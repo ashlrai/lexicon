@@ -20760,7 +20760,7 @@ function csvField(value) {
   return value;
 }
 function isFormulaCell(value) {
-  return /^[=+\-@\t\r]/.test(value);
+  return /^(?:[\t\r]|[ \t]*[=+\-@])/.test(value);
 }
 function csvTextField(value) {
   return isFormulaCell(value) ? `"'${value.replace(/"/g, '""')}"` : csvField(value);
@@ -21121,7 +21121,7 @@ function exportWispr(lexicon, _opts = {}, sink) {
   for (const { alias, canonical } of kept) lines.push(`${csvField(alias)},${csvField(canonical)}`);
   if (leftOut.length > 0) {
     sink?.notes.push(
-      `left out ${leftOut.length} pair${leftOut.length === 1 ? "" : "s"} a spreadsheet would run as a formula (a cell starting with = + - @, a tab or a carriage return): ${quotedNames(leftOut)}`
+      `left out ${leftOut.length} pair${leftOut.length === 1 ? "" : "s"} a spreadsheet would run as a formula (a cell starting with = + - @, after any spaces, or with a tab or a carriage return): ${quotedNames(leftOut)}`
     );
   }
   const shared = sharedTriggerNote(dropped, "word");

@@ -150,8 +150,23 @@ describe('csv and wispr: spreadsheet formulas', () => {
     // `lexicon export --json` reports the rows written, not the aliases.
     expect(rows).toBe(1);
     expect(notes).toEqual([
-      'left out 4 pairs a spreadsheet would run as a formula (a cell starting with = + - @, a tab or a carriage return): "hyperlink -> =HYPERLINK(\\"http://x\\",\\"y\\")", "+cmd -> Ashlr.AI", "@sum -> Ashlr.AI" and "-x -> Ashlr.AI"',
+      'left out 4 pairs a spreadsheet would run as a formula (a cell starting with = + - @, after any spaces, or with a tab or a carriage return): "hyperlink -> =HYPERLINK(\\"http://x\\",\\"y\\")", "+cmd -> Ashlr.AI", "@sum -> Ashlr.AI" and "-x -> Ashlr.AI"',
     ]);
+  });
+
+  // Catches: only the first character was checked, so ` =HYPERLINK(...)`
+  // (a spreadsheet trims the space on import, then runs the rest) was written
+  // as is.
+  it('a formula after leading spaces or a tab is guarded too', () => {
+    const spaced = lex([{ canonical: '  =HYPERLINK("http://x")', aliases: ['hyper'], phonetic: ' \t+1' }, { canonical: 'Ashlr.AI', aliases: ['Ashler'] }]);
+    const csv = exportLexiconWithNotes(spaced, 'csv');
+    expect(csv.text.split('\n')[1]).toBe(`"'  =HYPERLINK(""http://x"")",hyper,,"' \t+1"`);
+    expect(csv.notes[0]).toContain('wrote 2 values');
+    const wispr = exportLexiconWithNotes(spaced, 'wispr');
+    expect(wispr.text).toBe('word,replacement\nAshler,Ashlr.AI\n');
+    expect(wispr.notes).toHaveLength(1);
+    // A space inside a name is not a formula.
+    expect(exportLexiconWithNotes(lex([{ canonical: 'A = B', aliases: ['a b'] }]), 'csv').notes).toEqual([]);
   });
 
   it('a lexicon with no such cells has no note', () => {

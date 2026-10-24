@@ -121,10 +121,12 @@ export function csvField(value: string): string {
  * A cell a spreadsheet would run as a formula when the CSV is opened in it
  * (Excel, LibreOffice Calc, Google Sheets): one starting with `=`, `+`, `-`
  * or `@`, or with a tab or carriage return, which some importers strip
- * before reading the rest (OWASP's CSV injection list).
+ * before reading the rest (OWASP's CSV injection list). Spaces ahead of
+ * `=`, `+`, `-` or `@` count too: a spreadsheet trims them on import and
+ * runs ` =HYPERLINK(...)` as well, so only the first character was checked.
  */
 export function isFormulaCell(value: string): boolean {
-  return /^[=+\-@\t\r]/.test(value);
+  return /^(?:[\t\r]|[ \t]*[=+\-@])/.test(value);
 }
 
 /**
