@@ -62542,6 +62542,9 @@ async function runInstallJson(client, opts, io, deps) {
     const message = errorMessage(e);
     const nextStep = e instanceof CliRefusal && e.nextStep ? e.nextStep : !isInstallClient(name) ? `name one of: ${INSTALL_CLIENTS.join(", ")} (e.g. lexicon install cursor --json)` : /--scope must be/.test(message) ? "pass --scope user or --scope project" : `fix the problem in error, then run lexicon install ${name}${opts.apply ? " --apply" : ""} --json again`;
     print(jsonError(message, nextStep));
+    io.stderr(`lexicon: ${safeMessage(message)}
+lexicon: ${safeMessage(nextStep)}
+`);
     return 1;
   }
   if (err) io.stderr(err);

@@ -454,6 +454,8 @@ describe('generic, claude and the commander wiring', () => {
       expect(doc.error).toMatch(/unknown client "emacs"/);
       expect(doc.nextStep).toContain('cursor');
       expect(doc.nextStep).toContain('lexicon install cursor --json');
+      // Catches: the refusal reached stdout only, where every other --json refusal is on stderr too.
+      expect(unknown.io.err).toBe(`lexicon: ${doc.error}\nlexicon: ${doc.nextStep}\n`);
 
       const scope = await run('cursor', { json: true, scope: 'team' });
       expect(scope.code).toBe(1);

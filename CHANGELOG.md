@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon install <client> --json` names a refusal (an unknown client, a bad `--scope`) on stderr as well as in the `{ ok: false, error, nextStep }` document, as every other `--json` refusal does; stderr was empty.
 - `lexicon add <canonical> --json` on an existing term, with no aliases given, listed every generated spelling under `suggested` though none was added (only a term the call creates gets them, and the text output marked none). `suggested` is now `[]` there. `lexicon add --help` and `docs/CONTRACT.md` name the `--json` keys, `scope` and `suggested` included.
 - `lexicon pending list --json`, `pending accept <id> --json` and `pending reject <id> --json` print JSON: `pending` defines `--json` too, and the flag went to it, so `list` printed the table and `accept` and `reject` printed text, or nothing at all on stdout for an unknown id. `accept` and `reject` now lead with `ok: false` when they exit 1 (an unknown id, or an entry that was not accepted), and name each unknown id on stderr under `--json` too.
 - `POST /add` with `aliases: []` adds the term with no aliases, as MCP `add_term` does; it generated suggested spellings as if the field were omitted. Omitting `aliases` still gives a new term the suggested spellings. No shipped caller sends `[]`: the menu bar app leaves an empty list out of the body, and the Windows app and the browser extension send no aliases.

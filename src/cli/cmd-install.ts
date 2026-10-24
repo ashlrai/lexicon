@@ -20,7 +20,7 @@ import type { Command } from 'commander';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord, readJsonFile, writeJsonFile } from '../util/json.js';
 import { xdgConfigHome } from '../util/xdg.js';
-import { CliRefusal, bold, dim, green, indent, jsonError, line, red, safe, safeLines, yellow } from './io.js';
+import { CliRefusal, bold, dim, green, indent, jsonError, line, red, safe, safeLines, safeMessage, yellow } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   HOOK_EVENTS,
@@ -659,6 +659,8 @@ async function runInstallJson(client: string | undefined, opts: InstallOptions, 
             ? 'pass --scope user or --scope project'
             : `fix the problem in error, then run lexicon install ${name}${opts.apply ? ' --apply' : ''} --json again`;
     print(jsonError(message, nextStep));
+    // On stderr too, as every other --json refusal (`fail`, `refuse`) is.
+    io.stderr(`lexicon: ${safeMessage(message)}\nlexicon: ${safeMessage(nextStep)}\n`);
     return 1;
   }
   if (err) io.stderr(err);
