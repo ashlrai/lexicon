@@ -42148,6 +42148,9 @@ async function loadTrustRegistry(opts) {
 async function readTrustRegistry(opts = {}) {
   return (await loadTrustRegistry(opts)).registry;
 }
+async function trustRegistryProblem(opts = {}) {
+  return (await loadTrustRegistry(opts)).problem;
+}
 async function readTrustRegistryForUpdate(opts) {
   const { registry: registry2, problem } = await loadTrustRegistry(opts);
   if (problem !== void 0) throw new TrustRegistryUnreadableError(getTrustPath(opts), problem);
@@ -65925,6 +65928,14 @@ function summarize(checks, state, audience = "cli") {
       nextStep: mcp ? `Ask the user to open it and fix the parse error: ${cliCommand(editCommand(first.scope).replace(/^lexicon /, ""))} (setup_lexicon will not repair this). The file is ${first.path}` : `Open it and fix the parse error: ${editCommand(first.scope)}  (lexicon setup will not repair this). The file is ${first.path}`
     };
   }
+  if (state.brokenTrust && state.untrustedProject) {
+    const { path: file2, problem } = state.brokenTrust;
+    return {
+      ready: false,
+      summary: `The trust registry ${problem}, so this repo's project lexicon reads as untrusted and is not merged.`,
+      nextStep: mcp ? `Ask the user to fix the JSON in ${file2}, or move it aside, then call trust_project with action "trust" (trusting fails until then)` : `Fix the JSON in ${file2}, or move it aside, then run: lexicon trust  (it refuses to write over the broken file)`
+    };
+  }
   if (state.terms === 0 && state.untrustedProject && state.skippedProjectTerms > 0) {
     const skipped = `${state.skippedProjectTerms} term${state.skippedProjectTerms === 1 ? "" : "s"}`;
     return {
@@ -66010,11 +66021,20 @@ async function runDoctorReport(opts, deps = {}) {
       kind === "read" ? `global lexicon cannot be read (${readFix("global")}): ${error62}` : `global lexicon does not parse (run: ${editCommand("global")}): ${error62}`
     );
   }
+  const trustOpts = { cwd, env, home };
+  const trustPath = getTrustPath(trustOpts);
+  const trustProblem = await trustRegistryProblem(trustOpts);
+  if (trustProblem !== void 0) {
+    push2(
+      "fail",
+      `trust registry ${trustProblem}, so every project lexicon reads as untrusted and trusting one fails (fix the JSON in it, or move it aside and trust each project again): ${trustPath}`
+    );
+  }
   if (paths.project) {
     try {
       const p = await readLexiconFile(paths.project, "project");
       push2("ok", `project lexicon parses: ${paths.project} (${plural2(p.lexicon.terms.length, "term")})`);
-      const trust = await isTrusted(p, { cwd });
+      const trust = await isTrusted(p, trustOpts);
       if (trust === "trusted") {
         push2("ok", "project lexicon is trusted and merged");
         files.push(p);
@@ -66207,7 +66227,18 @@ async function runDoctorReport(opts, deps = {}) {
     push2("info", "lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)");
   }
   if (opts.audience === "mcp") for (const check3 of checks) check3.message = mcpRunHints(check3.message);
-  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, skippedProjectTerms, unreadable }, opts.audience);
+  const verdict = summarize(
+    checks,
+    {
+      terms: canonicalOwners.size,
+      wired,
+      untrustedProject,
+      skippedProjectTerms,
+      unreadable,
+      ...trustProblem !== void 0 ? { brokenTrust: { path: trustPath, problem: trustProblem } } : {}
+    },
+    opts.audience
+  );
   const firstFail = checks.find((c) => c.level === "fail");
   return {
     ok: firstFail === void 0,
@@ -66219,7 +66250,7 @@ async function runDoctorReport(opts, deps = {}) {
     paths: {
       global: paths.global,
       ...paths.project ? { project: paths.project } : {},
-      trust: getTrustPath({ cwd }),
+      trust: trustPath,
       settings: settingsPath,
       projectSettings: projectSettingsPath,
       projectSettingsFiles,

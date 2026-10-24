@@ -18,7 +18,7 @@ import { readDoctorConfigJson, readDoctorConfigText } from './doctor-config-read
 import { errorMessage } from '../util/errors.js';
 import { checkPhantomPresence } from './phantom-presence.js';
 import { packageVersion } from '../util/package.js';
-import { getTrustPath, isTrusted, readLexiconFile, resolvePaths, spellingKey } from '../core/index.js';
+import { getTrustPath, isTrusted, readLexiconFile, resolvePaths, spellingKey, trustRegistryProblem } from '../core/index.js';
 import { configPathFor } from './cmd-install.js';
 import { findGitRoot } from './setup/detect.js';
 import { cliCommand } from '../util/cli-hint.js';
@@ -463,7 +463,15 @@ const TRUST_NEXT_STEP_MCP =
 
 function summarize(
   checks: readonly DoctorCheck[],
-  state: { terms: number; wired: boolean; untrustedProject: boolean; skippedProjectTerms: number; unreadable: readonly UnreadableLexicon[] },
+  state: {
+    terms: number;
+    wired: boolean;
+    untrustedProject: boolean;
+    skippedProjectTerms: number;
+    unreadable: readonly UnreadableLexicon[];
+    /** `trust.json` when it cannot be used (trustRegistryProblem), with why. */
+    brokenTrust?: { path: string; problem: string };
+  },
   audience: DoctorAudience = 'cli',
 ): { ready: boolean; summary: string; nextStep: string } {
   const mcp = audience === 'mcp';
@@ -513,6 +521,19 @@ function summarize(
           `(setup_lexicon will not repair this). The file is ${first.path}`
         : `Open it and fix the parse error: ${editCommand(first.scope)}  ` +
           `(lexicon setup will not repair this). The file is ${first.path}`,
+    };
+  }
+  // A project file reads as untrusted because the registry itself is
+  // broken: `lexicon trust` refuses to write over it, so trusting is not
+  // the way on. Fixing the registry is.
+  if (state.brokenTrust && state.untrustedProject) {
+    const { path: file, problem } = state.brokenTrust;
+    return {
+      ready: false,
+      summary: `The trust registry ${problem}, so this repo's project lexicon reads as untrusted and is not merged.`,
+      nextStep: mcp
+        ? `Ask the user to fix the JSON in ${file}, or move it aside, then call trust_project with action "trust" (trusting fails until then)`
+        : `Fix the JSON in ${file}, or move it aside, then run: lexicon trust  (it refuses to write over the broken file)`,
     };
   }
   // Empty except for a project file this user has not trusted: the terms
@@ -690,11 +711,26 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
     );
   }
 
+  // The trust registry beside the global lexicon, read with the same env and
+  // home as the lexicon paths. One that cannot be used was read as empty and
+  // never mentioned: a trusted project file was reported as untrusted, with
+  // `lexicon trust` as the fix, which then refused the broken registry.
+  const trustOpts = { cwd, env, home };
+  const trustPath = getTrustPath(trustOpts);
+  const trustProblem = await trustRegistryProblem(trustOpts);
+  if (trustProblem !== undefined) {
+    push(
+      'fail',
+      `trust registry ${trustProblem}, so every project lexicon reads as untrusted and trusting one fails ` +
+        `(fix the JSON in it, or move it aside and trust each project again): ${trustPath}`,
+    );
+  }
+
   if (paths.project) {
     try {
       const p = await readLexiconFile(paths.project, 'project');
       push('ok', `project lexicon parses: ${paths.project} (${plural(p.lexicon.terms.length, 'term')})`);
-      const trust = await isTrusted(p, { cwd });
+      const trust = await isTrusted(p, trustOpts);
       if (trust === 'trusted') {
         push('ok', 'project lexicon is trusted and merged');
         files.push(p);
@@ -930,7 +966,18 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
   // For an agent every check's hint names the tool or the npx form, as
   // `nextStep` does; `lexicon doctor` prints the checks unchanged.
   if (opts.audience === 'mcp') for (const check of checks) check.message = mcpRunHints(check.message);
-  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, skippedProjectTerms, unreadable }, opts.audience);
+  const verdict = summarize(
+    checks,
+    {
+      terms: canonicalOwners.size,
+      wired,
+      untrustedProject,
+      skippedProjectTerms,
+      unreadable,
+      ...(trustProblem !== undefined ? { brokenTrust: { path: trustPath, problem: trustProblem } } : {}),
+    },
+    opts.audience,
+  );
   const firstFail = checks.find((c) => c.level === 'fail');
   return {
     ok: firstFail === undefined,
@@ -942,7 +989,7 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
     paths: {
       global: paths.global,
       ...(paths.project ? { project: paths.project } : {}),
-      trust: getTrustPath({ cwd }),
+      trust: trustPath,
       settings: settingsPath,
       projectSettings: projectSettingsPath,
       projectSettingsFiles,
