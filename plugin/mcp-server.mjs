@@ -67834,7 +67834,7 @@ function isBlankOrComment2(l) {
   return t === "" || t.startsWith("#");
 }
 function tomlValue(lines, key) {
-  const re = new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*(#[^"\\]]*)?$`);
+  const re = new RegExp(`^\\s*(?:${key}|"${key}"|'${key}')\\s*=\\s*(.+?)\\s*(#[^"\\]]*)?$`);
   for (const l of lines) {
     const m = re.exec(l);
     if (!m) continue;
