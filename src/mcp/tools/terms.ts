@@ -37,6 +37,8 @@ import {
   untrustedTermHolder,
   isProjectTrustError,
   LIMITS,
+  DEFAULT_MIN_CONFIDENCE,
+  INVENTED_BOUNDARY_CONFIDENCE,
 } from '../../core/index.js';
 import type { NormalizeIncomplete, NormalizeResult, Term, TermScope } from '../../core/index.js';
 import { filePathsInUse, guarded, log, mcpWriteOpts, nonBlank, skippedProjectFields, textResult, untrustedWriteFields } from '../shared.js';
@@ -147,7 +149,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. ' +
         'WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit ' +
         'counter. Use the `output` field as the message you act on, and mention the correction only if it changes what you are about to do. ' +
-        'WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a ' +
+        "WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails (unless the lexicon's settings.skipCode is false), and it never invents a " +
         'term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. ' +
         `Only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. ` +
         'Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently ' +
@@ -164,7 +166,10 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           .min(0)
           .max(1)
           .optional()
-          .describe('Override the minimum confidence (0..1) a fuzzy/phonetic match needs. Exact alias matches are always 1.'),
+          .describe(
+            `Override the minimum confidence (0..1) a fuzzy or phonetic match needs. Omitted: the lexicon's settings.minConfidence, else ${DEFAULT_MIN_CONFIDENCE}. ` +
+              `An exact alias or canonical match scores 1 and passes any value, except one the text spells with a word break the term does not have ("open ai" for OpenAI), which scores ${INVENTED_BOUNDARY_CONFIDENCE} and is refused above that.`,
+          ),
       },
     },
     async ({ text, dryRun, minConfidence }) =>

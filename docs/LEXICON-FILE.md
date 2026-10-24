@@ -47,7 +47,7 @@ settings:
 
 | Key | Default | Meaning |
 |---|---|---|
-| `minConfidence` | `0.82` | Minimum confidence a phonetic or fuzzy match needs before it is applied. Exact aliases are always 1.0 |
+| `minConfidence` | `0.82` | Minimum confidence a phonetic or fuzzy match needs before it is applied. An exact alias or canonical match scores 1.0, except one the text spells with a word break the term does not have ("open ai" for OpenAI), which scores 0.95, so a value above that refuses it |
 | `phonetic` | `true` | Enable double metaphone matching |
 | `fuzzy` | `true` | Enable edit-distance matching |
 | `protectedWords` | `[]` | Words no term may ever replace. Merged with the built-in stoplist |

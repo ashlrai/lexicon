@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- MCP `normalize_transcript`: the `minConfidence` description names its default (the lexicon's `settings.minConfidence`, else 0.82) and says an exact match the text spells with an extra word break ("open ai" for OpenAI) scores 0.95, so a value above that refuses it. It said exact matches are always 1. The tool description also says the code, path, URL and email protection is off when `settings.skipCode` is false. `docs/LEXICON-FILE.md` had the same "always 1.0" claim.
 - `install.sh`, when it cannot read the Node version, prints how to install Node 20 or newer (the same hint as a missing or old Node) and says to run `node --version` to see what PATH selects. It printed the unreadable output alone.
 - The Claude Code hook, when its bundle (`plugin/hook-main.mjs`) is missing or fails to load, names a next step on stderr: `claude plugin update lexicon@ashlrai`, or for an npm install `npm install -g @ashlr/lexicon` then `lexicon install claude --apply`. It printed the import error alone. The hook still exits 0.
 - `lexicon voice`, when whisper-cli runs but exits non-zero, names a next step on stderr and as the `--json` `nextStep`: the `whisper-cli -m <model> -f <audio>` command that shows whisper's full output, then deleting a damaged downloaded model so the next run fetches it again (or checking a `--model` file) or passing another with `--model`. It gave the error and the kept audio only.
