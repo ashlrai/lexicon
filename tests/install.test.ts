@@ -607,6 +607,30 @@ describe('installing from an npx cache', () => {
   });
 });
 
+// Catches: a preview ended `run again with --apply to write step 1`, leaving the
+// user to rebuild the command, and the flags it was run with, by hand.
+describe('a preview names the full command that applies it', () => {
+  it('keeps --cwd, --project or --scope and --home', async () => {
+    const project = await run('cursor', { project: true });
+    expect(project.io.out).toContain(`to write step 1, run: lexicon --cwd ${cwd} install cursor --project --home ${home} --apply`);
+    const scoped = await run('codex', { scope: 'user' });
+    expect(scoped.io.out).toContain(`to write step 1, run: lexicon --cwd ${cwd} install codex --scope user --home ${home} --apply`);
+    expect(scoped.io.out).not.toContain('run again with --apply');
+  });
+
+  it('quotes a path that needs it and names no --cwd for the current directory', async () => {
+    const io = makeIO();
+    const spaced = path.join(home, "it's here");
+    await runInstall('windsurf', { home: spaced, cwd: process.cwd() }, io, baseDeps());
+    expect(io.out).toContain(`to write step 1, run: lexicon install windsurf --home '${spaced.replace("'", "'\\''")}' --apply`);
+  });
+
+  it('for claude names steps 1 and 2 with the scope given', async () => {
+    const { io } = await run('claude', { scope: 'project' });
+    expect(io.out).toContain(`to perform steps 1 and 2, run: lexicon --cwd ${cwd} install claude --scope project --home ${home} --apply`);
+  });
+});
+
 describe('claude registration is idempotent', () => {
   it('reports an existing `claude mcp add` entry as unchanged rather than failed', async () => {
     const io = makeIO();

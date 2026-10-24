@@ -543,6 +543,28 @@ function jsonSnippet(key: 'mcpServers' | 'servers', entry: StdioServerEntry | Vs
   return JSON.stringify({ [key]: { lexicon: entry } }, null, 2);
 }
 
+/** Quote one word of a printed command for a POSIX shell, only when it needs it. */
+function shellWord(s: string): string {
+  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * The command a preview names to write what it showed: `lexicon install
+ * <client>` with the flags this run was given (`--cwd`, `--scope` or
+ * `--project`, `--home`) and `--apply`, so the line can be copied as it is.
+ * `--cwd` is named only when it is not the current directory.
+ */
+export function installApplyCommand(client: InstallClient, opts: InstallOptions): string {
+  const words = ['lexicon'];
+  if (opts.cwd !== undefined && path.resolve(opts.cwd) !== process.cwd()) words.push('--cwd', opts.cwd);
+  words.push('install', client);
+  if (opts.scope !== undefined) words.push('--scope', opts.scope);
+  else if (opts.project) words.push('--project');
+  if (opts.home) words.push('--home', opts.home);
+  words.push('--apply');
+  return safe(words.map(shellWord).join(' '));
+}
+
 /** How to take the lexicon entry back out of a client's config file by hand. */
 function undoEntry(target: InstallTarget): string {
   return target.format === 'toml'
@@ -703,7 +725,7 @@ async function installText(
       ...(deps.exec ? { exec: deps.exec } : {}),
       env,
     };
-    return runInstallClaude({ ...claudeOpts, cwd }, io, claudeDeps);
+    return runInstallClaude({ ...claudeOpts, cwd, applyCommand: installApplyCommand('claude', opts) }, io, claudeDeps);
   }
 
   const target = targetFor(name, serverPath, { home, cwd, platform, env, project });
@@ -733,7 +755,7 @@ async function installText(
   printExportHint(io, 2, name);
   if (!opts.apply) {
     line(io);
-    line(io, dim('run again with --apply to write step 1'));
+    line(io, dim(`to write step 1, run: ${installApplyCommand(name, opts)}`));
   }
   return 0;
 }
@@ -763,6 +785,12 @@ export function registerInstallCommands(program: Command, io: IO): void {
 export interface InstallClaudeOptions extends CommonOptions {
   apply?: boolean;
   scope?: string;
+  /**
+   * The command a preview names to perform steps 1 and 2. Default
+   * `lexicon install claude [--scope project] --apply`; runInstall passes
+   * `installApplyCommand` so the flags the user gave are kept.
+   */
+  applyCommand?: string;
 }
 
 /** What an installer did to one file; reported through `InstallClaudeDeps.onWritten` / `InstallDeps.onWritten`. */
@@ -907,7 +935,8 @@ export async function runInstallClaude(
   }
   if (!opts.apply) {
     line(io);
-    line(io, dim('run again with --apply to perform steps 1 and 2'));
+    const command = opts.applyCommand ?? `lexicon install claude${scope === 'project' ? ' --scope project' : ''} --apply`;
+    line(io, dim(`to perform steps 1 and 2, run: ${command}`));
   }
   return failed ? 1 : 0;
 }

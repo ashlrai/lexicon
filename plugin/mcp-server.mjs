@@ -62349,6 +62349,19 @@ async function applyToml(target) {
 function jsonSnippet(key, entry) {
   return JSON.stringify({ [key]: { lexicon: entry } }, null, 2);
 }
+function shellWord2(s) {
+  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+}
+function installApplyCommand(client, opts) {
+  const words = ["lexicon"];
+  if (opts.cwd !== void 0 && import_node_path20.default.resolve(opts.cwd) !== process.cwd()) words.push("--cwd", opts.cwd);
+  words.push("install", client);
+  if (opts.scope !== void 0) words.push("--scope", opts.scope);
+  else if (opts.project) words.push("--project");
+  if (opts.home) words.push("--home", opts.home);
+  words.push("--apply");
+  return safe(words.map(shellWord2).join(" "));
+}
 function undoEntry(target) {
   return target.format === "toml" ? `delete the [${CODEX_TABLE}] table from ${safe(target.file)}` : `delete the "lexicon" entry under "${target.key}" in ${safe(target.file)}`;
 }
@@ -62455,7 +62468,7 @@ async function installText(client, opts, io, deps) {
       ...deps.exec ? { exec: deps.exec } : {},
       env
     };
-    return runInstallClaude({ ...claudeOpts, cwd }, io, claudeDeps);
+    return runInstallClaude({ ...claudeOpts, cwd, applyCommand: installApplyCommand("claude", opts) }, io, claudeDeps);
   }
   const target = targetFor(name, serverPath, { home, cwd, platform, env, project });
   const body = target.format === "toml" ? codexBlock(target.entry) : jsonSnippet(target.key, target.entry);
@@ -62480,7 +62493,7 @@ async function installText(client, opts, io, deps) {
   printExportHint(io, 2, name);
   if (!opts.apply) {
     line(io);
-    line(io, dim("run again with --apply to write step 1"));
+    line(io, dim(`to write step 1, run: ${installApplyCommand(name, opts)}`));
   }
   return 0;
 }
@@ -62578,7 +62591,8 @@ async function runInstallClaude(opts, io, deps = {}) {
   }
   if (!opts.apply) {
     line(io);
-    line(io, dim("run again with --apply to perform steps 1 and 2"));
+    const command = opts.applyCommand ?? `lexicon install claude${scope === "project" ? " --scope project" : ""} --apply`;
+    line(io, dim(`to perform steps 1 and 2, run: ${command}`));
   }
   return failed ? 1 : 0;
 }
