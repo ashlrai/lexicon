@@ -144,18 +144,13 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
     return 1;
   }
   if (!correction.heard) {
-    if (opts.json) {
-      printJsonError(
-        io,
-        `"${opts.from ?? words.join(' ')}" names the intended spelling (${correction.meant}) but not what was heard`,
-        `run: ${learnCommand(undefined, correction.meant)}`,
-      );
-    }
-    io.stderr(
-      `lexicon: "${safe(opts.from ?? words.join(' '))}" names the intended spelling (${safe(correction.meant)}) but not what was heard\n`,
+    // Through refuse, so the `run:` line carries the `lexicon: ` prefix every other refusal's does.
+    return refuse(
+      io,
+      opts.json,
+      `"${opts.from ?? words.join(' ')}" names the intended spelling (${correction.meant}) but not what was heard`,
+      `run: ${learnCommand(undefined, correction.meant)}`,
     );
-    io.stderr(`run: ${learnCommand(undefined, correction.meant)}\n`);
-    return 1;
   }
   // The same spelling twice: learnCorrection refuses it with only an error, so
   // `--json` left a script without the step every other learn refusal names.
