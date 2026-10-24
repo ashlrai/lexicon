@@ -129,3 +129,37 @@ describe('list_terms and lexicon_stats name their result fields', () => {
     expect(listed.counts).toEqual({ matched: 1, total: 1, global: 1, project: 0 });
   });
 });
+
+describe('harvest_repo and suggest_terms', () => {
+  // Catches: minCount read as a floor for every candidate, while the directory
+  // name, git authors, package names and dot-TLD brands bypass it.
+  it('harvest_repo: minCount does not hold back a package name, as the schema says', async () => {
+    const d = (await tool('harvest_repo')).inputSchema.properties?.minCount?.description ?? '';
+    expect(d).toContain('The directory name, git authors, package names and dot-TLD brands (Ashlr.AI) are proposed at any count.');
+    await fs.writeFile(path.join(repo, 'package.json'), JSON.stringify({ name: 'zorblatt' }));
+    const res = (await call('harvest_repo', { minCount: 50 })).json();
+    const names = (res.candidates as { canonical: string }[]).map((c) => c.canonical);
+    expect(names).toContain('zorblatt');
+    const first = (res.candidates as Record<string, unknown>[])[0] ?? {};
+    expect(Object.keys(first).sort()).toEqual(['canonical', 'category', 'count', 'evidence', 'source', 'suggestedAliases']);
+    expect(Object.keys(res).sort()).toEqual(['candidates', 'count', 'root']);
+  });
+
+  // Catches: the description did not say the result is a bare array, nor that
+  // an empty one carries its reason in a second block.
+  it('suggest_terms: a bare array, and an empty one comes with a second block', async () => {
+    const d = (await tool('suggest_terms')).description ?? '';
+    expect(d).toContain('The result is a bare JSON array, best first. An empty array comes with a second text block');
+    // A two-letter directory gives no harvest name, and there is no history or term yet.
+    await fs.mkdir(path.join(repo, 'xy'));
+    const empty = await call('suggest_terms', { cwd: path.join(repo, 'xy') });
+    expect(empty.isError).toBe(false);
+    expect(JSON.parse(empty.blocks[0] ?? '')).toEqual([]);
+    expect(empty.blocks[1]).toMatch(/^No suggestions: there is no voice history yet/);
+    await addTerm({ canonical: 'Hetzner', aliases: ['hetsner'] }, { cwd: repo });
+    await fs.writeFile(path.join(repo, 'xy', 'package.json'), JSON.stringify({ name: 'zorblatt' }));
+    const full = await call('suggest_terms', { cwd: path.join(repo, 'xy') });
+    expect((JSON.parse(full.blocks[0] ?? '') as unknown[]).length).toBeGreaterThan(0);
+    expect(full.blocks).toHaveLength(1);
+  });
+});
