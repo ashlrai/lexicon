@@ -54,14 +54,14 @@ Arguments are checked against each tool's schema before the tool runs. A key the
 
 | Resource | Type | Content |
 |---|---|---|
-| `lexicon://me` | `text/markdown` | The `claude-md` export of the merged lexicon. What an agent should read at session start. Adds one line naming a skipped untrusted project file, and one saying the lexicon is empty when it has no terms |
+| `lexicon://me` | `text/markdown` | The `claude-md` export of the merged lexicon. What an agent should read at session start. Capped at 16000 characters: past that the most used terms (then brand, person and product names) are kept and a closing line says how many were left out and that `list_terms` (with a query) or `export_lexicon` (format `claude-md`) has the rest. Adds one line naming a skipped untrusted project file, and one saying the lexicon is empty when it has no terms |
 | `lexicon://json` | `application/json` | The merged lexicon as JSON (an untrusted project file is left out, and named by path in `skippedProject`; with no terms, `note` says so and names `setup_lexicon`) |
 
 ## Prompts
 
 | Prompt | Purpose |
 |---|---|
-| `voice-context` | The `claude-md` export plus an instruction to apply the canonical spellings for the rest of the session (with no terms, a note that there is nothing to apply and how to set it up instead) |
+| `voice-context` | The `claude-md` export (capped as `lexicon://me` is) plus an instruction to apply the canonical spellings for the rest of the session (with no terms, a note that there is nothing to apply and how to set it up instead) |
 | `onboard` | Walks the agent through first-run setup: ask for company, product and teammate spellings, which clients are in use, then call `setup_lexicon` and `add_term` |
 
 Neither prompt takes arguments (`prompts/list` gives `arguments: []`). Omit `arguments` or pass `{}`; an undeclared one is refused, as a tool refuses an unknown key, with JSON-RPC error -32602 naming it: `Invalid arguments for prompt onboard: unknown argument "scope" for prompt onboard: it takes no arguments; omit arguments or pass {}`.

@@ -9,6 +9,8 @@ import type { ExportFormat, ExportOptions, Lexicon, Term } from '../types.js';
 import { exportAssemblyai } from './assemblyai.js';
 import { exportAzure } from './azure.js';
 import { exportClaudeMd } from './claudeMd.js';
+export { exportClaudeMdWithin } from './claudeMd.js';
+export type { CappedClaudeMd } from './claudeMd.js';
 import { exportCsv } from './csv.js';
 import { exportDeepgram } from './deepgram.js';
 import { exportEspanso } from './espanso.js';

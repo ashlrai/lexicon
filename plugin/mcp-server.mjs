@@ -57861,6 +57861,9 @@ function exportAzure(lexicon, _opts = {}) {
 // src/core/exporters/claudeMd.ts
 var CLAUDE_MD_HEADING = "## Voice lexicon";
 function exportClaudeMd(lexicon, _opts = {}) {
+  return renderClaudeMd(sortByCategory(lexicon.terms).map(claudeMdRow));
+}
+function renderClaudeMd(rows, more) {
   const lines = [
     CLAUDE_MD_HEADING,
     "",
@@ -57869,13 +57872,31 @@ function exportClaudeMd(lexicon, _opts = {}) {
     "| Canonical | Sounds like / STT writes | Note |",
     "| --- | --- | --- |"
   ];
-  for (const term of sortByCategory(lexicon.terms)) {
-    lines.push(
-      `| ${mdCell(term.canonical)} | ${mdCell(joinAliasList(term.aliases))} | ${mdCell(noteFor(term))} |`
-    );
-  }
+  lines.push(...rows);
+  if (more !== void 0) lines.push(more);
   lines.push("", "If a word looks like a garbled proper noun and is not listed, ask rather than guess.");
   return lines.join("\n") + "\n";
+}
+function claudeMdRow(term) {
+  return `| ${mdCell(term.canonical)} | ${mdCell(joinAliasList(term.aliases))} | ${mdCell(noteFor(term))} |`;
+}
+function exportClaudeMdWithin(lexicon, maxChars, more) {
+  const full = exportClaudeMd(lexicon);
+  if (full.length <= maxChars) return { text: full, omitted: 0 };
+  const total = lexicon.terms.length;
+  let used = renderClaudeMd([]).length + more(total).length + 1;
+  const keep = /* @__PURE__ */ new Set();
+  for (const term of sortByImportance(lexicon.terms)) {
+    const cost = claudeMdRow(term).length + 1;
+    if (used + cost > maxChars) continue;
+    used += cost;
+    keep.add(term);
+  }
+  const rows = sortByCategory(lexicon.terms.filter((t) => keep.has(t))).map(claudeMdRow);
+  const omitted = total - keep.size;
+  const text = renderClaudeMd(rows, more(omitted));
+  return { text: text.length <= maxChars ? text : `${text.slice(0, Math.max(0, maxChars - 4))}...
+`, omitted };
 }
 function noteFor(term) {
   const parts = [];
@@ -65583,6 +65604,15 @@ function dirsFromRoots(roots) {
   }
   return dirs;
 }
+var MODEL_CONTEXT_MAX_CHARS = 16e3;
+function moreTermsLine(omitted) {
+  return `... ${omitted} more term${omitted === 1 ? "" : "s"} left out to keep this short (the most used, then brand, person and product names, are kept). Call list_terms with a query (it matches canonical spellings and aliases) to look one up, or export_lexicon with format claude-md for the whole table.`;
+}
+function lexiconForModel(loaded) {
+  const full = exportLexicon(loaded.merged, "claude-md");
+  const text = full.length <= MODEL_CONTEXT_MAX_CHARS ? full : exportClaudeMdWithin(loaded.merged, MODEL_CONTEXT_MAX_CHARS, moreTermsLine).text;
+  return neutralizeMarkup(text);
+}
 var VOICE_CONTEXT_INSTRUCTION = "Apply these canonical spellings to everything I say for the rest of this session. If you see a word that looks like a garbled version of one of them, use the canonical form without asking.";
 var EMPTY_LEXICON_NOTE = `Note: ${noTermsYet({ lower: true, so: "there are no spellings to apply and dictated names are not being corrected" })}. If the user dictates, offer once to set it up (the onboard prompt, or setup_lexicon, which previews before it writes).`;
 var ONBOARD_PROMPT = [
@@ -65687,12 +65717,12 @@ function createServer2(opts = {}) {
     "lexicon://me",
     {
       title: "Personal voice lexicon",
-      description: "Canonical spellings of names the user dictates and how STT mishears them, as markdown (the claude-md export of the global lexicon plus the project .lexicon.yaml when it is trusted). Read this before interpreting dictated input. An untrusted (or changed) project file is left out and named by path in a closing note, never quoted; with no terms at all, a closing note says so and how to set the lexicon up.",
+      description: `Canonical spellings of names the user dictates and how STT mishears them, as markdown (the claude-md export of the global lexicon plus the project .lexicon.yaml when it is trusted). Read this before interpreting dictated input. An untrusted (or changed) project file is left out and named by path in a closing note, never quoted; with no terms at all, a closing note says so and how to set the lexicon up. The table is capped at ${MODEL_CONTEXT_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept and a line says how many were left out; list_terms (with a query) and export_lexicon (format claude-md) reach the rest.`,
       mimeType: "text/markdown"
     },
     async (uri) => {
       const loaded = await loadForContext();
-      const text = neutralizeMarkup(exportLexicon(loaded.merged, "claude-md")) + skippedProjectSuffix(loaded) + emptyLexiconSuffix(loaded);
+      const text = lexiconForModel(loaded) + skippedProjectSuffix(loaded) + emptyLexiconSuffix(loaded);
       return {
         contents: [{ uri: uri.href, mimeType: "text/markdown", text }]
       };
@@ -65723,11 +65753,11 @@ function createServer2(opts = {}) {
     "voice-context",
     {
       title: "Voice context",
-      description: "Load the user's canonical spellings into the conversation so dictated input is interpreted correctly for the rest of the session: the lexicon://me text and an instruction to apply it. Takes no arguments. With no terms it says there is nothing to apply and how to set the lexicon up instead; an untrusted project file is left out and named by path."
+      description: `Load the user's canonical spellings into the conversation so dictated input is interpreted correctly for the rest of the session: the lexicon://me text and an instruction to apply it. Takes no arguments. With no terms it says there is nothing to apply and how to set the lexicon up instead; an untrusted project file is left out and named by path. The table is capped at ${MODEL_CONTEXT_MAX_CHARS} characters as lexicon://me is, with a line saying how many terms were left out and how to get them.`
     },
     async () => {
       const loaded = await loadForContext();
-      const snippet2 = neutralizeMarkup(exportLexicon(loaded.merged, "claude-md")).trimEnd() + skippedProjectSuffix(loaded);
+      const snippet2 = lexiconForModel(loaded).trimEnd() + skippedProjectSuffix(loaded);
       const instruction = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE : VOICE_CONTEXT_INSTRUCTION;
       return {
         messages: [
@@ -65805,6 +65835,7 @@ if (isMainModule()) {
   }
 }
 export {
+  MODEL_CONTEXT_MAX_CHARS,
   ROOTS_TIMEOUT_MS,
   cliFlagOutput,
   createServer2 as createServer,

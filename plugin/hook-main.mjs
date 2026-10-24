@@ -20482,6 +20482,9 @@ function exportAzure(lexicon, _opts = {}) {
 // src/core/exporters/claudeMd.ts
 var CLAUDE_MD_HEADING = "## Voice lexicon";
 function exportClaudeMd(lexicon, _opts = {}) {
+  return renderClaudeMd(sortByCategory(lexicon.terms).map(claudeMdRow));
+}
+function renderClaudeMd(rows, more) {
   const lines = [
     CLAUDE_MD_HEADING,
     "",
@@ -20490,13 +20493,13 @@ function exportClaudeMd(lexicon, _opts = {}) {
     "| Canonical | Sounds like / STT writes | Note |",
     "| --- | --- | --- |"
   ];
-  for (const term of sortByCategory(lexicon.terms)) {
-    lines.push(
-      `| ${mdCell(term.canonical)} | ${mdCell(joinAliasList(term.aliases))} | ${mdCell(noteFor(term))} |`
-    );
-  }
+  lines.push(...rows);
+  if (more !== void 0) lines.push(more);
   lines.push("", "If a word looks like a garbled proper noun and is not listed, ask rather than guess.");
   return lines.join("\n") + "\n";
+}
+function claudeMdRow(term) {
+  return `| ${mdCell(term.canonical)} | ${mdCell(joinAliasList(term.aliases))} | ${mdCell(noteFor(term))} |`;
 }
 function noteFor(term) {
   const parts = [];
@@ -21228,7 +21231,7 @@ function truncateSessionContext(text, max = SESSION_CONTEXT_MAX_CHARS) {
   while (end < lines.length && lines[end].startsWith("|")) end += 1;
   const rows = lines.slice(sep + 1, end);
   const footer = lines.slice(end);
-  const moreLine = (n) => `... ${n} more term${n === 1 ? "" : "s"}; read the lexicon://me resource for the full list.`;
+  const moreLine = (n) => `... ${n} more term${n === 1 ? "" : "s"}; read the lexicon://me resource for more, or call the list_terms tool to look any term up.`;
   const fixed = header.join("\n").length + footer.join("\n").length + moreLine(rows.length).length + 3;
   let used = fixed;
   const kept = [];

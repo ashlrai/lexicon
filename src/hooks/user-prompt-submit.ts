@@ -125,7 +125,7 @@ interface HookOutput {
   };
 }
 
-/** Upper bound for the whole SessionStart context, skipped-project note included; longer tables are truncated with a pointer to lexicon://me. */
+/** Upper bound for the whole SessionStart context, skipped-project note included; longer tables are truncated with a pointer to lexicon://me and list_terms (lexicon://me is capped too, at a larger size). */
 export const SESSION_CONTEXT_MAX_CHARS = 4000;
 
 /** State file (next to the global lexicon) recording when the empty-lexicon onboarding note was last emitted. */
@@ -629,7 +629,7 @@ export function truncateSessionContext(text: string, max = SESSION_CONTEXT_MAX_C
   const rows = lines.slice(sep + 1, end);
   const footer = lines.slice(end);
 
-  const moreLine = (n: number): string => `... ${n} more term${n === 1 ? '' : 's'}; read the lexicon://me resource for the full list.`;
+  const moreLine = (n: number): string => `... ${n} more term${n === 1 ? '' : 's'}; read the lexicon://me resource for more, or call the list_terms tool to look any term up.`;
   const fixed = header.join('\n').length + footer.join('\n').length + moreLine(rows.length).length + 3; // 3 joining newlines
   let used = fixed;
   const kept: string[] = [];

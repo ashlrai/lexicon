@@ -3,11 +3,16 @@
  * garbled spellings map to which canonical term.
  */
 import type { ExportOptions, Lexicon, Term } from '../types.js';
-import { joinAliasList, mdCell, sortByCategory } from './shared.js';
+import { joinAliasList, mdCell, sortByCategory, sortByImportance } from './shared.js';
 
 export const CLAUDE_MD_HEADING = '## Voice lexicon';
 
 export function exportClaudeMd(lexicon: Lexicon, _opts: ExportOptions = {}): string {
+  return renderClaudeMd(sortByCategory(lexicon.terms).map(claudeMdRow));
+}
+
+/** The table, its header and its footer around `rows`, with `more` (when given) as the line after the last row. */
+function renderClaudeMd(rows: readonly string[], more?: string): string {
   const lines = [
     CLAUDE_MD_HEADING,
     '',
@@ -16,13 +21,52 @@ export function exportClaudeMd(lexicon: Lexicon, _opts: ExportOptions = {}): str
     '| Canonical | Sounds like / STT writes | Note |',
     '| --- | --- | --- |',
   ];
-  for (const term of sortByCategory(lexicon.terms)) {
-    lines.push(
-      `| ${mdCell(term.canonical)} | ${mdCell(joinAliasList(term.aliases))} | ${mdCell(noteFor(term))} |`,
-    );
-  }
+  lines.push(...rows);
+  if (more !== undefined) lines.push(more);
   lines.push('', 'If a word looks like a garbled proper noun and is not listed, ask rather than guess.');
   return lines.join('\n') + '\n';
+}
+
+function claudeMdRow(term: Term): string {
+  return `| ${mdCell(term.canonical)} | ${mdCell(joinAliasList(term.aliases))} | ${mdCell(noteFor(term))} |`;
+}
+
+/** What `exportClaudeMdWithin` returns: the text, and how many terms' rows it left out. */
+export interface CappedClaudeMd {
+  text: string;
+  omitted: number;
+}
+
+/**
+ * The claude-md export of `lexicon` in at most `maxChars` characters, for
+ * text read into model context whole (the MCP `lexicon://me` resource and
+ * `voice-context` prompt). When the whole export fits it is returned as is.
+ * Otherwise rows are taken in `sortByImportance` order (hits, highest first;
+ * then brand, person and product terms; then canonical A to Z), as
+ * `ExportOptions.limit` keeps them, and a row that does not fit in what is
+ * left is skipped while later, shorter rows still count (as the SessionStart
+ * hook's `truncateSessionContext` does). The kept rows are written in the
+ * export's own order, followed by the line `more(omitted)` (which should say
+ * how to get the rest) and the usual footer. Header and footer always
+ * survive; when they alone exceed `maxChars` the text is cut there.
+ */
+export function exportClaudeMdWithin(lexicon: Lexicon, maxChars: number, more: (omitted: number) => string): CappedClaudeMd {
+  const full = exportClaudeMd(lexicon);
+  if (full.length <= maxChars) return { text: full, omitted: 0 };
+  const total = lexicon.terms.length;
+  // Room for the frame and the longest `more` line it can need, plus its newline.
+  let used = renderClaudeMd([]).length + more(total).length + 1;
+  const keep = new Set<Term>();
+  for (const term of sortByImportance(lexicon.terms)) {
+    const cost = claudeMdRow(term).length + 1;
+    if (used + cost > maxChars) continue;
+    used += cost;
+    keep.add(term);
+  }
+  const rows = sortByCategory(lexicon.terms.filter((t) => keep.has(t))).map(claudeMdRow);
+  const omitted = total - keep.size;
+  const text = renderClaudeMd(rows, more(omitted));
+  return { text: text.length <= maxChars ? text : `${text.slice(0, Math.max(0, maxChars - 4))}...\n`, omitted };
 }
 
 function noteFor(term: Term): string {
