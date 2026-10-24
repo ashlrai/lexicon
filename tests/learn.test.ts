@@ -441,6 +441,14 @@ describe('conflictNote', () => {
 });
 
 describe('suggestCanonicalFor', () => {
+  // Catches: a decomposed accent (as pasted from a macOS file name) scored
+  // 0.9 against the precomposed canonical it spells exactly.
+  it('scores a spelling in another Unicode form as exact', () => {
+    const lex: Lexicon = { version: 1, terms: [{ canonical: 'Caf\u00e9 Noir', aliases: ['Kaf\u00e9'] }] };
+    expect(suggestCanonicalFor('Cafe\u0301 Noir', lex)[0]?.confidence).toBe(1);
+    expect(suggestCanonicalFor('Kafe\u0301', lex)[0]?.confidence).toBe(1);
+  });
+
   it('ranks phonetic and near-spelling matches, best first', () => {
     const hits = suggestCanonicalFor('ashlur', lexicon);
     expect(hits[0]?.term.canonical).toBe('Ashlr.AI');

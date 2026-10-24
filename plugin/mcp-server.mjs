@@ -59968,14 +59968,14 @@ async function learnCaseOnly(heard, meant, loaded, storeOpts2, scope) {
   return { term: saved.term, created: false, file: saved.file, aliasAdded: true, ...withConflict };
 }
 function suggestCanonicalFor(heard, lexicon) {
-  const needle = heard.trim().toLowerCase();
+  const needle = heard.trim().normalize("NFC").toLowerCase();
   if (!needle) return [];
   const key = phoneticKey(needle);
   const scored = [];
   for (const term of lexicon.terms) {
     let best = 0;
     for (const candidate of [term.canonical, ...term.aliases]) {
-      const lower = candidate.toLowerCase();
+      const lower = candidate.normalize("NFC").toLowerCase();
       let score = similarity(needle, lower);
       if (key && phoneticKey(lower) === key) score = Math.max(score, PHONETIC_MATCH_CONFIDENCE);
       if (score > best) best = score;

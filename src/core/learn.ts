@@ -492,7 +492,9 @@ async function learnCaseOnly(
  * max(similarity, phonetic-key match ? 0.9 : 0). Top 3 with confidence >= 0.6.
  */
 export function suggestCanonicalFor(heard: string, lexicon: Lexicon): CanonicalSuggestion[] {
-  const needle = heard.trim().toLowerCase();
+  // In NFC on both sides: `Cafe` plus U+0301 is the alias `Café`, and
+  // compared as written it scored as a near miss instead of an exact match.
+  const needle = heard.trim().normalize('NFC').toLowerCase();
   if (!needle) return [];
   const key = phoneticKey(needle);
 
@@ -500,7 +502,7 @@ export function suggestCanonicalFor(heard: string, lexicon: Lexicon): CanonicalS
   for (const term of lexicon.terms) {
     let best = 0;
     for (const candidate of [term.canonical, ...term.aliases]) {
-      const lower = candidate.toLowerCase();
+      const lower = candidate.normalize('NFC').toLowerCase();
       let score = similarity(needle, lower);
       if (key && phoneticKey(lower) === key) score = Math.max(score, PHONETIC_MATCH_CONFIDENCE);
       if (score > best) best = score;

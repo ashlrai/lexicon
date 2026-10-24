@@ -27,6 +27,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `suggest_canonical` (and `suggestCanonicalFor`) compares spellings in NFC: a name with a decomposed accent, as pasted from a macOS file name, scored 0.9 against the canonical it spells exactly instead of 1.
 - `lexicon stats`, `suggest_canonical`, `lexicon harvest` and `lexicon suggest` broke ties in the user's locale, so under `LC_ALL=sv_SE.UTF-8` `Äpple` came after `Zeta` and the same lexicon listed in another order (a harvest that reached its 5000 file cap even scanned other files). They now use the fixed order the exports use.
 - The spellings `lexicon add`, `lexicon learn`, setup and `GET /aliases` guess for a new name no longer include a single everyday word, which was then rewritten wherever it was said: `Entire.io` got the alias `Entire` and `Flyy` got `Fly`, so "birds fly over the entire field" came out as "birds Flyy over the Entire.io field". An acronym's pronounced form (`SaaS` -> `sass`) is kept, since that is what speech-to-text writes for it.
 - A number corrected in passing ("it's 2024 not 2023") is no longer read as a spelling correction. The prompt hook flagged it for `learn_correction` and queued it in `lexicon pending`, and once learned it rewrote every 2023 in a transcript to 2024. A correction whose intended spelling has no letter is now ignored by `parseCorrection` (the hook, `lexicon learn --from`); `lexicon learn 2023 2024` with two words still learns it.
