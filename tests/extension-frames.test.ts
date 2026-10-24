@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 /**
  * Browser extension: which frames the composer guard covers (content-boot.ts
- * frameScope).
+ * frameScope), and its URL watch, which re-checks the settings when a
+ * single-page app navigates.
  */
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
@@ -19,6 +20,8 @@ function fakeSend(req: Request): Promise<NormalizeReply> {
   const r = engine.normalize(req.text, req.dryRun);
   return Promise.resolve({ ok: true, input: r.input, output: r.output, changed: r.changed, replacements: r.replacements, mode: 'embedded' });
 }
+
+const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
 
 /** A frame whose top window belongs to another origin: reading its location throws, as in a browser. */
 function crossOriginFrame(href: string, ancestors: string[] = []): FrameWindow {
@@ -84,7 +87,7 @@ describe('extension: composers inside iframes', () => {
     const ta = doc.createElement('textarea');
     doc.body.appendChild(ta);
     ta.value = 'ping ashler about it';
-    booted = await bootContent({ win, doc, loadSettings: () => Promise.resolve({ anySite: true }), onSettings: () => undefined, send: fakeSend });
+    booted = await bootContent({ win, doc, loadSettings: () => Promise.resolve({ anySite: true }), onSettings: () => undefined, send: fakeSend, pollMs: 60_000 });
     expect(booted).toBeDefined();
     expect(booted?.content.settings.enabled).toBe(true);
     ta.focus();
@@ -97,5 +100,43 @@ describe('extension: composers inside iframes', () => {
   it('does not start in a cross-origin frame that is not a chat site', async () => {
     const result = await bootContent({ win: window, doc: document, frame: crossOriginFrame('https://ads.example.net/frame'), loadSettings: () => Promise.resolve({ anySite: true }), onSettings: () => undefined, send: fakeSend });
     expect(result).toBeUndefined();
+  });
+});
+
+describe('extension: the guard follows single-page navigation', () => {
+  function pageAt(initial: string): { frame: FrameWindow; go(href: string): void } {
+    let href = initial;
+    const frame: FrameWindow = { location: { get href() { return href; } }, top: null };
+    return { frame, go: (next) => { href = next; } };
+  }
+
+  it('turns off when x.com leaves /i/grok and back on when it returns (poll)', async () => {
+    const page = pageAt('https://x.com/i/grok');
+    booted = await bootContent({ win: window, doc: document, frame: page.frame, loadSettings: () => Promise.resolve({}), onSettings: () => undefined, send: fakeSend, pollMs: 10 });
+    expect(booted?.content.settings.enabled).toBe(true);
+    page.go('https://x.com/home');
+    await wait(40);
+    expect(booted?.content.settings.enabled).toBe(false);
+    page.go('https://x.com/i/grok?conversation=1');
+    await wait(40);
+    expect(booted?.content.settings.enabled).toBe(true);
+  });
+
+  it('re-checks on popstate without waiting for the poll', async () => {
+    const page = pageAt('https://x.com/i/grok');
+    booted = await bootContent({ win: window, doc: document, frame: page.frame, loadSettings: () => Promise.resolve({}), onSettings: () => undefined, send: fakeSend, pollMs: 60_000 });
+    page.go('https://x.com/explore');
+    window.dispatchEvent(new PopStateEvent('popstate'));
+    expect(booted?.content.settings.enabled).toBe(false);
+  });
+
+  it('a settings change after a navigation is judged against the new URL', async () => {
+    const page = pageAt('https://x.com/i/grok');
+    let push: (raw: unknown) => void = () => undefined;
+    booted = await bootContent({ win: window, doc: document, frame: page.frame, loadSettings: () => Promise.resolve({}), onSettings: (fn) => { push = fn; }, send: fakeSend, pollMs: 60_000 });
+    page.go('https://x.com/home');
+    window.dispatchEvent(new HashChangeEvent('hashchange'));
+    push({ live: true });
+    expect(booted?.content.settings).toEqual({ enabled: false, live: true });
   });
 });

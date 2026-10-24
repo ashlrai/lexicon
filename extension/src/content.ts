@@ -3,7 +3,7 @@
  * Content script entry: wires the composer guard to chrome.runtime messaging
  * and chrome.storage. Never sees the API token. It runs in every frame the
  * manifest (or the "any site" registration) reaches; `bootContent` decides
- * which frames it covers.
+ * which frames it covers and re-checks the settings on URL changes.
  */
 import { bootContent } from './content-boot.js';
 import { sendToBackground } from './chrome-store.js';

@@ -1,7 +1,8 @@
 /**
  * Where and when the composer guard runs, apart from chrome.* so tests can
- * drive it: which frames it covers (`frameScope`) and whether the settings
- * turn it on for the page a frame is part of (`scopeActive`).
+ * drive it: which frames it covers (`frameScope`), whether the settings turn
+ * it on for the page a frame is part of (`scopeActive`), and the URL watch
+ * that re-checks that on a single-page app's navigation (`watchUrl`).
  * content.ts wires `bootContent` to chrome.storage and chrome.runtime.
  */
 import { builtinPage, guardActive } from './adapters.js';
@@ -85,6 +86,45 @@ export function scopeActive(settings: Pick<Settings, 'sites' | 'anySite'>, scope
   }
 }
 
+/** How often the URL watch polls, for navigations that fire no event the content script can see (`history.pushState`). */
+export const URL_POLL_MS = 500;
+
+/** The window events and timer `watchUrl` uses. A real `Window` fits. */
+export interface WatchWindow {
+  addEventListener(type: string, fn: () => void): void;
+  removeEventListener(type: string, fn: () => void): void;
+  setInterval(fn: () => void, ms: number): number;
+  clearInterval(id: number): void;
+  readonly navigation?: { addEventListener(type: string, fn: () => void): void; removeEventListener(type: string, fn: () => void): void };
+}
+
+/**
+ * Calls `onChange` whenever `read()` (the page's URL, or a key built from
+ * it) differs from the last value seen: on popstate and hashchange, on the
+ * Navigation API's `currententrychange` where the browser has it, and on a
+ * poll every `pollMs`, since a content script's isolated world sees no
+ * event for the page's own `history.pushState`. Returns the stop function.
+ */
+export function watchUrl(win: WatchWindow, read: () => string, onChange: () => void, pollMs = URL_POLL_MS): () => void {
+  let last = read();
+  const check = (): void => {
+    const now = read();
+    if (now === last) return;
+    last = now;
+    onChange();
+  };
+  win.addEventListener('popstate', check);
+  win.addEventListener('hashchange', check);
+  win.navigation?.addEventListener('currententrychange', check);
+  const timer = win.setInterval(check, pollMs);
+  return () => {
+    win.removeEventListener('popstate', check);
+    win.removeEventListener('hashchange', check);
+    win.navigation?.removeEventListener('currententrychange', check);
+    win.clearInterval(timer);
+  };
+}
+
 export interface BootDeps {
   win: Window;
   doc: Document;
@@ -93,8 +133,9 @@ export interface BootDeps {
   /** Calls `fn` with each new stored settings value. */
   onSettings(fn: (raw: unknown) => void): void;
   send(req: Request): Promise<NormalizeReply>;
-  /** Override for tests. */
+  /** Overrides for tests. */
   frame?: FrameWindow;
+  pollMs?: number;
 }
 
 export interface BootHandle {
@@ -103,12 +144,17 @@ export interface BootHandle {
   stop(): void;
 }
 
-/** Starts the guard in this frame when `frameScope` covers it, and keeps `enabled` in step with the stored settings. */
+/**
+ * Starts the guard in this frame when `frameScope` covers it, and keeps
+ * `enabled` in step with the stored settings and with the page's URL: on
+ * x.com the guard runs on /i/grok, and moving on to another page in the
+ * same tab used to leave it running there until a reload.
+ */
 export async function bootContent(deps: BootDeps): Promise<BootHandle | undefined> {
   const frame = deps.frame ?? deps.win;
   const first = frameScope(frame);
   if (!first) return undefined;
-  const scope = first;
+  let scope = first;
   let settings = coerceSettings(await deps.loadSettings(), '');
   let hostname = '';
   try {
@@ -126,12 +172,27 @@ export async function bootContent(deps: BootDeps): Promise<BootHandle | undefine
     settings = coerceSettings(raw, '');
     content.update({ enabled: scopeActive(settings, scope), live: settings.live });
   });
+  const key = (): string => {
+    const s = frameScope(frame);
+    return s ? `${s.url}\u0000${s.topUrl ?? ''}` : '';
+  };
+  const stopWatch = watchUrl(
+    deps.win,
+    key,
+    () => {
+      const next = frameScope(frame);
+      if (next) scope = next;
+      content.update({ enabled: next !== null && scopeActive(settings, scope) });
+    },
+    deps.pollMs,
+  );
   return {
     content,
     get scope() {
       return scope;
     },
     stop() {
+      stopWatch();
       content.destroy();
     },
   };
