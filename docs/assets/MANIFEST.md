@@ -1,4 +1,4 @@
-# Lexicon product imagery — manifest
+# Lexicon product imagery: manifest
 
 Captured on this Mac on 2026-09-20 against the real install: LexiconBar **0.4.0**
 (running build, Accessibility trusted), `lexicon serve` **0.4.0** on 127.0.0.1:41733,
@@ -9,8 +9,8 @@ Every asset below is a genuine capture. Nothing is mocked, composited, or retouc
 Each file exists at **two identical paths** so either surface can use it without
 reaching across directories:
 
-- `docs/assets/<name>` — for `README.md` / `docs/**`
-- `web/public/media/<name>` — for the landing page (reference as `/media/<name>`)
+- `docs/assets/<name>`: for `README.md` / `docs/**`
+- `web/public/media/<name>`: for the landing page (reference as `/media/<name>`)
 
 Sizes and dimensions below are identical for both copies.
 
@@ -18,7 +18,7 @@ Sizes and dimensions below are identical for both copies.
 
 ## Assets
 
-### `fix-in-place.mp4` — **the headline asset, prefer this over the GIF**
+### `fix-in-place.mp4`: **the headline asset, prefer this over the GIF**
 
 | | |
 |---|---|
@@ -45,7 +45,7 @@ Suggested markup (video first, GIF as fallback):
 support on versal next week' rewrites itself in place to 'Ashlr.AI is shipping
 Kubernetes support on Vercel next week', with a small bubble listing the three fixes."
 
-### `fix-in-place.gif` — fallback for the above
+### `fix-in-place.gif`: fallback for the above
 
 | | |
 |---|---|
@@ -56,7 +56,7 @@ Kubernetes support on Vercel next week', with a small bubble listing the three f
 
 Same take as the MP4, rendered at 1x with `gifski --quality 85`. Loops on a hard
 cut (it ends holding the corrected line for ~0.7 s, then restarts from the empty
-note) — there is no crossfade. Use it in `README.md`, where video will not play.
+note); there is no crossfade. Use it in `README.md`, where video will not play.
 
 **Alt text:** same as `fix-in-place.mp4`.
 
@@ -71,7 +71,7 @@ note) — there is no crossfade. Use it in `README.md`, where video will not pla
 Close crop of the real correction bubble next to the text caret, reading
 **Fixed 3 words** / `ashler → Ashlr.AI` / `cuban eats → Kubernetes` /
 `versal → Vercel`, with the **Undo** and **Never** buttons. Background is the
-white TextEdit page — it is not transparent, so give it a light card or a rounded
+white TextEdit page; it is not transparent, so give it a light card or a rounded
 white panel rather than dropping it straight onto the dark background.
 
 Note: there is no **Add** button in this shot. That button only appears when at
@@ -141,7 +141,7 @@ Onboarding step 2, **"Your words"**, with real alias suggestions returned live b
 and **Mason Wyat**, both switched on, plus a second empty row and the **Try it**
 box pre-filled with `ping Mason Wyatt about the cooper netties rollout on versel`.
 
-Shows the user's real name (Mason Wyatt) — intended, it is the product's own
+Shows the user's real name (Mason Wyatt): intended, it is the product's own
 example term.
 
 **Alt text:** "Lexicon's setup step 'Your words', showing the name Mason Wyatt with
@@ -161,8 +161,8 @@ live counts: AI models and tools (36 terms, 86 spellings, on), Business and star
 vocabulary (35 terms, 58 spellings, off), Developer tools (70 terms, 184 spellings,
 on), Voice and dictation tools (14 terms, 21 spellings, on).
 
-**Alt text:** "Lexicon's starter pack picker with four cards — AI models and tools,
-Business and startup vocabulary, Developer tools, and Voice and dictation tools —
+**Alt text:** "Lexicon's starter pack picker with four cards: AI models and tools,
+Business and startup vocabulary, Developer tools, and Voice and dictation tools,
 each with a term count and an on/off switch."
 
 ### `cli-setup.gif`
@@ -174,19 +174,19 @@ each with a term count and an on/off switch."
 | Size | **196,331 B** (192 KB) |
 | Duration | 7.10 s, loops forever |
 
-`lexicon setup` typed at a prompt and running to completion — all seven steps, ending
+`lexicon setup` typed at a prompt and running to completion, all seven steps, ending
 in the **step 7 correction demo** (`you dictate:` / `your agent sees:` / `fixed:`) and
 the `Done.` + `Next:` card. Dark terminal (`agg --theme github-dark`), so it sits
 directly on the dark page with no card needed.
 
 This is a **real, complete run** of the 0.5.1 CLI, executed against a throwaway
 `$HOME` in the session scratchpad. It seeded terms, installed all three default
-packs, and wrote all five agent client configs — inside the sandbox. Nothing on
+packs, and wrote all five agent client configs, inside the sandbox. Nothing on
 this Mac was modified.
 
-**Alt text:** "A terminal running `lexicon setup` through seven steps — seeding the
+**Alt text:** "A terminal running `lexicon setup` through seven steps (seeding the
 lexicon, installing starter packs, wiring up five agent clients, exporting for
-dictation — and finishing by showing a dictated sentence corrected from 'Mason
+dictation) and finishing by showing a dictated sentence corrected from 'Mason
 Wiatt' and 'Ashler' to 'Mason Wyatt' and 'Ashlr.AI'."
 
 ### `cli-setup.cast`
@@ -208,7 +208,7 @@ a selectable-text, ~3 KB alternative to the 192 KB GIF:
   { cols: 100, rows: 50, autoPlay: true, loop: true, theme: 'monokai' });</script>
 ```
 
-Verify your player build reads asciicast **v3** — asciinema-player 3.x expects v2 in
+Verify your player build reads asciicast **v3**; asciinema-player 3.x expects v2 in
 some releases. If it refuses the file, keep the GIF and drop the player.
 
 ### `cli-normalize.png`
@@ -238,14 +238,14 @@ we moved the Supabase migrations to Hetzner
 Same dark theme as `cli-setup.gif`; no card needed.
 
 **Alt text:** "A terminal running `lexicon normalize --diff`, listing each
-replacement — ashler to Ashlr.AI, cuban eats to Kubernetes, versal to Vercel — above
+replacement (ashler to Ashlr.AI, cuban eats to Kubernetes, versal to Vercel) above
 the fully corrected sentence."
 
 ---
 
 ## Not captured
 
-### `extension.png` — **missing**
+### `extension.png`: **missing**
 
 The browser-extension screenshot could not be produced. The extension itself is
 fine and fully built at `extension/dist` (v0.5.1); the blocker is Chrome.
@@ -253,7 +253,7 @@ fine and fully built at `extension/dist` (v0.5.1); the blocker is Chrome.
 Loading an unpacked extension from the command line no longer works: Chrome 137+
 removed the `--load-extension` switch, and relaunching with
 `--disable-features=DisableLoadExtensionCommandLineSwitch` did not restore it
-(verified twice — `chrome://extensions` in the throwaway profile listed nothing).
+(verified twice: `chrome://extensions` in the throwaway profile listed nothing).
 The only remaining route is the GUI: toggle **Developer mode**, click **Load
 unpacked**, and drive the file picker. Synthetic clicks were landing off-target on
 this two-display setup, so that was abandoned rather than guessed at.
@@ -264,7 +264,7 @@ Two further constraints worth recording for whoever retries:
   submit the composer. Shooting it on a real site therefore means submitting text
   to that site. The clean alternative is the **Live** toggle on the extension's
   options page (off by default), which corrects 400 ms after you stop typing and
-  shows the same toast with no submit at all — confirmed in
+  shows the same toast with no submit at all, confirmed in
   `extension/src/content-core.ts:216-238`, which calls `toastFor(...)` directly.
 - No pairing is needed. With no token the worker falls back to the bundled
   `examples/lexicon.example.yaml`, and the toast badge reads `embedded` rather than
@@ -274,7 +274,7 @@ Two further constraints worth recording for whoever retries:
 profile, turn on **Live** in the options page, open `https://chatgpt.com` or
 `https://claude.ai`, type `ping ashler about cooper netties`, wait 400 ms, hover the
 toast to freeze its 3 s timer, and capture. The toast is bottom-right, `#14201f` on
-`#0f766e` — it is hardcoded dark, so shoot it over a dark page.
+`#0f766e`; it is hardcoded dark, so shoot it over a dark page.
 
 ---
 
@@ -304,12 +304,12 @@ toast to freeze its 3 s timer, and capture. The toast is bottom-right, `#14201f`
    Rebuilt and relaunched, and `menubar.png` now reads **Quit LexiconBar 0.5.1**.
 3. **`remind` is fuzzy-matched to `Rewind` at 0.83.** Found while choosing demo
    copy: `lexicon normalize "remind mason white that ashler ships…"` turns *remind*
-   into *Rewind*. A false positive on a very common English word — avoid "remind"
+   into *Rewind*. A false positive on a very common English word: avoid "remind"
    in any launch copy, and consider it a matching bug.
 4. **Everything is light mode.** macOS is set to Light on this Mac and the app
-   correctly follows the system (nothing is hard-coded — verified across
+   correctly follows the system (nothing is hard-coded, verified across
    `apps/macos/LexiconBar/Sources`). System appearance was not changed, since that
    is the user's own setting. The four app screenshots are therefore light-on-dark
    when placed. The two terminal assets are dark and need no treatment. If dark app
    screenshots are wanted, flip System Settings ▸ Appearance ▸ Dark and re-run the
-   captures — the app will render dark with no code changes.
+   captures; the app will render dark with no code changes.

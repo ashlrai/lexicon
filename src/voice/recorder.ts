@@ -307,7 +307,7 @@ export interface FfmpegArgsOptions {
  * not cosmetic. ffmpeg's default output buffer is 256 KB, which at 16 kHz mono
  * s16 is a little over eight seconds: a recorder that is terminated rather than
  * asked to stop has written **nothing at all** to the file before then.
- * Measured on macOS with ffmpeg 9.0.2 — a capture killed at 4 s left a 0-byte
+ * Measured on macOS with ffmpeg 9.0.2: a capture killed at 4 s left a 0-byte
  * WAV, and one killed at 3 s with this flag left 3.5 s of audio that whisper.cpp
  * read back happily. Windows has no way to ask ffmpeg to stop (see
  * `stopRecorder`), so without this every `--toggle` recording shorter than
@@ -353,7 +353,7 @@ export interface StopResult {
   /**
    * True when ffmpeg was given the chance to write its trailer, so the WAV
    * header holds the real sizes. False whenever the recorder was terminated
-   * instead — which on Windows is every stop this code issues.
+   * instead, which on Windows is every stop this code issues.
    */
   finalized: boolean;
   /** True when the recorder outlived the grace period and had to be killed. */
@@ -372,14 +372,14 @@ export interface StopResult {
  * **This is graceful on POSIX and abrupt on Windows, and the difference is not
  * ours to fix.** On macOS and Linux, SIGINT makes ffmpeg finish the file:
  * it writes the trailer, patching the real RIFF and data sizes into the header.
- * On Windows there is no signal delivery at all — `process.kill(pid, sig)`
+ * On Windows there is no signal delivery at all: `process.kill(pid, sig)`
  * calls `TerminateProcess` for every signal including SIGINT, so ffmpeg is shot
  * where it stands and never runs its trailer. The honest form of that is to
  * send SIGKILL, which is what the platform is going to do anyway, and to report
  * `finalized: false` rather than claim a flush that did not happen.
  *
- * The alternative — putting the child in its own group and posting a real
- * `CTRL_C_EVENT` — does not work here and is not worth pretending about:
+ * The alternative (putting the child in its own group and posting a real
+ * `CTRL_C_EVENT`) does not work here and is not worth pretending about:
  * `GenerateConsoleCtrlEvent` reaches only processes sharing the caller's
  * console, Node has no binding for it, and a `--toggle` recorder is spawned
  * `detached` (so libuv gives it `DETACHED_PROCESS`, i.e. no console) and is
@@ -547,8 +547,8 @@ async function trailingChunkBytes(handle: FileHandle, from: number, size: number
  *
  * The old check was `size > 44`, which is not a WAV check at all: a truncated
  * or header-only file passes it and is then handed to whisper.cpp, which fails
- * with "failed to read the frames of the audio data" — observed, by feeding
- * whisper-cli a 78-byte header. Conversely a *valid* unfinalized capture cannot
+ * with "failed to read the frames of the audio data" (observed, by feeding
+ * whisper-cli a 78-byte header). Conversely a *valid* unfinalized capture cannot
  * be judged by its declared sizes, because ffmpeg leaves them at 0xFFFFFFFF
  * until its trailer runs, which on Windows it never does. So: check the
  * container for real, then trust the bytes on disk rather than the header's

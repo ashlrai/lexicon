@@ -1,7 +1,7 @@
 /**
  * Locating an executable, without spawning `which`/`where`.
  *
- * One implementation, three entry points: `findOnPath` (async, the default —
+ * One implementation, three entry points: `findOnPath` (async, the default;
  * it checks the execute bit), `findOnPathSync` (for the synchronous callers:
  * `lexicon doctor` and CLI-entry resolution) and `locateTool`/`locateToolSync`,
  * which try several candidate names in order and then fall back to a list of
@@ -34,7 +34,7 @@ function pathDirs(env: NodeJS.ProcessEnv, win: boolean): string[] {
 /**
  * The file names to try for `bin` in each directory. On POSIX that is just
  * `bin`; on Windows it is `bin` + each PATHEXT extension (upper and lower
- * case), then the bare name — unless `bin` already carries an extension.
+ * case), then the bare name, unless `bin` already carries an extension.
  */
 function candidateNames(bin: string, env: NodeJS.ProcessEnv, win: boolean): string[] {
   if (!win) return [bin];

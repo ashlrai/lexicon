@@ -35,7 +35,7 @@ export interface AtomicWriteOptions {
   /**
    * Mode for the finished file. Set on the temp file at creation *and* with an
    * explicit chmod, because writeFile's `mode` only applies when it creates the
-   * file — a leftover temp file from a crashed run would otherwise keep its
+   * file; a leftover temp file from a crashed run would otherwise keep its
    * old, possibly looser, mode.
    *
    * Left out, an existing target keeps the mode it already has. Without that a
