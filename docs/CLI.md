@@ -457,7 +457,8 @@ Usage: lexicon pending [options] [command]
 review aliases noticed in your corrections; nothing is applied until you accept
 
 Options:
-  --json                     print as JSON
+  --json                     print { ok: true, file, pending } as JSON, each
+                             entry with alreadyKnown
   -h, --help                 display help for command
 
 Commands:
