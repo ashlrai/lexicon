@@ -406,7 +406,7 @@ describe('runSetup --yes', () => {
       cliDir,
       installServe: (opts, io, serveDeps) => {
         seen = serveDeps;
-        return runServeInstall(opts, io, { ...serveDeps, exec: async (cmd, args) => { calls.push([cmd, ...args]); return { code: 0, stdout: '', stderr: '' }; }, nodePath: '/usr/local/bin/node', uid: 501 });
+        return runServeInstall(opts, io, { ...serveDeps, exec: async (cmd, args) => { if (args[0] === 'print') return { code: 113, stdout: '', stderr: '' }; calls.push([cmd, ...args]); return { code: 0, stdout: '', stderr: '' }; }, nodePath: '/usr/local/bin/node', uid: 501 });
       },
     });
     const { summary, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', serve: true }, f);

@@ -90,7 +90,13 @@ export interface ServeDeps {
   signal?: AbortSignal;
   /** Called once the server is listening (tests). */
   onListening?: (info: { port: number; url: string; token: string }) => void;
+  /** Waits between `launchctl print` polls after a bootout. Default a timer. */
+  sleep?: (ms: number) => Promise<void>;
 }
+
+/** How often, and how many times, `--install` asks launchd whether a booted-out label is gone. */
+export const BOOTOUT_POLL_MS = 100;
+export const BOOTOUT_POLL_TRIES = 50;
 
 function red(s: string, env: NodeJS.ProcessEnv): string {
   return process.stderr.isTTY && !env.NO_COLOR ? `\x1b[31m${s}\x1b[0m` : s;
@@ -659,7 +665,20 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     line(io, `  RunAtLoad + KeepAlive, logs in ${safe(logPath)}`);
     const uid = deps.uid ?? process.getuid?.() ?? 501;
     // A previous install must be booted out before bootstrap accepts the new plist.
-    await exec('launchctl', ['bootout', `gui/${uid}/${label}`]);
+    const target = `gui/${uid}/${label}`;
+    const bootout = await exec('launchctl', ['bootout', target]);
+    // bootout returns before launchd has finished tearing the job down, and a
+    // bootstrap in that window fails ("Bootstrap failed: 5: Input/output
+    // error"). Wait, bounded, until `launchctl print` no longer finds it.
+    if (bootout.code === 0) {
+      const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+      let gone = false;
+      for (let i = 0; i < BOOTOUT_POLL_TRIES && !gone; i += 1) {
+        gone = (await exec('launchctl', ['print', target])).code !== 0;
+        if (!gone) await sleep(BOOTOUT_POLL_MS);
+      }
+      if (!gone) io.stderr(`lexicon: warning: ${safe(label)} was still loaded ${(BOOTOUT_POLL_MS * BOOTOUT_POLL_TRIES) / 1000}s after launchctl bootout; bootstrapping anyway\n`);
+    }
     const bootstrap = await runAndReport(exec, io, 'launchctl', ['bootstrap', `gui/${uid}`, plistPath]);
     if (bootstrap.code !== 0) {
       const load = await runAndReport(exec, io, 'launchctl', ['load', plistPath]);

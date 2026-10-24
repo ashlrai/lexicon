@@ -58,6 +58,8 @@ import {
 } from '../src/serve/index.js';
 import type { LexiconHttpServer, ServeStartInfo } from '../src/serve/index.js';
 import {
+  BOOTOUT_POLL_MS,
+  BOOTOUT_POLL_TRIES,
   browserOpenCommand,
   launchAgentPath,
   launchAgentLogPath,
@@ -106,6 +108,8 @@ function memIO(): IO & { out: string[]; err: string[] } {
 
 function fakeExec(calls: string[][], code = 0): ServeExec {
   return async (cmd, args): Promise<ExecResult> => {
+    // `launchctl print` after a bootout: the label is gone, as launchd answers once it is.
+    if (cmd === 'launchctl' && args[0] === 'print') return { code: 113, stdout: '', stderr: 'Could not find service' };
     calls.push([cmd, ...args]);
     return { code, stdout: '', stderr: code === 0 ? '' : 'nope' };
   };
@@ -2327,6 +2331,7 @@ describe('lexicon serve (CLI)', () => {
       const calls2: string[][] = [];
       const io2 = memIO();
       const exec2: ServeExec = async (cmd, args) => {
+        if (args[0] === 'print') return { code: 113, stdout: '', stderr: '' };
         calls2.push([cmd, ...args]);
         return args[0] === 'bootstrap' ? { code: 5, stdout: '', stderr: 'Input/output error' } : { code: 0, stdout: '', stderr: '' };
       };
@@ -2372,6 +2377,46 @@ describe('lexicon serve (CLI)', () => {
       expect((await fs.stat(systemdUnitPath(home, {}))).mode & 0o777).toBe(0o644);
     } finally {
       process.umask(umask);
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
+  // Catches: bootout returns before launchd has removed the job, and the
+  // bootstrap right after it raced that teardown ("Bootstrap failed: 5").
+  it('--install on macOS waits, bounded, for the booted-out label to go before bootstrap', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
+    try {
+      const cli = await fakeCli(home);
+      const run = async (stillThere: number) => {
+        const calls: string[] = [];
+        const sleeps: number[] = [];
+        let prints = 0;
+        const exec: ServeExec = async (_cmd, args) => {
+          calls.push(args[0] as string);
+          if (args[0] === 'print') return { code: ++prints <= stillThere ? 0 : 113, stdout: '', stderr: '' };
+          return { code: 0, stdout: '', stderr: '' };
+        };
+        const io = memIO();
+        const code = await runServe({ install: true, globalPath: env.globalPath }, io, {
+          platform: 'darwin', home, env: {}, exec, cliPath: cli, nodePath: '/usr/bin/node', uid: 501,
+          sleep: async (ms) => {
+            sleeps.push(ms);
+          },
+        });
+        return { code, calls, sleeps, err: io.err.join('') };
+      };
+      const soon = await run(2);
+      expect(soon.code).toBe(0);
+      expect(soon.calls).toEqual(['bootout', 'print', 'print', 'print', 'bootstrap']);
+      expect(soon.sleeps).toEqual([BOOTOUT_POLL_MS, BOOTOUT_POLL_MS]);
+      expect(soon.err).toBe('');
+
+      const never = await run(Infinity);
+      expect(never.code).toBe(0);
+      expect(never.calls.filter((c) => c === 'print')).toHaveLength(BOOTOUT_POLL_TRIES);
+      expect(never.calls.at(-1)).toBe('bootstrap');
+      expect(never.err).toContain('was still loaded 5s after launchctl bootout; bootstrapping anyway');
+    } finally {
       await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
   });

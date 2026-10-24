@@ -66573,6 +66573,8 @@ async function probeHealth(baseUrl, opts = {}) {
 // src/cli/cmd-serve.ts
 init_errors3();
 init_atomic();
+var BOOTOUT_POLL_MS = 100;
+var BOOTOUT_POLL_TRIES = 50;
 function storeOpts(opts) {
   return opts.globalPath !== void 0 ? { globalPath: opts.globalPath } : {};
 }
@@ -66820,7 +66822,18 @@ async function runServeInstall(opts, io, deps = {}) {
     io.stdout(envReport(serviceEnv));
     line(io, `  RunAtLoad + KeepAlive, logs in ${safe(logPath)}`);
     const uid = deps.uid ?? process.getuid?.() ?? 501;
-    await exec("launchctl", ["bootout", `gui/${uid}/${label}`]);
+    const target = `gui/${uid}/${label}`;
+    const bootout = await exec("launchctl", ["bootout", target]);
+    if (bootout.code === 0) {
+      const sleep2 = deps.sleep ?? ((ms) => new Promise((resolve5) => setTimeout(resolve5, ms)));
+      let gone = false;
+      for (let i = 0; i < BOOTOUT_POLL_TRIES && !gone; i += 1) {
+        gone = (await exec("launchctl", ["print", target])).code !== 0;
+        if (!gone) await sleep2(BOOTOUT_POLL_MS);
+      }
+      if (!gone) io.stderr(`lexicon: warning: ${safe(label)} was still loaded ${BOOTOUT_POLL_MS * BOOTOUT_POLL_TRIES / 1e3}s after launchctl bootout; bootstrapping anyway
+`);
+    }
     const bootstrap = await runAndReport(exec, io, "launchctl", ["bootstrap", `gui/${uid}`, plistPath]);
     if (bootstrap.code !== 0) {
       const load = await runAndReport(exec, io, "launchctl", ["load", plistPath]);
