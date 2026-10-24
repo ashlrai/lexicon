@@ -441,6 +441,16 @@ export function extensionRequestFailedLine(error: string): string {
 }
 
 /**
+ * Options' Save or the popup's site switch when the browser refused the
+ * settings write (`chrome.storage.local.set` rejected, most likely over its
+ * quota): nothing was stored, what failed, then what to try. The failure was
+ * not caught, so Save said nothing and the switch looked applied.
+ */
+export function storageWriteFailedLine(error: string): string {
+  return `Not saved: ${error.replace(/[.\s]+$/, '')}. The browser refused to store the settings (its storage for Lexicon may be full); try again, and if it persists make the embedded lexicon smaller or reload Lexicon on the browser's extensions page.`;
+}
+
+/**
  * The popup's status when the status request itself failed: the pill says
  * what failed (a bare "Error" did not) and the line how to get it back.
  */

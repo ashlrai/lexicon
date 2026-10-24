@@ -4,7 +4,7 @@ import { siteRows } from './adapters.js';
 import { sendToBackground } from './chrome-store.js';
 import { setMessage } from './rich-text.js';
 import { parseLexicon, parseYaml } from './core.js';
-import { ANY_SITE_DENIED_MESSAGE, coerceHostList, coerceSettings, connectionTestLine, countOf, errorMessage, extensionRequestFailedLine, pairPortOrigins, pairUrl, PAIR_PORT_DENIED_MESSAGE, sitesAfterChange, syncedLine, STORAGE_KEYS, withConnection, yamlBoxAfterChange } from './shared.js';
+import { ANY_SITE_DENIED_MESSAGE, coerceHostList, coerceSettings, connectionTestLine, countOf, errorMessage, extensionRequestFailedLine, pairPortOrigins, pairUrl, PAIR_PORT_DENIED_MESSAGE, sitesAfterChange, syncedLine, STORAGE_KEYS, storageWriteFailedLine, withConnection, yamlBoxAfterChange } from './shared.js';
 import type { Failure, PairPortReply, Settings, StatusReply, SyncReply } from './shared.js';
 import defaultYaml from '../../examples/lexicon.example.yaml';
 
@@ -127,7 +127,12 @@ async function save(): Promise<void> {
     return;
   }
   const next = coerceSettings({ ...settings, ...collect() }, defaultYaml);
-  await chrome.storage.local.set({ [STORAGE_KEYS.settings]: next });
+  try {
+    await chrome.storage.local.set({ [STORAGE_KEYS.settings]: next });
+  } catch (err) {
+    setMessage(ui.saveMsg, storageWriteFailedLine(errorMessage(err)));
+    return;
+  }
   settings = next;
   ui.saveMsg.textContent = 'Saved.';
   setTimeout(() => {
