@@ -543,7 +543,11 @@ with the lexicon
 
 Options:
   --toggle               hotkey mode: first call starts recording in the
-                         background, second call stops and transcribes
+                         background, second call stops and transcribes. the
+                         first call records with its --device and --seconds, the
+                         second transcribes and delivers with its own --model,
+                         --lang, --translate, --no-prompt, --no-history, --copy
+                         and --paste, so give both calls the same flags
   --status               print "recording since <time>" (exit 0) or "idle" (exit
                          1)
   --list-devices         print the audio input devices ffmpeg can see
