@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon voice`, when whisper-cli runs but exits non-zero, names a next step on stderr and as the `--json` `nextStep`: the `whisper-cli -m <model> -f <audio>` command that shows whisper's full output, then deleting a damaged downloaded model so the next run fetches it again (or checking a `--model` file) or passing another with `--model`. It gave the error and the kept audio only.
 - `lexicon daemon` on a platform it has no clipboard default for says to pass `--backend <name>` when one of the supported tools works there, or to pipe the text through `lexicon normalize`. It said only that the platform is not supported.
 - `install.sh` names a next step when the installed `lexicon` is not on PATH (open a new terminal or `hash -r`, then add the bin directory under `npm prefix -g`), when it does not answer `--version` (run it to see the error), and when PATH selects another version (`command -v lexicon` shows which one runs).
 - `lexicon voice`, when the whisper model download fails, says to check the network and try again, names the URL to save as the model file by hand, or `--model <file>` for a model you already have. It said only `download failed: ...` or `fetch failed`.

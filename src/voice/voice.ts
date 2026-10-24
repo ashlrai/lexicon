@@ -74,7 +74,7 @@ import {
   findOrphanRecorder,
 } from './recorder.js';
 import type { RecordingState, WavCheck } from './recorder.js';
-import { MissingToolError, transcribeFile } from './transcribe.js';
+import { MissingToolError, WhisperExitError, transcribeFile } from './transcribe.js';
 import type { TranscribeResult } from './transcribe.js';
 
 export const EXIT_OK = 0;
@@ -677,20 +677,44 @@ async function transcribeCapture(
     await keepOrRemoveTranscribed(result, wav, io, timing.keepBecause);
     return await deliver(result, recordMs, seconds, opts, io, deps, r, loaded);
   } catch (e) {
-    return transcribeFailed(r, io, e, wav);
+    return transcribeFailed(r, io, e, wav, opts);
   }
 }
 
-/** A whisper (or model) failure: the stderr line, the kept audio, exit 2 for a missing binary else 1. */
-function transcribeFailed(r: Resolved, io: VoiceIO, e: unknown, wav: string): number {
-  io.stderr(`lexicon voice: ${message(e)} (audio kept at ${wav})\n`);
+/** `arg` as one shell word: bare when it is plainly safe, else single-quoted. */
+function shellWord(arg: string): string {
+  return /^[\w@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * The next step for a whisper-cli that ran and exited non-zero: the command
+ * that reproduces it with whisper's whole output, and what to do about the
+ * model, the usual cause (a truncated or wrong file). A downloaded model
+ * (a name like base.en) comes back when its file is removed; a --model path
+ * is the user's own, so the step offers another one instead.
+ */
+function whisperExitStep(e: WhisperExitError, wav: string, spec: string): string {
+  const rerun = `run \`${shellWord(e.whisperCli)} -m ${shellWord(e.modelPath)} -f ${shellWord(wav)}\` to see whisper's full output`;
+  const model = isModelPath(spec)
+    ? 'check that the model file is a whole ggml model, or pass another with --model <name|path>'
+    : `if the model file is damaged, delete ${e.modelPath} so the next \`lexicon voice\` downloads it again, or pass another with --model <name|path>`;
+  return `${rerun}; ${model}`;
+}
+
+/**
+ * A whisper (or model) failure: the stderr line, the kept audio, exit 2 for a
+ * missing binary else 1. A whisper-cli that exited non-zero also gets a next
+ * step, on stderr and in --json (a download failure already names its own).
+ */
+function transcribeFailed(r: Resolved, io: VoiceIO, e: unknown, wav: string, opts: Pick<VoiceOptions, 'model'>): number {
   const missing = e instanceof MissingToolError;
-  return failed(
-    r,
-    missing ? EXIT_MISSING_TOOL : EXIT_ERROR,
-    `${message(e)} (audio kept at ${wav})`,
-    missing ? installSteps(r.platform, { ffmpeg: false, whisper: true }).join(' ') : undefined,
-  );
+  const step = missing
+    ? installSteps(r.platform, { ffmpeg: false, whisper: true }).join(' ')
+    : e instanceof WhisperExitError
+      ? whisperExitStep(e, wav, opts.model ?? DEFAULT_MODEL)
+      : undefined;
+  io.stderr(`lexicon voice: ${message(e)} (audio kept at ${wav})\n${step && !missing ? `  ${step}\n` : ''}`);
+  return failed(r, missing ? EXIT_MISSING_TOOL : EXIT_ERROR, `${message(e)} (audio kept at ${wav})`, step);
 }
 
 // ---------------------------------------------------------------------------
@@ -768,7 +792,7 @@ async function recordForeground(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps
     await keepOrRemoveTranscribed(result, wav, io);
     return await deliver(result, recordMs, recordMs / 1000, opts, io, deps, r, loaded);
   } catch (e) {
-    return transcribeFailed(r, io, e, wav);
+    return transcribeFailed(r, io, e, wav, opts);
   }
 }
 

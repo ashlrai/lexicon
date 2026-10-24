@@ -1134,6 +1134,8 @@ describe('lexicon voice (foreground)', () => {
     const code = await runVoice(h.opts, h.io, h.deps);
     expect(code).toBe(EXIT_ERROR);
     expect(h.err.join('')).toMatch(/whisper-cli exited 1: whisper: boom \(audio kept at .*\.wav\)/);
+    // Catches: a non-zero whisper exit left no next step on stderr.
+    expect(h.err.join('')).toMatch(/\n {2}run `\S+ -m \S+ggml-base\.en\.bin -f \S+\.wav` to see whisper's full output; if the model file is damaged, delete /);
   });
 
   it('--copy writes the corrected text to the clipboard', async () => {
@@ -1292,6 +1294,8 @@ describe('lexicon voice --json failures', () => {
     h.whisperExit = 1;
     expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
     expect(String(onlyDocument(h).error)).toMatch(/^whisper-cli exited 1: whisper: boom \(audio kept at .*\.wav\)$/);
+    // Catches: --json had no nextStep for a whisper-cli that ran and failed.
+    expect(String(onlyDocument(h).nextStep)).toMatch(/^run `\S+ -m \S+ -f \S+\.wav` to see whisper's full output; .*--model <name\|path>$/);
   });
 
   // Catches: a --model path that does not exist was found only when whisper
