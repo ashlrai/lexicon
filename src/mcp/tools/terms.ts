@@ -260,7 +260,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           .array(z.string())
           .optional()
           .describe(
-            `Spellings STT actually produces for this term, each at most ${LIMITS.word} characters; a term holds at most ${LIMITS.aliases}. Omit to auto-suggest (new terms only; often none are found). An explicit [] adds none and generates none.`,
+            `Spellings STT actually produces for this term, each at most ${LIMITS.word} characters; a term holds at most ${LIMITS.aliases}; a blank one is an error and nothing is written. Omit to auto-suggest (new terms only; often none are found). An explicit [] adds none and generates none.`,
           ),
         phonetic: z.string().optional().describe(`Pronunciation hint, e.g. "ASH-ler": one line, at most ${LIMITS.text} characters.`),
         category: z.enum(TERM_CATEGORIES).optional(),
@@ -269,7 +269,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           .array(z.string())
           .optional()
           .describe(
-            `Ordinary words that must never be rewritten to this term even if they sound alike, e.g. ["sauce"] for SaaS; each at most ${LIMITS.word} characters, at most ${LIMITS.aliases} per term.`,
+            `Ordinary words that must never be rewritten to this term even if they sound alike, e.g. ["sauce"] for SaaS; each at most ${LIMITS.word} characters, at most ${LIMITS.aliases} per term; a blank one is an error and nothing is written.`,
           ),
         scope: z
           .enum(TERM_SCOPES)

@@ -354,7 +354,8 @@ export async function runAdd(
     ? (prompter ?? createPrompter({ input: process.stdin, output: process.stdout }))
     : undefined;
 
-  const aliases = aliasArgs.map((a) => a.trim()).filter(Boolean);
+  // A blank one is kept as given: addTerm refuses it, as MCP add_term and POST /add do.
+  const aliases = aliasArgs.map((a) => (a.trim() ? a.trim() : a));
   let suggested: string[] = [];
   // No aliases and no --suggest: the suggestions apply only if this creates the
   // term (addTerm's defaultAliases), so `add X --never w` on an existing X adds none.
@@ -419,8 +420,8 @@ export async function runAdd(
   }
   if (category) term.category = category;
   if (opts.notes) term.notes = opts.notes;
-  const never = (opts.never ?? []).map((w) => w.trim()).filter(Boolean);
-  if (never.length > 0) term.never = never;
+  // Passed as given: addTerm trims them and refuses a blank one, as MCP add_term and POST /add do.
+  if (opts.never && opts.never.length > 0) term.never = [...opts.never];
 
   const result = await addTerm(term, {
     scope,
@@ -447,7 +448,10 @@ export async function runAdd(
           created: result.created,
           ...(result.unchanged ? { unchanged: true } : {}),
           scope,
-          suggested,
+          // The suggestions this call applied: the fallback ones only when it
+          // created the term, as the text output marks them. They used to be
+          // listed for an existing term too, where none was added.
+          suggested: !fallbackOnly || result.created ? suggested : [],
           ...(conflicts.length > 0 ? { conflicts, note: conflictNote(conflicts) } : result.unchanged ? { note: unchangedTermNote(result.term.canonical) } : {}),
         }),
         null,
@@ -804,7 +808,8 @@ export async function runNormalize(
       `lexicon: no text to correct (${fromArgs ? 'the argument was empty' : 'stdin was empty'}); ` +
         'pass it as arguments: lexicon normalize "ping ashler", or pipe it in: echo "ping ashler" | lexicon normalize\n',
     );
-    if (opts.json) line(io, JSON.stringify(jsonOk({ input: '', output: '', replacements: [], changed: false })));
+    // Pretty-printed like every other normalize --json document.
+    if (opts.json) line(io, JSON.stringify(jsonOk({ input: '', output: '', replacements: [], changed: false }), null, 2));
     return 0;
   }
 

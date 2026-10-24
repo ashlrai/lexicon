@@ -119,8 +119,10 @@ Options:
                          phonetic hint and category
   --never <word...>      words that must never be rewritten to this term even if
                          they sound alike, e.g. --never sauce
-  --json                 print the saved term, file path and whether it was
-                         created as JSON
+  --json                 print { ok: true, term, path, created, scope, suggested
+                         } as JSON (suggested: the generated aliases this call
+                         added), plus unchanged, conflicts and note when they
+                         apply
   -h, --help             display help for command
 ```
 
@@ -457,7 +459,8 @@ Usage: lexicon pending [options] [command]
 review aliases noticed in your corrections; nothing is applied until you accept
 
 Options:
-  --json                     print as JSON
+  --json                     print { ok: true, file, pending } as JSON, each
+                             entry with alreadyKnown
   -h, --help                 display help for command
 
 Commands:

@@ -554,6 +554,26 @@ describe('POST /learn and POST /add', () => {
     expect(await fs.readFile(env.globalPath, 'utf8')).toBe(before);
   });
 
+  // Catches: `never: [" "]` answered 200 and wrote a blank never word.
+  it('add with a blank never word is a 400 naming it, and writes nothing', async () => {
+    const before = await fs.readFile(env.globalPath, 'utf8');
+    const res = await api('POST', '/add', { canonical: 'Ashlr.AI', never: ['ashes', ' '] });
+    expect(res.status).toBe(400);
+    const { error } = (await res.json()) as { error: string };
+    expect(error).toBe('term not added: never[1] (" ") is blank. Nothing was written; drop that entry or give the word and try again.');
+    expect(await fs.readFile(env.globalPath, 'utf8')).toBe(before);
+  });
+
+  // Catches: `aliases: ["  "]` was dropped and answered 200.
+  it('add with a blank alias is a 400 naming it, and writes nothing', async () => {
+    const before = await fs.readFile(env.globalPath, 'utf8');
+    const res = await api('POST', '/add', { canonical: 'Ashlr.AI', aliases: ['  '] });
+    expect(res.status).toBe(400);
+    const { error } = (await res.json()) as { error: string };
+    expect(error).toBe('term not added: aliases[0] ("  ") is blank. Nothing was written; drop that entry or give the word and try again.');
+    expect(await fs.readFile(env.globalPath, 'utf8')).toBe(before);
+  });
+
   it('add over the schema cap is a 400 naming the field, not an index into the lexicon file', async () => {
     const res = await api('POST', '/add', { canonical: 'Zed', aliases: ['x'.repeat(81)] });
     expect(res.status).toBe(400);
@@ -2970,18 +2990,21 @@ describe('documented route behaviour', () => {
     await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 
-  // Catches: docs/LOCAL-API.md never said what /add does with no aliases, and
-  // docs/CONTRACT.md said only "omitted": `aliases: []` generates them too,
-  // unlike MCP add_term, where an explicit [] means none.
-  it('POST /add with aliases omitted or [] gives a new term the suggested spellings, and an existing one none', async () => {
-    for (const [canonical, body] of [['Zorblatt', {}], ['Quuxly', { aliases: [] }]] as const) {
-      const res = await call('POST', '/add', { canonical, ...body });
-      expect(res.status, canonical).toBe(200);
-      const json = (await res.json()) as { created: boolean; term: { aliases: string[] } };
-      expect(json.created, canonical).toBe(true);
-      expect(json.term.aliases, canonical).toEqual(suggestAliases(canonical));
-      expect(json.term.aliases.length, canonical).toBeGreaterThan(0);
-    }
+  // Catches: `aliases: []` generated suggested spellings, unlike MCP
+  // add_term, where an explicit [] means none; only an omitted field asks.
+  it('POST /add with aliases omitted gives a new term the suggested spellings, [] gives none, and an existing one gains none', async () => {
+    const res = await call('POST', '/add', { canonical: 'Zorblatt' });
+    expect(res.status).toBe(200);
+    const json = (await res.json()) as { created: boolean; term: { aliases: string[] } };
+    expect(json.created).toBe(true);
+    expect(json.term.aliases).toEqual(suggestAliases('Zorblatt'));
+    expect(json.term.aliases.length).toBeGreaterThan(0);
+
+    expect(suggestAliases('Quuxly').length).toBeGreaterThan(0);
+    const none = (await (await call('POST', '/add', { canonical: 'Quuxly', aliases: [] })).json()) as { created: boolean; term: { aliases: string[] } };
+    expect(none.created).toBe(true);
+    expect(none.term.aliases).toEqual([]);
+
     const again = (await (await call('POST', '/add', { canonical: 'Zorblatt', category: 'product' })).json()) as { created: boolean; term: { aliases: string[] } };
     expect(again.created).toBe(false);
     expect(again.term.aliases).toEqual(suggestAliases('Zorblatt'));

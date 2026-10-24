@@ -22,8 +22,9 @@
  * 3 nothing heard.
  *
  * Under `--json` stdout carries exactly one document on every path: the
- * result (`ok: true`), a toggle status line, or `VoiceJsonFailure` (`ok:
- * false, error, nextStep?, code`) for every non-zero exit. The stderr lines
+ * result (`ok: true`), a toggle status line, `--status`'s `{ ok, recording,
+ * since?, pid? }` (`ok: false`, exit 1, when idle), or `VoiceJsonFailure`
+ * (`ok: false, error, nextStep?, code`) for every other non-zero exit. The stderr lines
  * and the exit codes are the same with or without `--json`.
  */
 import { promises as fs } from 'node:fs';
@@ -1120,7 +1121,8 @@ export async function runVoiceStatus(opts: VoiceOptions, io: VoiceIO, deps: Voic
   const state = await readState(r.globalPath);
   const recording = state !== undefined && state.pid !== undefined && r.isAlive(state.pid);
   if (opts.json) {
-    io.stdout(`${JSON.stringify(recording && state ? { recording: true, since: state.startedAt, pid: state.pid } : { recording: false })}\n`);
+    // `ok` follows the exit code, as `serve --status` reports `ok: false, up: false`.
+    io.stdout(`${JSON.stringify(recording && state ? { ok: true, recording: true, since: state.startedAt, pid: state.pid } : { ok: false, recording: false })}\n`);
   } else {
     io.stdout(recording && state ? `recording since ${state.startedAt}\n` : 'idle\n');
   }

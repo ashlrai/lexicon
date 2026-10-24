@@ -16,7 +16,8 @@ import {
   readPending,
   rejectPending,
 } from '../src/core/index.js';
-import { runPendingAccept, runPendingList, runPendingReject } from '../src/cli/cmd-pending.js';
+import { Command } from 'commander';
+import { registerPendingCommands, runPendingAccept, runPendingList, runPendingReject } from '../src/cli/cmd-pending.js';
 import { makeIO } from './helpers.js';
 
 let dir: string;
@@ -181,6 +182,55 @@ describe('lexicon pending CLI', () => {
     io = makeIO();
     expect(await runPendingAccept(['deadbeef'], o, io)).toBe(1);
     expect(io.err).toContain('no pending alias with id deadbeef; run lexicon pending list to see the ids\n');
+  });
+
+  // Catches: an unknown id exited 1 with `ok: true` under --json, and said
+  // nothing on stderr there.
+  it('--json leads with ok: false when an id is unknown, and names it on stderr', async () => {
+    const o = await opts();
+    for (const run of [runPendingAccept, runPendingReject]) {
+      const io = makeIO();
+      expect(await run(['deadbeef'], { ...o, json: true }, io)).toBe(1);
+      expect(JSON.parse(io.out)).toMatchObject({
+        ok: false,
+        error: 'no pending alias with id deadbeef',
+        nextStep: 'run lexicon pending list to see the ids',
+        unknown: ['deadbeef'],
+      });
+      expect(io.err).toContain('no pending alias with id deadbeef');
+    }
+    const io = makeIO();
+    expect(await runPendingReject(['deadbeef'], o, io)).toBe(1);
+    expect(io.out).toBe('');
+  });
+
+  // Catches: `pending` defines --json too, and commander handed the flag to
+  // it, so `pending accept <id> --json` printed text and `pending list --json`
+  // printed the table.
+  it('pending list|accept|reject honour their own --json', async () => {
+    const o = await opts();
+    await queueCorrections([{ heard: 'Quibbletron', meant: 'Ashlr.AI' }, { heard: 'Ashlur', meant: 'Ashlr.AI' }], o);
+    const id = pendingId('Quibbletron', 'Ashlr.AI');
+    const other = pendingId('Ashlur', 'Ashlr.AI');
+    const saved = process.env.LEXICON_PATH;
+    process.env.LEXICON_PATH = globalPath;
+    try {
+      const parse = async (args: string[]) => {
+        const io = makeIO();
+        const program = new Command().exitOverride().option('--cwd <dir>');
+        registerPendingCommands(program, io);
+        await program.parseAsync([...args, '--cwd', cwd], { from: 'user' });
+        return io;
+      };
+      expect(JSON.parse((await parse(['pending', 'list', '--json'])).out)).toMatchObject({ ok: true, pending: [{}, {}] });
+      expect(JSON.parse((await parse(['pending', 'accept', id, '--json'])).out)).toMatchObject({ ok: true, accepted: [{ id, canonical: 'Ashlr.AI' }], unknown: [] });
+      expect(JSON.parse((await parse(['pending', 'reject', other, '--json'])).out)).toMatchObject({ ok: true, rejected: [other], unknown: [] });
+      expect(JSON.parse((await parse(['pending', '--json'])).out)).toMatchObject({ ok: true, pending: [] });
+    } finally {
+      if (saved === undefined) delete process.env.LEXICON_PATH;
+      else process.env.LEXICON_PATH = saved;
+      process.exitCode = undefined;
+    }
   });
 
   it('marks entries the lexicon already knows', async () => {

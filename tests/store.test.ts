@@ -653,7 +653,7 @@ describe('addTerm', () => {
   });
 
   it('creates a new term in the global file with defaults', async () => {
-    const term: Term = { canonical: ' Ashlr.AI ', aliases: [' Ashler ', 'ashler', '', 'ASHLR.AI', 'Ashlar'] };
+    const term: Term = { canonical: ' Ashlr.AI ', aliases: [' Ashler ', 'ashler', 'ASHLR.AI', 'Ashlar'] };
     const result = await addTerm(term, { cwd: tmp, globalPath });
     expect(result.created).toBe(true);
     expect(result.file.path).toBe(globalPath);
@@ -726,6 +726,41 @@ describe('addTerm', () => {
   it('names the problem, not the internal function, in its errors', async () => {
     const err = await addTerm({ canonical: '  ', aliases: [] }, { cwd: tmp, globalPath }).catch((e: unknown) => e);
     expect((err as Error).message).toBe('canonical must not be empty');
+  });
+
+  // Catches: `never: [" "]` was written as a blank never word (MCP add_term,
+  // POST /add), which guards nothing and the schema dropped on the next read.
+  it('refuses a blank never word, naming it, and writes nothing', async () => {
+    await addTerm({ canonical: 'SaaS', aliases: ['sass'] }, { cwd: tmp, globalPath });
+    const before = await fs.readFile(globalPath, 'utf8');
+    for (const blank of [' ', '', '\u200b']) {
+      const err = await addTerm({ canonical: 'SaaS', aliases: [], never: ['sauce', blank] }, { cwd: tmp, globalPath }).catch((e: unknown) => e);
+      expect((err as Error).message).toBe(
+        `term not added: never[1] (${JSON.stringify(blank)}) is blank. Nothing was written; drop that entry or give the word and try again.`,
+      );
+    }
+    await expect(addTerm({ canonical: 'Fresh', aliases: [], never: ['  '] }, { cwd: tmp, globalPath })).rejects.toThrow(/never\[0\]/);
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(before);
+  });
+
+  // Catches: `aliases: ["  "]` (MCP add_term, POST /add) was dropped and the
+  // call answered success, reading as a spelling added.
+  it('refuses a blank alias, naming it, and writes nothing', async () => {
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler'] }, { cwd: tmp, globalPath });
+    const before = await fs.readFile(globalPath, 'utf8');
+    for (const blank of ['  ', '', '\ufeff']) {
+      const err = await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashlar', blank] }, { cwd: tmp, globalPath }).catch((e: unknown) => e);
+      expect((err as Error).message).toBe(
+        `term not added: aliases[1] (${JSON.stringify(blank)}) is blank. Nothing was written; drop that entry or give the word and try again.`,
+      );
+    }
+    await expect(addTerms([{ canonical: 'New', aliases: [' '] }], { cwd: tmp, globalPath })).rejects.toThrow(/aliases\[0\]/);
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(before);
+  });
+
+  it('trims and dedupes the never words of a new term', async () => {
+    const result = await addTerm({ canonical: 'SaaS', aliases: [], never: [' sauce ', 'Sauce', 'sass'] }, { cwd: tmp, globalPath });
+    expect(result.term.never).toEqual(['sauce', 'sass']);
   });
 });
 

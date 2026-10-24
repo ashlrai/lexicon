@@ -323,6 +323,9 @@ describe('normalize', () => {
     const empty = makeIO();
     expect(await runNormalize([], { json: true }, empty, async () => '')).toBe(0);
     expect(JSON.parse(empty.out)).toEqual({ ok: true, input: '', output: '', replacements: [], changed: false });
+    // Catches: the empty-text document was the one normalize --json printed on a single line.
+    expect(empty.out).toBe(`${JSON.stringify(JSON.parse(empty.out), null, 2)}\n`);
+    expect(good.out).toBe(`${JSON.stringify(JSON.parse(good.out), null, 2)}\n`);
     // Catches: empty stdin exited 0 without a word. stdout and the exit code stay as they were.
     expect(empty.err).toBe('lexicon: no text to correct (stdin was empty); pass it as arguments: lexicon normalize "ping ashler", or pipe it in: echo "ping ashler" | lexicon normalize\n');
     const plainEmpty = makeIO();
@@ -492,6 +495,37 @@ describe('add / remove / path', () => {
     expect(io.out).toContain('aliases: Ashler, Ashlar, Ashlr AI (suggested)');
     expect(io.out.match(/Ashler, Ashlar, Ashlr AI/g)).toHaveLength(1);
     expect(io.out).toContain('/tmp/proj/.lexicon.yaml');
+  });
+
+  // Catches: `lexicon add X --never " "` dropped the blank word and answered
+  // success, where MCP add_term and POST /add now refuse it: core decides.
+  it('passes --never words to addTerm as given, so a blank one is refused there', async () => {
+    await runAdd('SaaS', ['sass'], { never: ['sauce', ' '] }, makeIO());
+    expect(core.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ never: ['sauce', ' '] }), expect.anything());
+  });
+
+  // Catches: `lexicon add X "  "` dropped the blank alias and answered success.
+  it('passes a blank alias argument to addTerm, so it is refused there, and suggests none for it', async () => {
+    await runAdd('Ashlr.AI', ['Ashler', '  '], {}, makeIO());
+    expect(core.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ aliases: ['Ashler', '  '] }), expect.anything());
+  });
+
+  // Catches: `add Ashlr.AI --never ashes --json` on an existing term listed
+  // six `suggested` spellings, though none was added (the text marks none).
+  it('--json suggested is empty when the fallback suggestions were not applied to an existing term', async () => {
+    vi.mocked(core.addTerm).mockImplementationOnce(async (term) => ({
+      file: { path: '/tmp/g/lexicon.yaml', scope: 'global', lexicon: { version: 1, terms: [] }, exists: true },
+      term: { ...term, aliases: ['Ashler'] },
+      created: false,
+    }));
+    const io = makeIO();
+    expect(await runAdd('Ashlr.AI', [], { never: ['ashes'], json: true }, io)).toBe(0);
+    expect(core.addTerm).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ defaultAliases: ['Ashler', 'Ashlar', 'Ashlr AI'] }));
+    expect(JSON.parse(io.out)).toMatchObject({ created: false, suggested: [] });
+
+    const fresh = makeIO();
+    expect(await runAdd('Ashlr.AI', [], { json: true }, fresh)).toBe(0);
+    expect(JSON.parse(fresh.out)).toMatchObject({ created: true, suggested: ['Ashler', 'Ashlar', 'Ashlr AI'] });
   });
 
   it('does not suggest when aliases are given unless --suggest', async () => {
@@ -2534,7 +2568,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       }
       // The flags --status reads still work: idle is exit 1 with its own document.
       const status = lexicon(['voice', '--status', '--json', '--quiet', '--cwd', tmp], globalPath);
-      expect(JSON.parse(status.stdout)).toEqual({ recording: false });
+      expect(JSON.parse(status.stdout)).toEqual({ ok: false, recording: false });
     } finally {
       await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }

@@ -5,8 +5,10 @@
  *
  * node:http only, no framework. Every request must carry a `Host` that names
  * this server (isAllowedHost, the DNS rebinding guard). Every request except
- * `GET /health` (without `?cwd=`) and `GET /pair` needs
- * `Authorization: Bearer <token>` (token from serve.json, see ./config.ts). `/pair` is the one-click pairing page for the browser
+ * an `OPTIONS` preflight (204, no body, on any path), `GET /health` (without
+ * `?cwd=`) and `GET /pair` needs `Authorization: Bearer <token>` (token from
+ * serve.json, see ./config.ts); a 401 carries `WWW-Authenticate: Bearer`.
+ * `/pair` is the one-click pairing page for the browser
  * extension: it carries the token in a <meta> tag and is served only to a
  * loopback client whose `Host` header names this port (see pairPageHtml).
  * CORS headers are set only for browser-extension origins or the exact
@@ -1014,9 +1016,13 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   async function handleAdd(raw: unknown): Promise<AddResponse> {
     const body = parseBody(AddBody, raw, '/add');
     const cwd = await resolveCwd(body.cwd);
-    // Generated aliases only when this creates the term (see addTerm's defaultAliases).
+    // Generated aliases only when this creates the term (see addTerm's
+    // defaultAliases), and only for an omitted field: an explicit [] means
+    // none, as in MCP add_term. No caller sends [] to ask for suggestions
+    // (the menu bar app omits an empty list; the Windows app and the
+    // extension send no aliases at all).
+    const given = body.aliases !== undefined;
     const aliases = body.aliases ?? [];
-    const given = aliases.length > 0;
     const term: Term = {
       canonical: body.canonical,
       aliases,
