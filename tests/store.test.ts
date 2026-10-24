@@ -1129,6 +1129,28 @@ describe('recordHits', () => {
     expect(await readProjectHits(projectPath, { globalPath })).toEqual({ p: 1 });
   });
 
+  // Catches: any read error, not only a missing file, read as no counts, so the write that followed replaced every count in hits.json with the few being added.
+  it('keeps hits.json when it cannot be read, dropping the new counts instead', async () => {
+    const { nested, projectPath } = await counted();
+    await recordHits(['p', 'p', 'g'], { cwd: nested, globalPath });
+    const hitsPath = getHitsPath({ globalPath });
+    const before = await fs.readFile(hitsPath, 'utf8');
+    const realRead = fs.readFile.bind(fs);
+    const spy = vi.spyOn(fs, 'readFile').mockImplementation((async (p: unknown, ...rest: unknown[]) => {
+      if (p === hitsPath) throw Object.assign(new Error('EIO: i/o error, read'), { code: 'EIO' });
+      return (realRead as (...a: unknown[]) => Promise<unknown>)(p, ...rest);
+    }) as typeof fs.readFile);
+    try {
+      await expect(recordHits(['p', 'g'], { cwd: nested, globalPath })).resolves.toBeUndefined();
+      expect(await removeTerm('G', { cwd: nested, globalPath })).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await fs.readFile(hitsPath, 'utf8')).toBe(before);
+    expect(await readProjectHits(projectPath, { globalPath })).toEqual({ p: 2 });
+    expect(await readGlobalHits({ globalPath })).toEqual({ g: 1 });
+  });
+
   it('forgets a removed project term, so re-adding it does not inherit the tally', async () => {
     const { nested, projectPath } = await counted();
     await recordHits(['p', 'p'], { cwd: nested, globalPath });

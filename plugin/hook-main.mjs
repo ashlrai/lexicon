@@ -71,7 +71,7 @@ var require_node_url = __commonJS({
 });
 
 // src/core/types.ts
-var TERM_CATEGORIES, TERM_SCOPES, TERM_SOURCES, EXPORT_FORMATS;
+var TERM_CATEGORIES, TERM_SCOPES, TERM_SOURCES;
 var init_types = __esm({
   "src/core/types.ts"() {
     TERM_CATEGORIES = ["brand", "person", "product", "acronym", "identifier", "place", "other"];
@@ -87,23 +87,6 @@ var init_types = __esm({
       "import:github",
       "learned",
       "pack"
-    ];
-    EXPORT_FORMATS = [
-      "wispr",
-      "superwhisper",
-      "whisper-prompt",
-      "macos",
-      "claude-md",
-      "csv",
-      "json",
-      "deepgram",
-      "espanso",
-      "assemblyai",
-      "azure",
-      "google",
-      "openai",
-      "text",
-      "markdown"
     ];
   }
 });
@@ -20787,10 +20770,17 @@ async function canonicalPath2(filePath) {
 function emptyHitsRegistry() {
   return { version: 1, projects: {} };
 }
-async function readHitsRegistry(opts) {
+async function readHitsRegistry(opts, forWrite = false) {
+  let text;
+  try {
+    text = await import_node_fs5.promises.readFile(getHitsPath(opts), "utf8");
+  } catch (e) {
+    if (forWrite && e.code !== "ENOENT") throw e;
+    return emptyHitsRegistry();
+  }
   let raw;
   try {
-    raw = JSON.parse(await import_node_fs5.promises.readFile(getHitsPath(opts), "utf8"));
+    raw = JSON.parse(text);
   } catch {
     return emptyHitsRegistry();
   }
@@ -20968,7 +20958,7 @@ async function recordHits(canonicals, opts = {}) {
     if (!project && counts.size === 0) return;
     const hitsPath = getHitsPath(opts);
     await withFileLock(hitsPath, async () => {
-      const registry2 = await readHitsRegistry(opts);
+      const registry2 = await readHitsRegistry(opts, true);
       if (project) {
         const entry = { ...registry2.projects[project.key] ?? {} };
         for (const [canonical, n] of project.counts) entry[canonical] = (entry[canonical] ?? 0) + n;
@@ -21077,13 +21067,13 @@ var init_harvest = __esm({
 });
 
 // src/core/packs.ts
-var import_node_fs8, import_node_path7, import_node_url, import_yaml5, PACK_NAME_RE, PackFileSchema;
+var import_node_fs8, import_node_path7, import_node_url, import_yaml4, PACK_NAME_RE, PackFileSchema;
 var init_packs = __esm({
   "src/core/packs.ts"() {
     import_node_fs8 = __toESM(require_node_fs());
     import_node_path7 = __toESM(require_node_path());
     import_node_url = __toESM(require_node_url());
-    import_yaml5 = __toESM(require_dist());
+    import_yaml4 = __toESM(require_dist());
     init_zod();
     PACK_NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
     PackFileSchema = object({
@@ -21100,13 +21090,13 @@ var init_packs = __esm({
 });
 
 // src/core/registry.ts
-var import_node_crypto2, import_node_fs9, import_node_path8, import_yaml6, RegistryIndexEntrySchema, RegistryIndexSchema, MAX_REGISTRY_FILE_BYTES, RegistryPackStateSchema;
+var import_node_crypto2, import_node_fs9, import_node_path8, import_yaml5, RegistryIndexEntrySchema, RegistryIndexSchema, MAX_REGISTRY_FILE_BYTES, RegistryPackStateSchema;
 var init_registry = __esm({
   "src/core/registry.ts"() {
     import_node_crypto2 = __toESM(require_node_crypto());
     import_node_fs9 = __toESM(require_node_fs());
     import_node_path8 = __toESM(require_node_path());
-    import_yaml6 = __toESM(require_dist());
+    import_yaml5 = __toESM(require_dist());
     init_zod();
     init_packs();
     RegistryIndexEntrySchema = object({
@@ -21178,9 +21168,6 @@ function diffSummary(result) {
 // src/core/index.ts
 init_harvest();
 
-// src/core/exporters/index.ts
-init_types();
-
 // src/core/exporters/shared.ts
 init_collate();
 var CATEGORY_ORDER = {
@@ -21211,107 +21198,11 @@ function sortByCategory(terms) {
     (a, b) => categoryRank(a.category) - categoryRank(b.category) || compareCanonical(a.canonical, b.canonical)
   );
 }
-function aliasPairs(lexicon) {
-  const out = [];
-  for (const term of lexicon.terms) {
-    const canonical = term.canonical.normalize("NFC");
-    const seen = /* @__PURE__ */ new Set();
-    for (const alias of term.aliases) {
-      const a = alias.trim().normalize("NFC");
-      if (!a || seen.has(a)) continue;
-      seen.add(a);
-      out.push({ alias: a, canonical, term });
-    }
-  }
-  return out;
-}
-function canonicalList(terms) {
-  const seen = /* @__PURE__ */ new Set();
-  const out = [];
-  for (const term of terms) {
-    const canonical = term.canonical.normalize("NFC");
-    if (seen.has(canonical)) continue;
-    seen.add(canonical);
-    out.push({ term, canonical });
-  }
-  return out;
-}
-function csvField(value) {
-  if (/[",\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
-  return value;
-}
-function isFormulaCell(value) {
-  return /^(?:[\t\r]|[ \t]*[=+\-@])/.test(value);
-}
-function csvTextField(value) {
-  return isFormulaCell(value) ? `"'${value.replace(/"/g, '""')}"` : csvField(value);
-}
-function xmlEscape(value) {
-  return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
-}
 function joinAliasList(aliases) {
   return aliases.map((a) => a.includes(",") || a.trim().startsWith('"') ? `"${a.replace(/"/g, '""')}"` : a).join(", ");
 }
 function mdCell(value) {
   return value.replace(/\|/g, (_pipe, at) => at > 0 && value[at - 1] === "\\" ? "\u200B\\|" : "\\|").replace(/\r\n|[\n\r\u0085\u2028\u2029]/g, " ");
-}
-function quotedNames(names, max = 10) {
-  const shown = names.slice(0, max).map((n) => JSON.stringify(n));
-  const rest = names.length - shown.length;
-  if (rest > 0) return `${shown.join(", ")} and ${rest} more`;
-  if (shown.length <= 1) return shown.join("");
-  return `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}`;
-}
-function uniqueTriggers(pairs, key = (a) => a) {
-  const rank = /* @__PURE__ */ new Map();
-  sortByImportance([...new Set(pairs.map((p) => p.term))]).forEach((t, i) => rank.set(t, i));
-  const winner = /* @__PURE__ */ new Map();
-  for (const p of pairs) {
-    const k = key(p.alias);
-    const current = winner.get(k);
-    if (!current || (rank.get(p.term) ?? 0) < (rank.get(current.term) ?? 0)) winner.set(k, p);
-  }
-  const kept = [];
-  const dropped = [];
-  for (const p of pairs) (winner.get(key(p.alias)) === p ? kept : dropped).push(p);
-  return { kept, dropped };
-}
-function sharedTriggerNote(dropped, what) {
-  if (dropped.length === 0) return void 0;
-  return `left out ${dropped.length} ${what}${dropped.length === 1 ? "" : "s"} another term already uses (the more used term keeps it): ${quotedNames(dropped.map((p) => `${p.alias} -> ${p.canonical}`))}`;
-}
-
-// src/core/exporters/assemblyai.ts
-var ASSEMBLYAI_WORD_BOOST_MAX = 1e3;
-var ASSEMBLYAI_PHRASE_MAX_WORDS = 6;
-function exportAssemblyai(lexicon, _opts = {}, sink) {
-  const tooLong = [];
-  const overCap = [];
-  const word_boost = [];
-  for (const { canonical } of canonicalList(sortByImportance(lexicon.terms))) {
-    if (canonical.trim().split(/\s+/u).length > ASSEMBLYAI_PHRASE_MAX_WORDS) tooLong.push(canonical);
-    else if (word_boost.length >= ASSEMBLYAI_WORD_BOOST_MAX) overCap.push(canonical);
-    else word_boost.push(canonical);
-  }
-  if (tooLong.length > 0) {
-    sink?.notes.push(`left out ${tooLong.length} phrase${tooLong.length === 1 ? "" : "s"} over AssemblyAI's ${ASSEMBLYAI_PHRASE_MAX_WORDS} words per phrase: ${quotedNames(tooLong)}`);
-  }
-  if (overCap.length > 0) {
-    sink?.notes.push(`left out ${overCap.length} phrase${overCap.length === 1 ? "" : "s"} past AssemblyAI's ${ASSEMBLYAI_WORD_BOOST_MAX} word_boost entries (the most used kept): ${quotedNames(overCap)}`);
-  }
-  return JSON.stringify({ word_boost, boost_param: "high" }, null, 2) + "\n";
-}
-
-// src/core/exporters/azure.ts
-var AZURE_PHRASES_MAX = 500;
-function exportAzure(lexicon, _opts = {}, sink) {
-  const all = canonicalList(sortByImportance(lexicon.terms)).map((c) => c.canonical);
-  const phraseList = all.slice(0, AZURE_PHRASES_MAX);
-  const dropped = all.slice(AZURE_PHRASES_MAX);
-  if (dropped.length > 0) {
-    sink?.notes.push(`left out ${dropped.length} phrase${dropped.length === 1 ? "" : "s"} past the ${AZURE_PHRASES_MAX} kept (the most used; the phrase list size Azure documents): ${quotedNames(dropped)}`);
-  }
-  return JSON.stringify({ phraseList }, null, 2) + "\n";
 }
 
 // src/core/exporters/claudeMd.ts
@@ -21336,6 +21227,31 @@ function renderClaudeMd(rows, more) {
 function claudeMdRow(term) {
   return `| ${mdCell(term.canonical)} | ${mdCell(joinAliasList(term.aliases))} | ${mdCell(noteFor(term))} |`;
 }
+function exportClaudeMdWithin(lexicon, maxChars, more) {
+  const full = exportClaudeMd(lexicon);
+  if (full.length <= maxChars) return { text: full, omitted: 0 };
+  const total = lexicon.terms.length;
+  let used = renderClaudeMd([]).length + more(total).length + 1;
+  const keep = /* @__PURE__ */ new Set();
+  for (const term of sortByImportance(lexicon.terms)) {
+    const cost = claudeMdRow(term).length + 1;
+    if (used + cost > maxChars) continue;
+    used += cost;
+    keep.add(term);
+  }
+  const rows = sortByCategory(lexicon.terms.filter((t) => keep.has(t))).map(claudeMdRow);
+  const omitted = total - keep.size;
+  const text = renderClaudeMd(rows, more(omitted));
+  return { text: text.length <= maxChars ? text : cutWithin(text, maxChars), omitted };
+}
+function cutWithin(text, maxChars) {
+  const tail = "...\n";
+  if (maxChars <= tail.length) return tail.slice(0, Math.max(0, maxChars));
+  let end = maxChars - tail.length;
+  const before = text.charCodeAt(end - 1);
+  if (before >= 55296 && before <= 56319) end -= 1;
+  return `${text.slice(0, end)}${tail}`;
+}
 function noteFor(term) {
   const parts = [];
   if (term.category) parts.push(term.category);
@@ -21343,365 +21259,6 @@ function noteFor(term) {
   if (term.phonetic?.trim()) parts.push(`(${term.phonetic.trim()})`);
   else if (term.notes?.trim().endsWith(")")) parts.push("()");
   return parts.join(" ");
-}
-
-// src/core/exporters/csv.ts
-function exportCsv(lexicon, _opts = {}, sink) {
-  const lines = ["canonical,alias,category,phonetic"];
-  const guarded = /* @__PURE__ */ new Set();
-  for (const { alias, canonical, term } of aliasPairs(lexicon)) {
-    const cells = [canonical, alias, term.category ?? "", term.phonetic ?? ""];
-    for (const c of cells) if (isFormulaCell(c)) guarded.add(c);
-    lines.push(cells.map(csvTextField).join(","));
-  }
-  if (guarded.size > 0) {
-    sink?.notes.push(
-      `wrote ${guarded.size} value${guarded.size === 1 ? "" : "s"} a spreadsheet would run as a formula with a leading ' so it shows as text (lexicon import keeps the '): ${quotedNames([...guarded])}`
-    );
-  }
-  if (sink) sink.rows = lines.length - 1;
-  return lines.join("\n") + "\n";
-}
-
-// src/core/exporters/deepgram.ts
-var DEEPGRAM_KEYTERM_MAX = 100;
-function exportDeepgram(lexicon, _opts = {}, sink) {
-  const ordered = canonicalList(sortByImportance(lexicon.terms));
-  const keyterm = [];
-  const keytermSeen = /* @__PURE__ */ new Set();
-  const keytermRepeats = [];
-  const overCap = [];
-  for (const { canonical } of ordered) {
-    const k = canonical.replace(/\s+/g, " ").trim();
-    if (!k) continue;
-    if (keytermSeen.has(k)) {
-      keytermRepeats.push(canonical);
-      continue;
-    }
-    keytermSeen.add(k);
-    if (keyterm.length < DEEPGRAM_KEYTERM_MAX) keyterm.push(k);
-    else overCap.push(canonical);
-  }
-  const keywords = [];
-  const seen = /* @__PURE__ */ new Set();
-  const collided = [];
-  for (const { term, canonical } of ordered) {
-    const keyword = canonical.replace(/:/g, " ").replace(/\s+/g, " ").trim();
-    if (!keyword) continue;
-    if (seen.has(keyword)) {
-      collided.push(canonical);
-      continue;
-    }
-    seen.add(keyword);
-    keywords.push(`${keyword}:${isProperNounCategory(term.category) ? 2 : 1}`);
-  }
-  if (overCap.length > 0) {
-    sink?.notes.push(`left out ${overCap.length} name${overCap.length === 1 ? "" : "s"} from keyterm past the ${DEEPGRAM_KEYTERM_MAX} kept (the most used; a conservative cap for Nova-3 keyterms): ${quotedNames(overCap)}`);
-  }
-  if (keytermRepeats.length > 0) {
-    sink?.notes.push(`left out ${keytermRepeats.length} name${keytermRepeats.length === 1 ? "" : "s"} from keyterm that read as one already listed once whitespace is collapsed: ${quotedNames(keytermRepeats)}`);
-  }
-  if (collided.length > 0) {
-    sink?.notes.push(`left out ${collided.length} name${collided.length === 1 ? "" : "s"} from keywords that read as one already listed once its colon is a space: ${quotedNames(collided)}`);
-  }
-  return JSON.stringify({ keyterm, keywords }, null, 2) + "\n";
-}
-
-// src/core/exporters/espanso.ts
-var import_yaml3 = __toESM(require_dist());
-var ESPANSO_VAR_RE = /\{\{\s*(\w+)(\.(\w+))?\s*\}\}/;
-function espansoRenders(body) {
-  if (ESPANSO_VAR_RE.test(body)) return void 0;
-  return body.replaceAll("\\{\\{", "{{").replaceAll("\\}\\}", "}}");
-}
-function espansoEscape(canonical) {
-  return canonical.replace(/\{{2,}/g, (run) => (run.length % 2 === 1 ? "{" : "") + "\\{\\{".repeat(Math.floor(run.length / 2)));
-}
-function exportEspanso(lexicon, _opts = {}, sink) {
-  const leftOut = [];
-  const matches = [];
-  const { kept, dropped } = uniqueTriggers(aliasPairs(lexicon));
-  const shared = sharedTriggerNote(dropped, "trigger");
-  if (shared) sink?.notes.push(shared);
-  for (const { alias, canonical } of kept) {
-    const replace = espansoEscape(canonical);
-    const typed = espansoRenders(replace);
-    if (typed !== canonical) {
-      const as = typed === void 0 ? "read a variable in it" : `type it as ${JSON.stringify(typed)}`;
-      leftOut.push(`# left out ${JSON.stringify(alias)} -> ${JSON.stringify(canonical)}: espanso would ${as}`);
-      continue;
-    }
-    matches.push({ trigger: alias, replace, word: true, propagate_case: false });
-  }
-  if (sink) sink.rows = matches.length;
-  const body = (0, import_yaml3.stringify)({ matches }, { lineWidth: 0, defaultStringType: "QUOTE_DOUBLE", defaultKeyType: "PLAIN" });
-  return leftOut.length > 0 ? `${leftOut.join("\n")}
-${body}` : body;
-}
-
-// src/core/exporters/google.ts
-var GOOGLE_PHRASE_MAX_CHARS = 100;
-var GOOGLE_PHRASES_MAX = 1e3;
-function exportGoogle(lexicon, _opts = {}, sink) {
-  const tooLong = [];
-  const overCap = [];
-  const phrases = [];
-  for (const { term, canonical } of canonicalList(sortByImportance(lexicon.terms))) {
-    if ([...canonical].length > GOOGLE_PHRASE_MAX_CHARS) {
-      tooLong.push(canonical);
-      continue;
-    }
-    if (phrases.length >= GOOGLE_PHRASES_MAX) {
-      overCap.push(canonical);
-      continue;
-    }
-    phrases.push({ value: canonical, boost: isProperNounCategory(term.category) ? 20 : 10 });
-  }
-  if (tooLong.length > 0) {
-    sink?.notes.push(`left out ${tooLong.length} phrase${tooLong.length === 1 ? "" : "s"} over Google's ${GOOGLE_PHRASE_MAX_CHARS} characters per phrase: ${quotedNames(tooLong)}`);
-  }
-  if (overCap.length > 0) {
-    sink?.notes.push(`left out ${overCap.length} phrase${overCap.length === 1 ? "" : "s"} past the ${GOOGLE_PHRASES_MAX} kept (the most used; a conservative cap under Google's phrase limit): ${quotedNames(overCap)}`);
-  }
-  return JSON.stringify({ adaptation: { phraseSets: [{ phrases }] } }, null, 2) + "\n";
-}
-
-// src/core/exporters/json.ts
-function exportJson(lexicon, _opts = {}) {
-  const terms = lexicon.terms.map(({ scope: _scope, hits: _hits, ...rest }) => rest);
-  return JSON.stringify({ ...lexicon, terms }, null, 2) + "\n";
-}
-
-// src/core/exporters/macos.ts
-init_schema();
-function stripXmlControls(value) {
-  return value.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
-}
-function exportMacos(lexicon, _opts = {}, sink) {
-  const lines = [
-    '<?xml version="1.0" encoding="UTF-8"?>',
-    '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
-    '<plist version="1.0">',
-    "<array>"
-  ];
-  let stripped = 0;
-  const pairs = [];
-  for (const pair of aliasPairs(lexicon)) {
-    if (findUnencodableChar(pair.alias) !== void 0 || findUnencodableChar(pair.canonical) !== void 0) continue;
-    const alias = stripXmlControls(pair.alias).trim();
-    const canonical = stripXmlControls(pair.canonical);
-    if (alias !== pair.alias || canonical !== pair.canonical) stripped += 1;
-    if (alias === "" || canonical.trim() === "") continue;
-    pairs.push({ ...pair, alias, canonical });
-  }
-  const { kept, dropped } = uniqueTriggers(pairs, (a) => a.toLowerCase());
-  const shared = sharedTriggerNote(dropped, "shortcut");
-  if (shared) sink?.notes.push(shared);
-  let rows = 0;
-  for (const { alias, canonical } of kept) {
-    lines.push("	<dict>");
-    lines.push("		<key>phrase</key>");
-    lines.push(`		<string>${xmlEscape(canonical)}</string>`);
-    lines.push("		<key>shortcut</key>");
-    lines.push(`		<string>${xmlEscape(alias)}</string>`);
-    lines.push("	</dict>");
-    rows += 1;
-  }
-  if (sink) sink.rows = rows;
-  if (stripped > 0) {
-    sink?.notes.push(`removed control characters XML cannot hold from ${stripped} entr${stripped === 1 ? "y" : "ies"} (a pair left with an empty shortcut or phrase is not written)`);
-  }
-  lines.push("</array>", "</plist>");
-  return lines.join("\n") + "\n";
-}
-
-// src/core/exporters/markdown.ts
-function exportMarkdown(lexicon, _opts = {}) {
-  const lines = sortByCategory(lexicon.terms).map((t) => {
-    const aliases = t.aliases.map((a) => a.trim()).filter(Boolean);
-    const head = `- **${t.canonical}**${t.category ? ` (${t.category})` : ""}`;
-    return aliases.length > 0 ? `${head}: ${joinAliasList(aliases)}` : head;
-  });
-  return lines.join("\n") + (lines.length > 0 ? "\n" : "");
-}
-
-// src/core/exporters/whisperPrompt.ts
-var WHISPER_PROMPT_DEFAULT_LIMIT = 100;
-var WHISPER_PROMPT_TOKEN_BUDGET = 223;
-function estimateWhisperTokens(text) {
-  let tokens = 0;
-  for (const m of text.matchAll(/ ?[A-Za-z]+|[0-9]|[\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]| |[^\x00-\x7f]/gu)) {
-    const piece = m[0];
-    if (/[A-Za-z]/.test(piece)) tokens += Math.ceil(piece.trimStart().length / 2);
-    else if (/[^\x00-\x7f]/u.test(piece)) tokens += Buffer.byteLength(piece, "utf8");
-    else tokens += 1;
-  }
-  return tokens;
-}
-function exportWhisperPrompt(lexicon, opts = {}, sink) {
-  const limit = opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT;
-  const all = [];
-  const seen = /* @__PURE__ */ new Set();
-  const repeats = [];
-  for (const { canonical } of canonicalList(sortByImportance(lexicon.terms))) {
-    const name = canonical.replace(/\s+/g, " ").trim();
-    if (!name) continue;
-    if (seen.has(name)) {
-      repeats.push(canonical);
-      continue;
-    }
-    seen.add(name);
-    all.push(name);
-  }
-  const names = all.slice(0, Math.max(0, limit));
-  const pastDefault = opts.limit === void 0 ? all.slice(names.length) : [];
-  const kept = [];
-  const dropped = [];
-  let used = 0;
-  for (const name of names) {
-    const cost = estimateWhisperTokens(kept.length > 0 ? `, ${name}` : name);
-    if (dropped.length === 0 && used + cost <= WHISPER_PROMPT_TOKEN_BUDGET) {
-      kept.push(name);
-      used += cost;
-    } else {
-      dropped.push(name);
-    }
-  }
-  if (repeats.length > 0) {
-    sink?.notes.push(
-      `left out ${repeats.length} name${repeats.length === 1 ? "" : "s"} that read as one already listed once whitespace is collapsed: ${quotedNames(repeats)}`
-    );
-  }
-  if (pastDefault.length > 0) {
-    sink?.notes.push(
-      `left out ${pastDefault.length} name${pastDefault.length === 1 ? "" : "s"} past the ${WHISPER_PROMPT_DEFAULT_LIMIT} a prompt holds by default (the most used kept): ${quotedNames(pastDefault)}`
-    );
-  }
-  if (dropped.length > 0) {
-    sink?.notes.push(
-      `left out ${dropped.length} name${dropped.length === 1 ? "" : "s"} past the ${WHISPER_PROMPT_TOKEN_BUDGET} prompt tokens Whisper reads (an offline estimate): ${quotedNames(dropped)}`
-    );
-  }
-  if (sink) sink.names = kept.length;
-  return kept.join(", ");
-}
-
-// src/core/exporters/openai.ts
-function exportOpenai(lexicon, opts = {}, sink) {
-  return exportWhisperPrompt(lexicon, opts, sink);
-}
-
-// src/core/exporters/superwhisper.ts
-function exportSuperwhisper(lexicon, _opts = {}, sink) {
-  const { kept, dropped } = uniqueTriggers(aliasPairs(lexicon));
-  const shared = sharedTriggerNote(dropped, "replacement");
-  if (shared) sink?.notes.push(shared);
-  const entries2 = kept.map(({ alias, canonical }) => ({
-    original: alias,
-    replacement: canonical
-  }));
-  if (sink) sink.rows = entries2.length;
-  return JSON.stringify(entries2, null, 2) + "\n";
-}
-
-// src/core/exporters/text.ts
-var ESCAPABLE = "\\|,:=";
-function escapeField(field, separators) {
-  let out = "";
-  for (let i = 0; i < field.length; i++) {
-    const c = field[i];
-    const next = field[i + 1];
-    if (separators.includes(c)) out += `\\${c}`;
-    else if (c === "=" && (i === 0 || /\s/.test(field[i - 1]))) out += "\\=";
-    else if (c === "\\" && (next === void 0 || ESCAPABLE.includes(next))) out += "\\\\";
-    else out += c;
-  }
-  return out;
-}
-function exportText(lexicon, _opts = {}) {
-  const terms = [...lexicon.terms].sort((a, b) => compareCanonical(a.canonical, b.canonical));
-  const lines = terms.map((t) => {
-    const aliases = t.aliases.map((a) => a.trim()).filter(Boolean);
-    const needsEquals = t.canonical.includes(":") || aliases.some((a) => a.includes(","));
-    let canonical = escapeField(t.canonical, "");
-    if (/^\\*#/.test(canonical)) canonical = `\\${canonical}`;
-    if (aliases.length === 0) return t.canonical.includes(":") ? `${canonical} =` : canonical;
-    return needsEquals ? `${canonical} = ${aliases.map((a) => escapeField(a, "|")).join(" | ")}` : `${canonical}: ${aliases.map((a) => escapeField(a, ",")).join(", ")}`;
-  });
-  return lines.join("\n") + (lines.length > 0 ? "\n" : "");
-}
-
-// src/core/exporters/wispr.ts
-function exportWispr(lexicon, _opts = {}, sink) {
-  const lines = ["word,replacement"];
-  const leftOut = [];
-  const safe = aliasPairs(lexicon).filter(({ alias, canonical }) => {
-    if (!isFormulaCell(alias) && !isFormulaCell(canonical)) return true;
-    leftOut.push(`${alias} -> ${canonical}`);
-    return false;
-  });
-  const { kept, dropped } = uniqueTriggers(safe);
-  for (const { alias, canonical } of kept) lines.push(`${csvField(alias)},${csvField(canonical)}`);
-  if (leftOut.length > 0) {
-    sink?.notes.push(
-      `left out ${leftOut.length} pair${leftOut.length === 1 ? "" : "s"} a spreadsheet would run as a formula (a cell starting with = + - @, after any spaces, or with a tab or a carriage return): ${quotedNames(leftOut)}`
-    );
-  }
-  const shared = sharedTriggerNote(dropped, "word");
-  if (shared) sink?.notes.push(shared);
-  if (sink) sink.rows = lines.length - 1;
-  return lines.join("\n") + "\n";
-}
-
-// src/core/exporters/index.ts
-var EXPORTERS = {
-  "wispr": exportWispr,
-  "superwhisper": exportSuperwhisper,
-  "whisper-prompt": exportWhisperPrompt,
-  "macos": exportMacos,
-  "claude-md": exportClaudeMd,
-  "csv": exportCsv,
-  "json": exportJson,
-  "deepgram": exportDeepgram,
-  "espanso": exportEspanso,
-  "assemblyai": exportAssemblyai,
-  "azure": exportAzure,
-  "google": exportGoogle,
-  "openai": exportOpenai,
-  "text": exportText,
-  "markdown": exportMarkdown
-};
-var EXPORT_ALIAS_ROW_FORMATS = ["csv", "wispr", "superwhisper", "macos", "espanso"];
-function hasAliasRow(term) {
-  return term.aliases.some((a) => a.trim() !== "");
-}
-function exportLexicon(lexicon, format, opts = {}) {
-  return exportLexiconWithNotes(lexicon, format, opts).text;
-}
-function exportLexiconWithNotes(lexicon, format, opts = {}) {
-  const exporter = EXPORTERS[format];
-  if (!exporter) {
-    throw new Error(`Unknown export format "${format}". Known: ${EXPORT_FORMATS.join(", ")}`);
-  }
-  const sink = { notes: [] };
-  const text = exporter(applyOptions(lexicon, opts, format), opts, sink);
-  return { text, notes: sink.notes, ...sink.rows !== void 0 ? { rows: sink.rows } : {}, ...sink.names !== void 0 ? { names: sink.names } : {} };
-}
-function applyOptions(lexicon, opts, format) {
-  let terms = lexicon.terms;
-  if (opts.categories && opts.categories.length > 0) {
-    const allowed = new Set(opts.categories);
-    terms = terms.filter((t) => t.category !== void 0 && allowed.has(t.category));
-  }
-  if (opts.limit !== void 0) {
-    const candidates = format !== void 0 && EXPORT_ALIAS_ROW_FORMATS.includes(format) ? terms.filter(hasAliasRow) : terms;
-    if (candidates.length > opts.limit || candidates.length < terms.length) {
-      const keep = new Set(sortByImportance(candidates).slice(0, Math.max(0, opts.limit)));
-      terms = terms.filter((t) => keep.has(t));
-    }
-  }
-  if (terms === lexicon.terms) return lexicon;
-  return { ...lexicon, terms };
 }
 
 // src/core/index.ts
@@ -21880,7 +21437,7 @@ function sameText(a, b) {
 var import_node_crypto = __toESM(require_node_crypto());
 var import_node_fs7 = __toESM(require_node_fs());
 var import_node_path6 = __toESM(require_node_path());
-var import_yaml4 = __toESM(require_dist());
+var import_yaml3 = __toESM(require_dist());
 init_atomic();
 init_store();
 var PENDING_FILE_NAME = "pending-aliases.yaml";
@@ -21934,7 +21491,7 @@ async function readPending(file) {
   }
   let doc;
   try {
-    doc = (0, import_yaml4.parse)(text);
+    doc = (0, import_yaml3.parse)(text);
   } catch {
     throw new PendingFileError(`${file} is not valid YAML`);
   }
@@ -21948,7 +21505,7 @@ async function readPending(file) {
   return entries2;
 }
 async function writePending(file, entries2) {
-  await writeFileAtomic(file, HEADER + (0, import_yaml4.stringify)({ version: 1, pending: entries2 }), { mode: 384 });
+  await writeFileAtomic(file, HEADER + (0, import_yaml3.stringify)({ version: 1, pending: entries2 }), { mode: 384 });
 }
 async function queueCorrections(corrections, opts = {}) {
   const file = pendingPath(opts);
@@ -22429,6 +21986,9 @@ function dropDataBlockSpans(result) {
   if (spans.length === 0) return result;
   return dropReplacements(result, (r) => overlapsAny(r, spans));
 }
+function sessionMoreLine(n) {
+  return `... ${n} more term${n === 1 ? "" : "s"}; read the lexicon://me resource for more, or call the list_terms tool to look any term up.`;
+}
 function truncateSessionContext(text, max = SESSION_CONTEXT_MAX_CHARS) {
   if (text.length <= max) return text;
   const lines = text.split("\n");
@@ -22439,7 +21999,7 @@ function truncateSessionContext(text, max = SESSION_CONTEXT_MAX_CHARS) {
   while (end < lines.length && lines[end].startsWith("|")) end += 1;
   const rows = lines.slice(sep + 1, end);
   const footer = lines.slice(end);
-  const moreLine = (n) => `... ${n} more term${n === 1 ? "" : "s"}; read the lexicon://me resource for more, or call the list_terms tool to look any term up.`;
+  const moreLine = sessionMoreLine;
   const fixed = header.join("\n").length + footer.join("\n").length + moreLine(rows.length).length + 3;
   let used = fixed;
   const kept = [];
@@ -22627,7 +22187,8 @@ async function sessionStart(payload, opts) {
     return emit("SessionStart", trailer ? [ONBOARD_NOTE, trailer] : [ONBOARD_NOTE]);
   }
   const room = SESSION_CONTEXT_MAX_CHARS - (trailer ? trailer.length + 1 : 0);
-  const parts = [truncateSessionContext(neutralizeMarkup(exportLexicon(loaded.merged, "claude-md")).trimEnd(), room)];
+  const table = exportClaudeMdWithin(loaded.merged, room, sessionMoreLine).text;
+  const parts = [neutralizeMarkup(table).trimEnd()];
   if (trailer) parts.push(trailer);
   return emit("SessionStart", parts);
 }

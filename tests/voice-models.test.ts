@@ -177,6 +177,29 @@ describe('the sha256 of a downloaded model', () => {
   });
 });
 
+describe('a compressed model download', () => {
+  // Catches: fetch decodes a gzip or br body while Content-Length counts the encoded bytes, so every compressed download was rejected as cut short.
+  it('is kept when fetch decoded it, asks for identity, and a short identity download is still refused', async () => {
+    const d = tmp();
+    const dest = path.join(d, modelFileName('tiny.en'));
+    let asked: string | null = null;
+    vi.stubGlobal('fetch', async (_u: string, init?: RequestInit) => {
+      asked = new Headers(init?.headers).get('accept-encoding');
+      return new Response(new Uint8Array(MODEL), { status: 200, headers: { 'content-encoding': 'gzip', 'content-length': String(MODEL.length - 3), 'x-linked-etag': `"${sha(MODEL)}"` } });
+    });
+    const seen: Array<number | undefined> = [];
+    await defaultDownloader('https://example.invalid/m', dest, (p) => seen.push(p.total));
+    expect(asked).toBe('identity');
+    expect(readFileSync(dest)).toEqual(MODEL);
+    expect(seen.every((t) => t === undefined)).toBe(true);
+
+    const short = path.join(d, modelFileName('base.en'));
+    vi.stubGlobal('fetch', async () => new Response(new Uint8Array(MODEL), { status: 200, headers: { 'content-length': String(MODEL.length + 5) } }));
+    await expect(defaultDownloader('https://example.invalid/m', short, () => undefined)).rejects.toThrow(`the download ended after ${MODEL.length} of ${MODEL.length + 5} bytes`);
+    expect(existsSync(short)).toBe(false);
+  });
+});
+
 describe('a download that fails says why', () => {
   // Catches: every failed download said "check the network", for a misspelt model name (a 404) and a full disk alike.
   it('names a model that does not exist instead of blaming the network', async () => {
