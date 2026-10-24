@@ -26,6 +26,7 @@ import type { LoadOptions, LoadedLexicon } from '../core/index.js';
 import { SERVER_NAME, log, readPackageVersion, skippedProjectFields, withLexiconFix } from './shared.js';
 import { errorMessage } from '../util/errors.js';
 import { TOOL_REGISTRARS } from './tools/index.js';
+import { toolAnnotations } from './annotations.js';
 import { MCP_NORMALIZE_BUDGET_MS, MCP_NORMALIZE_MAX_CHARS } from './tools/terms.js';
 import { cliCommand } from '../util/cli-hint.js';
 
@@ -54,6 +55,16 @@ export function strictInput(config: unknown): unknown {
   const shape = (config as { inputSchema?: unknown }).inputSchema;
   if (shape === undefined || shape instanceof z.ZodType) return config;
   return { ...config, inputSchema: z.object(shape as z.ZodRawShape).strict() };
+}
+
+/**
+ * A tool config with its `annotations` from TOOL_ANNOTATIONS, unless it
+ * names its own. Throws for a tool the table does not list.
+ */
+export function withAnnotations(name: string, config: unknown): unknown {
+  if (typeof config !== 'object' || config === null) return config;
+  const own = (config as { annotations?: unknown }).annotations;
+  return { ...config, annotations: own ?? toolAnnotations(name) };
 }
 
 /**
@@ -263,7 +274,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   // advertises `additionalProperties: false` in tools/list.
   const registerTool = server.registerTool.bind(server);
   const gatedRegisterTool = (name: string, config: unknown, cb: (...args: unknown[]) => unknown): unknown =>
-    registerTool(name, strictInput(config) as never, (async (...args: unknown[]) => {
+    registerTool(name, withAnnotations(name, strictInput(config)) as never, (async (...args: unknown[]) => {
       if (rootsPending) await rootsPending;
       return cb(...args);
     }) as never);

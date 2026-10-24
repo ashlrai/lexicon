@@ -67328,12 +67328,64 @@ var TOOL_REGISTRARS = [
   registerPackTools
 ];
 
+// src/mcp/annotations.ts
+var READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+var MERGE = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+var TOOL_ANNOTATIONS = {
+  // Bumps a per-term hit counter in the lexicon file on a real change, so not
+  // read-only, and a repeat counts again.
+  normalize_transcript: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  add_term: MERGE,
+  // Deletes a term or an alias; a second call finds nothing more to remove.
+  remove_term: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  list_terms: READ,
+  export_lexicon: READ,
+  // Adds an alias, or recases a term's canonical; the same correction again changes nothing.
+  learn_correction: MERGE,
+  suggest_canonical: READ,
+  lexicon_stats: READ,
+  // Read-only preview unless `add: true`, which merges candidates into the project file.
+  harvest_repo: MERGE,
+  suggest_terms: READ,
+  // A 'stale' suggestion removes a term; applying it again is refused, not a no-op.
+  apply_suggestion: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+  // 'untrust' deletes the registry entry; 'trust' pins (after the user answers).
+  trust_project: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  lexicon_doctor: READ,
+  // Writes the lexicon entry into a client config (replacing a stale launch of
+  // lexicon's own, never another server).
+  install_client: MERGE,
+  uninstall_client: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  // Seeds terms, installs into clients and packs, may install a login service.
+  setup_lexicon: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  // Probes 127.0.0.1 only.
+  serve_status: READ,
+  // With `registry`, fetches a community index over the network.
+  list_packs: { ...READ, openWorldHint: true },
+  // A community pack is downloaded from its registry.
+  add_pack: { ...MERGE, openWorldHint: true },
+  // Reads the user's Contacts, Calendar or GitHub (through gh), then merges
+  // once per preview token: a second apply with the same token is refused.
+  import_vocabulary: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  import_dictionary: MERGE
+};
+function toolAnnotations(name) {
+  const hints = TOOL_ANNOTATIONS[name];
+  if (hints === void 0) throw new Error(`MCP tool ${name} has no entry in TOOL_ANNOTATIONS (src/mcp/annotations.ts)`);
+  return hints;
+}
+
 // src/mcp/server.ts
 function strictInput(config2) {
   if (typeof config2 !== "object" || config2 === null) return config2;
   const shape = config2.inputSchema;
   if (shape === void 0 || shape instanceof external_exports.ZodType) return config2;
   return { ...config2, inputSchema: external_exports.object(shape).strict() };
+}
+function withAnnotations(name, config2) {
+  if (typeof config2 !== "object" || config2 === null) return config2;
+  const own2 = config2.annotations;
+  return { ...config2, annotations: own2 ?? toolAnnotations(name) };
 }
 function strictPromptArgs(name, shape = {}) {
   const declared = Object.keys(shape);
@@ -67438,7 +67490,7 @@ function createServer2(opts = {}) {
     });
   }
   const registerTool = server.registerTool.bind(server);
-  const gatedRegisterTool = (name, config2, cb) => registerTool(name, strictInput(config2), (async (...args) => {
+  const gatedRegisterTool = (name, config2, cb) => registerTool(name, withAnnotations(name, strictInput(config2)), (async (...args) => {
     if (rootsPending) await rootsPending;
     return cb(...args);
   }));
@@ -67601,5 +67653,6 @@ export {
   dirsFromRoots,
   main,
   strictInput,
-  strictPromptArgs
+  strictPromptArgs,
+  withAnnotations
 };
