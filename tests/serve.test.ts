@@ -2937,3 +2937,66 @@ describe('notes on an empty or partial answer', () => {
     await fs.rm(globalPath, { force: true });
   });
 });
+
+// ---------------------------------------------------------------------------
+// Behaviour docs/LOCAL-API.md states, on a server of its own
+// ---------------------------------------------------------------------------
+
+describe('documented route behaviour', () => {
+  let dir: string;
+  let globalPath: string;
+  let repo: string;
+  let own: LexiconHttpServer;
+  let started: ServeStartInfo;
+  const call = async (method: string, route: string, body?: unknown): Promise<Response> =>
+    fetch(`${started.url}${route}`, {
+      method,
+      headers: { Authorization: `Bearer ${started.token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+
+  beforeAll(async () => {
+    dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-documented-')));
+    globalPath = path.join(dir, 'config', 'lexicon.yaml');
+    repo = path.join(dir, 'repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Repoword\n    aliases: [repo word]\n', 'utf8');
+    own = createServer({ port: 0, cwd: dir, globalPath, quiet: true, reloadMs: 0 });
+    started = await own.start();
+  });
+
+  afterAll(async () => {
+    await own.stop();
+    await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  });
+
+  // Catches: docs/LOCAL-API.md never said what /add does with no aliases, and
+  // docs/CONTRACT.md said only "omitted": `aliases: []` generates them too,
+  // unlike MCP add_term, where an explicit [] means none.
+  it('POST /add with aliases omitted or [] gives a new term the suggested spellings, and an existing one none', async () => {
+    for (const [canonical, body] of [['Zorblatt', {}], ['Quuxly', { aliases: [] }]] as const) {
+      const res = await call('POST', '/add', { canonical, ...body });
+      expect(res.status, canonical).toBe(200);
+      const json = (await res.json()) as { created: boolean; term: { aliases: string[] } };
+      expect(json.created, canonical).toBe(true);
+      expect(json.term.aliases, canonical).toEqual(suggestAliases(canonical));
+      expect(json.term.aliases.length, canonical).toBeGreaterThan(0);
+    }
+    const again = (await (await call('POST', '/add', { canonical: 'Zorblatt', category: 'product' })).json()) as { created: boolean; term: { aliases: string[] } };
+    expect(again.created).toBe(false);
+    expect(again.term.aliases).toEqual(suggestAliases('Zorblatt'));
+  });
+
+  // Catches: docs/LOCAL-API.md said /packs carries projectTrust only "when a
+  // project file was not loaded"; it is there whenever a project file exists.
+  it('GET /packs carries projectTrust for a trusted project file too, and skippedProject only for a skipped one', async () => {
+    const at = `/packs?cwd=${encodeURIComponent(repo)}`;
+    const untrusted = (await (await call('GET', at)).json()) as Record<string, unknown>;
+    expect(untrusted.projectTrust).toBe('untrusted');
+    expect(untrusted.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+    await trustProject(path.join(repo, '.lexicon.yaml'), { globalPath });
+    const trusted = (await (await call('GET', at)).json()) as Record<string, unknown>;
+    expect(trusted.projectTrust).toBe('trusted');
+    expect(trusted).not.toHaveProperty('skippedProject');
+  });
+});

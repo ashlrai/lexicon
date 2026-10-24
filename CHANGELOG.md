@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `docs/LOCAL-API.md`: `POST /add` with `aliases` omitted or `[]` gives a new term the suggested spellings (the docs never said, and `docs/CONTRACT.md` said only "omitted"); `GET /packs` carries `projectTrust` whenever a project file exists, not only when it was skipped; `DELETE /packs/:name` answers 404 for an unknown pack and 400 for a bad `?scope=`; `/stats` and `/packs` report `projectTrust` too, and its value can be `changed`.
 - `docs/LOCAL-API.md` and `SECURITY.md` say an `OPTIONS` preflight needs no token (204, no body, on any path) and that a 401 carries `WWW-Authenticate: Bearer`; `SECURITY.md` named only `GET /health` as the route without a token, leaving out `/pair`.
 - `lexicon serve`: the POST routes (`/normalize`, `/learn`, `/add`, `/packs/:name`) refuse a query parameter with a 400 naming the body fields, as the docs said every route but `/pair` does. A query parameter was dropped, so `POST /packs/developer?scope=project` installed the pack into the global lexicon and answered 200, and `POST /normalize?cwd=...` corrected against the server's own directory.
 - MCP `add_pack` refuses a blank `name` at the schema (`must not be blank at name`), as the other required string arguments do; it passed the schema and came back as `unknown pack "  "`. The other tool schemas were checked: every other required string argument already makes this check.
