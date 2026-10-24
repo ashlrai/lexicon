@@ -301,10 +301,105 @@ export async function applyCorrections(doc: Document, el: HTMLElement, correctio
   return flatten(el).text;
 }
 
-/** Last resort: replace everything. Keeps one paragraph per line for ProseMirror-style editors. */
+/** Replace the single-line flattened range [start, end) by editing text node data in place. */
+function editTextNodes(el: HTMLElement, start: number, end: number, replacement: string): boolean {
+  const flat = flatten(el);
+  const from = locate(flat, start, 'start');
+  const to = start === end ? from : locate(flat, end, 'end');
+  if (!from || !to) return false;
+  if (from.node === to.node) {
+    const d = from.node.data;
+    from.node.data = d.slice(0, from.offset) + replacement + d.slice(to.offset);
+    return true;
+  }
+  const i = flat.segments.findIndex((s) => s.node === from.node);
+  const j = flat.segments.findIndex((s) => s.node === to.node);
+  if (i < 0 || j < i) return false;
+  for (let k = i + 1; k < j; k++) {
+    const seg = flat.segments[k];
+    if (seg) seg.node.data = '';
+  }
+  from.node.data = from.node.data.slice(0, from.offset) + replacement;
+  to.node.data = to.node.data.slice(to.offset);
+  return true;
+}
+
+/**
+ * The edits (old flattened [start, end) and the text to put there, each
+ * within one line) that turn the prose of `flat` into `text` while every code
+ * range keeps its text, or null when `text` does not hold the code as it
+ * stands or a prose region changed its number of lines.
+ */
+function proseEdits(flat: Flattened, ranges: ReadonlyArray<readonly [number, number]>, text: string): Array<[number, number, string]> | null {
+  const regions: Array<[number, number, string]> = [];
+  let oldAt = 0;
+  let newAt = 0;
+  for (const [cs, ce] of ranges) {
+    const code = flat.text.slice(cs, ce);
+    const idx = text.indexOf(code, newAt);
+    if (idx < 0) return null;
+    regions.push([oldAt, cs, text.slice(newAt, idx)]);
+    oldAt = ce;
+    newAt = idx + code.length;
+  }
+  regions.push([oldAt, flat.text.length, text.slice(newAt)]);
+  const edits: Array<[number, number, string]> = [];
+  for (const [start, end, next] of regions) {
+    const oldLines = flat.text.slice(start, end).split('\n');
+    const newLines = next.split('\n');
+    if (oldLines.length !== newLines.length) return null;
+    let at = start;
+    oldLines.forEach((before, n) => {
+      const after = newLines[n] ?? '';
+      if (before !== after) {
+        let p = 0;
+        while (p < before.length && p < after.length && before[p] === after[p]) p++;
+        let q = 0;
+        while (q < before.length - p && q < after.length - p && before[before.length - 1 - q] === after[after.length - 1 - q]) q++;
+        edits.push([at + p, at + before.length - q, after.slice(p, after.length - q)]);
+      }
+      at += before.length + 1;
+    });
+  }
+  return edits;
+}
+
+/**
+ * setWholeText for a rich editor holding code (a `<pre>` block or inline
+ * `<code>`): only the prose text nodes are rewritten, so the code elements
+ * keep their structure. Replacing everything turned a code block into plain
+ * paragraphs. False (and nothing changed) when that cannot be done.
+ */
+function setProseKeepingCode(el: HTMLElement, text: string): boolean {
+  const ranges = codeRanges(el);
+  if (ranges.length === 0) return false;
+  const flat = flatten(el);
+  const edits = proseEdits(flat, ranges, text);
+  if (edits === null) return false;
+  const saved = flat.segments.map((s) => [s.node, s.node.data] as const);
+  for (const [start, end, replacement] of [...edits].sort((a, b) => b[0] - a[0])) {
+    if (!editTextNodes(el, start, end, replacement)) {
+      for (const [node, data] of saved) node.data = data;
+      return false;
+    }
+  }
+  if (flatten(el).text === text) return true;
+  for (const [node, data] of saved) node.data = data;
+  return false;
+}
+
+/**
+ * Last resort: replace everything. Keeps one paragraph per line for
+ * ProseMirror-style editors, and a composer's `<pre>` and `<code>` elements
+ * as they are (only the prose around them is rewritten).
+ */
 export function setWholeText(doc: Document, el: HTMLElement, text: string): void {
   if (isTextField(el)) {
     setFieldValue(el, text);
+    return;
+  }
+  if (el.querySelector(CODE_SELECTOR) !== null && setProseKeepingCode(el, text)) {
+    fireInput(el, 'insertReplacementText', text);
     return;
   }
   const sel = doc.getSelection?.();
