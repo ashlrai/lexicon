@@ -2159,8 +2159,8 @@ describe('doctor: Claude Code hooks and plugin', () => {
     expect(code).toBe(0);
     expect(io.out).toContain(`! UserPromptSubmit hook not found in ${s.settingsPath} (user scope), `);
     expect(io.out).toContain(`! SessionStart hook not found in ${s.settingsPath} (user scope), `);
-    expect(io.out).toContain('/.claude/settings.json (project scope) or ');
-    expect(io.out).toContain('/.claude/settings.local.json (local scope) (fine if you use the plugin');
+    expect(io.out).toContain(`${path.sep}${path.join('.claude', 'settings.json')} (project scope) or `);
+    expect(io.out).toContain(`${path.sep}${path.join('.claude', 'settings.local.json')} (local scope) (fine if you use the plugin`);
     expect(io.out).toContain('all checks passed');
   });
 
