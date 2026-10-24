@@ -56,6 +56,22 @@ export function setupNameProblem(value: string): string | undefined {
   return undefined;
 }
 
+/**
+ * What is wrong with a phonetic hint given to setup (`--phonetic`, or typed
+ * at the prompt), or undefined when it can be written. Blank is fine (no
+ * hint); otherwise it must be one line with no control characters and fit
+ * LIMITS.text once invisible characters are stripped and it is trimmed.
+ * Checked before any step runs, so a hint the write would refuse no longer
+ * fails only after the lexicon was created and the person term seeded.
+ */
+export function setupHintProblem(value: string): string | undefined {
+  const hint = stripInvisible(value).trim();
+  if (hint === '') return undefined;
+  if (hasControlChars(hint)) return 'must be one line, with no control characters';
+  if (hint.length > LIMITS.text) return `must be at most ${LIMITS.text} characters (it has ${hint.length})`;
+  return undefined;
+}
+
 export function isSetupClient(value: string): value is SetupClient {
   return (SETUP_CLIENTS as readonly string[]).includes(value);
 }

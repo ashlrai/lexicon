@@ -50,7 +50,7 @@ import { createPrompter, isInteractive } from './prompt.js';
 import { shellWord } from './cmd-install.js';
 import { SETUP_APPS, SETUP_CLIENTS } from './setup/types.js';
 import type { Ctx, SetupDeps, SetupOptions, SetupPlan, SetupSummary } from './setup/types.js';
-import { defaultSetupExec, isSetupApp, parseClientList, parsePackList, setupNameProblem } from './setup/detect.js';
+import { defaultSetupExec, isSetupApp, parseClientList, parsePackList, setupHintProblem, setupNameProblem } from './setup/detect.js';
 import {
   stepClients,
   stepDemo,
@@ -85,7 +85,7 @@ export type {
   SetupPlan,
   SetupSummary,
 } from './setup/types.js';
-export { detectClients, parseClientList, parsePackList, setupNameProblem, suggestCompany } from './setup/detect.js';
+export { detectClients, parseClientList, parsePackList, setupHintProblem, setupNameProblem, suggestCompany } from './setup/detect.js';
 
 /**
  * Step h (dry run): the plan card.
@@ -266,6 +266,11 @@ export async function runSetup(
     if (problem !== undefined) {
       throw new Error(`${flag} ${problem}; nothing was written. Pass only the name, spelled as you want it written, or leave ${flag} out.`);
     }
+  }
+  // A multi-line or over-cap hint failed the same way, at the company write.
+  const hintProblem = opts.phonetic === undefined ? undefined : setupHintProblem(opts.phonetic);
+  if (hintProblem !== undefined) {
+    throw new Error(`--phonetic ${hintProblem}; nothing was written. Pass only the pronunciation hint, e.g. ASH-ler, or leave --phonetic out.`);
   }
   if (opts.app !== undefined && !isSetupApp(opts.app.trim().toLowerCase())) {
     throw new Error(`unknown app "${opts.app}" (expected one of: ${SETUP_APPS.join(', ')})`);

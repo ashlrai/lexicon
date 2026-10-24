@@ -52,6 +52,8 @@ import {
   parseClientList,
   parsePackList,
   readPackageName,
+  setupHintProblem,
+  setupNameProblem,
   suggestCompany,
   tryExec,
 } from './detect.js';
@@ -126,6 +128,31 @@ function gitUserName(ctx: Ctx): string | undefined {
     tryExec(ctx.exec, 'git', ['-C', ctx.cwd, 'config', 'user.name']) ??
     (ctx.env.GIT_AUTHOR_NAME?.trim() || ctx.env.GIT_COMMITTER_NAME?.trim() || undefined)
   );
+}
+
+/**
+ * Asks until the answer is blank (returned as '') or `problem` finds nothing
+ * wrong with it, so a name or hint the write would refuse is asked again
+ * before anything is written instead of failing setup after the lexicon was
+ * created. After a refused answer the default is dropped, so Enter skips.
+ */
+async function askChecked(
+  ctx: Ctx,
+  question: string,
+  def: string,
+  what: string,
+  problem: (value: string) => string | undefined,
+): Promise<string> {
+  const prompter = ctx.prompter!;
+  let fallback = def;
+  for (;;) {
+    const answer = (await prompter.ask(question, { default: fallback })).trim();
+    if (answer === '') return '';
+    const wrong = problem(answer);
+    if (wrong === undefined) return answer;
+    ctx.say(`   the ${what} ${wrong}; type it again (Enter to skip)`);
+    fallback = '';
+  }
 }
 
 /** Step a: the global lexicon and the person/company seed. */
@@ -205,11 +232,13 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   let company: string | undefined = ctx.opts.company ?? (ctx.prompter ? undefined : suggestion);
   let phonetic: string | undefined = ctx.opts.phonetic;
   if (ctx.prompter && !ctx.opts.company && !gated) {
-    company = (
-      await ctx.prompter.ask('   Your company or product name (as you want it spelled; Enter to skip)', {
-        default: suggestion ?? '',
-      })
-    ).trim();
+    company = await askChecked(
+      ctx,
+      '   Your company or product name (as you want it spelled; Enter to skip)',
+      suggestion ?? '',
+      'name',
+      setupNameProblem,
+    );
   }
   if (!company) {
     if (!gated) ctx.say(dim('   no company term (add one later: lexicon add "Your Co" --category brand)'));
@@ -219,7 +248,7 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   if (ctx.prompter) {
     if (aliases.length > 0) ctx.say(dim(`   STT will likely write: ${safe(aliases.join(', '))}`));
     if (!phonetic) {
-      phonetic = (await ctx.prompter.ask('   phonetic hint (e.g. ASH-ler, Enter for none)', { default: '' })).trim() || undefined;
+      phonetic = (await askChecked(ctx, '   phonetic hint (e.g. ASH-ler, Enter for none)', '', 'hint', setupHintProblem)) || undefined;
     }
   }
   const term: Term = { canonical: company, aliases, category: 'brand', source: 'user' };
@@ -229,9 +258,9 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
 
   // More terms, one at a time, on a terminal only.
   while (ctx.prompter && !gated && (await ctx.prompter.confirm('   add another term?', false))) {
-    const name = (await ctx.prompter.ask('   name (as you want it spelled; Enter to stop)', { default: '' })).trim();
+    const name = await askChecked(ctx, '   name (as you want it spelled; Enter to stop)', '', 'name', setupNameProblem);
     if (!name) break;
-    const hint = (await ctx.prompter.ask('   phonetic hint (Enter for none)', { default: '' })).trim();
+    const hint = await askChecked(ctx, '   phonetic hint (Enter for none)', '', 'hint', setupHintProblem);
     const categoryAnswer = (await ctx.prompter.ask('   category (brand|person|product|acronym|identifier|place|other)', { default: 'brand' }))
       .trim()
       .toLowerCase();

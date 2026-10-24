@@ -63449,6 +63449,13 @@ function setupNameProblem(value) {
   if (name.length > LIMITS.word) return `must be at most ${LIMITS.word} characters (it has ${name.length})`;
   return void 0;
 }
+function setupHintProblem(value) {
+  const hint = stripInvisible(value).trim();
+  if (hint === "") return void 0;
+  if (hasControlChars(hint)) return "must be one line, with no control characters";
+  if (hint.length > LIMITS.text) return `must be at most ${LIMITS.text} characters (it has ${hint.length})`;
+  return void 0;
+}
 function isSetupClient(value) {
   return SETUP_CLIENTS.includes(value);
 }
@@ -64058,6 +64065,18 @@ async function seedTerm(ctx, term) {
 function gitUserName(ctx) {
   return tryExec2(ctx.exec, "git", ["config", "--global", "user.name"]) ?? tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "config", "user.name"]) ?? (ctx.env.GIT_AUTHOR_NAME?.trim() || ctx.env.GIT_COMMITTER_NAME?.trim() || void 0);
 }
+async function askChecked(ctx, question, def, what, problem) {
+  const prompter = ctx.prompter;
+  let fallback = def;
+  for (; ; ) {
+    const answer = (await prompter.ask(question, { default: fallback })).trim();
+    if (answer === "") return "";
+    const wrong = problem(answer);
+    if (wrong === void 0) return answer;
+    ctx.say(`   the ${what} ${wrong}; type it again (Enter to skip)`);
+    fallback = "";
+  }
+}
 async function stepLexicon(ctx) {
   stepHeading(ctx, 1, "Global lexicon");
   const global = resolvePaths({ cwd: ctx.cwd }).global;
@@ -64120,9 +64139,13 @@ async function stepLexicon(ctx) {
   let company = ctx.opts.company ?? (ctx.prompter ? void 0 : suggestion);
   let phonetic = ctx.opts.phonetic;
   if (ctx.prompter && !ctx.opts.company && !gated) {
-    company = (await ctx.prompter.ask("   Your company or product name (as you want it spelled; Enter to skip)", {
-      default: suggestion ?? ""
-    })).trim();
+    company = await askChecked(
+      ctx,
+      "   Your company or product name (as you want it spelled; Enter to skip)",
+      suggestion ?? "",
+      "name",
+      setupNameProblem
+    );
   }
   if (!company) {
     if (!gated) ctx.say(dim('   no company term (add one later: lexicon add "Your Co" --category brand)'));
@@ -64132,7 +64155,7 @@ async function stepLexicon(ctx) {
   if (ctx.prompter) {
     if (aliases.length > 0) ctx.say(dim(`   STT will likely write: ${safe(aliases.join(", "))}`));
     if (!phonetic) {
-      phonetic = (await ctx.prompter.ask("   phonetic hint (e.g. ASH-ler, Enter for none)", { default: "" })).trim() || void 0;
+      phonetic = await askChecked(ctx, "   phonetic hint (e.g. ASH-ler, Enter for none)", "", "hint", setupHintProblem) || void 0;
     }
   }
   const term = { canonical: company, aliases, category: "brand", source: "user" };
@@ -64140,9 +64163,9 @@ async function stepLexicon(ctx) {
   await seedTerm(ctx, term);
   ctx.company = company;
   while (ctx.prompter && !gated && await ctx.prompter.confirm("   add another term?", false)) {
-    const name = (await ctx.prompter.ask("   name (as you want it spelled; Enter to stop)", { default: "" })).trim();
+    const name = await askChecked(ctx, "   name (as you want it spelled; Enter to stop)", "", "name", setupNameProblem);
     if (!name) break;
-    const hint = (await ctx.prompter.ask("   phonetic hint (Enter for none)", { default: "" })).trim();
+    const hint = await askChecked(ctx, "   phonetic hint (Enter for none)", "", "hint", setupHintProblem);
     const categoryAnswer = (await ctx.prompter.ask("   category (brand|person|product|acronym|identifier|place|other)", { default: "brand" })).trim().toLowerCase();
     const category = ["brand", "person", "product", "acronym", "identifier", "place", "other"].find(
       (c) => c === categoryAnswer
@@ -64642,6 +64665,10 @@ async function runSetup(opts, io, deps = {}) {
     if (problem !== void 0) {
       throw new Error(`${flag} ${problem}; nothing was written. Pass only the name, spelled as you want it written, or leave ${flag} out.`);
     }
+  }
+  const hintProblem = opts.phonetic === void 0 ? void 0 : setupHintProblem(opts.phonetic);
+  if (hintProblem !== void 0) {
+    throw new Error(`--phonetic ${hintProblem}; nothing was written. Pass only the pronunciation hint, e.g. ASH-ler, or leave --phonetic out.`);
   }
   if (opts.app !== void 0 && !isSetupApp(opts.app.trim().toLowerCase())) {
     throw new Error(`unknown app "${opts.app}" (expected one of: ${SETUP_APPS.join(", ")})`);
