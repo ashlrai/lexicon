@@ -17,6 +17,7 @@ import {
   getTrustPath,
   hashFile,
   isTrustContentChangedError,
+  isTrustRegistryUnreadableError,
   isTrusted,
   parsedContentHash,
   listTrusted,
@@ -179,6 +180,78 @@ describe('trustProject / isTrusted', () => {
 
   it('refuses to trust a file that cannot be read', async () => {
     await expect(trustProject(path.join(tmp, 'nope.yaml'), { globalPath })).rejects.toThrow(/cannot read/);
+  });
+});
+
+describe('a trust.json that does not parse', () => {
+  const other = '/elsewhere/repo/.lexicon.yaml';
+  const entry = { sha256: 'a'.repeat(64), trustedAt: '2026-01-01T00:00:00.000Z' };
+
+  async function writeRegistry(text: string): Promise<string> {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(getTrustPath({ globalPath }), text);
+    return text;
+  }
+
+  it('reads a registry with a UTF-8 BOM and keeps its entries when trusting another file', async () => {
+    const sha = await hashFile(projectPath);
+    await writeRegistry('\uFEFF' + JSON.stringify({ version: 1, trusted: { [other]: entry, [projectPath]: { sha256: sha, trustedAt: entry.trustedAt } } }));
+    expect(await isTrusted(file(projectPath), { globalPath })).toBe('trusted');
+    await fs.writeFile(projectPath, 'version: 1\nterms: []\n');
+    await trustProject(projectPath, { globalPath });
+    const after = await readTrustRegistry({ globalPath });
+    expect(after.trusted[other]).toEqual(entry);
+    expect(after.trusted[projectPath]?.sha256).toBe(await hashFile(projectPath));
+  });
+
+  it.each([
+    ['not JSON', '{"version": 1, "trusted": {"/elsewhere/repo/.lexicon.yaml": ', /is not valid JSON/],
+    ['an array', '[]', /is not a JSON object/],
+    ['without a trusted object', '{"version": 1, "trusted": []}', /has no "trusted" object/],
+  ])('refuses trust, refresh and untrust on a registry that is %s and leaves it byte for byte', async (_label, text, problem) => {
+    await writeRegistry(text);
+    expect(await isTrusted(file(projectPath), { globalPath })).toBe('untrusted');
+    const registryPath = getTrustPath({ globalPath });
+    for (const run of [
+      () => trustProject(projectPath, { globalPath }),
+      () => refreshTrust(projectPath, { globalPath }),
+      () => untrustProject(projectPath, { globalPath }),
+    ]) {
+      const err = await run().then(() => undefined, (e: unknown) => e);
+      expect(isTrustRegistryUnreadableError(err)).toBe(true);
+      expect((err as Error).message).toContain(registryPath);
+      expect((err as Error).message).toMatch(problem);
+      expect((err as Error).message).toMatch(/nothing was changed/);
+      expect((err as Error).message).toMatch(/move it aside/);
+      expect(await fs.readFile(registryPath, 'utf8')).toBe(text);
+    }
+    expect(await isTrusted(file(projectPath), { globalPath })).toBe('untrusted');
+  });
+
+  it('refuses when trust.json cannot be read at all (a directory)', async () => {
+    await fs.mkdir(getTrustPath({ globalPath }), { recursive: true });
+    await expect(trustProject(projectPath, { globalPath })).rejects.toThrow(/cannot be read \(EISDIR\)/);
+    expect(await isTrusted(file(projectPath), { globalPath })).toBe('untrusted');
+  });
+
+  it('treats an empty trust.json as an empty registry it may write', async () => {
+    await writeRegistry('');
+    await trustProject(projectPath, { globalPath });
+    expect(await isTrusted(file(projectPath), { globalPath })).toBe('trusted');
+  });
+
+  it('lexicon trust and untrust name the file, exit 1 and leave it alone', async () => {
+    process.env.LEXICON_PATH = globalPath;
+    const text = await writeRegistry(JSON.stringify({ version: 1, trusted: { [other]: entry } }).slice(0, -1));
+    const registryPath = getTrustPath({ globalPath });
+    const io = makeIO();
+    expect(await runTrust(projectPath, { yes: true }, io)).toBe(1);
+    expect(io.err).toContain(`the trust registry at ${registryPath} is not valid JSON`);
+    expect(io.err).toContain(`move it aside`);
+    const json = makeIO();
+    expect(await runUntrust(projectPath, { json: true }, json)).toBe(1);
+    expect(JSON.parse(json.out)).toMatchObject({ ok: false, action: 'untrust', path: projectPath });
+    expect(await fs.readFile(registryPath, 'utf8')).toBe(text);
   });
 });
 

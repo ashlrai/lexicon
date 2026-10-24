@@ -20313,27 +20313,38 @@ function emptyRegistry() {
 function isTrustEntry(value) {
   return typeof value === "object" && value !== null && typeof value.sha256 === "string" && typeof value.trustedAt === "string";
 }
-async function readTrustRegistry(opts = {}) {
+async function loadTrustRegistry(opts) {
   let text;
   try {
     text = await import_node_fs4.promises.readFile(getTrustPath(opts), "utf8");
-  } catch {
-    return emptyRegistry();
+  } catch (err) {
+    if (err.code === "ENOENT") return { registry: emptyRegistry() };
+    const code = err.code;
+    return { registry: emptyRegistry(), problem: `cannot be read${code ? ` (${code})` : ""}` };
   }
+  text = text.replace(/^\uFEFF/, "");
+  if (text.trim() === "") return { registry: emptyRegistry() };
   let raw;
   try {
     raw = JSON.parse(text);
-  } catch {
-    return emptyRegistry();
+  } catch (err) {
+    return { registry: emptyRegistry(), problem: `is not valid JSON (${err instanceof Error ? err.message : String(err)})` };
   }
-  if (typeof raw !== "object" || raw === null) return emptyRegistry();
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { registry: emptyRegistry(), problem: "is not a JSON object" };
+  }
   const trustedRaw = raw.trusted;
-  if (typeof trustedRaw !== "object" || trustedRaw === null) return emptyRegistry();
+  if (typeof trustedRaw !== "object" || trustedRaw === null || Array.isArray(trustedRaw)) {
+    return { registry: emptyRegistry(), problem: 'has no "trusted" object' };
+  }
   const trusted = {};
   for (const [key, value] of Object.entries(trustedRaw)) {
     if (isTrustEntry(value)) trusted[key] = { sha256: value.sha256, trustedAt: value.trustedAt };
   }
-  return { version: 1, trusted };
+  return { registry: { version: 1, trusted } };
+}
+async function readTrustRegistry(opts = {}) {
+  return (await loadTrustRegistry(opts)).registry;
 }
 async function isInsideGlobalConfig(filePath, opts) {
   const globalPath = await canonicalPath(resolvePaths(opts).global);
@@ -20445,7 +20456,11 @@ async function readLexiconText(filePath) {
     const { bytes, mode } = await readBoundedRegularFile(filePath, MAX_LEXICON_BYTES);
     return { text: bytes.toString("utf8"), mode, bytes };
   } catch (err) {
-    if (isEnoent(err)) return void 0;
+    if (isEnoent(err)) {
+      const inTheWay = await fileInTheWay(import_node_path4.default.dirname(filePath));
+      if (inTheWay === void 0) return void 0;
+      throw Object.assign(new Error(`Cannot read lexicon at ${filePath}: ${inTheWay} is not a directory, so no lexicon file can be there`, { cause: err }), { code: "ENOTDIR" });
+    }
     if (isBoundedReadError(err)) {
       throw new Error(
         err.reason === "not-regular" ? `Refusing to read lexicon at ${filePath}: not a regular file` : `Refusing to read lexicon at ${filePath}: ${err.size ?? "more than"} bytes exceeds the ${MAX_LEXICON_BYTES} byte limit`
@@ -20459,6 +20474,15 @@ async function unreadableLexiconError(filePath, err) {
   if (typeof code !== "string") return err instanceof Error ? err : new Error(errorMessage(err));
   const detail = code === "ENOTDIR" ? `${await blockingFile(import_node_path4.default.dirname(filePath))} is not a directory, so no lexicon file can be there` : code === "EACCES" || code === "EPERM" ? `permission denied (${code})` : errorMessage(err);
   return Object.assign(new Error(`Cannot read lexicon at ${filePath}: ${detail}`, { cause: err }), { code });
+}
+async function fileInTheWay(dir) {
+  for (let p = dir; ; p = import_node_path4.default.dirname(p)) {
+    try {
+      return (await import_node_fs5.promises.stat(p)).isDirectory() ? void 0 : p;
+    } catch {
+    }
+    if (import_node_path4.default.dirname(p) === p) return void 0;
+  }
 }
 function parseLexiconText(text, filePath, scope) {
   let raw;

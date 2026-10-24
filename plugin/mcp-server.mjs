@@ -42115,27 +42115,43 @@ function emptyRegistry() {
 function isTrustEntry(value) {
   return typeof value === "object" && value !== null && typeof value.sha256 === "string" && typeof value.trustedAt === "string";
 }
-async function readTrustRegistry(opts = {}) {
+async function loadTrustRegistry(opts) {
   let text;
   try {
     text = await import_node_fs4.promises.readFile(getTrustPath(opts), "utf8");
-  } catch {
-    return emptyRegistry();
+  } catch (err) {
+    if (err.code === "ENOENT") return { registry: emptyRegistry() };
+    const code = err.code;
+    return { registry: emptyRegistry(), problem: `cannot be read${code ? ` (${code})` : ""}` };
   }
+  text = text.replace(/^\uFEFF/, "");
+  if (text.trim() === "") return { registry: emptyRegistry() };
   let raw;
   try {
     raw = JSON.parse(text);
-  } catch {
-    return emptyRegistry();
+  } catch (err) {
+    return { registry: emptyRegistry(), problem: `is not valid JSON (${err instanceof Error ? err.message : String(err)})` };
   }
-  if (typeof raw !== "object" || raw === null) return emptyRegistry();
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { registry: emptyRegistry(), problem: "is not a JSON object" };
+  }
   const trustedRaw = raw.trusted;
-  if (typeof trustedRaw !== "object" || trustedRaw === null) return emptyRegistry();
+  if (typeof trustedRaw !== "object" || trustedRaw === null || Array.isArray(trustedRaw)) {
+    return { registry: emptyRegistry(), problem: 'has no "trusted" object' };
+  }
   const trusted = {};
   for (const [key, value] of Object.entries(trustedRaw)) {
     if (isTrustEntry(value)) trusted[key] = { sha256: value.sha256, trustedAt: value.trustedAt };
   }
-  return { version: 1, trusted };
+  return { registry: { version: 1, trusted } };
+}
+async function readTrustRegistry(opts = {}) {
+  return (await loadTrustRegistry(opts)).registry;
+}
+async function readTrustRegistryForUpdate(opts) {
+  const { registry: registry2, problem } = await loadTrustRegistry(opts);
+  if (problem !== void 0) throw new TrustRegistryUnreadableError(getTrustPath(opts), problem);
+  return registry2;
 }
 function withTrustLock(fn, opts = {}) {
   return withFileLock(getTrustPath(opts), fn);
@@ -42179,7 +42195,7 @@ async function trustProject(projectPath, opts = {}) {
   if (sha256 === void 0) throw new Error(`cannot read the project lexicon at ${projectPath}`);
   if (opts.expectedSha256 !== void 0 && sha256 !== opts.expectedSha256) throw new TrustContentChangedError(projectPath);
   return withTrustLock(async () => {
-    const registry2 = await readTrustRegistry(opts);
+    const registry2 = await readTrustRegistryForUpdate(opts);
     const existing = registry2.trusted[key];
     if (existing?.sha256 === sha256) return { ...existing, alreadyPinned: true };
     const entry = { sha256, trustedAt: (/* @__PURE__ */ new Date()).toISOString() };
@@ -42191,7 +42207,7 @@ async function trustProject(projectPath, opts = {}) {
 async function refreshTrust(projectPath, opts = {}) {
   const key = await canonicalPath(projectPath);
   return withTrustLock(async () => {
-    const registry2 = await readTrustRegistry(opts);
+    const registry2 = await readTrustRegistryForUpdate(opts);
     const existing = registry2.trusted[key];
     if (!existing) return false;
     const sha256 = await hashFile(key);
@@ -42220,7 +42236,7 @@ async function restoreTrustEntry(projectPath, entry, opts = {}) {
 async function untrustProject(projectPath, opts = {}) {
   const key = await canonicalPath(projectPath);
   return withTrustLock(async () => {
-    const registry2 = await readTrustRegistry(opts);
+    const registry2 = await readTrustRegistryForUpdate(opts);
     if (!(key in registry2.trusted)) return false;
     delete registry2.trusted[key];
     await writeTrustRegistry(registry2, opts);
@@ -42259,7 +42275,7 @@ function trustSummaryForModel(file2) {
     fullPreview: TRUST_FULL_PREVIEW_NOTE
   };
 }
-var import_node_fs4, import_node_path2, TRUST_FILE_NAME, TRUST_ALL_ENV, TrustContentChangedError, TRUST_PREVIEW_ROWS, TRUST_MODEL_SAMPLE_ROWS, TRUST_MODEL_SAMPLE_MAX_CHARS, TRUST_FULL_PREVIEW_NOTE;
+var import_node_fs4, import_node_path2, TRUST_FILE_NAME, TRUST_ALL_ENV, TrustRegistryUnreadableError, TrustContentChangedError, TRUST_PREVIEW_ROWS, TRUST_MODEL_SAMPLE_ROWS, TRUST_MODEL_SAMPLE_MAX_CHARS, TRUST_FULL_PREVIEW_NOTE;
 var init_trust = __esm({
   "src/core/trust.ts"() {
     import_node_fs4 = __toESM(require_node_fs());
@@ -42273,6 +42289,19 @@ var init_trust = __esm({
     init_schema();
     TRUST_FILE_NAME = "trust.json";
     TRUST_ALL_ENV = "LEXICON_TRUST_ALL";
+    TrustRegistryUnreadableError = class extends Error {
+      path;
+      /** Why it could not be used: `is not valid JSON (...)`, `has no "trusted" object`, `cannot be read (EACCES)`. */
+      problem;
+      constructor(registryPath, problem) {
+        super(
+          `the trust registry at ${registryPath} ${problem}, so it was left as it is and nothing was changed. Until it is fixed every project lexicon reads as untrusted. Fix the JSON in that file, or move it aside (then run \`lexicon trust\` again in each project), and retry.`
+        );
+        this.name = "TrustRegistryUnreadableError";
+        this.path = registryPath;
+        this.problem = problem;
+      }
+    };
     TrustContentChangedError = class extends Error {
       path;
       constructor(projectPath) {
@@ -42376,7 +42405,11 @@ async function readLexiconText(filePath) {
     const { bytes, mode } = await readBoundedRegularFile(filePath, MAX_LEXICON_BYTES);
     return { text: bytes.toString("utf8"), mode, bytes };
   } catch (err) {
-    if (isEnoent(err)) return void 0;
+    if (isEnoent(err)) {
+      const inTheWay = await fileInTheWay(import_node_path4.default.dirname(filePath));
+      if (inTheWay === void 0) return void 0;
+      throw Object.assign(new Error(`Cannot read lexicon at ${filePath}: ${inTheWay} is not a directory, so no lexicon file can be there`, { cause: err }), { code: "ENOTDIR" });
+    }
     if (isBoundedReadError(err)) {
       throw new Error(
         err.reason === "not-regular" ? `Refusing to read lexicon at ${filePath}: not a regular file` : `Refusing to read lexicon at ${filePath}: ${err.size ?? "more than"} bytes exceeds the ${MAX_LEXICON_BYTES} byte limit`
@@ -42390,6 +42423,15 @@ async function unreadableLexiconError(filePath, err) {
   if (typeof code !== "string") return err instanceof Error ? err : new Error(errorMessage(err));
   const detail = code === "ENOTDIR" ? `${await blockingFile(import_node_path4.default.dirname(filePath))} is not a directory, so no lexicon file can be there` : code === "EACCES" || code === "EPERM" ? `permission denied (${code})` : errorMessage(err);
   return Object.assign(new Error(`Cannot read lexicon at ${filePath}: ${detail}`, { cause: err }), { code });
+}
+async function fileInTheWay(dir) {
+  for (let p = dir; ; p = import_node_path4.default.dirname(p)) {
+    try {
+      return (await import_node_fs5.promises.stat(p)).isDirectory() ? void 0 : p;
+    } catch {
+    }
+    if (import_node_path4.default.dirname(p) === p) return void 0;
+  }
 }
 function parseLexiconText(text, filePath, scope) {
   let raw;
@@ -63941,6 +63983,27 @@ function parseClaudeMcpGet(out) {
   if (args !== void 0) result.args = args;
   return result;
 }
+function claudeUserConfigPath(env = process.env, home) {
+  const override = env.CLAUDE_CONFIG_DIR?.trim();
+  return override ? import_node_path17.default.join(override, ".claude.json") : import_node_path17.default.join(home === void 0 ? homeDir() : usableHome(home), ".claude.json");
+}
+function claudeRegistrationFile(scope, files) {
+  return scope === "user" ? files.userConfig : import_node_path17.default.join(files.cwd, ".mcp.json");
+}
+async function readClaudeRegistrationAt(scope, files) {
+  const read = await readJsonFile(claudeRegistrationFile(scope, files));
+  if (!read.exists) return null;
+  if (read.error !== void 0) return void 0;
+  const servers = isRecord(read.value) ? read.value.mcpServers : void 0;
+  const entry = isRecord(servers) ? servers.lexicon : void 0;
+  if (entry === void 0) return null;
+  const result = { scope };
+  if (!isRecord(entry)) return result;
+  if (typeof entry.command === "string" && entry.command !== "") result.command = entry.command;
+  if (Array.isArray(entry.args) && entry.args.every((a) => typeof a === "string")) result.args = entry.args.join(" ");
+  else if (entry.args === void 0) result.args = "";
+  return result;
+}
 function mergeHookIntoSettings(settings, command, timeout = 5, events = ["UserPromptSubmit"]) {
   const base = isRecord(settings) ? structuredClone(settings) : {};
   if (base.hooks !== void 0 && !isRecord(base.hooks)) {
@@ -64023,9 +64086,9 @@ function launchCommandLine(launch, platform = process.platform) {
   };
   return [launch.command, ...launch.args].map(quote).join(" ");
 }
-function defaultExec(file2, args) {
+function defaultExec(file2, args, opts = {}) {
   try {
-    return (0, import_node_child_process3.execFileSync)(file2, [...args], { encoding: "utf8", timeout: 15e3, stdio: ["ignore", "pipe", "pipe"] });
+    return (0, import_node_child_process3.execFileSync)(file2, [...args], { encoding: "utf8", timeout: 15e3, stdio: ["ignore", "pipe", "pipe"], ...opts.cwd !== void 0 ? { cwd: opts.cwd } : {} });
   } catch (err) {
     const text = (stream) => typeof stream === "string" ? stream.trim() : "";
     const detail = text(err.stderr) || text(err.stdout);
@@ -64742,9 +64805,87 @@ function upsertTomlKeys(text, header, values) {
   const next = lines.join("\n");
   return { next, changed: next !== text };
 }
+function readTomlKey(text, from) {
+  const parts = [];
+  let i = from;
+  for (; ; ) {
+    while (text[i] === " " || text[i] === "	") i += 1;
+    const c = text[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (j < text.length && text[j] !== '"') j += text[j] === "\\" ? 2 : 1;
+      if (j >= text.length) return void 0;
+      try {
+        parts.push(JSON.parse(text.slice(i, j + 1)));
+      } catch {
+        return void 0;
+      }
+      i = j + 1;
+    } else if (c === "'") {
+      const j = text.indexOf("'", i + 1);
+      if (j < 0) return void 0;
+      parts.push(text.slice(i + 1, j));
+      i = j + 1;
+    } else {
+      const m = /^[A-Za-z0-9_-]+/.exec(text.slice(i));
+      if (!m) return void 0;
+      parts.push(m[0]);
+      i += m[0].length;
+    }
+    while (text[i] === " " || text[i] === "	") i += 1;
+    if (text[i] !== ".") return { parts, end: i };
+    i += 1;
+  }
+}
+function tomlHeaderKey(line2) {
+  const m = /^\s*(\[\[?)/.exec(line2);
+  if (!m) return void 0;
+  const array2 = m[1] === "[[";
+  const key = readTomlKey(line2, (m[0] ?? "").length);
+  if (!key) return void 0;
+  const close = array2 ? "]]" : "]";
+  if (!line2.startsWith(close, key.end)) return void 0;
+  return /^\s*(#.*)?$/.test(line2.slice(key.end + close.length)) ? { parts: key.parts, array: array2 } : void 0;
+}
+function sameKey(a, b) {
+  return a.length === b.length && a.every((p, i) => p === b[i]);
+}
 function tomlHeaderRe(header) {
-  const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`^\\s*\\[\\s*${escaped}\\s*\\]\\s*(#.*)?$`);
+  const want = header.split(".");
+  return {
+    test(line2) {
+      const key = tomlHeaderKey(line2);
+      return key !== void 0 && !key.array && sameKey(key.parts, want);
+    }
+  };
+}
+function codexServerElsewhere(text) {
+  const own2 = CODEX_TABLE.split(".");
+  const lines = text.split("\n");
+  let table = [];
+  for (const [n, l] of lines.entries()) {
+    const header = tomlHeaderKey(l);
+    if (header) {
+      table = header.parts;
+      if (header.array && sameKey(header.parts.slice(0, 2), own2)) {
+        return `defines the lexicon server as an array of tables ([[${header.parts.join(".")}]]) on line ${n + 1}`;
+      }
+      continue;
+    }
+    if (isBlankOrComment(l)) continue;
+    const key = readTomlKey(l, 0);
+    if (!key || l[key.end] !== "=") continue;
+    if (sameKey(table.slice(0, 2), own2)) continue;
+    const full = [...table, ...key.parts];
+    if (sameKey(full, own2.slice(0, 1))) {
+      return `defines [${own2[0]}] as an inline table on line ${n + 1}, and a [${CODEX_TABLE}] table cannot be added to one`;
+    }
+    if (!sameKey(full.slice(0, 2), own2)) continue;
+    const where = table.length === 0 ? "in the root table" : `under [${table.join(".")}]`;
+    const inline = full.length === 2 && /^\s*\{/.test(l.slice(key.end + 1));
+    return `defines the lexicon server as ${inline ? "an inline table" : "dotted keys"} ${where} on line ${n + 1}`;
+  }
+  return void 0;
 }
 function isBlankOrComment(line2) {
   const trimmed = line2.trim();
@@ -64814,6 +64955,13 @@ function mergeChanged(first, second) {
   return { next: second.next, changed: first.changed || second.changed };
 }
 function planToml(text, target) {
+  const elsewhere = codexServerElsewhere(text);
+  if (elsewhere) {
+    throw new CliRefusal(
+      `${target.file} already ${elsewhere}; nothing was changed`,
+      `replace that definition with the [${CODEX_TABLE}] table shown above (or remove it), then run this again`
+    );
+  }
   const { env, ...launch } = target.entry;
   const envTable = `${CODEX_TABLE}.env`;
   const subTable = env !== void 0 && text.split("\n").some((l) => tomlHeaderRe(envTable).test(l));
@@ -64965,6 +65113,7 @@ async function installText(client, opts, io, deps) {
       // uninstall reads it: a CLAUDE_CONFIG_DIR only the process had sent the
       // hooks to a file the given environment (and uninstall) never names.
       ...opts.home && !project ? { settingsPath: import_node_path19.default.join(claudeConfigDir(env, home), "settings.json") } : {},
+      ...opts.home ? { claudeUserConfig: claudeUserConfigPath(env, home) } : {},
       ...deps.onWritten ? { onWritten: deps.onWritten } : {},
       ...deps.exec ? { exec: deps.exec } : {},
       env
@@ -65033,7 +65182,8 @@ async function runInstallClaude(opts, io, deps = {}) {
     }
   }
   const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
-  const exec = deps.exec ?? defaultExec;
+  const claudeCwd = import_node_path19.default.resolve(opts.cwd ?? process.cwd());
+  const exec = deps.exec ?? ((file2, args) => defaultExec(file2, args, { cwd: claudeCwd }));
   let failed = false;
   const serverLaunch = launchFor(serverPath, "mcp");
   const serverEnv = lexiconServerEnv(deps.env ?? process.env, import_node_path19.default.resolve(opts.cwd ?? process.cwd()));
@@ -65054,7 +65204,8 @@ async function runInstallClaude(opts, io, deps = {}) {
     } catch (err) {
       const message = errorMessage(err);
       if (/already exists/i.test(message)) {
-        if (!refreshClaudeRegistration(io, exec, scope, mcpArgs, serverLaunch)) failed = true;
+        const files = { userConfig: deps.claudeUserConfig ?? claudeUserConfigPath(deps.env ?? process.env), cwd: import_node_path19.default.resolve(opts.cwd ?? process.cwd()) };
+        if (!await refreshClaudeRegistration(io, exec, scope, mcpArgs, serverLaunch, files)) failed = true;
         line(io, dim(`   undo: claude mcp remove --scope ${scope} lexicon`));
       } else {
         failed = true;
@@ -65107,7 +65258,7 @@ async function runInstallClaude(opts, io, deps = {}) {
   }
   return failed ? 1 : 0;
 }
-function refreshClaudeRegistration(io, exec, scope, mcpArgs, launch) {
+async function refreshClaudeRegistration(io, exec, scope, mcpArgs, launch, files) {
   let got;
   try {
     got = parseClaudeMcpGet(exec("claude", ["mcp", "get", "lexicon"]));
@@ -65115,6 +65266,21 @@ function refreshClaudeRegistration(io, exec, scope, mcpArgs, launch) {
     line(io, dim(`   already registered with claude, nothing changed (could not read it back with claude mcp get to compare: ${safeLines(errorMessage(err))})`));
     return true;
   }
+  const shadow = got.scope !== void 0 && got.scope !== scope ? got.scope : void 0;
+  if (shadow !== void 0) {
+    const own2 = await readClaudeRegistrationAt(scope, files);
+    if (!own2) {
+      const why = own2 === void 0 ? `${safePath(claudeRegistrationFile(scope, files))} could not be read to compare` : `claude mcp get shows the ${shadow}-scope one`;
+      line(io, dim(`   already registered with claude at ${scope} scope, nothing changed (${why})`));
+      return true;
+    }
+    got = own2;
+  }
+  const shadowNote = () => {
+    if (shadow !== void 0) {
+      line(io, dim(`   note: a ${shadow}-scope lexicon registration takes precedence over the ${scope}-scope one here; to use this one: claude mcp remove --scope ${shadow} lexicon`));
+    }
+  };
   const wanted = launch.args.join(" ");
   if (got.command === void 0 || got.args === void 0) {
     line(io, dim("   already registered with claude, nothing changed (claude mcp get did not show its command to compare)"));
@@ -65122,13 +65288,10 @@ function refreshClaudeRegistration(io, exec, scope, mcpArgs, launch) {
   }
   if (got.command === launch.command && got.args === wanted) {
     line(io, dim("   already registered with claude, nothing changed"));
+    shadowNote();
     return true;
   }
   const old = safePath(`${got.command} ${got.args}`.trim());
-  if (got.scope !== void 0 && got.scope !== scope) {
-    line(io, dim(`   already registered with claude at ${got.scope} scope (${old}), nothing changed at ${scope} scope`));
-    return true;
-  }
   if (!isInstalledLexiconServer(got.command, got.args)) {
     line(io, yellow(`   a "lexicon" server that lexicon install did not write is registered with claude (${old}); left as it is`));
     line(io, dim(`   to replace it: claude mcp remove --scope ${scope} lexicon, then run this again`));
@@ -65148,6 +65311,7 @@ function refreshClaudeRegistration(io, exec, scope, mcpArgs, launch) {
     return false;
   }
   line(io, green(`   repointed lexicon: ${old} -> ${safePath(`${launch.command} ${wanted}`)}`));
+  shadowNote();
   return true;
 }
 function quoteArg(s, platform = process.platform) {
@@ -65359,7 +65523,7 @@ function programPathFromUnit(unit) {
   const line2 = unit.split("\n").find((l) => l.startsWith("ExecStart="));
   if (!line2) return void 0;
   const words = [...line2.slice("ExecStart=".length).matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1].replace(/\\(.)/g, "$1").replace(/%%/g, "%"));
-  return words[1];
+  return words[1]?.replace(/\$\$/g, "$");
 }
 function xmlUnescape2(s) {
   return s.replace(/&quot;/g, '"').replace(/&gt;/g, ">").replace(/&lt;/g, "<").replace(/&amp;/g, "&");
@@ -66375,6 +66539,12 @@ var defaultServeExec = (cmd, args) => new Promise((resolve5) => {
 function xmlEscape2(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
+function stableNodePath(execPath, exists = import_node_fs26.existsSync) {
+  const m = /^(.*)\/Cellar\/(node(?:@\d+)?)\/[^/]+\/bin\/node$/.exec(execPath);
+  if (!m) return execPath;
+  const stable = `${m[1]}/opt/${m[2]}/bin/node`;
+  return exists(stable) ? stable : execPath;
+}
 var SERVE_PASSTHROUGH_ENV = ["LEXICON_PATH", "XDG_CONFIG_HOME"];
 var SERVE_ENV_FILE_NAME = "serve.env";
 function nodeSupportsEnvFile(version2) {
@@ -66498,6 +66668,9 @@ function taskUserId(env) {
 function unitQuote(s) {
   return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%")}"`;
 }
+function unitArg(s) {
+  return unitQuote(s).replace(/\$/g, "$$$$");
+}
 function systemdUnit(nodePath, cliPath, env) {
   const envLines = Object.entries(env ?? {}).map(([name, value]) => `Environment=${unitQuote(`${name}=${value}`)}`);
   return [
@@ -66508,7 +66681,7 @@ function systemdUnit(nodePath, cliPath, env) {
     "[Service]",
     "Type=simple",
     ...envLines,
-    `ExecStart=${unitQuote(nodePath)} ${unitQuote(cliPath)} serve`,
+    `ExecStart=${unitQuote(nodePath)} ${unitArg(cliPath)} serve`,
     "Restart=on-failure",
     "RestartSec=2",
     "",
@@ -66516,6 +66689,10 @@ function systemdUnit(nodePath, cliPath, env) {
     "WantedBy=default.target",
     ""
   ].join("\n");
+}
+async function writeServiceFile(file2, text) {
+  await import_node_fs26.promises.writeFile(file2, text, { encoding: "utf8", mode: 420 });
+  await import_node_fs26.promises.chmod(file2, 420);
 }
 async function runAndReport(exec, io, cmd, args) {
   line(io, `ran: ${[cmd, ...args].map((a) => safe(a)).join(" ")}`);
@@ -66557,7 +66734,7 @@ async function runServeInstall(opts, io, deps = {}) {
   const home = deps.home ?? homeDir();
   const env = deps.env ?? process.env;
   const exec = deps.exec ?? defaultServeExec;
-  const nodePath = deps.nodePath ?? process.execPath;
+  const nodePath = deps.nodePath ?? stableNodePath(process.execPath);
   let cliPath;
   try {
     cliPath = resolveCliEntry({ env, ...deps.cliPath !== void 0 ? { cliPath: deps.cliPath } : {} });
@@ -66579,7 +66756,7 @@ async function runServeInstall(opts, io, deps = {}) {
     const logPath = launchAgentLogPath(home);
     await import_node_fs26.promises.mkdir(import_node_path25.default.dirname(plistPath), { recursive: true });
     await import_node_fs26.promises.mkdir(import_node_path25.default.dirname(logPath), { recursive: true });
-    await import_node_fs26.promises.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv), "utf8");
+    await writeServiceFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv));
     line(io, `wrote ${safe(plistPath)}`);
     line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} serve`);
     io.stdout(envReport(serviceEnv));
@@ -66603,14 +66780,18 @@ async function runServeInstall(opts, io, deps = {}) {
   if (platform === "linux") {
     const unitPath = systemdUnitPath(home, env);
     await import_node_fs26.promises.mkdir(import_node_path25.default.dirname(unitPath), { recursive: true });
-    await import_node_fs26.promises.writeFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv), "utf8");
+    await writeServiceFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv));
     line(io, `wrote ${safe(unitPath)}`);
     line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} serve`);
     io.stdout(envReport(serviceEnv));
     await runAndReport(exec, io, "systemctl", ["--user", "daemon-reload"]);
-    const enable = await runAndReport(exec, io, "systemctl", ["--user", "enable", "--now", SYSTEMD_UNIT_NAME]);
-    if (enable.code !== 0) {
-      io.stderr("lexicon: could not enable the unit; the file is in place, run `systemctl --user enable --now lexicon-serve.service` manually\n");
+    const enable = await runAndReport(exec, io, "systemctl", ["--user", "enable", SYSTEMD_UNIT_NAME]);
+    const started = enable.code === 0 ? await runAndReport(exec, io, "systemctl", ["--user", "restart", SYSTEMD_UNIT_NAME]) : enable;
+    if (started.code !== 0) {
+      io.stderr(
+        `lexicon: could not ${enable.code !== 0 ? "enable" : "start"} the unit; the file is in place, run \`systemctl --user enable ${SYSTEMD_UNIT_NAME} && systemctl --user restart ${SYSTEMD_UNIT_NAME}\` manually
+`
+      );
       return 1;
     }
     line(io, `installed ${SYSTEMD_UNIT_NAME}; check with: lexicon serve --status`);
@@ -67500,6 +67681,7 @@ var import_node_path28 = __toESM(require_node_path());
 init_errors3();
 init_json();
 init_xdg();
+init_atomic();
 function isInstalledServerEntry(entry) {
   if (!isRecord(entry) || typeof entry.command !== "string" || !Array.isArray(entry.args)) return false;
   if (!entry.args.every((a) => typeof a === "string")) return false;
@@ -67635,11 +67817,11 @@ async function uninstallToml(ctx, target) {
   }
   const { next, outcome } = removeServerFromToml(text);
   if (outcome === "removed" && !ctx.dryRun) {
-    await explainWrite(target.file, () => import_node_fs29.promises.writeFile(target.file, next, "utf8"));
+    await explainWrite(target.file, () => writeFileAtomic(target.file, next));
   }
   report(ctx, { file: target.file, entry, outcome });
 }
-async function uninstallClaude(ctx, scope, settingsPath, exec) {
+async function uninstallClaude(ctx, scope, settingsPath, exec, files) {
   const { io } = ctx;
   let ok = true;
   line(io, bold("1. Remove the MCP server registration"));
@@ -67658,12 +67840,27 @@ async function uninstallClaude(ctx, scope, settingsPath, exec) {
       line(io, dim(`   to remove it by hand: claude mcp remove --scope ${scope} lexicon`));
     }
   }
-  if (out !== void 0) {
-    const got = parseClaudeMcpGet(out);
+  let got = out === void 0 ? void 0 : parseClaudeMcpGet(out);
+  let shadow;
+  if (got?.scope !== void 0 && got.scope !== scope) {
+    shadow = got.scope;
+    const own2 = await readClaudeRegistrationAt(scope, files);
+    if (own2 === void 0) {
+      ok = false;
+      got = void 0;
+      line(io, yellow(`   could not read ${safePath(claudeRegistrationFile(scope, files))} to check the ${scope}-scope registration (claude mcp get shows the ${shadow}-scope one)`));
+      line(io, dim(`   to remove it by hand: claude mcp remove --scope ${scope} lexicon`));
+    } else if (own2 === null) {
+      got = void 0;
+      const how = shadow === "local" ? `remove it with claude mcp remove --scope local lexicon` : `pass --scope ${shadow} for it, or claude mcp remove --scope ${shadow} lexicon`;
+      report(ctx, { file: where, entry, outcome: "absent" }, `the lexicon server is registered at ${shadow} scope, not ${scope} (${how})`);
+    } else {
+      got = own2;
+    }
+  }
+  if (got !== void 0) {
     const launch = `${got.command ?? ""} ${got.args ?? ""}`.trim();
-    if (got.scope !== void 0 && got.scope !== scope) {
-      report(ctx, { file: where, entry, outcome: "absent" }, `the lexicon server is registered at ${got.scope} scope, not ${scope} (pass --scope ${got.scope === "local" ? "user" : got.scope} for it, or claude mcp remove --scope ${got.scope} lexicon)`);
-    } else if (got.command === void 0 || got.args === void 0 || !isInstalledLexiconServer(got.command, got.args)) {
+    if (got.command === void 0 || got.args === void 0 || !isInstalledLexiconServer(got.command, got.args)) {
       report(ctx, { file: where, entry, outcome: "kept" }, launch || "claude mcp get did not show its command");
     } else {
       let removedIt = true;
@@ -67677,6 +67874,10 @@ async function uninstallClaude(ctx, scope, settingsPath, exec) {
         }
       }
       if (removedIt) report(ctx, { file: where, entry, outcome: "removed" });
+    }
+    if (shadow !== void 0) {
+      const how = shadow === "project" ? "lexicon uninstall claude --scope project" : `claude mcp remove --scope ${shadow} lexicon`;
+      line(io, dim(`   note: a ${shadow}-scope lexicon registration is there too and stays; to remove it: ${how}`));
     }
   }
   line(io);
@@ -67751,7 +67952,11 @@ async function uninstallText(client, opts, io, deps, changes) {
   let ok = true;
   if (name === "claude") {
     const settingsPath = deps.settingsPath ?? (opts.home && !project ? import_node_path28.default.join(claudeConfigDir(env, home), "settings.json") : claudeSettingsPathFor(scope, cwd, env));
-    ok = await uninstallClaude(ctx, scope, settingsPath, deps.exec ?? defaultExec);
+    const exec = deps.exec ?? ((file2, args) => defaultExec(file2, args, { cwd }));
+    ok = await uninstallClaude(ctx, scope, settingsPath, exec, {
+      userConfig: deps.claudeUserConfig ?? claudeUserConfigPath(env, home),
+      cwd
+    });
     if (!project) {
       const settings = await readJsonFile(settingsPath);
       const installed = await readJsonFile(import_node_path28.default.join(import_node_path28.default.dirname(settingsPath), "plugins", "installed_plugins.json"));

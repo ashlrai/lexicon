@@ -197,7 +197,14 @@ async function readLexiconText(filePath: string): Promise<{ text: string; mode: 
     const { bytes, mode } = await readBoundedRegularFile(filePath, MAX_LEXICON_BYTES);
     return { text: bytes.toString('utf8'), mode, bytes };
   } catch (err) {
-    if (isEnoent(err)) return undefined;
+    if (isEnoent(err)) {
+      // Windows answers a path under a regular file (`notes.txt\lexicon.yaml`)
+      // with ENOENT, not ENOTDIR, so the lexicon read as missing and a write
+      // later failed. Name the file in the way there as well.
+      const inTheWay = await fileInTheWay(path.dirname(filePath));
+      if (inTheWay === undefined) return undefined;
+      throw Object.assign(new Error(`Cannot read lexicon at ${filePath}: ${inTheWay} is not a directory, so no lexicon file can be there`, { cause: err }), { code: 'ENOTDIR' });
+    }
     if (isBoundedReadError(err)) {
       throw new Error(
         err.reason === 'not-regular'
@@ -226,6 +233,22 @@ async function unreadableLexiconError(filePath: string, err: unknown): Promise<E
         ? `permission denied (${code})`
         : errorMessage(err);
   return Object.assign(new Error(`Cannot read lexicon at ${filePath}: ${detail}`, { cause: err }), { code });
+}
+
+/**
+ * The nearest existing ancestor of `dir` (itself included) when it is not a
+ * directory, else undefined: a missing lexicon under a missing directory is
+ * just missing.
+ */
+async function fileInTheWay(dir: string): Promise<string | undefined> {
+  for (let p = dir; ; p = path.dirname(p)) {
+    try {
+      return (await fs.stat(p)).isDirectory() ? undefined : p;
+    } catch {
+      // missing (or unreadable): look further up
+    }
+    if (path.dirname(p) === p) return undefined;
+  }
 }
 
 function parseLexiconText(text: string, filePath: string, scope: TermScope): LexiconFile {

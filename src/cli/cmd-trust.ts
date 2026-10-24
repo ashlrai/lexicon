@@ -29,6 +29,7 @@ import {
   trustProject,
   untrustProject,
   isTrustContentChangedError,
+  isTrustRegistryUnreadableError,
   parsedContentHash,
 } from '../core/index.js';
 import type { LexiconFile, Term } from '../core/index.js';
@@ -112,6 +113,19 @@ function fail(
   return 1;
 }
 
+/** A `TrustRegistryUnreadableError`: the registry file is named whole and was not touched. */
+function registryFail(io: IO, json: boolean | undefined, action: 'trust' | 'untrust', filePath: string, err: unknown): number {
+  const { path: registryPath, problem } = err as { path: string; problem: string };
+  return fail(
+    io,
+    json,
+    action,
+    filePath,
+    `the trust registry at ${registryPath} ${problem}; it was left as it is and nothing was ${action === 'trust' ? 'trusted' : 'untrusted'}`,
+    `fix the JSON in ${registryPath}, or move it aside (every project then reads as untrusted until you run \`lexicon trust\` in it again), and retry`,
+  );
+}
+
 /**
  * Ask the person at the terminal whether to trust the file just previewed.
  * Default no; a closed input (EOF, ctrl-D) is a no. Under --json the question
@@ -183,6 +197,7 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
   try {
     entry = await trustProject(filePath, { cwd, ...(shownSha !== undefined ? { expectedSha256: shownSha } : {}) });
   } catch (err) {
+    if (isTrustRegistryUnreadableError(err)) return registryFail(io, opts.json, 'trust', filePath, err);
     if (!isTrustContentChangedError(err)) throw err;
     return fail(io, opts.json, 'trust', filePath, `${filePath} changed while it was being trusted; nothing was trusted`, 'review it and run: lexicon trust');
   }
@@ -226,7 +241,13 @@ export async function runUntrust(target: string | undefined, opts: CommonOptions
   const cwd = resolveCwd(opts);
   const filePath = resolveTarget(target, cwd);
   if (!filePath) return fail(io, opts.json, 'untrust', undefined, `no project .lexicon.yaml found from ${cwd}`, 'pass the path of the .lexicon.yaml to untrust (lexicon trust --list shows the trusted ones)');
-  const removed = await untrustProject(filePath, { cwd });
+  let removed: boolean;
+  try {
+    removed = await untrustProject(filePath, { cwd });
+  } catch (err) {
+    if (isTrustRegistryUnreadableError(err)) return registryFail(io, opts.json, 'untrust', filePath, err);
+    throw err;
+  }
   if (opts.json) {
     // `ok: true`, then the object MCP trust_project returns for action 'untrust'.
     printJson(io, jsonOk({

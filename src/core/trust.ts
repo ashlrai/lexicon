@@ -113,30 +113,87 @@ function isTrustEntry(value: unknown): value is TrustEntry {
 }
 
 /**
- * Read the registry. A missing or unparseable file yields an empty registry:
- * the safe failure mode is "nothing is trusted", never "everything is".
+ * Thrown by `trustProject`, `refreshTrust` and `untrustProject` when
+ * `trust.json` exists but cannot be read or parsed. Nothing was written: the
+ * mutation reads the whole registry and writes the whole registry back, so
+ * going on would replace every entry in the file with the one being changed.
  */
-export async function readTrustRegistry(opts: StoreOptions = {}): Promise<TrustRegistry> {
+export class TrustRegistryUnreadableError extends Error {
+  readonly path: string;
+  /** Why it could not be used: `is not valid JSON (...)`, `has no "trusted" object`, `cannot be read (EACCES)`. */
+  readonly problem: string;
+
+  constructor(registryPath: string, problem: string) {
+    super(
+      `the trust registry at ${registryPath} ${problem}, so it was left as it is and nothing was changed. ` +
+        'Until it is fixed every project lexicon reads as untrusted. Fix the JSON in that file, or move it aside ' +
+        '(then run `lexicon trust` again in each project), and retry.',
+    );
+    this.name = 'TrustRegistryUnreadableError';
+    this.path = registryPath;
+    this.problem = problem;
+  }
+}
+
+/** True for a `TrustRegistryUnreadableError` (duck-typed by name). */
+export function isTrustRegistryUnreadableError(err: unknown): boolean {
+  return err instanceof Error && err.name === 'TrustRegistryUnreadableError';
+}
+
+interface RegistryRead {
+  registry: TrustRegistry;
+  /** Set when the file exists but could not be used; `registry` is then empty. */
+  problem?: string;
+}
+
+async function loadTrustRegistry(opts: StoreOptions): Promise<RegistryRead> {
   let text: string;
   try {
     text = await fs.readFile(getTrustPath(opts), 'utf8');
-  } catch {
-    return emptyRegistry();
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { registry: emptyRegistry() };
+    const code = (err as NodeJS.ErrnoException).code;
+    return { registry: emptyRegistry(), problem: `cannot be read${code ? ` (${code})` : ''}` };
   }
+  // A BOM (Notepad, PowerShell's Set-Content) is not part of the JSON.
+  text = text.replace(/^\uFEFF/, '');
+  // An empty file holds no entries, so there is nothing a write could lose.
+  if (text.trim() === '') return { registry: emptyRegistry() };
   let raw: unknown;
   try {
     raw = JSON.parse(text);
-  } catch {
-    return emptyRegistry();
+  } catch (err) {
+    return { registry: emptyRegistry(), problem: `is not valid JSON (${err instanceof Error ? err.message : String(err)})` };
   }
-  if (typeof raw !== 'object' || raw === null) return emptyRegistry();
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) {
+    return { registry: emptyRegistry(), problem: 'is not a JSON object' };
+  }
   const trustedRaw = (raw as { trusted?: unknown }).trusted;
-  if (typeof trustedRaw !== 'object' || trustedRaw === null) return emptyRegistry();
+  if (typeof trustedRaw !== 'object' || trustedRaw === null || Array.isArray(trustedRaw)) {
+    return { registry: emptyRegistry(), problem: 'has no "trusted" object' };
+  }
   const trusted: Record<string, TrustEntry> = {};
   for (const [key, value] of Object.entries(trustedRaw as Record<string, unknown>)) {
     if (isTrustEntry(value)) trusted[key] = { sha256: value.sha256, trustedAt: value.trustedAt };
   }
-  return { version: 1, trusted };
+  return { registry: { version: 1, trusted } };
+}
+
+/**
+ * Read the registry. A missing file yields an empty registry, and so does one
+ * that cannot be read or parsed: the safe failure mode is "nothing is
+ * trusted", never "everything is". A leading BOM is ignored. The mutations
+ * below refuse such a file instead (`TrustRegistryUnreadableError`).
+ */
+export async function readTrustRegistry(opts: StoreOptions = {}): Promise<TrustRegistry> {
+  return (await loadTrustRegistry(opts)).registry;
+}
+
+/** The registry for a read-modify-write: throws rather than hand back an empty stand-in for a broken file. */
+async function readTrustRegistryForUpdate(opts: StoreOptions): Promise<TrustRegistry> {
+  const { registry, problem } = await loadTrustRegistry(opts);
+  if (problem !== undefined) throw new TrustRegistryUnreadableError(getTrustPath(opts), problem);
+  return registry;
 }
 
 /**
@@ -269,7 +326,7 @@ export async function trustProject(
   if (sha256 === undefined) throw new Error(`cannot read the project lexicon at ${projectPath}`);
   if (opts.expectedSha256 !== undefined && sha256 !== opts.expectedSha256) throw new TrustContentChangedError(projectPath);
   return withTrustLock(async () => {
-    const registry = await readTrustRegistry(opts);
+    const registry = await readTrustRegistryForUpdate(opts);
     const existing = registry.trusted[key];
     if (existing?.sha256 === sha256) return { ...existing, alreadyPinned: true };
     const entry: TrustEntry = { sha256, trustedAt: new Date().toISOString() };
@@ -290,7 +347,7 @@ export async function refreshTrust(
 ): Promise<boolean> {
   const key = await canonicalPath(projectPath);
   return withTrustLock(async () => {
-    const registry = await readTrustRegistry(opts);
+    const registry = await readTrustRegistryForUpdate(opts);
     const existing = registry.trusted[key];
     if (!existing) return false;
     const sha256 = await hashFile(key);
@@ -338,7 +395,7 @@ export async function restoreTrustEntry(projectPath: string, entry: TrustEntry |
 export async function untrustProject(projectPath: string, opts: StoreOptions = {}): Promise<boolean> {
   const key = await canonicalPath(projectPath);
   return withTrustLock(async () => {
-    const registry = await readTrustRegistry(opts);
+    const registry = await readTrustRegistryForUpdate(opts);
     if (!(key in registry.trusted)) return false;
     delete registry.trusted[key];
     await writeTrustRegistry(registry, opts);

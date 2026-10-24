@@ -79,6 +79,7 @@ import {
 } from '../src/cli/cmd-serve.js';
 import { programPathFromPlist, programPathFromUnit } from '../src/cli/serve-paths.js';
 import type { ExecResult, ServeExec } from '../src/cli/cmd-serve.js';
+import { stableNodePath } from '../src/cli/cmd-serve.js';
 import type { IO } from '../src/cli/commands.js';
 import { FileLockError } from '../src/util/atomic.js';
 import { InputError } from '../src/util/errors.js';
@@ -2353,6 +2354,41 @@ describe('lexicon serve (CLI)', () => {
     }
   });
 
+  // Catches: the plist and unit were written with the umask (002 on many
+  // shared machines) or the mode of the file they replaced, and launchd
+  // refuses to bootstrap a group- or world-writable plist.
+  it.skipIf(process.platform === 'win32')('--install writes the plist and the unit as 0644, whatever was there', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
+    const umask = process.umask(0o002);
+    try {
+      const cli = await fakeCli(home);
+      const plistPath = launchAgentPath(home, {});
+      await fs.mkdir(path.dirname(plistPath), { recursive: true });
+      await fs.writeFile(plistPath, 'old', { mode: 0o666 });
+      await fs.chmod(plistPath, 0o666);
+      expect(await runServe({ install: true, globalPath: env.globalPath }, memIO(), { platform: 'darwin', home, env: {}, exec: fakeExec([]), uid: 501, cliPath: cli, nodePath: '/usr/bin/node' })).toBe(0);
+      expect((await fs.stat(plistPath)).mode & 0o777).toBe(0o644);
+      expect(await runServe({ install: true, globalPath: env.globalPath }, memIO(), { platform: 'linux', home, env: {}, exec: fakeExec([]), cliPath: cli, nodePath: '/usr/bin/node' })).toBe(0);
+      expect((await fs.stat(systemdUnitPath(home, {}))).mode & 0o777).toBe(0o644);
+    } finally {
+      process.umask(umask);
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
+  // Catches: process.execPath of a Homebrew node is its versioned Cellar
+  // directory, which brew upgrade and brew cleanup delete, so the service
+  // was left pointing at a node that no longer exists.
+  it('stableNodePath runs a Homebrew node through its opt/ symlink when there is one', () => {
+    const there = new Set(['/opt/homebrew/opt/node/bin/node', '/home/linuxbrew/.linuxbrew/opt/node@20/bin/node']);
+    const exists = (p: string): boolean => there.has(p);
+    expect(stableNodePath('/opt/homebrew/Cellar/node/22.9.0/bin/node', exists)).toBe('/opt/homebrew/opt/node/bin/node');
+    expect(stableNodePath('/home/linuxbrew/.linuxbrew/Cellar/node@20/20.18.0_1/bin/node', exists)).toBe('/home/linuxbrew/.linuxbrew/opt/node@20/bin/node');
+    expect(stableNodePath('/usr/local/Cellar/node/22.9.0/bin/node', exists)).toBe('/usr/local/Cellar/node/22.9.0/bin/node');
+    expect(stableNodePath('/home/me/.nvm/versions/node/v22.9.0/bin/node', exists)).toBe('/home/me/.nvm/versions/node/v22.9.0/bin/node');
+    expect(stableNodePath('/usr/bin/node', exists)).toBe('/usr/bin/node');
+  });
+
   it('--install on Linux writes the systemd user unit', async () => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
     try {
@@ -2377,14 +2413,22 @@ describe('lexicon serve (CLI)', () => {
       expect(unit).toContain(`ExecStart="/usr/bin/node" "${cli.replace(/\\/g, '\\\\')}" serve`);
       expect(unit).toContain('WantedBy=default.target');
       expect(unit).not.toContain('Environment=');
+      // Catches: `enable --now` leaves a running unit as it is, so a
+      // reinstall kept the old process (old node, old CLI path) serving.
       expect(calls).toEqual([
         ['systemctl', '--user', 'daemon-reload'],
-        ['systemctl', '--user', 'enable', '--now', SYSTEMD_UNIT_NAME],
+        ['systemctl', '--user', 'enable', SYSTEMD_UNIT_NAME],
+        ['systemctl', '--user', 'restart', SYSTEMD_UNIT_NAME],
       ]);
       expect(io.out.join('')).toContain(`wrote ${unitPath}`);
 
       const failing = memIO();
       expect(await runServe({ install: true, globalPath: env.globalPath }, failing, { platform: 'linux', home, env: {}, exec: fakeExec([], 1), cliPath: cli })).toBe(1);
+      expect(failing.err.join('')).toContain(`could not enable the unit; the file is in place, run \`systemctl --user enable ${SYSTEMD_UNIT_NAME} && systemctl --user restart ${SYSTEMD_UNIT_NAME}\` manually`);
+      const restartFails: ServeExec = async (_cmd, args) => ({ code: args[1] === 'restart' ? 1 : 0, stdout: '', stderr: '' });
+      const noStart = memIO();
+      expect(await runServe({ install: true, globalPath: env.globalPath }, noStart, { platform: 'linux', home, env: {}, exec: restartFails, cliPath: cli })).toBe(1);
+      expect(noStart.err.join('')).toContain('could not start the unit; the file is in place');
 
       const calls2: string[][] = [];
       expect(await runServe({ uninstall: true, globalPath: env.globalPath }, memIO(), { platform: 'linux', home, env: {}, exec: fakeExec(calls2) })).toBe(0);
@@ -2629,6 +2673,15 @@ describe('lexicon serve (CLI)', () => {
       const unit = systemdUnit('/usr/bin/node', '/opt/100%/index.js');
       expect(unit).toContain('ExecStart="/usr/bin/node" "/opt/100%%/index.js" serve');
       expect(programPathFromUnit(unit)).toBe('/opt/100%/index.js');
+    });
+
+    // Catches: systemd expands `${NAME}` in an ExecStart argument and reads
+    // `$$` as `$`, so a CLI path holding either was started as another path.
+    it('systemd: a $ in the CLI path is doubled (not in the node path) and still round-trips', () => {
+      const unit = systemdUnit('/opt/n$de/bin/node', '/opt/a${HOME}$$b/index.js', { LEXICON_PATH: '/x/$y.yaml' });
+      expect(unit).toContain('ExecStart="/opt/n$de/bin/node" "/opt/a$${HOME}$$$$b/index.js" serve');
+      expect(unit).toContain('Environment="LEXICON_PATH=/x/$y.yaml"');
+      expect(programPathFromUnit(unit)).toBe('/opt/a${HOME}$$b/index.js');
     });
 
     it('Windows: a serve.env next to serve.json, loaded with node --env-file', async () => {

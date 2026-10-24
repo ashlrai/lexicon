@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Command } from 'commander';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runInstall } from '../src/cli/cmd-install.js';
 import type { InstallDeps } from '../src/cli/cmd-install.js';
 import {
@@ -162,6 +162,28 @@ describe('lexicon uninstall codex', () => {
     expect(await fs.readFile(file, 'utf8')).toBe(before);
   });
 
+  // Catches: uninstall wrote config.toml in place, which truncates it first,
+  // so a write that failed partway (a full disk) left the config cut short.
+  it('a write that fails partway leaves the old config.toml', async () => {
+    const file = path.join(home, '.codex', 'config.toml');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, 'model = "o3"\n');
+    await install('codex');
+    const installed = await fs.readFile(file, 'utf8');
+    const realWrite = fs.writeFile.bind(fs);
+    const spy = vi.spyOn(fs, 'writeFile').mockImplementation(async (target, data, options) => {
+      await realWrite(target, String(data).slice(0, 5), options);
+      throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+    });
+    try {
+      await expect(uninstall('codex')).rejects.toThrow('ENOSPC');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await fs.readFile(file, 'utf8')).toBe(installed);
+    expect(await fs.readdir(path.dirname(file))).toEqual(['config.toml']);
+  });
+
   it('pure: sub-tables go with an owned table, a foreign table stays', () => {
     const owned = `a = 1\n\n[mcp_servers.lexicon]\ncommand = "node"\nargs = [${JSON.stringify(SERVER)}]\n\n[mcp_servers.lexicon.env]\nLEXICON_PATH = "/x"\n\n[other]\nb = 2\n`;
     expect(removeServerFromToml(owned)).toEqual({ next: 'a = 1\n\n[other]\nb = 2\n', outcome: 'removed' });
@@ -210,7 +232,7 @@ describe('lexicon uninstall claude', () => {
   it('leaves a foreign registration, one at another scope and an unregistered one alone', async () => {
     for (const [out, expected] of [
       [get('/me/mine.js'), 'lexicon server was not written by lexicon install (node /me/mine.js); left as it is'],
-      [get(SERVER, 'Project config (shared via .mcp.json)'), 'the lexicon server is registered at project scope, not user'],
+      [get(SERVER, 'Project config (shared via .mcp.json)'), 'the lexicon server is registered at project scope, not user (pass --scope project for it, or claude mcp remove --scope project lexicon)'],
     ] as const) {
       const calls: string[][] = [];
       const exec = (_f: string, args: readonly string[]): string => {
@@ -238,6 +260,69 @@ describe('lexicon uninstall claude', () => {
     });
     expect(broken.code).toBe(1);
     expect(broken.io.out).toContain('to remove it by hand: claude mcp remove --scope user lexicon');
+  });
+
+  // Catches: `claude mcp get` has no --scope and shows the local-scope
+  // registration over the user-scope one, so the user-scope server an
+  // install wrote was reported as not registered and left behind.
+  it('removes the user-scope registration under a local-scope one, read from .claude.json', async () => {
+    const local = get('/me/local.js', 'Local config (private to you in this project)');
+    const calls: string[][] = [];
+    const exec = (_f: string, args: readonly string[]): string => {
+      calls.push([...args]);
+      return args[1] === 'get' ? local : 'Removed';
+    };
+    await fs.writeFile(path.join(home, '.claude.json'), JSON.stringify({ mcpServers: { lexicon: { type: 'stdio', command: 'node', args: [SERVER] } } }));
+    const { code, io } = await uninstall('claude', {}, { env: { PATH: '' }, exec });
+    expect(code).toBe(0);
+    expect(calls.at(-1)).toEqual(['mcp', 'remove', '--scope', 'user', 'lexicon']);
+    expect(io.out).toContain('removed lexicon server from claude mcp (user scope)');
+    expect(io.out).toContain('note: a local-scope lexicon registration is there too and stays; to remove it: claude mcp remove --scope local lexicon');
+
+    // A user-scope server of the user's own under it is named and kept.
+    await fs.writeFile(path.join(home, '.claude.json'), JSON.stringify({ mcpServers: { lexicon: { command: 'python3', args: ['/me/mine.py'] } } }));
+    calls.length = 0;
+    const kept = await uninstall('claude', {}, { env: { PATH: '' }, exec });
+    expect(kept.io.out).toContain('lexicon server was not written by lexicon install (python3 /me/mine.py); left as it is');
+    expect(calls.some((c) => c[1] === 'remove')).toBe(false);
+
+    // CLAUDE_CONFIG_DIR moves .claude.json.
+    const dir = path.join(home, 'alt');
+    await fs.mkdir(dir);
+    await fs.writeFile(path.join(dir, '.claude.json'), JSON.stringify({ mcpServers: { lexicon: { command: 'node', args: [SERVER] } } }));
+    calls.length = 0;
+    await uninstall('claude', {}, { env: { PATH: '', CLAUDE_CONFIG_DIR: dir }, exec, settingsPath: path.join(dir, 'settings.json') });
+    expect(calls.at(-1)).toEqual(['mcp', 'remove', '--scope', 'user', 'lexicon']);
+
+    // An unreadable one is a failure that says how to remove it by hand.
+    await fs.writeFile(path.join(home, '.claude.json'), '{ not json');
+    const broken = await uninstall('claude', {}, { env: { PATH: '' }, exec });
+    expect(broken.code).toBe(1);
+    expect(broken.io.out).toContain(`could not read ${path.join(home, '.claude.json')} to check the user-scope registration (claude mcp get shows the local-scope one)`);
+    expect(broken.io.out).toContain('to remove it by hand: claude mcp remove --scope user lexicon');
+  });
+
+  it('removes the project-scope registration under a local-scope one, read from .mcp.json', async () => {
+    const calls: string[][] = [];
+    const exec = (_f: string, args: readonly string[]): string => {
+      calls.push([...args]);
+      return args[1] === 'get' ? get('/me/local.js', 'Local config (private to you in this project)') : 'Removed';
+    };
+    await fs.writeFile(path.join(cwd, '.mcp.json'), JSON.stringify({ mcpServers: { lexicon: { command: 'node', args: [SERVER] } } }));
+    const { io } = await uninstall('claude', { scope: 'project' }, { env: { PATH: '' }, exec });
+    expect(calls.at(-1)).toEqual(['mcp', 'remove', '--scope', 'project', 'lexicon']);
+    expect(io.out).toContain('removed lexicon server from claude mcp (project scope)');
+  });
+
+  // Catches: a local-scope registration was told to pass --scope user, which
+  // is the run that just reported it (no --scope of uninstall reaches local).
+  it('names claude mcp remove --scope local for a local-scope registration, at either scope', async () => {
+    const exec = (_f: string, args: readonly string[]): string => (args[1] === 'get' ? get(SERVER, 'Local config (private to you in this project)') : '');
+    for (const scope of ['user', 'project'] as const) {
+      const { io } = await uninstall('claude', { scope }, { env: { PATH: '' }, exec });
+      expect(io.out).toContain(`the lexicon server is registered at local scope, not ${scope} (remove it with claude mcp remove --scope local lexicon)`);
+      expect(io.out).not.toContain('pass --scope');
+    }
   });
 
   it('at project scope reads the repo settings.json', async () => {

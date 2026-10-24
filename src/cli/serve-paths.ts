@@ -73,12 +73,12 @@ export function programPathFromTaskXml(xml: string): string | undefined {
   return quoted ? quoted[1] : undefined;
 }
 
-/** The program path a systemd unit runs: the second quoted word of `ExecStart=`. */
+/** The program path a systemd unit runs: the second quoted word of `ExecStart=` (an argument, so `$$` is one `$`). */
 export function programPathFromUnit(unit: string): string | undefined {
   const line = unit.split('\n').find((l) => l.startsWith('ExecStart='));
   if (!line) return undefined;
   const words = [...line.slice('ExecStart='.length).matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1].replace(/\\(.)/g, '$1').replace(/%%/g, '%'));
-  return words[1];
+  return words[1]?.replace(/\$\$/g, '$');
 }
 
 function xmlUnescape(s: string): string {

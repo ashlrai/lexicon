@@ -6,7 +6,7 @@
  * Handlers are exported for tests; registerServeCommands() only wires commander.
  */
 import { spawn } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import { homeDir } from '../util/xdg.js';
 import path from 'node:path';
@@ -77,7 +77,7 @@ export interface ServeDeps {
    * program path does not exist, whichever way it was resolved.
    */
   cliPath?: string;
-  /** Node binary used by the service. Default process.execPath. */
+  /** Node binary used by the service. Default `stableNodePath(process.execPath)`. */
   nodePath?: string;
   /** Version of `nodePath` (`v20.18.0`), for the Windows `--env-file` gate. Default process.version. */
   nodeVersion?: string;
@@ -324,6 +324,21 @@ function xmlEscape(s: string): string {
 }
 
 /**
+ * The node binary a login service should run, for `execPath` (this node's
+ * own, symlinks resolved). A Homebrew node resolves into its versioned Cellar
+ * directory (`<prefix>/Cellar/node/22.9.0/bin/node`, or `node@20/...`), which
+ * `brew upgrade` and `brew cleanup` delete, leaving the service crash-looping
+ * on a missing binary; its `<prefix>/opt/<formula>/bin/node` symlink follows
+ * upgrades, so that is used when it exists. Any other path is returned as is.
+ */
+export function stableNodePath(execPath: string, exists: (p: string) => boolean = existsSync): string {
+  const m = /^(.*)\/Cellar\/(node(?:@\d+)?)\/[^/]+\/bin\/node$/.exec(execPath);
+  if (!m) return execPath;
+  const stable = `${m[1]}/opt/${m[2]}/bin/node`;
+  return exists(stable) ? stable : execPath;
+}
+
+/**
  * Variables `lexicon serve --install` writes into the login service when they
  * are set at install time, as absolute paths. A login service does not start
  * from the user's shell, so without them it reads (and mints a token into) the
@@ -502,6 +517,18 @@ function unitQuote(s: string): string {
   return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%')}"`;
 }
 
+/**
+ * An `ExecStart=` argument after the executable: `unitQuote`, with `$` doubled.
+ * systemd expands `${NAME}` (and `$NAME` as a word of its own) in arguments
+ * and reads `$$` as one `$`, so a CLI path holding `${...}` or `$$` was
+ * started as some other path. The executable itself is not expanded
+ * (`systemd-analyze verify` looks for a doubled `$$` literally), and
+ * `Environment=` values are never expanded, so both keep a single `$`.
+ */
+function unitArg(s: string): string {
+  return unitQuote(s).replace(/\$/g, '$$$$');
+}
+
 /** The systemd user unit, with one `Environment=` line per entry of `env`. */
 export function systemdUnit(nodePath: string, cliPath: string, env?: Readonly<Record<string, string>>): string {
   const envLines = Object.entries(env ?? {}).map(([name, value]) => `Environment=${unitQuote(`${name}=${value}`)}`);
@@ -513,7 +540,7 @@ export function systemdUnit(nodePath: string, cliPath: string, env?: Readonly<Re
     '[Service]',
     'Type=simple',
     ...envLines,
-    `ExecStart=${unitQuote(nodePath)} ${unitQuote(cliPath)} serve`,
+    `ExecStart=${unitQuote(nodePath)} ${unitArg(cliPath)} serve`,
     'Restart=on-failure',
     'RestartSec=2',
     '',
@@ -521,6 +548,18 @@ export function systemdUnit(nodePath: string, cliPath: string, env?: Readonly<Re
     'WantedBy=default.target',
     '',
   ].join('\n');
+}
+
+/**
+ * Write a LaunchAgent plist or a systemd unit as mode 0644 whatever the umask
+ * or the old file's mode. launchd refuses to bootstrap a plist that is group-
+ * or world-writable ("Path had bad ownership/permissions"), and `writeFile`
+ * kept the mode of the file it replaced and took the umask (002 on many
+ * shared machines) for a new one, so such an install failed to load.
+ */
+async function writeServiceFile(file: string, text: string): Promise<void> {
+  await fs.writeFile(file, text, { encoding: 'utf8', mode: 0o644 });
+  await fs.chmod(file, 0o644);
 }
 
 async function runAndReport(exec: ServeExec, io: IO, cmd: string, args: readonly string[]): Promise<ExecResult> {
@@ -582,7 +621,7 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
   const home = deps.home ?? homeDir();
   const env = deps.env ?? process.env;
   const exec = deps.exec ?? defaultServeExec;
-  const nodePath = deps.nodePath ?? process.execPath;
+  const nodePath = deps.nodePath ?? stableNodePath(process.execPath);
   let cliPath: string;
   try {
     cliPath = resolveCliEntry({ env, ...(deps.cliPath !== undefined ? { cliPath: deps.cliPath } : {}) });
@@ -610,7 +649,7 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     const logPath = launchAgentLogPath(home);
     await fs.mkdir(path.dirname(plistPath), { recursive: true });
     await fs.mkdir(path.dirname(logPath), { recursive: true });
-    await fs.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv), 'utf8');
+    await writeServiceFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv));
     line(io, `wrote ${safe(plistPath)}`);
     line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} serve`);
     io.stdout(envReport(serviceEnv));
@@ -635,14 +674,21 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
   if (platform === 'linux') {
     const unitPath = systemdUnitPath(home, env);
     await fs.mkdir(path.dirname(unitPath), { recursive: true });
-    await fs.writeFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv), 'utf8');
+    await writeServiceFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv));
     line(io, `wrote ${safe(unitPath)}`);
     line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} serve`);
     io.stdout(envReport(serviceEnv));
     await runAndReport(exec, io, 'systemctl', ['--user', 'daemon-reload']);
-    const enable = await runAndReport(exec, io, 'systemctl', ['--user', 'enable', '--now', SYSTEMD_UNIT_NAME]);
-    if (enable.code !== 0) {
-      io.stderr('lexicon: could not enable the unit; the file is in place, run `systemctl --user enable --now lexicon-serve.service` manually\n');
+    // `enable --now` starts a stopped unit but leaves a running one as it is,
+    // so a reinstall (a new node or CLI path, new Environment= lines) kept the
+    // old process serving until the next login. `restart` starts it either
+    // way, as bootout + bootstrap does on macOS.
+    const enable = await runAndReport(exec, io, 'systemctl', ['--user', 'enable', SYSTEMD_UNIT_NAME]);
+    const started = enable.code === 0 ? await runAndReport(exec, io, 'systemctl', ['--user', 'restart', SYSTEMD_UNIT_NAME]) : enable;
+    if (started.code !== 0) {
+      io.stderr(
+        `lexicon: could not ${enable.code !== 0 ? 'enable' : 'start'} the unit; the file is in place, run \`systemctl --user enable ${SYSTEMD_UNIT_NAME} && systemctl --user restart ${SYSTEMD_UNIT_NAME}\` manually\n`,
+      );
       return 1;
     }
     line(io, `installed ${SYSTEMD_UNIT_NAME}; check with: lexicon serve --status`);
