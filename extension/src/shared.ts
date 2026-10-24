@@ -101,6 +101,47 @@ export interface Correction {
   confidence: number;
 }
 
+/**
+ * True for a correction of the shape the engine writes: whole offsets with
+ * `0 <= start <= end`, the three strings, a string `reason` and a finite
+ * `confidence`. The background checks each `/normalize` entry with it before
+ * the reply is used or kept in "recent", where a malformed one broke the
+ * popup's list.
+ */
+export function isCorrection(value: unknown): value is Correction {
+  if (typeof value !== 'object' || value === null) return false;
+  const c = value as Record<string, unknown>;
+  return (
+    Number.isSafeInteger(c.start) &&
+    Number.isSafeInteger(c.end) &&
+    (c.start as number) >= 0 &&
+    (c.start as number) <= (c.end as number) &&
+    typeof c.original === 'string' &&
+    typeof c.replacement === 'string' &&
+    typeof c.canonical === 'string' &&
+    typeof c.reason === 'string' &&
+    typeof c.confidence === 'number' &&
+    Number.isFinite(c.confidence)
+  );
+}
+
+/**
+ * The popup's "recent" rows: `original` and `replacement` of each entry that
+ * has both as strings, the rest skipped, and none for a value that is not a
+ * list. A malformed entry stored by an older release threw in the popup and
+ * left the list half drawn.
+ */
+export function recentRows(recent: unknown): Array<Pick<Correction, 'original' | 'replacement'>> {
+  if (!Array.isArray(recent)) return [];
+  const rows: Array<Pick<Correction, 'original' | 'replacement'>> = [];
+  for (const entry of recent as unknown[]) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const { original, replacement } = entry as Record<string, unknown>;
+    if (typeof original === 'string' && typeof replacement === 'string') rows.push({ original, replacement });
+  }
+  return rows;
+}
+
 export interface ServerHealth {
   ok: boolean;
   version: string;

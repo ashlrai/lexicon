@@ -22,7 +22,7 @@ import { ANY_SITE_SCRIPT_ID, setAnySite } from '../extension/src/any-site.js';
 import type { AnySiteApi, AnySiteScript } from '../extension/src/any-site.js';
 import { prunePairPorts, registerPairPort } from '../extension/src/pair-port.js';
 import type { PairPortApi } from '../extension/src/pair-port.js';
-import { ANY_SITE_DENIED_MESSAGE, STORAGE_KEYS, API_MAX_BODY_BYTES, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, sitesAfterChange, syncedLine, PAIR_META, withConnection, withSiteSwitch, yamlBoxAfterChange } from '../extension/src/shared.js';
+import { ANY_SITE_DENIED_MESSAGE, STORAGE_KEYS, API_MAX_BODY_BYTES, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches, coerceSettings, connectionTestLine, recentRows, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, sitesAfterChange, syncedLine, PAIR_META, withConnection, withSiteSwitch, yamlBoxAfterChange } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 import { setMessage } from '../extension/src/rich-text.js';
@@ -973,6 +973,34 @@ describe('extension errors name the next step', () => {
     expect(reply.fallback).toBe(
       'API /normalize returned an unexpected shape: the server and this extension are likely different releases; update lexicon or the extension so they match.',
     );
+  });
+
+  // Catches: a /normalize reply whose list held an entry of another shape
+  // was used and kept in "recent", where it broke the popup's list; a bad
+  // entry already stored reached the popup too.
+  it('a /normalize entry of another shape falls back, and recent keeps only well-formed entries', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/health') ? json({ ok: true, version: '9.9.9', terms: 1 }) : json({ output: 'ping Ashlr.AI', changed: true, replacements: [null, { original: 1 }] }),
+    );
+    const store = storeWith({ token });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
+    const reply = (await bg.handle({ type: 'normalize', text: 'ping ashler' })) as NormalizeReply & { fallback?: string };
+    expect(reply).toMatchObject({ ok: true, mode: 'embedded', output: 'ping Ashlr.AI' });
+    expect(reply.fallback).toContain('API /normalize returned an unexpected shape');
+    const stored = (await store.get(['recent'])).recent as unknown[];
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ original: 'ashler', replacement: 'Ashlr.AI' });
+
+    await store.set({ recent: [null, 'x', { original: 'a' }, ...stored] });
+    const status = (await bg.handle({ type: 'status' })) as StatusReply;
+    expect(status.recent).toHaveLength(1);
+    expect(status.recent[0]).toMatchObject({ original: 'ashler', replacement: 'Ashlr.AI' });
+  });
+
+  it('recentRows skips entries the popup cannot draw', () => {
+    expect(recentRows(undefined)).toEqual([]);
+    expect(recentRows({ length: 2 })).toEqual([]);
+    expect(recentRows([null, 3, { original: 'a' }, { original: 'b', replacement: 'B', start: 'x' }])).toEqual([{ original: 'b', replacement: 'B' }]);
   });
 
   it('an embedded lexicon that does not parse says where to fix it', async () => {
