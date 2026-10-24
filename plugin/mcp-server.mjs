@@ -61877,6 +61877,23 @@ function noTermMatchesNote(context) {
   const terms = `${context.total} term${context.total === 1 ? "" : "s"}`;
   return `No term matches ${context.filter}; the lexicon has ${terms} in all, which ${lister.name} without ${context.filters === 1 ? "it" : "them"} ${lister.verb}.`;
 }
+function pageTermList(items, request = {}) {
+  if (request.offset === void 0 && request.limit === void 0) return { items: [...items] };
+  const offset = request.offset ?? 0;
+  const end = request.limit === void 0 ? items.length : Math.min(items.length, offset + request.limit);
+  const slice = items.slice(offset, end);
+  const page = {
+    offset,
+    ...request.limit !== void 0 ? { limit: request.limit } : {},
+    returned: slice.length,
+    ...end < items.length && slice.length > 0 ? { nextOffset: end } : {}
+  };
+  return { items: slice, page };
+}
+function offsetPastEndNote(offset, matched) {
+  const held = matched === 1 ? "1 term matched, at offset 0" : `${matched} terms matched, at offsets 0 to ${matched - 1}`;
+  return `No term at offset ${offset}: only ${held}.`;
+}
 function emptyStatsNote(loaded, step = `${FIRST_TERM_STEP}.`) {
   if (loaded.merged.terms.length > 0 || loaded.skippedProject) return void 0;
   return `${noTermsYet({ so: "nothing is corrected or counted" })}; ${step}`;
@@ -63206,34 +63223,41 @@ var registerTermTools = (server, ctx) => {
     "list_terms",
     {
       title: "List lexicon terms",
-      description: "List the user's lexicon terms, global and project merged. Optional case-insensitive substring filter over canonical spellings and aliases, plus a category filter. WHEN TO CALL: to show the user what is already known, to check whether a name is covered before adding it, or to find the exact canonical another tool needs. Read-only and safe to call unprompted; filter rather than listing everything. WHAT IT CHANGES: nothing. WHAT IT WILL NOT DO: it does not include an untrusted project .lexicon.yaml -- if one was skipped the result says so in `note`, and trust_project is how the user reviews it. Returns { terms, counts: { matched, total, global, project }, paths: { global, project? } }, plus `projectTrust`, `skippedProject` and `note` for a skipped file, or a `note` saying why `terms` is empty (no terms yet, or the filter matched none). A blank `query` filters nothing.",
+      description: "List the user's lexicon terms, global and project merged. Optional case-insensitive substring filter over canonical spellings and aliases, plus a category filter. WHEN TO CALL: to show the user what is already known, to check whether a name is covered before adding it, or to find the exact canonical another tool needs. Read-only and safe to call unprompted; filter rather than listing everything. WHAT IT CHANGES: nothing. WHAT IT WILL NOT DO: it does not include an untrusted project .lexicon.yaml -- if one was skipped the result says so in `note`, and trust_project is how the user reviews it. Returns { terms, counts: { matched, total, global, project }, paths: { global, project? } }, plus `projectTrust`, `skippedProject` and `note` for a skipped file, or a `note` saying why `terms` is empty (no terms yet, the filter matched none, or `offset` is past the last match). A blank `query` filters nothing. Every matching term comes back unless `offset` or `limit` is given; then `terms` is that page of the matches (in the same order), and `page: { offset, limit?, returned, nextOffset? }` says where it started and, while more matches remain, the `offset` that gets the next page (`counts.matched` is how many there are in all).",
       inputSchema: {
         query: external_exports.string().optional().describe("Case-insensitive substring matched against canonical and aliases."),
-        category: external_exports.enum(TERM_CATEGORIES).optional()
+        category: external_exports.enum(TERM_CATEGORIES).optional(),
+        offset: external_exports.number().int().nonnegative().optional().describe("Matching terms to skip before the page starts (0 when omitted); pass `page.nextOffset` to get the next page."),
+        limit: external_exports.number().int().positive().optional().describe("Most terms to return. Omitted with `offset` omitted too: every matching term.")
       }
     },
-    async ({ query, category }) => guarded(async () => {
+    async ({ query, category, offset, limit }) => guarded(async () => {
       const loaded = await load({ parseSkipped: false });
       const needle = query?.trim().toLowerCase();
-      const terms = loaded.merged.terms.filter((t) => {
+      const matched = loaded.merged.terms.filter((t) => {
         if (category && t.category !== category) return false;
         if (!needle) return true;
         if (t.canonical.toLowerCase().includes(needle)) return true;
         return t.aliases.some((a) => a.toLowerCase().includes(needle));
       });
+      const { items: terms, page } = pageTermList(matched, {
+        ...offset !== void 0 ? { offset } : {},
+        ...limit !== void 0 ? { limit } : {}
+      });
       return textResult({
         terms,
         counts: {
-          matched: terms.length,
+          matched: matched.length,
           total: loaded.merged.terms.length,
           global: loaded.global.lexicon.terms.length,
           project: loaded.project?.lexicon.terms.length ?? 0
         },
         paths: filePathsInUse(loaded),
+        ...page ? { page } : {},
         ...skippedProjectFields(loaded),
         // Why nothing came back, as `lexicon list` says it: no terms at
-        // all, or a filter that matched none of them.
-        ...terms.length > 0 || loaded.skippedProject ? {} : loaded.merged.terms.length === 0 ? { note: emptyLexiconNote("add_term or setup_lexicon adds some.") } : {
+        // all, a filter that matched none of them, or a page past the end.
+        ...terms.length > 0 || loaded.skippedProject ? {} : matched.length > 0 ? { note: offsetPastEndNote(page?.offset ?? 0, matched.length) } : loaded.merged.terms.length === 0 ? { note: emptyLexiconNote("add_term or setup_lexicon adds some.") } : {
           note: noTermMatchesNote({
             filter: `the ${[...category ? ["category"] : [], ...needle ? ["query"] : []].join(" and ")} given`,
             filters: category && needle ? 2 : 1,
@@ -68996,7 +69020,7 @@ function dirsFromRoots(roots) {
 }
 var MODEL_CONTEXT_MAX_CHARS = 16e3;
 function moreTermsLine(omitted) {
-  return `... ${omitted} more term${omitted === 1 ? "" : "s"} left out to keep this short (the most used, then brand, person and product names, are kept). Call list_terms with a query (it matches canonical spellings and aliases) to look one up, or export_lexicon with format claude-md for the whole table.`;
+  return `... ${omitted} more term${omitted === 1 ? "" : "s"} left out to keep this short (the most used, then brand, person and product names, are kept). Call list_terms with a query (it matches canonical spellings and aliases) to look one up, or with offset and limit to page through every term, or export_lexicon with format claude-md for the whole table.`;
 }
 function lexiconForModel(loaded) {
   const full = exportLexicon(loaded.merged, "claude-md");
@@ -69005,7 +69029,7 @@ function lexiconForModel(loaded) {
 }
 var LEXICON_JSON_MAX_CHARS = MODEL_CONTEXT_MAX_CHARS * 4;
 function jsonOmittedNote(omitted, total) {
-  return `${omitted} of ${total} term${total === 1 ? "" : "s"} left out to keep this resource under ${LEXICON_JSON_MAX_CHARS} characters (the most used, then brand, person and product names, are kept). Call export_lexicon with format json for the whole lexicon, or list_terms with a query to look one up.`;
+  return `${omitted} of ${total} term${total === 1 ? "" : "s"} left out to keep this resource under ${LEXICON_JSON_MAX_CHARS} characters (the most used, then brand, person and product names, are kept). Call export_lexicon with format json for the whole lexicon, list_terms with a query to look one up, or list_terms with offset and limit to page through every term.`;
 }
 function lexiconJsonWithin(merged, extra) {
   const render2 = (terms, more) => `${JSON.stringify({ ...merged, terms, ...extra, ...more }, null, 2)}
@@ -69131,7 +69155,7 @@ function createServer2(opts = {}) {
     "lexicon://me",
     {
       title: "Personal voice lexicon",
-      description: `Canonical spellings of names the user dictates and how STT mishears them, as markdown (the claude-md export of the global lexicon plus the project .lexicon.yaml when it is trusted). Read this before interpreting dictated input. An untrusted (or changed) project file is left out and named by path in a closing note, never quoted; with no terms at all, a closing note says so and how to set the lexicon up. The table is capped at ${MODEL_CONTEXT_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept and a line says how many were left out; list_terms (with a query) and export_lexicon (format claude-md) reach the rest.`,
+      description: `Canonical spellings of names the user dictates and how STT mishears them, as markdown (the claude-md export of the global lexicon plus the project .lexicon.yaml when it is trusted). Read this before interpreting dictated input. An untrusted (or changed) project file is left out and named by path in a closing note, never quoted; with no terms at all, a closing note says so and how to set the lexicon up. The table is capped at ${MODEL_CONTEXT_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept and a line says how many were left out; list_terms (with a query, or offset and limit to page) and export_lexicon (format claude-md) reach the rest.`,
       mimeType: "text/markdown"
     },
     async (uri) => {
@@ -69147,7 +69171,7 @@ function createServer2(opts = {}) {
     "lexicon://json",
     {
       title: "Lexicon JSON",
-      description: `The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds \`projectTrust\`, \`skippedProject\` (its path, never its contents) and \`note\`. With no terms at all, \`note\` says so (after the skipped-file sentence, when there is one) and how to set the lexicon up. The text is capped at ${LEXICON_JSON_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept, \`omittedTerms\` counts the rest and \`note\` says so; export_lexicon (format json) and list_terms (with a query) reach them.`,
+      description: `The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds \`projectTrust\`, \`skippedProject\` (its path, never its contents) and \`note\`. With no terms at all, \`note\` says so (after the skipped-file sentence, when there is one) and how to set the lexicon up. The text is capped at ${LEXICON_JSON_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept, \`omittedTerms\` counts the rest and \`note\` says so; export_lexicon (format json) and list_terms (with a query, or offset and limit to page) reach them.`,
       mimeType: "application/json"
     },
     async (uri) => {

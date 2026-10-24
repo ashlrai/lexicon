@@ -137,7 +137,7 @@ export const MODEL_CONTEXT_MAX_CHARS = 16_000;
 function moreTermsLine(omitted: number): string {
   return (
     `... ${omitted} more term${omitted === 1 ? '' : 's'} left out to keep this short (the most used, then brand, person and product names, are kept). ` +
-    'Call list_terms with a query (it matches canonical spellings and aliases) to look one up, or export_lexicon with format claude-md for the whole table.'
+    'Call list_terms with a query (it matches canonical spellings and aliases) to look one up, or with offset and limit to page through every term, or export_lexicon with format claude-md for the whole table.'
   );
 }
 
@@ -166,7 +166,7 @@ export const LEXICON_JSON_MAX_CHARS = MODEL_CONTEXT_MAX_CHARS * 4;
 function jsonOmittedNote(omitted: number, total: number): string {
   return (
     `${omitted} of ${total} term${total === 1 ? '' : 's'} left out to keep this resource under ${LEXICON_JSON_MAX_CHARS} characters (the most used, then brand, person and product names, are kept). ` +
-    'Call export_lexicon with format json for the whole lexicon, or list_terms with a query to look one up.'
+    'Call export_lexicon with format json for the whole lexicon, list_terms with a query to look one up, or list_terms with offset and limit to page through every term.'
   );
 }
 
@@ -364,7 +364,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       description:
         'Canonical spellings of names the user dictates and how STT mishears them, as markdown (the claude-md export of the global lexicon plus the project .lexicon.yaml when it is trusted). Read this before interpreting dictated input. ' +
         'An untrusted (or changed) project file is left out and named by path in a closing note, never quoted; with no terms at all, a closing note says so and how to set the lexicon up. ' +
-        `The table is capped at ${MODEL_CONTEXT_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept and a line says how many were left out; list_terms (with a query) and export_lexicon (format claude-md) reach the rest.`,
+        `The table is capped at ${MODEL_CONTEXT_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept and a line says how many were left out; list_terms (with a query, or offset and limit to page) and export_lexicon (format claude-md) reach the rest.`,
       mimeType: 'text/markdown',
     },
     async (uri) => {
@@ -384,7 +384,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       title: 'Lexicon JSON',
       description:
         'The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`. With no terms at all, `note` says so (after the skipped-file sentence, when there is one) and how to set the lexicon up. ' +
-        `The text is capped at ${LEXICON_JSON_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept, \`omittedTerms\` counts the rest and \`note\` says so; export_lexicon (format json) and list_terms (with a query) reach them.`,
+        `The text is capped at ${LEXICON_JSON_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept, \`omittedTerms\` counts the rest and \`note\` says so; export_lexicon (format json) and list_terms (with a query, or offset and limit to page) reach them.`,
       mimeType: 'application/json',
     },
     async (uri) => {
