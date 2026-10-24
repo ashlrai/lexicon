@@ -1789,6 +1789,44 @@ describe('XDG base directories', () => {
     }
   });
 
+  // Catches: src/cli and src/voice read os.homedir() directly, so with HOME=
+  // `lexicon serve --install` on macOS wrote Library/LaunchAgents/... under the
+  // working directory, and ~/.claude and ~/models resolved there too.
+  it.skipIf(process.platform === 'win32')('CLI and voice home defaults never go cwd-relative when HOME is empty', async () => {
+    const { claudeConfigDir } = await import('../src/cli/claude-settings.js');
+    const { launchAgentLogPath, launchAgentPath } = await import('../src/cli/serve-paths.js');
+    const { expandTilde } = await import('../src/voice/models.js');
+    const saved = process.env.HOME;
+    process.env.HOME = '';
+    try {
+      expect(os.homedir()).toBe('');
+      for (const p of [claudeConfigDir({}), claudeConfigDir({}, ''), launchAgentPath('', {}), launchAgentLogPath(''), expandTilde('~/m.bin'), expandTilde('~/m.bin', ''), expandTilde('~')]) {
+        expect(path.isAbsolute(p), p).toBe(true);
+      }
+      expect(claudeConfigDir({}, '/abs/home')).toBe(path.join('/abs/home', '.claude'));
+    } finally {
+      process.env.HOME = saved;
+    }
+  });
+
+  it('src/cli and src/voice take the home default from util/xdg.ts, not os.homedir()', async () => {
+    const root = path.join(path.dirname(fileURLToPath(import.meta.url)), '..', 'src');
+    // cmd-import-guided.ts is owned by the importer work and still to be routed.
+    const exempt = new Set([path.join('cli', 'cmd-import-guided.ts')]);
+    const offenders: string[] = [];
+    for (const dir of ['cli', 'voice']) {
+      for (const entry of await fs.readdir(path.join(root, dir), { recursive: true })) {
+        const rel = path.join(dir, String(entry));
+        if (!rel.endsWith('.ts') || exempt.has(rel)) continue;
+        const text = await fs.readFile(path.join(root, rel), 'utf8');
+        text.split('\n').forEach((line, i) => {
+          if (/\bos\.homedir\(\)/.test(line) && !/^\s*(?:\/?\*|\/\/)/.test(line)) offenders.push(`${rel}:${i + 1}`);
+        });
+      }
+    }
+    expect(offenders).toEqual([]);
+  });
+
   it('resolvePaths takes env and home as options rather than only reading the process', () => {
     const home = path.join(path.sep, 'elsewhere');
     expect(resolvePaths({ cwd: tmp, env: {}, home }).global).toBe(path.join(home, '.config', 'lexicon', 'lexicon.yaml'));

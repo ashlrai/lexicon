@@ -7,7 +7,7 @@
  */
 import { execFileSync } from 'node:child_process';
 import { existsSync, promises as fs } from 'node:fs';
-import os from 'node:os';
+import { homeDir } from '../../util/xdg.js';
 import path from 'node:path';
 import { LIMITS, hasControlChars, stripInvisible } from '../../core/index.js';
 import { findOnPath } from '../../util/which.js';
@@ -200,7 +200,7 @@ export function configDirFor(client: SetupClient, ctx: DetectContext): string {
  */
 export async function detectClients(deps: SetupDeps = {}, cwd = process.cwd()): Promise<DetectedClient[]> {
   const ctx: DetectContext = {
-    home: deps.home ?? os.homedir(),
+    home: deps.home ?? homeDir(),
     cwd,
     platform: deps.platform ?? process.platform,
     env: deps.env ?? process.env,

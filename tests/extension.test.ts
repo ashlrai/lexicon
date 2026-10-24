@@ -281,6 +281,64 @@ describe('content: send interception', () => {
     expect(t.value).toBe('ping Ashlr.AI and ashler');
     expect(t.selectionEnd).toBe('ping Ashlr.AI'.length);
   });
+
+  // Catches: the toast compared the composer with the corrected prefix only,
+  // so after a live rewrite with text after the caret Undo did nothing.
+  it('undo after a live rewrite puts the original back when text follows the caret', async () => {
+    document.body.innerHTML = '<form><textarea placeholder="Ask Grok anything"></textarea></form>';
+    const t = document.querySelector('textarea')!;
+    handle = installContent({ doc: document, hostname: 'grok.com', send: vi.fn(fakeSend), settings: { enabled: true, live: true }, liveDebounceMs: 5, precheckDebounceMs: 1000, toastMs: 60_000 });
+    t.value = 'ping ashler and ashler';
+    t.setSelectionRange(11, 11);
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(40);
+    expect(t.value).toBe('ping Ashlr.AI and ashler');
+    document.getElementById(TOAST_ID)!.shadowRoot!.querySelector<HTMLButtonElement>('button.undo')!.click();
+    // Past the live debounce: the restored text is not corrected straight back.
+    await wait(40);
+    expect(t.value).toBe('ping ashler and ashler');
+  });
+
+  // Catches: the undo's own input event cleared the precheck and scheduled a
+  // new dry run, so the next Enter corrected the restored wording again.
+  it('after undo, Enter sends the restored wording as it is', async () => {
+    document.body.innerHTML = '<form><textarea placeholder="Ask Grok anything"></textarea></form>';
+    const t = document.querySelector('textarea')!;
+    const send = vi.fn(fakeSend);
+    handle = installContent({ doc: document, hostname: 'grok.com', send, settings: { enabled: true, live: false }, precheckDebounceMs: 5, toastMs: 60_000 });
+    t.addEventListener('keydown', (ev) => ev.preventDefault());
+    t.value = 'ping ashler';
+    t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    expect(t.value).toBe('ping Ashlr.AI');
+    document.getElementById(TOAST_ID)!.shadowRoot!.querySelector<HTMLButtonElement>('button.undo')!.click();
+    expect(t.value).toBe('ping ashler');
+    await wait(40);
+    send.mockClear();
+    t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    expect(t.value).toBe('ping ashler');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('undo after a live rewrite in a contenteditable restores the text after the caret too', async () => {
+    document.body.innerHTML = '<div id="e" contenteditable="true"><p>ping ashler and more</p></div>';
+    const e = document.getElementById('e')!;
+    handle = installContent({ doc: document, hostname: 'example.org', send: vi.fn(fakeSend), settings: { enabled: true, live: true }, liveDebounceMs: 5, precheckDebounceMs: 1000, toastMs: 60_000 });
+    e.focus();
+    const node = e.querySelector('p')!.firstChild as Text;
+    const r = document.createRange();
+    r.setStart(node, 11);
+    r.collapse(true);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(r);
+    e.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(40);
+    expect(readText(e)).toBe('ping Ashlr.AI and more');
+    document.getElementById(TOAST_ID)!.shadowRoot!.querySelector<HTMLButtonElement>('button.undo')!.click();
+    await wait(40);
+    expect(readText(e)).toBe('ping ashler and more');
+  });
 });
 
 describe('content: matching that stopped early', () => {
@@ -706,6 +764,31 @@ describe('message routing (mock chrome.runtime) and background', () => {
     expect(good.tokenError).toBeUndefined();
   });
 
+  // Catches: a token pasted with a character no header can carry (a smart
+  // quote, a non-breaking space) made fetch throw a TypeError, which read as
+  // "cannot reach lexicon serve" and left status saying Connected while every
+  // /normalize fell back to the embedded lexicon.
+  it('a stored token no header can carry is reported as a token problem, not an unreachable server', async () => {
+    const json = (body: unknown, status = 200): Response => ({ ok: status < 400, status, json: async () => body }) as unknown as Response;
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      if (url.endsWith('/health')) return json({ ok: true, version: '9.9.9', terms: 3 });
+      // What Chromium does with a header value outside ISO-8859-1.
+      const auth = (init.headers as Record<string, string>).Authorization;
+      if ([...auth].some((ch) => ch.charCodeAt(0) > 0xff)) throw new TypeError("Failed to execute 'fetch' on 'WorkerGlobalScope': String contains non ISO-8859-1 code point.");
+      return json({ termCount: 3 });
+    });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore({ settings: { token: '\u201c' + 'a'.repeat(32) + '\u201d' } }), defaultYaml: EXAMPLE_YAML });
+    const status = (await bg.handle({ type: 'status' })) as StatusReply;
+    expect(status.server).toEqual({ ok: true, version: '9.9.9', terms: 3 });
+    expect(status.activeMode).toBe('embedded');
+    expect(status.tokenError).toMatch(/token/);
+    expect(status.tokenError).not.toMatch(/cannot reach/);
+    const reply = (await bg.handle({ type: 'normalize', text: 'ping ashler' })) as NormalizeReply & { ok: true };
+    expect(reply.mode).toBe('embedded');
+    expect(reply.fallback).toMatch(/lexicon serve --show/);
+    expect(reply.fallback).not.toMatch(/cannot reach/);
+  });
+
   // Catches: a /learn whose `conflict` says another term also holds the
   // spelling (or whose `untrustedProject` claims it) showed a bare "Added ..."
   // in the popup, so the user trusted a correction that may not win.
@@ -1101,7 +1184,7 @@ describe('content: generic sites keep the Enter key working', () => {
 
   it('a form without a submit button and several text fields is not submitted, as a real Enter would not', async () => {
     document.body.innerHTML =
-      '<form id="f"><input id="u" type="text"><input id="p" type="password"><button type="button">log in</button></form>';
+      '<form id="f"><input id="u" type="text"><input id="n" type="text"><button type="button">save</button></form>';
     const u = document.getElementById('u') as HTMLInputElement;
     const form = document.getElementById('f') as HTMLFormElement;
     const submitted = vi.fn((e: Event) => e.preventDefault());
@@ -1113,6 +1196,35 @@ describe('content: generic sites keep the Enter key working', () => {
     await handle.idle();
     expect(u.value).toBe('ping Ashlr.AI');
     expect(submitted).not.toHaveBeenCalled();
+  });
+
+  // Catches: with "any site" on, Enter in a login form's username field
+  // rewrote the username ("ashler" -> "Ashlr.AI") before the form submitted.
+  it('never rewrites a username, email or code field, or a text field in a form with a password', async () => {
+    for (const html of [
+      '<form id="f"><input id="u" type="text" autocomplete="username"><button type="submit">go</button></form>',
+      '<form id="f"><input id="u" type="text" autocomplete="section-login email"><button type="submit">go</button></form>',
+      '<form id="f"><input id="u" type="text" autocomplete="one-time-code"><button type="submit">go</button></form>',
+      '<form id="f"><input id="u" type="text"><input type="password"><button type="submit">log in</button></form>',
+    ]) {
+      document.body.innerHTML = html;
+      const u = document.getElementById('u') as HTMLInputElement;
+      const form = document.getElementById('f') as HTMLFormElement;
+      const submitted = vi.fn((e: Event) => e.preventDefault());
+      form.addEventListener('submit', submitted);
+      const send = vi.fn(fakeSend);
+      handle = installContent({ doc: document, hostname: 'example.org', send, settings: { enabled: true, live: true }, liveDebounceMs: 5, precheckDebounceMs: 5 });
+      u.value = 'ashler';
+      u.focus();
+      u.dispatchEvent(new Event('input', { bubbles: true }));
+      await wait(20);
+      u.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      await handle.idle();
+      expect(u.value, html).toBe('ashler');
+      expect(send, html).not.toHaveBeenCalled();
+      handle.destroy();
+      handle = null;
+    }
   });
 
   it('a form without a submit button and one text field is still submitted', async () => {

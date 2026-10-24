@@ -11,6 +11,7 @@
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import os from 'node:os';
+import { homeDir, usableHome } from '../util/xdg.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { isRecord } from '../util/json.js';
@@ -26,9 +27,10 @@ export const HOOK_EVENTS: readonly string[] = ['UserPromptSubmit', 'SessionStart
  * `os.homedir()` reads USERPROFILE there. Claude Code does not honour
  * XDG_CONFIG_HOME, so neither do we.
  */
-export function claudeConfigDir(env: NodeJS.ProcessEnv = process.env, home: string = os.homedir()): string {
+export function claudeConfigDir(env: NodeJS.ProcessEnv = process.env, home?: string): string {
   const override = env.CLAUDE_CONFIG_DIR?.trim();
-  return override ? override : path.join(home, '.claude');
+  // The home default is read only when it is needed, and never as an empty or relative HOME.
+  return override ? override : path.join(home === undefined ? homeDir() : usableHome(home), '.claude');
 }
 
 /** Commands `install-claude` (any version) or the plugin register for the hook. */

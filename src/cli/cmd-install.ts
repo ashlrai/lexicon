@@ -19,7 +19,7 @@ import path from 'node:path';
 import type { Command } from 'commander';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord, readJsonFile, writeJsonFile } from '../util/json.js';
-import { xdgConfigHome } from '../util/xdg.js';
+import { homeDir, xdgConfigHome } from '../util/xdg.js';
 import { CliRefusal, bold, dim, green, indent, jsonError, line, red, safe, safeLines, safeMessage, yellow } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
@@ -685,7 +685,7 @@ async function installText(
 ): Promise<number> {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
-  const home = opts.home ? path.resolve(opts.home) : os.homedir();
+  const home = opts.home ? path.resolve(opts.home) : homeDir();
   const cwd = path.resolve(opts.cwd ?? process.cwd());
   const serverPath = resolveServerPath(deps.cliDir);
 

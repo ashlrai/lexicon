@@ -8,6 +8,7 @@
  */
 import { createWriteStream, existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
+import { homeDir, usableHome } from '../util/xdg.js';
 import path from 'node:path';
 import { Readable } from 'node:stream';
 import { pipeline } from 'node:stream/promises';
@@ -74,9 +75,13 @@ export interface ResolvedModel {
  * there -- so the old `process.env.HOME ?? ''` silently turned
  * `~/models/ggml-base.en.bin` into a *cwd-relative* path, and the model was
  * reported missing wherever it actually was. `os.homedir()` answers on all
- * three platforms.
+ * three platforms, and goes through `usableHome` (src/util/xdg.ts) so an
+ * empty or relative HOME is not used as is.
  */
-export function expandTilde(spec: string, home: string = os.homedir()): string {
+export function expandTilde(spec: string, homeArg?: string): string {
+  if (spec !== '~' && !spec.startsWith('~/') && !(process.platform === 'win32' && spec.startsWith('~\\'))) return spec;
+  // HOME= or a relative HOME would make the expansion cwd-relative.
+  const home = homeArg === undefined ? homeDir() : usableHome(homeArg);
   if (spec === '~') return home;
   if (spec.startsWith('~/')) return path.join(home, spec.slice(2));
   if (process.platform === 'win32' && spec.startsWith('~\\')) return path.join(home, spec.slice(2));

@@ -117,10 +117,28 @@ export function isTextField(el: unknown): el is HTMLTextAreaElement | HTMLInputE
   return false;
 }
 
+/** `autocomplete` tokens of a field that holds an identifier, never prose to correct. */
+const IDENTIFIER_AUTOCOMPLETE = new Set(['username', 'email', 'one-time-code', 'current-password', 'new-password', 'tel', 'url', 'cc-number', 'cc-csc', 'cc-name', 'impp']);
+
+/**
+ * A one-line field that holds an identifier rather than dictation: its
+ * `autocomplete` names a username, email, code, password, phone, URL or card
+ * field, or it sits in a form with a password field (a login form's username
+ * box). With "any site" on, Enter in a login form rewrote the username
+ * ("ashler" -> "Ashlr.AI") before the form submitted.
+ */
+export function isIdentifierField(el: HTMLInputElement | HTMLTextAreaElement): boolean {
+  if (el.tagName !== 'INPUT') return false;
+  const tokens = (el.getAttribute('autocomplete') ?? '').toLowerCase().split(/\s+/);
+  if (tokens.some((t) => IDENTIFIER_AUTOCOMPLETE.has(t))) return true;
+  const form = (el as HTMLInputElement).form;
+  return form !== null && form.querySelector('input[type="password" i]') !== null;
+}
+
 export function isEditable(el: unknown): el is HTMLElement {
   if (!el || typeof el !== 'object' || !(el as Node).nodeType) return false;
   if ((el as Node).nodeType !== 1) return false;
-  if (isTextField(el)) return !(el as HTMLTextAreaElement).readOnly && !(el as HTMLTextAreaElement).disabled;
+  if (isTextField(el)) return !(el as HTMLTextAreaElement).readOnly && !(el as HTMLTextAreaElement).disabled && !isIdentifierField(el);
   const h = el as HTMLElement;
   const ce = h.getAttribute('contenteditable');
   return ce === '' || ce === 'true' || ce === 'plaintext-only';

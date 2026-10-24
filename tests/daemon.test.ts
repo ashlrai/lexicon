@@ -35,6 +35,7 @@ import {
   detectClipboardBackend,
   powershellBackend,
 } from '../src/daemon/clipboard-backends.js';
+import * as backends from '../src/daemon/clipboard-backends.js';
 import type { ClipboardExec } from '../src/daemon/clipboard-backends.js';
 
 interface Harness {
@@ -295,6 +296,25 @@ describe('runClipboardDaemon', () => {
     const read = vi.fn(async () => 'x');
     await runClipboardDaemon({ read, write: async () => undefined, signal: controller.signal, quiet: true });
     expect(read).not.toHaveBeenCalled();
+  });
+
+  // Catches: lastSeen was set before the write, so a write that failed once
+  // (a clipboard tool that hiccuped) was never retried for that text.
+  it('retries a write that failed on the next poll, and reports the failure once', async () => {
+    const h = start('meet Ashler');
+    h.write.mockRejectedValueOnce(new Error('wl-copy exited with code 1: compositor busy'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.write).toHaveBeenCalledTimes(1);
+    expect(h.clipboard).toBe('meet Ashler');
+    expect(h.err.join('')).toContain('compositor busy');
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.write).toHaveBeenCalledTimes(2);
+    expect(h.clipboard).toBe('meet Ashlr.AI');
+    await vi.advanceTimersByTimeAsync(250 * 3);
+    expect(h.write).toHaveBeenCalledTimes(2);
+    expect(h.err.join('')).toMatch(/working again/);
+    h.controller.abort();
+    await h.done;
   });
 
   it('throws with an install hint on Linux when no clipboard tool is on PATH', async () => {
@@ -624,5 +644,77 @@ describe('detectClipboardBackend', () => {
 
   it('unknown platform -> error', async () => {
     await expect(detectClipboardBackend('haiku' as NodeJS.Platform, {}, which())).rejects.toThrow(/does not support/);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// A clipboard too large to correct, read through a real process
+
+describe('a clipboard too large to correct', () => {
+  beforeEach(() => {
+    vi.useRealTimers();
+  });
+
+  /** An exec whose reads print `size()` bytes of "Ashler " from a real node process (or `small` when size() is 0). */
+  function bigExec(size: () => number, small = '') {
+    const writes: string[] = [];
+    const exec: ClipboardExec = async (_cmd, _args, stdin) => {
+      if (stdin !== undefined) {
+        writes.push(stdin);
+        return '';
+      }
+      const n = size();
+      if (n === 0) return small;
+      return backends.defaultClipboardExec(process.execPath, ['-e', `process.stdout.write('Ashler '.repeat(${Math.ceil(n / 7)}))`]);
+    };
+    return { exec, writes };
+  }
+
+  // Catches: past 16 MB the read failed and was swallowed, so --once said
+  // "clipboard is empty or not text" while 20k chars..16 MB said "too large".
+  it('--once says "too large" for a clipboard over 16 MB, as it does under it, and exits cleanly', async () => {
+    for (const bytes of [100_000, 17 * 1024 * 1024]) {
+      const { exec, writes } = bigExec(() => bytes);
+      const out: string[] = [];
+      const res = await runClipboardOnce({ backend: 'xclip', exec, platform: 'linux', out: (s) => out.push(s), err: () => undefined, cwd: '/fake' });
+      expect(out.join(''), String(bytes)).toBe('no changes (clipboard too large)\n');
+      expect(res).toEqual({ changed: false, written: false, corrections: 0, pasted: false });
+      expect(writes).toEqual([]);
+    }
+    expect(await runDaemonCommand({ once: true, backend: 'xclip', exec: bigExec(() => 17 * 1024 * 1024).exec, platform: 'linux', out: () => undefined, err: () => undefined, cwd: '/fake' })).toBe(0);
+  }, 20_000);
+
+  // The read stops at MAX_CLIPBOARD_READ_BYTES instead of buffering up to 16 MB on every poll.
+  it('the default exec stops reading at MAX_CLIPBOARD_READ_BYTES, which still covers MAX_CLIPBOARD_CHARS of any text', async () => {
+    const { MAX_CLIPBOARD_CHARS } = await import('../src/daemon/clipboard.js');
+    expect(backends.MAX_CLIPBOARD_READ_BYTES).toBeGreaterThanOrEqual(3 * MAX_CLIPBOARD_CHARS);
+    expect(backends.MAX_CLIPBOARD_READ_BYTES).toBeLessThan(1024 * 1024);
+    const over = backends.MAX_CLIPBOARD_READ_BYTES + 10;
+    await expect(backends.defaultClipboardExec(process.execPath, ['-e', `process.stdout.write('a'.repeat(${over}))`])).rejects.toMatchObject({ name: 'ClipboardTooLargeError' });
+    const ok = await backends.defaultClipboardExec(process.execPath, ['-e', `process.stdout.write('a'.repeat(${backends.MAX_CLIPBOARD_READ_BYTES}))`]);
+    expect(ok.length).toBe(backends.MAX_CLIPBOARD_READ_BYTES);
+  });
+
+  it('the loop skips a too-large clipboard without reporting an error, then corrects the next copy', async () => {
+    let bytes = 17 * 1024 * 1024;
+    const { exec, writes } = bigExec(() => bytes, 'meet Ashler');
+    const err: string[] = [];
+    const controller = new AbortController();
+    const done = runClipboardDaemon({ intervalMs: 20, backend: 'xclip', exec, platform: 'linux', quiet: true, signal: controller.signal, err: (s) => err.push(s), cwd: '/fake' });
+    await new Promise((r) => setTimeout(r, 400));
+    expect(writes).toEqual([]);
+    expect(err).toEqual([]);
+    bytes = 0;
+    await vi.waitFor(() => expect(writes).toEqual(['meet Ashlr.AI']), { timeout: 5_000 });
+    controller.abort();
+    await done;
+  }, 20_000);
+
+  it('--paste still pastes a clipboard that was too large to correct', async () => {
+    const { exec } = bigExec(() => 17 * 1024 * 1024);
+    const sendPaste = vi.fn(async () => undefined);
+    const res = await runClipboardOnce({ backend: 'pbcopy', exec, platform: 'darwin', paste: true, sendPaste, out: () => undefined, err: () => undefined, cwd: '/fake' });
+    expect(sendPaste).toHaveBeenCalledTimes(1);
+    expect(res.pasted).toBe(true);
   });
 });

@@ -612,8 +612,9 @@ export function dropDataBlockSpans(result: NormalizeResult): NormalizeResult {
 }
 
 /**
- * Keeps a claude-md export under `max` characters by dropping table rows from
- * the end and adding a "... N more terms" line. Header and footer survive so
+ * Keeps a claude-md export under `max` characters by keeping the table rows
+ * that fit, in order (a row too long to fit is dropped, later rows still
+ * count), and adding a "... N more terms" line. Header and footer survive so
  * the model still gets the instructions around the table.
  */
 export function truncateSessionContext(text: string, max = SESSION_CONTEXT_MAX_CHARS): string {
@@ -632,8 +633,10 @@ export function truncateSessionContext(text: string, max = SESSION_CONTEXT_MAX_C
   const fixed = header.join('\n').length + footer.join('\n').length + moreLine(rows.length).length + 3; // 3 joining newlines
   let used = fixed;
   const kept: string[] = [];
+  // A row that does not fit is skipped, not the end of the table: one long
+  // row near the top used to hide every later row that would have fit.
   for (const row of rows) {
-    if (used + row.length + 1 > max) break;
+    if (used + row.length + 1 > max) continue;
     used += row.length + 1;
     kept.push(row);
   }

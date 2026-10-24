@@ -4,7 +4,7 @@
  * touches the filesystem, so both can import it without a cycle.
  */
 import path from 'node:path';
-import { xdgConfigHome } from '../util/xdg.js';
+import { usableHome, xdgConfigHome } from '../util/xdg.js';
 
 export const LAUNCH_AGENT_LABEL = 'ai.ashlr.lexicon.serve';
 export const SYSTEMD_UNIT_NAME = 'lexicon-serve.service';
@@ -32,11 +32,11 @@ export function scheduledTaskName(env: NodeJS.ProcessEnv = process.env): string 
 }
 
 export function launchAgentPath(home: string, env: NodeJS.ProcessEnv = process.env): string {
-  return path.join(home, 'Library', 'LaunchAgents', `${serveLabel(env)}.plist`);
+  return path.join(usableHome(home), 'Library', 'LaunchAgents', `${serveLabel(env)}.plist`);
 }
 
 export function launchAgentLogPath(home: string): string {
-  return path.join(home, 'Library', 'Logs', 'lexicon', 'serve.log');
+  return path.join(usableHome(home), 'Library', 'Logs', 'lexicon', 'serve.log');
 }
 
 export function systemdUnitPath(home: string, env: NodeJS.ProcessEnv): string {

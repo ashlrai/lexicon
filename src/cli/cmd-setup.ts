@@ -38,7 +38,7 @@
  * reported and not added again. All process spawning and filesystem probing
  * goes through `SetupDeps` so tests never touch the machine.
  */
-import os from 'node:os';
+import { homeDir } from '../util/xdg.js';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Command } from 'commander';
@@ -256,7 +256,7 @@ export async function runSetup(
   deps: SetupDeps = {},
 ): Promise<{ code: number; summary: SetupSummary; plan?: SetupPlan }> {
   const cwd = path.resolve(opts.cwd ?? process.cwd());
-  const home = opts.home ? path.resolve(opts.home) : (deps.home ?? os.homedir());
+  const home = opts.home ? path.resolve(opts.home) : (deps.home ?? homeDir());
   // Validate the flags before any step writes anything.
   if (opts.clients !== undefined) parseClientList(opts.clients);
   // A blank, multi-line or over-cap name otherwise failed only at the write,

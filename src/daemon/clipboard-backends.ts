@@ -16,7 +16,11 @@ export interface ClipboardBackend {
   name: string;
   /** Human-readable description of the commands used (for `--which` and doctor). */
   description?: string;
-  /** Resolve to '' when the clipboard is empty or holds something that is not text. */
+  /**
+   * Resolve to '' when the clipboard is empty or holds something that is not
+   * text. May reject with a ClipboardTooLargeError (isClipboardTooLarge) for a
+   * clipboard past MAX_CLIPBOARD_READ_BYTES, which the daemon skips as too large.
+   */
   read(): Promise<string>;
   write(text: string): Promise<void>;
 }
@@ -46,12 +50,40 @@ export class ExecError extends Error {
   }
 }
 
-const MAX_OUTPUT = 16 * 1024 * 1024;
+/**
+ * Most stdout bytes a read takes before giving up on the clipboard as too
+ * large. The daemon corrects at most MAX_CLIPBOARD_CHARS (20,000) UTF-16 units,
+ * and no text needs more than 3 UTF-8 bytes per unit, so anything past 64 KiB
+ * is over that limit whatever it holds. Stopping here, rather than at 16 MB,
+ * keeps the 250 ms poll from re-reading a huge clipboard in full every time.
+ */
+export const MAX_CLIPBOARD_READ_BYTES = 64 * 1024;
+
+/**
+ * A read that stopped at MAX_CLIPBOARD_READ_BYTES: the clipboard holds more
+ * text than the daemon corrects. Not a failure; the daemon skips it as too large.
+ */
+export class ClipboardTooLargeError extends Error {
+  constructor(
+    public readonly cmd: string,
+    public readonly limit: number,
+  ) {
+    super(`${cmd}: clipboard holds more than ${limit} bytes`);
+    this.name = 'ClipboardTooLargeError';
+  }
+}
+
+/** True for a ClipboardTooLargeError (by name, so an injected exec may throw its own). */
+export function isClipboardTooLarge(err: unknown): boolean {
+  return err instanceof Error && err.name === 'ClipboardTooLargeError';
+}
 
 /**
  * Default process runner. Writes (a `stdin` payload) ignore stdout/stderr and
  * resolve as soon as the process exits: `xclip -i` forks a child that keeps
- * the selection alive and would otherwise hold the pipes open forever.
+ * the selection alive and would otherwise hold the pipes open forever. A read
+ * whose stdout passes MAX_CLIPBOARD_READ_BYTES kills the tool and rejects with
+ * a ClipboardTooLargeError.
  */
 export function defaultClipboardExec(cmd: string, args: readonly string[], stdin?: string): Promise<string> {
   const isWrite = stdin !== undefined;
@@ -72,9 +104,9 @@ export function defaultClipboardExec(cmd: string, args: readonly string[], stdin
     child.once('error', fail);
     child.stdout?.on('data', (chunk: Buffer) => {
       size += chunk.length;
-      if (size > MAX_OUTPUT) {
+      if (size > MAX_CLIPBOARD_READ_BYTES) {
         child.kill();
-        fail(new Error(`${cmd}: output exceeds ${MAX_OUTPUT} bytes`));
+        fail(new ClipboardTooLargeError(cmd, MAX_CLIPBOARD_READ_BYTES));
         return;
       }
       out.push(chunk);
@@ -98,13 +130,15 @@ export function defaultClipboardExec(cmd: string, args: readonly string[], stdin
  * Read helper shared by every backend: an empty or non-text clipboard makes
  * most tools exit non-zero (`wl-paste`: "Nothing is copied", `xclip`: "target
  * STRING not available"), which is not an error for us. A missing binary or a
- * display/session problem still surfaces so the daemon does not sit silent.
+ * display/session problem still surfaces so the daemon does not sit silent,
+ * and so does a ClipboardTooLargeError: swallowed, a clipboard over the read
+ * cap was reported as empty while a smaller oversized one was "too large".
  */
 async function readOrEmpty(exec: ClipboardExec, cmd: string, args: readonly string[]): Promise<string> {
   try {
     return await exec(cmd, args);
   } catch (e) {
-    if (isEnoent(e)) throw e;
+    if (isEnoent(e) || isClipboardTooLarge(e)) throw e;
     if (e instanceof ExecError && /display|DISPLAY|WAYLAND_DISPLAY|compositor|not allowed|permission/i.test(e.stderr)) throw e;
     return '';
   }

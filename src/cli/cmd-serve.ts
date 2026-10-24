@@ -8,6 +8,7 @@
 import { spawn } from 'node:child_process';
 import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
+import { homeDir } from '../util/xdg.js';
 import path from 'node:path';
 import { Command, InvalidArgumentError } from 'commander';
 import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, ensureServeConfig, getServePath, readServeConfig, isLexiconHealth, isLoopbackHost, probeHealth, serveUrl, FOREIGN_HEALTH_ERROR, SERVE_STATUS_HINTS } from '../serve/index.js';
@@ -64,7 +65,7 @@ export type ServeExec = (cmd: string, args: readonly string[]) => Promise<ExecRe
 
 export interface ServeDeps {
   platform?: NodeJS.Platform;
-  /** Home directory (LaunchAgents / Logs / .config live under it). Default os.homedir(). */
+  /** Home directory (LaunchAgents / Logs / .config live under it). Default homeDir() (src/util/xdg.ts). */
   home?: string;
   env?: NodeJS.ProcessEnv;
   /** Runs launchctl / systemctl and the `--pair` browser opener. Injectable for tests. */
@@ -125,7 +126,7 @@ export const defaultServeExec: ServeExec = (cmd, args) =>
 // ---------------------------------------------------------------------------
 
 export async function runServeShow(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
-  const home = deps.home ?? os.homedir();
+  const home = deps.home ?? homeDir();
   const config = await ensureServeConfig(storeOpts(opts));
   const port = opts.port ?? config.port;
   const url = serveUrl(port, opts.host ?? DEFAULT_HOST);
@@ -176,7 +177,7 @@ export async function runServeStatus(opts: ServeOptions, io: IO, deps: ServeDeps
     line(io, JSON.stringify({ ok: up, up, url, ...rest, ...notConfigured }, null, 2));
     return up ? 0 : 1;
   }
-  if (!config) line(io, `serve is not configured: ${safe(tildify(configPath, deps.home ?? os.homedir()))} ${why}`);
+  if (!config) line(io, `serve is not configured: ${safe(tildify(configPath, deps.home ?? homeDir()))} ${why}`);
   if (up) {
     const version = typeof health?.version === 'string' ? health.version : '?';
     const terms = typeof health?.terms === 'number' ? health.terms : 0;
@@ -241,7 +242,7 @@ export async function runServePair(opts: ServeOptions, io: IO, deps: ServeDeps =
     const error = `serve is not configured: ${configPath} ${why}`;
     const nextStep = 'run `lexicon serve --install` (or `lexicon serve` in the foreground) first, then run `lexicon serve --pair` again';
     if (opts.json) line(io, JSON.stringify({ ...jsonError(error, nextStep), up: false, configured: false, configPath }, null, 2));
-    io.stderr(`lexicon: serve is not configured: ${safe(tildify(configPath, deps.home ?? os.homedir()))} ${why}\n`);
+    io.stderr(`lexicon: serve is not configured: ${safe(tildify(configPath, deps.home ?? homeDir()))} ${why}\n`);
     io.stderr(`lexicon: ${nextStep}\n`);
     return 1;
   }
@@ -559,7 +560,7 @@ export async function serveInstallBlocker(deps: Pick<ServeDeps, 'cliPath' | 'env
 
 export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
   const platform = deps.platform ?? process.platform;
-  const home = deps.home ?? os.homedir();
+  const home = deps.home ?? homeDir();
   const env = deps.env ?? process.env;
   const exec = deps.exec ?? defaultServeExec;
   const nodePath = deps.nodePath ?? process.execPath;
@@ -705,7 +706,7 @@ async function removeServiceFile(file: string, io: IO): Promise<boolean> {
 
 export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
   const platform = deps.platform ?? process.platform;
-  const home = deps.home ?? os.homedir();
+  const home = deps.home ?? homeDir();
   const env = deps.env ?? process.env;
   const exec = deps.exec ?? defaultServeExec;
   void opts;
@@ -747,7 +748,7 @@ export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeD
 
 export async function runServeForeground(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
   const env = deps.env ?? process.env;
-  const home = deps.home ?? os.homedir();
+  const home = deps.home ?? homeDir();
   const host = opts.host ?? DEFAULT_HOST;
   if (opts.host !== undefined && !isLoopbackHost(opts.host)) {
     io.stderr(

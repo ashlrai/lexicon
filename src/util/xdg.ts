@@ -55,6 +55,16 @@ export function usableHome(home: string): string {
   throw new Error(`no usable home directory: HOME is ${what} and the user database has none; set HOME to an absolute path, or LEXICON_PATH to the lexicon file`);
 }
 
+/**
+ * The home directory default every CLI and voice path should use instead of
+ * `os.homedir()`: `usableHome(os.homedir())`, so `HOME=` or a relative HOME
+ * cannot turn `~/.claude`, `~/Library/LaunchAgents` or `~/models` into a
+ * path under the working directory.
+ */
+export function homeDir(): string {
+  return usableHome(os.homedir());
+}
+
 export function xdgConfigHome(env: NodeJS.ProcessEnv = process.env, home: string = os.homedir()): string {
   return absoluteOr(env.XDG_CONFIG_HOME, () => path.join(usableHome(home), '.config'));
 }

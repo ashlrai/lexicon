@@ -54072,6 +54072,9 @@ function usableHome(home) {
   const what = trimmed ? `the relative path ${JSON.stringify(trimmed)}` : "empty";
   throw new Error(`no usable home directory: HOME is ${what} and the user database has none; set HOME to an absolute path, or LEXICON_PATH to the lexicon file`);
 }
+function homeDir() {
+  return usableHome(import_node_os2.default.homedir());
+}
 function xdgConfigHome(env = process.env, home = import_node_os2.default.homedir()) {
   return absoluteOr(env.XDG_CONFIG_HOME, () => import_node_path4.default.join(usableHome(home), ".config"));
 }
@@ -58922,11 +58925,14 @@ var QUOTED_SIDE = `(?:"([^"]{1,80})"|\u201C([^\u201D]{1,80})\u201D|\`([^\`]{1,80
 var TAIL = `\\s*(?:[.!?]+\\s+[\\s\\S]*)?[.!?]*\\s*$`;
 var LEAD = `(?:^|[\\s,;:\u2014-])`;
 var APOS = `['\u2019]`;
+var IT_IS = `it(?:${APOS}?s| is)`;
 var PATTERNS = [
   // "it's X not Y" / "it's X, not Y" / "it's spelled X, not Y". The apostrophe
   // may be the typographic one (U+2019) that macOS and iOS smart punctuation and
   // dictation write; with only `'` accepted, "it\u2019s Ashlr.AI not Ashler" was no correction.
-  { template: `${LEAD}it${APOS}?s (?:spelled |spelt |written |called )?{X},? not {Y}${TAIL}`, order: ["meant", "heard"], example: "it's Ashlr.AI, not Ashler", needle: /not /iu },
+  // Speech-to-text often writes the contraction out ("it is X not Y") or drops
+  // its apostrophe ("its X not Y"); IT_IS accepts all three.
+  { template: `${LEAD}${IT_IS} (?:spelled |spelt |written |called )?{X},? not {Y}${TAIL}`, order: ["meant", "heard"], example: "it's Ashlr.AI, not Ashler", needle: /not /iu },
   // "I said X not Y"
   { template: `${LEAD}i said {X},? not {Y}${TAIL}`, order: ["meant", "heard"], example: "I said Ashlr.AI not Ashler", needle: /not /iu },
   // "I meant X not Y"
@@ -58934,7 +58940,7 @@ var PATTERNS = [
   // "X not Y" with no verb - only when both sides are quoted, otherwise far too loose
   { template: `^\\s*{X},? not {Y}${TAIL}`, order: ["meant", "heard"], quotedOnly: true, example: '"Ashlr.AI" not "Ashler"', needle: /not /iu },
   // "not Y, X" / "not Y, it's X"
-  { template: `^\\s*not {Y},\\s*(?:it${APOS}?s |i meant |i said |but )?{X}${TAIL}`, order: ["heard", "meant"], example: "not Ashler, Ashlr.AI", needle: /not /iu },
+  { template: `^\\s*not {Y},\\s*(?:${IT_IS} |i meant |i said |but )?{X}${TAIL}`, order: ["heard", "meant"], example: "not Ashler, Ashlr.AI", needle: /not /iu },
   // "replace Y with X"
   { template: `${LEAD}replace {Y} with {X}${TAIL}`, order: ["heard", "meant"], bareNeedsName: true, example: "replace Ashler with Ashlr.AI", needle: /replace /iu },
   // "Y -> X" / "Y => X" / "Y → X"
@@ -61681,7 +61687,6 @@ var import_node_path23 = __toESM(require_node_path());
 // src/cli/claude-settings.ts
 var import_node_fs17 = __toESM(require_node_fs());
 var import_node_child_process3 = __toESM(require_node_child_process());
-var import_node_os5 = __toESM(require_node_os());
 var import_node_path18 = __toESM(require_node_path());
 var import_node_url3 = __toESM(require_node_url());
 
@@ -61790,9 +61795,9 @@ function resolveCliEntry(opts = {}) {
 
 // src/cli/claude-settings.ts
 var HOOK_EVENTS = ["UserPromptSubmit", "SessionStart"];
-function claudeConfigDir(env = process.env, home = import_node_os5.default.homedir()) {
+function claudeConfigDir(env = process.env, home) {
   const override = env.CLAUDE_CONFIG_DIR?.trim();
-  return override ? override : import_node_path18.default.join(home, ".claude");
+  return override ? override : import_node_path18.default.join(home === void 0 ? homeDir() : usableHome(home), ".claude");
 }
 var LEXICON_HOOK_COMMAND = /user-prompt-submit\.js|plugin[\\/]hook\.mjs|lexicon/i;
 function findInstalledLexiconPlugin(settings, installedPlugins) {
@@ -61895,7 +61900,6 @@ function defaultExec(file2, args) {
 
 // src/cli/cmd-doctor.ts
 var import_node_fs22 = __toESM(require_node_fs());
-var import_node_os8 = __toESM(require_node_os());
 var import_node_path22 = __toESM(require_node_path());
 
 // src/daemon/clipboard-backends.ts
@@ -61913,7 +61917,20 @@ var ExecError = class extends Error {
   exitCode;
   stderr;
 };
-var MAX_OUTPUT = 16 * 1024 * 1024;
+var MAX_CLIPBOARD_READ_BYTES = 64 * 1024;
+var ClipboardTooLargeError = class extends Error {
+  constructor(cmd, limit) {
+    super(`${cmd}: clipboard holds more than ${limit} bytes`);
+    this.cmd = cmd;
+    this.limit = limit;
+    this.name = "ClipboardTooLargeError";
+  }
+  cmd;
+  limit;
+};
+function isClipboardTooLarge(err) {
+  return err instanceof Error && err.name === "ClipboardTooLargeError";
+}
 function defaultClipboardExec(cmd, args, stdin) {
   const isWrite = stdin !== void 0;
   return new Promise((resolve5, reject) => {
@@ -61933,9 +61950,9 @@ function defaultClipboardExec(cmd, args, stdin) {
     child.once("error", fail2);
     child.stdout?.on("data", (chunk) => {
       size += chunk.length;
-      if (size > MAX_OUTPUT) {
+      if (size > MAX_CLIPBOARD_READ_BYTES) {
         child.kill();
-        fail2(new Error(`${cmd}: output exceeds ${MAX_OUTPUT} bytes`));
+        fail2(new ClipboardTooLargeError(cmd, MAX_CLIPBOARD_READ_BYTES));
         return;
       }
       out.push(chunk);
@@ -61957,7 +61974,7 @@ async function readOrEmpty(exec, cmd, args) {
   try {
     return await exec(cmd, args);
   } catch (e) {
-    if (isEnoent(e)) throw e;
+    if (isEnoent(e) || isClipboardTooLarge(e)) throw e;
     if (e instanceof ExecError && /display|DISPLAY|WAYLAND_DISPLAY|compositor|not allowed|permission/i.test(e.stderr)) throw e;
     return "";
   }
@@ -62059,7 +62076,6 @@ async function detectClipboardBackend(platform = process.platform, env = process
 
 // src/voice/models.ts
 var import_node_fs18 = __toESM(require_node_fs());
-var import_node_os6 = __toESM(require_node_os());
 var import_node_path19 = __toESM(require_node_path());
 var import_node_stream = __toESM(require_node_stream());
 var import_promises = __toESM(require_promises());
@@ -62079,7 +62095,9 @@ function modelUrl(name) {
 function modelsDir(globalPath, env = process.env) {
   return env.LEXICON_WHISPER_MODELS || import_node_path19.default.join(import_node_path19.default.dirname(globalPath), "models");
 }
-function expandTilde(spec, home = import_node_os6.default.homedir()) {
+function expandTilde(spec, homeArg) {
+  if (spec !== "~" && !spec.startsWith("~/") && !(process.platform === "win32" && spec.startsWith("~\\"))) return spec;
+  const home = homeArg === void 0 ? homeDir() : usableHome(homeArg);
   if (spec === "~") return home;
   if (spec.startsWith("~/")) return import_node_path19.default.join(home, spec.slice(2));
   if (process.platform === "win32" && spec.startsWith("~\\")) return import_node_path19.default.join(home, spec.slice(2));
@@ -62109,7 +62127,7 @@ function resolveModel(spec, opts) {
 // src/voice/process.ts
 var import_node_child_process5 = __toESM(require_node_child_process());
 var import_node_fs19 = __toESM(require_node_fs());
-var MAX_OUTPUT2 = 16 * 1024 * 1024;
+var MAX_OUTPUT = 16 * 1024 * 1024;
 var WHISPER_BIN_NAMES = ["whisper-cli", "whisper-cpp"];
 var INSTALL_HINTS = {
   darwin: "brew install ffmpeg whisper-cpp",
@@ -62212,7 +62230,6 @@ function checkPhantomPresence(probe) {
 
 // src/cli/cmd-install.ts
 var import_node_fs21 = __toESM(require_node_fs());
-var import_node_os7 = __toESM(require_node_os());
 var import_node_path20 = __toESM(require_node_path());
 var INSTALL_CLIENTS = [
   "claude",
@@ -62587,7 +62604,7 @@ lexicon: ${safeMessage(nextStep)}
 async function installText(client, opts, io, deps) {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
-  const home = opts.home ? import_node_path20.default.resolve(opts.home) : import_node_os7.default.homedir();
+  const home = opts.home ? import_node_path20.default.resolve(opts.home) : homeDir();
   const cwd = import_node_path20.default.resolve(opts.cwd ?? process.cwd());
   const serverPath = resolveServerPath(deps.cliDir);
   const scope = opts.scope ?? (opts.project ? "project" : "user");
@@ -62770,10 +62787,10 @@ function scheduledTaskName(env = process.env) {
   return override && /^[A-Za-z0-9._-]+$/.test(override) ? override : SCHEDULED_TASK_NAME;
 }
 function launchAgentPath(home, env = process.env) {
-  return import_node_path21.default.join(home, "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
+  return import_node_path21.default.join(usableHome(home), "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
 }
 function launchAgentLogPath(home) {
-  return import_node_path21.default.join(home, "Library", "Logs", "lexicon", "serve.log");
+  return import_node_path21.default.join(usableHome(home), "Library", "Logs", "lexicon", "serve.log");
 }
 function systemdUnitPath(home, env) {
   return import_node_path21.default.join(xdgConfigHome(env, home), "systemd", "user", SYSTEMD_UNIT_NAME);
@@ -63132,7 +63149,7 @@ function summarize(checks, state, audience = "cli") {
 async function runDoctorReport(opts, deps = {}) {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
-  const home = deps.home ?? import_node_os8.default.homedir();
+  const home = deps.home ?? homeDir();
   const exec = deps.exec ?? defaultExec;
   const cwd = resolveCwd(opts);
   const checks = [];
@@ -63544,7 +63561,6 @@ async function createLexiconFile(target, scope) {
 }
 
 // src/cli/cmd-setup.ts
-var import_node_os11 = __toESM(require_node_os());
 var import_node_path28 = __toESM(require_node_path());
 var import_node_fs28 = __toESM(require_node_fs());
 
@@ -63558,7 +63574,6 @@ var SEEDED_TERMS = 3;
 // src/cli/setup/detect.ts
 var import_node_child_process6 = __toESM(require_node_child_process());
 var import_node_fs24 = __toESM(require_node_fs());
-var import_node_os9 = __toESM(require_node_os());
 var import_node_path24 = __toESM(require_node_path());
 function captureIO() {
   const sink = {
@@ -63678,7 +63693,7 @@ function configDirFor(client, ctx) {
 }
 async function detectClients(deps = {}, cwd = process.cwd()) {
   const ctx = {
-    home: deps.home ?? import_node_os9.default.homedir(),
+    home: deps.home ?? homeDir(),
     cwd,
     platform: deps.platform ?? process.platform,
     env: deps.env ?? process.env,
@@ -63713,7 +63728,7 @@ var import_node_path27 = __toESM(require_node_path());
 // src/cli/cmd-serve.ts
 var import_node_child_process7 = __toESM(require_node_child_process());
 var import_node_fs26 = __toESM(require_node_fs());
-var import_node_os10 = __toESM(require_node_os());
+var import_node_os5 = __toESM(require_node_os());
 var import_node_path26 = __toESM(require_node_path());
 
 // src/serve/config.ts
@@ -64036,7 +64051,7 @@ async function serveInstallBlocker(deps = {}) {
 }
 async function runServeInstall(opts, io, deps = {}) {
   const platform = deps.platform ?? process.platform;
-  const home = deps.home ?? import_node_os10.default.homedir();
+  const home = deps.home ?? homeDir();
   const env = deps.env ?? process.env;
   const exec = deps.exec ?? defaultServeExec;
   const nodePath = deps.nodePath ?? process.execPath;
@@ -64119,7 +64134,7 @@ async function runServeInstall(opts, io, deps = {}) {
       }
     }
     const xml = scheduledTaskXml(nodePath, cliPath, taskUserId(env), envFile);
-    const xmlPath = import_node_path26.default.join(await import_node_fs26.promises.mkdtemp(import_node_path26.default.join(import_node_os10.default.tmpdir(), "lexicon-task-")), "lexicon-serve.xml");
+    const xmlPath = import_node_path26.default.join(await import_node_fs26.promises.mkdtemp(import_node_path26.default.join(import_node_os5.default.tmpdir(), "lexicon-task-")), "lexicon-serve.xml");
     await import_node_fs26.promises.writeFile(xmlPath, Buffer.from(`\uFEFF${xml}`, "utf16le"));
     try {
       const created = await runAndReport(exec, io, "schtasks", ["/Create", "/TN", taskName, "/XML", xmlPath, "/F"]);
@@ -64805,7 +64820,7 @@ function printSummary(ctx) {
 }
 async function runSetup(opts, io, deps = {}) {
   const cwd = import_node_path28.default.resolve(opts.cwd ?? process.cwd());
-  const home = opts.home ? import_node_path28.default.resolve(opts.home) : deps.home ?? import_node_os11.default.homedir();
+  const home = opts.home ? import_node_path28.default.resolve(opts.home) : deps.home ?? homeDir();
   if (opts.clients !== void 0) parseClientList(opts.clients);
   for (const [flag, value] of [["--company", opts.company], ["--person", opts.person]]) {
     const problem = value === void 0 ? void 0 : setupNameProblem(value);
