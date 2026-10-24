@@ -43,6 +43,8 @@ import {
   isLoopbackHost,
   isAllowedHost,
   isOriginAllowed,
+  exportNote,
+  isLexiconHealth,
   isPairHost,
   pairPageHtml,
   pairPortNote,
@@ -342,6 +344,51 @@ describe('serve.json', () => {
 // ---------------------------------------------------------------------------
 // auth + health
 // ---------------------------------------------------------------------------
+
+describe('exportNote', () => {
+  // Catches: GET /export/:format said nothing when the format left entries out.
+  it('says a format left entries out, in ASCII, and where the list is', () => {
+    const loaded = { merged: { version: 1 as const, terms: [{ canonical: 'Café', aliases: [] }] } };
+    const note = exportNote(loaded, 'google', {}, ['left out 1 phrase over 100 characters: "Caf\u00e9..."']);
+    expect(note).toBe("The google export left entries out to stay within its target's limits; lexicon export google --json lists them under dropped.");
+    expect(exportNote(loaded, 'google', {})).toBeUndefined();
+  });
+});
+
+describe('isLexiconHealth', () => {
+  // Catches: any { ok: true } counted as lexicon serve, so another program on
+  // the port that answered it was reported up by --status and serve_status.
+  it('takes only the /health shape lexicon serve answers', () => {
+    expect(isLexiconHealth({ ok: true, version: '0.5.6', terms: 0 })).toBe(true);
+    expect(isLexiconHealth({ ok: true, version: '0.5.6', terms: 12, port: 41733 })).toBe(true);
+    expect(isLexiconHealth({ ok: true })).toBe(false);
+    expect(isLexiconHealth({ ok: 'true', version: '1', terms: 1 })).toBe(false);
+    expect(isLexiconHealth({ ok: false, version: '1', terms: 1 })).toBe(false);
+    expect(isLexiconHealth({ ok: true, version: '', terms: 1 })).toBe(false);
+    expect(isLexiconHealth({ ok: true, version: '1', terms: 1.5 })).toBe(false);
+    expect(isLexiconHealth({ ok: true, version: '1', terms: -1 })).toBe(false);
+    expect(isLexiconHealth({ ok: true, version: '1', terms: '3' })).toBe(false);
+    expect(isLexiconHealth([{ ok: true }])).toBe(false);
+    expect(isLexiconHealth(null)).toBe(false);
+  });
+
+  it('--status says something else answers when the port gives a bare { ok: true }', async () => {
+    const other = http.createServer((_req, res) => {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end('{"ok":true}');
+    });
+    await new Promise<void>((resolve) => other.listen(0, '127.0.0.1', resolve));
+    const port = (other.address() as net.AddressInfo).port;
+    try {
+      const io = memIO();
+      expect(await runServe({ status: true, port, globalPath: env.globalPath }, io)).toBe(1);
+      expect(io.out.join('')).toContain('something else answers on that port');
+      expect(io.out.join('')).not.toContain('is up');
+    } finally {
+      await new Promise<void>((resolve) => other.close(() => resolve()));
+    }
+  });
+});
 
 describe('auth', () => {
   it('a wrong method on /health is 405, not 401, without a token', async () => {
@@ -1851,7 +1898,7 @@ describe('lexicon serve (CLI)', () => {
       const io = memIO();
       expect(await runServe({ status: true, port, globalPath: env.globalPath }, io)).toBe(1);
       const out = io.out.join('');
-      expect(out).toContain(`something answered at http://127.0.0.1:${port}, but it is not lexicon serve`);
+      expect(out).toContain(`something else answers on that port: http://127.0.0.1:${port}/health did not answer as lexicon serve does`);
       expect(out).toContain('lexicon serve --port <n>');
       expect(out).not.toContain('start it with');
 
@@ -1862,7 +1909,7 @@ describe('lexicon serve (CLI)', () => {
         up: false,
         url: `http://127.0.0.1:${port}`,
         reason: 'unexpected /health response',
-        error: 'unexpected /health response (not lexicon serve)',
+        error: "something else answers on that port: its /health response is not lexicon serve's",
         hint: expect.stringContaining('lexicon serve --port <n>'),
         nextStep: expect.stringContaining('lexicon serve --port <n>'),
       });

@@ -347,7 +347,8 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       const text =
         Object.keys(extra).length > 0
           ? `${JSON.stringify({ ...loaded.merged, ...extra }, null, 2)}\n`
-          : exportLexicon(loaded.merged, 'json');
+          : // The merged view whole, `scope` and `hits` included (the json export leaves them out).
+            `${JSON.stringify(loaded.merged, null, 2)}\n`;
       return {
         contents: [{ uri: uri.href, mimeType: 'application/json', text }],
       };

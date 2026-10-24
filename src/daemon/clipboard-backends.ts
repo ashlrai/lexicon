@@ -73,6 +73,30 @@ export class ClipboardTooLargeError extends Error {
   }
 }
 
+/**
+ * How long a clipboard tool may run before it is killed. `xclip -o` waits for
+ * the selection owner to answer and an unresponsive owner never does; with
+ * no limit the read never settled, so the watcher stopped polling without a
+ * word, and the spawned tool kept the process alive past ctrl-C.
+ */
+export const CLIPBOARD_EXEC_TIMEOUT_MS = 5_000;
+
+/** A clipboard tool that ran past CLIPBOARD_EXEC_TIMEOUT_MS and was killed. Reported, never read as an empty clipboard. */
+export class ClipboardTimeoutError extends Error {
+  constructor(
+    public readonly cmd: string,
+    public readonly timeoutMs: number,
+  ) {
+    super(`${cmd} did not finish within ${timeoutMs} ms and was stopped (the app holding the clipboard may not be answering)`);
+    this.name = 'ClipboardTimeoutError';
+  }
+}
+
+/** True for a ClipboardTimeoutError (by name, so an injected exec may throw its own). */
+export function isClipboardTimeout(err: unknown): boolean {
+  return err instanceof Error && err.name === 'ClipboardTimeoutError';
+}
+
 /** True for a ClipboardTooLargeError (by name, so an injected exec may throw its own). */
 export function isClipboardTooLarge(err: unknown): boolean {
   return err instanceof Error && err.name === 'ClipboardTooLargeError';
@@ -85,7 +109,12 @@ export function isClipboardTooLarge(err: unknown): boolean {
  * whose stdout passes MAX_CLIPBOARD_READ_BYTES kills the tool and rejects with
  * a ClipboardTooLargeError.
  */
-export function defaultClipboardExec(cmd: string, args: readonly string[], stdin?: string): Promise<string> {
+export function defaultClipboardExec(
+  cmd: string,
+  args: readonly string[],
+  stdin?: string,
+  timeoutMs: number = CLIPBOARD_EXEC_TIMEOUT_MS,
+): Promise<string> {
   const isWrite = stdin !== undefined;
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, [...args], {
@@ -96,9 +125,14 @@ export function defaultClipboardExec(cmd: string, args: readonly string[], stdin
     const errChunks: Buffer[] = [];
     let size = 0;
     let settled = false;
+    const timer = setTimeout(() => {
+      child.kill('SIGKILL');
+      fail(new ClipboardTimeoutError(cmd, timeoutMs));
+    }, timeoutMs);
     const fail = (e: Error): void => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       reject(e);
     };
     child.once('error', fail);
@@ -115,6 +149,7 @@ export function defaultClipboardExec(cmd: string, args: readonly string[], stdin
     child.once(isWrite ? 'exit' : 'close', (code: number | null) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       if (code === 0) resolve(Buffer.concat(out).toString('utf8'));
       else reject(new ExecError(cmd, code, Buffer.concat(errChunks).toString('utf8')));
     });
@@ -138,7 +173,7 @@ async function readOrEmpty(exec: ClipboardExec, cmd: string, args: readonly stri
   try {
     return await exec(cmd, args);
   } catch (e) {
-    if (isEnoent(e) || isClipboardTooLarge(e)) throw e;
+    if (isEnoent(e) || isClipboardTooLarge(e) || isClipboardTimeout(e)) throw e;
     if (e instanceof ExecError && /display|DISPLAY|WAYLAND_DISPLAY|compositor|not allowed|permission/i.test(e.stderr)) throw e;
     return '';
   }
@@ -198,9 +233,9 @@ export function xselBackend(exec: ClipboardExec = defaultClipboardExec): Clipboa
  * text is fed on stdin and read whole with `[Console]::In.ReadToEnd()` rather
  * than `$input`, which is line-based and would drop the final newline.
  *
- * Windows clipboards are usually CRLF: reads normalize to `\n` so the matcher
- * sees plain text, and the next write restores the line-ending style that was
- * read.
+ * Windows clipboards are usually CRLF: a read whose every line break is CRLF
+ * is normalized to `\n` so the matcher sees plain text, and the next write
+ * restores CRLF. Text with both kinds is left as it is, both ways.
  */
 export function powershellBackend(exec: ClipboardExec = defaultClipboardExec, shell = 'powershell'): ClipboardBackend {
   let crlf = false;
@@ -215,7 +250,10 @@ export function powershellBackend(exec: ClipboardExec = defaultClipboardExec, sh
     description: `${shell} Get-Clipboard -Raw / Set-Clipboard (Windows)`,
     read: async () => {
       const raw = (await readOrEmpty(exec, shell, ['-NoProfile', '-NonInteractive', '-Command', readScript])).replace(/^\uFEFF/, '');
-      crlf = raw.includes('\r\n');
+      // Only a clipboard whose every line break is CRLF is normalized: one with
+      // both kinds was rewritten with CRLF everywhere, changing lines the
+      // lexicon never touched. Mixed text is passed through as it is.
+      crlf = raw.includes('\r\n') && !/(^|[^\r])\n/.test(raw);
       return crlf ? raw.replace(/\r\n/g, '\n') : raw;
     },
     write: async (text) => {

@@ -1,7 +1,8 @@
 /** espanso match file: one word-bounded trigger per alias. */
 import { stringify as stringifyYaml } from 'yaml';
 import type { ExportOptions, Lexicon } from '../types.js';
-import { aliasPairs } from './shared.js';
+import { aliasPairs, sharedTriggerNote, uniqueTriggers } from './shared.js';
+import type { ExportSink } from './shared.js';
 
 /**
  * What espanso's renderer does with a `replace` body (espanso-render,
@@ -30,11 +31,25 @@ function espansoEscape(canonical: string): string {
  * canonical espanso cannot be made to type as written (it holds a literal
  * `\{\{` or `\}\}`, which espanso always unescapes) is left out, with a YAML
  * comment at the top naming it, rather than written to type something else.
+ *
+ * Two terms sharing an alias wrote the trigger twice, and espanso then
+ * expands it to either. The term `uniqueTriggers` ranks first keeps it (a
+ * trigger is matched as written, so `Ashler` and `ashler` are two); the
+ * other is named in a note.
+ *
+ * Every string is written double-quoted. A plain scalar is read by type:
+ * `yes`, `no`, `on`, `off` (YAML 1.1 booleans), `null`, `~`, `0o7`, `1_000`
+ * or `1:20` (a 1.1 sexagesimal) would come back as a boolean, null or number
+ * under one YAML version or another, so a trigger or name like that no
+ * longer types as written.
  */
-export function exportEspanso(lexicon: Lexicon, _opts: ExportOptions = {}): string {
+export function exportEspanso(lexicon: Lexicon, _opts: ExportOptions = {}, sink?: ExportSink): string {
   const leftOut: string[] = [];
   const matches = [];
-  for (const { alias, canonical } of aliasPairs(lexicon)) {
+  const { kept, dropped } = uniqueTriggers(aliasPairs(lexicon));
+  const shared = sharedTriggerNote(dropped, 'trigger');
+  if (shared) sink?.notes.push(shared);
+  for (const { alias, canonical } of kept) {
     const replace = espansoEscape(canonical);
     const typed = espansoRenders(replace);
     if (typed !== canonical) {
@@ -44,6 +59,7 @@ export function exportEspanso(lexicon: Lexicon, _opts: ExportOptions = {}): stri
     }
     matches.push({ trigger: alias, replace, word: true, propagate_case: false });
   }
-  const body = stringifyYaml({ matches }, { lineWidth: 0 });
+  if (sink) sink.rows = matches.length;
+  const body = stringifyYaml({ matches }, { lineWidth: 0, defaultStringType: 'QUOTE_DOUBLE', defaultKeyType: 'PLAIN' });
   return leftOut.length > 0 ? `${leftOut.join('\n')}\n${body}` : body;
 }

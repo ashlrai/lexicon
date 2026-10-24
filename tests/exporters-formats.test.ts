@@ -47,7 +47,7 @@ describe('exports in NFC', () => {
     expect(JSON.parse(exportLexicon(lexicon, 'assemblyai'))).toEqual({ word_boost: [NFC], boost_param: 'high' });
     expect(JSON.parse(exportLexicon(lexicon, 'azure'))).toEqual({ phraseList: [NFC] });
     expect(JSON.parse(exportLexicon(lexicon, 'google'))).toEqual({ adaptation: { phraseSets: [{ phrases: [{ value: NFC, boost: 20 }] }] } });
-    expect(JSON.parse(exportLexicon(lexicon, 'deepgram'))).toEqual({ keywords: [`${NFC}:2`] });
+    expect(JSON.parse(exportLexicon(lexicon, 'deepgram'))).toEqual({ keyterm: [NFC], keywords: [`${NFC}:2`] });
     expect(exportLexicon(lexicon, 'whisper-prompt')).toBe(NFC);
     expect(exportLexicon(lexicon, 'openai')).toBe(NFC);
   });

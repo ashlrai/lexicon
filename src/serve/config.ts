@@ -247,12 +247,18 @@ export type HealthProbe =
   | { state: 'down'; error: string };
 
 /**
- * True when a 2xx /health body is lexicon serve's (`{ ok: true, ... }`).
- * Anything else that answers 200 on the port is another program, so neither
- * `lexicon serve --status` nor MCP `serve_status` may call it up.
+ * True when a 2xx /health body has lexicon serve's shape (server.ts
+ * HealthResponse): `ok` true, a non-empty `version` string and a
+ * whole-number `terms`, the shape the browser extension checks
+ * (extension/src/background-core.ts isLexiconHealth, which also takes a
+ * boolean `ok` and leaves the value to its own code). Any `{ ok: true }`
+ * used to count, so another program on the port that answered that was
+ * reported as lexicon serve by `lexicon serve --status` and MCP `serve_status`.
  */
-export function isLexiconHealth(body: unknown): boolean {
-  return typeof body === 'object' && body !== null && !Array.isArray(body) && (body as { ok?: unknown }).ok === true;
+export function isLexiconHealth(body: unknown): body is { ok: true; version: string; terms: number } {
+  if (typeof body !== 'object' || body === null || Array.isArray(body)) return false;
+  const b = body as { ok?: unknown; version?: unknown; terms?: unknown };
+  return b.ok === true && typeof b.version === 'string' && b.version.length > 0 && Number.isInteger(b.terms) && (b.terms as number) >= 0;
 }
 
 /** The next step for each way /health can fail, shared by `lexicon serve --status --json` and MCP `serve_status`. */
@@ -265,7 +271,7 @@ export const SERVE_STATUS_HINTS = {
 } as const;
 
 /** The `error` for a 2xx /health whose body is not lexicon serve's. */
-export const FOREIGN_HEALTH_ERROR = 'unexpected /health response (not lexicon serve)';
+export const FOREIGN_HEALTH_ERROR = "something else answers on that port: its /health response is not lexicon serve's";
 
 /**
  * GET `<baseUrl>/health`, sending the bearer `token` when there is one so a

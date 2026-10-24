@@ -192,7 +192,7 @@ export async function runServeStatus(opts: ServeOptions, io: IO, deps: ServeDeps
   }
   if (foreign) {
     // "Start it" would fail with EADDRINUSE: the port is taken by something else.
-    line(io, `something answered at ${url}, but it is not lexicon serve (unexpected /health response)`);
+    line(io, `something else answers on that port: ${url}/health did not answer as lexicon serve does`);
     line(io, 'another program holds the port: stop it, or run the local API on another port with: lexicon serve --port <n>');
     return 1;
   }

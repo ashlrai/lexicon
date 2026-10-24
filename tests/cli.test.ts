@@ -85,6 +85,10 @@ vi.mock('../src/core/index.js', async (importOriginal) => {
     findTerm: vi.fn(),
     harvestRepo: vi.fn(async () => []),
     exportLexicon: vi.fn((_l: Lexicon, format: string) => `export:${format}`),
+    exportLexiconWithNotes: vi.fn((_l: Lexicon, format: string) => ({
+      text: `export:${format}`,
+      notes: format === 'google' ? ['left out 1 phrase over 100 characters: "X"'] : [],
+    })),
     EXPORT_FORMATS: ['wispr', 'superwhisper', 'claude-md', 'json'],
     EXPORT_FORMAT_INFO: {
       wispr: { description: 'Wispr Flow dictionary CSV', ext: 'csv' },
@@ -987,7 +991,7 @@ describe('export', () => {
     expect(io.err).toContain('Wispr Flow dictionary CSV');
     expect(io.err).toContain('claude-md');
     expect(io.out).toBe('');
-    expect(core.exportLexicon).not.toHaveBeenCalled();
+    expect(core.exportLexiconWithNotes).not.toHaveBeenCalled();
   });
 
   // Catches: `export --out lex.md` with the format forgotten listed the formats and exited 0, writing nothing.
@@ -1001,7 +1005,7 @@ describe('export', () => {
     const cat = makeIO();
     expect(await runExport(undefined, { category: ['brand'] }, cat)).toBe(1);
     expect(cat.err).toContain('lexicon: --category needs a format');
-    expect(core.exportLexicon).not.toHaveBeenCalled();
+    expect(core.exportLexiconWithNotes).not.toHaveBeenCalled();
   });
 
   it('lists formats (exit 0) when no format is given', async () => {
@@ -1014,7 +1018,7 @@ describe('export', () => {
     const io = makeIO();
     await runExport('wispr', { category: ['brand'], limit: 5 }, io);
     expect(io.out).toBe('export:wispr\n');
-    expect(core.exportLexicon).toHaveBeenCalledWith(expect.anything(), 'wispr', { categories: ['brand'], limit: 5 });
+    expect(core.exportLexiconWithNotes).toHaveBeenCalledWith(expect.anything(), 'wispr', { categories: ['brand'], limit: 5 });
 
     const dir = await tempDir('lexicon-cli-');
     const io2 = makeIO();
@@ -1246,13 +1250,28 @@ describe('export', () => {
     });
   });
 
+  // Catches: what a format left out to fit its target was said nowhere.
+  it('names what a format left out on stderr, and under --json as dropped', async () => {
+    const io = makeIO();
+    expect(await runExport('google', {}, io)).toBe(0);
+    expect(io.out).toBe('export:google\n');
+    expect(io.err).toContain('lexicon: google export left out 1 phrase over 100 characters: "X"');
+    const json = makeIO();
+    expect(await runExport('google', { json: true }, json)).toBe(0);
+    expect(JSON.parse(json.out)).toMatchObject({ ok: true, content: 'export:google\n', dropped: ['left out 1 phrase over 100 characters: "X"'] });
+    expect(json.err).not.toContain('left out');
+    const plain = makeIO();
+    await runExport('wispr', { json: true }, plain);
+    expect(JSON.parse(plain.out)).not.toHaveProperty('dropped');
+  });
+
   it('accepts the product name for a format (wispr-flow, any case)', async () => {
     for (const name of ['wispr-flow', 'Wispr-Flow', 'wisprflow']) {
       const io = makeIO();
       expect(await runExport(name, {}, io)).toBe(0);
       expect(io.out).toBe('export:wispr\n');
     }
-    expect(core.exportLexicon).toHaveBeenLastCalledWith(expect.anything(), 'wispr', {});
+    expect(core.exportLexiconWithNotes).toHaveBeenLastCalledWith(expect.anything(), 'wispr', {});
   });
 });
 

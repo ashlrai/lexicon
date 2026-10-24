@@ -58478,6 +58478,12 @@ function csvField(value) {
   if (/[",\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
   return value;
 }
+function isFormulaCell(value) {
+  return /^[=+\-@\t\r]/.test(value);
+}
+function csvTextField(value) {
+  return isFormulaCell(value) ? `"'${value.replace(/"/g, '""')}"` : csvField(value);
+}
 function xmlEscape(value) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
@@ -58487,17 +58493,62 @@ function joinAliasList(aliases) {
 function mdCell(value) {
   return value.replace(/\|/g, (_pipe2, at) => at > 0 && value[at - 1] === "\\" ? "\u200B\\|" : "\\|").replace(/\r\n|[\n\r\u0085\u2028\u2029]/g, " ");
 }
+function quotedNames(names, max = 10) {
+  const shown = names.slice(0, max).map((n) => JSON.stringify(n));
+  const rest = names.length - shown.length;
+  if (rest > 0) return `${shown.join(", ")} and ${rest} more`;
+  if (shown.length <= 1) return shown.join("");
+  return `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}`;
+}
+function uniqueTriggers(pairs, key = (a) => a) {
+  const rank2 = /* @__PURE__ */ new Map();
+  sortByImportance([...new Set(pairs.map((p) => p.term))]).forEach((t, i) => rank2.set(t, i));
+  const winner = /* @__PURE__ */ new Map();
+  for (const p of pairs) {
+    const k = key(p.alias);
+    const current = winner.get(k);
+    if (!current || (rank2.get(p.term) ?? 0) < (rank2.get(current.term) ?? 0)) winner.set(k, p);
+  }
+  const kept = [];
+  const dropped = [];
+  for (const p of pairs) (winner.get(key(p.alias)) === p ? kept : dropped).push(p);
+  return { kept, dropped };
+}
+function sharedTriggerNote(dropped, what) {
+  if (dropped.length === 0) return void 0;
+  return `left out ${dropped.length} ${what}${dropped.length === 1 ? "" : "s"} another term already uses (the more used term keeps it): ${quotedNames(dropped.map((p) => `${p.alias} -> ${p.canonical}`))}`;
+}
 
 // src/core/exporters/assemblyai.ts
 var ASSEMBLYAI_WORD_BOOST_MAX = 1e3;
-function exportAssemblyai(lexicon, _opts = {}) {
-  const word_boost = canonicalList(sortByImportance(lexicon.terms)).slice(0, ASSEMBLYAI_WORD_BOOST_MAX).map((c) => c.canonical);
+var ASSEMBLYAI_PHRASE_MAX_WORDS = 6;
+function exportAssemblyai(lexicon, _opts = {}, sink) {
+  const tooLong = [];
+  const overCap = [];
+  const word_boost = [];
+  for (const { canonical } of canonicalList(sortByImportance(lexicon.terms))) {
+    if (canonical.trim().split(/\s+/u).length > ASSEMBLYAI_PHRASE_MAX_WORDS) tooLong.push(canonical);
+    else if (word_boost.length >= ASSEMBLYAI_WORD_BOOST_MAX) overCap.push(canonical);
+    else word_boost.push(canonical);
+  }
+  if (tooLong.length > 0) {
+    sink?.notes.push(`left out ${tooLong.length} phrase${tooLong.length === 1 ? "" : "s"} over AssemblyAI's ${ASSEMBLYAI_PHRASE_MAX_WORDS} words per phrase: ${quotedNames(tooLong)}`);
+  }
+  if (overCap.length > 0) {
+    sink?.notes.push(`left out ${overCap.length} phrase${overCap.length === 1 ? "" : "s"} past AssemblyAI's ${ASSEMBLYAI_WORD_BOOST_MAX} word_boost entries (the most used kept): ${quotedNames(overCap)}`);
+  }
   return JSON.stringify({ word_boost, boost_param: "high" }, null, 2) + "\n";
 }
 
 // src/core/exporters/azure.ts
-function exportAzure(lexicon, _opts = {}) {
-  const phraseList = canonicalList(sortByImportance(lexicon.terms)).map((c) => c.canonical);
+var AZURE_PHRASES_MAX = 500;
+function exportAzure(lexicon, _opts = {}, sink) {
+  const all = canonicalList(sortByImportance(lexicon.terms)).map((c) => c.canonical);
+  const phraseList = all.slice(0, AZURE_PHRASES_MAX);
+  const dropped = all.slice(AZURE_PHRASES_MAX);
+  if (dropped.length > 0) {
+    sink?.notes.push(`left out ${dropped.length} phrase${dropped.length === 1 ? "" : "s"} past the ${AZURE_PHRASES_MAX} kept (the most used; the phrase list size Azure documents): ${quotedNames(dropped)}`);
+  }
   return JSON.stringify({ phraseList }, null, 2) + "\n";
 }
 
@@ -58538,8 +58589,15 @@ function exportClaudeMdWithin(lexicon, maxChars, more) {
   const rows = sortByCategory(lexicon.terms.filter((t) => keep.has(t))).map(claudeMdRow);
   const omitted = total - keep.size;
   const text = renderClaudeMd(rows, more(omitted));
-  return { text: text.length <= maxChars ? text : `${text.slice(0, Math.max(0, maxChars - 4))}...
-`, omitted };
+  return { text: text.length <= maxChars ? text : cutWithin(text, maxChars), omitted };
+}
+function cutWithin(text, maxChars) {
+  const tail = "...\n";
+  if (maxChars <= tail.length) return tail.slice(0, Math.max(0, maxChars));
+  let end = maxChars - tail.length;
+  const before = text.charCodeAt(end - 1);
+  if (before >= 55296 && before <= 56319) end -= 1;
+  return `${text.slice(0, end)}${tail}`;
 }
 function noteFor(term) {
   const parts = [];
@@ -58551,24 +58609,49 @@ function noteFor(term) {
 }
 
 // src/core/exporters/csv.ts
-function exportCsv(lexicon, _opts = {}) {
+function exportCsv(lexicon, _opts = {}, sink) {
   const lines = ["canonical,alias,category,phonetic"];
+  const guarded2 = /* @__PURE__ */ new Set();
   for (const { alias, canonical, term } of aliasPairs(lexicon)) {
-    lines.push(
-      [canonical, alias, term.category ?? "", term.phonetic ?? ""].map(csvField).join(",")
+    const cells = [canonical, alias, term.category ?? "", term.phonetic ?? ""];
+    for (const c of cells) if (isFormulaCell(c)) guarded2.add(c);
+    lines.push(cells.map(csvTextField).join(","));
+  }
+  if (guarded2.size > 0) {
+    sink?.notes.push(
+      `wrote ${guarded2.size} value${guarded2.size === 1 ? "" : "s"} a spreadsheet would run as a formula with a leading ' so it shows as text (lexicon import keeps the '): ${quotedNames([...guarded2])}`
     );
   }
+  if (sink) sink.rows = lines.length - 1;
   return lines.join("\n") + "\n";
 }
 
 // src/core/exporters/deepgram.ts
-function exportDeepgram(lexicon, _opts = {}) {
+var DEEPGRAM_KEYTERM_MAX = 100;
+function exportDeepgram(lexicon, _opts = {}, sink) {
+  const ordered = canonicalList(sortByImportance(lexicon.terms));
+  const keyterm = ordered.slice(0, DEEPGRAM_KEYTERM_MAX).map((c) => c.canonical.replace(/\s+/g, " ").trim()).filter((k) => k !== "");
+  const overCap = ordered.slice(DEEPGRAM_KEYTERM_MAX).map((c) => c.canonical);
   const keywords = [];
-  for (const { term, canonical } of canonicalList(sortByImportance(lexicon.terms))) {
+  const seen = /* @__PURE__ */ new Set();
+  const collided = [];
+  for (const { term, canonical } of ordered) {
     const keyword = canonical.replace(/:/g, " ").replace(/\s+/g, " ").trim();
-    if (keyword) keywords.push(`${keyword}:${isProperNounCategory(term.category) ? 2 : 1}`);
+    if (!keyword) continue;
+    if (seen.has(keyword)) {
+      collided.push(canonical);
+      continue;
+    }
+    seen.add(keyword);
+    keywords.push(`${keyword}:${isProperNounCategory(term.category) ? 2 : 1}`);
   }
-  return JSON.stringify({ keywords }, null, 2) + "\n";
+  if (overCap.length > 0) {
+    sink?.notes.push(`left out ${overCap.length} name${overCap.length === 1 ? "" : "s"} from keyterm past the ${DEEPGRAM_KEYTERM_MAX} kept (the most used; a conservative cap for Nova-3 keyterms): ${quotedNames(overCap)}`);
+  }
+  if (collided.length > 0) {
+    sink?.notes.push(`left out ${collided.length} name${collided.length === 1 ? "" : "s"} from keywords that read as one already listed once its colon is a space: ${quotedNames(collided)}`);
+  }
+  return JSON.stringify({ keyterm, keywords }, null, 2) + "\n";
 }
 
 // src/core/exporters/espanso.ts
@@ -58581,10 +58664,13 @@ function espansoRenders(body) {
 function espansoEscape(canonical) {
   return canonical.replace(/\{{2,}/g, (run) => (run.length % 2 === 1 ? "{" : "") + "\\{\\{".repeat(Math.floor(run.length / 2)));
 }
-function exportEspanso(lexicon, _opts = {}) {
+function exportEspanso(lexicon, _opts = {}, sink) {
   const leftOut = [];
   const matches = [];
-  for (const { alias, canonical } of aliasPairs(lexicon)) {
+  const { kept, dropped } = uniqueTriggers(aliasPairs(lexicon));
+  const shared = sharedTriggerNote(dropped, "trigger");
+  if (shared) sink?.notes.push(shared);
+  for (const { alias, canonical } of kept) {
     const replace = espansoEscape(canonical);
     const typed = espansoRenders(replace);
     if (typed !== canonical) {
@@ -58594,41 +58680,82 @@ function exportEspanso(lexicon, _opts = {}) {
     }
     matches.push({ trigger: alias, replace, word: true, propagate_case: false });
   }
-  const body = (0, import_yaml3.stringify)({ matches }, { lineWidth: 0 });
+  if (sink) sink.rows = matches.length;
+  const body = (0, import_yaml3.stringify)({ matches }, { lineWidth: 0, defaultStringType: "QUOTE_DOUBLE", defaultKeyType: "PLAIN" });
   return leftOut.length > 0 ? `${leftOut.join("\n")}
 ${body}` : body;
 }
 
 // src/core/exporters/google.ts
-function exportGoogle(lexicon, _opts = {}) {
-  const phrases = canonicalList(sortByImportance(lexicon.terms)).map(({ term, canonical }) => ({
-    value: canonical,
-    boost: isProperNounCategory(term.category) ? 20 : 10
-  }));
+var GOOGLE_PHRASE_MAX_CHARS = 100;
+var GOOGLE_PHRASES_MAX = 1e3;
+function exportGoogle(lexicon, _opts = {}, sink) {
+  const tooLong = [];
+  const overCap = [];
+  const phrases = [];
+  for (const { term, canonical } of canonicalList(sortByImportance(lexicon.terms))) {
+    if ([...canonical].length > GOOGLE_PHRASE_MAX_CHARS) {
+      tooLong.push(canonical);
+      continue;
+    }
+    if (phrases.length >= GOOGLE_PHRASES_MAX) {
+      overCap.push(canonical);
+      continue;
+    }
+    phrases.push({ value: canonical, boost: isProperNounCategory(term.category) ? 20 : 10 });
+  }
+  if (tooLong.length > 0) {
+    sink?.notes.push(`left out ${tooLong.length} phrase${tooLong.length === 1 ? "" : "s"} over Google's ${GOOGLE_PHRASE_MAX_CHARS} characters per phrase: ${quotedNames(tooLong)}`);
+  }
+  if (overCap.length > 0) {
+    sink?.notes.push(`left out ${overCap.length} phrase${overCap.length === 1 ? "" : "s"} past the ${GOOGLE_PHRASES_MAX} kept (the most used; a conservative cap under Google's phrase limit): ${quotedNames(overCap)}`);
+  }
   return JSON.stringify({ adaptation: { phraseSets: [{ phrases }] } }, null, 2) + "\n";
 }
 
 // src/core/exporters/json.ts
 function exportJson(lexicon, _opts = {}) {
-  return JSON.stringify(lexicon, null, 2) + "\n";
+  const terms = lexicon.terms.map(({ scope: _scope, hits: _hits, ...rest }) => rest);
+  return JSON.stringify({ ...lexicon, terms }, null, 2) + "\n";
 }
 
 // src/core/exporters/macos.ts
-function exportMacos(lexicon, _opts = {}) {
+function stripXmlControls(value) {
+  return value.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f]/g, "");
+}
+function exportMacos(lexicon, _opts = {}, sink) {
   const lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
     '<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">',
     '<plist version="1.0">',
     "<array>"
   ];
-  for (const { alias, canonical } of aliasPairs(lexicon)) {
-    if (findUnencodableChar(alias) !== void 0 || findUnencodableChar(canonical) !== void 0) continue;
+  let stripped = 0;
+  const pairs = [];
+  for (const pair of aliasPairs(lexicon)) {
+    if (findUnencodableChar(pair.alias) !== void 0 || findUnencodableChar(pair.canonical) !== void 0) continue;
+    const alias = stripXmlControls(pair.alias).trim();
+    const canonical = stripXmlControls(pair.canonical);
+    if (alias !== pair.alias || canonical !== pair.canonical) stripped += 1;
+    if (alias === "" || canonical.trim() === "") continue;
+    pairs.push({ ...pair, alias, canonical });
+  }
+  const { kept, dropped } = uniqueTriggers(pairs, (a) => a.toLowerCase());
+  const shared = sharedTriggerNote(dropped, "shortcut");
+  if (shared) sink?.notes.push(shared);
+  let rows = 0;
+  for (const { alias, canonical } of kept) {
     lines.push("	<dict>");
     lines.push("		<key>phrase</key>");
     lines.push(`		<string>${xmlEscape(canonical)}</string>`);
     lines.push("		<key>shortcut</key>");
     lines.push(`		<string>${xmlEscape(alias)}</string>`);
     lines.push("	</dict>");
+    rows += 1;
+  }
+  if (sink) sink.rows = rows;
+  if (stripped > 0) {
+    sink?.notes.push(`removed control characters XML cannot hold from ${stripped} entr${stripped === 1 ? "y" : "ies"} (a pair left with an empty shortcut or phrase is not written)`);
   }
   lines.push("</array>", "</plist>");
   return lines.join("\n") + "\n";
@@ -58646,23 +58773,52 @@ function exportMarkdown(lexicon, _opts = {}) {
 
 // src/core/exporters/whisperPrompt.ts
 var WHISPER_PROMPT_DEFAULT_LIMIT = 100;
-function exportWhisperPrompt(lexicon, opts = {}) {
+var WHISPER_PROMPT_TOKEN_BUDGET = 223;
+function estimateWhisperTokens(text) {
+  let tokens = 0;
+  for (const m of text.matchAll(/ ?[A-Za-z]+|[0-9]|[\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]| |[^\x00-\x7f]/gu)) {
+    const piece = m[0];
+    if (/[A-Za-z]/.test(piece)) tokens += Math.ceil(piece.trimStart().length / 2);
+    else if (/[^\x00-\x7f]/u.test(piece)) tokens += Buffer.byteLength(piece, "utf8");
+    else tokens += 1;
+  }
+  return tokens;
+}
+function exportWhisperPrompt(lexicon, opts = {}, sink) {
   const limit = opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT;
-  const terms = canonicalList(sortByImportance(lexicon.terms)).slice(0, Math.max(0, limit));
-  return terms.map((c) => c.canonical.replace(/\s+/g, " ").trim()).join(", ");
+  const names = canonicalList(sortByImportance(lexicon.terms)).slice(0, Math.max(0, limit)).map((c) => c.canonical.replace(/\s+/g, " ").trim());
+  const kept = [];
+  const dropped = [];
+  let used = 0;
+  for (const name of names) {
+    const cost = estimateWhisperTokens(kept.length > 0 ? `, ${name}` : name);
+    if (dropped.length === 0 && used + cost <= WHISPER_PROMPT_TOKEN_BUDGET) {
+      kept.push(name);
+      used += cost;
+    } else {
+      dropped.push(name);
+    }
+  }
+  if (dropped.length > 0) {
+    sink?.notes.push(
+      `left out ${dropped.length} name${dropped.length === 1 ? "" : "s"} past the ${WHISPER_PROMPT_TOKEN_BUDGET} prompt tokens Whisper reads (an offline estimate): ${quotedNames(dropped)}`
+    );
+  }
+  return kept.join(", ");
 }
 
 // src/core/exporters/openai.ts
-function exportOpenai(lexicon, opts = {}) {
-  return exportWhisperPrompt(lexicon, opts);
+function exportOpenai(lexicon, opts = {}, sink) {
+  return exportWhisperPrompt(lexicon, opts, sink);
 }
 
 // src/core/exporters/superwhisper.ts
-function exportSuperwhisper(lexicon, _opts = {}) {
+function exportSuperwhisper(lexicon, _opts = {}, sink) {
   const entries2 = aliasPairs(lexicon).map(({ alias, canonical }) => ({
     original: alias,
     replacement: canonical
   }));
+  if (sink) sink.rows = entries2.length;
   return JSON.stringify(entries2, null, 2) + "\n";
 }
 
@@ -58694,11 +58850,22 @@ function exportText(lexicon, _opts = {}) {
 }
 
 // src/core/exporters/wispr.ts
-function exportWispr(lexicon, _opts = {}) {
+function exportWispr(lexicon, _opts = {}, sink) {
   const lines = ["word,replacement"];
+  const leftOut = [];
   for (const { alias, canonical } of aliasPairs(lexicon)) {
+    if (isFormulaCell(alias) || isFormulaCell(canonical)) {
+      leftOut.push(`${alias} -> ${canonical}`);
+      continue;
+    }
     lines.push(`${csvField(alias)},${csvField(canonical)}`);
   }
+  if (leftOut.length > 0) {
+    sink?.notes.push(
+      `left out ${leftOut.length} pair${leftOut.length === 1 ? "" : "s"} a spreadsheet would run as a formula (a cell starting with = + - @, a tab or a carriage return): ${quotedNames(leftOut)}`
+    );
+  }
+  if (sink) sink.rows = lines.length - 1;
   return lines.join("\n") + "\n";
 }
 
@@ -58711,7 +58878,7 @@ var EXPORT_FORMAT_INFO = {
   "claude-md": { description: "Markdown snippet for CLAUDE.md / system prompt", ext: "md" },
   "csv": { description: "Generic canonical,alias CSV", ext: "csv" },
   "json": { description: "Raw lexicon JSON", ext: "json" },
-  "deepgram": { description: "Deepgram keywords with boost", ext: "json" },
+  "deepgram": { description: "Deepgram keyterm list (Nova-3) and keywords with boost (Nova-2 and older)", ext: "json" },
   "espanso": { description: "espanso match YAML", ext: "yml" },
   "assemblyai": { description: "AssemblyAI word_boost JSON", ext: "json" },
   "azure": { description: "Azure Speech phraseList JSON", ext: "json" },
@@ -58756,11 +58923,16 @@ function hasAliasRow(term) {
   return term.aliases.some((a) => a.trim() !== "");
 }
 function exportLexicon(lexicon, format, opts = {}) {
+  return exportLexiconWithNotes(lexicon, format, opts).text;
+}
+function exportLexiconWithNotes(lexicon, format, opts = {}) {
   const exporter = EXPORTERS[format];
   if (!exporter) {
     throw new Error(`Unknown export format "${format}". Known: ${EXPORT_FORMATS.join(", ")}`);
   }
-  return exporter(applyOptions(lexicon, opts, format), opts);
+  const sink = { notes: [] };
+  const text = exporter(applyOptions(lexicon, opts, format), opts, sink);
+  return { text, notes: sink.notes, ...sink.rows !== void 0 ? { rows: sink.rows } : {} };
 }
 function selectExportTerms(lexicon, opts = {}, format) {
   return applyOptions(lexicon, opts, format).terms;
@@ -61885,7 +62057,7 @@ var registerTermTools = (server, ctx) => {
     "export_lexicon",
     {
       title: "Export the lexicon",
-      description: `Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'. Aliases: ${EXPORT_ALIAS_NOTE}. The first content block is the export itself, exactly what the CLI export command writes. A second block, only when there is something to say, is a note for you, not part of the export: the export is empty (no terms yet, or none matched \`categories\`), or the repo has an untrusted project .lexicon.yaml whose terms were left out (relay it to the user).`,
+      description: `Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'. Aliases: ${EXPORT_ALIAS_NOTE}. The first content block is the export itself, exactly what the CLI export command writes. A second block, only when there is something to say, is a note for you, not part of the export: the format left entries out to stay within its target's limits (named in the note), the export is empty (no terms yet, or none matched \`categories\`), or the repo has an untrusted project .lexicon.yaml whose terms were left out (relay it to the user).`,
       inputSchema: {
         format: external_exports.enum(EXPORT_FORMAT_NAMES),
         categories: external_exports.array(external_exports.enum(TERM_CATEGORIES)).optional().describe("Only include terms in these categories. Omitted: every category."),
@@ -61902,8 +62074,8 @@ var registerTermTools = (server, ctx) => {
         ...categories !== void 0 ? { categories } : {},
         ...limit !== void 0 ? { limit } : {}
       };
-      const exported = exportLexicon(loaded.merged, resolved2, opts);
-      const notes = [];
+      const { text: exported, notes: dropped } = exportLexiconWithNotes(loaded.merged, resolved2, opts);
+      const notes = dropped.map((d) => `The ${resolved2} export ${d}.`);
       const reason = emptyExportReason(loaded, resolved2, opts);
       if (reason) {
         notes.push(
@@ -62728,10 +62900,24 @@ var ClipboardTooLargeError = class extends Error {
   cmd;
   limit;
 };
+var CLIPBOARD_EXEC_TIMEOUT_MS = 5e3;
+var ClipboardTimeoutError = class extends Error {
+  constructor(cmd, timeoutMs) {
+    super(`${cmd} did not finish within ${timeoutMs} ms and was stopped (the app holding the clipboard may not be answering)`);
+    this.cmd = cmd;
+    this.timeoutMs = timeoutMs;
+    this.name = "ClipboardTimeoutError";
+  }
+  cmd;
+  timeoutMs;
+};
+function isClipboardTimeout(err) {
+  return err instanceof Error && err.name === "ClipboardTimeoutError";
+}
 function isClipboardTooLarge(err) {
   return err instanceof Error && err.name === "ClipboardTooLargeError";
 }
-function defaultClipboardExec(cmd, args, stdin) {
+function defaultClipboardExec(cmd, args, stdin, timeoutMs = CLIPBOARD_EXEC_TIMEOUT_MS) {
   const isWrite = stdin !== void 0;
   return new Promise((resolve5, reject) => {
     const child = (0, import_node_child_process4.spawn)(cmd, [...args], {
@@ -62742,9 +62928,14 @@ function defaultClipboardExec(cmd, args, stdin) {
     const errChunks = [];
     let size = 0;
     let settled = false;
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      fail2(new ClipboardTimeoutError(cmd, timeoutMs));
+    }, timeoutMs);
     const fail2 = (e) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       reject(e);
     };
     child.once("error", fail2);
@@ -62761,6 +62952,7 @@ function defaultClipboardExec(cmd, args, stdin) {
     child.once(isWrite ? "exit" : "close", (code) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       if (code === 0) resolve5(Buffer.concat(out).toString("utf8"));
       else reject(new ExecError(cmd, code, Buffer.concat(errChunks).toString("utf8")));
     });
@@ -62774,7 +62966,7 @@ async function readOrEmpty(exec, cmd, args) {
   try {
     return await exec(cmd, args);
   } catch (e) {
-    if (isEnoent(e) || isClipboardTooLarge(e)) throw e;
+    if (isEnoent(e) || isClipboardTooLarge(e) || isClipboardTimeout(e)) throw e;
     if (e instanceof ExecError && /display|DISPLAY|WAYLAND_DISPLAY|compositor|not allowed|permission/i.test(e.stderr)) throw e;
     return "";
   }
@@ -62831,7 +63023,7 @@ function powershellBackend(exec = defaultClipboardExec, shell = "powershell") {
     description: `${shell} Get-Clipboard -Raw / Set-Clipboard (Windows)`,
     read: async () => {
       const raw = (await readOrEmpty(exec, shell, ["-NoProfile", "-NonInteractive", "-Command", readScript])).replace(/^\uFEFF/, "");
-      crlf = raw.includes("\r\n");
+      crlf = raw.includes("\r\n") && !/(^|[^\r])\n/.test(raw);
       return crlf ? raw.replace(/\r\n/g, "\n") : raw;
     },
     write: async (text) => {
@@ -64878,14 +65070,16 @@ function serveUrl(port, host = DEFAULT_HOST) {
   return `http://${h}:${port}`;
 }
 function isLexiconHealth(body) {
-  return typeof body === "object" && body !== null && !Array.isArray(body) && body.ok === true;
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return false;
+  const b = body;
+  return b.ok === true && typeof b.version === "string" && b.version.length > 0 && Number.isInteger(b.terms) && b.terms >= 0;
 }
 var SERVE_STATUS_HINTS = {
   failing: "The server is running but cannot serve the lexicon; fix what `error` names (often a lexicon file that does not parse) and check again. Starting another server will not help.",
   down: "Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login.",
   foreign: "Something other than lexicon serve answers on this port. Stop that program, or run the local API on another port: lexicon serve --port <n>."
 };
-var FOREIGN_HEALTH_ERROR = "unexpected /health response (not lexicon serve)";
+var FOREIGN_HEALTH_ERROR = "something else answers on that port: its /health response is not lexicon serve's";
 async function probeHealth(baseUrl, opts = {}) {
   const doFetch = opts.fetch ?? fetch;
   let res;
@@ -65752,10 +65946,12 @@ async function stepExport(ctx) {
     return;
   }
   const loaded = await loadLexicon({ cwd: ctx.cwd, parseSkipped: false });
-  const text = exportLexicon(loaded.merged, format);
-  await writeFileAtomic(file2, text);
+  const exported = exportLexiconWithNotes(loaded.merged, format);
+  await writeFileAtomic(file2, exported.text);
   ctx.summary.exports.push({ format, path: file2 });
-  ctx.say(`   wrote ${safe(tildify(file2, ctx.home))} (${plural2(loaded.merged.terms.length, "term")})`);
+  const count = exported.rows !== void 0 ? plural2(exported.rows, "row") : plural2(loaded.merged.terms.length, "term");
+  ctx.say(`   wrote ${safe(tildify(file2, ctx.home))} (${count})`);
+  for (const note of exported.notes) ctx.warn(`   ${safeLines(note)}`);
   ctx.say(`   import it in ${APP_LABELS[app].where}`);
 }
 async function stepDemo(ctx) {
@@ -65863,10 +66059,22 @@ function printNext(ctx) {
   const quoted = name ? JSON.stringify(name) : void 0;
   s.nextStep = ctx.opts.forAgent ? addName ? "Ask the user for a name they dictate (their company, product or a teammate) and add it with add_term; then ask them to dictate a sentence with it in it." : `Ask the user to dictate a sentence with ${quoted ?? "one of their names"} in it${installed.length > 0 ? ` in ${where}` : ""}.` : addName ? `add a name you dictate: lexicon add "Your Co" --suggest (then open ${where} and say it in a sentence)` : `open ${where} and dictate a sentence with ${quoted ?? "one of your names"} in it`;
 }
+function printStopped(ctx) {
+  ctx.say();
+  ctx.say(bold(`Stopped at "${ctx.summary.stoppedAt ?? ""}" (the prompt was cancelled); nothing after it ran.`));
+  printWritten(ctx);
+  ctx.summary.nextStep = "run lexicon setup again to finish; every step skips what is already done";
+  ctx.say();
+  ctx.say(`${bold("Next:")} ${ctx.summary.nextStep}`);
+}
 function printSummary(ctx) {
-  const s = ctx.summary;
   ctx.say();
   ctx.say(bold("Done."));
+  printWritten(ctx);
+  printNext(ctx);
+}
+function printWritten(ctx) {
+  const s = ctx.summary;
   ctx.say(`   lexicon: ${safe(tildify(s.lexiconPath, ctx.home))}`);
   ctx.say(`   terms added: ${s.termsAdded.length > 0 ? safe(s.termsAdded.join(", ")) : dim("none")}`);
   ctx.say(`   packs: ${s.packs.length > 0 ? s.packs.map((p) => `${p.name} (${p.added} added)`).join(", ") : dim("none")}`);
@@ -65877,7 +66085,6 @@ function printSummary(ctx) {
   );
   ctx.say(`   local API: ${s.serve}`);
   ctx.say(`   exports: ${s.exports.length > 0 ? safe(s.exports.map((e) => tildify(e.path, ctx.home)).join(", ")) : dim("none")}`);
-  printNext(ctx);
 }
 async function runSetup(opts, io, deps = {}) {
   const cwd = import_node_path28.default.resolve(opts.cwd ?? process.cwd());
@@ -65949,26 +66156,33 @@ async function runSetup(opts, io, deps = {}) {
   say(bold(opts.dryRun ? "lexicon setup (dry run)" : "lexicon setup"));
   if (!interactive && !opts.yes && !opts.json && !opts.dryRun) say(dim("(no terminal: taking the defaults, as with --yes)"));
   say();
+  const steps = [
+    ["Global lexicon", stepLexicon],
+    ["Starter packs", stepPacks],
+    ["Repo harvest", stepHarvest],
+    ["Agent clients", stepClients],
+    ["Local API", stepServe],
+    ["Dictation app", stepExport],
+    ["Does it work?", stepDemo]
+  ];
   try {
-    await stepLexicon(ctx);
-    say();
-    await stepPacks(ctx);
-    say();
-    await stepHarvest(ctx);
-    say();
-    await stepClients(ctx);
-    say();
-    await stepServe(ctx);
-    say();
-    await stepExport(ctx);
-    say();
-    await stepDemo(ctx);
+    for (const [i, [title, step]] of steps.entries()) {
+      if (i > 0) say();
+      try {
+        await step(ctx);
+      } catch (err) {
+        if (!(err instanceof PromptClosedError)) throw err;
+        ctx.summary.stoppedAt = title;
+        break;
+      }
+    }
     if (ctx.plan) printPlan(ctx, ctx.plan);
+    else if (ctx.summary.stoppedAt !== void 0) printStopped(ctx);
     else printSummary(ctx);
   } finally {
     if (ownPrompter) prompter?.close();
   }
-  const failed = ctx.summary.serve === "failed" || ctx.summary.clients.some((c) => c.status === "failed");
+  const failed = ctx.summary.stoppedAt !== void 0 || ctx.summary.serve === "failed" || ctx.summary.clients.some((c) => c.status === "failed");
   if (opts.json) io.stdout(`${JSON.stringify({ ok: !failed, ...ctx.plan ?? ctx.summary }, null, 2)}
 `);
   return { code: failed ? 1 : 0, summary: ctx.summary, ...ctx.plan ? { plan: ctx.plan } : {} };
@@ -67122,7 +67336,11 @@ function createServer2(opts = {}) {
       const note = [skipped.note, empty].filter((n) => n !== void 0).join(" ");
       const extra = note ? { ...skipped, note } : skipped;
       const text = Object.keys(extra).length > 0 ? `${JSON.stringify({ ...loaded.merged, ...extra }, null, 2)}
-` : exportLexicon(loaded.merged, "json");
+` : (
+        // The merged view whole, `scope` and `hits` included (the json export leaves them out).
+        `${JSON.stringify(loaded.merged, null, 2)}
+`
+      );
       return {
         contents: [{ uri: uri.href, mimeType: "application/json", text }]
       };

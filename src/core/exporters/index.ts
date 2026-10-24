@@ -20,6 +20,7 @@ import { exportMacos } from './macos.js';
 import { exportMarkdown } from './markdown.js';
 import { exportOpenai } from './openai.js';
 import { sortByImportance } from './shared.js';
+import type { ExportSink } from './shared.js';
 import { exportSuperwhisper } from './superwhisper.js';
 import { exportText } from './text.js';
 import { exportWhisperPrompt } from './whisperPrompt.js';
@@ -51,7 +52,7 @@ export const EXPORT_FORMAT_INFO: Record<ExportFormat, { description: string; ext
   'claude-md': { description: 'Markdown snippet for CLAUDE.md / system prompt', ext: 'md' },
   'csv': { description: 'Generic canonical,alias CSV', ext: 'csv' },
   'json': { description: 'Raw lexicon JSON', ext: 'json' },
-  'deepgram': { description: 'Deepgram keywords with boost', ext: 'json' },
+  'deepgram': { description: 'Deepgram keyterm list (Nova-3) and keywords with boost (Nova-2 and older)', ext: 'json' },
   'espanso': { description: 'espanso match YAML', ext: 'yml' },
   'assemblyai': { description: 'AssemblyAI word_boost JSON', ext: 'json' },
   'azure': { description: 'Azure Speech phraseList JSON', ext: 'json' },
@@ -84,7 +85,28 @@ export function resolveExportFormat(value: string): ExportFormat | undefined {
   return Object.hasOwn(EXPORT_FORMAT_ALIASES, lower) ? EXPORT_FORMAT_ALIASES[lower] : undefined;
 }
 
-const EXPORTERS: Record<ExportFormat, (lexicon: Lexicon, opts: ExportOptions) => string> = {
+/**
+ * One exporter: the export text of `lexicon`. A format with a limit of its
+ * own (a vendor's list size, a per-phrase length, a prompt window) leaves out
+ * what does not fit and pushes one sentence per kind of drop onto
+ * `sink.notes`, naming what was left out; an alias-row format sets
+ * `sink.rows`. The text itself stays exactly what the target reads.
+ */
+export type Exporter = (lexicon: Lexicon, opts: ExportOptions, sink?: ExportSink) => string;
+export type { ExportSink } from './shared.js';
+
+/**
+ * What `exportLexiconWithNotes` returns: the export, a sentence for each
+ * kind of entry the format left out, and for an alias-row format
+ * (EXPORT_ALIAS_ROW_FORMATS) the rows it wrote.
+ */
+export interface ExportResult {
+  text: string;
+  notes: string[];
+  rows?: number;
+}
+
+const EXPORTERS: Record<ExportFormat, Exporter> = {
   'wispr': exportWispr,
   'superwhisper': exportSuperwhisper,
   'whisper-prompt': exportWhisperPrompt,
@@ -121,11 +143,24 @@ function hasAliasRow(term: Term): boolean {
 }
 
 export function exportLexicon(lexicon: Lexicon, format: ExportFormat, opts: ExportOptions = {}): string {
+  return exportLexiconWithNotes(lexicon, format, opts).text;
+}
+
+/**
+ * `exportLexicon`, plus `notes`: one sentence for each kind of entry the
+ * format left out to stay within its target's limits (an STT engine's list
+ * size or phrase length, Whisper's prompt window, a duplicate trigger),
+ * naming what was dropped. `lexicon export` prints them on stderr and under
+ * `--json` as `dropped`; MCP `export_lexicon` adds them to its note block.
+ */
+export function exportLexiconWithNotes(lexicon: Lexicon, format: ExportFormat, opts: ExportOptions = {}): ExportResult {
   const exporter = EXPORTERS[format];
   if (!exporter) {
     throw new Error(`Unknown export format "${format}". Known: ${EXPORT_FORMATS.join(', ')}`);
   }
-  return exporter(applyOptions(lexicon, opts, format), opts);
+  const sink: ExportSink = { notes: [] };
+  const text = exporter(applyOptions(lexicon, opts, format), opts, sink);
+  return { text, notes: sink.notes, ...(sink.rows !== undefined ? { rows: sink.rows } : {}) };
 }
 
 /**

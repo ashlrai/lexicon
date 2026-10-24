@@ -112,8 +112,10 @@ describe('exportLexicon', () => {
       version: 1,
       terms: Array.from({ length: 150 }, (_, i) => ({ canonical: `Term${String(i).padStart(3, '0')}`, aliases: [] })),
     };
+    // 150 short names: the 100-name cap, then the token window (exporters-limits.test.ts) cut further.
     const capped = exportLexicon(big, 'whisper-prompt');
-    expect(capped.split(', ')).toHaveLength(100);
+    expect(capped.split(', ').length).toBeLessThanOrEqual(100);
+    expect(capped.split(', ')[0]).toBe('Term000');
     expect(capped.includes('\n')).toBe(false);
   });
 
@@ -179,8 +181,9 @@ describe('exportLexicon', () => {
     expect(lines).toContain('Mason Wyatt,Mason White,person,');
   });
 
-  it('json: raw lexicon', () => {
-    expect(JSON.parse(exportLexicon(lexicon, 'json'))).toEqual(lexicon);
+  it('json: raw lexicon, without the merged-only scope and hits', () => {
+    const expected = { ...lexicon, terms: lexicon.terms.map(({ scope: _s, hits: _h, ...t }) => t) };
+    expect(JSON.parse(exportLexicon(lexicon, 'json'))).toEqual(expected);
   });
 
   it('deepgram: keywords with boost by category, canonicals only', () => {
@@ -260,7 +263,7 @@ describe('exportLexicon', () => {
     expect(exportLexicon(empty, 'whisper-prompt')).toBe('');
     expect(exportLexicon(empty, 'macos')).toContain('<array>\n</array>');
     expect(exportLexicon(empty, 'claude-md')).toContain('| --- | --- | --- |\n\nIf a word');
-    expect(JSON.parse(exportLexicon(empty, 'deepgram'))).toEqual({ keywords: [] });
+    expect(JSON.parse(exportLexicon(empty, 'deepgram'))).toEqual({ keyterm: [], keywords: [] });
     expect(parseYaml(exportLexicon(empty, 'espanso'))).toEqual({ matches: [] });
   });
 

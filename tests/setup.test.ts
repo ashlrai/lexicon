@@ -24,6 +24,7 @@ import type { InstallOptions } from '../src/cli/cmd-install.js';
 import { runServeInstall } from '../src/cli/cmd-serve.js';
 import type { ServeDeps } from '../src/cli/cmd-serve.js';
 import { makeIO, quotedForShell, scripted } from './helpers.js';
+import { PromptClosedError } from '../src/cli/prompt.js';
 
 
 
@@ -443,19 +444,24 @@ describe('runSetup --yes', () => {
     const csv = await fs.readFile(path.join(exportDir, 'lexicon-wispr.csv'), 'utf8');
     expect(csv).toContain('Ashlr.AI');
     expect(io.out).toContain('Wispr Flow > Dictionary > Import');
-    expect(io.out).toContain('lexicon-wispr.csv (2 terms)');
+    // The rows Wispr Flow imports, one per alias of the two seeded terms.
+    const rows = csv.trimEnd().split('\n').length - 1;
+    expect(rows).toBeGreaterThan(1);
+    expect(io.out).toContain(`lexicon-wispr.csv (${rows} rows)`);
     await expect(run({ yes: true, clients: 'none', app: 'dragon' }, f)).rejects.toThrow(/unknown app "dragon"/);
   });
 
-  it('says "1 term", not "1 terms", for a one-term export', async () => {
+  it('says "1 row", not "1 rows", for a one-row export', async () => {
     const exportDir = path.join(home, 'Desktop');
     const noGit = fakes({
       exec: () => {
         throw new Error('no git');
       },
     });
-    const { io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', app: 'wispr', exportDir }, noGit);
-    expect(io.out).toContain('lexicon-wispr.csv (1 term)');
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n  - canonical: A\n    aliases: []\n  - canonical: B\n    aliases: []\n');
+    const { io } = await run({ yes: true, clients: 'none', app: 'wispr', exportDir }, noGit);
+    expect(io.out).toContain('lexicon-wispr.csv (1 row)');
   });
 
   it('rejects bad --clients / --app before touching anything', async () => {
@@ -763,7 +769,54 @@ describe('runSetup --dry-run', () => {
   });
 });
 
+describe('runSetup dictation export', () => {
+  // Catches: the export step wrote with exportLexicon, so a pair the format
+  // left out (a cell a spreadsheet would run as a formula) vanished without
+  // a word, and the line counted terms rather than the rows the app imports.
+  it('names what the export left out and counts the rows written', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler, "=Ashlar"]\n  - canonical: A\n    aliases: []\n  - canonical: B\n    aliases: []\n');
+    const exportDir = path.join(home, 'out');
+    const f = fakes();
+    const { code, summary, io } = await run({ yes: true, clients: 'none', app: 'wispr', exportDir }, f);
+    expect(code).toBe(0);
+    const file = path.join(exportDir, 'lexicon-wispr.csv');
+    expect(summary.exports).toEqual([{ format: 'wispr', path: file }]);
+    expect(await fs.readFile(file, 'utf8')).toBe('word,replacement\nAshler,Ashlr.AI\n');
+    expect(io.out).toMatch(/wrote .*lexicon-wispr\.csv \(1 row\)/);
+    expect(io.err).toContain('left out 1 pair a spreadsheet would run as a formula');
+    expect(io.err).toContain('"=Ashlar -> Ashlr.AI"');
+  });
+});
+
 describe('runSetup interactive', () => {
+  // Catches: ctrl-C or ctrl-D at a prompt surfaced as `input closed before
+  // the prompt was answered` and exit 1, with no word of what the steps
+  // before it had already written (a created lexicon, seeded terms).
+  it('a prompt cancelled mid-run stops there and says what was already written', async () => {
+    const answers = scripted([
+      'y', // add "Mason Wyatt" as a person term?
+      'Ashlr.AI', // company
+      '', // phonetic hint
+      'n', // add another term?
+    ]);
+    // The starter pack checklist is where the input closes.
+    const p = { ...answers, choose: async (): Promise<never> => { throw new PromptClosedError(); } };
+    const f = fakes({ isInteractive: () => true, createPrompter: () => p });
+    const { code, summary, io } = await run({}, f);
+    expect(code).toBe(1);
+    expect(summary.stoppedAt).toBe('Starter packs');
+    expect(summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+    expect(io.out).toContain('Stopped at "Starter packs" (the prompt was cancelled); nothing after it ran.');
+    expect(io.out).toContain('terms added: Mason Wyatt, Ashlr.AI');
+    expect(io.out).toContain('Next: run lexicon setup again to finish; every step skips what is already done');
+    expect(io.out).not.toContain('3. Repo harvest');
+    expect(io.out).not.toContain('Done.');
+    expect(f.installed).toEqual([]);
+    expect(f.serveCalls).toBe(0);
+    expect((await readLexiconFile(globalPath, 'global')).lexicon.terms.map((t) => t.canonical)).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+  });
+
   it('walks every prompt: person, company, phonetic, another term, packs, harvest, clients, serve, app', async () => {
     await fs.mkdir(path.join(cwd, '.git'));
     const exportDir = path.join(home, 'Desktop');
