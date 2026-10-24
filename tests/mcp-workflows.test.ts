@@ -1224,6 +1224,42 @@ describe('a lexicon file that does not parse', () => {
     }
   });
 
+  // Catches: a schema-invalid file with 5000 bad entries made every tool,
+  // resource and prompt answer with a 359 KB error (lexicon_doctor 730 KB).
+  it('a file with thousands of problems gives a bounded error that still names the file and the fix', async () => {
+    const globalPath = process.env.LEXICON_PATH as string;
+    await fs.writeFile(globalPath, 'version: 1\nterms:\n' + Array.from({ length: 5000 }, (_, i) => `  - canonical: T${i}\n    aliases: nope\n`).join(''), 'utf8');
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const textOf = (r: ToolResult): string => (r.content ?? []).map((c) => c.text ?? '').join('\n');
+    try {
+      const messages: string[] = [];
+      for (const [name, args] of [['normalize_transcript', { text: 'ping ashler' }], ['learn_correction', { heard: 'ashler', meant: 'Ashlr.AI' }], ['add_term', { canonical: 'Zork', aliases: ['zorc'] }], ['list_terms', {}]] as const) {
+        const r = (await client.callTool({ name, arguments: args })) as ToolResult;
+        expect(r.isError, name).toBe(true);
+        messages.push(textOf(r));
+      }
+      messages.push(await client.readResource({ uri: 'lexicon://me' }).then(() => 'resolved', (e: unknown) => (e as Error).message));
+      messages.push(await client.getPrompt({ name: 'voice-context' }).then(() => 'resolved', (e: unknown) => (e as Error).message));
+      for (const message of messages) {
+        expect(message.length).toBeLessThan(3000);
+        expect(message).toContain(`Invalid lexicon at ${globalPath}`);
+        expect(message).toContain('more problems like these');
+        expect(message).toContain('`lexicon edit`');
+      }
+      const doctor = textOf((await client.callTool({ name: 'lexicon_doctor', arguments: {} })) as ToolResult);
+      expect(doctor.length).toBeLessThan(12_000);
+      // The file is untouched.
+      expect(await fs.readFile(globalPath, 'utf8')).toContain('T4999');
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it('names lexicon edit --project for a broken trusted project file', async () => {
     const projectPath = path.join(repo, '.lexicon.yaml');
     await fs.writeFile(projectPath, 'version: 1\nterms: [\n', 'utf8');

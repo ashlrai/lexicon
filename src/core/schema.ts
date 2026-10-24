@@ -328,8 +328,17 @@ function formatPath(path: ReadonlyArray<PropertyKey>): string {
 }
 
 /**
+ * Problems `parseLexicon` lists before it counts the rest. A file with
+ * thousands of bad entries made a message of hundreds of kilobytes, which
+ * every CLI command printed and every MCP tool, resource and prompt returned
+ * to the agent.
+ */
+export const MAX_LISTED_ISSUES = 20;
+
+/**
  * Parse an unknown value (typically YAML/JSON output) into a Lexicon.
- * Throws an Error whose message lists every problem with its field path, e.g.
+ * Throws an Error whose message lists the problems with their field paths
+ * (the first MAX_LISTED_ISSUES, then a count of the rest), e.g.
  *
  *   Invalid lexicon:
  *     - terms[0].canonical: must not be empty
@@ -345,9 +354,10 @@ export function parseLexicon(raw: unknown): Lexicon {
   }
   const result = schemas().lexicon.safeParse(raw);
   if (!result.success) {
-    const lines = result.error.issues.map(
-      (issue) => `  - ${formatPath(issue.path)}: ${issue.message}`,
-    );
+    const { issues } = result.error;
+    const lines = issues.slice(0, MAX_LISTED_ISSUES).map((issue) => `  - ${formatPath(issue.path)}: ${issue.message}`);
+    const rest = issues.length - MAX_LISTED_ISSUES;
+    if (rest > 0) lines.push(`  - ... and ${rest} more problem${rest === 1 ? '' : 's'} like these`);
     throw new Error(`Invalid lexicon:\n${lines.join('\n')}`);
   }
   const lexicon: Lexicon = result.data;

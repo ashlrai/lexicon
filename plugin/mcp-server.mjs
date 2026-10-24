@@ -47763,6 +47763,7 @@ function formatPath(path27) {
   }
   return out;
 }
+var MAX_LISTED_ISSUES = 20;
 function parseLexicon(raw) {
   if (raw === null || raw === void 0) {
     return emptyLexicon();
@@ -47772,9 +47773,10 @@ function parseLexicon(raw) {
   }
   const result = schemas().lexicon.safeParse(raw);
   if (!result.success) {
-    const lines = result.error.issues.map(
-      (issue2) => `  - ${formatPath(issue2.path)}: ${issue2.message}`
-    );
+    const { issues } = result.error;
+    const lines = issues.slice(0, MAX_LISTED_ISSUES).map((issue2) => `  - ${formatPath(issue2.path)}: ${issue2.message}`);
+    const rest = issues.length - MAX_LISTED_ISSUES;
+    if (rest > 0) lines.push(`  - ... and ${rest} more problem${rest === 1 ? "" : "s"} like these`);
     throw new Error(`Invalid lexicon:
 ${lines.join("\n")}`);
   }

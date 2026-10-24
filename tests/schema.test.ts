@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 import {
   DISPLAY_MAX_CHARS,
   LIMITS,
+  MAX_LISTED_ISSUES,
   LexiconSchema,
   LexiconSettingsSchema,
   TermSchema,
@@ -78,6 +79,25 @@ describe('parseLexicon', () => {
     expect(message).toMatch(/^Invalid lexicon:/);
     expect(message).toMatch(/terms\[0\]\.canonical/);
     expect(message).toMatch(/terms\[1\]\.scope/);
+  });
+
+  // Catches: a file with thousands of bad entries made a 359 KB message, and
+  // every MCP tool, resource and prompt returned it whole to the agent (the
+  // doctor twice), as did every CLI command.
+  it('lists at most MAX_LISTED_ISSUES problems, with a count of the rest', () => {
+    const terms = Array.from({ length: 5000 }, (_, i) => ({ canonical: `T${i}`, aliases: 'nope' }));
+    let message = '';
+    try {
+      parseLexicon({ terms });
+    } catch (err) {
+      message = (err as Error).message;
+    }
+    const lines = message.split('\n');
+    expect(lines[0]).toBe('Invalid lexicon:');
+    expect(lines.slice(1, -1)).toHaveLength(MAX_LISTED_ISSUES);
+    expect(lines[1]).toBe('  - terms[0].aliases: Invalid input: expected array, received string');
+    expect(lines.at(-1)).toBe(`  - ... and ${5000 - MAX_LISTED_ISSUES} more problems like these`);
+    expect(message.length).toBeLessThan(2000);
   });
 });
 
