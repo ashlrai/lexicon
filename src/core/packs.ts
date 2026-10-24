@@ -281,8 +281,8 @@ export function installedPacks(loaded: LoadedLexicon): string[] {
 }
 
 /**
- * Rewrite a file's `settings.packs`. Empty lists (the parser's `protectedWords: []`
- * default, an emptied `packs`) are dropped, and so is an empty `settings`, so a
+ * Rewrite a file's `settings.packs`. Empty lists (an explicit `protectedWords: []`,
+ * an emptied `packs`) are dropped, and so is an empty `settings`, so a
  * file that only ever held packs goes back to how it looked before.
  * Re-pins a project file's trust and refreshes the index cache for it, unless
  * `leaveUntrusted` (the install left the file unpinned, and refreshTrust

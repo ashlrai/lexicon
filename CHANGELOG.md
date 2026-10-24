@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- A term read from a lexicon file and one just added have the same shape in `lexicon list --json`, `learn --json`, `add --json` and the MCP results: `never` appears only when the term has never-words. Every term read from a file came back with `never: []` (and settings with `protectedWords: []` and `packs: []`), while a new term had no `never` key. Writing a file back still adds no `never: []` line; the parse caches move to new versions so an old entry is reparsed once.
 - `lexicon normalize --json` with empty text pretty-prints its document like every other `normalize --json` result; it was the one printed on a single line.
 - `lexicon voice --status --json` leads with `ok`, as every other object-shaped `--json` document does: `{ ok: true, recording: true, since, pid }` while recording, `{ ok: false, recording: false }` when idle (exit 1, as before). It printed `{ recording }` alone.
 - `lexicon install <client> --json` names a refusal (an unknown client, a bad `--scope`) on stderr as well as in the `{ ok: false, error, nextStep }` document, as every other `--json` refusal does; stderr was empty.

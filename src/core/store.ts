@@ -256,9 +256,11 @@ export const PARSE_CACHE_MIN_BYTES = 8 * 1024;
 
 /**
  * Entry format. 1 was keyed by a sha256 of the text, 2 held the lexicon as an
- * object and re-validated it; both are simply reparsed and replaced.
+ * object and re-validated it, 3 held a parse that gave every term `never: []`
+ * (and settings `protectedWords: []`, `packs: []`); all are simply reparsed
+ * and replaced.
  */
-export const PARSE_CACHE_VERSION = 3;
+export const PARSE_CACHE_VERSION = 4;
 
 /**
  * 32-bit FNV-1a of `text`'s UTF-16 code units, as 8 hex digits. A corruption
@@ -434,8 +436,11 @@ async function promoteCacheEntry(mainPath: string, id: string, mainId: string | 
  */
 export const PROJECT_PARSE_CACHE_FILE_NAME = 'project-parse-cache.json';
 
-/** Entry format of PROJECT_PARSE_CACHE_FILE_NAME. */
-export const PROJECT_PARSE_CACHE_VERSION = 1;
+/**
+ * Entry format of PROJECT_PARSE_CACHE_FILE_NAME. 1 held a parse that gave
+ * every term `never: []`; such an entry is reparsed and replaced.
+ */
+export const PROJECT_PARSE_CACHE_VERSION = 2;
 
 /** A project file read for `loadLexicon`, and whether its parse came from the cache. */
 interface ProjectRead {
@@ -934,7 +939,7 @@ function updateMap(doc: Document, node: YAMLMap, value: Record<string, unknown>,
   }
   for (const [key, next] of Object.entries(value)) {
     const current = node.get(key, true);
-    // An empty list the schema filled in (`never: []`) is not worth adding.
+    // An empty list the file did not have (`never: []` from a caller) is not worth adding.
     if (current === undefined && Array.isArray(next) && next.length === 0) continue;
     if (isMap(current) && next !== null && typeof next === 'object' && !Array.isArray(next)) {
       updateMap(doc, current, next as Record<string, unknown>, []);
@@ -1041,9 +1046,10 @@ const TERM_KEY_ORDER: (keyof Term)[] = [
 ];
 
 /**
- * Drop `undefined` values and empty lists. The schema materializes an empty
- * array for every optional word list (`protectedWords`, `packs`), so without
- * this a plain `lexicon add` would litter a hand-edited file with `packs: []`.
+ * Drop `undefined` values and empty settings lists. The schema no longer
+ * fills an empty `protectedWords` or `packs`, but a caller can still hand one
+ * in (an emptied pack list), and without this a plain `lexicon add` would
+ * litter a hand-edited file with `packs: []`.
  */
 function orderLexicon(lexicon: Lexicon): Record<string, unknown> {
   const out: Record<string, unknown> = { version: lexicon.version };

@@ -13578,7 +13578,13 @@ function NonEmptyWord() {
   );
 }
 function WordList(maxItems, what) {
-  return array(string2()).default([]).transform((list) => list.map((s) => stripInvisible(s).trim()).filter((s) => s.length > 0)).pipe(
+  return CleanWordList(array(string2()).default([]), maxItems, what);
+}
+function OptionalWordList(maxItems, what) {
+  return CleanWordList(array(string2()), maxItems, what).optional();
+}
+function CleanWordList(list, maxItems, what) {
+  return list.transform((list2) => (list2 ?? []).map((s) => stripInvisible(s).trim()).filter((s) => s.length > 0)).pipe(
     array(
       string2().max(LIMITS.word, `must be at most ${LIMITS.word} characters`).refine((s) => !hasControlChars(s), "must not contain control characters or newlines")
     ).max(maxItems, `at most ${maxItems} ${what}`)
@@ -13605,7 +13611,7 @@ function buildTerm(category, scope, source) {
     // call. Only `writeLexiconFile` decides what a project file may gain: see
     // `pinProjectHits` in store.ts.
     hits: number2().int().nonnegative().optional(),
-    never: WordList(LIMITS.aliases, "never words per term").optional()
+    never: OptionalWordList(LIMITS.aliases, "never words per term")
   });
 }
 function buildSettings() {
@@ -13613,9 +13619,9 @@ function buildSettings() {
     minConfidence: number2().min(0).max(1).optional(),
     phonetic: boolean2().optional(),
     fuzzy: boolean2().optional(),
-    protectedWords: WordList(LIMITS.protectedWords, "protected words").optional(),
+    protectedWords: OptionalWordList(LIMITS.protectedWords, "protected words"),
     skipCode: boolean2().optional(),
-    packs: WordList(LIMITS.aliases, "packs").optional()
+    packs: OptionalWordList(LIMITS.aliases, "packs")
   });
 }
 function buildLexicon(term, settings) {
@@ -19888,7 +19894,7 @@ function parseLexiconText(text, filePath, scope) {
 }
 var PARSE_CACHE_FILE_NAME = "parse-cache.json";
 var PARSE_CACHE_MIN_BYTES = 8 * 1024;
-var PARSE_CACHE_VERSION = 3;
+var PARSE_CACHE_VERSION = 4;
 function cacheChecksum(text) {
   let h = 2166136261;
   for (let i = 0; i < text.length; i++) {
@@ -19964,7 +19970,7 @@ async function promoteCacheEntry(mainPath, id, mainId) {
   await import_node_fs5.promises.rename(cacheSpillPath(mainPath, id), mainPath).catch(() => void 0);
 }
 var PROJECT_PARSE_CACHE_FILE_NAME = "project-parse-cache.json";
-var PROJECT_PARSE_CACHE_VERSION = 1;
+var PROJECT_PARSE_CACHE_VERSION = 2;
 async function readProjectBytes(filePath, globalPath) {
   const read = await readLexiconText(filePath);
   if (read === void 0) return void 0;
