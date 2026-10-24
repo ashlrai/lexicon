@@ -61320,7 +61320,7 @@ var registerHarvestTools = (server, ctx) => {
         count: candidates.length,
         ...add ? { added, failures } : {},
         ...written !== void 0 ? { path: written, ...writeOpts.leaveUntrusted ? untrustedWriteFields(written, `${added} name(s)`, true) : {} } : {},
-        ...failures.length > 0 ? { note: `${failures.length} of ${candidates.length} candidates were not added (first: ${failures[0]?.error}); see failures` } : {}
+        ...failures.length > 0 ? { note: `${failures.length} of ${candidates.length} candidate${candidates.length === 1 ? " was" : "s were"} not added (first: ${failures[0]?.error}); see failures` } : {}
       };
       if (add && added === 0 && failures.length > 0) return { ...textResult(payload), isError: true };
       return textResult(payload);
@@ -63177,7 +63177,7 @@ async function runDoctorReport(opts, deps = {}) {
       canonicalOwners.set(key, list);
     }
   }
-  push2("info", `${canonicalOwners.size} unique terms across ${files.length} file${files.length === 1 ? "" : "s"}`);
+  push2("info", `${plural2(canonicalOwners.size, "unique term")} across ${plural2(files.length, "file")}`);
   for (const [, owners] of canonicalOwners) {
     const scopes = new Set(owners.map((o) => o.scope));
     if (scopes.size > 1) {
@@ -64324,7 +64324,7 @@ async function stepPacks(ctx) {
   const byName = new Map(available.map((p) => [p.name, p]));
   const describe3 = (name) => {
     const p = byName.get(name);
-    return p ? `${name} ${dim(`(${p.terms} terms)`)}` : name;
+    return p ? `${name} ${dim(`(${plural2(p.terms, "term")})`)}` : name;
   };
   const explicit = typeof ctx.opts.packs === "string" ? parsePackList(ctx.opts.packs, available.map((p) => p.name)) : void 0;
   let installed = [];
@@ -64372,12 +64372,12 @@ async function stepPacks(ctx) {
   } else if (ctx.prompter) {
     chosen = defaults.length === 0 ? [] : await ctx.prompter.choose(
       "   add starter packs to the global lexicon (Enter keeps the checked ones):",
-      defaults.map((name) => ({ label: `${name}  ${dim(safe(`${byName.get(name)?.title ?? ""}, ${byName.get(name)?.terms ?? 0} terms`))}`, value: name })),
+      defaults.map((name) => ({ label: `${name}  ${dim(safe(`${byName.get(name)?.title ?? ""}, ${plural2(byName.get(name)?.terms ?? 0, "term")}`))}`, value: name })),
       { multi: true }
     );
     for (const p of available) {
       if (defaults.includes(p.name) || installed.includes(p.name)) continue;
-      if (await ctx.prompter.confirm(`   also add ${safe(p.name)} (${safe(p.title)}, ${p.terms} terms)?`, false)) chosen.push(p.name);
+      if (await ctx.prompter.confirm(`   also add ${safe(p.name)} (${safe(p.title)}, ${plural2(p.terms, "term")})?`, false)) chosen.push(p.name);
     }
     if (chosen.length === 0) {
       ctx.say(dim("   skipped; later: lexicon pack add developer"));
@@ -64441,7 +64441,7 @@ async function stepHarvest(ctx) {
     return;
   }
   if (ctx.prompter) {
-    ctx.say(`   found ${candidates.length} names in ${safe(tildify(root, ctx.home))}:`);
+    ctx.say(`   found ${plural2(candidates.length, "name")} in ${safe(tildify(root, ctx.home))}:`);
     const rows = candidates.map((c) => [c.canonical, c.category, String(c.count), c.suggestedAliases.slice(0, 3).join(", ")]);
     ctx.say(renderTable(rows, ["canonical", "category", "count", "suggested aliases"]).replace(/\n$/, ""));
     if (!await ctx.prompter.confirm(`   add them to the project lexicon (${safe(import_node_path27.default.join(tildify(root, ctx.home), ".lexicon.yaml"))})?`, false)) {
@@ -65413,7 +65413,7 @@ var registerPackTools = (server, ctx) => {
           added: result.added,
           merged: result.merged,
           path: result.path,
-          summary: `imported ${result.added + result.merged} terms (${result.added} new, ${result.merged} merged)${result.path ? ` into ${result.path}` : ""}`,
+          summary: `imported ${result.added + result.merged} term${result.added + result.merged === 1 ? "" : "s"} (${result.added} new, ${result.merged} merged)${result.path ? ` into ${result.path}` : ""}`,
           ...writeOpts.leaveUntrusted && result.path !== void 0 ? untrustedWriteFields(result.path, "The imported terms", true) : {}
         });
       }

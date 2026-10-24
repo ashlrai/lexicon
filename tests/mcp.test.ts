@@ -491,7 +491,7 @@ describe('lexicon MCP server', () => {
         count: 1,
         added: 0,
         failures: [{ canonical: 'FooBar', error: 'EACCES: permission denied' }],
-        note: expect.stringContaining('1 of 1 candidates were not added'),
+        note: expect.stringContaining('1 of 1 candidate was not added'),
       });
 
       mocks.harvestRepo.mockResolvedValueOnce([

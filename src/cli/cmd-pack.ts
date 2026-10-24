@@ -257,7 +257,7 @@ export async function runPackShow(name: string, opts: PackRegistryCliOptions, io
 }
 
 function printPackTerms(io: IO, pack: { name: string; title: string; description: string; lexicon: { terms: Term[] } }): void {
-  line(io, `${pack.name}: ${pack.title} (${pack.lexicon.terms.length} terms)`);
+  line(io, `${pack.name}: ${pack.title} (${plural(pack.lexicon.terms.length, 'term')})`);
   if (pack.description) line(io, pack.description);
   line(io);
   line(io, JSON.stringify(pack.lexicon.terms, null, 2));
@@ -422,7 +422,7 @@ async function runPackAddRegistry(
     printPackTerms(io, pack);
     line(io);
   }
-  const consent = await confirmCommunityWrite(io, `install ${entry.ref} (${pack.lexicon.terms.length} terms)?`, yesCommand('add', rawName, opts), opts, deps);
+  const consent = await confirmCommunityWrite(io, `install ${entry.ref} (${plural(pack.lexicon.terms.length, 'term')})?`, yesCommand('add', rawName, opts), opts, deps);
   if (consent !== 'yes') return { kind: 'declined', ref: entry.ref, offTerminal: consent === 'no-terminal' };
   const result = await installRegistryPack(entry, base, opts.registry as string, {
     cwd,

@@ -660,7 +660,7 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
       canonicalOwners.set(key, list);
     }
   }
-  push('info', `${canonicalOwners.size} unique terms across ${files.length} file${files.length === 1 ? '' : 's'}`);
+  push('info', `${plural(canonicalOwners.size, 'unique term')} across ${plural(files.length, 'file')}`);
 
   for (const [, owners] of canonicalOwners) {
     const scopes = new Set(owners.map((o) => o.scope));

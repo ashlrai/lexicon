@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- Counts of one read in the singular: `lexicon doctor` said "1 unique terms", a one-term pack showed "(1 terms)" in `lexicon pack show` and the community install prompt, `lexicon setup` said "found 1 names", a long error said "1 more lines", MCP `import_vocabulary` said "imported 1 terms" and `harvest_repo` "1 of 1 candidates were not added".
 - A term read from a lexicon file and one just added have the same shape in `lexicon list --json`, `learn --json`, `add --json` and the MCP results: `never` appears only when the term has never-words. Every term read from a file came back with `never: []` (and settings with `protectedWords: []` and `packs: []`), while a new term had no `never` key. Writing a file back still adds no `never: []` line; the parse caches move to new versions so an old entry is reparsed once.
 - `lexicon normalize --json` with empty text pretty-prints its document like every other `normalize --json` result; it was the one printed on a single line.
 - `lexicon voice --status --json` leads with `ok`, as every other object-shaped `--json` document does: `{ ok: true, recording: true, since, pid }` while recording, `{ ok: false, recording: false }` when idle (exit 1, as before). It printed `{ recording }` alone.

@@ -285,7 +285,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
           return textResult({
             applied: true, candidates: accepted.map((c) => ({ id: importCandidateId(c), ...importCandidatePreview(c) })),
             added: result.added, merged: result.merged, path: result.path,
-            summary: `imported ${result.added + result.merged} terms (${result.added} new, ${result.merged} merged)${result.path ? ` into ${result.path}` : ''}`,
+            summary: `imported ${result.added + result.merged} term${result.added + result.merged === 1 ? '' : 's'} (${result.added} new, ${result.merged} merged)${result.path ? ` into ${result.path}` : ''}`,
             ...(writeOpts.leaveUntrusted && result.path !== undefined ? untrustedWriteFields(result.path, 'The imported terms', true) : {}),
           });
         }

@@ -130,7 +130,7 @@ export const ERROR_MAX_LINES = 12;
 export function safeError(s: string): string {
   const lines = s.split(/\r?\n/).filter((l) => l.trim() !== '');
   const shown = lines.slice(0, ERROR_MAX_LINES).map((l) => sanitizeForDisplayMax(l, ERROR_LINE_MAX_CHARS));
-  if (lines.length > ERROR_MAX_LINES) shown.push(`  ... and ${lines.length - ERROR_MAX_LINES} more lines`);
+  if (lines.length > ERROR_MAX_LINES) shown.push(`  ... and ${plural(lines.length - ERROR_MAX_LINES, 'more line')}`);
   return shown.join('\n');
 }
 
