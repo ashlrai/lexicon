@@ -29,7 +29,7 @@ import {
   pickDevice,
 } from '../src/voice/devices.js';
 import { HISTORY_MAX_BYTES, HISTORY_MAX_LINES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
-import { expandTilde, modelFileName, modelUrl, resolveModel } from '../src/voice/models.js';
+import { GGML_MAGIC, defaultDownloader, expandTilde, modelFileName, modelUrl, resolveModel } from '../src/voice/models.js';
 import type { Downloader } from '../src/voice/models.js';
 import { installHint, locateWhisperCli, makeProcessDescribe, makeProcessList } from '../src/voice/process.js';
 import type { ChildHandle, ExecResult, SpawnOptions, VoiceExec, VoiceSpawn } from '../src/voice/process.js';
@@ -1567,6 +1567,91 @@ describe('history', () => {
     expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t3', 't4', 't5']);
     await appendHistory(h.globalPath, entry(9, 'y'.repeat(HISTORY_MAX_BYTES)));
     expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t9']);
+  });
+});
+
+/** The model downloader against a stubbed fetch: no network. */
+describe('model download', () => {
+  let dir = '';
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-voice-dl-'));
+  });
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  });
+
+  /** A fetch answering every URL with `body` in chunks, and `length` as Content-Length when given. */
+  function stubFetch(body: Buffer, length?: number, chunk = 1024): void {
+    vi.stubGlobal('fetch', async () => {
+      let at = 0;
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (at >= body.length) return controller.close();
+          controller.enqueue(new Uint8Array(body.subarray(at, at + chunk)));
+          at += chunk;
+        },
+      });
+      return new Response(stream, { status: 200, headers: length !== undefined ? { 'content-length': String(length) } : {} });
+    });
+  }
+  const model = (n: number, fill = 7): Buffer => Buffer.concat([GGML_MAGIC, Buffer.alloc(n, fill)]);
+
+  it('writes a whole ggml model and leaves no .part file', async () => {
+    const dest = path.join(dir, 'models', 'ggml-tiny.bin');
+    const body = model(10_000);
+    stubFetch(body, body.length);
+    await defaultDownloader('https://example.invalid/ggml-tiny.bin', dest, () => undefined);
+    expect((await fs.readFile(dest)).equals(body)).toBe(true);
+    expect(await fs.readdir(path.dirname(dest))).toEqual(['ggml-tiny.bin']);
+  });
+
+  // Catches: a download that ended early was renamed into place as the model.
+  it('refuses a download shorter than its Content-Length, keeping nothing', async () => {
+    const dest = path.join(dir, 'ggml-tiny.bin');
+    const body = model(5000);
+    stubFetch(body, body.length * 2);
+    await expect(defaultDownloader('https://example.invalid/m', dest, () => undefined)).rejects.toThrow(`the download ended after ${body.length} of ${body.length * 2} bytes`);
+    expect(await fs.readdir(dir)).toEqual([]);
+  });
+
+  // Catches: an HTML error page served with 200 was saved as the model.
+  it('refuses a file that is not a ggml model, keeping nothing', async () => {
+    const dest = path.join(dir, 'ggml-tiny.bin');
+    const page = Buffer.from('<!doctype html><title>Sign in</title>');
+    stubFetch(page, page.length);
+    await expect(defaultDownloader('https://example.invalid/m', dest, () => undefined)).rejects.toThrow('not a ggml whisper model');
+    stubFetch(page);
+    await expect(defaultDownloader('https://example.invalid/m', dest, () => undefined)).rejects.toThrow('not a ggml whisper model');
+    expect(await fs.readdir(dir)).toEqual([]);
+  });
+
+  // Catches: two downloads of one model shared `<dest>.part`, interleaving their bytes.
+  it('two downloads of the same model at once each write their own part file', async () => {
+    const dest = path.join(dir, 'ggml-tiny.bin');
+    const a = model(200_000, 1);
+    const b = model(200_000, 2);
+    let calls = 0;
+    vi.stubGlobal('fetch', async () => {
+      const body = calls++ === 0 ? a : b;
+      let at = 0;
+      const stream = new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          if (at >= body.length) return controller.close();
+          await new Promise((r) => setTimeout(r, 1));
+          controller.enqueue(new Uint8Array(body.subarray(at, at + 4096)));
+          at += 4096;
+        },
+      });
+      return new Response(stream, { status: 200, headers: { 'content-length': String(body.length) } });
+    });
+    await Promise.all([
+      defaultDownloader('https://example.invalid/m', dest, () => undefined),
+      defaultDownloader('https://example.invalid/m', dest, () => undefined),
+    ]);
+    const got = await fs.readFile(dest);
+    expect(got.equals(a) || got.equals(b)).toBe(true);
+    expect(await fs.readdir(dir)).toEqual(['ggml-tiny.bin']);
   });
 });
 
