@@ -89,9 +89,10 @@ final class LocalAPI: @unchecked Sendable {
         }
     }
 
-    /// `POST /add`. `aliases` nil lets the server pick its own suggestions;
-    /// an explicit empty array would mean the same thing, so the two are equal
-    /// here. `never` records a spelling the user said must be left alone.
+    /// `POST /add`. `aliases` nil lets the server pick its own suggestions.
+    /// An empty array is left out of the body too, so it also asks for them
+    /// (the server reads an explicit `[]` as "no aliases"). `never` records a
+    /// spelling the user said must be left alone.
     func add(canonical: String, aliases: [String]? = nil, never: [String]? = nil,
              completion: @escaping (Result<AddResult, Failure>) -> Void) {
         var body: [String: Any] = ["canonical": canonical]
