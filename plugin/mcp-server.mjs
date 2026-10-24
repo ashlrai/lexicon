@@ -59087,6 +59087,14 @@ function computeStats(loaded) {
 }
 
 // src/core/notes.ts
+function noTermsYet(opts = {}) {
+  return `${opts.lower ? "the" : "The"} lexicon has no terms yet${opts.so ? `, so ${opts.so}` : ""}`;
+}
+var FIRST_TERM_STEP = "run `lexicon setup`, or add one with: lexicon learn <heard> <meant>";
+function onlyUntrustedTerms(fate) {
+  return `the only terms are in the untrusted project lexicon, which ${fate}`;
+}
+var TRUST_STEP = "review it and run `lexicon trust`";
 var CLI_TRUST_VOICE = { who: "", trust: "`lexicon trust`" };
 function skippedProjectNote(loaded, consequence, voice = CLI_TRUST_VOICE) {
   if (!loaded.skippedProject) return void 0;
@@ -59094,11 +59102,11 @@ function skippedProjectNote(loaded, consequence, voice = CLI_TRUST_VOICE) {
   return consequence ? `${head} ${consequence}` : head;
 }
 function emptyLexiconNote(step = 'add one with: lexicon add "Ashlr.AI" Ashler, or run `lexicon setup`.') {
-  return `The lexicon has no terms yet; ${step}`;
+  return `${noTermsYet()}; ${step}`;
 }
-function emptyStatsNote(loaded, step = "run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.") {
+function emptyStatsNote(loaded, step = `${FIRST_TERM_STEP}.`) {
   if (loaded.merged.terms.length > 0 || loaded.skippedProject) return void 0;
-  return `The lexicon has no terms yet, so nothing is corrected or counted; ${step}`;
+  return `${noTermsYet({ so: "nothing is corrected or counted" })}; ${step}`;
 }
 function emptyExportReason(loaded, format, opts = {}) {
   if (loaded.merged.terms.length === 0) return loaded.skippedProject ? "only-untrusted" : "no-terms";
@@ -59111,8 +59119,8 @@ function emptyExportReason(loaded, format, opts = {}) {
   return void 0;
 }
 var CLI_EXPORT_STEPS = {
-  "no-terms": "run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.",
-  "only-untrusted": "review it and run `lexicon trust`.",
+  "no-terms": `${FIRST_TERM_STEP}.`,
+  "only-untrusted": `${TRUST_STEP}.`,
   "no-match": "lexicon list shows each term's category.",
   "no-rows": "add one with: lexicon add <canonical> <alias>."
 };
@@ -59120,9 +59128,9 @@ function emptyExportNote(reason, context) {
   const step = context.steps?.[reason] ?? CLI_EXPORT_STEPS[reason];
   switch (reason) {
     case "no-terms":
-      return `The lexicon has no terms yet, so the export is empty; ${step}`;
+      return `${noTermsYet({ so: "the export is empty" })}; ${step}`;
     case "only-untrusted":
-      return `The export is empty: the only terms are in the untrusted project lexicon, which was left out; ${step}`;
+      return `The export is empty: ${onlyUntrustedTerms("was left out")}; ${step}`;
     case "no-match":
       return `No term matched ${context.filter}, so the export is empty; ${step}`;
     case "no-rows":
@@ -65476,7 +65484,7 @@ function dirsFromRoots(roots) {
   return dirs;
 }
 var VOICE_CONTEXT_INSTRUCTION = "Apply these canonical spellings to everything I say for the rest of this session. If you see a word that looks like a garbled version of one of them, use the canonical form without asking.";
-var EMPTY_LEXICON_NOTE = "Note: the lexicon has no terms yet, so there are no spellings to apply and dictated names are not being corrected. If the user dictates, offer once to set it up (the onboard prompt, or setup_lexicon, which previews before it writes).";
+var EMPTY_LEXICON_NOTE = `Note: ${noTermsYet({ lower: true, so: "there are no spellings to apply and dictated names are not being corrected" })}. If the user dictates, offer once to set it up (the onboard prompt, or setup_lexicon, which previews before it writes).`;
 var ONBOARD_PROMPT = [
   "Help me set up my voice lexicon so the names I dictate come out spelled right. Go in this order, one question at a time, and keep each message short:",
   "1. Ask for my company or product names, spelled exactly as they should appear (capitalization and punctuation included), and how I pronounce each one.",

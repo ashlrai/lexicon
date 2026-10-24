@@ -21,7 +21,7 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
-import { exportLexicon, loadLexicon, neutralizeMarkup, pathForModel } from '../core/index.js';
+import { exportLexicon, loadLexicon, neutralizeMarkup, noTermsYet, pathForModel } from '../core/index.js';
 import type { LoadOptions, LoadedLexicon } from '../core/index.js';
 import { SERVER_NAME, log, readPackageVersion, skippedProjectFields, withLexiconFix } from './shared.js';
 import { errorMessage } from '../util/errors.js';
@@ -119,7 +119,7 @@ const VOICE_CONTEXT_INSTRUCTION =
  * was loaded and simply had nothing to correct.
  */
 const EMPTY_LEXICON_NOTE =
-  'Note: the lexicon has no terms yet, so there are no spellings to apply and dictated names are not being corrected. ' +
+  `Note: ${noTermsYet({ lower: true, so: 'there are no spellings to apply and dictated names are not being corrected' })}. ` +
   'If the user dictates, offer once to set it up (the onboard prompt, or setup_lexicon, which previews before it writes).';
 
 /** The `onboard` prompt: a user-role script that drives the model through first-run setup. */

@@ -1,5 +1,17 @@
+import { readFileSync, readdirSync } from 'node:fs';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { emptyExportNote, emptyExportReason, emptyLexiconNote, emptyStatsNote, skippedProjectNote } from '../src/core/notes.js';
+import {
+  emptyExportNote,
+  emptyExportReason,
+  emptyLexiconNote,
+  emptyNormalizeHint,
+  emptyStatsNote,
+  noTermsYet,
+  onlyUntrustedTerms,
+  skippedProjectNote,
+} from '../src/core/notes.js';
+import { emptyLexiconHint } from '../src/daemon/clipboard.js';
 import { skippedProjectJson } from '../src/cli/io.js';
 import { exportNote, lexiconNote, statsNote } from '../src/serve/server.js';
 import type { Lexicon, LoadedLexicon } from '../src/core/types.js';
@@ -66,5 +78,42 @@ describe('core notes', () => {
     expect(exportNote(loadedOf(aliased), 'csv', { categories: ['person'] })).toBe(
       "No term matched ?category=person, so the export is empty; lexicon list shows each term's category.",
     );
+  });
+
+  it('the clipboard daemon, POST /normalize and the MCP note keep their wording', () => {
+    expect(emptyLexiconHint(loadedOf([]))).toBe('the lexicon has no terms yet; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>');
+    expect(emptyLexiconHint(loadedOf([], 'untrusted'))).toBe(
+      'the project lexicon is not trusted, so its terms were not used; review it and run `lexicon trust`',
+    );
+    expect(emptyLexiconHint(loadedOf(bare))).toBeUndefined();
+    expect(emptyNormalizeHint(loadedOf([]))).toBe(
+      'The lexicon has no terms yet, so nothing can be corrected; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.',
+    );
+    expect(emptyNormalizeHint(loadedOf([], 'untrusted'))).toBe(
+      'Nothing can be corrected: the only terms are in the untrusted project lexicon, which was not loaded; review it and run `lexicon trust`.',
+    );
+    expect(noTermsYet({ lower: true, so: 'there is nothing to remove' })).toBe('the lexicon has no terms yet, so there is nothing to remove');
+    expect(onlyUntrustedTerms('is not loaded')).toBe('the only terms are in the untrusted project lexicon, which is not loaded');
+  });
+
+  // Catches: a surface spelling the "no terms yet" or "only terms are in the
+  // untrusted project lexicon" sentence itself again, outside core/notes.ts,
+  // where the next rewording would leave it behind.
+  it('no other source file spells the shared openings itself', () => {
+    const root = path.resolve(__dirname, '../src');
+    const files: string[] = [];
+    const walk = (dir: string): void => {
+      for (const entry of readdirSync(dir, { withFileTypes: true })) {
+        const full = path.join(dir, entry.name);
+        if (entry.isDirectory()) walk(full);
+        else if (entry.name.endsWith('.ts')) files.push(full);
+      }
+    };
+    walk(root);
+    const copies = files
+      .filter((f) => f !== path.join(root, 'core', 'notes.ts'))
+      .filter((f) => /lexicon has no terms yet|only terms are in the untrusted project lexicon/i.test(readFileSync(f, 'utf8')))
+      .map((f) => path.relative(root, f));
+    expect(copies).toEqual([]);
   });
 });

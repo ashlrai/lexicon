@@ -37,6 +37,7 @@ import {
   emptyExportNote,
   emptyExportReason,
   emptyLexiconNote,
+  emptyNormalizeHint,
   emptyStatsNote,
   exportLexicon,
   findRegistryRecordMismatch,
@@ -62,6 +63,8 @@ import {
   unchangedTermNote,
   uninstallPack,
 } from '../core/index.js';
+// Built in core/notes.ts; still exported here, where POST /normalize uses it.
+export { emptyNormalizeHint } from '../core/index.js';
 import type {
   ExportFormat,
   InstallPackResult,
@@ -546,17 +549,6 @@ export function lexiconNote(loaded: Pick<LoadedLexicon, 'merged' | 'projectTrust
  */
 export function statsNote(loaded: Pick<LoadedLexicon, 'merged' | 'projectTrust' | 'skippedProject'>): string | undefined {
   return skippedProjectNote(loaded, 'Its terms are not in the counts.') ?? emptyStatsNote(loaded);
-}
-
-/**
- * `POST /normalize`'s `hint` on a lexicon with no terms: nothing can be
- * corrected, so say how to get terms (`lexicon setup`), or `lexicon trust`
- * when only a skipped project file holds them.
- */
-export function emptyNormalizeHint(loaded: Pick<LoadedLexicon, 'skippedProject'>): string {
-  return loaded.skippedProject
-    ? 'Nothing can be corrected: the only terms are in the untrusted project lexicon, which was not loaded; review it and run `lexicon trust`.'
-    : 'The lexicon has no terms yet, so nothing can be corrected; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.';
 }
 
 function withNote(note: string | undefined): { note?: string } {

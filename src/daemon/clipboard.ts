@@ -11,7 +11,7 @@
  * The platform tools live in ./clipboard-backends.ts. Read/write stay
  * injectable so the loop can be tested without touching a real clipboard.
  */
-import { diffSummary, loadLexicon, normalize, recordHits } from '../core/index.js';
+import { FIRST_TERM_STEP, TRUST_STEP, diffSummary, loadLexicon, noTermsYet, normalize, recordHits } from '../core/index.js';
 import type { LoadedLexicon, NormalizeResult } from '../core/index.js';
 import {
   checkClipboardBackend,
@@ -137,8 +137,8 @@ function reportable(text: string): boolean {
 export function emptyLexiconHint(loaded: Pick<LoadedLexicon, 'merged' | 'skippedProject'>): string | undefined {
   if (loaded.merged.terms.length > 0) return undefined;
   return loaded.skippedProject
-    ? 'the project lexicon is not trusted, so its terms were not used; review it and run `lexicon trust`'
-    : 'the lexicon has no terms yet; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>';
+    ? `the project lexicon is not trusted, so its terms were not used; ${TRUST_STEP}`
+    : `${noTermsYet({ lower: true })}; ${FIRST_TERM_STEP}`;
 }
 
 /**

@@ -82,6 +82,8 @@ import {
   termHolders,
   untrustedAliasHolder,
   untrustedTermHolder,
+  noTermsYet,
+  onlyUntrustedTerms,
   resolvePaths,
   spellingConflicts,
   suggestAliases,
@@ -576,8 +578,8 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
 function emptyLexiconRemoveStep(loaded: LoadedLexicon | undefined): string | undefined {
   if (loaded === undefined || loaded.merged.terms.length > 0) return undefined;
   return loaded.skippedProject
-    ? 'the only terms are in the untrusted project lexicon, which is not loaded; review it and run lexicon trust'
-    : 'the lexicon has no terms yet, so there is nothing to remove; run lexicon setup, or add one with: lexicon add <canonical> <alias>';
+    ? `${onlyUntrustedTerms('is not loaded')}; review it and run lexicon trust`
+    : `${noTermsYet({ lower: true, so: 'there is nothing to remove' })}; run lexicon setup, or add one with: lexicon add <canonical> <alias>`;
 }
 
 async function runRemoveAlias(

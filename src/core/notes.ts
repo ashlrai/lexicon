@@ -8,6 +8,41 @@
 import { EXPORT_ALIAS_ROW_FORMATS, selectExportTerms } from './exporters/index.js';
 import type { ExportFormat, ExportOptions, LoadedLexicon } from './types.js';
 
+/**
+ * The opening every note on a lexicon with no terms shares: `The lexicon has
+ * no terms yet`, then `, so <so>` when given. `lower` starts it with a small
+ * letter, for a note that follows a prefix (`no changes (...)`, `Note: `).
+ */
+export function noTermsYet(opts: { so?: string; lower?: boolean } = {}): string {
+  return `${opts.lower ? 'the' : 'The'} lexicon has no terms yet${opts.so ? `, so ${opts.so}` : ''}`;
+}
+
+/** The CLI step that gets a lexicon its first term (no closing period). */
+export const FIRST_TERM_STEP = 'run `lexicon setup`, or add one with: lexicon learn <heard> <meant>';
+
+/**
+ * The opening of a note when the only terms are in a skipped (untrusted)
+ * project file: `the only terms are in the untrusted project lexicon, which
+ * <fate>` (`was not loaded`, `was left out`).
+ */
+export function onlyUntrustedTerms(fate: string): string {
+  return `the only terms are in the untrusted project lexicon, which ${fate}`;
+}
+
+/** The CLI step for a skipped project file (no closing period). */
+export const TRUST_STEP = 'review it and run `lexicon trust`';
+
+/**
+ * Why nothing can be corrected (`POST /normalize`'s `hint`, MCP
+ * normalize_transcript has its own): how to get terms, or the `lexicon trust`
+ * step when only a skipped project file holds them.
+ */
+export function emptyNormalizeHint(loaded: Pick<LoadedLexicon, 'skippedProject'>): string {
+  return loaded.skippedProject
+    ? `Nothing can be corrected: ${onlyUntrustedTerms('was not loaded')}; ${TRUST_STEP}.`
+    : `${noTermsYet({ so: 'nothing can be corrected' })}; ${FIRST_TERM_STEP}.`;
+}
+
 /** Who reviews a skipped project file and the command that trusts it. */
 export interface TrustNoteVoice {
   /** Put before "review it": '' for the CLI, 'the user can ' for MCP. */
@@ -41,7 +76,7 @@ export function skippedProjectNote(
  * list_terms, `GET /lexicon`), ending in `step`.
  */
 export function emptyLexiconNote(step = 'add one with: lexicon add "Ashlr.AI" Ashler, or run `lexicon setup`.'): string {
-  return `The lexicon has no terms yet; ${step}`;
+  return `${noTermsYet()}; ${step}`;
 }
 
 /**
@@ -52,10 +87,10 @@ export function emptyLexiconNote(step = 'add one with: lexicon add "Ashlr.AI" As
  */
 export function emptyStatsNote(
   loaded: Pick<LoadedLexicon, 'merged' | 'skippedProject'>,
-  step = 'run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.',
+  step = `${FIRST_TERM_STEP}.`,
 ): string | undefined {
   if (loaded.merged.terms.length > 0 || loaded.skippedProject) return undefined;
-  return `The lexicon has no terms yet, so nothing is corrected or counted; ${step}`;
+  return `${noTermsYet({ so: 'nothing is corrected or counted' })}; ${step}`;
 }
 
 /**
@@ -87,8 +122,8 @@ export function emptyExportReason(
 export type EmptyExportSteps = Record<EmptyExportReason, string>;
 
 const CLI_EXPORT_STEPS: EmptyExportSteps = {
-  'no-terms': 'run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.',
-  'only-untrusted': 'review it and run `lexicon trust`.',
+  'no-terms': `${FIRST_TERM_STEP}.`,
+  'only-untrusted': `${TRUST_STEP}.`,
   'no-match': "lexicon list shows each term's category.",
   'no-rows': 'add one with: lexicon add <canonical> <alias>.',
 };
@@ -105,9 +140,9 @@ export function emptyExportNote(
   const step = context.steps?.[reason] ?? CLI_EXPORT_STEPS[reason];
   switch (reason) {
     case 'no-terms':
-      return `The lexicon has no terms yet, so the export is empty; ${step}`;
+      return `${noTermsYet({ so: 'the export is empty' })}; ${step}`;
     case 'only-untrusted':
-      return `The export is empty: the only terms are in the untrusted project lexicon, which was left out; ${step}`;
+      return `The export is empty: ${onlyUntrustedTerms('was left out')}; ${step}`;
     case 'no-match':
       return `No term matched ${context.filter}, so the export is empty; ${step}`;
     case 'no-rows':
