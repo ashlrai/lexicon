@@ -10,7 +10,16 @@ const port = Number(process.env.PORT ?? 4173);
 const types = { '.html': 'text/html; charset=utf-8', '.js': 'text/javascript; charset=utf-8', '.css': 'text/css; charset=utf-8', '.svg': 'image/svg+xml', '.json': 'application/json' };
 
 createServer((req, res) => {
-  const path = normalize(decodeURIComponent((req.url ?? '/').split('?')[0])).replace(/^(\.\.[/\\])+/, '');
+  let decoded;
+  try {
+    decoded = decodeURIComponent((req.url ?? '/').split('?')[0]);
+  } catch {
+    // A malformed escape (`/%E0`) threw out of the handler and stopped the server.
+    res.writeHead(400, { 'content-type': 'text/plain' });
+    res.end('bad request');
+    return;
+  }
+  const path = normalize(decoded).replace(/^(\.\.[/\\])+/, '');
   let file = join(dist, path);
   if (!file.startsWith(dist)) file = dist;
   if (existsSync(file) && statSync(file).isDirectory()) file = join(file, 'index.html');
