@@ -15,7 +15,7 @@ lexicon daemon --which         # print the detected clipboard backend and exit
 lexicon daemon --backend xsel  # force a backend: pbcopy | wl | xclip | xsel | powershell
 ```
 
-The watcher polls the clipboard every 250ms. When the text changes and `normalize` would alter it, it writes the corrected text back, prints the diff and records the hits. A loop guard remembers the last value it wrote so it never rewrites its own output. The lexicon is re-read when a lexicon file or `trust.json` has changed, checked (a few `stat` calls) each time a new clipboard text is about to be corrected, so a term you just learned is used on the next copy; it is also re-read every 5 seconds as a backstop. Ctrl-C stops it cleanly.
+The watcher polls the clipboard every 250ms. When the text changes and `normalize` would alter it, it writes the corrected text back, prints the diff and records the hits. A loop guard remembers the last value it wrote so it never rewrites its own output. The lexicon is re-read when a lexicon file or `trust.json` has changed, checked (a few `stat` calls) each time a new clipboard text is about to be corrected, so a term you just learned is used on the next copy; it is also re-read every 5 seconds as a backstop. Ctrl-C stops it cleanly; when a clipboard read is still in flight it waits for it and says so, and a second Ctrl-C stops at once (exit code 130).
 
 ## Backends
 

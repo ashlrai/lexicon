@@ -322,6 +322,24 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
     // every poll; report it once, then again only when it changes or clears.
     let lastError: string | undefined;
 
+    // A second ctrl-C while a poll is still in flight (a clipboard tool that
+    // hangs until its timeout) stops at once: the first one only waited, and
+    // with its listener gone nothing answered the second.
+    const forceInt = (): void => forceExit(130);
+    const forceTerm = (): void => forceExit(143);
+    const forceExit = (code: number): void => {
+      err(`[${timestamp()}] clipboard daemon: stopped without waiting for the clipboard tool\n`);
+      process.exit(code);
+    };
+    const dropForce = (): void => {
+      process.removeListener('SIGINT', forceInt);
+      process.removeListener('SIGTERM', forceTerm);
+    };
+    const finish = (): void => {
+      dropForce();
+      resolve();
+    };
+
     const stop = (): void => {
       if (stopped) return;
       stopped = true;
@@ -329,7 +347,13 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
       opts.signal?.removeEventListener('abort', stop);
       process.removeListener('SIGINT', stop);
       process.removeListener('SIGTERM', stop);
-      if (!inFlight) resolve();
+      if (!inFlight) {
+        resolve();
+        return;
+      }
+      process.once('SIGINT', forceInt);
+      process.once('SIGTERM', forceTerm);
+      if (!quiet) err(`[${timestamp()}] clipboard daemon: stopping once the clipboard tool answers; ctrl-C again to stop now\n`);
     };
 
     const tick = async (): Promise<void> => {
@@ -351,7 +375,7 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
         inFlight = false;
       }
       if (stopped) {
-        resolve();
+        finish();
         return;
       }
       timer = setTimeout(() => void tick(), intervalMs);

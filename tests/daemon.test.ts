@@ -332,6 +332,46 @@ describe('runClipboardDaemon', () => {
     }
   });
 
+  // Catches: the first ctrl-C waited for the poll in flight and removed its
+  // listener, so a second ctrl-C during a clipboard tool that hangs did
+  // nothing the daemon could answer.
+  it('a second ctrl-C while a poll is in flight exits at once', async () => {
+    let release: (s: string) => void = () => undefined;
+    const read = vi.fn(() => new Promise<string>((r) => (release = r)));
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    const errs: string[] = [];
+    const before = process.listenerCount('SIGINT');
+    try {
+      const done = runClipboardDaemon({ read, write: async () => undefined, quiet: false, out: () => undefined, err: (s) => errs.push(s), cwd: '/fake' });
+      await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+      process.emit('SIGINT');
+      expect(exit).not.toHaveBeenCalled();
+      expect(errs.join('')).toContain('ctrl-C again to stop now');
+      process.emit('SIGINT');
+      expect(exit).toHaveBeenCalledWith(130);
+      release('x');
+      await done;
+      expect(process.listenerCount('SIGINT')).toBe(before);
+    } finally {
+      exit.mockRestore();
+    }
+  });
+
+  it('a ctrl-C with no poll in flight stops without forcing, and leaves no listener', async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    const before = process.listenerCount('SIGINT');
+    try {
+      const done = runClipboardDaemon({ read: async () => 'x', write: async () => undefined, quiet: true, cwd: '/fake' });
+      await vi.advanceTimersByTimeAsync(10);
+      process.emit('SIGINT');
+      await done;
+      expect(exit).not.toHaveBeenCalled();
+      expect(process.listenerCount('SIGINT')).toBe(before);
+    } finally {
+      exit.mockRestore();
+    }
+  });
+
   it('resolves immediately when started with an already-aborted signal', async () => {
     const controller = new AbortController();
     controller.abort();
