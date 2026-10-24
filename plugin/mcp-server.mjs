@@ -66552,36 +66552,51 @@ function parseServeConfig(raw) {
 function parseServeJson(text) {
   return JSON.parse(text.replace(/^\uFEFF/, ""));
 }
+var MISSING_REASON = "does not exist; lexicon serve creates it";
+function readErrorResult(file2, err) {
+  const code = err.code;
+  if (code === "ENOENT") return { status: "missing", path: file2, reason: MISSING_REASON };
+  return {
+    status: "unusable",
+    path: file2,
+    reason: `could not be read (${typeof code === "string" ? code : errorMessage(err)}); make it a readable file, or remove it so lexicon serve makes a new token`
+  };
+}
+function textResult2(file2, text) {
+  if (text.replace(/^\uFEFF/, "").trim() === "") return { status: "unusable", path: file2, reason: "is empty; lexicon serve replaces it" };
+  let raw;
+  try {
+    raw = parseServeJson(text);
+  } catch {
+    return { status: "unusable", path: file2, reason: "is not valid JSON; fix it, or delete it and lexicon serve makes a new token" };
+  }
+  const config2 = parseServeConfig(raw);
+  if (config2) return { status: "ok", path: file2, config: config2 };
+  return { status: "unusable", path: file2, reason: `has no usable token (${tokenProblem(raw)}); lexicon serve replaces it` };
+}
 function unusableServeConfigReason(file2) {
   let text;
   try {
     text = (0, import_node_fs25.readFileSync)(file2, "utf8");
   } catch (err) {
-    const code = err.code;
-    if (code === "ENOENT") return "does not exist; lexicon serve creates it";
-    return `could not be read (${typeof code === "string" ? code : errorMessage(err)}); make it a readable file, or remove it so lexicon serve makes a new token`;
+    return readErrorResult(file2, err).reason;
   }
-  if (text.replace(/^\uFEFF/, "").trim() === "") return "is empty; lexicon serve replaces it";
-  let raw;
-  try {
-    raw = parseServeJson(text);
-  } catch {
-    return "is not valid JSON; fix it, or delete it and lexicon serve makes a new token";
-  }
-  return `has no usable token (${tokenProblem(raw)}); lexicon serve replaces it`;
+  const read = textResult2(file2, text);
+  return read.status === "ok" ? "has no usable token; lexicon serve replaces it" : read.reason;
 }
-async function readServeConfig(opts = {}) {
+async function readServeConfigResult(opts = {}) {
+  const file2 = getServePath(opts);
   let text;
   try {
-    text = await import_node_fs25.promises.readFile(getServePath(opts), "utf8");
-  } catch {
-    return void 0;
+    text = await import_node_fs25.promises.readFile(file2, "utf8");
+  } catch (err) {
+    return readErrorResult(file2, err);
   }
-  try {
-    return parseServeConfig(parseServeJson(text));
-  } catch {
-    return void 0;
-  }
+  return textResult2(file2, text);
+}
+async function readServeConfig(opts = {}) {
+  const read = await readServeConfigResult(opts);
+  return read.status === "ok" ? read.config : void 0;
 }
 function withServeConfigLock(fn, opts = {}) {
   return withFileLock(getServePath(opts), fn);

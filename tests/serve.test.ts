@@ -49,6 +49,7 @@ import {
   pairPageHtml,
   pairPortNote,
   readServeConfig,
+  readServeConfigResult,
   unusableServeConfigReason,
   DEFAULT_PORT,
   EXPORT_NOTE_HEADER,
@@ -386,6 +387,40 @@ describe('serve.json', () => {
       expect(unusableServeConfigReason(servePath)).toBe('does not exist; lexicon serve creates it');
       await fs.mkdir(servePath);
       expect(unusableServeConfigReason(servePath)).toBe('could not be read (EISDIR); make it a readable file, or remove it so lexicon serve makes a new token');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Catches: readServeConfig swallowed every read and parse error, so a
+  // caller could not tell a serve.json that is simply not there yet from one
+  // that is broken (unreadable, a directory, not JSON, no usable token).
+  it('readServeConfigResult tells a missing serve.json from a broken one, in one read', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-result-'));
+    try {
+      const gp = path.join(dir, 'lexicon.yaml');
+      const servePath = getServePath({ globalPath: gp });
+      expect(await readServeConfigResult({ globalPath: gp })).toEqual({
+        status: 'missing',
+        path: servePath,
+        reason: 'does not exist; lexicon serve creates it',
+      });
+      const token = 'ab'.repeat(16);
+      await fs.writeFile(servePath, JSON.stringify({ port: 4000, token, createdAt: '2026-01-01T00:00:00.000Z' }));
+      expect(await readServeConfigResult({ globalPath: gp })).toMatchObject({ status: 'ok', path: servePath, config: { port: 4000, token } });
+      await fs.writeFile(servePath, '{ nope');
+      expect(await readServeConfigResult({ globalPath: gp })).toEqual({
+        status: 'unusable',
+        path: servePath,
+        reason: 'is not valid JSON; fix it, or delete it and lexicon serve makes a new token',
+      });
+      // The old shape stays: undefined for broken and missing alike.
+      expect(await readServeConfig({ globalPath: gp })).toBeUndefined();
+      await fs.writeFile(servePath, JSON.stringify({ token: 'short' }));
+      expect(await readServeConfigResult({ globalPath: gp })).toMatchObject({ status: 'unusable', reason: expect.stringContaining('has no usable token') });
+      await fs.rm(servePath);
+      await fs.mkdir(servePath);
+      expect(await readServeConfigResult({ globalPath: gp })).toMatchObject({ status: 'unusable', reason: expect.stringContaining('could not be read (EISDIR)') });
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
