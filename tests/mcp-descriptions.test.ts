@@ -8,9 +8,10 @@ import os from 'node:os';
 import path from 'node:path';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer } from '../src/mcp/server.js';
 import { addTerm } from '../src/core/store.js';
+import { runDoctorReport } from '../src/cli/commands.js';
 
 let repo: string;
 let home: string;
@@ -197,5 +198,46 @@ describe('import_dictionary and import_vocabulary', () => {
       expect(again.isError).toBe(true);
       expect(again.content[0]?.text).toContain('preview is missing, expired');
     });
+  });
+});
+
+describe('lexicon_doctor, serve_status and trust_project name every field they answer with', () => {
+  // Catches: `error` (present exactly when ok is false) was in no description.
+  it('lexicon_doctor: `error` is described and is there when ok is false', async () => {
+    expect((await tool('lexicon_doctor')).description).toContain('`error` (only when ok is false: the first failing check)');
+    await fs.writeFile(path.join(home, 'lexicon.yaml'), 'version: 1\nterms: [\n');
+    const report = await runDoctorReport({ cwd: repo, audience: 'mcp' }, { home, platform: 'linux', env: { PATH: '', LEXICON_PATH: path.join(home, 'lexicon.yaml') }, exec: () => '' });
+    expect(report.ok).toBe(false);
+    expect(typeof report.error).toBe('string');
+  });
+
+  // Catches: `url` is on every serve_status result and no description said so.
+  it('serve_status: every result carries url', async () => {
+    expect((await tool('serve_status')).description).toContain('Every result carries `url`, the /health address probed');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    try {
+      fetchSpy.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+      const down = (await call('serve_status', {})).json();
+      expect(down).toMatchObject({ up: false, url: expect.stringMatching(/^http:\/\/127\.0\.0\.1:\d+\/health$/) });
+      fetchSpy.mockResolvedValueOnce(new Response('{"hello":"world"}', { status: 200, headers: { 'content-type': 'application/json' } }));
+      const foreign = (await call('serve_status', {})).json();
+      expect(foreign).toMatchObject({ up: false, url: down.url });
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
+  // Catches: the status and result words were in no description, so 'changed'
+  // or 'declined' had to be guessed from a sample call.
+  it("trust_project: the status words are described, and 'none', 'missing' and 'untrusted' are what status answers", async () => {
+    const d = (await tool('trust_project')).description ?? '';
+    for (const word of ["'trusted'", "'untrusted'", "'changed'", "'missing'", "'invalid'", "'none'", "'updated'", "'re-pinned'", "'already-trusted'", "'declined'"]) {
+      expect(d).toContain(word);
+    }
+    expect((await call('trust_project', { action: 'status' })).json()).toMatchObject({ status: 'none' });
+    expect((await call('trust_project', { action: 'status', path: 'nope.yaml' })).json()).toMatchObject({ status: 'missing' });
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms: []\n');
+    expect((await call('trust_project', { action: 'status' })).json()).toMatchObject({ status: 'untrusted' });
+    expect((await call('trust_project', { action: 'untrust' })).json()).toMatchObject({ removed: false });
   });
 });

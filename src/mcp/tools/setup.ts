@@ -58,7 +58,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         'ready being false does not always mean "not set up yet": a lexicon file that exists but does not parse also reports ready false, ' +
         'and setup_lexicon will not repair it. Always relay `nextStep` as written instead of assuming setup is the fix; for an unreadable ' +
         'lexicon it names the file and the command that opens it. ' +
-        'Also returns `ok` (no failing checks, which is weaker than `ready`: a lexicon with no terms fails nothing), ' +
+        'Also returns `ok` (no failing checks, which is weaker than `ready`: a lexicon with no terms fails nothing), `error` (only when ok is false: the first failing check), ' +
         "`checks: [{ level: 'ok'|'warn'|'fail'|'info', message }]`, `paths` and `versions`. Read `checks` only when the user asks for " +
         'detail or you need to diagnose something `nextStep` does not cover; warns are usually optional extras, not problems.',
       inputSchema: {},
@@ -245,7 +245,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
       title: 'Local API status',
       description:
         'Check whether the local lexicon API (the CLI serve command, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). ' +
-        'Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); { up: false, error } when nothing answers, or when something other than lexicon serve answers on the port. Every up: false result carries `hint`, the next step. Call when a non-MCP surface is not correcting text.',
+        'Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); { up: false, error } when nothing answers, or when something other than lexicon serve answers on the port. Every result carries `url`, the /health address probed, and every up: false result carries `hint`, the next step. Call when a non-MCP surface is not correcting text.',
       inputSchema: {},
     },
     async () =>
