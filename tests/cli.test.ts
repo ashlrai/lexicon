@@ -440,7 +440,7 @@ describe('list', () => {
 
     const miss = makeIO();
     await runList({ query: ' zork ' }, miss);
-    expect(miss.out).toContain('no terms match --query "zork" (');
+    expect(miss.out).toContain('No term matches --query "zork"; the lexicon has ');
   });
 
   // Catches: a filter on a lexicon with no terms said `no terms match`, which
@@ -449,7 +449,8 @@ describe('list', () => {
   it('says why the list is empty: no terms at all, or a filter that matched none', async () => {
     const miss = makeIO();
     expect(await runList({ category: 'product', query: 'zork' }, miss)).toBe(0);
-    expect(miss.out).toContain('no terms match --category product --query "zork" (2 terms in all; run lexicon list without them to see them)\n');
+    // The text line is the note --full and MCP list_terms carry, word for word.
+    expect(miss.out).toContain('No term matches --category product --query "zork"; the lexicon has 2 terms in all, which lexicon list without them shows.\n');
     const missFull = makeIO();
     expect(await runList({ category: 'product', full: true }, missFull)).toBe(0);
     expect(JSON.parse(missFull.out)).toMatchObject({

@@ -720,7 +720,7 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
       io,
       dim(
         total > 0 && filters.length > 0
-          ? `no terms match ${safe(filters.join(' '))} (${plural(total, 'term')} in all; run lexicon list without ${filters.length === 1 ? 'it' : 'them'} to see them)`
+          ? noTermMatchesNote({ filter: safe(filters.join(' ')), filters: filters.length, total })
           : 'no terms' + empty,
       ),
     );
