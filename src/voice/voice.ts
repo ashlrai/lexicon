@@ -27,6 +27,7 @@
  * (`ok: false, error, nextStep?, code`) for every other non-zero exit. The stderr lines
  * and the exit codes are the same with or without `--json`.
  */
+import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -69,6 +70,7 @@ import {
   stateFilePath,
   stopRecorder,
   sweepVoiceDir,
+  createPrivateFile,
   touchPrivateFile,
   voiceDir,
   writeState,
@@ -818,6 +820,19 @@ function transcribeFailed(r: Resolved, io: VoiceIO, e: unknown, wav: string, opt
 // ---------------------------------------------------------------------------
 // Foreground mode
 
+/** A new 0600 `<tmpDir>/lexicon-voice-<pid>-<t>-<random>.wav`, never one that was already there. */
+async function createForegroundWav(r: Resolved): Promise<string> {
+  for (let attempt = 0; ; attempt++) {
+    const wav = path.join(r.tmpDir, `lexicon-voice-${process.pid}-${r.clock().toString(36)}-${randomBytes(6).toString('hex')}.wav`);
+    try {
+      await createPrivateFile(wav);
+      return wav;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST' || attempt >= 4) throw e;
+    }
+  }
+}
+
 /** Record until Enter, Ctrl-C or `--seconds`, then transcribe, normalize and output. Returns the exit code. */
 export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps = {}): Promise<number> {
   return runReported(opts, io, deps, (tracked, r) => recordForeground(opts, tracked, deps, r));
@@ -844,9 +859,12 @@ async function recordForeground(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps
   }
 
   await fs.mkdir(r.tmpDir, { recursive: true });
-  const wav = path.join(r.tmpDir, `lexicon-voice-${process.pid}-${r.clock().toString(36)}.wav`);
-  // Created 0600 before ffmpeg opens it (O_TRUNC keeps the mode): the audio is the user's.
-  await touchPrivateFile(wav);
+  // Created new and 0600 before ffmpeg opens it (O_TRUNC keeps the mode): the
+  // audio is the user's. The name was the pid and the time alone, opened
+  // whether or not something was there, so in a shared temp directory (/tmp
+  // on Linux) a file or symlink another account put at that name first was
+  // used: a symlink sent the recording over the file it pointed to.
+  const wav = await createForegroundWav(r);
   const seconds = opts.seconds !== undefined && opts.seconds > 0 ? opts.seconds : undefined;
   const t0 = r.clock();
   const child = startRecorder({ ffmpeg: tools.ffmpeg, spawn: r.spawn, input, wav, detached: false, ...(seconds !== undefined ? { seconds } : {}) });
