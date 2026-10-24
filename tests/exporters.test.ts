@@ -58,6 +58,21 @@ describe('exportLexicon', () => {
     expect(json.terms.map((t) => t.canonical)).toEqual(['Ashlr.AI', 'kubectl']);
   });
 
+  // Catches: `categories: ['other']` dropped a term with no category, which
+  // every other place (categoryRank) counts as `other`.
+  it('counts a term without a category as other for the category filter', () => {
+    const mixed: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'Plain', aliases: ['plane'] },
+        { canonical: 'Tagged', aliases: ['tag it'], category: 'other' },
+        { canonical: 'Ashlr.AI', aliases: ['Ashler'], category: 'brand' },
+      ],
+    };
+    expect(selectExportTerms(mixed, { categories: ['other'] }).map((t) => t.canonical)).toEqual(['Plain', 'Tagged']);
+    expect(selectExportTerms(mixed, { categories: ['brand'] }).map((t) => t.canonical)).toEqual(['Ashlr.AI']);
+  });
+
   // Catches: with every hit at 0 the cap took the first proper noun A to Z, a
   // term with no alias, so `limit: 1` wrote a CSV of only its header row.
   it('limit counts only terms with an alias for the formats that write one row per alias', () => {

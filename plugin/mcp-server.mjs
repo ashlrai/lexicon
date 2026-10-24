@@ -60825,7 +60825,7 @@ function applyOptions(lexicon, opts, format) {
   let terms = lexicon.terms;
   if (opts.categories && opts.categories.length > 0) {
     const allowed = new Set(opts.categories);
-    terms = terms.filter((t) => t.category !== void 0 && allowed.has(t.category));
+    terms = terms.filter((t) => allowed.has(t.category ?? "other"));
   }
   if (opts.limit !== void 0) {
     const candidates = format !== void 0 && EXPORT_ALIAS_ROW_FORMATS.includes(format) ? terms.filter(hasAliasRow) : terms;
