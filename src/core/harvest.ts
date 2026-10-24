@@ -24,6 +24,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { compareText } from './collate.js';
 import { STOPLIST } from './stoplist.js';
 import { suggestAliases } from './suggest.js';
 import type { HarvestCandidate, HarvestOptions, TermCategory, TermSource } from './types.js';
@@ -329,7 +330,7 @@ export async function harvestRepo(root: string, opts: HarvestOptions = {}): Prom
     }
   }
 
-  const { files } = walk(absRoot, ignore);
+  const { files } = gitFiles(absRoot, ignore) ?? walk(absRoot, ignore);
 
   for (const file of files) {
     const rel = path.relative(absRoot, file) || path.basename(file);
@@ -398,7 +399,7 @@ export async function harvestRepo(root: string, opts: HarvestOptions = {}): Prom
     });
   }
 
-  candidates.sort((a, b) => b.count - a.count || a.canonical.localeCompare(b.canonical));
+  candidates.sort((a, b) => b.count - a.count || compareText(a.canonical, b.canonical));
   return candidates.slice(0, Math.max(0, limit));
 }
 
@@ -419,7 +420,7 @@ function walk(root: string, ignore: Set<string>): WalkResult {
       continue;
     }
     // Deterministic order so counts/evidence are stable across runs.
-    entries.sort((a, b) => a.name.localeCompare(b.name));
+    entries.sort((a, b) => compareText(a.name, b.name));
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -438,6 +439,52 @@ function walk(root: string, ignore: Set<string>): WalkResult {
     }
   }
   return { files, truncated };
+}
+
+/**
+ * The files git would show for `root`: tracked ones plus untracked ones that
+ * no .gitignore (the repo's, a nested one, `.git/info/exclude` or the user's
+ * global excludes) leaves out, under the same filters as walk(). The walk only
+ * knew a fixed list of directories, so a repo's ignored build output (`out/`,
+ * `.turbo/`, a generated client) was scanned and its names proposed.
+ * Undefined, so the caller walks, when `root` is not in a git work tree, git
+ * is missing or slow, or git lists nothing (a directory the enclosing repo
+ * ignores, which the user still asked to scan).
+ */
+function gitFiles(root: string, ignore: Set<string>): WalkResult | undefined {
+  let out: string;
+  try {
+    out = execFileSync('git', ['-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
+      encoding: 'utf8',
+      stdio: ['ignore', 'pipe', 'ignore'],
+      timeout: 5000,
+      maxBuffer: 64 * 1024 * 1024,
+    });
+  } catch {
+    return undefined;
+  }
+  // A tracked file deleted from the work tree, or listed twice by
+  // --cached --others while it is being added, is skipped below.
+  const rels = [...new Set(out.split('\0').filter((r) => r !== ''))].sort(compareText);
+  if (rels.length === 0) return undefined;
+  const files: string[] = [];
+  for (const rel of rels) {
+    const parts = rel.split('/');
+    if (parts.slice(0, -1).some((dir) => ignore.has(dir))) continue;
+    if (!READ_EXTENSIONS.has(path.extname(rel).toLowerCase())) continue;
+    const full = path.join(root, ...parts);
+    // As the walk: regular files only, never a symlink out of the repo.
+    let st: fs.Stats;
+    try {
+      st = fs.lstatSync(full);
+    } catch {
+      continue;
+    }
+    if (!st.isFile()) continue;
+    files.push(full);
+    if (files.length >= MAX_FILES) return { files, truncated: true };
+  }
+  return { files, truncated: false };
 }
 
 function readText(file: string): string | undefined {

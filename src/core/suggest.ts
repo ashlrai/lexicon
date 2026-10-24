@@ -1,7 +1,8 @@
 /**
  * suggestAliases(): guess the spellings a speech-to-text engine is likely to
  * produce for an invented name. Deterministic, at most 8 results, never the
- * canonical itself.
+ * canonical itself, and never a single everyday word (STOPLIST), which would
+ * be rewritten wherever it is said.
  *
  * Techniques, in priority order (earlier ones survive the cap):
  *   1. split on dots / hyphens / underscores / camelCase  ("Ashlr.AI" -> "Ashlr AI")
@@ -22,11 +23,18 @@ export function suggestAliases(canonical: string): string[] {
   const base = canonical.trim();
   const out: string[] = [];
   const seen = new Set<string>([base.toLowerCase()]);
-  const add = (s: string): void => {
+  const add = (s: string, everydayOk = false): void => {
     const v = s.replace(/\s+/g, ' ').trim();
     if (!v) return;
     const key = v.toLowerCase();
     if (seen.has(key)) return;
+    // A one-word guess that is an everyday word ("Entire.io" -> "Entire",
+    // "Flyy" -> "Fly") rewrote that word everywhere: "birds fly over the
+    // entire field" came out as "birds Flyy over the Entire.io field". The
+    // soft-c rule below already kept such words out; now every rule does but
+    // an acronym's pronounced form ("SaaS" -> "sass"), which is exactly what
+    // speech-to-text writes for it.
+    if (!everydayOk && !key.includes(' ') && STOPLIST.has(key)) return;
     seen.add(key);
     out.push(v);
   };
@@ -52,7 +60,7 @@ export function suggestAliases(canonical: string): string[] {
 
   // 4. acronyms
   if (acronym) {
-    add(pronounceAcronym(base));
+    add(pronounceAcronym(base), true);
     add(base.replace(/[^\p{L}\p{N}]/gu, '').split('').join(' '));
   }
 

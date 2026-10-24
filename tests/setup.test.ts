@@ -24,7 +24,9 @@ import type { InstallOptions } from '../src/cli/cmd-install.js';
 import { runServeInstall } from '../src/cli/cmd-serve.js';
 import type { ServeDeps } from '../src/cli/cmd-serve.js';
 import { makeIO, quotedForShell, scripted } from './helpers.js';
-import { PromptClosedError } from '../src/cli/prompt.js';
+import { PromptClosedError, onlyStdoutRedirected } from '../src/cli/prompt.js';
+import { stepExport } from '../src/cli/setup/steps.js';
+import type { Ctx } from '../src/cli/setup/types.js';
 
 
 
@@ -449,6 +451,100 @@ describe('runSetup --yes', () => {
     expect(rows).toBeGreaterThan(1);
     expect(io.out).toContain(`lexicon-wispr.csv (${rows} rows)`);
     await expect(run({ yes: true, clients: 'none', app: 'dragon' }, f)).rejects.toThrow(/unknown app "dragon"/);
+  });
+
+  // Catches: a rerun wrote over ~/Desktop/lexicon-<app>.<ext> without
+  // asking, so a row fixed by hand before importing was lost.
+  it('a rerun keeps an export edited by hand: --yes writes the next free name, a terminal asks', async () => {
+    const exportDir = path.join(home, 'Desktop');
+    const f = fakes();
+    await run({ yes: true, clients: 'none', company: 'Ashlr.AI', app: 'wispr', exportDir }, f);
+    const file = path.join(exportDir, 'lexicon-wispr.csv');
+    const fresh = await fs.readFile(file, 'utf8');
+
+    // The same export again: rewritten in place, no second file.
+    const same = await run({ yes: true, clients: 'none', app: 'wispr', exportDir }, f);
+    expect(same.summary.exports).toEqual([{ format: 'wispr', path: file }]);
+    expect(existsSync(path.join(exportDir, 'lexicon-wispr-2.csv'))).toBe(false);
+
+    const edited = `${fresh}my fix,Ashlr.AI\n`;
+    await fs.writeFile(file, edited);
+    const kept = await run({ yes: true, clients: 'none', app: 'wispr', exportDir }, f);
+    const second = path.join(exportDir, 'lexicon-wispr-2.csv');
+    expect(await fs.readFile(file, 'utf8')).toBe(edited);
+    expect(await fs.readFile(second, 'utf8')).toBe(fresh);
+    expect(kept.summary.exports).toEqual([{ format: 'wispr', path: second }]);
+    expect(kept.io.out).toContain('kept');
+    expect(kept.io.out).toContain('it differs from this export (no terminal to ask on)');
+    expect(kept.io.out).toContain(`lexicon-wispr-2.csv (`);
+    // Again: the -2 file already holds this export, so it is reused.
+    const again = await run({ yes: true, clients: 'none', app: 'wispr', exportDir }, f);
+    expect(again.summary.exports).toEqual([{ format: 'wispr', path: second }]);
+    expect(existsSync(path.join(exportDir, 'lexicon-wispr-3.csv'))).toBe(false);
+
+    // The plan says so too.
+    const plan = await run({ yes: true, dryRun: true, clients: 'none', app: 'wispr', exportDir }, f);
+    expect(plan.plan?.wouldExport).toEqual([{ format: 'wispr', path: path.join(exportDir, 'lexicon-wispr-3.csv') }]);
+    expect(plan.io.out).toContain('exists, so it would be kept');
+
+    // On a terminal: asked, default no; a yes replaces it.
+    const ask = async (answer: string): Promise<Ctx['summary']> => {
+      const io = makeIO();
+      const summary: Ctx['summary'] = { lexiconPath: globalPath, termsAdded: [], packs: [], clients: [], serve: 'skipped', exports: [] };
+      const ctx = {
+        opts: { app: 'wispr', exportDir },
+        deps: {},
+        say: (t = '') => io.stdout(`${t}\n`),
+        warn: (t: string) => io.stderr(`${t}\n`),
+        io,
+        cwd,
+        home,
+        platform: 'darwin',
+        env: {},
+        exists: existsSync,
+        exec: () => '',
+        prompter: scripted([answer]),
+        homeOverridden: true,
+        seeded: [],
+        packCanonicals: [],
+        plannedSeed: [],
+        summary,
+      } as unknown as Ctx;
+      await stepExport(ctx);
+      expect((ctx.prompter as ReturnType<typeof scripted>).asked[0]).toContain('exists and differs from this export');
+      return summary;
+    };
+    await fs.writeFile(file, edited);
+    expect((await ask('')).exports).toEqual([{ format: 'wispr', path: second }]);
+    expect(await fs.readFile(file, 'utf8')).toBe(edited);
+    expect((await ask('y')).exports).toEqual([{ format: 'wispr', path: file }]);
+    expect(await fs.readFile(file, 'utf8')).toBe(fresh);
+  });
+
+  // Catches: `lexicon setup | tee log` (stdin a terminal, stdout a pipe)
+  // took every default under a "(no terminal ...)" line sent into the pipe,
+  // with no word of why on stderr or how to answer the questions.
+  it('says on stderr that stdout is why the defaults were taken', async () => {
+    expect(onlyStdoutRedirected({ stdin: { isTTY: true }, stdout: { isTTY: false } })).toBe(true);
+    expect(onlyStdoutRedirected({ stdin: { isTTY: true }, stdout: { isTTY: true } })).toBe(false);
+    expect(onlyStdoutRedirected({ stdin: {}, stdout: {} })).toBe(false);
+    const f = fakes();
+    delete f.deps.isInteractive;
+    const stdin = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+    const stdout = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+    Object.defineProperty(process.stdout, 'isTTY', { value: false, configurable: true });
+    try {
+      const { io } = await run({ clients: 'none', serve: false, packs: false, harvest: false }, f);
+      expect(io.err).toContain('lexicon setup: stdout is not a terminal (piped or redirected), so no questions were asked and the defaults were taken, as with --yes.');
+      expect(io.out).toContain('(stdout is not a terminal: taking the defaults, as with --yes)');
+      expect(io.out).not.toContain('(no terminal:');
+    } finally {
+      if (stdin) Object.defineProperty(process.stdin, 'isTTY', stdin);
+      else delete (process.stdin as { isTTY?: boolean }).isTTY;
+      if (stdout) Object.defineProperty(process.stdout, 'isTTY', stdout);
+      else delete (process.stdout as { isTTY?: boolean }).isTTY;
+    }
   });
 
   it('says "1 row", not "1 rows", for a one-row export', async () => {

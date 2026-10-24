@@ -551,7 +551,8 @@ describe('add / remove / path', () => {
     const io = makeIO();
     expect(await runAdd('Ashley', ['Ashler'], {}, io)).toBe(0);
     expect(io.out).toContain('warn: Ashler is also an alias of Ashlr.AI (global), so it may still be corrected to that');
-    expect(io.out).toContain('lexicon remove "Ashlr.AI" --alias "Ashler"');
+    // Quoted for the shell (shownCommand): bare words need no quotes.
+    expect(io.out).toContain('to drop it: lexicon remove Ashlr.AI --alias Ashler --global');
 
     const json = makeIO();
     expect(await runAdd('Ashley', ['Ashler'], { json: true }, json)).toBe(0);
@@ -562,7 +563,7 @@ describe('add / remove / path', () => {
       '"Ashler" is also an alias of "Ashlr.AI" (global), so it may still be corrected to that; ' +
         'if the user agrees, drop it with: lexicon remove "Ashlr.AI" --alias "Ashler" --global',
     );
-    expect(io.out).toContain('lexicon remove "Ashlr.AI" --alias "Ashler" --global');
+    expect(io.out).toContain('lexicon remove Ashlr.AI --alias Ashler --global');
 
     // No conflict: no warning, and the JSON keeps its old shape.
     const plain = makeIO();

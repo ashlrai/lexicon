@@ -15,7 +15,7 @@ lexicon daemon --which         # print the detected clipboard backend and exit
 lexicon daemon --backend xsel  # force a backend: pbcopy | wl | xclip | xsel | powershell
 ```
 
-The watcher polls the clipboard every 250ms. When the text changes and `normalize` would alter it, it writes the corrected text back, prints the diff and records the hits. A loop guard remembers the last value it wrote so it never rewrites its own output. The lexicon is re-read at most every 5 seconds. Ctrl-C stops it cleanly.
+The watcher polls the clipboard every 250ms. When the text changes and `normalize` would alter it, it writes the corrected text back, prints the diff and records the hits. A loop guard remembers the last value it wrote so it never rewrites its own output. The lexicon is re-read when a lexicon file or `trust.json` has changed, checked (a few `stat` calls) each time a new clipboard text is about to be corrected, so a term you just learned is used on the next copy; it is also re-read every 5 seconds as a backstop. Ctrl-C stops it cleanly; when a clipboard read is still in flight it waits for it and says so, and a second Ctrl-C stops at once (exit code 130).
 
 ## Backends
 
@@ -24,7 +24,7 @@ The clipboard tool is detected per platform (`lexicon daemon --which` and `lexic
 | Platform | Backend | Commands |
 |---|---|---|
 | macOS | `pbcopy` | `pbpaste` / `pbcopy` (built in) |
-| Linux, Wayland (`WAYLAND_DISPLAY` set) | `wl` | `wl-paste --no-newline --type text` / `wl-copy` (`sudo apt install wl-clipboard`) |
+| Linux, Wayland (`WAYLAND_DISPLAY` set) | `wl` | `wl-paste --no-newline --type text` / `wl-copy --type text/plain` (`sudo apt install wl-clipboard`) |
 | Linux, X11 | `xclip`, else `xsel` | `xclip -selection clipboard -o` / `-i` (`sudo apt install xclip`) |
 | Windows | `powershell` | `Get-Clipboard -Raw` / `Set-Clipboard` (built in; CRLF preserved) |
 
@@ -32,7 +32,7 @@ An empty or non-text clipboard (an image, a file) is treated as no text and skip
 
 ## One-shot mode for a keyboard shortcut
 
-`lexicon daemon --once` reads the clipboard once, corrects it, writes it back if anything changed, prints the diff (or `no changes`) and exits 0. With no terms in the lexicon it says so, `no changes (the lexicon has no terms yet; run \`lexicon setup\`, or add one with: lexicon learn <heard> <meant>)`, and the watching daemon says it once when it starts. Bind it to a key: dictate, copy, press the key, paste. With `--paste` (macOS only) it also sends Cmd+V to the frontmost app, so the shortcut becomes "dictate, press the key".
+`lexicon daemon --once` reads the clipboard once, corrects it, writes it back if anything changed, prints the diff (or `no changes`) and exits 0. With no terms in the lexicon it says so, `no changes (the lexicon has no terms yet; run \`lexicon setup\`, or add one with: lexicon learn <heard> <meant>)`, and the watching daemon says it once when it starts. Bind it to a key: dictate, copy, press the key, paste. With `--paste` (macOS only) it also sends Cmd+V to the frontmost app, so the shortcut becomes "dictate, press the key". A clipboard it leaves as it was (empty, too large, binary such as an image, or with no letters) is not pasted, and stderr says why.
 
 `--paste` uses `osascript` and needs Accessibility permission for whatever runs the shortcut (Raycast, Alfred, Keyboard Maestro, Terminal): System Settings > Privacy & Security > Accessibility. Nothing else in the daemon needs a permission. On Linux and Windows `--paste` prints a notice and leaves the corrected text on the clipboard. On macOS the [LexiconBar](MACOS-APP.md) app wraps the same command in a menu bar hotkey; [the Windows tray app](WINDOWS-APP.md) has its own equivalent, though nothing in it has been run on Windows yet. [PLATFORMS.md](PLATFORMS.md) has the full picture.
 

@@ -49,6 +49,17 @@ export function isInteractive(): boolean {
   return Boolean(process.stdin.isTTY && process.stdout.isTTY);
 }
 
+/**
+ * True when stdin is a terminal but stdout is not (`lexicon setup | tee log`,
+ * `> file`): a person is there to answer, but isInteractive() is false, so a
+ * command that takes the defaults must say that stdout is why. Prompts stay
+ * off then: progress goes to stdout, and questions on stderr would arrive
+ * without the lines they refer to.
+ */
+export function onlyStdoutRedirected(streams: { stdin: { isTTY?: boolean }; stdout: { isTTY?: boolean } } = process): boolean {
+  return Boolean(streams.stdin.isTTY) && !streams.stdout.isTTY;
+}
+
 /** Split `a, b,c` into trimmed, non-empty, case-insensitively deduped items. */
 export function splitList(input: string): string[] {
   const seen = new Set<string>();

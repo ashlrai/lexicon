@@ -7215,12 +7215,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs21, exportName) {
+    function addFormats(ajv, list, fs22, exportName) {
       var _a3;
       var _b;
       (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 ? _a3 : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs21[f]);
+        ajv.addFormat(f, fs22[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -14123,14 +14123,14 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs21 = this.flowScalar(this.type);
+              const fs22 = this.flowScalar(this.type);
               if (atNextItem || it.value) {
-                map2.items.push({ start, key: fs21, sep: [] });
+                map2.items.push({ start, key: fs22, sep: [] });
                 this.onKeyLine = true;
               } else if (it.sep) {
-                this.stack.push(fs21);
+                this.stack.push(fs22);
               } else {
-                Object.assign(it, { key: fs21, sep: [] });
+                Object.assign(it, { key: fs22, sep: [] });
                 this.onKeyLine = true;
               }
               return;
@@ -14258,13 +14258,13 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs21 = this.flowScalar(this.type);
+              const fs22 = this.flowScalar(this.type);
               if (!it || it.value)
-                fc.items.push({ start: [], key: fs21, sep: [] });
+                fc.items.push({ start: [], key: fs22, sep: [] });
               else if (it.sep)
-                this.stack.push(fs21);
+                this.stack.push(fs22);
               else
-                Object.assign(it, { key: fs21, sep: [] });
+                Object.assign(it, { key: fs22, sep: [] });
               return;
             }
             case "flow-map-end":
@@ -15912,7 +15912,7 @@ var require_command = __commonJS({
     var EventEmitter = require_node_events().EventEmitter;
     var childProcess = require_node_child_process();
     var path28 = require_node_path();
-    var fs21 = require_node_fs();
+    var fs22 = require_node_fs();
     var process3 = require_node_process();
     var { Argument: Argument2, humanReadableArgName } = require_argument();
     var { CommanderError: CommanderError2 } = require_error();
@@ -16906,7 +16906,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @param {string} subcommandName
        */
       _checkForMissingExecutable(executableFile, executableDir, subcommandName) {
-        if (fs21.existsSync(executableFile)) return;
+        if (fs22.existsSync(executableFile)) return;
         const executableDirMessage = executableDir ? `searched for local subcommand relative to directory '${executableDir}'` : "no directory for search for local subcommand, use .executableDir() to supply a custom directory";
         const executableMissing = `'${executableFile}' does not exist
  - if '${subcommandName}' is not meant to be an executable command, remove description parameter from '.command()' and use '.description()' instead
@@ -16925,10 +16925,10 @@ Expecting one of '${allowedValues.join("', '")}'`);
         const sourceExt = [".js", ".ts", ".tsx", ".mjs", ".cjs"];
         function findFile(baseDir, baseName) {
           const localBin = path28.resolve(baseDir, baseName);
-          if (fs21.existsSync(localBin)) return localBin;
+          if (fs22.existsSync(localBin)) return localBin;
           if (sourceExt.includes(path28.extname(baseName))) return void 0;
           const foundExt = sourceExt.find(
-            (ext) => fs21.existsSync(`${localBin}${ext}`)
+            (ext) => fs22.existsSync(`${localBin}${ext}`)
           );
           if (foundExt) return `${localBin}${foundExt}`;
           return void 0;
@@ -16940,7 +16940,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
         if (this._scriptPath) {
           let resolvedScriptPath;
           try {
-            resolvedScriptPath = fs21.realpathSync(this._scriptPath);
+            resolvedScriptPath = fs22.realpathSync(this._scriptPath);
           } catch {
             resolvedScriptPath = this._scriptPath;
           }
@@ -18203,7 +18203,7 @@ var require_node_net = __commonJS({
 });
 
 // src/mcp/server.ts
-var import_node_fs30 = __toESM(require_node_fs(), 1);
+var import_node_fs31 = __toESM(require_node_fs(), 1);
 var import_node_path32 = __toESM(require_node_path(), 1);
 var import_node_url4 = __toESM(require_node_url(), 1);
 
@@ -55761,6 +55761,13 @@ function diffSummary(result) {
   return result.replacements.map((r) => `"${r.original}" -> "${r.replacement}" (${r.reason}, ${r.confidence.toFixed(2)})`).join("\n");
 }
 
+// src/core/collate.ts
+var collator;
+function compareText(a, b) {
+  collator ??= new Intl.Collator("en");
+  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+}
+
 // src/core/harvest.ts
 var import_node_child_process = __toESM(require_node_child_process());
 var import_node_fs6 = __toESM(require_node_fs());
@@ -55774,11 +55781,12 @@ function suggestAliases(canonical) {
   const base = canonical.trim();
   const out = [];
   const seen = /* @__PURE__ */ new Set([base.toLowerCase()]);
-  const add = (s) => {
+  const add = (s, everydayOk = false) => {
     const v = s.replace(/\s+/g, " ").trim();
     if (!v) return;
     const key = v.toLowerCase();
     if (seen.has(key)) return;
+    if (!everydayOk && !key.includes(" ") && STOPLIST.has(key)) return;
     seen.add(key);
     out.push(v);
   };
@@ -55795,7 +55803,7 @@ function suggestAliases(canonical) {
     for (const variant of insertVowels(target)) add(variant);
   }
   if (acronym) {
-    add(pronounceAcronym(base));
+    add(pronounceAcronym(base), true);
     add(base.replace(/[^\p{L}\p{N}]/gu, "").split("").join(" "));
   }
   for (const target of stem ? [stem, spaced] : [spaced, base]) {
@@ -57352,7 +57360,7 @@ async function harvestRepo(root, opts = {}) {
       bump3(author, "person", "harvest:git", "git log", 1, true);
     }
   }
-  const { files } = walk(absRoot, ignore2);
+  const { files } = gitFiles(absRoot, ignore2) ?? walk(absRoot, ignore2);
   for (const file2 of files) {
     const rel = import_node_path6.default.relative(absRoot, file2) || import_node_path6.default.basename(file2);
     const base = import_node_path6.default.basename(file2);
@@ -57408,7 +57416,7 @@ async function harvestRepo(root, opts = {}) {
       suggestedAliases: harvestAliases(bucket.canonical, bucket.category)
     });
   }
-  candidates.sort((a, b) => b.count - a.count || a.canonical.localeCompare(b.canonical));
+  candidates.sort((a, b) => b.count - a.count || compareText(a.canonical, b.canonical));
   return candidates.slice(0, Math.max(0, limit));
 }
 function walk(root, ignore2) {
@@ -57423,7 +57431,7 @@ function walk(root, ignore2) {
     } catch {
       continue;
     }
-    entries2.sort((a, b) => a.name.localeCompare(b.name));
+    entries2.sort((a, b) => compareText(a.name, b.name));
     for (const entry of entries2) {
       const full = import_node_path6.default.join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -57442,6 +57450,38 @@ function walk(root, ignore2) {
     }
   }
   return { files, truncated };
+}
+function gitFiles(root, ignore2) {
+  let out;
+  try {
+    out = (0, import_node_child_process.execFileSync)("git", ["-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 5e3,
+      maxBuffer: 64 * 1024 * 1024
+    });
+  } catch {
+    return void 0;
+  }
+  const rels = [...new Set(out.split("\0").filter((r) => r !== ""))].sort(compareText);
+  if (rels.length === 0) return void 0;
+  const files = [];
+  for (const rel of rels) {
+    const parts = rel.split("/");
+    if (parts.slice(0, -1).some((dir) => ignore2.has(dir))) continue;
+    if (!READ_EXTENSIONS.has(import_node_path6.default.extname(rel).toLowerCase())) continue;
+    const full = import_node_path6.default.join(root, ...parts);
+    let st;
+    try {
+      st = import_node_fs6.default.lstatSync(full);
+    } catch {
+      continue;
+    }
+    if (!st.isFile()) continue;
+    files.push(full);
+    if (files.length >= MAX_FILES) return { files, truncated: true };
+  }
+  return { files, truncated: false };
 }
 function readText(file2) {
   try {
@@ -58434,10 +58474,8 @@ function categoryRank2(category) {
 function isProperNounCategory(category) {
   return category === "brand" || category === "person" || category === "product";
 }
-var collator;
 function compareCanonical(a, b) {
-  collator ??= new Intl.Collator("en");
-  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+  return compareText(a, b);
 }
 function sortByImportance(terms) {
   return [...terms].sort(
@@ -58479,7 +58517,7 @@ function csvField(value) {
   return value;
 }
 function isFormulaCell(value) {
-  return /^[=+\-@\t\r]/.test(value);
+  return /^(?:[\t\r]|[ \t]*[=+\-@])/.test(value);
 }
 function csvTextField(value) {
   return isFormulaCell(value) ? `"'${value.replace(/"/g, '""')}"` : csvField(value);
@@ -58814,7 +58852,10 @@ function exportOpenai(lexicon, opts = {}, sink) {
 
 // src/core/exporters/superwhisper.ts
 function exportSuperwhisper(lexicon, _opts = {}, sink) {
-  const entries2 = aliasPairs(lexicon).map(({ alias, canonical }) => ({
+  const { kept, dropped } = uniqueTriggers(aliasPairs(lexicon));
+  const shared = sharedTriggerNote(dropped, "replacement");
+  if (shared) sink?.notes.push(shared);
+  const entries2 = kept.map(({ alias, canonical }) => ({
     original: alias,
     replacement: canonical
   }));
@@ -58853,18 +58894,20 @@ function exportText(lexicon, _opts = {}) {
 function exportWispr(lexicon, _opts = {}, sink) {
   const lines = ["word,replacement"];
   const leftOut = [];
-  for (const { alias, canonical } of aliasPairs(lexicon)) {
-    if (isFormulaCell(alias) || isFormulaCell(canonical)) {
-      leftOut.push(`${alias} -> ${canonical}`);
-      continue;
-    }
-    lines.push(`${csvField(alias)},${csvField(canonical)}`);
-  }
+  const safe2 = aliasPairs(lexicon).filter(({ alias, canonical }) => {
+    if (!isFormulaCell(alias) && !isFormulaCell(canonical)) return true;
+    leftOut.push(`${alias} -> ${canonical}`);
+    return false;
+  });
+  const { kept, dropped } = uniqueTriggers(safe2);
+  for (const { alias, canonical } of kept) lines.push(`${csvField(alias)},${csvField(canonical)}`);
   if (leftOut.length > 0) {
     sink?.notes.push(
-      `left out ${leftOut.length} pair${leftOut.length === 1 ? "" : "s"} a spreadsheet would run as a formula (a cell starting with = + - @, a tab or a carriage return): ${quotedNames(leftOut)}`
+      `left out ${leftOut.length} pair${leftOut.length === 1 ? "" : "s"} a spreadsheet would run as a formula (a cell starting with = + - @, after any spaces, or with a tab or a carriage return): ${quotedNames(leftOut)}`
     );
   }
+  const shared = sharedTriggerNote(dropped, "word");
+  if (shared) sink?.notes.push(shared);
   if (sink) sink.rows = lines.length - 1;
   return lines.join("\n") + "\n";
 }
@@ -59881,13 +59924,18 @@ async function learnCorrection(c, opts = {}) {
   const untrusted = untrustedClaim(loaded, heard, existing?.canonical ?? meant);
   const withConflict = { ...conflict ? { conflict } : {}, ...untrusted ? { untrustedProject: untrusted } : {} };
   if (existing) {
-    const alreadyKnown = sameText(existing.canonical, heard) || existing.aliases.some((a) => sameText(a, heard));
     const targetScope = scope ?? existing.scope ?? "global";
+    const targetFile = targetScope === "project" ? loaded.project : loaded.global;
+    const inTarget = scope === void 0 ? existing : targetFile?.lexicon.terms.find((t) => sameText(t.canonical, existing.canonical));
+    const known = (t) => t !== void 0 && (sameText(t.canonical, heard) || t.aliases.some((a) => sameText(a, heard)));
+    if (known(inTarget) && targetFile) {
+      return { term: existing, created: false, file: targetFile, aliasAdded: false, ...withConflict };
+    }
     const saved2 = await addTerm(
-      { canonical: existing.canonical, aliases: alreadyKnown ? [] : [heard], source: "learned" },
+      { canonical: existing.canonical, aliases: [heard], source: "learned" },
       { ...writeOpts, scope: targetScope }
     );
-    return { term: saved2.term, created: saved2.created, file: saved2.file, aliasAdded: !alreadyKnown, ...withConflict };
+    return { term: saved2.term, created: saved2.created, file: saved2.file, aliasAdded: true, ...withConflict };
   }
   const aliases = dedupeCaseInsensitive2([heard, ...suggestAliases(meant)]).filter((a) => !sameText(a, meant));
   const saved = await addTerm(
@@ -59940,7 +59988,7 @@ async function learnCaseOnly(heard, meant, loaded, storeOpts2, scope) {
   }
   const termScope = byCanonical.scope ?? "global";
   const file2 = termScope === "project" ? loaded.project : loaded.global;
-  if (byCanonical.canonical === meant && file2) {
+  if (byCanonical.canonical.normalize("NFC") === meant.normalize("NFC") && file2) {
     return { term: byCanonical, created: false, file: file2, aliasAdded: false, ...withConflict };
   }
   const onDisk = file2?.lexicon.terms.find((t) => sameText(t.canonical, byCanonical.canonical));
@@ -59952,21 +60000,21 @@ async function learnCaseOnly(heard, meant, loaded, storeOpts2, scope) {
   return { term: saved.term, created: false, file: saved.file, aliasAdded: true, ...withConflict };
 }
 function suggestCanonicalFor(heard, lexicon) {
-  const needle = heard.trim().toLowerCase();
+  const needle = heard.trim().normalize("NFC").toLowerCase();
   if (!needle) return [];
   const key = phoneticKey(needle);
   const scored = [];
   for (const term of lexicon.terms) {
     let best = 0;
     for (const candidate of [term.canonical, ...term.aliases]) {
-      const lower = candidate.toLowerCase();
+      const lower = candidate.normalize("NFC").toLowerCase();
       let score = similarity(needle, lower);
       if (key && phoneticKey(lower) === key) score = Math.max(score, PHONETIC_MATCH_CONFIDENCE);
       if (score > best) best = score;
     }
     if (best >= MIN_SUGGEST_CONFIDENCE) scored.push({ term, confidence: best });
   }
-  scored.sort((a, b) => b.confidence - a.confidence || a.term.canonical.localeCompare(b.term.canonical));
+  scored.sort((a, b) => b.confidence - a.confidence || compareText(a.term.canonical, b.term.canonical));
   return scored.slice(0, MAX_SUGGESTIONS);
 }
 
@@ -59995,7 +60043,7 @@ function computeStats(loaded) {
     bump(byCategory, term.category ?? "uncategorized");
     bump(bySource, term.source ?? "unknown");
   }
-  const topTerms = terms.filter((t) => (t.hits ?? 0) > 0).map((t) => ({ canonical: t.canonical, hits: t.hits ?? 0 })).sort((a, b) => b.hits - a.hits || a.canonical.localeCompare(b.canonical)).slice(0, TOP_TERMS);
+  const topTerms = terms.filter((t) => (t.hits ?? 0) > 0).map((t) => ({ canonical: t.canonical, hits: t.hits ?? 0 })).sort((a, b) => b.hits - a.hits || compareText(a.canonical, b.canonical)).slice(0, TOP_TERMS);
   const files = [
     { path: loaded.global.path, scope: "global", terms: loaded.global.lexicon.terms.length }
   ];
@@ -60669,7 +60717,7 @@ async function suggestTerms(input2) {
     });
   }
   const merged = mergeSuggestions(suggestions);
-  merged.sort((a, b) => rank(b) - rank(a) || b.confidence - a.confidence || a.canonical.localeCompare(b.canonical));
+  merged.sort((a, b) => rank(b) - rank(a) || b.confidence - a.confidence || compareText(a.canonical, b.canonical));
   return merged.slice(0, limit).map((s) => withTarget(s, loaded));
 }
 function withTarget(s, loaded) {
@@ -62901,6 +62949,7 @@ var ClipboardTooLargeError = class extends Error {
   limit;
 };
 var CLIPBOARD_EXEC_TIMEOUT_MS = 5e3;
+var POWERSHELL_EXEC_TIMEOUT_MS = 2e4;
 var ClipboardTimeoutError = class extends Error {
   constructor(cmd, timeoutMs) {
     super(`${cmd} did not finish within ${timeoutMs} ms and was stopped (the app holding the clipboard may not be answering)`);
@@ -62984,13 +63033,20 @@ function pbcopyBackend(exec = defaultClipboardExec) {
 function wlBackend(exec = defaultClipboardExec) {
   return {
     name: "wl",
-    description: "wl-paste --no-newline --type text / wl-copy (Wayland, wl-clipboard)",
+    description: "wl-paste --no-newline --type text / wl-copy --type text/plain (Wayland, wl-clipboard)",
     // `--type text` asks for any text type: without it wl-paste hands over the
     // first offered type when no text is offered, so a copied image came back
     // as PNG bytes. With no text on offer it exits non-zero, which reads as ''.
     read: () => readOrEmpty(exec, "wl-paste", ["--no-newline", "--type", "text"]),
+    // `--type text/plain`: without it wl-copy guesses the type from the bytes
+    // (with xdg-mime when installed), so a correction that looked like markup
+    // or a file path could be offered as another type and paste as nothing
+    // in a text field. A text type also makes wl-copy offer the usual text
+    // aliases (UTF8_STRING, text/plain;charset=utf-8, ...). The other
+    // backends write text already: pbcopy, xclip -i (UTF8_STRING), xsel and
+    // Set-Clipboard take nothing but text.
     write: async (text) => {
-      await exec("wl-copy", [], text);
+      await exec("wl-copy", ["--type", "text/plain"], text);
     }
   };
 }
@@ -63016,19 +63072,20 @@ function xselBackend(exec = defaultClipboardExec) {
 }
 function powershellBackend(exec = defaultClipboardExec, shell = "powershell") {
   let crlf = false;
+  const run = exec === defaultClipboardExec ? (cmd, args, stdin) => defaultClipboardExec(cmd, args, stdin, POWERSHELL_EXEC_TIMEOUT_MS) : exec;
   const readScript = "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; [Console]::Out.Write([string](Get-Clipboard -Raw))";
   const writeScript = "[Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false; $t = [Console]::In.ReadToEnd(); Set-Clipboard -Value $t";
   return {
     name: "powershell",
     description: `${shell} Get-Clipboard -Raw / Set-Clipboard (Windows)`,
     read: async () => {
-      const raw = (await readOrEmpty(exec, shell, ["-NoProfile", "-NonInteractive", "-Command", readScript])).replace(/^\uFEFF/, "");
+      const raw = (await readOrEmpty(run, shell, ["-NoProfile", "-NonInteractive", "-Command", readScript])).replace(/^\uFEFF/, "");
       crlf = raw.includes("\r\n") && !/(^|[^\r])\n/.test(raw);
       return crlf ? raw.replace(/\r\n/g, "\n") : raw;
     },
     write: async (text) => {
       const payload = crlf ? text.replace(/\r?\n/g, "\r\n") : text;
-      await exec(shell, ["-NoProfile", "-NonInteractive", "-Command", writeScript], payload);
+      await run(shell, ["-NoProfile", "-NonInteractive", "-Command", writeScript], payload);
     }
   };
 }
@@ -64758,6 +64815,9 @@ function outputIsTTY(output2) {
 function isInteractive() {
   return Boolean(process.stdin.isTTY && process.stdout.isTTY);
 }
+function onlyStdoutRedirected(streams = process) {
+  return Boolean(streams.stdin.isTTY) && !streams.stdout.isTTY;
+}
 function createPrompter(io = {}) {
   const input2 = io.input ?? process.stdin;
   const output2 = io.output ?? process.stdout;
@@ -64947,9 +65007,10 @@ async function createLexiconFile(target, scope) {
 
 // src/cli/cmd-setup.ts
 var import_node_path28 = __toESM(require_node_path());
-var import_node_fs27 = __toESM(require_node_fs());
+var import_node_fs28 = __toESM(require_node_fs());
 
 // src/cli/setup/steps.ts
+var import_node_fs27 = __toESM(require_node_fs());
 var import_node_path27 = __toESM(require_node_path());
 
 // src/cli/cmd-serve.ts
@@ -65913,6 +65974,21 @@ async function stepServe(ctx) {
     ctx.warn(ctx.opts.forAgent ? "   (retry with: setup_lexicon with apply: true and serve: true)" : "   (retry with: lexicon serve --install)");
   }
 }
+async function readIfThere(file2) {
+  try {
+    return await import_node_fs27.promises.readFile(file2, "utf8");
+  } catch {
+    return void 0;
+  }
+}
+async function freeExportPath(dir, format, ext, text) {
+  for (let n = 2; n < 100; n += 1) {
+    const candidate = import_node_path27.default.join(dir, `lexicon-${format}-${n}.${ext}`);
+    const current = await readIfThere(candidate);
+    if (current === void 0 || text !== void 0 && current === text) return candidate;
+  }
+  return void 0;
+}
 async function stepExport(ctx) {
   stepHeading(ctx, 6, "Dictation app");
   let app;
@@ -65937,20 +66013,39 @@ async function stepExport(ctx) {
   const format = app;
   const desktop = import_node_path27.default.join(ctx.home, "Desktop");
   const dir = ctx.opts.exportDir ?? (ctx.exists(desktop) ? desktop : import_node_path27.default.dirname(ctx.summary.lexiconPath));
-  const file2 = import_node_path27.default.join(dir, `lexicon-${format}.${EXPORT_FORMAT_INFO[format].ext}`);
+  const ext = EXPORT_FORMAT_INFO[format].ext;
+  const file2 = import_node_path27.default.join(dir, `lexicon-${format}.${ext}`);
+  const existing = await readIfThere(file2);
   if (ctx.plan) {
-    ctx.plan.wouldExport.push({ format, path: file2 });
+    const alt = existing !== void 0 ? await freeExportPath(dir, format, ext, void 0) : void 0;
+    ctx.plan.wouldExport.push({ format, path: alt ?? file2 });
+    const shown = safe(tildify(file2, ctx.home));
+    const keep = alt === void 0 ? "" : ctx.plan.interactive ? `; ${shown} exists, so it would ask before replacing it (default no: writes ${safe(tildify(alt, ctx.home))})` : `; ${shown} exists, so it would be kept and ${safe(tildify(alt, ctx.home))} written, unless it holds this same export`;
     ctx.say(
-      ctx.plan.wouldAsk.includes("export") ? `   would ask which app; ${APP_LABELS[app].label} (the default) writes ${safe(tildify(file2, ctx.home))}` : `   would write ${safe(tildify(file2, ctx.home))} for ${APP_LABELS[app].label}`
+      ctx.plan.wouldAsk.includes("export") ? `   would ask which app; ${APP_LABELS[app].label} (the default) writes ${shown}${keep}` : `   would write ${shown} for ${APP_LABELS[app].label}${keep}`
     );
     return;
   }
   const loaded = await loadLexicon({ cwd: ctx.cwd, parseSkipped: false });
   const exported = exportLexiconWithNotes(loaded.merged, format);
-  await writeFileAtomic(file2, exported.text);
-  ctx.summary.exports.push({ format, path: file2 });
+  let target = file2;
+  if (existing !== void 0 && existing !== exported.text) {
+    const shown = safe(tildify(file2, ctx.home));
+    const replace = ctx.prompter ? await ctx.prompter.confirm(`   ${shown} exists and differs from this export (edited by hand?); replace it?`, false) : false;
+    if (!replace) {
+      ctx.say(`   kept ${shown} as it was: it differs from this export${ctx.prompter ? "" : " (no terminal to ask on)"}`);
+      const free = await freeExportPath(dir, format, ext, exported.text);
+      if (free === void 0) {
+        ctx.say(dim(`   nothing written: lexicon-${format}-2 to -99 are taken; later: lexicon export ${format} --out <file>`));
+        return;
+      }
+      target = free;
+    }
+  }
+  await writeFileAtomic(target, exported.text);
+  ctx.summary.exports.push({ format, path: target });
   const count = exported.rows !== void 0 ? plural2(exported.rows, "row") : plural2(loaded.merged.terms.length, "term");
-  ctx.say(`   wrote ${safe(tildify(file2, ctx.home))} (${count})`);
+  ctx.say(`   wrote ${safe(tildify(target, ctx.home))} (${count})`);
   for (const note of exported.notes) ctx.warn(`   ${safeLines(note)}`);
   ctx.say(`   import it in ${APP_LABELS[app].where}`);
 }
@@ -66127,7 +66222,7 @@ async function runSetup(opts, io, deps = {}) {
     home,
     platform: deps.platform ?? process.platform,
     env: deps.env ?? process.env,
-    exists: deps.exists ?? import_node_fs27.existsSync,
+    exists: deps.exists ?? import_node_fs28.existsSync,
     exec: deps.exec ?? defaultSetupExec,
     seeded: [],
     packCanonicals: [],
@@ -66154,7 +66249,16 @@ async function runSetup(opts, io, deps = {}) {
     };
   }
   say(bold(opts.dryRun ? "lexicon setup (dry run)" : "lexicon setup"));
-  if (!interactive && !opts.yes && !opts.json && !opts.dryRun) say(dim("(no terminal: taking the defaults, as with --yes)"));
+  if (!interactive && !opts.yes && !opts.json && !opts.dryRun) {
+    if (deps.isInteractive === void 0 && onlyStdoutRedirected()) {
+      say(dim("(stdout is not a terminal: taking the defaults, as with --yes)"));
+      io.stderr(
+        "lexicon setup: stdout is not a terminal (piped or redirected), so no questions were asked and the defaults were taken, as with --yes. To answer them, run lexicon setup without the pipe or redirect; or pass the answers as flags (--app, --clients, --packs, --serve, --harvest).\n"
+      );
+    } else {
+      say(dim("(no terminal: taking the defaults, as with --yes)"));
+    }
+  }
   say();
   const steps = [
     ["Global lexicon", stepLexicon],
@@ -66189,7 +66293,7 @@ async function runSetup(opts, io, deps = {}) {
 }
 
 // src/cli/cmd-uninstall.ts
-var import_node_fs28 = __toESM(require_node_fs());
+var import_node_fs29 = __toESM(require_node_fs());
 var import_node_path29 = __toESM(require_node_path());
 function isInstalledServerEntry(entry) {
   if (!isRecord(entry) || typeof entry.command !== "string" || !Array.isArray(entry.args)) return false;
@@ -66319,14 +66423,14 @@ async function uninstallToml(ctx, target) {
   const entry = `[${CODEX_TABLE}]`;
   let text;
   try {
-    text = await import_node_fs28.promises.readFile(target.file, "utf8");
+    text = await import_node_fs29.promises.readFile(target.file, "utf8");
   } catch (err) {
     if (isEnoent(err)) return report(ctx, { file: target.file, entry, outcome: "absent" }, "does not exist");
     throw new Error(`could not read ${target.file}: ${errorMessage(err)}`);
   }
   const { next, outcome } = removeServerFromToml(text);
   if (outcome === "removed" && !ctx.dryRun) {
-    await explainWrite(target.file, () => import_node_fs28.promises.writeFile(target.file, next, "utf8"));
+    await explainWrite(target.file, () => import_node_fs29.promises.writeFile(target.file, next, "utf8"));
   }
   report(ctx, { file: target.file, entry, outcome });
 }
@@ -66712,7 +66816,7 @@ var registerSetupTools = (server, ctx) => {
 var import_node_crypto5 = __toESM(require_node_crypto());
 
 // src/cli/cmd-import.ts
-var import_node_fs29 = __toESM(require_node_fs());
+var import_node_fs30 = __toESM(require_node_fs());
 var import_node_path31 = __toESM(require_node_path());
 var SOURCES2 = TERM_SOURCES;
 var CATEGORIES = ["brand", "person", "product", "acronym", "identifier", "place", "other"];
@@ -66760,10 +66864,10 @@ async function readInputBytes(file2, cwd) {
   if (file2 === "-") return { bytes: await readStdinBytes(MAX_IMPORT_BYTES) };
   const resolved2 = import_node_path31.default.resolve(cwd, file2);
   try {
-    const stat = await import_node_fs29.promises.stat(resolved2);
+    const stat = await import_node_fs30.promises.stat(resolved2);
     if (stat.isDirectory()) throw new Error(`expected a file, got a directory: ${resolved2}`);
     if (stat.size > MAX_IMPORT_BYTES) throw tooLarge(resolved2, stat.size);
-    return { bytes: await import_node_fs29.promises.readFile(resolved2), path: resolved2 };
+    return { bytes: await import_node_fs30.promises.readFile(resolved2), path: resolved2 };
   } catch (err) {
     const code = err.code;
     if (code === "ENOENT") throw new Error(`file not found: ${resolved2}`);
@@ -66810,7 +66914,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   if (dryRun) {
     const paths = resolvePaths({ cwd });
     const target = scope === "project" ? paths.project : paths.global;
-    const blind = opts.leaveUntrusted === true && scope === "project" && target !== void 0 && (0, import_node_fs29.existsSync)(target);
+    const blind = opts.leaveUntrusted === true && scope === "project" && target !== void 0 && (0, import_node_fs30.existsSync)(target);
     const existing = target && !blind ? (await readLexiconFile(target, scope)).lexicon : void 0;
     if (target) report2.path = target;
     if (blind) report2.untrustedTarget = true;
@@ -67191,7 +67295,7 @@ function dirsFromRoots(roots) {
     if (typeof root?.uri !== "string" || !root.uri.startsWith("file:")) continue;
     try {
       const dir = (0, import_node_url4.fileURLToPath)(root.uri);
-      if ((0, import_node_fs30.statSync)(dir).isDirectory()) dirs.push(dir);
+      if ((0, import_node_fs31.statSync)(dir).isDirectory()) dirs.push(dir);
     } catch {
     }
   }
@@ -67407,7 +67511,7 @@ function isMainModule() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return (0, import_node_fs30.realpathSync)((0, import_node_path32.resolve)(entry)) === (0, import_node_fs30.realpathSync)((0, import_node_url4.fileURLToPath)(import.meta.url));
+    return (0, import_node_fs31.realpathSync)((0, import_node_path32.resolve)(entry)) === (0, import_node_fs31.realpathSync)((0, import_node_url4.fileURLToPath)(import.meta.url));
   } catch {
     return false;
   }

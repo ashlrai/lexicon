@@ -13,6 +13,17 @@ describe('suggestAliases', () => {
     expect(suggestAliases('PostgreSQL')).toContain('Postgre SQL');
   });
 
+  // Catches: a guess that is an everyday word ("Entire.io" -> "Entire",
+  // "Flyy" -> "Fly") became an alias, so "birds fly over the entire field"
+  // was rewritten to "birds Flyy over the Entire.io field".
+  it('never suggests a single everyday word, but keeps an acronym said as one', () => {
+    expect(suggestAliases('Entire.io')).not.toContain('Entire');
+    expect(suggestAliases('Entire.io')).toContain('Entire io');
+    expect(suggestAliases('Flyy')).not.toContain('Fly');
+    expect(suggestAliases('Ashlr.AI')).toContain('Ashlr');
+    expect(suggestAliases('SaaS')).toContain('sass');
+  });
+
   it('handles acronyms: pronounced and spelled forms', () => {
     const out = suggestAliases('SaaS');
     expect(out).toContain('sass');

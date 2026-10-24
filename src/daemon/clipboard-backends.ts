@@ -81,6 +81,15 @@ export class ClipboardTooLargeError extends Error {
  */
 export const CLIPBOARD_EXEC_TIMEOUT_MS = 5_000;
 
+/**
+ * The limit for the PowerShell backend. Each read and write starts a new
+ * powershell.exe, which loads .NET and the clipboard cmdlets before it runs
+ * a line: a cold start on a busy or slow machine took over 5 s, so a
+ * clipboard that was answering fine was reported as hung and left
+ * uncorrected. A hung owner is still stopped, just later.
+ */
+export const POWERSHELL_EXEC_TIMEOUT_MS = 20_000;
+
 /** A clipboard tool that ran past CLIPBOARD_EXEC_TIMEOUT_MS and was killed. Reported, never read as an empty clipboard. */
 export class ClipboardTimeoutError extends Error {
   constructor(
@@ -193,13 +202,20 @@ export function pbcopyBackend(exec: ClipboardExec = defaultClipboardExec): Clipb
 export function wlBackend(exec: ClipboardExec = defaultClipboardExec): ClipboardBackend {
   return {
     name: 'wl',
-    description: 'wl-paste --no-newline --type text / wl-copy (Wayland, wl-clipboard)',
+    description: 'wl-paste --no-newline --type text / wl-copy --type text/plain (Wayland, wl-clipboard)',
     // `--type text` asks for any text type: without it wl-paste hands over the
     // first offered type when no text is offered, so a copied image came back
     // as PNG bytes. With no text on offer it exits non-zero, which reads as ''.
     read: () => readOrEmpty(exec, 'wl-paste', ['--no-newline', '--type', 'text']),
+    // `--type text/plain`: without it wl-copy guesses the type from the bytes
+    // (with xdg-mime when installed), so a correction that looked like markup
+    // or a file path could be offered as another type and paste as nothing
+    // in a text field. A text type also makes wl-copy offer the usual text
+    // aliases (UTF8_STRING, text/plain;charset=utf-8, ...). The other
+    // backends write text already: pbcopy, xclip -i (UTF8_STRING), xsel and
+    // Set-Clipboard take nothing but text.
     write: async (text) => {
-      await exec('wl-copy', [], text);
+      await exec('wl-copy', ['--type', 'text/plain'], text);
     },
   };
 }
@@ -239,6 +255,9 @@ export function xselBackend(exec: ClipboardExec = defaultClipboardExec): Clipboa
  */
 export function powershellBackend(exec: ClipboardExec = defaultClipboardExec, shell = 'powershell'): ClipboardBackend {
   let crlf = false;
+  // An injected exec keeps its own limit; the default one gets PowerShell's.
+  const run: ClipboardExec =
+    exec === defaultClipboardExec ? (cmd, args, stdin) => defaultClipboardExec(cmd, args, stdin, POWERSHELL_EXEC_TIMEOUT_MS) : exec;
   // UTF8Encoding without a byte order mark: [Text.Encoding]::UTF8 carries
   // one, which Windows PowerShell 5.1 writes ahead of redirected output, so
   // the read began with U+FEFF and the correction written back put it on
@@ -249,7 +268,7 @@ export function powershellBackend(exec: ClipboardExec = defaultClipboardExec, sh
     name: 'powershell',
     description: `${shell} Get-Clipboard -Raw / Set-Clipboard (Windows)`,
     read: async () => {
-      const raw = (await readOrEmpty(exec, shell, ['-NoProfile', '-NonInteractive', '-Command', readScript])).replace(/^\uFEFF/, '');
+      const raw = (await readOrEmpty(run, shell, ['-NoProfile', '-NonInteractive', '-Command', readScript])).replace(/^\uFEFF/, '');
       // Only a clipboard whose every line break is CRLF is normalized: one with
       // both kinds was rewritten with CRLF everywhere, changing lines the
       // lexicon never touched. Mixed text is passed through as it is.
@@ -258,7 +277,7 @@ export function powershellBackend(exec: ClipboardExec = defaultClipboardExec, sh
     },
     write: async (text) => {
       const payload = crlf ? text.replace(/\r?\n/g, '\r\n') : text;
-      await exec(shell, ['-NoProfile', '-NonInteractive', '-Command', writeScript], payload);
+      await run(shell, ['-NoProfile', '-NonInteractive', '-Command', writeScript], payload);
     },
   };
 }

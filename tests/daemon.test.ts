@@ -24,8 +24,14 @@ vi.mock('../src/core/index.js', async () => {
     diffSummary: vi.fn((r: NormalizeResult) => r.replacements.map((x) => `"${x.original}" -> "${x.replacement}"`).join('\n')),
     loadLexicon: vi.fn(async () => ({ merged: lexicon, global: { path: '/g', scope: 'global', lexicon, exists: true } })),
     recordHits: vi.fn(async () => undefined),
+    // The files the loop stats to see an edit: a temp file a test can change.
+    resolvePaths: vi.fn(() => ({ global: watched.global })),
+    getTrustPath: vi.fn(() => watched.trust),
   };
 });
+
+// Hoisted with the mock above: the paths it reports, set per test.
+const watched = vi.hoisted(() => ({ global: '/nonexistent/lexicon.yaml', trust: '/nonexistent/trust.json' }));
 
 import * as core from '../src/core/index.js';
 import { main as daemonMain, runClipboardDaemon, runClipboardOnce, runDaemonCommand } from '../src/daemon/clipboard.js';
@@ -290,6 +296,82 @@ describe('runClipboardDaemon', () => {
     expect(h.read.mock.calls.length).toBe(reads); // timer cleared
   });
 
+  // Catches: an edit to the lexicon file was seen only by the next 5 s
+  // reload, so a term just learned was not used on the next copy.
+  it('reloads the lexicon on the next copy after a lexicon file changes', async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = mkdtempSync(join(tmpdir(), 'lexicon-daemon-reload-'));
+    watched.global = join(dir, 'lexicon.yaml');
+    watched.trust = join(dir, 'trust.json');
+    writeFileSync(watched.global, 'version: 1\nterms: []\n');
+    try {
+      const h = start('a Ashler');
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.waitFor(() => expect(core.loadLexicon).toHaveBeenCalledTimes(1));
+      h.clipboard = 'b Ashler';
+      await vi.advanceTimersByTimeAsync(250);
+      await vi.waitFor(() => expect(h.write).toHaveBeenCalledTimes(2));
+      expect(core.loadLexicon).toHaveBeenCalledTimes(1);
+      writeFileSync(watched.global, 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n');
+      h.clipboard = 'c Ashler';
+      await vi.advanceTimersByTimeAsync(250);
+      await vi.waitFor(() => expect(core.loadLexicon).toHaveBeenCalledTimes(2));
+      // A new trust.json counts too (a project file trusted from another shell).
+      writeFileSync(watched.trust, '{}\n');
+      h.clipboard = 'd Ashler';
+      await vi.advanceTimersByTimeAsync(250);
+      await vi.waitFor(() => expect(core.loadLexicon).toHaveBeenCalledTimes(3));
+      h.controller.abort();
+      await h.done;
+    } finally {
+      watched.global = '/nonexistent/lexicon.yaml';
+      watched.trust = '/nonexistent/trust.json';
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Catches: the first ctrl-C waited for the poll in flight and removed its
+  // listener, so a second ctrl-C during a clipboard tool that hangs did
+  // nothing the daemon could answer.
+  it('a second ctrl-C while a poll is in flight exits at once', async () => {
+    let release: (s: string) => void = () => undefined;
+    const read = vi.fn(() => new Promise<string>((r) => (release = r)));
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    const errs: string[] = [];
+    const before = process.listenerCount('SIGINT');
+    try {
+      const done = runClipboardDaemon({ read, write: async () => undefined, quiet: false, out: () => undefined, err: (s) => errs.push(s), cwd: '/fake' });
+      await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+      process.emit('SIGINT');
+      expect(exit).not.toHaveBeenCalled();
+      expect(errs.join('')).toContain('ctrl-C again to stop now');
+      process.emit('SIGINT');
+      expect(exit).toHaveBeenCalledWith(130);
+      release('x');
+      await done;
+      expect(process.listenerCount('SIGINT')).toBe(before);
+    } finally {
+      exit.mockRestore();
+    }
+  });
+
+  it('a ctrl-C with no poll in flight stops without forcing, and leaves no listener', async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    const before = process.listenerCount('SIGINT');
+    try {
+      const done = runClipboardDaemon({ read: async () => 'x', write: async () => undefined, quiet: true, cwd: '/fake' });
+      await vi.advanceTimersByTimeAsync(10);
+      process.emit('SIGINT');
+      await done;
+      expect(exit).not.toHaveBeenCalled();
+      expect(process.listenerCount('SIGINT')).toBe(before);
+    } finally {
+      exit.mockRestore();
+    }
+  });
+
   it('resolves immediately when started with an already-aborted signal', async () => {
     const controller = new AbortController();
     controller.abort();
@@ -453,6 +535,20 @@ describe('runClipboardOnce', () => {
     await expect(runClipboardOnce({ read, write, out, err, paste: true, platform: 'darwin', sendPaste: failing })).rejects.toThrow(
       /Accessibility/,
     );
+  });
+
+  it('--paste does not paste binary or letterless clipboard contents, and says why', async () => {
+    for (const [clip, why] of [
+      ['\uFFFDPNG\u0000', 'clipboard holds binary data, not text'],
+      ['1234 5678', 'clipboard has no letters to correct'],
+    ] as const) {
+      const sendPaste = vi.fn(async () => undefined);
+      const errs: string[] = [];
+      const res = await runClipboardOnce({ read: async () => clip, write: async () => undefined, out: () => undefined, err: (s) => errs.push(s), paste: true, platform: 'darwin', sendPaste });
+      expect(sendPaste).not.toHaveBeenCalled();
+      expect(res.pasted).toBe(false);
+      expect(errs.join('')).toBe(`--paste skipped: ${why}, so it was left as it was and nothing was pasted\n`);
+    }
   });
 
   it('--paste uses osascript through exec by default', async () => {
@@ -647,7 +743,7 @@ describe('clipboard backends', () => {
       { cmd: 'pbpaste', args: [] },
       { cmd: 'pbcopy', args: [], stdin: 'a' },
       { cmd: 'wl-paste', args: ['--no-newline', '--type', 'text'] },
-      { cmd: 'wl-copy', args: [], stdin: 'b' },
+      { cmd: 'wl-copy', args: ['--type', 'text/plain'], stdin: 'b' },
       { cmd: 'xclip', args: ['-selection', 'clipboard', '-o'] },
       { cmd: 'xclip', args: ['-selection', 'clipboard', '-i'], stdin: 'c' },
       { cmd: 'xsel', args: ['--clipboard', '--output'] },
@@ -752,6 +848,12 @@ describe('a clipboard too large to correct', () => {
     expect(ok.length).toBe(backends.MAX_CLIPBOARD_READ_BYTES);
   });
 
+  // Catches: a cold powershell.exe start on a busy Windows machine ran past
+  // the 5 s limit, so a clipboard that was answering was reported as hung.
+  it('gives the PowerShell backend a longer limit than the other clipboard tools', () => {
+    expect(backends.POWERSHELL_EXEC_TIMEOUT_MS).toBeGreaterThanOrEqual(4 * backends.CLIPBOARD_EXEC_TIMEOUT_MS);
+  });
+
   // Catches: a clipboard tool that never exits (`xclip -o` waiting on a
   // selection owner that does not answer) left the read unsettled forever:
   // the watcher stopped polling without a word and the child kept the
@@ -787,12 +889,16 @@ describe('a clipboard too large to correct', () => {
     await done;
   }, 20_000);
 
-  it('--paste still pastes a clipboard that was too large to correct', async () => {
+  // Catches: --paste pasted a clipboard it had left as it was, so a shortcut
+  // meant to paste dictated text pasted a 17 MB buffer instead.
+  it('--paste does not paste a clipboard that was too large to correct, and says why', async () => {
     const { exec } = bigExec(() => 17 * 1024 * 1024);
     const sendPaste = vi.fn(async () => undefined);
-    const res = await runClipboardOnce({ backend: 'pbcopy', exec, platform: 'darwin', paste: true, sendPaste, out: () => undefined, err: () => undefined, cwd: '/fake' });
-    expect(sendPaste).toHaveBeenCalledTimes(1);
-    expect(res.pasted).toBe(true);
+    const errs: string[] = [];
+    const res = await runClipboardOnce({ backend: 'pbcopy', exec, platform: 'darwin', paste: true, sendPaste, out: () => undefined, err: (s) => errs.push(s), cwd: '/fake' });
+    expect(sendPaste).not.toHaveBeenCalled();
+    expect(res.pasted).toBe(false);
+    expect(errs.join('')).toBe('--paste skipped: clipboard too large, so it was left as it was and nothing was pasted\n');
   });
 });
 

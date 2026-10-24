@@ -20699,6 +20699,13 @@ function diffSummary(result) {
   return result.replacements.map((r) => `"${r.original}" -> "${r.replacement}" (${r.reason}, ${r.confidence.toFixed(2)})`).join("\n");
 }
 
+// src/core/collate.ts
+var collator;
+function compareText(a, b) {
+  collator ??= new Intl.Collator("en");
+  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+}
+
 // src/core/exporters/shared.ts
 var CATEGORY_ORDER = {
   brand: 0,
@@ -20715,10 +20722,8 @@ function categoryRank(category) {
 function isProperNounCategory(category) {
   return category === "brand" || category === "person" || category === "product";
 }
-var collator;
 function compareCanonical(a, b) {
-  collator ??= new Intl.Collator("en");
-  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+  return compareText(a, b);
 }
 function sortByImportance(terms) {
   return [...terms].sort(
@@ -20760,7 +20765,7 @@ function csvField(value) {
   return value;
 }
 function isFormulaCell(value) {
-  return /^[=+\-@\t\r]/.test(value);
+  return /^(?:[\t\r]|[ \t]*[=+\-@])/.test(value);
 }
 function csvTextField(value) {
   return isFormulaCell(value) ? `"'${value.replace(/"/g, '""')}"` : csvField(value);
@@ -21070,7 +21075,10 @@ function exportOpenai(lexicon, opts = {}, sink) {
 
 // src/core/exporters/superwhisper.ts
 function exportSuperwhisper(lexicon, _opts = {}, sink) {
-  const entries2 = aliasPairs(lexicon).map(({ alias, canonical }) => ({
+  const { kept, dropped } = uniqueTriggers(aliasPairs(lexicon));
+  const shared = sharedTriggerNote(dropped, "replacement");
+  if (shared) sink?.notes.push(shared);
+  const entries2 = kept.map(({ alias, canonical }) => ({
     original: alias,
     replacement: canonical
   }));
@@ -21109,18 +21117,20 @@ function exportText(lexicon, _opts = {}) {
 function exportWispr(lexicon, _opts = {}, sink) {
   const lines = ["word,replacement"];
   const leftOut = [];
-  for (const { alias, canonical } of aliasPairs(lexicon)) {
-    if (isFormulaCell(alias) || isFormulaCell(canonical)) {
-      leftOut.push(`${alias} -> ${canonical}`);
-      continue;
-    }
-    lines.push(`${csvField(alias)},${csvField(canonical)}`);
-  }
+  const safe = aliasPairs(lexicon).filter(({ alias, canonical }) => {
+    if (!isFormulaCell(alias) && !isFormulaCell(canonical)) return true;
+    leftOut.push(`${alias} -> ${canonical}`);
+    return false;
+  });
+  const { kept, dropped } = uniqueTriggers(safe);
+  for (const { alias, canonical } of kept) lines.push(`${csvField(alias)},${csvField(canonical)}`);
   if (leftOut.length > 0) {
     sink?.notes.push(
-      `left out ${leftOut.length} pair${leftOut.length === 1 ? "" : "s"} a spreadsheet would run as a formula (a cell starting with = + - @, a tab or a carriage return): ${quotedNames(leftOut)}`
+      `left out ${leftOut.length} pair${leftOut.length === 1 ? "" : "s"} a spreadsheet would run as a formula (a cell starting with = + - @, after any spaces, or with a tab or a carriage return): ${quotedNames(leftOut)}`
     );
   }
+  const shared = sharedTriggerNote(dropped, "word");
+  if (shared) sink?.notes.push(shared);
   if (sink) sink.rows = lines.length - 1;
   return lines.join("\n") + "\n";
 }
@@ -21274,6 +21284,7 @@ function parseCorrection(text) {
     if (heard && heard.toLowerCase() === meant.toLowerCase()) return void 0;
     if (heard && allStoplisted(heard) && allStoplisted(meant)) return void 0;
     if (/^not\b/i.test(meant) || /^not\b/i.test(heard)) return void 0;
+    if (!new RegExp("\\p{L}", "u").test(meant)) return void 0;
     return { heard, meant };
   }
   return void 0;

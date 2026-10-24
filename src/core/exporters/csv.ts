@@ -2,8 +2,8 @@
  * Generic CSV: canonical,alias,category,phonetic, one row per alias.
  *
  * Written for "anything else", which is usually a spreadsheet, so a cell a
- * spreadsheet would run as a formula (a name starting with `=`, `+`, `-`,
- * `@`, a tab or a carriage return) is written as text with a leading `'`
+ * spreadsheet would run as a formula (a name starting with `=`, `+`, `-` or
+ * `@`, after any spaces, or with a tab or a carriage return) is written as text with a leading `'`
  * (csvTextField), and a note counts them: `lexicon import` reads the `'`
  * back as part of the name. Lines end in LF and there is no byte order
  * mark: scripts and `lexicon import` read it as is, and a BOM would end up in

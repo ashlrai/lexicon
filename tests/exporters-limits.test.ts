@@ -150,8 +150,23 @@ describe('csv and wispr: spreadsheet formulas', () => {
     // `lexicon export --json` reports the rows written, not the aliases.
     expect(rows).toBe(1);
     expect(notes).toEqual([
-      'left out 4 pairs a spreadsheet would run as a formula (a cell starting with = + - @, a tab or a carriage return): "hyperlink -> =HYPERLINK(\\"http://x\\",\\"y\\")", "+cmd -> Ashlr.AI", "@sum -> Ashlr.AI" and "-x -> Ashlr.AI"',
+      'left out 4 pairs a spreadsheet would run as a formula (a cell starting with = + - @, after any spaces, or with a tab or a carriage return): "hyperlink -> =HYPERLINK(\\"http://x\\",\\"y\\")", "+cmd -> Ashlr.AI", "@sum -> Ashlr.AI" and "-x -> Ashlr.AI"',
     ]);
+  });
+
+  // Catches: only the first character was checked, so ` =HYPERLINK(...)`
+  // (a spreadsheet trims the space on import, then runs the rest) was written
+  // as is.
+  it('a formula after leading spaces or a tab is guarded too', () => {
+    const spaced = lex([{ canonical: '  =HYPERLINK("http://x")', aliases: ['hyper'], phonetic: ' \t+1' }, { canonical: 'Ashlr.AI', aliases: ['Ashler'] }]);
+    const csv = exportLexiconWithNotes(spaced, 'csv');
+    expect(csv.text.split('\n')[1]).toBe(`"'  =HYPERLINK(""http://x"")",hyper,,"' \t+1"`);
+    expect(csv.notes[0]).toContain('wrote 2 values');
+    const wispr = exportLexiconWithNotes(spaced, 'wispr');
+    expect(wispr.text).toBe('word,replacement\nAshler,Ashlr.AI\n');
+    expect(wispr.notes).toHaveLength(1);
+    // A space inside a name is not a formula.
+    expect(exportLexiconWithNotes(lex([{ canonical: 'A = B', aliases: ['a b'] }]), 'csv').notes).toEqual([]);
   });
 
   it('a lexicon with no such cells has no note', () => {
@@ -200,6 +215,36 @@ describe('espanso and macos: ambiguous scalars and shared triggers', () => {
     expect(text).toContain('<string>Zeta</string>\n\t\t<key>shortcut</key>\n\t\t<string>zeta</string>');
     expect(text).toContain('<string>Zeta</string>\n\t\t<key>shortcut</key>\n\t\t<string>Zed</string>');
     expect(notes).toEqual(['left out 2 shortcuts another term already uses (the more used term keeps it): "zeta -> Zeta Corp" and "zed -> Zeta Corp"']);
+  });
+
+  // Catches: wispr and superwhisper wrote a shared alias once per term, so
+  // the app replaced the word with either canonical.
+  it('wispr and superwhisper write a shared alias once, for the term ranked first, whatever the file order', () => {
+    for (const l of [shared, { ...shared, terms: [...shared.terms].reverse() }]) {
+      const wispr = exportLexiconWithNotes(l, 'wispr');
+      const rows = wispr.text.trimEnd().split('\n').slice(1);
+      expect(rows.filter((r) => r.startsWith('zeta,'))).toEqual(['zeta,Zeta']);
+      expect(rows.map((r) => r.split(',')[0]).sort()).toEqual(['Zed', 'zed', 'zeta']);
+      expect(wispr.rows).toBe(3);
+      expect(wispr.notes).toEqual(['left out 1 word another term already uses (the more used term keeps it): "zeta -> Zeta Corp"']);
+
+      const sw = exportLexiconWithNotes(l, 'superwhisper');
+      const entries = JSON.parse(sw.text) as { original: string; replacement: string }[];
+      expect(entries.filter((e) => e.original === 'zeta')).toEqual([{ original: 'zeta', replacement: 'Zeta' }]);
+      expect(sw.rows).toBe(3);
+      expect(sw.notes).toEqual(['left out 1 replacement another term already uses (the more used term keeps it): "zeta -> Zeta Corp"']);
+    }
+  });
+
+  it('wispr: a pair left out as a formula does not take a shared word from the term that can keep it', () => {
+    const l = lex([
+      { canonical: '=Zeta', aliases: ['zeta'], category: 'brand', hits: 9 },
+      { canonical: 'Zeta Corp', aliases: ['zeta'] },
+    ]);
+    const { text, notes } = exportLexiconWithNotes(l, 'wispr');
+    expect(text).toBe('word,replacement\nzeta,Zeta Corp\n');
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toContain('"zeta -> =Zeta"');
   });
 });
 

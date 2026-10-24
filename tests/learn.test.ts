@@ -59,6 +59,17 @@ afterEach(() => {
 describe('parseCorrection', () => {
   const ashlr = { heard: 'Ashler', meant: 'Ashlr.AI' };
 
+  // Catches: a number or time corrected in passing ("it's 2024 not 2023")
+  // was taken for a spelling, flagged by the hook and queued, and once
+  // learned rewrote every 2023 in a transcript to 2024.
+  it('takes no correction whose meant has no letter in it', () => {
+    for (const t of ["It's 2024 not 2023", "it's 3:30, not 3:15", 'I said 42 not 24', '"10" not "12"', '2023 -> 2024']) {
+      expect(parseCorrection(t), t).toBeUndefined();
+    }
+    expect(parseCorrection("it's k8s not kates")).toEqual({ heard: 'kates', meant: 'k8s' });
+    expect(parseCorrection("it's GPT-4 not GPT for")).toEqual({ heard: 'GPT for', meant: 'GPT-4' });
+  });
+
   // LEAD writes the em dash as an escape (tests/no-dashes.test.ts); it still leads a correction.
   it('takes an em dash before the correction as a lead, as a comma is', () => {
     expect(parseCorrection("ok\u2014it's Ashlr.AI not Ashler")).toEqual(ashlr);
@@ -257,13 +268,30 @@ describe('learnCorrection', () => {
     expect(result.aliasAdded).toBe(true);
   });
 
-  it('reports aliasAdded:false when heard is already known', async () => {
+  // Catches: learning a known correction again rewrote the lexicon file
+  // (same bytes, new timestamp and inode), and with --project wrote a hollow
+  // copy of the global term into the project file (created, no alias).
+  it('reports aliasAdded:false and writes nothing when heard is already known', async () => {
     const result = await learnCorrection({ heard: 'ashler', meant: 'Ashlr.AI' });
-    expect(result.aliasAdded).toBe(false);
+    expect(result).toMatchObject({ created: false, aliasAdded: false, file: { path: '/fake/global.yaml' } });
+    expect(result.term.canonical).toBe('Ashlr.AI');
+    expect(store.addTerm).not.toHaveBeenCalled();
+  });
+
+  it('a known correction learned into another scope writes heard there, never a term without it', async () => {
+    const result = await learnCorrection({ heard: 'Ashler', meant: 'Ashlr.AI' }, { cwd: '/fake/repo', scope: 'project' });
     expect(store.addTerm).toHaveBeenCalledWith(
-      { canonical: 'Ashlr.AI', aliases: [], source: 'learned' },
-      { scope: 'global' },
+      { canonical: 'Ashlr.AI', aliases: ['Ashler'], source: 'learned' },
+      { cwd: '/fake/repo', scope: 'project' },
     );
+    expect(result.aliasAdded).toBe(true);
+    // Already in that file too: nothing written.
+    const project: Lexicon = { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'], scope: 'project' }] };
+    store.loadLexicon.mockResolvedValueOnce({ ...loaded, project: { ...loaded.project!, lexicon: project } });
+    store.addTerm.mockClear();
+    const again = await learnCorrection({ heard: 'Ashler', meant: 'Ashlr.AI' }, { cwd: '/fake/repo', scope: 'project' });
+    expect(store.addTerm).not.toHaveBeenCalled();
+    expect(again).toMatchObject({ created: false, aliasAdded: false, file: { path: '/fake/repo/.lexicon.yaml' } });
   });
 
   it('creates a new learned term with heard first, then suggested aliases', async () => {
@@ -301,6 +329,15 @@ describe('learnCorrection', () => {
         { scope: 'global', merge: false },
       );
       expect(result).toMatchObject({ created: false, aliasAdded: true });
+    });
+
+    // Catches: `Zoe` plus U+0308 (as pasted from a macOS file name) is the
+    // canonical `Zoë` the store holds, but compared as written it recased the
+    // term to itself, rewrote the file and reported the alias added.
+    it('writes nothing when meant is the canonical in another Unicode form', async () => {
+      const result = await learnCorrection({ heard: 'zoe\u0308', meant: 'Zoe\u0308' });
+      expect(store.addTerm).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ created: false, aliasAdded: false });
     });
 
     it('writes nothing when the canonical is already spelled that way', async () => {
@@ -404,6 +441,14 @@ describe('conflictNote', () => {
 });
 
 describe('suggestCanonicalFor', () => {
+  // Catches: a decomposed accent (as pasted from a macOS file name) scored
+  // 0.9 against the precomposed canonical it spells exactly.
+  it('scores a spelling in another Unicode form as exact', () => {
+    const lex: Lexicon = { version: 1, terms: [{ canonical: 'Caf\u00e9 Noir', aliases: ['Kaf\u00e9'] }] };
+    expect(suggestCanonicalFor('Cafe\u0301 Noir', lex)[0]?.confidence).toBe(1);
+    expect(suggestCanonicalFor('Kafe\u0301', lex)[0]?.confidence).toBe(1);
+  });
+
   it('ranks phonetic and near-spelling matches, best first', () => {
     const hits = suggestCanonicalFor('ashlur', lexicon);
     expect(hits[0]?.term.canonical).toBe('Ashlr.AI');
@@ -468,7 +513,7 @@ describe('lexicon learn (CLI)', () => {
     expect(JSON.parse(meantOnly.out())).toEqual({
       ok: false,
       error: '"that should be Ashlr.AI" names the intended spelling (Ashlr.AI) but not what was heard',
-      nextStep: 'run: lexicon learn <heard> "Ashlr.AI"',
+      nextStep: 'run: lexicon learn <heard> Ashlr.AI',
     });
   });
 
@@ -512,11 +557,11 @@ describe('lexicon learn (CLI)', () => {
     const { io, out } = captureIO();
     expect(await runLearn(['ashler', 'Ashley'], { cwd: '/fake/repo' }, io)).toBe(0);
     expect(out()).toContain('warn: Ashler is also an alias of Ashlr.AI (global), so it may still be corrected to that');
-    expect(out()).toContain('lexicon remove "Ashlr.AI" --alias "Ashler"');
+    expect(out()).toContain('lexicon remove Ashlr.AI --alias Ashler --global');
 
     const ownTerm = captureIO();
     await runLearn(['Kubernetes', 'Kubectl'], { cwd: '/fake/repo' }, ownTerm.io);
-    expect(ownTerm.out()).toContain('warn: Kubernetes is its own term (project), so it may still be kept as written; to drop that term: lexicon remove "Kubernetes" --project');
+    expect(ownTerm.out()).toContain('warn: Kubernetes is its own term (project), so it may still be kept as written; to drop that term: lexicon remove Kubernetes --project');
 
     const json = captureIO();
     await runLearn(['Kubernetes', 'Kubectl'], { cwd: '/fake/repo', json: true }, json.io);
@@ -561,7 +606,8 @@ describe('lexicon learn (CLI)', () => {
     expect(JSON.parse(json.out())).toEqual({
       ok: false,
       error: 'only one spelling was given ("Mason White"); learn needs the spelling STT wrote and the one you meant, so nothing was learned',
-      nextStep: 'run: lexicon learn "Mason White" <meant>, where <meant> is the spelling you want',
+      // Quoted for the shell: single quotes on POSIX and in PowerShell alike.
+      nextStep: "run: lexicon learn 'Mason White' <meant>, where <meant> is the spelling you want",
     });
     expect(json.err()).not.toContain('usage:');
     expect(store.addTerm).not.toHaveBeenCalled();
@@ -586,9 +632,9 @@ describe('lexicon learn (CLI)', () => {
       expect(JSON.parse(out())).toEqual({
         ok: false,
         error: '"Ashlr.AI" and "Ashlr.AI" are the same spelling; nothing to learn',
-        nextStep: 'run: lexicon learn <heard> "Ashlr.AI", where <heard> is the misspelling STT wrote',
+        nextStep: 'run: lexicon learn <heard> Ashlr.AI, where <heard> is the misspelling STT wrote',
       });
-      expect(err()).toContain('lexicon: run: lexicon learn <heard> "Ashlr.AI"');
+      expect(err()).toContain('lexicon: run: lexicon learn <heard> Ashlr.AI');
     }
     expect(store.addTerm).not.toHaveBeenCalled();
   });
@@ -598,8 +644,12 @@ describe('lexicon learn (CLI)', () => {
     const code = await runLearn([], { from: 'spelled Zoë' }, io);
     expect(code).toBe(1);
     expect(err()).toContain('not what was heard');
-    expect(err()).toContain('lexicon learn <heard> "Zoë"');
+    expect(err()).toContain("lexicon learn <heard> 'Zoë'");
     expect(out()).toBe('');
+    // Catches: JSON quoting ("Z$oe") left a `$` for a POSIX shell to expand.
+    const dollar = captureIO();
+    expect(await runLearn([], { from: 'spelled Z$oe' }, dollar.io)).toBe(1);
+    expect(dollar.err()).toContain("lexicon learn <heard> 'Z$oe'");
   });
 
   it('--json prints only the error object on stdout when there is nothing to learn (usage goes to stderr)', async () => {

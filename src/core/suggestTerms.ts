@@ -31,6 +31,7 @@ import { HARVEST_STOPLIST, harvestRepo } from './harvest.js';
 import { STOPLIST, buildIndex, findReplacements, similarity } from './matcher.js';
 import type { AliasEntry, MatcherIndex } from './matcher.js';
 import { sanitizeForDisplay } from './schema.js';
+import { compareText } from './collate.js';
 import { resolvePaths } from './store.js';
 import { suggestAliases } from './suggest.js';
 import type { LoadedLexicon, Replacement, Term, TermCategory, TermScope } from './types.js';
@@ -945,7 +946,7 @@ export async function suggestTerms(input: SuggestInput): Promise<TermSuggestion[
   }
 
   const merged = mergeSuggestions(suggestions);
-  merged.sort((a, b) => rank(b) - rank(a) || b.confidence - a.confidence || a.canonical.localeCompare(b.canonical));
+  merged.sort((a, b) => rank(b) - rank(a) || b.confidence - a.confidence || compareText(a.canonical, b.canonical));
   return merged.slice(0, limit).map((s) => withTarget(s, loaded));
 }
 

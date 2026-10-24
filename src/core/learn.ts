@@ -10,6 +10,7 @@
 import { STOPLIST, phoneticKey, similarity } from './matcher.js';
 import { addTerm, loadLexicon } from './store.js';
 import { InputError } from '../util/errors.js';
+import { compareText } from './collate.js';
 import type { StoreOptions } from './store.js';
 import { suggestAliases } from './suggest.js';
 import type { Lexicon, LexiconFile, LoadedLexicon, Term, TermScope } from './types.js';
@@ -265,6 +266,9 @@ export function parseCorrection(text: string): Correction | undefined {
     if (heard && heard.toLowerCase() === meant.toLowerCase()) return undefined;
     if (heard && allStoplisted(heard) && allStoplisted(meant)) return undefined;
     if (/^not\b/i.test(meant) || /^not\b/i.test(heard)) return undefined;
+    // "it's 2024 not 2023" or "it's 3:30, not 3:15" corrects a fact, not a
+    // spelling: a name holds a letter. Learned, it rewrote every 2023 to 2024.
+    if (!/\p{L}/u.test(meant)) return undefined;
     return { heard, meant };
   }
   return undefined;
@@ -350,14 +354,23 @@ export async function learnCorrection(
   const withConflict = { ...(conflict ? { conflict } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
 
   if (existing) {
-    const alreadyKnown =
-      sameText(existing.canonical, heard) || existing.aliases.some((a) => sameText(a, heard));
     const targetScope: TermScope = scope ?? existing.scope ?? 'global';
+    // Known where it would be written: the term's own file, or the file an
+    // explicit scope names. Learning the same correction again rewrote the
+    // file with the same bytes (so a watcher reloaded and a project file's
+    // timestamp moved), and with a scope the term does not live in it wrote
+    // a hollow copy there (created, with no alias) while reporting nothing added.
+    const targetFile = targetScope === 'project' ? loaded.project : loaded.global;
+    const inTarget = scope === undefined ? existing : targetFile?.lexicon.terms.find((t) => sameText(t.canonical, existing.canonical));
+    const known = (t: Term | undefined): boolean => t !== undefined && (sameText(t.canonical, heard) || t.aliases.some((a) => sameText(a, heard)));
+    if (known(inTarget) && targetFile) {
+      return { term: existing, created: false, file: targetFile, aliasAdded: false, ...withConflict };
+    }
     const saved = await addTerm(
-      { canonical: existing.canonical, aliases: alreadyKnown ? [] : [heard], source: 'learned' },
+      { canonical: existing.canonical, aliases: [heard], source: 'learned' },
       { ...writeOpts, scope: targetScope },
     );
-    return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: !alreadyKnown, ...withConflict };
+    return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true, ...withConflict };
   }
 
   const aliases = dedupeCaseInsensitive([heard, ...suggestAliases(meant)]).filter((a) => !sameText(a, meant));
@@ -453,7 +466,9 @@ async function learnCaseOnly(
 
   const termScope: TermScope = byCanonical.scope ?? 'global';
   const file = termScope === 'project' ? loaded.project : loaded.global;
-  if (byCanonical.canonical === meant && file) {
+  // In NFC, as the store writes it: `Cafe` plus U+0301 is the canonical
+  // `Café` already, and recasing to it rewrote the file and reported a change.
+  if (byCanonical.canonical.normalize('NFC') === meant.normalize('NFC') && file) {
     return { term: byCanonical, created: false, file, aliasAdded: false, ...withConflict };
   }
   // Recase from the term as it is on disk, not the merged view: that one
@@ -477,7 +492,9 @@ async function learnCaseOnly(
  * max(similarity, phonetic-key match ? 0.9 : 0). Top 3 with confidence >= 0.6.
  */
 export function suggestCanonicalFor(heard: string, lexicon: Lexicon): CanonicalSuggestion[] {
-  const needle = heard.trim().toLowerCase();
+  // In NFC on both sides: `Cafe` plus U+0301 is the alias `Café`, and
+  // compared as written it scored as a near miss instead of an exact match.
+  const needle = heard.trim().normalize('NFC').toLowerCase();
   if (!needle) return [];
   const key = phoneticKey(needle);
 
@@ -485,7 +502,7 @@ export function suggestCanonicalFor(heard: string, lexicon: Lexicon): CanonicalS
   for (const term of lexicon.terms) {
     let best = 0;
     for (const candidate of [term.canonical, ...term.aliases]) {
-      const lower = candidate.toLowerCase();
+      const lower = candidate.normalize('NFC').toLowerCase();
       let score = similarity(needle, lower);
       if (key && phoneticKey(lower) === key) score = Math.max(score, PHONETIC_MATCH_CONFIDENCE);
       if (score > best) best = score;
@@ -493,6 +510,6 @@ export function suggestCanonicalFor(heard: string, lexicon: Lexicon): CanonicalS
     if (best >= MIN_SUGGEST_CONFIDENCE) scored.push({ term, confidence: best });
   }
 
-  scored.sort((a, b) => b.confidence - a.confidence || a.term.canonical.localeCompare(b.term.canonical));
+  scored.sort((a, b) => b.confidence - a.confidence || compareText(a.term.canonical, b.term.canonical));
   return scored.slice(0, MAX_SUGGESTIONS);
 }

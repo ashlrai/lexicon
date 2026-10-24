@@ -685,6 +685,29 @@ export async function stepServe(ctx: Ctx): Promise<void> {
   }
 }
 
+/** The file's text, or undefined when there is none to read. */
+async function readIfThere(file: string): Promise<string | undefined> {
+  try {
+    return await fs.readFile(file, 'utf8');
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * The first `lexicon-<format>-<n>.<ext>` (n from 2) that does not exist or
+ * already holds `text`, so a rerun with the same terms reuses its file rather
+ * than adding another; undefined past 99 of them.
+ */
+async function freeExportPath(dir: string, format: string, ext: string, text: string | undefined): Promise<string | undefined> {
+  for (let n = 2; n < 100; n += 1) {
+    const candidate = path.join(dir, `lexicon-${format}-${n}.${ext}`);
+    const current = await readIfThere(candidate);
+    if (current === undefined || (text !== undefined && current === text)) return candidate;
+  }
+  return undefined;
+}
+
 /** Step f: export for the dictation app. */
 export async function stepExport(ctx: Ctx): Promise<void> {
   stepHeading(ctx, 6, 'Dictation app');
@@ -714,25 +737,55 @@ export async function stepExport(ctx: Ctx): Promise<void> {
   const format: ExportFormat = app;
   const desktop = path.join(ctx.home, 'Desktop');
   const dir = ctx.opts.exportDir ?? (ctx.exists(desktop) ? desktop : path.dirname(ctx.summary.lexiconPath));
-  const file = path.join(dir, `lexicon-${format}.${EXPORT_FORMAT_INFO[format].ext}`);
+  const ext = EXPORT_FORMAT_INFO[format].ext;
+  const file = path.join(dir, `lexicon-${format}.${ext}`);
+  const existing = await readIfThere(file);
   if (ctx.plan) {
-    ctx.plan.wouldExport.push({ format, path: file });
+    // A rerun keeps a file that differs from the export (see below); the plan
+    // cannot compare it with an export of terms it has not written yet.
+    const alt = existing !== undefined ? await freeExportPath(dir, format, ext, undefined) : undefined;
+    ctx.plan.wouldExport.push({ format, path: alt ?? file });
+    const shown = safe(tildify(file, ctx.home));
+    const keep =
+      alt === undefined
+        ? ''
+        : ctx.plan.interactive
+          ? `; ${shown} exists, so it would ask before replacing it (default no: writes ${safe(tildify(alt, ctx.home))})`
+          : `; ${shown} exists, so it would be kept and ${safe(tildify(alt, ctx.home))} written, unless it holds this same export`;
     ctx.say(
       ctx.plan.wouldAsk.includes('export')
-        ? `   would ask which app; ${APP_LABELS[app].label} (the default) writes ${safe(tildify(file, ctx.home))}`
-        : `   would write ${safe(tildify(file, ctx.home))} for ${APP_LABELS[app].label}`,
+        ? `   would ask which app; ${APP_LABELS[app].label} (the default) writes ${shown}${keep}`
+        : `   would write ${shown} for ${APP_LABELS[app].label}${keep}`,
     );
     return;
   }
   // The export is of the merged terms only: an untrusted project file is never parsed.
   const loaded = await loadLexicon({ cwd: ctx.cwd, parseSkipped: false });
   const exported = exportLexiconWithNotes(loaded.merged, format);
+  // A rerun wrote over the file without asking, so edits made to it (a row
+  // fixed by hand before importing) were lost. A file that differs from this
+  // export is replaced only on a yes at the terminal; otherwise it is kept and
+  // the export goes to the next free `lexicon-<app>-<n>.<ext>`.
+  let target = file;
+  if (existing !== undefined && existing !== exported.text) {
+    const shown = safe(tildify(file, ctx.home));
+    const replace = ctx.prompter ? await ctx.prompter.confirm(`   ${shown} exists and differs from this export (edited by hand?); replace it?`, false) : false;
+    if (!replace) {
+      ctx.say(`   kept ${shown} as it was: it differs from this export${ctx.prompter ? '' : ' (no terminal to ask on)'}`);
+      const free = await freeExportPath(dir, format, ext, exported.text);
+      if (free === undefined) {
+        ctx.say(dim(`   nothing written: lexicon-${format}-2 to -99 are taken; later: lexicon export ${format} --out <file>`));
+        return;
+      }
+      target = free;
+    }
+  }
   // A temp file and a rename (writeFileAtomic makes the directory too), as `lexicon export --out` writes.
-  await writeFileAtomic(file, exported.text);
-  ctx.summary.exports.push({ format, path: file });
+  await writeFileAtomic(target, exported.text);
+  ctx.summary.exports.push({ format, path: target });
   // Every app format writes one row per alias, so the rows are what the app imports.
   const count = exported.rows !== undefined ? plural(exported.rows, 'row') : plural(loaded.merged.terms.length, 'term');
-  ctx.say(`   wrote ${safe(tildify(file, ctx.home))} (${count})`);
+  ctx.say(`   wrote ${safe(tildify(target, ctx.home))} (${count})`);
   // What the format left out (a pair a spreadsheet would run as a formula, a
   // shared shortcut) was dropped without a word, as `lexicon export` says it.
   for (const note of exported.notes) ctx.warn(`   ${safeLines(note)}`);

@@ -854,6 +854,11 @@ describe('runSuggest', () => {
     const io2 = makeIO();
     expect(await runSuggest({ json: true }, io2, store.deps)).toBe(0);
     expect(JSON.parse(io2.out)).toEqual([]);
+    // Catches: after --harvest it still said to run --harvest.
+    const io3 = makeIO();
+    expect(await runSuggest({ harvest: true }, io3, store.deps)).toBe(0);
+    expect(io3.out).toContain('hold nothing the lexicon does not already have');
+    expect(io3.out).not.toContain('--harvest');
   });
 
   it('reports a store error and returns 1; an untrusted project write stops the run', async () => {

@@ -11,7 +11,8 @@
  * The platform tools live in ./clipboard-backends.ts. Read/write stay
  * injectable so the loop can be tested without touching a real clipboard.
  */
-import { FIRST_TERM_STEP, TRUST_STEP, diffSummary, loadLexicon, noTermsYet, normalize, recordHits } from '../core/index.js';
+import { statSync } from 'node:fs';
+import { FIRST_TERM_STEP, TRUST_STEP, diffSummary, getTrustPath, loadLexicon, noTermsYet, normalize, recordHits, resolvePaths } from '../core/index.js';
 import type { LoadedLexicon, NormalizeResult } from '../core/index.js';
 import {
   checkClipboardBackend,
@@ -68,8 +69,38 @@ export interface ClipboardOnceOptions extends ClipboardCommonOptions {
 
 /** Skip clipboard payloads larger than this (bytes of UTF-16 units, i.e. string length). */
 export const MAX_CLIPBOARD_CHARS = 20_000;
-/** Re-read the lexicon files at most this often. */
+/**
+ * Re-read the lexicon files at least this often. A change to a lexicon file
+ * or to trust.json is seen sooner, on the next clipboard change to correct
+ * (lexiconFilesStamp); this is the backstop for a file system whose times did
+ * not move.
+ */
 export const LEXICON_RELOAD_MS = 5_000;
+
+/**
+ * What the loop compares to see a lexicon edit: size, modification time and
+ * inode of the global lexicon, the project lexicon for `cwd` (found again
+ * each time, so a new `.lexicon.yaml` counts) and trust.json, `-` for a file
+ * that is not there. A few `stat` calls, made only when a new clipboard text
+ * is about to be corrected, never on an unchanged poll. An edit used to wait
+ * for the 5 s reload, so a term just learned was not used on the next copy.
+ */
+export function lexiconFilesStamp(cwd: string): string {
+  const paths = resolvePaths({ cwd });
+  const files = [paths.global, paths.project ?? '', getTrustPath({ cwd })];
+  // Synchronous: three stats of small local files cost microseconds, and the
+  // poll then never waits on the I/O queue between reading and correcting.
+  const stamps = files.map((file) => {
+    if (file === '') return '-';
+    try {
+      const st = statSync(file, { throwIfNoEntry: false });
+      return st ? `${st.size}:${st.mtimeMs}:${st.ino}` : '-';
+    } catch {
+      return '-';
+    }
+  });
+  return `${paths.project ?? ''}|${stamps.join('|')}`;
+}
 
 /** macOS `pbpaste` (kept for callers of the old API; prefers the backend module). */
 export function pbpaste(): Promise<string> {
@@ -208,20 +239,25 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
   let lastWritten: string | undefined; // what we last wrote (loop guard)
   let lexicon: LoadedLexicon | undefined;
   let lexiconLoadedAt = -Infinity;
+  let lexiconStamp: string | undefined;
 
   async function currentLexicon(): Promise<LoadedLexicon> {
     const now = Date.now();
-    if (!lexicon || now - lexiconLoadedAt >= LEXICON_RELOAD_MS) {
+    // Taken before the load, so an edit that lands during it is seen next time.
+    const stamp = lexiconFilesStamp(cwd);
+    if (!lexicon || stamp !== lexiconStamp || now - lexiconLoadedAt >= LEXICON_RELOAD_MS) {
       try {
         // parseSkipped: false: only the merged terms are used, so an untrusted
         // or changed project file is never parsed, on this or any reload.
         lexicon = await loadLexicon({ cwd, parseSkipped: false });
         lexiconLoadedAt = now;
+        lexiconStamp = stamp;
       } catch (e) {
         // Keep serving the previous lexicon (if any) while the file is broken.
         if (!lexicon) throw e;
         if (!quiet) err(`[${timestamp()}] lexicon reload failed, using previous: ${message(e)}\n`);
         lexiconLoadedAt = now;
+        lexiconStamp = stamp;
       }
     }
     return lexicon;
@@ -286,6 +322,24 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
     // every poll; report it once, then again only when it changes or clears.
     let lastError: string | undefined;
 
+    // A second ctrl-C while a poll is still in flight (a clipboard tool that
+    // hangs until its timeout) stops at once: the first one only waited, and
+    // with its listener gone nothing answered the second.
+    const forceInt = (): void => forceExit(130);
+    const forceTerm = (): void => forceExit(143);
+    const forceExit = (code: number): void => {
+      err(`[${timestamp()}] clipboard daemon: stopped without waiting for the clipboard tool\n`);
+      process.exit(code);
+    };
+    const dropForce = (): void => {
+      process.removeListener('SIGINT', forceInt);
+      process.removeListener('SIGTERM', forceTerm);
+    };
+    const finish = (): void => {
+      dropForce();
+      resolve();
+    };
+
     const stop = (): void => {
       if (stopped) return;
       stopped = true;
@@ -293,7 +347,13 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
       opts.signal?.removeEventListener('abort', stop);
       process.removeListener('SIGINT', stop);
       process.removeListener('SIGTERM', stop);
-      if (!inFlight) resolve();
+      if (!inFlight) {
+        resolve();
+        return;
+      }
+      process.once('SIGINT', forceInt);
+      process.once('SIGTERM', forceTerm);
+      if (!quiet) err(`[${timestamp()}] clipboard daemon: stopping once the clipboard tool answers; ctrl-C again to stop now\n`);
     };
 
     const tick = async (): Promise<void> => {
@@ -315,7 +375,7 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
         inFlight = false;
       }
       if (stopped) {
-        resolve();
+        finish();
         return;
       }
       timer = setTimeout(() => void tick(), intervalMs);
@@ -391,19 +451,22 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
   }
 
   const result: ClipboardOnceResult = { changed: false, written: false, corrections: 0, pasted: false };
+  // Why the clipboard was not looked at, for --paste: a paste then puts back
+  // whatever it holds (an image, a huge buffer, a run of digits), which is
+  // not the dictated text the shortcut means to paste.
+  let notText: string | undefined;
 
   if (tooLarge || !reportable(text)) {
-    if (!quiet) {
-      const why =
-        text.length === 0 && !tooLarge
-          ? 'clipboard is empty or not text'
-          : tooLarge || text.length > MAX_CLIPBOARD_CHARS
-            ? 'clipboard too large'
-            : looksBinary(text)
-              ? 'clipboard holds binary data, not text; left as it was'
-              : 'no letters';
-      out(`no changes (${why})\n`);
-    }
+    const why =
+      text.length === 0 && !tooLarge
+        ? 'clipboard is empty or not text'
+        : tooLarge || text.length > MAX_CLIPBOARD_CHARS
+          ? 'clipboard too large'
+          : looksBinary(text)
+            ? 'clipboard holds binary data, not text; left as it was'
+            : 'no letters';
+    notText = why;
+    if (!quiet) out(`no changes (${why})\n`);
   } else {
     // Only the merged terms are used: an untrusted project file is never parsed.
     const loaded = await loadLexicon({ cwd, parseSkipped: false });
@@ -431,6 +494,9 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
       err(`--paste is macOS-only (uses osascript); the text is on the clipboard, paste it with your usual shortcut (platform: ${platform})\n`);
     } else if (text.length === 0 && !tooLarge) {
       err('--paste skipped: clipboard is empty\n');
+    } else if (notText !== undefined) {
+      const what = notText.startsWith('clipboard holds binary') ? 'clipboard holds binary data, not text' : notText === 'no letters' ? 'clipboard has no letters to correct' : notText;
+      err(`--paste skipped: ${what}, so it was left as it was and nothing was pasted\n`);
     } else {
       const sendPaste =
         opts.sendPaste ??

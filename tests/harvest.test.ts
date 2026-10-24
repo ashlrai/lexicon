@@ -146,6 +146,28 @@ describe('harvestRepo', () => {
     }
   });
 
+  // Catches: only a fixed list of directories was skipped, so a repo's
+  // gitignored build output was scanned and its names proposed.
+  it('leaves out what .gitignore leaves out, in a git work tree', async () => {
+    if (!hasGit) return;
+    const dir = path.join(tmp, 'ignore-repo');
+    await fs.mkdir(path.join(dir, 'out'), { recursive: true });
+    await fs.mkdir(path.join(dir, 'docs'), { recursive: true });
+    await fs.writeFile(path.join(dir, '.gitignore'), 'out/\n*.gen.md\n');
+    await fs.writeFile(path.join(dir, 'out', 'notes.md'), 'Built with Hiddenbrand.io and Hiddenbrand.io again.\n');
+    await fs.writeFile(path.join(dir, 'docs', 'api.gen.md'), 'See Genbrand.io and Genbrand.io.\n');
+    await fs.writeFile(path.join(dir, 'docs', 'guide.md'), 'Deploy to Visiblebrand.io, then Visiblebrand.io.\n');
+    git(['init', '-q'], dir);
+    const found = (await harvestRepo(dir, { git: false, minCount: 1 })).map((c) => c.canonical);
+    expect(found).toContain('Visiblebrand.io');
+    expect(found).not.toContain('Hiddenbrand.io');
+    expect(found).not.toContain('Genbrand.io');
+    // Outside a work tree the walk still scans everything but its fixed list.
+    await fs.rm(path.join(dir, '.git'), { recursive: true, force: true });
+    const walked = (await harvestRepo(dir, { git: false, minCount: 1 })).map((c) => c.canonical);
+    expect(walked).toContain('Hiddenbrand.io');
+  });
+
   it('ignores node_modules', async () => {
     // Assert the fixture is really there before asserting it was skipped.
     // It lives under a `node_modules/` path, so a contributor's *global*
