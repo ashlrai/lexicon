@@ -187,13 +187,21 @@ export async function runHarvestInteractive(
     else merged += 1;
     line(io, `  ${result.created ? 'added' : 'merged'} ${bold(safe(result.term.canonical))}`);
   };
-  /** False after printing a ProjectTrustError (nothing in the call was written); any other error is thrown. */
+  /**
+   * A write that failed for any other reason (a full disk, a read-only or
+   * unreadable file): it stops the walk, and the summary still says what the
+   * earlier answers wrote. Thrown, it ended the walk with only the error, so
+   * the terms already added went unmentioned.
+   */
+  let writeError: unknown;
+  /** False after printing why the write was refused or failed (nothing in the call was written). */
   const refused = (err: unknown): false => {
     if (err instanceof ProjectTrustError) {
       io.stderr(`lexicon: ${safeMessage(err.message)}\n`);
       return false;
     }
-    throw err;
+    writeError = err;
+    return false;
   };
 
   const add = async (c: HarvestCandidate): Promise<boolean> => {
@@ -231,7 +239,7 @@ export async function runHarvestInteractive(
   let current = 0;
   let closedAt: number | undefined;
   try {
-    for (let i = 0; i < work.length && !quit && !addAll; i += 1) {
+    walk: for (let i = 0; i < work.length && !quit && !addAll; i += 1) {
       current = i;
       const c = work[i];
       showCandidate(io, c, i, work.length);
@@ -240,7 +248,11 @@ export async function runHarvestInteractive(
         const key = await askKey(prompter, `  add? ${dim('[y/n/e/c/a/q]')}`, HARVEST_KEYS, 'y', keyHelp(io, HARVEST_HELP, 'y'));
         switch (key) {
           case 'y':
-            if (!(await add(c))) return 1;
+            if (!(await add(c))) {
+              if (writeError === undefined) return 1;
+              skipped += work.length - i;
+              break walk;
+            }
             decided = true;
             break;
           case 'n':
@@ -261,7 +273,11 @@ export async function runHarvestInteractive(
             break;
           case 'a':
             addAll = true;
-            if (!(await addRest(i))) return 1;
+            if (!(await addRest(i))) {
+              if (writeError === undefined) return 1;
+              skipped += work.length - i;
+              break walk;
+            }
             decided = true;
             break;
           case 'q':
@@ -290,13 +306,18 @@ export async function runHarvestInteractive(
     const kept = created + merged > 0 ? 'the terms added before it stay in the project lexicon' : 'nothing was added';
     line(io, `input closed at candidate ${closedAt + 1} of ${work.length}; ${kept}`);
   }
+  if (writeError !== undefined) {
+    line(io);
+    const kept = created + merged > 0 ? 'the terms added before it stay in the project lexicon' : 'nothing was added';
+    io.stderr(`lexicon: could not write the project lexicon at candidate ${current + 1} of ${work.length} (${safeMessage(errorMessage(writeError))}); ${kept}\n`);
+  }
 
   const where = filePath ? ` in ${safe(filePath)}` : '';
   line(io, `added ${plural(created, 'new term')}, merged ${merged}, skipped ${skipped}${where}`);
   if (filePath) line(io, dim(`project lexicon trusted (${safe(filePath)})`));
   // One way on, and only when there is something new to look at.
   if (created + merged > 0) line(io, dim(NEXT_LIST));
-  return 0;
+  return writeError === undefined ? 0 : 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -600,25 +621,35 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
     // and the write. Without the lock a writer landing between the re-read and
     // the write is merged against a copy that is already stale, and the write
     // renames it away while reporting the merge succeeded.
-    await withLexiconLock(file.path, async () => {
-      if (digestAtStart !== undefined && (await fileDigest(file.path)) !== digestAtStart) {
-        try {
-          const disk = await readLexiconFile(file.path, file.scope);
-          const merged = reconcileReview(file.lexicon.terms, snapshot, disk.lexicon.terms, editedTerms, deleted);
-          // The session never touches settings, so the on-disk ones win too.
-          file.lexicon = { ...disk.lexicon, terms: merged.terms };
-          mergedElsewhere = merged.changes;
-        } catch (err) {
-          io.stderr(
-            `lexicon: ${safeMessage(file.path)} changed during review but could not be re-read (${safeMessage(errorMessage(err))}); writing the reviewed version\n`,
-          );
+    try {
+      await withLexiconLock(file.path, async () => {
+        if (digestAtStart !== undefined && (await fileDigest(file.path)) !== digestAtStart) {
+          try {
+            const disk = await readLexiconFile(file.path, file.scope);
+            const merged = reconcileReview(file.lexicon.terms, snapshot, disk.lexicon.terms, editedTerms, deleted);
+            // The session never touches settings, so the on-disk ones win too.
+            file.lexicon = { ...disk.lexicon, terms: merged.terms };
+            mergedElsewhere = merged.changes;
+          } catch (err) {
+            io.stderr(
+              `lexicon: ${safeMessage(file.path)} changed during review but could not be re-read (${safeMessage(errorMessage(err))}); writing the reviewed version\n`,
+            );
+            file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
+          }
+        } else {
           file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
         }
-      } else {
-        file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
-      }
-      await writeLexiconFile(file);
-    });
+        await writeLexiconFile(file);
+      });
+    } catch (err) {
+      // Thrown, it ended the review with only the error, not saying that
+      // every answer given was lost with the write.
+      io.stderr(
+        `lexicon: could not write ${safeMessage(file.path)} (${safeMessage(errorMessage(err))}); nothing was written, ` +
+          `so this review's ${plural(deleted.size, 'removal')} and ${plural(edited, 'edit')} were not saved\n`,
+      );
+      return 1;
+    }
     // The user's own edit must not flip a trusted project file to 'changed'.
     // Then the cached matcher index the hook reads next (a no-op where there
     // is none); writeLexiconFile already refreshed it for a global file.

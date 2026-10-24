@@ -82,6 +82,39 @@ function closingAfter(answers: Parameters<typeof scripted>[0]): Prompter {
   };
 }
 
+/**
+ * Make the next write of `file` fail (as root too, unlike a chmod): a
+ * non-empty directory where writeFileAtomic puts its temp file
+ * (`<file>.<pid>.tmp`). Reads and the trust check still see the file.
+ */
+async function breakWrites(file: string): Promise<void> {
+  await fs.mkdir(path.join(`${file}.${process.pid}.tmp`, 'blocker'), { recursive: true });
+}
+
+/** `inner`, running `before` once just before the `n`th answer (1-based) is returned. */
+function withHook(inner: Prompter, n: number, before: () => Promise<void>): Prompter {
+  let count = 0;
+  const tick = async (): Promise<void> => {
+    count += 1;
+    if (count === n) await before();
+  };
+  return {
+    ask: async (question, opts) => {
+      await tick();
+      return inner.ask(question, opts);
+    },
+    confirm: async (question, def) => {
+      await tick();
+      return inner.confirm(question, def);
+    },
+    choose: async (question, choices, opts) => {
+      await tick();
+      return inner.choose(question, choices, opts);
+    },
+    close: () => inner.close(),
+  };
+}
+
 /** Written as raw YAML: writeLexiconFile pins `hits` to what is on disk, and the seed's counts are the point. */
 async function seedGlobal(terms: Term[]): Promise<void> {
   await fs.mkdir(path.dirname(globalPath), { recursive: true });
@@ -184,6 +217,28 @@ describe('harvest --interactive', () => {
     // when something was added.
     expect(io.out).toContain('next: run lexicon list to see the terms');
     expect(none.out).not.toContain('next:');
+  });
+
+  // Catches: a write that failed for a reason other than trust (a full disk,
+  // an unreadable file) was thrown out of the walk, so the terms already
+  // added and the summary went unmentioned, and the error came alone.
+  it('a failed write stops the walk, says what was added before it, and exits 1', async () => {
+    const candidates = [candidate('Alpha'), candidate('Beta'), candidate('Gamma')];
+    const io = makeIO();
+    const p = withHook(scripted(['y', 'y']), 2, () => breakWrites(projectPath));
+    expect(await runHarvestInteractive(candidates, { cwd: repo, globalPath }, io, p)).toBe(1);
+    expect(io.err).toMatch(/lexicon: could not write the project lexicon at candidate 2 of 3 \(.+\); the terms added before it stay in the project lexicon/);
+    expect(io.out).toContain('added Alpha');
+    expect(io.out).toContain(`added 1 new term, merged 0, skipped 2 in ${projectPath}`);
+
+    // The same for `a` (one write for the rest), with nothing added before it.
+    await fs.rm(`${projectPath}.${process.pid}.tmp`, { recursive: true, force: true });
+    await fs.rm(projectPath, { force: true });
+    const all = makeIO();
+    const q = withHook(scripted(['a']), 1, () => breakWrites(projectPath));
+    expect(await runHarvestInteractive(candidates, { cwd: repo, globalPath }, all, q)).toBe(1);
+    expect(all.err).toMatch(/at candidate 1 of 3 \(.+\); nothing was added/);
+    expect(all.out).toContain('added 0 new terms, merged 0, skipped 3');
   });
 
   it('c changes the category and a adds every remaining candidate without asking', async () => {
@@ -610,6 +665,17 @@ describe('review', () => {
   // word on the two terms never shown; and ctrl-D threw `input closed before
   // the prompt was answered`, exit 1, losing the deletion already made with
   // no word on what was kept.
+  // Catches: a failed final write was thrown out of review with only the
+  // error, so nothing said that every answer given was lost with it.
+  it('a write that fails says the answers were not saved and exits 1', async () => {
+    await seedGlobal(terms);
+    const io = makeIO();
+    const p = withHook(scripted(['d', 'k', 'k', 'k']), 4, () => breakWrites(globalPath));
+    expect(await runReview({ globalPath }, io, p)).toBe(1);
+    expect(io.err).toMatch(new RegExp(`lexicon: could not write ${globalPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(.+\\); nothing was written, so this review's 1 removal and 0 edits were not saved`));
+    expect(io.out).not.toContain('Wrote');
+  });
+
   it('q and ctrl-D say how many terms were not reviewed, and ctrl-D keeps the answers given', async () => {
     await seedGlobal(terms);
     const quit = makeIO();
