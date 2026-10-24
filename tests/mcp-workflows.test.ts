@@ -1743,6 +1743,21 @@ describe('harvest_repo and suggest_terms on a model-chosen path', () => {
     expect(JSON.parse(again.text)).toMatchObject({ trusted: false });
   });
 
+  // Catches: add: true with no candidates returned added: 0 and no note, which
+  // read like a write that dropped every name rather than nothing to write.
+  it('add: true with no candidates says nothing was written', async () => {
+    // Two letters: too short to propose as the project name, and nothing else in it.
+    const empty = path.join(repo, 'x2');
+    await fs.mkdir(empty);
+    const res = await call('harvest_repo', { path: empty, add: true });
+    expect(res.isError).toBe(false);
+    const payload = JSON.parse(res.text) as { count: number; added: number; note?: string; path?: string };
+    expect(payload).toMatchObject({ count: 0, added: 0 });
+    expect(payload).not.toHaveProperty('path');
+    expect(payload.note).toBe('No candidates were found, so nothing was written to the project lexicon');
+    await expect(fs.access(path.join(repo, '.lexicon.yaml'))).rejects.toThrow();
+  });
+
   // Catches: add: true never pinned, so a project file the user had already
   // trusted read as "changed" after the harvest and stopped applying, unlike
   // every other MCP write into a trusted file (round 24's rule).

@@ -58,7 +58,6 @@ async function serveTarget(): Promise<{ base: string; token?: string; notConfigu
 
 export const registerSetupTools: ToolRegistrar = (server, ctx) => {
   // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
-  const { load } = ctx;
   server.registerTool(
     'lexicon_doctor',
     {
@@ -247,7 +246,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         'It writes the global lexicon and each named client\'s config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), ' +
         'does not install starter packs unless packs: [...] names them (packsOnOffer, the same list as wouldInstallPacks, is the default set to offer, not what will be installed; packsToInstall is what this call would install, empty until packs names some; list_packs describes each), ' +
         'does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. ' +
-        'Runs non-interactively and returns { ok, applied: true, summary, nextStep? }; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file that was not trusted already is left untrusted for the user to review).',
+        'Runs non-interactively and returns { ok, applied: true, summary, nextStep? }, as an error result (same fields) when ok is false because a step failed; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file that was not trusted already is left untrusted for the user to review).',
       inputSchema: {
         company: z
           .string()
@@ -333,13 +332,16 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
           ...(untrusted !== undefined ? [untrustedWriteFields(untrusted, 'The repo names', true).nextStep] : []),
           ...(summary.nextStep !== undefined ? [summary.nextStep] : []),
         ];
-        return textResult({
+        const result = textResult({
           ok: code === 0,
           applied: true,
           summary,
           ...(stderr ? { stderr } : {}),
           ...(steps.length > 0 ? { nextStep: steps.join(' Then: ') } : {}),
         });
+        // A step failed (a client, the login service, an export): an agent that
+        // reads only isError reported the setup as done. Same payload, flagged.
+        return code === 0 ? result : { ...result, isError: true };
       }),
   );
 

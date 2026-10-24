@@ -186,6 +186,20 @@ describe('deepgram: keyterm for Nova-3, deduped keywords', () => {
     expect(capped).toContain('K099');
   });
 
+  // Catches: a canonical of only colons was skipped from keywords with no
+  // note, while it stayed in keyterm, so the two lists differed unexplained.
+  it('names a canonical left empty in keywords once its colons are spaces', () => {
+    const { text, notes } = exportLexiconWithNotes(
+      lex([
+        { canonical: 'Vercel', aliases: [], hits: 2 },
+        { canonical: '::', aliases: [], hits: 1 },
+      ]),
+      'deepgram',
+    );
+    expect(JSON.parse(text)).toEqual({ keyterm: ['Vercel', '::'], keywords: ['Vercel:1'] });
+    expect(notes).toEqual(['left out 1 name from keywords that hold nothing but colons and whitespace (a colon becomes a space there): "::"']);
+  });
+
   it('caps keyterm at 100, the most used kept', () => {
     const terms = Array.from({ length: 101 }, (_, i) => ({ canonical: `K${String(i).padStart(3, '0')}`, aliases: [], hits: 500 - i }));
     const { text, notes } = exportLexiconWithNotes(lex(terms), 'deepgram');

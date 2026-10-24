@@ -60478,9 +60478,13 @@ function exportDeepgram(lexicon, _opts = {}, sink) {
   const keywords = [];
   const seen = /* @__PURE__ */ new Set();
   const collided = [];
+  const onlyColons = [];
   for (const { term, canonical } of ordered) {
     const keyword = canonical.replace(/:/g, " ").replace(/\s+/g, " ").trim();
-    if (!keyword) continue;
+    if (!keyword) {
+      onlyColons.push(canonical);
+      continue;
+    }
     if (seen.has(keyword)) {
       collided.push(canonical);
       continue;
@@ -60493,6 +60497,9 @@ function exportDeepgram(lexicon, _opts = {}, sink) {
   }
   if (keytermRepeats.length > 0) {
     sink?.notes.push(`left out ${keytermRepeats.length} name${keytermRepeats.length === 1 ? "" : "s"} from keyterm that read as one already listed once whitespace is collapsed: ${quotedNames(keytermRepeats)}`);
+  }
+  if (onlyColons.length > 0) {
+    sink?.notes.push(`left out ${onlyColons.length} name${onlyColons.length === 1 ? "" : "s"} from keywords that hold nothing but colons and whitespace (a colon becomes a space there): ${quotedNames(onlyColons)}`);
   }
   if (collided.length > 0) {
     sink?.notes.push(`left out ${collided.length} name${collided.length === 1 ? "" : "s"} from keywords that read as one already listed once its colon is a space: ${quotedNames(collided)}`);
@@ -60512,6 +60519,7 @@ function espansoEscape(canonical) {
 }
 function exportEspanso(lexicon, _opts = {}, sink) {
   const leftOut = [];
+  const unrenderable = [];
   const matches = [];
   const { kept, dropped } = uniqueTriggers(aliasPairs(lexicon));
   const shared = sharedTriggerNote(dropped, "trigger");
@@ -60522,9 +60530,15 @@ function exportEspanso(lexicon, _opts = {}, sink) {
     if (typed !== canonical) {
       const as = typed === void 0 ? "read a variable in it" : `type it as ${JSON.stringify(typed)}`;
       leftOut.push(`# left out ${JSON.stringify(alias)} -> ${JSON.stringify(canonical)}: espanso would ${as}`);
+      unrenderable.push(`${alias} -> ${canonical}`);
       continue;
     }
     matches.push({ trigger: alias, replace, word: true, propagate_case: false });
+  }
+  if (unrenderable.length > 0) {
+    sink?.notes.push(
+      `left out ${unrenderable.length} pair${unrenderable.length === 1 ? "" : "s"} espanso would not type as written (a canonical holding a literal \\{\\{ or \\}\\}): ${quotedNames(unrenderable)}`
+    );
   }
   if (sink) sink.rows = matches.length;
   const body = (0, import_yaml3.stringify)({ matches }, { lineWidth: 0, defaultStringType: "QUOTE_DOUBLE", defaultKeyType: "PLAIN" });
@@ -60578,14 +60592,23 @@ function exportMacos(lexicon, _opts = {}, sink) {
     "<array>"
   ];
   let stripped = 0;
+  const unencodable = [];
   const pairs = [];
   for (const pair of aliasPairs(lexicon)) {
-    if (findUnencodableChar(pair.alias) !== void 0 || findUnencodableChar(pair.canonical) !== void 0) continue;
+    if (findUnencodableChar(pair.alias) !== void 0 || findUnencodableChar(pair.canonical) !== void 0) {
+      unencodable.push(pair);
+      continue;
+    }
     const alias = stripXmlControls(pair.alias).trim();
     const canonical = stripXmlControls(pair.canonical);
     if (alias !== pair.alias || canonical !== pair.canonical) stripped += 1;
     if (alias === "" || canonical.trim() === "") continue;
     pairs.push({ ...pair, alias, canonical });
+  }
+  if (unencodable.length > 0) {
+    sink?.notes.push(
+      `left out ${unencodable.length} pair${unencodable.length === 1 ? "" : "s"} holding a character XML cannot hold even as a reference (U+FFFE, U+FFFF or an unpaired surrogate): ${quotedNames(unencodable.map((p) => `${p.alias} -> ${p.canonical}`))}`
+    );
   }
   const { kept, dropped } = uniqueTriggers(pairs, (a) => a.toLowerCase());
   const shared = sharedTriggerNote(dropped, "shortcut");
@@ -60818,7 +60841,7 @@ function applyOptions(lexicon, opts, format) {
   let terms = lexicon.terms;
   if (opts.categories && opts.categories.length > 0) {
     const allowed = new Set(opts.categories);
-    terms = terms.filter((t) => t.category !== void 0 && allowed.has(t.category));
+    terms = terms.filter((t) => allowed.has(t.category ?? "other"));
   }
   if (opts.limit !== void 0) {
     const candidates = format !== void 0 && EXPORT_ALIAS_ROW_FORMATS.includes(format) ? terms.filter(hasAliasRow) : terms;
@@ -63330,7 +63353,7 @@ var registerTermTools = (server, ctx) => {
       description: "List the user's lexicon terms, global and project merged. Optional case-insensitive substring filter over canonical spellings and aliases, plus a category filter. WHEN TO CALL: to show the user what is already known, to check whether a name is covered before adding it, or to find the exact canonical another tool needs. Read-only and safe to call unprompted; filter rather than listing everything. WHAT IT CHANGES: nothing. WHAT IT WILL NOT DO: it does not include an untrusted project .lexicon.yaml -- if one was skipped the result says so in `note`, and trust_project is how the user reviews it. Returns { terms, counts: { matched, total, global, project }, paths: { global, project? } }, plus `projectTrust`, `skippedProject` and `note` for a skipped file, or a `note` saying why `terms` is empty (no terms yet, the filter matched none, or `offset` is past the last match). A blank `query` filters nothing. Every matching term comes back unless `offset` or `limit` is given; then `terms` is that page of the matches (in the same order), and `page: { offset, limit?, returned, nextOffset? }` says where it started and, while more matches remain, the `offset` that gets the next page (`counts.matched` is how many there are in all).",
       inputSchema: {
         query: external_exports.string().optional().describe("Case-insensitive substring matched against canonical and aliases."),
-        category: external_exports.enum(TERM_CATEGORIES).optional(),
+        category: external_exports.enum(TERM_CATEGORIES).optional().describe("Only terms in this category; a term without one counts as other."),
         offset: external_exports.number().int().nonnegative().optional().describe("Matching terms to skip before the page starts (0 when omitted); pass `page.nextOffset` to get the next page."),
         limit: external_exports.number().int().positive().optional().describe("Most terms to return. Omitted with `offset` omitted too: every matching term.")
       }
@@ -63339,7 +63362,7 @@ var registerTermTools = (server, ctx) => {
       const loaded = await load({ parseSkipped: false });
       const needle = query?.trim().toLowerCase();
       const matched = loaded.merged.terms.filter((t) => {
-        if (category && t.category !== category) return false;
+        if (category && (t.category ?? "other") !== category) return false;
         if (!needle) return true;
         if (t.canonical.toLowerCase().includes(needle)) return true;
         return t.aliases.some((a) => a.toLowerCase().includes(needle));
@@ -63592,6 +63615,7 @@ var registerHarvestTools = (server, ctx) => {
           }
         }
       }
+      const noneToAdd = add === true && candidates.length === 0;
       const payload = {
         root,
         candidates,
@@ -63600,8 +63624,11 @@ var registerHarvestTools = (server, ctx) => {
         ...written !== void 0 ? { path: written, ...writeOpts.leaveUntrusted ? untrustedWriteFields(written, `${added} name(s)`, true) : {} } : {},
         // The 5000-file cap was never reported, so a large tree looked fully scanned.
         ...report2.truncated ? { truncated: true } : {},
-        ...failures.length > 0 || report2.truncated ? {
+        ...failures.length > 0 || report2.truncated || noneToAdd ? {
           note: [
+            // add: true with no candidates returned added: 0 and no word,
+            // which read like a write that silently dropped every name.
+            ...noneToAdd ? ["No candidates were found, so nothing was written to the project lexicon"] : [],
             ...failures.length > 0 ? [`${failures.length} of ${candidates.length} candidate${candidates.length === 1 ? " was" : "s were"} not added (first: ${failures[0]?.error}); see failures`] : [],
             ...report2.truncated ? [harvestTruncatedNote(root)] : []
           ].join(". ")
@@ -68413,7 +68440,6 @@ async function serveTarget() {
   return { base: serveUrl(port), ...config2?.token ? { token: config2.token } : {}, notConfigured };
 }
 var registerSetupTools = (server, ctx) => {
-  const { load } = ctx;
   server.registerTool(
     "lexicon_doctor",
     {
@@ -68536,7 +68562,7 @@ var registerSetupTools = (server, ctx) => {
     "setup_lexicon",
     {
       title: "One-shot onboarding (preview, then apply)",
-      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, packsOnOffer, packsToInstall, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, serveBlocked?, wouldExport, demo?, interactive, wouldAsk, next } and is computed without writing anything; demo { heard, corrected, terms, usedExample } is the before and after a real run would end on, worth showing; interactive is false and wouldAsk empty here, since this tool never prompts; serveBlocked (with serve: true) says why the login service would be refused and how to fix it, so relay it instead of offering the service. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (packsOnOffer, the same list as wouldInstallPacks, is the default set to offer, not what will be installed; packsToInstall is what this call would install, empty until packs names some; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary, nextStep? }; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file that was not trusted already is left untrusted for the user to review).",
+      description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, packsOnOffer, packsToInstall, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, serveBlocked?, wouldExport, demo?, interactive, wouldAsk, next } and is computed without writing anything; demo { heard, corrected, terms, usedExample } is the before and after a real run would end on, worth showing; interactive is false and wouldAsk empty here, since this tool never prompts; serveBlocked (with serve: true) says why the login service would be refused and how to fix it, so relay it instead of offering the service. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (packsOnOffer, the same list as wouldInstallPacks, is the default set to offer, not what will be installed; packsToInstall is what this call would install, empty until packs names some; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary, nextStep? }, as an error result (same fields) when ok is false because a step failed; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file that was not trusted already is left untrusted for the user to review).",
       inputSchema: {
         company: external_exports.string().optional().describe(`Company or product name, spelled exactly as it should appear: one name of at most ${LIMITS.word} characters once trimmed, on one line (the lexicon's cap for a term). A longer, blank or multi-line one is refused, in the preview too, and nothing is written.`),
         person: external_exports.string().optional().describe(`The user's own name as they write it: at most ${LIMITS.word} characters once trimmed, on one line. A longer, blank or multi-line one is refused, in the preview too, and nothing is written.`),
@@ -68599,13 +68625,14 @@ var registerSetupTools = (server, ctx) => {
         ...untrusted !== void 0 ? [untrustedWriteFields(untrusted, "The repo names", true).nextStep] : [],
         ...summary.nextStep !== void 0 ? [summary.nextStep] : []
       ];
-      return textResult({
+      const result = textResult({
         ok: code === 0,
         applied: true,
         summary,
         ...stderr ? { stderr } : {},
         ...steps.length > 0 ? { nextStep: steps.join(" Then: ") } : {}
       });
+      return code === 0 ? result : { ...result, isError: true };
     })
   );
   server.registerTool(
