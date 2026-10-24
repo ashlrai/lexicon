@@ -67,11 +67,23 @@ var import_node_path = __toESM(require_node_path());
 var import_node_os = __toESM(require_node_os());
 function absoluteOr(value, fallback) {
   const trimmed = value?.trim();
-  if (!trimmed) return fallback;
-  return import_node_path.default.isAbsolute(trimmed) ? trimmed : fallback;
+  if (!trimmed) return fallback();
+  return import_node_path.default.isAbsolute(trimmed) ? trimmed : fallback();
+}
+function usableHome(home) {
+  const trimmed = home.trim();
+  if (trimmed && import_node_path.default.isAbsolute(trimmed)) return home;
+  let fromUserDb;
+  try {
+    fromUserDb = import_node_os.default.userInfo().homedir;
+  } catch {
+  }
+  if (fromUserDb && import_node_path.default.isAbsolute(fromUserDb)) return fromUserDb;
+  const what = trimmed ? `the relative path ${JSON.stringify(trimmed)}` : "empty";
+  throw new Error(`no usable home directory: HOME is ${what} and the user database has none; set HOME to an absolute path, or LEXICON_PATH to the lexicon file`);
 }
 function xdgConfigHome(env = process.env, home = import_node_os.default.homedir()) {
-  return absoluteOr(env.XDG_CONFIG_HOME, import_node_path.default.join(home, ".config"));
+  return absoluteOr(env.XDG_CONFIG_HOME, () => import_node_path.default.join(usableHome(home), ".config"));
 }
 function globalLexiconPath(env = process.env, home = import_node_os.default.homedir()) {
   return env.LEXICON_PATH || import_node_path.default.join(xdgConfigHome(env, home), "lexicon", "lexicon.yaml");
