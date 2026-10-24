@@ -1,6 +1,7 @@
 /// <reference types="chrome" />
 /** Popup: engine status, per-site switch, recent corrections, "learn" mini-form. */
 import { sendToBackground } from './chrome-store.js';
+import { siteNote } from './adapters.js';
 import { setMessage } from './rich-text.js';
 import { coerceSettings, describeCorrection, hostKey, siteEnabled, statusFailedView, statusView, STORAGE_KEYS, withSiteSwitch } from './shared.js';
 import type { Failure, LearnReply, StatusReply } from './shared.js';
@@ -26,11 +27,12 @@ const ui = {
 };
 
 let currentHost = '';
+let currentUrl = '';
 
-async function activeHostname(): Promise<string> {
+async function activeUrl(): Promise<string> {
   try {
     const [tab] = await chrome.tabs.query({ active: true, currentWindow: true });
-    if (tab?.url) return new URL(tab.url).hostname;
+    if (tab?.url && new URL(tab.url).hostname) return tab.url;
   } catch {
     // no tabs permission for this URL; fine
   }
@@ -85,7 +87,8 @@ function renderStatusFailure(error: string): void {
 }
 
 async function loadSite(): Promise<void> {
-  currentHost = await activeHostname();
+  currentUrl = await activeUrl();
+  currentHost = currentUrl ? new URL(currentUrl).hostname : '';
   const raw = await chrome.storage.local.get([STORAGE_KEYS.settings]);
   const settings = coerceSettings(raw[STORAGE_KEYS.settings], '');
   if (!currentHost) {
@@ -96,14 +99,15 @@ async function loadSite(): Promise<void> {
   }
   ui.siteHost.textContent = hostKey(currentHost);
   ui.siteEnabled.checked = siteEnabled(settings, currentHost);
-  ui.siteNote.textContent = ui.siteEnabled.checked ? 'Corrections run before each send.' : 'Paused on this site.';
+  ui.siteNote.textContent = siteNote(settings, currentUrl);
 }
 
 ui.siteEnabled.addEventListener('change', () => {
   void (async () => {
     const raw = await chrome.storage.local.get([STORAGE_KEYS.settings]);
-    await chrome.storage.local.set({ [STORAGE_KEYS.settings]: withSiteSwitch(raw[STORAGE_KEYS.settings], currentHost, ui.siteEnabled.checked) });
-    ui.siteNote.textContent = ui.siteEnabled.checked ? 'Corrections run before each send.' : 'Paused on this site.';
+    const next = withSiteSwitch(raw[STORAGE_KEYS.settings], currentHost, ui.siteEnabled.checked);
+    await chrome.storage.local.set({ [STORAGE_KEYS.settings]: next });
+    ui.siteNote.textContent = siteNote(coerceSettings(next, ''), currentUrl);
   })();
 });
 

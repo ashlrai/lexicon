@@ -11,6 +11,8 @@
 import {
   adapterFor,
   composerFromTarget,
+  deepActiveElement,
+  eventOrigin,
   findComposer,
   findSendButton,
   isTextField,
@@ -69,6 +71,8 @@ export function installContent(deps: ContentDeps): ContentHandle {
   let liveInFlight = false;
   /** True while Undo writes the original wording back: its own input events are not the user typing. */
   let restoring = false;
+  /** True between compositionstart and compositionend: an IME owns the text being typed. */
+  let composing = false;
 
   const setTimer = (fn: () => void, ms: number): number | undefined => win?.setTimeout(fn, ms);
   const clearTimer = (id: number | undefined): void => {
@@ -168,7 +172,8 @@ export function installContent(deps: ContentDeps): ContentHandle {
         // text) replacement left it, so the line break a generic site's Enter
         // then inserts landed mid-text. Put the caret back where it was,
         // shifted by the corrections before it. A text field keeps its own.
-        const focused = !isTextField(composer) && (composer === doc.activeElement || composer.contains(doc.activeElement));
+        const active = deepActiveElement(doc);
+        const focused = !isTextField(composer) && (composer === active || composer.contains(active));
         const caret = focused ? caretOffset(doc, composer) : undefined;
         await applyCorrections(doc, composer, reply.replacements, reply.output);
         if (caret !== undefined) setCaret(doc, composer, shiftOffset(caret, reply.replacements));
@@ -213,7 +218,7 @@ export function installContent(deps: ContentDeps): ContentHandle {
     if (passthrough || !settings.enabled) return;
     if (ev.key !== 'Enter' || ev.shiftKey || ev.isComposing || ev.keyCode === 229) return;
     if (ev.defaultPrevented) return;
-    const composer = composerFromTarget(ev.target, adapter);
+    const composer = composerFromTarget(eventOrigin(ev), adapter);
     if (!composer) return;
     const text = readText(composer);
     if (shouldSkip(text)) return;
@@ -259,7 +264,7 @@ export function installContent(deps: ContentDeps): ContentHandle {
 
   function onClick(ev: MouseEvent): void {
     if (passthrough || !settings.enabled) return;
-    const button = sendButtonFromTarget(ev.target, adapter);
+    const button = sendButtonFromTarget(eventOrigin(ev), adapter);
     if (!button) return;
     const composer = findComposer(doc, adapter);
     if (!composer) return;
@@ -296,7 +301,9 @@ export function installContent(deps: ContentDeps): ContentHandle {
   function scheduleLive(composer: HTMLElement): void {
     clearTimer(liveTimer);
     liveTimer = setTimer(() => {
-      if (liveInFlight) return;
+      // Mid-composition the IME owns the text: a rewrite there cancels or
+      // garbles the word being composed. compositionend schedules it again.
+      if (liveInFlight || composing) return;
       const full = readText(composer);
       const caret = caretOffset(doc, composer);
       const prefix = full.slice(0, caret);
@@ -305,12 +312,13 @@ export function installContent(deps: ContentDeps): ContentHandle {
       void normalizeComposer(composer, prefix, false)
         .then(async (reply) => {
           if (!reply.ok || !reply.changed || reply.replacements.length === 0) return;
-          if (readText(composer) !== full) return;
+          if (readText(composer) !== full || composing) return;
           const output = reply.output + full.slice(caret);
           await applyCorrections(doc, composer, reply.replacements, output);
           // Put the caret back where the user was typing, shifted by what
           // the corrections changed before it.
-          if (composer === doc.activeElement || composer.contains(doc.activeElement)) setCaret(doc, composer, reply.output.length);
+          const active = deepActiveElement(doc);
+          if (composer === active || composer.contains(active)) setCaret(doc, composer, reply.output.length);
           precheck = null;
           toastFor(composer, full, reply.replacements, reply, output);
         })
@@ -322,16 +330,32 @@ export function installContent(deps: ContentDeps): ContentHandle {
 
   function onInput(ev: Event): void {
     if (passthrough || restoring || !settings.enabled) return;
-    const composer = composerFromTarget(ev.target, adapter);
+    const composer = composerFromTarget(eventOrigin(ev), adapter);
     if (!composer) return;
     precheck = null;
     schedulePrecheck(composer);
-    if (settings.live) scheduleLive(composer);
+    // An input event inside a composition (IME, some dictation) is not a
+    // finished word: live mode waits for compositionend.
+    if (settings.live && !composing && (ev as InputEvent).isComposing !== true) scheduleLive(composer);
+  }
+
+  function onCompositionStart(): void {
+    composing = true;
+    clearTimer(liveTimer);
+  }
+
+  function onCompositionEnd(ev: Event): void {
+    composing = false;
+    if (passthrough || restoring || !settings.enabled || !settings.live) return;
+    const composer = composerFromTarget(eventOrigin(ev), adapter);
+    if (composer) scheduleLive(composer);
   }
 
   doc.addEventListener('keydown', onKeydown, true);
   doc.addEventListener('click', onClick, true);
   doc.addEventListener('input', onInput, true);
+  doc.addEventListener('compositionstart', onCompositionStart, true);
+  doc.addEventListener('compositionend', onCompositionEnd, true);
 
   return {
     adapter,
@@ -347,6 +371,8 @@ export function installContent(deps: ContentDeps): ContentHandle {
       doc.removeEventListener('keydown', onKeydown, true);
       doc.removeEventListener('click', onClick, true);
       doc.removeEventListener('input', onInput, true);
+      doc.removeEventListener('compositionstart', onCompositionStart, true);
+      doc.removeEventListener('compositionend', onCompositionEnd, true);
       clearTimer(precheckTimer);
       clearTimer(liveTimer);
       removeToast(doc);

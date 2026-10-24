@@ -5,7 +5,8 @@
  */
 import { installContent } from './content-core.js';
 import { sendToBackground } from './chrome-store.js';
-import { coerceSettings, siteEnabled, STORAGE_KEYS } from './shared.js';
+import { guardActive } from './adapters.js';
+import { coerceSettings, STORAGE_KEYS } from './shared.js';
 import type { NormalizeReply, Request } from './shared.js';
 
 declare global {
@@ -25,13 +26,13 @@ if (!window.__lexiconExtension && window === window.top) {
       doc: document,
       hostname,
       send: (req: Request) => sendToBackground<NormalizeReply>(req),
-      settings: { enabled: siteEnabled(settings, hostname), live: settings.live },
+      settings: { enabled: guardActive(settings, location.href), live: settings.live },
     });
 
     chrome.storage.onChanged.addListener((changes, area) => {
       if (area !== 'local' || !changes[STORAGE_KEYS.settings]) return;
       const next = coerceSettings(changes[STORAGE_KEYS.settings].newValue, '');
-      handle.update({ enabled: siteEnabled(next, hostname), live: next.live });
+      handle.update({ enabled: guardActive(next, location.href), live: next.live });
     });
   });
 }
