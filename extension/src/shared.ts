@@ -49,7 +49,16 @@ export const LIVE_DEBOUNCE_MS = 400;
 export const PRECHECK_DEBOUNCE_MS = 250;
 export const TOAST_MS = 3000;
 export const HEALTH_TTL_MS = 10_000;
+/** Timeout for /health, /normalize and /stats: quick reads a correction waits on. */
 export const FETCH_TIMEOUT_MS = 1500;
+/**
+ * Timeout for POST /learn: the server waits up to 10 s for the lexicon file's
+ * lock (DEFAULT_LOCK_TIMEOUT_MS) before it writes, so 1.5 s gave up on a write
+ * that still went through.
+ */
+export const WRITE_TIMEOUT_MS = 15_000;
+/** Timeout for GET /lexicon (Sync), which sends the whole lexicon. */
+export const LEXICON_TIMEOUT_MS = 10_000;
 /**
  * After the server answers 401 to the stored token, no bearer request is sent
  * with that token (and base URL) for this long; each further 401 doubles it,

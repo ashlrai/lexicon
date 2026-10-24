@@ -924,7 +924,7 @@ describe('extension errors name the next step', () => {
       throw Object.assign(new Error('aborted'), { name: 'AbortError' });
     });
     const bg = createBackground({ fetch: aborting as unknown as typeof fetch, store: storeWith({ token }), defaultYaml: EXAMPLE_YAML });
-    expect(await bg.handle({ type: 'sync' })).toEqual({ ok: false, error: 'API /lexicon timed out after 1500 ms; run `lexicon serve --status` to check the server' });
+    expect(await bg.handle({ type: 'sync' })).toEqual({ ok: false, error: 'API /lexicon timed out after 10000 ms; run `lexicon serve --status` to check the server' });
 
     const notOk = vi.fn(async () => json({ ok: false, version: '1', terms: 0 }));
     const bg2 = createBackground({ fetch: notOk as unknown as typeof fetch, store: storeWith({ token }), defaultYaml: EXAMPLE_YAML });

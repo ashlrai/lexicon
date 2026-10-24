@@ -12,6 +12,7 @@ import {
   errorMessage,
   FETCH_TIMEOUT_MS,
   HEALTH_TTL_MS,
+  LEXICON_TIMEOUT_MS,
   pairableBaseUrl,
   pairPortOrigins,
   RECENT_LIMIT,
@@ -19,6 +20,7 @@ import {
   TOKEN_BACKOFF_MAX_MS,
   TOKEN_BACKOFF_MS,
   TOKEN_RE,
+  WRITE_TIMEOUT_MS,
 } from './shared.js';
 import type {
   Correction,
@@ -209,10 +211,14 @@ export function createBackground(deps: BackgroundDeps): Background {
    * (Options > Test connection); every other bearer request with a token the
    * server rejected waits out the backoff without touching the network.
    */
-  async function fetchJson(settings: Settings, path: string, opts: RequestInit & { auth?: boolean; probe?: boolean } = {}): Promise<unknown> {
-    const { auth, probe, ...init } = opts;
+  async function fetchJson(
+    settings: Settings,
+    path: string,
+    opts: RequestInit & { auth?: boolean; probe?: boolean; timeoutMs?: number } = {},
+  ): Promise<unknown> {
+    const { auth, probe, timeoutMs = FETCH_TIMEOUT_MS, ...init } = opts;
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
       const headers: Record<string, string> = { Accept: 'application/json' };
       if (init.body !== undefined) headers['Content-Type'] = 'application/json';
@@ -261,7 +267,7 @@ export function createBackground(deps: BackgroundDeps): Background {
     } catch (err) {
       if ((err as { name?: string }).name === 'AbortError') {
         healthCache = null;
-        throw new Error(`API ${path} timed out after ${FETCH_TIMEOUT_MS} ms; ${SERVE_STATUS_STEP}`);
+        throw new Error(`API ${path} timed out after ${timeoutMs} ms; ${SERVE_STATUS_STEP}`);
       }
       throw err;
     } finally {
@@ -414,7 +420,7 @@ export function createBackground(deps: BackgroundDeps): Background {
     if (useApi && skipped === undefined) {
       try {
         // Server reply: { term, created, aliasAdded, path, conflict?, untrustedProject? } (src/serve/server.ts LearnResponse).
-        const raw = (await fetchJson(settings, '/learn', { method: 'POST', body: JSON.stringify({ heard, meant }) })) as {
+        const raw = (await fetchJson(settings, '/learn', { method: 'POST', body: JSON.stringify({ heard, meant }), timeoutMs: WRITE_TIMEOUT_MS })) as {
           term?: { canonical?: string };
           created?: boolean;
           aliasAdded?: boolean;
@@ -449,7 +455,7 @@ export function createBackground(deps: BackgroundDeps): Background {
   async function syncReq(): Promise<SyncReply | Failure> {
     const settings = await getSettings();
     try {
-      const raw = (await fetchJson(settings, '/lexicon')) as { lexicon?: unknown; skippedProject?: unknown; projectTrust?: unknown } | null;
+      const raw = (await fetchJson(settings, '/lexicon', { timeoutMs: LEXICON_TIMEOUT_MS })) as { lexicon?: unknown; skippedProject?: unknown; projectTrust?: unknown } | null;
       const body = raw?.lexicon;
       if (!body || typeof body !== 'object' || !Array.isArray((body as { terms?: unknown }).terms)) return { ok: false, error: LEXICON_SHAPE_MESSAGE };
       const lexicon = parseLexicon(body);

@@ -9,7 +9,7 @@ import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBackground } from '../extension/src/background-core.js';
 import type { KeyValueStore } from '../extension/src/background-core.js';
-import { TOKEN_BACKOFF_MS, connectionTestLine, statusView } from '../extension/src/shared.js';
+import { FETCH_TIMEOUT_MS, LEXICON_TIMEOUT_MS, TOKEN_BACKOFF_MS, WRITE_TIMEOUT_MS, connectionTestLine, statusView } from '../extension/src/shared.js';
 import type { NormalizeReply, StatusReply } from '../extension/src/shared.js';
 
 const EXAMPLE_YAML = readFileSync(resolve(process.cwd(), 'examples/lexicon.example.yaml'), 'utf8');
@@ -140,5 +140,46 @@ describe('extension rejected-token backoff', () => {
     expect(ok.tokenError).toBeUndefined();
     expect(ok.tokenRetryAt).toBeUndefined();
     expect(ok.activeMode).toBe('api');
+  });
+});
+
+describe('extension request timeouts', () => {
+  /** A fetch whose bearer routes answer after `delayMs` (fake timers), or reject with AbortError when aborted first. */
+  function slowFetch(delayMs: number): typeof fetch {
+    return (async (url: string, init: RequestInit) => {
+      if (url.endsWith('/health')) return json(HEALTH);
+      const body = url.endsWith('/learn')
+        ? { term: { canonical: 'Quorbyx' }, created: true, aliasAdded: true, path: '/g/lexicon.yaml' }
+        : url.endsWith('/lexicon')
+          ? { lexicon: { version: 1, terms: [{ canonical: 'Entire.io', aliases: [] }] } }
+          : normalized('hi');
+      return new Promise<Response>((resolveFetch, reject) => {
+        const t = setTimeout(() => resolveFetch(json(body)), delayMs);
+        init.signal?.addEventListener('abort', () => {
+          clearTimeout(t);
+          reject(Object.assign(new Error('aborted'), { name: 'AbortError' }));
+        });
+      });
+    }) as unknown as typeof fetch;
+  }
+
+  // Catches: /learn and /lexicon shared the 1.5 s timeout of /normalize, so a
+  // Learn the server was still writing (it waits up to 10 s for the file lock)
+  // and a Sync of a large lexicon were reported as timed out.
+  it('gives /learn and /lexicon longer than the quick reads', async () => {
+    expect(WRITE_TIMEOUT_MS).toBeGreaterThan(10_000);
+    expect(LEXICON_TIMEOUT_MS).toBeGreaterThan(FETCH_TIMEOUT_MS);
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    const bg = createBackground({ fetch: slowFetch(3000), store: memoryStore({ settings: { token: TOKEN } }), defaultYaml: EXAMPLE_YAML });
+    const learn = bg.handle({ type: 'learn', heard: 'quorbix', meant: 'Quorbyx' });
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(await learn).toMatchObject({ ok: true, mode: 'api' });
+    const sync = bg.handle({ type: 'sync' });
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(await sync).toMatchObject({ ok: true, terms: 1 });
+    // A normalize keeps the short timeout: the user is waiting on the send.
+    const norm = bg.handle({ type: 'normalize', text: 'hi' });
+    await vi.advanceTimersByTimeAsync(3000);
+    expect(await norm).toMatchObject({ ok: true, mode: 'embedded', fallback: `API /normalize timed out after ${FETCH_TIMEOUT_MS} ms; run \`lexicon serve --status\` to check the server` });
   });
 });
