@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon remove yod` (text and `--json`) and MCP `remove_term` report the canonical as the file spelled it (`removed Yod`, `canonical: "Yod"`). They echoed the spelling typed.
 - `lexicon add Yod yod` says the alias was not added because it differs from the canonical only in case (a `note:` line, and `droppedAliases: [{ alias, reason }]` under `--json`). The alias was dropped silently and the output read `aliases: (none)`.
 - A lexicon that cannot be read for a reason other than a missing file (a `LEXICON_PATH` under a file, a permission error) stops `lexicon list`, `stats`, `export` and `learn` with `Cannot read lexicon at <path>: <why>` naming the file in the way, and a next step that says to fix that path or `LEXICON_PATH`, then run `lexicon doctor`. It was Node's bare `ENOTDIR: not a directory, stat '<path>'` with the generic next step.
 - `lexicon review`, `lexicon harvest --interactive` and `lexicon harvest --add` print a project trust refusal naming a long path whole, and `lexicon normalize` and `lexicon harvest --add --json` print a lexicon load or write error whole. These went through the 200-character display cap, which cut a deep path off before the `lexicon trust` next step or the reason.

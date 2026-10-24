@@ -9,7 +9,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { runHarvestInteractive, runReview, runEdit, editorCommand } from '../src/cli/cmd-review.js';
 import type { SpawnEditor } from '../src/cli/cmd-review.js';
-import { runAdd, runHarvest } from '../src/cli/commands.js';
+import { runAdd, runHarvest, runRemove } from '../src/cli/commands.js';
 import { PromptClosedError, askKey, splitList } from '../src/cli/prompt.js';
 import type { Prompter } from '../src/cli/prompt.js';
 import { addTerm, loadLexicon, recordHits, trustProject, writeLexiconFile } from '../src/core/index.js';
@@ -364,6 +364,21 @@ describe('add with an alias that is the canonical in another case', () => {
     const plain = makeIO();
     expect(await runAdd('Zed', ['zedd'], { cwd: tmp, globalPath, json: true }, plain)).toBe(0);
     expect(JSON.parse(plain.out)).not.toHaveProperty('droppedAliases');
+  });
+});
+
+describe('remove with the canonical in another case', () => {
+  // Catches: `lexicon remove yod` said `removed yod` (and `canonical: "yod"` under --json) for the term the file spells "Yod".
+  it('reports the stored spelling, in text and --json', async () => {
+    await runAdd('Yod', ['yodd'], { cwd: tmp, globalPath }, makeIO());
+    await runAdd('Zed', ['zedd'], { cwd: tmp, globalPath }, makeIO());
+    process.env.LEXICON_PATH = globalPath;
+    const text = makeIO();
+    expect(await runRemove('yod', { cwd: tmp }, text)).toBe(0);
+    expect(text.out).toContain('removed Yod from');
+    const json = makeIO();
+    expect(await runRemove('ZED', { cwd: tmp, json: true }, json)).toBe(0);
+    expect(JSON.parse(json.out)).toMatchObject({ ok: true, canonical: 'Zed', removed: true });
   });
 });
 

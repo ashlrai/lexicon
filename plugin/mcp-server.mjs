@@ -62856,6 +62856,10 @@ function normalizeCut(text, max) {
   }
   return cut;
 }
+function storedCanonical(file2, canonical) {
+  const key = spellingKey(canonical);
+  return file2?.lexicon.terms.find((t) => spellingKey(t.canonical) === key)?.canonical;
+}
 function holds(terms, canonical) {
   const key = spellingKey(canonical);
   return (terms ?? []).some((t) => spellingKey(t.canonical) === key);
@@ -63058,7 +63062,8 @@ var registerTermTools = (server, ctx) => {
           } : {}
         });
       }
-      const before = termHolders(await load(), canonical);
+      const loadedBefore = await load();
+      const before = termHolders(loadedBefore, canonical);
       let removed;
       try {
         removed = await removeTerm(canonical, opts);
@@ -63071,18 +63076,20 @@ var registerTermTools = (server, ctx) => {
       const loadedAfter = await load();
       const after = termHolders(loadedAfter, canonical);
       const from = before.find((b) => !after.some((a) => a.path === b.path));
+      const stored = from ? storedCanonical(from.scope === "project" ? loadedBefore.project : loadedBefore.global, canonical) : void 0;
+      const name = stored ?? canonical;
       const untrustedProject = untrustedTermHolder(loadedAfter, canonical);
-      if (after.length === 0 && !untrustedProject) return textResult({ canonical, removed, ...from ? { path: from.path } : {} });
+      if (after.length === 0 && !untrustedProject) return textResult({ canonical: name, removed, ...from ? { path: from.path } : {} });
       const notes = after.map(
-        (h) => `"${canonical}" is still in the ${h.scope} lexicon (${h.path}) and keeps correcting from there; if the user wants it gone too, call remove_term again with scope "${h.scope}".`
+        (h) => `"${name}" is still in the ${h.scope} lexicon (${h.path}) and keeps correcting from there; if the user wants it gone too, call remove_term again with scope "${h.scope}".`
       );
       if (untrustedProject) {
         notes.push(
-          `"${canonical}" is also in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was neither loaded nor edited; that copy corrects again once the user runs ` + cliCommand("trust") + ", so tell them to review the file first."
+          `"${name}" is also in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was neither loaded nor edited; that copy corrects again once the user runs ` + cliCommand("trust") + ", so tell them to review the file first."
         );
       }
       return textResult({
-        canonical,
+        canonical: name,
         removed,
         ...from ? { path: from.path } : {},
         ...after.length > 0 ? { stillIn: after } : {},

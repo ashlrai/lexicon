@@ -544,6 +544,9 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     return 1;
   }
   const from = removed ? (scope ? holders.find((h) => h.scope === scope) : holders[0]) : undefined;
+  // The spelling the file held, not the one typed: `lexicon remove yod` removes "Yod".
+  const fromFile = from && loaded ? (from.scope === 'project' ? loaded.project : loaded.global) : undefined;
+  const removedName = fromFile?.lexicon.terms.find((t) => spellingKey(t.canonical) === spellingKey(canonical))?.canonical ?? canonical;
   const stillIn = removed ? holders.filter((h) => h !== from) : [];
   const other = scope ? holders.find((h) => h.scope !== scope) : undefined;
   // What to do about a miss, also the `nextStep` under --json: the flag for
@@ -564,7 +567,7 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     // A miss is a failure document like every other --json refusal: `ok: false` and `error` lead it;
     // a removal leads with `ok: true`.
     const failure = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ''}`, missStep);
-    line(io, JSON.stringify(removed ? jsonOk({ canonical, removed, ...extra }) : { ...failure, canonical, removed, ...extra }, null, 2));
+    line(io, JSON.stringify(removed ? jsonOk({ canonical: removedName, removed, ...extra }) : { ...failure, canonical, removed, ...extra }, null, 2));
     if (!removed) io.stderr(notFound());
     return removed ? 0 : 1;
   }
@@ -572,9 +575,9 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     io.stderr(notFound());
     return 1;
   }
-  line(io, `removed ${bold(safe(canonical))}${from ? ` from ${safeMessage(from.path)}` : ''}`);
-  for (const h of stillIn) line(io, stillInLine(canonical, h));
-  if (untrusted) line(io, untrustedLine(canonical, untrusted));
+  line(io, `removed ${bold(safe(removedName))}${from ? ` from ${safeMessage(from.path)}` : ''}`);
+  for (const h of stillIn) line(io, stillInLine(removedName, h));
+  if (untrusted) line(io, untrustedLine(removedName, untrusted));
   return 0;
 }
 
