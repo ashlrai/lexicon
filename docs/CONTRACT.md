@@ -278,7 +278,7 @@ The notes the CLI, the MCP server and the local API add when a result needs a wo
   - filters `HARVEST_STOPLIST` (README-word filter, distinct from matcher `STOPLIST` to avoid an `export *` collision in `core/index.ts`) and generic identifiers (String, Error, Component, ...).
   - **external evidence**: a name seen only as a source identifier is not proposed (source still counts towards one that is named in a manifest, a README sentence, the git log, the directory name or as a dot-TLD brand). `symbols: true` proposes the uncorroborated ones too.
   - ranks by count, returns candidates with `suggestedAliases` from suggest.ts, minus the ones that would invent a word boundary: an `identifier` gets none, and a canonical with no separator of its own (`LexiconBar`) keeps only the single-word suggestions, while one that has a separator (`Ashlr.AI`, `pasture-notes`) keeps them all.
-  - never reads node_modules/dist/.git/vendor/build (plus `opts.ignore`); caps file size 512 KB; caps files scanned 5000.
+  - never reads node_modules/dist/.git/vendor/build (plus `opts.ignore`); caps file size 512 KB; caps files scanned 5000. In a git work tree it reads only the files `git ls-files --cached --others --exclude-standard` lists (so nothing a `.gitignore`, `.git/info/exclude` or the global excludes leave out), regular files only, under the same filters; outside one, when git is missing or slow, or when git lists nothing, it walks the directory.
 
 ## src/core/importers/index.ts
 Pure, no IO.

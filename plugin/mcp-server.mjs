@@ -57360,7 +57360,7 @@ async function harvestRepo(root, opts = {}) {
       bump3(author, "person", "harvest:git", "git log", 1, true);
     }
   }
-  const { files } = walk(absRoot, ignore2);
+  const { files } = gitFiles(absRoot, ignore2) ?? walk(absRoot, ignore2);
   for (const file2 of files) {
     const rel = import_node_path6.default.relative(absRoot, file2) || import_node_path6.default.basename(file2);
     const base = import_node_path6.default.basename(file2);
@@ -57450,6 +57450,38 @@ function walk(root, ignore2) {
     }
   }
   return { files, truncated };
+}
+function gitFiles(root, ignore2) {
+  let out;
+  try {
+    out = (0, import_node_child_process.execFileSync)("git", ["-C", root, "ls-files", "-z", "--cached", "--others", "--exclude-standard"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 5e3,
+      maxBuffer: 64 * 1024 * 1024
+    });
+  } catch {
+    return void 0;
+  }
+  const rels = [...new Set(out.split("\0").filter((r) => r !== ""))].sort(compareText);
+  if (rels.length === 0) return void 0;
+  const files = [];
+  for (const rel of rels) {
+    const parts = rel.split("/");
+    if (parts.slice(0, -1).some((dir) => ignore2.has(dir))) continue;
+    if (!READ_EXTENSIONS.has(import_node_path6.default.extname(rel).toLowerCase())) continue;
+    const full = import_node_path6.default.join(root, ...parts);
+    let st;
+    try {
+      st = import_node_fs6.default.lstatSync(full);
+    } catch {
+      continue;
+    }
+    if (!st.isFile()) continue;
+    files.push(full);
+    if (files.length >= MAX_FILES) return { files, truncated: true };
+  }
+  return { files, truncated: false };
 }
 function readText(file2) {
   try {

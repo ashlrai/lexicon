@@ -27,6 +27,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon harvest` (and setup's harvest step and `lexicon suggest --harvest`) honors `.gitignore`. It skipped only a fixed list of directories, so a repo's ignored build output (`out/`, a generated client) was scanned and its names proposed. In a git work tree it now reads the files `git ls-files --cached --others --exclude-standard` lists; outside one it walks the directory as before.
 - `suggest_canonical` (and `suggestCanonicalFor`) compares spellings in NFC: a name with a decomposed accent, as pasted from a macOS file name, scored 0.9 against the canonical it spells exactly instead of 1.
 - `lexicon stats`, `suggest_canonical`, `lexicon harvest` and `lexicon suggest` broke ties in the user's locale, so under `LC_ALL=sv_SE.UTF-8` `Äpple` came after `Zeta` and the same lexicon listed in another order (a harvest that reached its 5000 file cap even scanned other files). They now use the fixed order the exports use.
 - The spellings `lexicon add`, `lexicon learn`, setup and `GET /aliases` guess for a new name no longer include a single everyday word, which was then rewritten wherever it was said: `Entire.io` got the alias `Entire` and `Flyy` got `Fly`, so "birds fly over the entire field" came out as "birds Flyy over the Entire.io field". An acronym's pronounced form (`SaaS` -> `sass`) is kept, since that is what speech-to-text writes for it.
