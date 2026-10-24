@@ -790,7 +790,10 @@ async function installText(
       ...(deps.cliDir ? { cliDir: deps.cliDir } : {}),
       // A project-scope install writes the repo's .claude/settings.json (see
       // claudeSettingsPathFor), whatever the home directory.
-      ...(opts.home && !project ? { settingsPath: path.join(claudeConfigDir(process.env, home), 'settings.json') } : {}),
+      // `env`, the environment this install was given, not process.env, as
+      // uninstall reads it: a CLAUDE_CONFIG_DIR only the process had sent the
+      // hooks to a file the given environment (and uninstall) never names.
+      ...(opts.home && !project ? { settingsPath: path.join(claudeConfigDir(env, home), 'settings.json') } : {}),
       ...(deps.onWritten ? { onWritten: deps.onWritten } : {}),
       ...(deps.exec ? { exec: deps.exec } : {}),
       env,
@@ -881,7 +884,7 @@ export interface InstallClaudeDeps {
   exec?: (file: string, args: readonly string[]) => string;
   /** Called once per config file touched under `--apply` (setup uses it for its summary). */
   onWritten?: (file: string, outcome: InstallOutcome) => void;
-  /** Environment whose LEXICON_PATH / LEXICON_CWD are passed to `claude mcp add -e`. Default process.env. */
+  /** Environment whose LEXICON_PATH / LEXICON_CWD are passed to `claude mcp add -e`, and whose CLAUDE_CONFIG_DIR locates the user settings.json. Default process.env. */
   env?: NodeJS.ProcessEnv;
   /** Claude's plugin registry. Default `plugins/installed_plugins.json` beside `settingsPath`. */
   installedPluginsPath?: string;
@@ -921,7 +924,7 @@ export async function runInstallClaude(
   if (scope !== 'user' && scope !== 'project') {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
-  const settingsPath = deps.settingsPath ?? claudeSettingsPathFor(scope, path.resolve(opts.cwd ?? process.cwd()));
+  const settingsPath = deps.settingsPath ?? claudeSettingsPathFor(scope, path.resolve(opts.cwd ?? process.cwd()), deps.env ?? process.env);
   // The plugin already runs the MCP server and both hooks for every session.
   // A user-scope registration on top of it doubled the hook notes on every
   // prompt and added a second `lexicon` server (setup_lexicon from a plugin

@@ -787,6 +787,26 @@ describe('install claude --scope project writes the repo hooks', () => {
     expect(io.out).toContain(`in ${projectSettings} (this run created the file, so deleting it undoes step 2)`);
   });
 
+  // Catches: the hooks' settings.json was found through process.env's
+  // CLAUDE_CONFIG_DIR, not the environment the install was given (which
+  // uninstall uses), so the two named different files.
+  it('finds settings.json through the environment it was given, as uninstall does', async () => {
+    const elsewhere = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-install-elsewhere-'));
+    const given = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-install-given-'));
+    vi.stubEnv('CLAUDE_CONFIG_DIR', elsewhere);
+    try {
+      await runInstall('claude', { apply: true, home, cwd }, makeIO(), { cliDir: CLI_DIR, env: { PATH: '' }, exec: () => 'Added' });
+      expect(Object.keys((await readJson(path.join(home, '.claude', 'settings.json'))).hooks as object)).toContain('UserPromptSubmit');
+      await runInstall('claude', { apply: true, cwd }, makeIO(), { cliDir: CLI_DIR, env: { PATH: '', CLAUDE_CONFIG_DIR: given }, exec: () => 'Added' });
+      expect(Object.keys((await readJson(path.join(given, 'settings.json'))).hooks as object)).toContain('UserPromptSubmit');
+      expect(await fs.readdir(elsewhere)).toEqual([]);
+    } finally {
+      vi.unstubAllEnvs();
+      await fs.rm(elsewhere, { recursive: true, force: true });
+      await fs.rm(given, { recursive: true, force: true });
+    }
+  });
+
   it('a user-scope install still uses the home settings.json', async () => {
     const io = makeIO();
     await runInstall('claude', { apply: true, home, cwd }, io, { cliDir: CLI_DIR, env: { PATH: '' }, exec: () => 'Added' });

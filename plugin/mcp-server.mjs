@@ -64957,7 +64957,10 @@ async function installText(client, opts, io, deps) {
       ...deps.cliDir ? { cliDir: deps.cliDir } : {},
       // A project-scope install writes the repo's .claude/settings.json (see
       // claudeSettingsPathFor), whatever the home directory.
-      ...opts.home && !project ? { settingsPath: import_node_path19.default.join(claudeConfigDir(process.env, home), "settings.json") } : {},
+      // `env`, the environment this install was given, not process.env, as
+      // uninstall reads it: a CLAUDE_CONFIG_DIR only the process had sent the
+      // hooks to a file the given environment (and uninstall) never names.
+      ...opts.home && !project ? { settingsPath: import_node_path19.default.join(claudeConfigDir(env, home), "settings.json") } : {},
       ...deps.onWritten ? { onWritten: deps.onWritten } : {},
       ...deps.exec ? { exec: deps.exec } : {},
       env
@@ -65011,7 +65014,7 @@ async function runInstallClaude(opts, io, deps = {}) {
   if (scope !== "user" && scope !== "project") {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
-  const settingsPath = deps.settingsPath ?? claudeSettingsPathFor(scope, import_node_path19.default.resolve(opts.cwd ?? process.cwd()));
+  const settingsPath = deps.settingsPath ?? claudeSettingsPathFor(scope, import_node_path19.default.resolve(opts.cwd ?? process.cwd()), deps.env ?? process.env);
   if (scope === "user") {
     const pluginId = await installedLexiconPlugin(
       settingsPath,
