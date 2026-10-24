@@ -198,23 +198,17 @@ function parseCategoryLoose(value: string): TermCategory | undefined {
 }
 
 /**
- * Read all of stdin as UTF-8. With `maxBytes` the read is abandoned (and an
- * Error thrown) as soon as more than that has arrived, so a runaway pipe
- * cannot be buffered whole before the caller gets to refuse it.
+ * Read all of stdin as UTF-8. Unbounded on purpose: `lexicon normalize` is a
+ * filter whose stdout round-trips the whole input, so there is no size it
+ * could refuse without breaking `cat notes.md | lexicon normalize`.
  */
-export async function readStdin(maxBytes?: number): Promise<string> {
+export async function readStdin(): Promise<string> {
   if (process.stdin.isTTY) {
     process.stderr.write('lexicon: reading text from stdin (press ctrl-D to finish)\n');
   }
   const chunks: Buffer[] = [];
-  let total = 0;
   for await (const chunk of process.stdin) {
-    const buf = typeof chunk === 'string' ? Buffer.from(chunk) : chunk;
-    total += buf.length;
-    if (maxBytes !== undefined && total > maxBytes) {
-      throw new Error(`stdin exceeds the ${maxBytes} byte limit`);
-    }
-    chunks.push(buf);
+    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
   }
   return Buffer.concat(chunks).toString('utf8');
 }
