@@ -4,7 +4,7 @@ import { siteRows } from './adapters.js';
 import { sendToBackground } from './chrome-store.js';
 import { setMessage } from './rich-text.js';
 import { parseLexicon, parseYaml } from './core.js';
-import { ANY_SITE_DENIED_MESSAGE, coerceHostList, coerceSettings, connectionTestLine, countOf, errorMessage, extensionRequestFailedLine, pairPortOrigins, pairUrl, PAIR_PORT_DENIED_MESSAGE, syncedLine, STORAGE_KEYS, withConnection, yamlBoxAfterChange } from './shared.js';
+import { ANY_SITE_DENIED_MESSAGE, coerceHostList, coerceSettings, connectionTestLine, countOf, errorMessage, extensionRequestFailedLine, pairPortOrigins, pairUrl, PAIR_PORT_DENIED_MESSAGE, sitesAfterChange, syncedLine, STORAGE_KEYS, withConnection, yamlBoxAfterChange } from './shared.js';
 import type { Failure, PairPortReply, Settings, StatusReply, SyncReply } from './shared.js';
 import defaultYaml from '../../examples/lexicon.example.yaml';
 
@@ -267,6 +267,12 @@ chrome.storage.onChanged.addListener((changes, area) => {
     ui.yaml.value = yamlBoxAfterChange(ui.yaml.value, settings.yaml, next.yaml);
     settings.yaml = next.yaml;
     validateYaml();
+  }
+  // A site the popup paused or resumed: follow it, keeping this page's unsaved switches, so Save does not undo it.
+  const sites = sitesAfterChange(settings.sites, coerceSettings(changes[STORAGE_KEYS.settings].oldValue, defaultYaml).sites, next.sites);
+  if (JSON.stringify(sites) !== JSON.stringify(settings.sites)) {
+    settings.sites = sites;
+    renderSites();
   }
   if (next.token === settings.token && next.baseUrl === settings.baseUrl && next.mode === settings.mode) return;
   settings = { ...settings, token: next.token, baseUrl: next.baseUrl, mode: next.mode };

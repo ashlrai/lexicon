@@ -22,7 +22,7 @@ import { ANY_SITE_SCRIPT_ID, setAnySite } from '../extension/src/any-site.js';
 import type { AnySiteApi, AnySiteScript } from '../extension/src/any-site.js';
 import { prunePairPorts, registerPairPort } from '../extension/src/pair-port.js';
 import type { PairPortApi } from '../extension/src/pair-port.js';
-import { ANY_SITE_DENIED_MESSAGE, STORAGE_KEYS, API_MAX_BODY_BYTES, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META, withConnection, withSiteSwitch, yamlBoxAfterChange } from '../extension/src/shared.js';
+import { ANY_SITE_DENIED_MESSAGE, STORAGE_KEYS, API_MAX_BODY_BYTES, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, sitesAfterChange, syncedLine, PAIR_META, withConnection, withSiteSwitch, yamlBoxAfterChange } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 import { setMessage } from '../extension/src/rich-text.js';
@@ -1789,6 +1789,25 @@ describe('popup and Options write only what they change', () => {
       expect(handler(id)).toContain('await saveConnection();');
       expect(handler(id)).not.toMatch(/await save\(\)/);
     }
+  });
+
+  // Catches: Options followed only the YAML and the connection fields, so a
+  // site the popup paused while Options was open was resumed by its Save.
+  it('the Options site switches follow a switch changed elsewhere and keep their unsaved edits', () => {
+    const current = { 'claude.ai': false, 'grok.com': true };
+    // The popup paused chatgpt.com and resumed claude.ai; grok.com is this page's own unsaved edit.
+    expect(sitesAfterChange(current, { 'claude.ai': false }, { 'chatgpt.com': false, 'claude.ai': true })).toEqual({
+      'claude.ai': true,
+      'grok.com': true,
+      'chatgpt.com': false,
+    });
+    // A switch removed from storage is removed here too; one that did not change is left as the page has it.
+    expect(sitesAfterChange({ 'x.com': false, 'grok.com': true }, { 'x.com': false, 'grok.com': false }, { 'grok.com': false })).toEqual({ 'grok.com': true });
+    expect(sitesAfterChange(current, {}, {})).toEqual(current);
+    const options = readFileSync(resolve(process.cwd(), 'extension/src/options.ts'), 'utf8');
+    const listener = options.slice(options.indexOf('chrome.storage.onChanged.addListener'));
+    expect(listener).toMatch(/sitesAfterChange\(settings\.sites, coerceSettings\(changes\[STORAGE_KEYS\.settings\]\.oldValue/);
+    expect(listener).toContain('renderSites();');
   });
 
   it('the Options YAML box follows a YAML changed elsewhere unless it holds an unsaved edit', () => {

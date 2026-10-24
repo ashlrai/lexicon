@@ -275,6 +275,24 @@ export function yamlBoxAfterChange(box: string, loaded: string, stored: string):
   return box === loaded ? stored : box;
 }
 
+/**
+ * The Options page's site switches after the stored ones changed elsewhere
+ * (the popup paused or resumed a site): each host whose stored switch went
+ * from `previous` to something else in `next` takes the stored value, and
+ * every other host keeps `current`, the page's own switches, unsaved edits
+ * included. Options only followed the YAML and connection fields, so its
+ * Save wrote back the switches it had loaded and undid the popup's.
+ */
+export function sitesAfterChange(current: Readonly<Record<string, boolean>>, previous: Readonly<Record<string, boolean>>, next: Readonly<Record<string, boolean>>): Record<string, boolean> {
+  const out = { ...current };
+  for (const host of new Set([...Object.keys(previous), ...Object.keys(next)])) {
+    if (previous[host] === next[host]) continue;
+    if (Object.hasOwn(next, host)) out[host] = next[host] as boolean;
+    else delete out[host];
+  }
+  return out;
+}
+
 /** `www.perplexity.ai` and `perplexity.ai` share one switch. */
 export function hostKey(hostname: string): string {
   return hostname.toLowerCase().replace(/^www\./, '');
