@@ -20,7 +20,8 @@ import type { Command } from 'commander';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord, readJsonFile, writeJsonFile } from '../util/json.js';
 import { homeDir, xdgConfigHome } from '../util/xdg.js';
-import { CliRefusal, bold, dim, green, indent, jsonError, line, red, safe, safeLines, safeMessage, yellow } from './io.js';
+import { posixShellWord, powerShellWord } from '../core/index.js';
+import { CliRefusal, bold, dim, green, indent, jsonError, line, red, safe, safeLines, safeMessage, shownCommand, yellow } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   HOOK_EVENTS,
@@ -523,7 +524,7 @@ export async function explainWrite(file: string, write: () => Promise<void>): Pr
     if (code !== 'EACCES' && code !== 'EPERM' && code !== 'EROFS') throw err;
     throw new CliRefusal(
       `could not write ${safe(file)} (${code}): it is read-only or not yours; nothing was changed`,
-      `make it writable (ls -l ${shellWord(file)} shows who owns it; chmod u+w ${shellWord(file)}) and run this again, or add the entry shown above to it by hand`,
+      `make it writable (ls -l ${posixShellWord(file)} shows who owns it; chmod u+w ${posixShellWord(file)}) and run this again, or add the entry shown above to it by hand`,
     );
   }
 }
@@ -604,11 +605,6 @@ function jsonSnippet(key: 'mcpServers' | 'servers', entry: StdioServerEntry | Vs
   return JSON.stringify({ [key]: { lexicon: entry } }, null, 2);
 }
 
-/** Quote one word of a printed command for a POSIX shell, only when it needs it. */
-export function shellWord(s: string): string {
-  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
-}
-
 /**
  * The command a preview names to write what it showed: `lexicon install
  * <client>` with the flags this run was given (`--cwd`, `--scope` or
@@ -623,7 +619,7 @@ export function installApplyCommand(client: InstallClient, opts: InstallOptions)
   else if (opts.project) words.push('--project');
   if (opts.home) words.push('--home', opts.home);
   words.push('--apply');
-  return safe(words.map(shellWord).join(' '));
+  return shownCommand(words);
 }
 
 /** How to take the lexicon entry back out of a client's config file by hand. */
@@ -1099,12 +1095,14 @@ function refreshClaudeRegistration(
 /**
  * Quote one argument of the printed `claude mcp add ...` line.
  *
- * Windows takes the same branch as launchCommandLine and for the same reason:
- * a backslash there is the path separator, not an escape, so doubling it
- * prints a command that the user copies and that then does not work. A
- * Windows filename cannot hold a `"`, so quoting needs no escaping at all.
+ * Windows quotes as PowerShell does (`powerShellWord`), like every other
+ * command lexicon prints there: a backslash is the path separator, not an
+ * escape, so a path stays bare, and a quoted one is single-quoted so a `$`
+ * in a directory name is not read as a variable. The hook command in
+ * settings.json is not typed into a terminal and keeps launchCommandLine's
+ * double quotes.
  */
 function quoteArg(s: string, platform: NodeJS.Platform = process.platform): string {
-  if (platform === 'win32') return /[\s"]/.test(s) || path.win32.isAbsolute(s) ? `"${s.replace(/"/g, '')}"` : s;
+  if (platform === 'win32') return powerShellWord(s);
   return /[\s"'$`\\]/.test(s) ? `"${s.replace(/(["\\$`])/g, '\\$1')}"` : s;
 }

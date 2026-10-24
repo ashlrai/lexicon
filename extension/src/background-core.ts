@@ -12,11 +12,15 @@ import {
   errorMessage,
   FETCH_TIMEOUT_MS,
   HEALTH_TTL_MS,
+  LEXICON_TIMEOUT_MS,
   pairableBaseUrl,
   pairPortOrigins,
   RECENT_LIMIT,
   STORAGE_KEYS,
+  TOKEN_BACKOFF_MAX_MS,
+  TOKEN_BACKOFF_MS,
   TOKEN_RE,
+  WRITE_TIMEOUT_MS,
 } from './shared.js';
 import type {
   Correction,
@@ -62,8 +66,19 @@ export interface Background {
 
 interface HealthCache {
   at: number;
+  /** The base URL probed: a cache for another URL (Options writes storage directly) is not reused. */
+  baseUrl: string;
   health: ServerHealth | null;
   error?: string;
+}
+
+/** A token the server answered 401 to, at that base URL: not sent again before `until`. */
+interface Rejection {
+  baseUrl: string;
+  token: string;
+  until: number;
+  delayMs: number;
+  message: string;
 }
 
 interface ApiNormalize {
@@ -128,6 +143,23 @@ export function tooLargeForApiMessage(bytes: number): string {
   return `the text is ${bytes} bytes as a request, over the 1 MB lexicon serve accepts, so the embedded lexicon checked it`;
 }
 
+/**
+ * A /health body with lexicon serve's shape (src/serve/server.ts
+ * HealthResponse): a boolean `ok`, a non-empty `version` string and a
+ * whole-number `terms`. Any `{ ok: true }` used to count, so another program
+ * on the port read as the server and every correction was posted to it.
+ */
+export function isLexiconHealth(raw: unknown): raw is { ok: boolean; version: string; terms: number } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const r = raw as { ok?: unknown; version?: unknown; terms?: unknown };
+  return typeof r.ok === 'boolean' && typeof r.version === 'string' && r.version.length > 0 && Number.isInteger(r.terms) && (r.terms as number) >= 0;
+}
+
+/** What status and a fallback say when something other than lexicon serve answers /health. */
+export function foreignHealthMessage(baseUrl: string): string {
+  return `something answered ${baseUrl}/health, but not as lexicon serve does; another program may hold the port. Run \`lexicon serve --status\` to check, or point Options at the port lexicon serve uses`;
+}
+
 /** What a request that never reached the server says: where it went and how to start the server. */
 export function unreachableMessage(baseUrl: string): string {
   return `cannot reach lexicon serve at ${baseUrl}; start it with \`lexicon serve\` (or \`lexicon serve --install\` to start it at login)`;
@@ -149,6 +181,18 @@ export function createBackground(deps: BackgroundDeps): Background {
   const now = deps.now ?? (() => Date.now());
   const embedded = createEmbedded(deps.defaultYaml);
   let healthCache: HealthCache | null = null;
+  let rejection: Rejection | null = null;
+
+  /** The backoff for these settings' token and base URL, or null (another token or URL is never held back). */
+  function rejectionFor(settings: Settings): Rejection | null {
+    return rejection && rejection.baseUrl === settings.baseUrl && rejection.token === settings.token ? rejection : null;
+  }
+
+  /** The backoff when it still holds at this moment. */
+  function activeRejection(settings: Settings): Rejection | null {
+    const r = rejectionFor(settings);
+    return r && now() < r.until ? r : null;
+  }
 
   async function getSettings(): Promise<Settings> {
     const raw = await deps.store.get([STORAGE_KEYS.settings]);
@@ -159,7 +203,10 @@ export function createBackground(deps: BackgroundDeps): Background {
     const current = await getSettings();
     const next = coerceSettings({ ...current, ...patch }, deps.defaultYaml);
     await deps.store.set({ [STORAGE_KEYS.settings]: next });
-    if (patch.baseUrl !== undefined || patch.token !== undefined) healthCache = null;
+    if (patch.baseUrl !== undefined || patch.token !== undefined) {
+      healthCache = null;
+      rejection = null;
+    }
     return next;
   }
 
@@ -176,21 +223,36 @@ export function createBackground(deps: BackgroundDeps): Background {
     await deps.store.set({ [STORAGE_KEYS.recent]: next });
   }
 
-  async function fetchJson(settings: Settings, path: string, init: RequestInit & { auth?: boolean } = {}): Promise<unknown> {
+  /**
+   * `probe` sends a bearer request even while the token is backed off
+   * (Options > Test connection); every other bearer request with a token the
+   * server rejected waits out the backoff without touching the network.
+   */
+  async function fetchJson(
+    settings: Settings,
+    path: string,
+    opts: RequestInit & { auth?: boolean; probe?: boolean; timeoutMs?: number } = {},
+  ): Promise<unknown> {
+    const { auth, probe, timeoutMs = FETCH_TIMEOUT_MS, ...init } = opts;
     const ctrl = new AbortController();
-    const timer = setTimeout(() => ctrl.abort(), FETCH_TIMEOUT_MS);
+    const timer = setTimeout(() => ctrl.abort(), timeoutMs);
     try {
       const headers: Record<string, string> = { Accept: 'application/json' };
       if (init.body !== undefined) headers['Content-Type'] = 'application/json';
-      if (init.auth !== false) {
+      if (auth !== false) {
         if (!settings.token) throw new Error(NO_TOKEN_MESSAGE);
         if (!/^[\x21-\x7e]+$/.test(settings.token)) throw new TokenRejectedError(MALFORMED_TOKEN_MESSAGE);
+        const held = activeRejection(settings);
+        if (held && !probe) throw new TokenRejectedError(held.message);
         headers.Authorization = `Bearer ${settings.token}`;
       }
       let res: Response;
       try {
         res = await deps.fetch(`${settings.baseUrl}${path}`, { ...init, headers, signal: ctrl.signal });
       } catch (err) {
+        // Nothing answered: whatever /health said earlier no longer holds, so
+        // the next request probes again instead of trusting the cache.
+        healthCache = null;
         // A refused connection is a bare TypeError ("Failed to fetch" in
         // Chromium, "NetworkError when attempting to fetch resource." in
         // Firefox), which the popup, Test connection and Sync showed as is.
@@ -200,14 +262,30 @@ export function createBackground(deps: BackgroundDeps): Background {
       // Only 401 means the token. The server also answers 403 for an untrusted
       // project lexicon and 400 for bad input, each with an `{ error }` body
       // that says what to fix, so pass that through instead of a bare status.
-      if (res.status === 401) throw new TokenRejectedError();
+      // A 401 or 403 can mean the server restarted with another token or
+      // another lexicon: drop the cached /health so the next request asks.
+      if (res.status === 401 || res.status === 403) healthCache = null;
+      if (res.status === 401) {
+        const err = new TokenRejectedError();
+        if (auth !== false) {
+          // Back off: every normalize sent the rejected token again.
+          const prev = rejectionFor(settings);
+          const delayMs = prev ? Math.min(prev.delayMs * 2, TOKEN_BACKOFF_MAX_MS) : TOKEN_BACKOFF_MS;
+          rejection = { baseUrl: settings.baseUrl, token: settings.token, until: now() + delayMs, delayMs, message: err.message };
+        }
+        throw err;
+      }
+      if (auth !== false && res.ok && rejectionFor(settings)) rejection = null;
       if (!res.ok) {
         const detail = await apiErrorDetail(res, settings.token);
         throw new Error(detail ? `API ${path}: ${detail}` : `API ${path} returned HTTP ${res.status}; ${SERVE_STATUS_STEP}`);
       }
       return (await res.json()) as unknown;
     } catch (err) {
-      if ((err as { name?: string }).name === 'AbortError') throw new Error(`API ${path} timed out after ${FETCH_TIMEOUT_MS} ms; ${SERVE_STATUS_STEP}`);
+      if ((err as { name?: string }).name === 'AbortError') {
+        healthCache = null;
+        throw new Error(`API ${path} timed out after ${timeoutMs} ms; ${SERVE_STATUS_STEP}`);
+      }
       throw err;
     } finally {
       clearTimeout(timer);
@@ -215,17 +293,17 @@ export function createBackground(deps: BackgroundDeps): Background {
   }
 
   async function health(settings: Settings, force = false): Promise<HealthCache> {
-    if (!force && healthCache && now() - healthCache.at < HEALTH_TTL_MS) return healthCache;
+    if (!force && healthCache && healthCache.baseUrl === settings.baseUrl && now() - healthCache.at < HEALTH_TTL_MS) return healthCache;
     try {
-      const raw = (await fetchJson(settings, '/health', { auth: false })) as Partial<ServerHealth>;
-      const h: ServerHealth = {
-        ok: raw.ok === true,
-        version: typeof raw.version === 'string' ? raw.version : '?',
-        terms: typeof raw.terms === 'number' ? raw.terms : 0,
-      };
-      healthCache = { at: now(), health: h.ok ? h : null, error: h.ok ? undefined : `server reports not ok; ${SERVE_STATUS_STEP}` };
+      const raw = (await fetchJson(settings, '/health', { auth: false })) as unknown;
+      if (!isLexiconHealth(raw)) {
+        healthCache = { at: now(), baseUrl: settings.baseUrl, health: null, error: foreignHealthMessage(settings.baseUrl) };
+        return healthCache;
+      }
+      const h: ServerHealth = { ok: raw.ok === true, version: raw.version, terms: raw.terms };
+      healthCache = { at: now(), baseUrl: settings.baseUrl, health: h.ok ? h : null, error: h.ok ? undefined : `server reports not ok; ${SERVE_STATUS_STEP}` };
     } catch (err) {
-      healthCache = { at: now(), health: null, error: errorMessage(err) };
+      healthCache = { at: now(), baseUrl: settings.baseUrl, health: null, error: errorMessage(err) };
     }
     return healthCache;
   }
@@ -273,8 +351,12 @@ export function createBackground(deps: BackgroundDeps): Background {
       const h = await health(settings);
       const body = JSON.stringify(dryRun ? { text, dryRun: true } : { text });
       const bytes = new TextEncoder().encode(body).length;
+      const held = activeRejection(settings);
       if (!h.health) {
         reply = embeddedNormalize(settings, text, dryRun, h.error ?? 'local API unreachable');
+      } else if (held) {
+        // The token was rejected: wait out the backoff, keeping the health cache.
+        reply = embeddedNormalize(settings, text, dryRun, held.message);
       } else if (bytes > API_MAX_BODY_BYTES) {
         // A known 413: the server is fine, so the health cache stays.
         reply = embeddedNormalize(settings, text, dryRun, tooLargeForApiMessage(bytes));
@@ -291,9 +373,12 @@ export function createBackground(deps: BackgroundDeps): Background {
     return reply;
   }
 
-  async function statusReq(): Promise<StatusReply> {
+  async function statusReq(probe: boolean): Promise<StatusReply> {
     const settings = await getSettings();
-    const h = settings.mode === 'api' ? await health(settings, true) : await health(settings);
+    // The Embedded mode uses no server, so the popup does not probe one;
+    // Test connection (`probe`) still asks, since that is what it is for.
+    const h: Pick<HealthCache, 'health' | 'error'> =
+      settings.mode === 'api' || probe ? await health(settings, true) : { health: null };
     // /health needs no token, so a reachable server says nothing about the
     // stored one. Prove it on a bearer route, or "Test connection" reports
     // Connected while every /normalize falls back with a 401.
@@ -306,7 +391,7 @@ export function createBackground(deps: BackgroundDeps): Background {
     let apiError: string | undefined;
     if (settings.mode === 'api' && h.health && settings.token) {
       try {
-        await fetchJson(settings, '/stats');
+        await fetchJson(settings, '/stats', { probe });
       } catch (err) {
         if (err instanceof TokenRejectedError) tokenError = err.message;
         else apiError = errorMessage(err);
@@ -316,6 +401,7 @@ export function createBackground(deps: BackgroundDeps): Background {
     // route without one), so the popup must not read "Local API" then either.
     const activeMode: Mode = settings.mode === 'api' && h.health && settings.token && !tokenError && !apiError ? 'api' : 'embedded';
     const embeddedError = embedded.load(settings.yaml);
+    const held = tokenError !== undefined ? activeRejection(settings) : null;
     return {
       ok: true,
       configuredMode: settings.mode,
@@ -324,6 +410,7 @@ export function createBackground(deps: BackgroundDeps): Background {
       serverError: h.error,
       tokenSet: settings.token.length > 0,
       ...(tokenError !== undefined ? { tokenError } : {}),
+      ...(held ? { tokenRetryAt: held.until } : {}),
       ...(apiError !== undefined ? { apiError } : {}),
       embeddedTerms: embedded.termCount(),
       embeddedError: embeddedError ?? undefined,
@@ -353,7 +440,7 @@ export function createBackground(deps: BackgroundDeps): Background {
     if (useApi && skipped === undefined) {
       try {
         // Server reply: { term, created, aliasAdded, path, conflict?, untrustedProject? } (src/serve/server.ts LearnResponse).
-        const raw = (await fetchJson(settings, '/learn', { method: 'POST', body: JSON.stringify({ heard, meant }) })) as {
+        const raw = (await fetchJson(settings, '/learn', { method: 'POST', body: JSON.stringify({ heard, meant }), timeoutMs: WRITE_TIMEOUT_MS })) as {
           term?: { canonical?: string };
           created?: boolean;
           aliasAdded?: boolean;
@@ -388,7 +475,7 @@ export function createBackground(deps: BackgroundDeps): Background {
   async function syncReq(): Promise<SyncReply | Failure> {
     const settings = await getSettings();
     try {
-      const raw = (await fetchJson(settings, '/lexicon')) as { lexicon?: unknown; skippedProject?: unknown; projectTrust?: unknown } | null;
+      const raw = (await fetchJson(settings, '/lexicon', { timeoutMs: LEXICON_TIMEOUT_MS })) as { lexicon?: unknown; skippedProject?: unknown; projectTrust?: unknown } | null;
       const body = raw?.lexicon;
       if (!body || typeof body !== 'object' || !Array.isArray((body as { terms?: unknown }).terms)) return { ok: false, error: LEXICON_SHAPE_MESSAGE };
       const lexicon = parseLexicon(body);
@@ -449,7 +536,7 @@ export function createBackground(deps: BackgroundDeps): Background {
       case 'normalize':
         return normalizeReq(req.text, req.dryRun === true);
       case 'status':
-        return statusReq();
+        return statusReq(req.probe === true);
       case 'learn':
         return learnReq(String(req.heard ?? ''), String(req.meant ?? ''));
       case 'sync':

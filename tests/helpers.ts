@@ -61,3 +61,12 @@ export function scripted(answers: Answer[]): Prompter & { asked: string[]; close
   };
   return fake;
 }
+
+/**
+ * `s` single-quoted as a printed command quotes a word that needs it, written
+ * out for each platform rather than through the code's own helper: POSIX
+ * (`'` as `'\''`), or on Windows PowerShell (`'` doubled).
+ */
+export function quotedForShell(s: string): string {
+  return process.platform === 'win32' ? `'${s.replace(/'/g, "''")}'` : `'${s.replace(/'/g, `'\\''`)}'`;
+}

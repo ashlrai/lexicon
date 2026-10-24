@@ -41,10 +41,9 @@ import {
 } from '../core/index.js';
 import { findRegistryRecordMismatch, loadLexicon, registryRecordMismatch } from '../core/index.js';
 import type { InstallPackResult, RegistryDeps, RegistryRecordMismatch, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
-import { CliRefusal, PACK_NOT_FOUND_NEXT_STEP, bold, dim, exampleAfterMissingArgument, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, safeMessage, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
+import { CliRefusal, PACK_NOT_FOUND_NEXT_STEP, bold, dim, exampleAfterMissingArgument, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, shownCommand, safeMessage, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
-import { shellWord } from './cmd-install.js';
 import { createPrompter, isInteractive } from './prompt.js';
 import type { Prompter } from './prompt.js';
 
@@ -335,7 +334,7 @@ function yesCommand(sub: 'add' | 'update', ref: string, opts: PackRegistryCliOpt
   if (opts.registry) words.push('--registry', opts.registry);
   if (opts.project) words.push('--project');
   words.push('--yes');
-  return safe(words.map(shellWord).join(' '));
+  return shownCommand(words);
 }
 
 /** The answer to a community write: yes, no at the question, or no terminal to ask on. */

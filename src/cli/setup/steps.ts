@@ -33,6 +33,7 @@ import type {
   TermCategory,
 } from '../../core/index.js';
 import { errorMessage } from '../../util/errors.js';
+import { writeFileAtomic } from '../../util/atomic.js';
 import { bold, dim, plural, renderTable, safe, safeLines, tildify } from '../io.js';
 import type { IO } from '../io.js';
 import { runInstall } from '../cmd-install.js';
@@ -726,8 +727,8 @@ export async function stepExport(ctx: Ctx): Promise<void> {
   // The export is of the merged terms only: an untrusted project file is never parsed.
   const loaded = await loadLexicon({ cwd: ctx.cwd, parseSkipped: false });
   const text = exportLexicon(loaded.merged, format);
-  await fs.mkdir(dir, { recursive: true });
-  await fs.writeFile(file, text, 'utf8');
+  // A temp file and a rename (writeFileAtomic makes the directory too), as `lexicon export --out` writes.
+  await writeFileAtomic(file, text);
   ctx.summary.exports.push({ format, path: file });
   ctx.say(`   wrote ${safe(tildify(file, ctx.home))} (${plural(loaded.merged.terms.length, 'term')})`);
   ctx.say(`   import it in ${APP_LABELS[app].where}`);

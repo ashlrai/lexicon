@@ -9,12 +9,12 @@
  * docs/EXPORTS.md rather than switching separators for every lexicon.
  */
 import type { ExportOptions, Lexicon } from '../types.js';
-import { sortByImportance } from './shared.js';
+import { canonicalList, sortByImportance } from './shared.js';
 
 export const WHISPER_PROMPT_DEFAULT_LIMIT = 100;
 
 export function exportWhisperPrompt(lexicon: Lexicon, opts: ExportOptions = {}): string {
   const limit = opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT;
-  const terms = sortByImportance(lexicon.terms).slice(0, Math.max(0, limit));
-  return terms.map((t) => t.canonical.replace(/\s+/g, ' ').trim()).join(', ');
+  const terms = canonicalList(sortByImportance(lexicon.terms)).slice(0, Math.max(0, limit));
+  return terms.map((c) => c.canonical.replace(/\s+/g, ' ').trim()).join(', ');
 }

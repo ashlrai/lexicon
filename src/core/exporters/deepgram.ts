@@ -9,13 +9,13 @@
  * whitespace collapsed; a canonical with nothing else in it is left out.
  */
 import type { ExportOptions, Lexicon } from '../types.js';
-import { isProperNounCategory, sortByImportance } from './shared.js';
+import { canonicalList, isProperNounCategory, sortByImportance } from './shared.js';
 
 export function exportDeepgram(lexicon: Lexicon, _opts: ExportOptions = {}): string {
   const keywords: string[] = [];
-  for (const t of sortByImportance(lexicon.terms)) {
-    const keyword = t.canonical.replace(/:/g, ' ').replace(/\s+/g, ' ').trim();
-    if (keyword) keywords.push(`${keyword}:${isProperNounCategory(t.category) ? 2 : 1}`);
+  for (const { term, canonical } of canonicalList(sortByImportance(lexicon.terms))) {
+    const keyword = canonical.replace(/:/g, ' ').replace(/\s+/g, ' ').trim();
+    if (keyword) keywords.push(`${keyword}:${isProperNounCategory(term.category) ? 2 : 1}`);
   }
   return JSON.stringify({ keywords }, null, 2) + '\n';
 }

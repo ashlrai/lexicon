@@ -198,7 +198,8 @@ ui.test.addEventListener('click', () => {
   void (async () => {
     // Save the URL/token first so the background tests what is on screen.
     await saveConnection();
-    const status = await sendToBackground<StatusReply | Failure>({ type: 'status' });
+    // probe: a button press asks the server even while a rejected token is backed off.
+    const status = await sendToBackground<StatusReply | Failure>({ type: 'status', probe: true });
     if (!status.ok) {
       setMessage(ui.testResult, status.error);
       return;

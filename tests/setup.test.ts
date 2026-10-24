@@ -8,7 +8,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { Command } from 'commander';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { loadLexicon, readLexiconFile, readTrustRegistry, trustProject } from '../src/core/index.js';
+import { loadLexicon, readLexiconFile, readTrustRegistry, shellWord, trustProject } from '../src/core/index.js';
 import type { HarvestCandidate } from '../src/core/index.js';
 import {
   SETUP_CLIENTS,
@@ -16,13 +16,14 @@ import {
   parseClientList,
   registerSetupCommands,
   runSetup,
+  setupApplyCommand,
   suggestCompany,
 } from '../src/cli/cmd-setup.js';
 import type { SetupDeps, SetupOptions, SetupPlan, SetupSummary } from '../src/cli/cmd-setup.js';
 import type { InstallOptions } from '../src/cli/cmd-install.js';
 import { runServeInstall } from '../src/cli/cmd-serve.js';
 import type { ServeDeps } from '../src/cli/cmd-serve.js';
-import { makeIO, scripted } from './helpers.js';
+import { makeIO, quotedForShell, scripted } from './helpers.js';
 
 
 
@@ -716,11 +717,20 @@ describe('runSetup --dry-run', () => {
       fakes(),
     );
     expect(io.out).toContain(
-      `to apply, run: lexicon --cwd ${cwd} setup --yes --clients none --company 'Ashlr'\\''s AI' --phonetic ASH-ler --app none --no-packs --no-harvest --serve`,
+      `to apply, run: lexicon --cwd ${shellWord(cwd)} setup --yes --clients none --company ${quotedForShell("Ashlr's AI")} --phonetic ASH-ler --app none --no-packs --no-harvest --serve\n`,
     );
     // An interactive dry run names the interactive command: no --yes was given.
     const asked = await run({ dryRun: true }, fakes({ isInteractive: () => true }));
     expect(asked.io.out).toMatch(new RegExp(`to apply, run: lexicon --cwd \\S+ setup\\n`));
+  });
+
+  // Catches: the command was capped at 200 characters like any displayed
+  // text, so a long --cwd or --export-dir printed a command cut with an ellipsis.
+  it('names the whole apply command, however long the paths', () => {
+    const deep = path.join(cwd, ...Array.from({ length: 8 }, (_, i) => `a-rather-long-directory-name-${i}`));
+    const command = setupApplyCommand({ cwd: deep, yes: true, exportDir: deep, packs: false });
+    expect(command).toBe(`lexicon --cwd ${shellWord(deep)} setup --yes --export-dir ${shellWord(deep)} --no-packs`);
+    expect(command.length).toBeGreaterThan(400);
   });
 
   it('still lists the detected clients under --clients none, and serve/export stay off unless asked', async () => {

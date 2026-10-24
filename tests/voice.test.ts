@@ -311,6 +311,14 @@ function whisperCall(h: Harness): { cmd: string; args: string[] } | undefined {
   return h.execCalls.find((c) => path.basename(c.cmd) === 'whisper-cli');
 }
 
+/** The rerun step a whisper failure names: the call that ran, as commandLine quotes it for the platform the harness gives runVoice. */
+function rerunOf(h: Harness): string {
+  const call = whisperCall(h);
+  if (!call) throw new Error('whisper-cli was not run');
+  const arg = (flag: string): string => call.args[call.args.indexOf(flag) + 1] ?? '';
+  return `run${h.deps.platform === 'win32' ? ' in PowerShell' : ''} \`${commandLine([call.cmd, '-m', arg('-m'), '-f', arg('-f')], h.deps.platform ?? process.platform)}\``;
+}
+
 /**
  * A state file whose recorder is gone (pid 99999 is not in `h.alive`), holding
  * `bytes` as its capture. This is what the next hotkey press finds after the
@@ -1272,7 +1280,11 @@ describe('lexicon voice (foreground)', () => {
     expect(code).toBe(EXIT_ERROR);
     expect(h.err.join('')).toMatch(/whisper-cli exited 1: whisper: boom \(audio kept at .*\.wav\)/);
     // Catches: a non-zero whisper exit left no next step on stderr.
-    expect(h.err.join('')).toMatch(/\n {2}run `\S+ -m \S+ggml-base\.en\.bin -f \S+\.wav` to see whisper's full output; if the model file is damaged, delete /);
+    // The command is the whisper call that failed, quoted by commandLine for
+    // the platform runVoice was given. The harness says darwin, so on a
+    // Windows host the backslash paths are POSIX-quoted, which the old
+    // `\S+ -m \S+` pattern did not allow.
+    expect(h.err.join('')).toContain(`\n  ${rerunOf(h)} to see whisper's full output; if the model file is damaged, delete `);
   });
 
   // Catches: the rerun command was POSIX-quoted on Windows, which neither
@@ -1492,7 +1504,9 @@ describe('lexicon voice --json failures', () => {
     expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
     expect(String(onlyDocument(h).error)).toMatch(/^whisper-cli exited 1: whisper: boom \(audio kept at .*\.wav\)$/);
     // Catches: --json had no nextStep for a whisper-cli that ran and failed.
-    expect(String(onlyDocument(h).nextStep)).toMatch(/^run `\S+ -m \S+ -f \S+\.wav` to see whisper's full output; .*--model <name\|path>$/);
+    const nextStep = String(onlyDocument(h).nextStep);
+    expect(nextStep.startsWith(`${rerunOf(h)} to see whisper's full output; `)).toBe(true);
+    expect(nextStep).toMatch(/--model <name\|path>$/);
   });
 
   // Catches: a --model path that does not exist was found only when whisper

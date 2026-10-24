@@ -43,11 +43,10 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Command } from 'commander';
 import { LIMITS, listPacks } from '../core/index.js';
-import { bold, dim, fail, jsonError, safe, tildify } from './io.js';
+import { bold, dim, fail, jsonError, safe, shownCommand, tildify } from './io.js';
 import { errorMessage } from '../util/errors.js';
 import type { IO } from './io.js';
 import { createPrompter, isInteractive } from './prompt.js';
-import { shellWord } from './cmd-install.js';
 import { SETUP_APPS, SETUP_CLIENTS } from './setup/types.js';
 import type { Ctx, SetupDeps, SetupOptions, SetupPlan, SetupSummary } from './setup/types.js';
 import { defaultSetupExec, isSetupApp, parseClientList, parsePackList, setupHintProblem, setupNameProblem } from './setup/detect.js';
@@ -182,7 +181,7 @@ export function setupApplyCommand(opts: SetupOptions): string {
   if (opts.reseed) words.push('--reseed');
   if (opts.home) words.push('--home', opts.home);
   if (opts.json) words.push('--json');
-  return safe(words.map(shellWord).join(' '));
+  return shownCommand(words);
 }
 
 /**

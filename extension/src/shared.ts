@@ -49,7 +49,23 @@ export const LIVE_DEBOUNCE_MS = 400;
 export const PRECHECK_DEBOUNCE_MS = 250;
 export const TOAST_MS = 3000;
 export const HEALTH_TTL_MS = 10_000;
+/** Timeout for /health, /normalize and /stats: quick reads a correction waits on. */
 export const FETCH_TIMEOUT_MS = 1500;
+/**
+ * Timeout for POST /learn: the server waits up to 10 s for the lexicon file's
+ * lock (DEFAULT_LOCK_TIMEOUT_MS) before it writes, so 1.5 s gave up on a write
+ * that still went through.
+ */
+export const WRITE_TIMEOUT_MS = 15_000;
+/** Timeout for GET /lexicon (Sync), which sends the whole lexicon. */
+export const LEXICON_TIMEOUT_MS = 10_000;
+/**
+ * After the server answers 401 to the stored token, no bearer request is sent
+ * with that token (and base URL) for this long; each further 401 doubles it,
+ * up to TOKEN_BACKOFF_MAX_MS. Changing the token or base URL ends it at once.
+ */
+export const TOKEN_BACKOFF_MS = 30_000;
+export const TOKEN_BACKOFF_MAX_MS = 10 * 60_000;
 /**
  * The largest request body `lexicon serve` reads (MAX_BODY_BYTES in
  * src/serve/server.ts); a longer one is a 413. The background checks text whose
@@ -79,7 +95,8 @@ export interface ServerHealth {
 
 export type Request =
   | { type: 'normalize'; text: string; dryRun?: boolean }
-  | { type: 'status' }
+  /** `probe`: Options > Test connection, which asks the server even while a rejected token is backed off. */
+  | { type: 'status'; probe?: boolean }
   | { type: 'learn'; heard: string; meant: string }
   | { type: 'sync' }
   | { type: 'anySite'; enabled: boolean }
@@ -117,6 +134,12 @@ export interface StatusReply {
   tokenSet: boolean;
   /** Set when the server is up but answered 401 to the stored token. */
   tokenError?: string;
+  /**
+   * Set with `tokenError` while the background backs off from that token
+   * (TOKEN_BACKOFF_MS): until this time (epoch ms) no bearer request is sent
+   * with it, unless the token or base URL changes first.
+   */
+  tokenRetryAt?: number;
   /** Set when the server is up and took the token, but a bearer route failed for another reason (so corrections fall back). */
   apiError?: string;
   embeddedTerms: number;
@@ -183,7 +206,8 @@ export function coerceSettings(raw: unknown, defaultYaml: string): Settings {
   const r = raw as Partial<Record<keyof Settings, unknown>>;
   return {
     baseUrl: typeof r.baseUrl === 'string' && r.baseUrl.trim() ? r.baseUrl.trim().replace(/\/+$/, '') : d.baseUrl,
-    token: typeof r.token === 'string' ? r.token : d.token,
+    // A token pasted with the newline or spaces around it was sent as is and rejected.
+    token: typeof r.token === 'string' ? r.token.trim() : d.token,
     mode: r.mode === 'embedded' ? 'embedded' : 'api',
     live: r.live === true,
     yaml: typeof r.yaml === 'string' ? r.yaml : d.yaml,
@@ -272,8 +296,8 @@ export function incompleteNotice(inc: NormalizeIncomplete): string {
  * token set does not serve this browser's corrections yet, so that line leads
  * with what is true and then the step that pairs it.
  */
-export function connectionTestLine(s: StatusReply): string {
-  if (s.server && s.tokenError) return `Reachable (lexicon ${s.server.version}), but ${s.tokenError}`;
+export function connectionTestLine(s: StatusReply, now = Date.now()): string {
+  if (s.server && s.tokenError) return `Reachable (lexicon ${s.server.version}), but ${s.tokenError}${tokenBackoffNote(s, now)}`;
   if (s.server && s.apiError) return `Reachable (lexicon ${s.server.version}), but ${s.apiError.replace(/[.\s]+$/, '')}. Corrections use the embedded lexicon until that is fixed.`;
   if (s.server && !s.tokenSet) {
     return `Server is up, not paired: lexicon ${s.server.version}, ${countOf(s.server.terms, 'term')}. Corrections use the embedded lexicon until you run \`lexicon serve --pair\`.`;
@@ -281,6 +305,16 @@ export function connectionTestLine(s: StatusReply): string {
   if (s.server) return `Connected: lexicon ${s.server.version}, ${countOf(s.server.terms, 'term')}.`;
   const why = s.serverError ?? 'no reply';
   return `Unreachable: ${why}${why.includes('lexicon serve') ? '' : '. Start it with `lexicon serve`'}.`;
+}
+
+/**
+ * What follows a rejected token while the background backs off from it
+ * (`tokenRetryAt`), with a leading space, or an empty string.
+ */
+export function tokenBackoffNote(s: Pick<StatusReply, 'tokenRetryAt'>, now = Date.now()): string {
+  if (s.tokenRetryAt === undefined) return '';
+  const secs = Math.max(1, Math.ceil((s.tokenRetryAt - now) / 1000));
+  return ` The extension will not send this token again for ${secs} s; pairing or saving another token retries at once.`;
 }
 
 /** What the popup's status pill and line say for a status reply. */
@@ -298,13 +332,13 @@ export interface StatusView {
  * with the step that fixes it: the popup is where a first run, a missing or
  * rejected token and a stopped server all show up first.
  */
-export function statusView(s: StatusReply): StatusView {
+export function statusView(s: StatusReply, now = Date.now()): StatusView {
   if (s.activeMode === 'api' && s.server) {
     return { mode: 'Local API', warn: false, line: `lexicon ${s.server.version}, ${countOf(s.server.terms, 'term')}` };
   }
   const api = s.configuredMode === 'api';
   const parts: string[] = [`${countOf(s.embeddedTerms, 'embedded term')}`];
-  if (api && s.tokenError) parts.push(s.tokenError);
+  if (api && s.tokenError) parts.push(s.tokenError + tokenBackoffNote(s, now));
   else if (api && s.apiError) parts.push(`server: ${s.apiError}`);
   else if (api && !s.server) parts.push(s.serverError ? `server: ${s.serverError}` : 'server unreachable; start it with `lexicon serve`');
   if (api && !s.tokenSet) {

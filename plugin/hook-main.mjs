@@ -13774,18 +13774,18 @@ function check(before, after) {
   while (s < max - p && before.charCodeAt(before.length - 1 - s) === after.charCodeAt(after.length - 1 - s)) s += 1;
   const changedEnd = Math.max(p, after.length - s);
   const termsKey = /^terms:[ \t]*(?:#[^\n]*)?$/m.exec(after);
-  if (!termsKey) return void 0;
+  if (!termsKey) return checkWhole(after);
   const listStart = termsKey.index + termsKey[0].length + 1;
-  if (p < listStart) return void 0;
-  const firstItem = /^( *)- /m.exec(after.slice(listStart));
-  if (!firstItem) return void 0;
-  const indent = firstItem[1];
-  const itemRe = new RegExp(`^${indent}- `, "gm");
   const topLevelRe = /^(?:[^\s#-]|---|\.\.\.)/gm;
   topLevelRe.lastIndex = listStart;
   const nextTop = topLevelRe.exec(after);
   const listEnd = nextTop ? nextTop.index : after.length;
-  if (changedEnd > listEnd) return void 0;
+  if (changedEnd <= listStart || p >= listEnd) return checkOutsideList(after, termsKey.index, listStart, listEnd);
+  if (p < listStart || changedEnd > listEnd) return checkWhole(after);
+  const firstItem = /^( *)- /m.exec(after.slice(listStart));
+  if (!firstItem) return checkWhole(after);
+  const indent = firstItem[1];
+  const itemRe = new RegExp(`^${indent}- `, "gm");
   let regionStart = -1;
   itemRe.lastIndex = listStart;
   const editLine = lineStart(after, p);
@@ -13796,7 +13796,7 @@ function check(before, after) {
   const regionEnd = next && next.index < listEnd ? next.index : listEnd;
   if (regionEnd - regionStart > EDIT_CHECK_MAX_CHARS) return void 0;
   const region = after.slice(regionStart, regionEnd);
-  if (/(?:^|[\s[{,])[&*][^\s]|<<\s*:/.test(region)) return void 0;
+  if (hasAnchors(region)) return void 0;
   const header = "terms:\n";
   const firstLine = lineNumber(after, regionStart);
   const at = (offset) => firstLine + lineNumber(region, Math.max(0, offset - header.length)) - 1;
@@ -13813,14 +13813,116 @@ function check(before, after) {
   const itemLines = [];
   const localRe = new RegExp(`^${indent}- `, "gm");
   for (let m = localRe.exec(region); m; m = localRe.exec(region)) itemLines.push(firstLine + lineNumber(region, m.index) - 1);
+  let parsed;
   try {
-    parseLexicon({ version: 1, terms });
+    parsed = parseLexicon({ version: 1, terms });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    const issue2 = message.split("\n").find((l) => l.trim().startsWith("- ")) ?? message;
-    return issue2.trim().replace(/^- /, "").replace(/^terms\[(\d+)\]\.?/, (m, k) => `the term at line ${itemLines[Number(k)] ?? firstLine}${m.endsWith(".") ? ": " : ""}`);
+    return schemaIssue(err, (k) => `term at line ${itemLines[k] ?? firstLine}`);
+  }
+  return duplicateCanonical(after, parsed.terms, (k) => itemLines[k] ?? firstLine, indent, listStart, listEnd, regionStart, regionEnd);
+}
+function hasAnchors(text) {
+  return /(?:^|[\s[{,])[&*][^\s]|<<\s*:/.test(text);
+}
+function hasSecondDocument(text) {
+  const re = /^(?:---|\.\.\.)(?:[ \t]|$)/gm;
+  for (let m = re.exec(text); m; m = re.exec(text)) if (m.index !== 0) return true;
+  return false;
+}
+function schemaIssue(err, termName) {
+  const message = err instanceof Error ? err.message : String(err);
+  const issue2 = message.split("\n").find((l) => l.trim().startsWith("- ")) ?? message;
+  return issue2.trim().replace(/^- /, "").replace(/^terms\[(\d+)\]\.?/, (m, k) => `the ${termName(Number(k))}${m.endsWith(".") ? ": " : ""}`);
+}
+function checkOutsideList(after, termsAt, listStart, listEnd) {
+  const head = `${after.slice(0, termsAt)}terms: []
+`;
+  const skeleton = head + after.slice(listEnd);
+  if (skeleton.length > EDIT_CHECK_MAX_CHARS || hasAnchors(skeleton) || hasSecondDocument(skeleton)) return void 0;
+  const lineOf = (offset) => offset < head.length ? lineNumber(skeleton, offset) : lineNumber(after, listEnd + offset - head.length);
+  return checkText(skeleton, lineOf);
+}
+function checkWhole(after) {
+  if (after.length > EDIT_CHECK_MAX_CHARS || hasAnchors(after) || hasSecondDocument(after)) return void 0;
+  return checkText(after, (offset) => lineNumber(after, offset));
+}
+function checkText(text, lineOf) {
+  let raw;
+  try {
+    raw = (0, import_yaml.parse)(text, { prettyErrors: false });
+  } catch (err) {
+    const pos = err.pos;
+    const offset = Array.isArray(pos) && typeof pos[0] === "number" ? pos[0] : 0;
+    return `line ${lineOf(offset)}: ${firstSentence(err)}`;
+  }
+  if (raw === null || raw === void 0) return void 0;
+  let parsed;
+  try {
+    parsed = parseLexicon(raw);
+  } catch (err) {
+    return schemaIssue(err, (k) => `term #${k + 1}`);
+  }
+  const seen = /* @__PURE__ */ new Map();
+  for (const [k, t] of parsed.terms.entries()) {
+    const key = foldCanonical(t.canonical);
+    const first = seen.get(key);
+    if (first !== void 0) return `the term #${k + 1}: ${sameCanonicalNote(`term #${first + 1}`)}`;
+    seen.set(key, k);
   }
   return void 0;
+}
+function foldCanonical(canonical) {
+  return canonical.trim().toLowerCase().normalize("NFC");
+}
+function sameCanonicalNote(other) {
+  return `its canonical is already the canonical of the ${other} (a canonical may be defined once per file: merge the two terms or remove one)`;
+}
+function duplicateCanonical(after, terms, termLine, indent, listStart, listEnd, regionStart, regionEnd) {
+  const edited = /* @__PURE__ */ new Map();
+  for (const [k, t] of terms.entries()) {
+    const key = foldCanonical(t.canonical);
+    const first = edited.get(key);
+    if (first !== void 0) return `the term at line ${termLine(k)}: ${sameCanonicalNote(`term at line ${termLine(first)}`)}`;
+    edited.set(key, k);
+  }
+  const keyRe = new RegExp(`^${indent}(?:- |  )canonical:[ \\t]*(.*)$`, "gm");
+  for (const [from, to] of [
+    [listStart, regionStart],
+    [regionEnd, listEnd]
+  ]) {
+    keyRe.lastIndex = from;
+    for (let m = keyRe.exec(after); m && m.index < to; m = keyRe.exec(after)) {
+      const value = scalarValue(m[1]);
+      if (value === void 0) continue;
+      const k = edited.get(foldCanonical(value));
+      if (k !== void 0) return `the term at line ${termLine(k)}: ${sameCanonicalNote(`term at line ${lineNumber(after, m.index)}`)}`;
+    }
+  }
+  return void 0;
+}
+function scalarValue(text) {
+  const t = text.trim();
+  if (!t || /^[|>&*!{[]/.test(t)) return void 0;
+  if (t.startsWith("'")) {
+    const m = /^'((?:[^']|'')*)'(?:\s+#.*)?$/.exec(t);
+    return m ? m[1].replace(/''/g, "'") : void 0;
+  }
+  if (t.startsWith('"')) {
+    const m = /^("(?:[^"\\]|\\.)*")(?:\s+#.*)?$/.exec(t);
+    if (!m) return void 0;
+    try {
+      const v = JSON.parse(m[1]);
+      return typeof v === "string" ? v : void 0;
+    } catch {
+      try {
+        const v = (0, import_yaml.parse)(m[1]);
+        return typeof v === "string" ? v : void 0;
+      } catch {
+        return void 0;
+      }
+    }
+  }
+  return t.replace(/\s+#.*$/, "").trim();
 }
 function firstSentence(err) {
   const message = err instanceof Error ? err.message : String(err);
@@ -20613,24 +20715,43 @@ function categoryRank(category) {
 function isProperNounCategory(category) {
   return category === "brand" || category === "person" || category === "product";
 }
+var collator;
+function compareCanonical(a, b) {
+  collator ??= new Intl.Collator("en");
+  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+}
 function sortByImportance(terms) {
   return [...terms].sort(
-    (a, b) => (b.hits ?? 0) - (a.hits ?? 0) || Number(isProperNounCategory(b.category)) - Number(isProperNounCategory(a.category)) || a.canonical.localeCompare(b.canonical)
+    (a, b) => (b.hits ?? 0) - (a.hits ?? 0) || Number(isProperNounCategory(b.category)) - Number(isProperNounCategory(a.category)) || compareCanonical(a.canonical, b.canonical)
   );
 }
 function sortByCategory(terms) {
   return [...terms].sort(
-    (a, b) => categoryRank(a.category) - categoryRank(b.category) || a.canonical.localeCompare(b.canonical)
+    (a, b) => categoryRank(a.category) - categoryRank(b.category) || compareCanonical(a.canonical, b.canonical)
   );
 }
 function aliasPairs(lexicon) {
   const out = [];
   for (const term of lexicon.terms) {
+    const canonical = term.canonical.normalize("NFC");
+    const seen = /* @__PURE__ */ new Set();
     for (const alias of term.aliases) {
-      const a = alias.trim();
-      if (!a) continue;
-      out.push({ alias: a, canonical: term.canonical, term });
+      const a = alias.trim().normalize("NFC");
+      if (!a || seen.has(a)) continue;
+      seen.add(a);
+      out.push({ alias: a, canonical, term });
     }
+  }
+  return out;
+}
+function canonicalList(terms) {
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const term of terms) {
+    const canonical = term.canonical.normalize("NFC");
+    if (seen.has(canonical)) continue;
+    seen.add(canonical);
+    out.push({ term, canonical });
   }
   return out;
 }
@@ -20649,14 +20770,15 @@ function mdCell(value) {
 }
 
 // src/core/exporters/assemblyai.ts
+var ASSEMBLYAI_WORD_BOOST_MAX = 1e3;
 function exportAssemblyai(lexicon, _opts = {}) {
-  const word_boost = sortByImportance(lexicon.terms).map((t) => t.canonical);
+  const word_boost = canonicalList(sortByImportance(lexicon.terms)).slice(0, ASSEMBLYAI_WORD_BOOST_MAX).map((c) => c.canonical);
   return JSON.stringify({ word_boost, boost_param: "high" }, null, 2) + "\n";
 }
 
 // src/core/exporters/azure.ts
 function exportAzure(lexicon, _opts = {}) {
-  const phraseList = sortByImportance(lexicon.terms).map((t) => t.canonical);
+  const phraseList = canonicalList(sortByImportance(lexicon.terms)).map((c) => c.canonical);
   return JSON.stringify({ phraseList }, null, 2) + "\n";
 }
 
@@ -20705,9 +20827,9 @@ function exportCsv(lexicon, _opts = {}) {
 // src/core/exporters/deepgram.ts
 function exportDeepgram(lexicon, _opts = {}) {
   const keywords = [];
-  for (const t of sortByImportance(lexicon.terms)) {
-    const keyword = t.canonical.replace(/:/g, " ").replace(/\s+/g, " ").trim();
-    if (keyword) keywords.push(`${keyword}:${isProperNounCategory(t.category) ? 2 : 1}`);
+  for (const { term, canonical } of canonicalList(sortByImportance(lexicon.terms))) {
+    const keyword = canonical.replace(/:/g, " ").replace(/\s+/g, " ").trim();
+    if (keyword) keywords.push(`${keyword}:${isProperNounCategory(term.category) ? 2 : 1}`);
   }
   return JSON.stringify({ keywords }, null, 2) + "\n";
 }
@@ -20742,9 +20864,9 @@ ${body}` : body;
 
 // src/core/exporters/google.ts
 function exportGoogle(lexicon, _opts = {}) {
-  const phrases = sortByImportance(lexicon.terms).map((t) => ({
-    value: t.canonical,
-    boost: isProperNounCategory(t.category) ? 20 : 10
+  const phrases = canonicalList(sortByImportance(lexicon.terms)).map(({ term, canonical }) => ({
+    value: canonical,
+    boost: isProperNounCategory(term.category) ? 20 : 10
   }));
   return JSON.stringify({ adaptation: { phraseSets: [{ phrases }] } }, null, 2) + "\n";
 }
@@ -20789,8 +20911,8 @@ function exportMarkdown(lexicon, _opts = {}) {
 var WHISPER_PROMPT_DEFAULT_LIMIT = 100;
 function exportWhisperPrompt(lexicon, opts = {}) {
   const limit = opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT;
-  const terms = sortByImportance(lexicon.terms).slice(0, Math.max(0, limit));
-  return terms.map((t) => t.canonical.replace(/\s+/g, " ").trim()).join(", ");
+  const terms = canonicalList(sortByImportance(lexicon.terms)).slice(0, Math.max(0, limit));
+  return terms.map((c) => c.canonical.replace(/\s+/g, " ").trim()).join(", ");
 }
 
 // src/core/exporters/openai.ts
@@ -20822,7 +20944,7 @@ function escapeField(field, separators) {
   return out;
 }
 function exportText(lexicon, _opts = {}) {
-  const terms = [...lexicon.terms].sort((a, b) => a.canonical.localeCompare(b.canonical));
+  const terms = [...lexicon.terms].sort((a, b) => compareCanonical(a.canonical, b.canonical));
   const lines = terms.map((t) => {
     const aliases = t.aliases.map((a) => a.trim()).filter(Boolean);
     const needsEquals = t.canonical.includes(":") || aliases.some((a) => a.includes(","));

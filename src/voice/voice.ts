@@ -30,7 +30,7 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { diffSummary, loadLexicon, recordHits, resolvePaths, sanitizeForDisplay } from '../core/index.js';
+import { commandLine, diffSummary, loadLexicon, recordHits, resolvePaths, sanitizeForDisplay } from '../core/index.js';
 import type { Lexicon, LoadedLexicon } from '../core/index.js';
 import { PASTE_APPLESCRIPT, emptyLexiconHint } from '../daemon/clipboard.js';
 import { ExecError, detectClipboardBackend } from '../daemon/clipboard-backends.js';
@@ -747,28 +747,12 @@ async function transcribeInterruptibly(wav: string, options: TranscribeOptions, 
   }
 }
 
-/** `arg` as one POSIX shell word: bare when it is plainly safe, else single-quoted. */
-function shellWord(arg: string): string {
-  return /^[\w@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, `'\\''`)}'`;
-}
-
-/** `arg` as one PowerShell word: bare when it is plainly safe (backslashes included), else single-quoted, `'` doubled. */
-function powerShellWord(arg: string): string {
-  return /^[\w@+=:,./\\-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, "''")}'`;
-}
-
 /**
- * The command line `words` as the user's shell reads it. On Windows that is
- * PowerShell, the default in Windows Terminal: POSIX quoting there printed
- * `'C:\Program Files\...'`, which PowerShell reads as a string and does not
- * run, and cmd.exe does not read single quotes at all. A quoted command needs
- * PowerShell's call operator `& ` in front. Exported for tests.
+ * The command line `words` as the user's shell reads it: POSIX quoting, or on
+ * Windows PowerShell's, the default in Windows Terminal (core's `commandLine`,
+ * the quoting every command lexicon prints uses). Re-exported for tests.
  */
-export function commandLine(words: readonly string[], platform: NodeJS.Platform): string {
-  if (platform !== 'win32') return words.map(shellWord).join(' ');
-  const quoted = words.map(powerShellWord);
-  return `${quoted[0] !== words[0] ? '& ' : ''}${quoted.join(' ')}`;
-}
+export { commandLine };
 
 /**
  * The next step for a whisper-cli that ran and exited non-zero: the command

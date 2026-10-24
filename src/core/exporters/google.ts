@@ -3,12 +3,12 @@
  * brand/person/product (what STT gets wrong most), 10 for everything else.
  */
 import type { ExportOptions, Lexicon } from '../types.js';
-import { isProperNounCategory, sortByImportance } from './shared.js';
+import { canonicalList, isProperNounCategory, sortByImportance } from './shared.js';
 
 export function exportGoogle(lexicon: Lexicon, _opts: ExportOptions = {}): string {
-  const phrases = sortByImportance(lexicon.terms).map((t) => ({
-    value: t.canonical,
-    boost: isProperNounCategory(t.category) ? 20 : 10,
+  const phrases = canonicalList(sortByImportance(lexicon.terms)).map(({ term, canonical }) => ({
+    value: canonical,
+    boost: isProperNounCategory(term.category) ? 20 : 10,
   }));
   return JSON.stringify({ adaptation: { phraseSets: [{ phrases }] } }, null, 2) + '\n';
 }

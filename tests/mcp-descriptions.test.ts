@@ -10,6 +10,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { createServer } from '../src/mcp/server.js';
+import { pathForModel } from '../src/core/schema.js';
 import { addTerm } from '../src/core/store.js';
 import { runDoctorReport } from '../src/cli/commands.js';
 
@@ -271,11 +272,24 @@ describe('resources and prompts', () => {
     const d = resources.find((r) => r.uri === 'lexicon://me')?.description ?? '';
     expect(d).toContain('An untrusted (or changed) project file is left out and named by path in a closing note, never quoted');
     expect(d).toContain('with no terms at all, a closing note says so');
-    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [cube control]\n');
-    const text = await connected(async (client) => ((await client.readResource({ uri: 'lexicon://me' })).contents[0] as { text: string }).text);
-    expect(text).not.toContain('Kubectl');
-    expect(text).toContain(path.join(repo, '.lexicon.yaml'));
-    expect(text).toMatch(/no terms yet/);
+    // A repo nested below the temp dir, so the file's path has more than three
+    // parts on every platform and the note names it as pathForModel shortens
+    // it (`…/<last three parts>`), never in full.
+    const outer = repo;
+    repo = path.join(outer, 'clients', 'acme', 'web');
+    try {
+      await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+      const file = path.join(repo, '.lexicon.yaml');
+      await fs.writeFile(file, 'version: 1\nterms:\n  - canonical: Kubectl\n    aliases: [cube control]\n');
+      const text = await connected(async (client) => ((await client.readResource({ uri: 'lexicon://me' })).contents[0] as { text: string }).text);
+      expect(text).not.toContain('Kubectl');
+      expect(pathForModel(file)).toBe(`\u2026${path.sep}${path.join('acme', 'web', '.lexicon.yaml')}`);
+      expect(text).toContain(`untrusted project lexicon at ${pathForModel(file)} that was not loaded`);
+      expect(text).not.toContain(file);
+      expect(text).toMatch(/no terms yet/);
+    } finally {
+      repo = outer;
+    }
   });
 
   // Catches: neither prompt said it takes no arguments (an argument is refused),

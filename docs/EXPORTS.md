@@ -19,7 +19,7 @@ lexicon export <format> --out <file>
 | `whisper-prompt` | One line for Whisper `initial_prompt`, canonicals joined with `, ` | Any Whisper wrapper. Keep it under about 100 terms or it stops helping. Whisper reads the line as text it has already heard and never splits it, so a name holding `, ` still biases the right spelling, though a person cannot tell where it ends |
 | `openai` | One line of canonicals | OpenAI transcription `prompt` field (same as `whisper-prompt`) |
 | `deepgram` | Keyword boost JSON (`keyword:boost`) | Deepgram `keywords` parameter. The format has no escape for a colon, so one in a name becomes a space (`Win:2` is written `Win 2:1`) |
-| `assemblyai` | `word_boost` JSON | AssemblyAI `word_boost` / `boost_param` |
+| `assemblyai` | `word_boost` JSON | AssemblyAI `word_boost` / `boost_param`. At most 1,000 entries, the API's limit: a larger lexicon keeps its most used names |
 | `azure` | `phraseList` JSON | Azure Speech `PhraseListGrammar` |
 | `google` | Adaptation `phraseSets` JSON | Google Speech-to-Text model adaptation (boost 20 for brand/person/product, 10 otherwise) |
 | `claude-md` | Markdown table under `## Voice lexicon` | `CLAUDE.md`, `AGENTS.md`, any system prompt. Also what `lexicon://me` and the `SessionStart` hook emit |
@@ -28,7 +28,7 @@ lexicon export <format> --out <file>
 | `csv` | Generic `canonical,alias` | Anything else |
 | `json` | Raw lexicon JSON | Scripts, backups |
 
-`lexicon export` with no format lists them. `--category brand person` limits the export to those categories. `--limit N` caps term count.
+`lexicon export` with no format lists them. `--category brand person` limits the export to those categories. `--limit N` caps term count. `--out` replaces the file in one step (a temp file and a rename, so an interrupted export never leaves half a file), creates missing directories, and refuses a directory or the lexicon file the export is read from. Names are written in Unicode NFC (the form typed and transcribed text uses) by every format but `json`, `text`, `markdown` and `claude-md`, which keep the file's own text; an alias written in two forms is one row, and a name in two forms is boosted once. The order is the same on every machine: names sort A to Z by a fixed English collation, not the system locale, so one lexicon always exports byte for byte the same and `--limit` keeps the same terms.
 
 `--json` prints one document instead, for scripts and agents: `{ ok: true, format, terms, bytes, path }` after writing `--out` (`terms` counts what `--category` and `--limit` kept; the one-row-per-alias formats csv, wispr, superwhisper, macos and espanso add `rows`, the rows written, since a term without an alias writes none), `{ ok: true, format, terms, bytes, content }` with the export as a string when there is no `--out`, and `{ ok: true, formats }` with no format. A failure is `{ ok: false, error, nextStep }`.
 

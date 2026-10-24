@@ -1023,6 +1023,50 @@ describe('export', () => {
     expect(io2.out).toContain('wrote json export');
   });
 
+  // Catches: --out was written in place (an export cut short left a truncated
+  // file where the last good one was), a directory failed with a bare EISDIR,
+  // and --out naming the lexicon file itself replaced every term with the export.
+  it('--out replaces the file atomically and refuses a directory or the lexicon file it reads', async () => {
+    const dir = await tempDir('lexicon-cli-out-');
+    const out = path.join(dir, 'lex.json');
+    await fs.writeFile(out, 'old export\n', { mode: 0o640 });
+    const before = await fs.stat(out);
+    const io = makeIO();
+    expect(await runExport('json', { out }, io)).toBe(0);
+    expect(await fs.readFile(out, 'utf8')).toBe('export:json\n');
+    const after = await fs.stat(out);
+    // A rename put a new file there; the old one was never truncated in place.
+    expect(after.ino).not.toBe(before.ino);
+    if (process.platform !== 'win32') expect(after.mode & 0o777).toBe(0o640);
+    expect((await fs.readdir(dir)).sort()).toEqual(['lex.json']);
+
+    const asDir = makeIO();
+    expect(await runExport('json', { out: dir, json: true }, asDir)).toBe(1);
+    expect(JSON.parse(asDir.out)).toMatchObject({ ok: false, error: `--out ${dir} is a directory, so nothing was exported` });
+
+    const saved = state.globalPath;
+    try {
+      state.globalPath = path.join(dir, 'lexicon.yaml');
+      await fs.writeFile(state.globalPath, 'version: 1\nterms: []\n');
+      const link = path.join(dir, 'link.yaml');
+      await fs.symlink(state.globalPath, link).catch(() => undefined);
+      for (const target of [state.globalPath, ...(existsSync(link) ? [link] : [])]) {
+        const self = makeIO();
+        expect(await runExport('json', { out: target }, self)).toBe(1);
+        expect(self.err).toContain('is the global lexicon file the export reads, so nothing was written');
+        expect(self.err).toContain('lexicon: name another file with --out, or leave --out off to print the export');
+      }
+      expect(await fs.readFile(state.globalPath, 'utf8')).toBe('version: 1\nterms: []\n');
+      state.projectPath = path.join(dir, '.lexicon.yaml');
+      const proj = makeIO();
+      expect(await runExport('csv', { out: state.projectPath }, proj)).toBe(1);
+      expect(proj.err).toContain('is the project lexicon file the export reads');
+      expect(existsSync(state.projectPath)).toBe(false);
+    } finally {
+      state.globalPath = saved;
+    }
+  });
+
   // Catches: an empty export (no terms yet, or --category matching none) came
   // out with no word on stderr or under --json, read as a complete export,
   // while MCP export_lexicon says why in a note.
@@ -1390,11 +1434,11 @@ describe('install-claude', () => {
     expect(code).toBe(0);
     expect(exec).not.toHaveBeenCalled();
     // resolveIntegrationPaths resolves against cliDir, so these are backslash
-    // paths on Windows; and on Windows an absolute path is quoted in the
-    // printed `claude mcp add` line, where on POSIX it is bare.
+    // paths on Windows. The printed `claude mcp add` line is quoted for
+    // PowerShell there, which needs no quotes around a backslash path, so the
+    // path is bare on every platform.
     const { server, hook } = resolveIntegrationPaths(cliDir);
-    const shown = process.platform === 'win32' ? `"${server}"` : server;
-    expect(io.out).toContain(`claude mcp add --scope user lexicon -- node ${shown}`);
+    expect(io.out).toContain(`claude mcp add --scope user lexicon -- node ${server}\n`);
     expect(io.out).toContain('"UserPromptSubmit"');
     // The hook command is embedded in JSON, so its quotes arrive escaped.
     expect(io.out).toContain(JSON.stringify(`node "${hook}"`).slice(1, -1));
@@ -2115,8 +2159,8 @@ describe('doctor: Claude Code hooks and plugin', () => {
     expect(code).toBe(0);
     expect(io.out).toContain(`! UserPromptSubmit hook not found in ${s.settingsPath} (user scope), `);
     expect(io.out).toContain(`! SessionStart hook not found in ${s.settingsPath} (user scope), `);
-    expect(io.out).toContain('/.claude/settings.json (project scope) or ');
-    expect(io.out).toContain('/.claude/settings.local.json (local scope) (fine if you use the plugin');
+    expect(io.out).toContain(`${path.sep}${path.join('.claude', 'settings.json')} (project scope) or `);
+    expect(io.out).toContain(`${path.sep}${path.join('.claude', 'settings.local.json')} (local scope) (fine if you use the plugin`);
     expect(io.out).toContain('all checks passed');
   });
 

@@ -641,9 +641,12 @@ describe('message routing (mock chrome.runtime) and background', () => {
       expect(learn.message).toContain(token ? 'rejected the token' : 'No API token set');
       expect(learn.message).toContain('Sync from local API replaces');
       expect(await bg.handle({ type: 'normalize', text: 'ping quorbix' })).toMatchObject({ ok: true, mode: 'embedded', output: 'ping Quorbyx' });
-      // A server that refuses the correction itself is not overridden by the embedded copy.
+      // A server that refuses the correction itself is not overridden by the
+      // embedded copy. A fresh background: this one backs off from the token
+      // the server just rejected, so it would not ask.
       learnStatus = 400;
-      if (token) expect(await bg.handle({ type: 'learn', heard: 'Hetznr', meant: 'Hetzner' })).toMatchObject({ ok: false });
+      const fresh = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore({ settings: { token } }), defaultYaml: EXAMPLE_YAML });
+      if (token) expect(await fresh.handle({ type: 'learn', heard: 'Hetznr', meant: 'Hetzner' })).toMatchObject({ ok: false });
     }
   });
 
@@ -921,7 +924,7 @@ describe('extension errors name the next step', () => {
       throw Object.assign(new Error('aborted'), { name: 'AbortError' });
     });
     const bg = createBackground({ fetch: aborting as unknown as typeof fetch, store: storeWith({ token }), defaultYaml: EXAMPLE_YAML });
-    expect(await bg.handle({ type: 'sync' })).toEqual({ ok: false, error: 'API /lexicon timed out after 1500 ms; run `lexicon serve --status` to check the server' });
+    expect(await bg.handle({ type: 'sync' })).toEqual({ ok: false, error: 'API /lexicon timed out after 10000 ms; run `lexicon serve --status` to check the server' });
 
     const notOk = vi.fn(async () => json({ ok: false, version: '1', terms: 0 }));
     const bg2 = createBackground({ fetch: notOk as unknown as typeof fetch, store: storeWith({ token }), defaultYaml: EXAMPLE_YAML });
