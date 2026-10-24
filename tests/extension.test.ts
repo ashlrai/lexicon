@@ -1209,6 +1209,30 @@ describe('live-site regressions (2026-09-19)', () => {
     expect(inline.textContent).toBe('npm');
   });
 
+  // Catches: in a composer without <p> paragraphs, an empty line with a
+  // <pre> right after it (or at the end, after one) was written as nothing,
+  // since its line break was left to a following text line, so the rebuild
+  // did not read back and the last resort flattened the code block.
+  it('setWholeText keeps a <pre> next to an empty line in a <br> composer', () => {
+    const cases: Array<[string, string]> = [
+      ['<div id="e" contenteditable="true">one two<pre>ls</pre><div><br></div><pre>pwd</pre></div>', 'one\ntwo\nls\n\npwd'],
+      ['<div id="e" contenteditable="true"><div><br></div><pre>ls</pre>one two</div>', '\nls\none\ntwo'],
+      ['<div id="e" contenteditable="true">one two<pre>ls</pre><div><br></div></div>', 'one\ntwo\nls\n'],
+      ['<div id="e" contenteditable="true">one two<br><br><pre>ls</pre>end</div>', 'one\ntwo\n\n\nls\nend'],
+    ];
+    for (const [html, next] of cases) {
+      document.body.innerHTML = html;
+      const e = document.getElementById('e')!;
+      const pres = Array.from(e.querySelectorAll('pre'));
+      // The rewrite gains a line in the prose, so ranged prose edits cannot express it.
+      expect(readText(e).split('\n').length + 1, html).toBe(next.split('\n').length);
+      setWholeText(document, e, next);
+      expect(readText(e), html).toBe(next);
+      expect(Array.from(e.querySelectorAll('pre')), html).toEqual(pres);
+      expect(e.querySelector('p'), html).toBeNull();
+    }
+  });
+
   it('setWholeText restores every node when a rebuild cannot keep the code', () => {
     // The code text is not in the new text at all: nothing to keep, so the
     // last resort runs, but the rebuild attempt must not have lost any node.
