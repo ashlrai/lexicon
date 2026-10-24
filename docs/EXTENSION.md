@@ -130,6 +130,8 @@ With **Local API** selected, the extension falls back to the embedded lexicon wh
 
 Each site has an on/off switch in the popup (for the current tab) and in Options (all of them). **Any site** in Options asks for the optional `<all_urls>` permission and registers the content script everywhere else, using the focused text box as the composer. A one-line field that holds an identifier is never a composer: one whose `autocomplete` names a username, email, one-time code, password, phone, URL or card field, and any text field in a form with a password field, so a login form's username is never rewritten. Code is never a composer either: the editable of a code editor (CodeMirror, Monaco, Ace), a contenteditable `<pre>` or `<code>`, and, on any site, a rich text box that embeds a code editor or has the caret in a code block or inline code, so Enter in an editor never rewrites code. On every site a code block or inline code typed into the composer is left as typed while the prose around it is corrected: the code goes to the engine blanked out, so it is never matched or counted.
 
+A composer inside an iframe is covered when the frame is part of the page (same origin, including an `about:blank` editor frame, judged by the page's own settings) or is itself one of the chat sites embedded in another page; a frame from any other origin (an ad, a payment field, a third-party widget) is left alone. A frame follows the site switch of the tab it is in.
+
 ## Popup
 
 - Engine and server status ("Local API, lexicon 0.5.2, 42 terms" or "Embedded (fallback), server: cannot reach lexicon serve at http://127.0.0.1:41733; start it with `lexicon serve`"). The same sentence is what **Test connection** and **Sync from local API** in Options say when the server is not running. Each reason the local API is not in use ends with its fix: with no token stored it adds `no token set: once the server is running, run lexicon serve --pair` (or, with the server up, `server up (lexicon X), but no token set: run lexicon serve --pair`), a rejected token names `lexicon serve --show` and `lexicon serve --pair`, and a broken embedded YAML says `fix it under Options > Embedded lexicon`. **Test connection** says `Connected` only when the server is up and a token is stored; with the server up and no token it says `Server is up, not paired` and names `lexicon serve --pair`.
@@ -168,7 +170,7 @@ npx tsc -p extension/tsconfig.json --noEmit      # typecheck the extension sourc
 npx vitest run tests/extension.test.ts           # jsdom tests: adapters, rewrite, Enter/click, toast, embedded, routing
 ```
 
-The content script logic lives in `extension/src/content-core.ts` and takes its DOM and messaging channel as parameters; `content.ts` is the thin `chrome.*` wiring. Same split for `background-core.ts` / `background.ts`. `pair.ts` exports `pairFromDocument({ doc, send })` and auto-runs only when `chrome.runtime.id` is set. Tests drive the cores under jsdom with a fake background and a mocked `chrome.runtime`.
+The content script logic lives in `extension/src/content-core.ts` and takes its DOM and messaging channel as parameters; `content-boot.ts` decides which frames it runs in; `content.ts` is the thin `chrome.*` wiring. Same split for `background-core.ts` / `background.ts`. `pair.ts` exports `pairFromDocument({ doc, send })` and auto-runs only when `chrome.runtime.id` is set. Tests drive the cores under jsdom with a fake background and a mocked `chrome.runtime`.
 
 ### Manual checklist
 

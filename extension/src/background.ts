@@ -22,13 +22,18 @@ async function setAnySite(enabled: boolean): Promise<void> {
   }
   const granted = await chrome.permissions.contains({ origins: ['<all_urls>'] });
   if (!granted) throw new Error(ANY_SITE_DENIED_MESSAGE);
-  if (registered.length) return;
+  // A registration from before frames were covered persists across updates: replace it.
+  if (registered.length && registered.every((r) => r.allFrames === true)) return;
+  if (registered.length) await chrome.scripting.unregisterContentScripts({ ids: [ANY_SITE_SCRIPT_ID] });
   await chrome.scripting.registerContentScripts([
     {
       id: ANY_SITE_SCRIPT_ID,
       matches: ['<all_urls>'],
       excludeMatches: [...BUILTIN_MATCHES],
       js: ['content.js'],
+      // Frames too: a composer in a same-origin iframe. content-boot.ts
+      // leaves a cross-origin frame alone unless it is a chat site.
+      allFrames: true,
       runAt: 'document_idle',
       persistAcrossSessions: true,
     },
