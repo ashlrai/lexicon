@@ -643,6 +643,17 @@ function tokenMatches(header: string | undefined, token: string): boolean {
   return timingSafeEqual(given, expected);
 }
 
+/** True when the request carries `Expect: 100-continue`. */
+function expectsContinue(req: http.IncomingMessage): boolean {
+  return String(req.headers.expect ?? '').trim().toLowerCase() === '100-continue';
+}
+
+/** True when the request announces a body (`Content-Length`) over `cap`. */
+function declaresOver(req: http.IncomingMessage, cap: number): boolean {
+  const declared = Number(req.headers['content-length']);
+  return Number.isFinite(declared) && declared > cap;
+}
+
 /**
  * Read a body of at most `cap` bytes. Beyond the cap the rest is drained
  * (never buffered) and the promise rejects with 413 once the client has
@@ -663,8 +674,15 @@ function readBody(req: http.IncomingMessage, cap: number): Promise<string> {
       else resolve(Buffer.concat(chunks).toString('utf8'));
     };
     const tooLarge = (): HttpError => new HttpError(413, `request body exceeds ${cap} bytes`);
-    const declared = Number(req.headers['content-length']);
-    if (Number.isFinite(declared) && declared > cap) overflow = true;
+    if (declaresOver(req, cap)) {
+      // A client waiting on `Expect: 100-continue` has not sent the body (the
+      // server's checkContinue handler did not invite it): refuse it now.
+      if (expectsContinue(req)) {
+        settle(tooLarge());
+        return;
+      }
+      overflow = true;
+    }
     req.on('data', (chunk: Buffer) => {
       size += chunk.length;
       if (!overflow && size > cap) {
@@ -1525,6 +1543,15 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
         if (status === 401) extra['WWW-Authenticate'] = 'Bearer';
         send(res, json(status, { error: message }), extra, head);
       });
+  });
+
+  // Node answers `Expect: 100-continue` with 100 Continue on its own, so a
+  // client announcing a 20 MB body uploaded it, and past readBody's drain
+  // limit the connection was cut: a reset instead of the 413. A body over
+  // the limit is not invited; readBody answers 413 before it is sent.
+  server.on('checkContinue', (req, res) => {
+    if (!declaresOver(req, MAX_BODY_BYTES)) res.writeContinue();
+    server.emit('request', req, res);
   });
 
   // Close idle keep-alive sockets quickly on stop(); the default 5 s is fine while running.
