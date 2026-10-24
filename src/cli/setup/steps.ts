@@ -131,6 +131,21 @@ function gitUserName(ctx: Ctx): string | undefined {
 }
 
 /**
+ * The git user name to offer as the person term, or undefined. A name the
+ * write would refuse (longer than a term may be, or with control characters)
+ * is skipped with a note instead of failing setup after the lexicon was
+ * created; the note says how to pass the name by hand.
+ */
+function gitPersonGuess(ctx: Ctx): { name?: string; skipped: boolean } {
+  const name = gitUserName(ctx);
+  if (name === undefined) return { skipped: false };
+  const problem = setupNameProblem(name);
+  if (problem === undefined) return { name, skipped: false };
+  ctx.say(dim(`   skipped the person term: git user.name ${problem}; pass --person "Your Name", or later: lexicon add "Your Name" --category person`));
+  return { skipped: true };
+}
+
+/**
  * Asks until the answer is blank (returned as '') or `problem` finds nothing
  * wrong with it, so a name or hint the write would refuse is asked again
  * before anything is written instead of failing setup after the lexicon was
@@ -189,7 +204,7 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
       : suggestCompany(await readPackageName(ctx.cwd), tryExec(ctx.exec, 'git', ['-C', ctx.cwd, 'remote', 'get-url', 'origin']));
   if (ctx.plan) {
     // Same defaults as the non-interactive path below, without the writes.
-    const person = ctx.opts.person ?? (gated ? undefined : gitUserName(ctx));
+    const person = ctx.opts.person ?? (gated ? undefined : gitPersonGuess(ctx).name);
     const company = ctx.opts.company ?? (await guessCompany());
     const present = await globalCanonicals(ctx);
     for (const [canonical, category] of [
@@ -214,7 +229,8 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   }
 
   // Person: the git user, confirmed on a terminal.
-  const gitName = ctx.opts.person ?? (gated ? undefined : gitUserName(ctx));
+  const guess = ctx.opts.person !== undefined || gated ? { skipped: false } : gitPersonGuess(ctx);
+  const gitName = ctx.opts.person ?? guess.name;
   let person = gitName;
   if (ctx.prompter && gitName && !ctx.opts.person) {
     person = (await ctx.prompter.confirm(`   add "${safe(gitName)}" as a person term (how you want your name spelled)?`, true))
@@ -223,7 +239,7 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   }
   if (person) {
     await seedTerm(ctx, { canonical: person, aliases: suggestAliases(person), category: 'person', source: 'user' });
-  } else if (!gated) {
+  } else if (!gated && !guess.skipped) {
     ctx.say(dim('   no person term (git user.name is unset; pass --person "Your Name", or later: lexicon add "Your Name" --category person)'));
   }
 

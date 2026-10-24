@@ -1150,6 +1150,29 @@ describe('runSetup starter packs', () => {
     expect(nothing.io.out).toContain('pass --person "Your Name" and --company "Your Co"');
   });
 
+  it('skips a git user.name the write would refuse (too long, control characters) with a note instead of failing after the lexicon was created', async () => {
+    for (const bad of ['x'.repeat(500), 'Mason\u0007Wyatt']) {
+      await fs.rm(globalPath, { force: true });
+      const f = fakes({
+        exec: (file, args) => {
+          if (file === 'git' && args.join(' ') === 'config --global user.name') return bad;
+          if (file === 'git') throw new Error('exit 1');
+          throw new Error(`unexpected exec: ${file} ${args.join(' ')}`);
+        },
+      });
+      // The plan agrees: only the company would be seeded.
+      const planned = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI', packs: false }, f);
+      expect(planned.plan?.wouldSeed).toEqual(['Ashlr.AI']);
+      expect(planned.io.out).toMatch(/skipped the person term: git user\.name must be/);
+      const { code, summary, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', packs: false, harvest: false }, f);
+      expect(code).toBe(0);
+      expect(summary.termsAdded).toEqual(['Ashlr.AI']);
+      expect(io.out).toMatch(/skipped the person term: git user\.name must be/);
+      expect(io.out).toContain('pass --person "Your Name"');
+      expect(io.out).not.toContain('git user.name is unset');
+    }
+  });
+
   it('goes through deps.listPacks / deps.installPack when injected, with global scope', async () => {
     const calls: { name: string; opts: unknown }[] = [];
     const f = fakes({

@@ -64065,6 +64065,14 @@ async function seedTerm(ctx, term) {
 function gitUserName(ctx) {
   return tryExec2(ctx.exec, "git", ["config", "--global", "user.name"]) ?? tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "config", "user.name"]) ?? (ctx.env.GIT_AUTHOR_NAME?.trim() || ctx.env.GIT_COMMITTER_NAME?.trim() || void 0);
 }
+function gitPersonGuess(ctx) {
+  const name = gitUserName(ctx);
+  if (name === void 0) return { skipped: false };
+  const problem = setupNameProblem(name);
+  if (problem === void 0) return { name, skipped: false };
+  ctx.say(dim(`   skipped the person term: git user.name ${problem}; pass --person "Your Name", or later: lexicon add "Your Name" --category person`));
+  return { skipped: true };
+}
 async function askChecked(ctx, question, def, what, problem) {
   const prompter = ctx.prompter;
   let fallback = def;
@@ -64102,7 +64110,7 @@ async function stepLexicon(ctx) {
   if (gated) ctx.say(dim(`   already has ${before} terms; seeding only the names you passed`));
   const guessCompany = async () => gated ? void 0 : suggestCompany(await readPackageName(ctx.cwd), tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
   if (ctx.plan) {
-    const person2 = ctx.opts.person ?? (gated ? void 0 : gitUserName(ctx));
+    const person2 = ctx.opts.person ?? (gated ? void 0 : gitPersonGuess(ctx).name);
     const company2 = ctx.opts.company ?? await guessCompany();
     const present = await globalCanonicals(ctx);
     for (const [canonical, category] of [
@@ -64125,14 +64133,15 @@ async function stepLexicon(ctx) {
     }
     return;
   }
-  const gitName = ctx.opts.person ?? (gated ? void 0 : gitUserName(ctx));
+  const guess = ctx.opts.person !== void 0 || gated ? { skipped: false } : gitPersonGuess(ctx);
+  const gitName = ctx.opts.person ?? guess.name;
   let person = gitName;
   if (ctx.prompter && gitName && !ctx.opts.person) {
     person = await ctx.prompter.confirm(`   add "${safe(gitName)}" as a person term (how you want your name spelled)?`, true) ? gitName : void 0;
   }
   if (person) {
     await seedTerm(ctx, { canonical: person, aliases: suggestAliases(person), category: "person", source: "user" });
-  } else if (!gated) {
+  } else if (!gated && !guess.skipped) {
     ctx.say(dim('   no person term (git user.name is unset; pass --person "Your Name", or later: lexicon add "Your Name" --category person)'));
   }
   const suggestion = ctx.opts.company ?? await guessCompany();
