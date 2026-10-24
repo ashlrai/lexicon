@@ -59,6 +59,17 @@ afterEach(() => {
 describe('parseCorrection', () => {
   const ashlr = { heard: 'Ashler', meant: 'Ashlr.AI' };
 
+  // Catches: a number or time corrected in passing ("it's 2024 not 2023")
+  // was taken for a spelling, flagged by the hook and queued, and once
+  // learned rewrote every 2023 in a transcript to 2024.
+  it('takes no correction whose meant has no letter in it', () => {
+    for (const t of ["It's 2024 not 2023", "it's 3:30, not 3:15", 'I said 42 not 24', '"10" not "12"', '2023 -> 2024']) {
+      expect(parseCorrection(t), t).toBeUndefined();
+    }
+    expect(parseCorrection("it's k8s not kates")).toEqual({ heard: 'kates', meant: 'k8s' });
+    expect(parseCorrection("it's GPT-4 not GPT for")).toEqual({ heard: 'GPT for', meant: 'GPT-4' });
+  });
+
   // LEAD writes the em dash as an escape (tests/no-dashes.test.ts); it still leads a correction.
   it('takes an em dash before the correction as a lead, as a comma is', () => {
     expect(parseCorrection("ok\u2014it's Ashlr.AI not Ashler")).toEqual(ashlr);

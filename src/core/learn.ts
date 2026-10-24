@@ -265,6 +265,9 @@ export function parseCorrection(text: string): Correction | undefined {
     if (heard && heard.toLowerCase() === meant.toLowerCase()) return undefined;
     if (heard && allStoplisted(heard) && allStoplisted(meant)) return undefined;
     if (/^not\b/i.test(meant) || /^not\b/i.test(heard)) return undefined;
+    // "it's 2024 not 2023" or "it's 3:30, not 3:15" corrects a fact, not a
+    // spelling: a name holds a letter. Learned, it rewrote every 2023 to 2024.
+    if (!/\p{L}/u.test(meant)) return undefined;
     return { heard, meant };
   }
   return undefined;

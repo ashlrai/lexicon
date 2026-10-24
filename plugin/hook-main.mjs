@@ -21279,6 +21279,7 @@ function parseCorrection(text) {
     if (heard && heard.toLowerCase() === meant.toLowerCase()) return void 0;
     if (heard && allStoplisted(heard) && allStoplisted(meant)) return void 0;
     if (/^not\b/i.test(meant) || /^not\b/i.test(heard)) return void 0;
+    if (!new RegExp("\\p{L}", "u").test(meant)) return void 0;
     return { heard, meant };
   }
   return void 0;
