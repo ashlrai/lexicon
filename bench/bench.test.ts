@@ -43,10 +43,10 @@ describe('bench corpus', () => {
 describe('bench accuracy (default config)', () => {
   const report = runBench(corpus, lexicon, { timing: false });
 
-  // Measured 2026-09-19 after the matcher precision fixes A-H (docs/BENCHMARK.md):
-  // positives 94.2%, term recall 96.5%, prose FP 0.0% excl. expected-hard /
-  // 12.5% incl. Thresholds are those numbers minus a small margin so a matcher
-  // regression trips them.
+  // Re-measured 2026-10-24 on the 402-case corpus (docs/BENCHMARK.md):
+  // positives 95.3% (265/278), term recall 96.8% (303/313), prose FP 0.0%
+  // excl. expected-hard / 15.3% (19/124) incl. Thresholds are those numbers
+  // minus a small margin so a matcher regression trips them.
   it('recovers misheard terms (target >= 0.88 / 0.94)', () => {
     expect(report.sentence.positives.rate).toBeGreaterThanOrEqual(0.94);
     expect(report.terms.recall.rate).toBeGreaterThanOrEqual(0.95);
@@ -66,7 +66,7 @@ describe('bench accuracy (default config)', () => {
   // The suite's target is <= 0.02 excl. expected-hard; the matcher measures
   // 0.0% (0/95) today. The expected-hard negatives are corpus ambiguities
   // (canonicals that are English words, user aliases that are phrases) and
-  // sit at 15/25 (16/120 passes, 17/120 trips); they are bounded separately
+  // sit at 19/29 (19/124 passes, 20/124 trips); they are bounded separately
   // so they cannot creep up.
   /*
    * The inclusive bound moved 0.14 -> 0.16 when four negatives were added for a
