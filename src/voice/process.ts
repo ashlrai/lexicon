@@ -4,7 +4,7 @@
  * spawn ffmpeg or whisper-cli.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, openSync } from 'node:fs';
+import { closeSync, existsSync, openSync } from 'node:fs';
 import { locateTool } from '../util/which.js';
 import type { LocateOptions } from '../util/which.js';
 
@@ -128,11 +128,25 @@ export function defaultSpawn(cmd: string, args: readonly string[], opts: SpawnOp
       stderrFd = 'ignore';
     }
   }
-  const child = spawn(cmd, [...args], {
-    detached: opts.detached,
-    stdio: ['ignore', 'ignore', opts.detached ? stderrFd : 'pipe'],
-    windowsHide: true,
-  });
+  let child: ReturnType<typeof spawn>;
+  try {
+    child = spawn(cmd, [...args], {
+      detached: opts.detached,
+      stdio: ['ignore', 'ignore', opts.detached ? stderrFd : 'pipe'],
+      windowsHide: true,
+    });
+  } finally {
+    // The child has its own copy of the descriptor now. The parent's was never
+    // closed, so a process that started recorders (the menu bar app's
+    // long-lived host, a test run) leaked one open log file per start.
+    if (typeof stderrFd === 'number') {
+      try {
+        closeSync(stderrFd);
+      } catch {
+        // already closed
+      }
+    }
+  }
   const exited = new Promise<number | null>((resolve) => {
     let done = false;
     const settle = (code: number | null): void => {

@@ -2,8 +2,11 @@
  * The real process seam of `lexicon voice` (src/voice/process.ts): spawning
  * plain `node` children, never ffmpeg or whisper-cli. Temp directories only.
  */
+import { existsSync, promises as fs, readdirSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { defaultExec } from '../src/voice/process.js';
+import { defaultExec, defaultSpawn } from '../src/voice/process.js';
 
 const node = process.execPath;
 
@@ -32,5 +35,27 @@ describe('defaultExec timeout', () => {
     expect(r).toMatchObject({ code: null, timedOut: true });
     const quick = await defaultExec(node, ['-e', '0'], { timeoutMs: 10_000 });
     expect(quick.timedOut).toBeUndefined();
+  });
+});
+
+describe('defaultSpawn', () => {
+  const hasProcFd = process.platform === 'linux' && existsSync('/proc/self/fd');
+  // Catches: the parent kept the detached recorder's log descriptor open, one per start.
+  it.skipIf(!hasProcFd)('closes its copy of a detached child\'s log descriptor, and the child still writes the log', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-voice-process-'));
+    try {
+      const logFile = path.join(dir, 'recorder.log');
+      const openFds = (): number => readdirSync('/proc/self/fd').length;
+      const before = openFds();
+      const children = [];
+      for (let i = 0; i < 3; i += 1) {
+        children.push(defaultSpawn(node, ['-e', 'process.stderr.write("from the recorder\\n")'], { detached: true, logFile }));
+      }
+      for (const child of children) await child.exited;
+      expect(openFds()).toBeLessThanOrEqual(before);
+      expect(await fs.readFile(logFile, 'utf8')).toBe('from the recorder\n'.repeat(3));
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });
