@@ -21111,16 +21111,33 @@ function parseCorrections(text) {
   const seen = /* @__PURE__ */ new Set();
   const add = (c) => {
     if (!c || c.heard.trim() === "" || c.meant.trim() === "") return;
+    if (CODE_SHAPE_RE.test(c.heard) || CODE_SHAPE_RE.test(c.meant)) return;
     if (isOrdinaryContrast(text, c)) return;
     const key = `${collapse2(c.heard)}\0${collapse2(c.meant)}`;
     if (seen.has(key)) return;
     seen.add(key);
     found.push(c);
   };
-  add(parseCorrection(text));
-  if (!SENTENCE_BREAK_RE.test(text)) return found;
-  for (const sentence of text.split(SENTENCE_BREAK_RE)) add(parseCorrection(sentence));
+  const prose = blankCode(text);
+  add(parseCorrection(prose));
+  if (!SENTENCE_BREAK_RE.test(prose)) return found;
+  for (const sentence of prose.split(SENTENCE_BREAK_RE)) add(parseCorrection(sentence));
   return found;
+}
+var CODE_SHAPE_RE = /[\p{L}\p{N}_]\(|[{};=]/u;
+function blankCode(text) {
+  if (!/[`~<\n@/:.]/.test(text)) return text;
+  const spans = new Set(codeSpanRanges(text).map((r) => `${r.start}:${r.end}`));
+  let out = "";
+  let pos = 0;
+  for (const r of collectRanges(text)) {
+    if (r.end <= pos) continue;
+    const start = Math.max(pos, r.start);
+    if (spans.has(`${r.start}:${r.end}`) && parseCorrection(text.slice(r.start, r.end).replace(/^`+|`+$/g, "")) === void 0) continue;
+    out += text.slice(pos, start) + text.slice(start, r.end).replace(/[^\n]/g, " ");
+    pos = r.end;
+  }
+  return pos === 0 ? text : out + text.slice(pos);
 }
 var CORRECTION_MIN_SIMILARITY = 0.45;
 function quotedIn(text, side) {

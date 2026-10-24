@@ -391,6 +391,31 @@ describe('runUserPromptSubmitHook', () => {
       expect(mocks.queueCorrections).not.toHaveBeenCalled();
     });
 
+    // Catches: a correction phrase inside pasted code (a fenced or indented
+    // block, an HTML <pre>) or a code expression got a learn_correction line
+    // and a pending entry: "expect(x).toBe('Ashler -> Ashlr.AI')" queued
+    // heard "expect(x).toBe('Ashler", and an indented line took the next
+    // line into heard ("versel ok").
+    it('does not flag a correction phrase inside code', async () => {
+      const { runUserPromptSubmitHook, parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+      for (const prompt of [
+        "Fix it.\n```\nit's Vercel not versel.\n```",
+        "Fix it.\n~~~\nit's Vercel not versel\n~~~\n",
+        "Look at this.\n\n    it's Vercel not versel\nok",
+        "Error copy is wrong. <pre>it's Vercel not versel</pre>",
+        "Update tests. expect(x).toBe('versel -> Vercel'). Done.",
+        "Fix the map. { versel: 1 } -> { Vercel: 1 }",
+      ]) {
+        expect(parseCorrections(prompt), prompt).toEqual([]);
+        expect(await runUserPromptSubmitHook(payload(prompt)), prompt).toBe('');
+      }
+      expect(mocks.queueCorrections).not.toHaveBeenCalled();
+      // Prose around the code is still read, and a one-word inline code span is a quoted spelling.
+      expect(parseCorrections("```\nconst a = 1\n```\nAlso it's Vercel not versel.")).toEqual([{ heard: 'versel', meant: 'Vercel' }]);
+      expect(parseCorrections("it's `Vercel` not versel")).toEqual([{ heard: 'versel', meant: 'Vercel' }]);
+      expect(parseCorrections("it's Vercel (the company) not versel")).toEqual([{ heard: 'versel', meant: 'Vercel (the company)' }]);
+    });
+
     it('still flags a lowercase correction whose sides resemble, a name-like side, or a quoted one', async () => {
       const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
       expect(parseCorrections("it's vercel not versel")).toEqual([{ heard: 'versel', meant: 'vercel' }]);
