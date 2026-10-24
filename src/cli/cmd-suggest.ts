@@ -62,7 +62,7 @@ function describe(s: TermSuggestion): string {
     case 'never':
       return `protect ${bold(safe(s.alias ?? ''))} from ${bold(safe(s.canonical))} (never)`;
     case 'term':
-      return `new term ${bold(safe(s.canonical))}${s.aliases?.length ? dim(` (aliases: ${safe(s.aliases.join(', '))})`) : ''}`;
+      return `new term ${bold(safe(s.canonical))}${s.aliases?.length ? dim(` (aliases: ${s.aliases.map(safe).join(', ')})`) : ''}`;
     case 'stale':
       return `remove ${bold(safe(s.canonical))}`;
     default:

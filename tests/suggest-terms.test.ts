@@ -694,6 +694,20 @@ describe('runSuggest', () => {
     expect(store.inputs[1].cwd).toBe(path.resolve('/tmp/other-repo'));
   });
 
+  // Catches: a new term's aliases were joined and then cut at the
+  // 200-character display cap, so with several long aliases the last ones
+  // shown were cut mid-alias with an ellipsis or not shown at all.
+  it('shows every alias of a new term whole, each one sanitized on its own', async () => {
+    const aliases = Array.from({ length: 6 }, (_, i) => `Siobhan Reilly Of The Long Dictated Spelling ${i}`);
+    const store = mockStore([{ ...FIXED[1], aliases: [...aliases, 'Reilli\x1b[31m'] }]);
+    const io = makeIO();
+    expect(await runSuggest({ yes: true }, io, store.deps)).toBe(0);
+    for (const a of aliases) expect(io.out).toContain(a);
+    expect(io.out).toContain(', Reilli)');
+    expect(io.out).not.toContain('\x1b');
+    expect(io.out).not.toContain('\u2026');
+  });
+
   it('--yes applies every suggestion at or above 0.80 through the store and never removes a term', async () => {
     const store = mockStore();
     const io = makeIO();
