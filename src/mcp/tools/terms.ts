@@ -269,7 +269,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           .array(z.string())
           .optional()
           .describe(
-            `Ordinary words that must never be rewritten to this term even if they sound alike, e.g. ["sauce"] for SaaS; each at most ${LIMITS.word} characters, at most ${LIMITS.aliases} per term.`,
+            `Ordinary words that must never be rewritten to this term even if they sound alike, e.g. ["sauce"] for SaaS; each at most ${LIMITS.word} characters, at most ${LIMITS.aliases} per term; a blank one is an error and nothing is written.`,
           ),
         scope: z
           .enum(TERM_SCOPES)

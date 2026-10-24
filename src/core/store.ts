@@ -1519,13 +1519,41 @@ export type AddTermOptions = StoreOptions & {
   leaveUntrusted?: boolean;
 };
 
-/** `term` with a trimmed canonical and deduped aliases; throws on an empty canonical. */
+/**
+ * `term` with a trimmed canonical, deduped aliases and deduped never-words;
+ * throws on an empty canonical or a blank list entry (see assertNoBlankEntries).
+ */
 function prepareIncoming(term: Term): Term {
   const canonical = term.canonical.trim();
   if (!canonical) throw new InputError('canonical must not be empty');
+  assertNoBlankEntries(term);
   const prepared: Term = { ...term, canonical, aliases: dedupeAliases(term.aliases ?? [], canonical) };
+  // A never word in the wrong case or with spaces around it once is still one word.
+  const never = dedupeCaseInsensitive(term.never ?? []);
+  if (never.length > 0) prepared.never = never;
+  else delete prepared.never;
   assertTermFields(prepared);
   return prepared;
+}
+
+/**
+ * Refuse a blank `never` word (empty, whitespace or invisible characters
+ * only), naming the field and its index. It used to be written as is
+ * (`never: [" "]` from MCP add_term or POST /add), a word that guards nothing
+ * and that the schema then dropped on the next read.
+ */
+// Whitespace and format characters (zero-width space, joiners, BOM) only: what the schema trims away.
+const BLANK_ENTRY_RE = /^[\s\p{Cf}]*$/u;
+
+function assertNoBlankEntries(term: Term): void {
+  for (const field of ['never'] as const) {
+    const list: readonly unknown[] = term[field] ?? [];
+    const at = list.findIndex((s) => typeof s !== 'string' || BLANK_ENTRY_RE.test(s));
+    if (at < 0) continue;
+    throw new InputError(
+      `term not added: ${field}[${at}] (${JSON.stringify(list[at])}) is blank. Nothing was written; drop that entry or give the word and try again.`,
+    );
+  }
 }
 
 /**

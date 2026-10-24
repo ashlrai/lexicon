@@ -727,6 +727,26 @@ describe('addTerm', () => {
     const err = await addTerm({ canonical: '  ', aliases: [] }, { cwd: tmp, globalPath }).catch((e: unknown) => e);
     expect((err as Error).message).toBe('canonical must not be empty');
   });
+
+  // Catches: `never: [" "]` was written as a blank never word (MCP add_term,
+  // POST /add), which guards nothing and the schema dropped on the next read.
+  it('refuses a blank never word, naming it, and writes nothing', async () => {
+    await addTerm({ canonical: 'SaaS', aliases: ['sass'] }, { cwd: tmp, globalPath });
+    const before = await fs.readFile(globalPath, 'utf8');
+    for (const blank of [' ', '', '\u200b']) {
+      const err = await addTerm({ canonical: 'SaaS', aliases: [], never: ['sauce', blank] }, { cwd: tmp, globalPath }).catch((e: unknown) => e);
+      expect((err as Error).message).toBe(
+        `term not added: never[1] (${JSON.stringify(blank)}) is blank. Nothing was written; drop that entry or give the word and try again.`,
+      );
+    }
+    await expect(addTerm({ canonical: 'Fresh', aliases: [], never: ['  '] }, { cwd: tmp, globalPath })).rejects.toThrow(/never\[0\]/);
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(before);
+  });
+
+  it('trims and dedupes the never words of a new term', async () => {
+    const result = await addTerm({ canonical: 'SaaS', aliases: [], never: [' sauce ', 'Sauce', 'sass'] }, { cwd: tmp, globalPath });
+    expect(result.term.never).toEqual(['sauce', 'sass']);
+  });
 });
 
 describe('addTerms', () => {

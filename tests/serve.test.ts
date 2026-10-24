@@ -554,6 +554,16 @@ describe('POST /learn and POST /add', () => {
     expect(await fs.readFile(env.globalPath, 'utf8')).toBe(before);
   });
 
+  // Catches: `never: [" "]` answered 200 and wrote a blank never word.
+  it('add with a blank never word is a 400 naming it, and writes nothing', async () => {
+    const before = await fs.readFile(env.globalPath, 'utf8');
+    const res = await api('POST', '/add', { canonical: 'Ashlr.AI', never: ['ashes', ' '] });
+    expect(res.status).toBe(400);
+    const { error } = (await res.json()) as { error: string };
+    expect(error).toBe('term not added: never[1] (" ") is blank. Nothing was written; drop that entry or give the word and try again.');
+    expect(await fs.readFile(env.globalPath, 'utf8')).toBe(before);
+  });
+
   it('add over the schema cap is a 400 naming the field, not an index into the lexicon file', async () => {
     const res = await api('POST', '/add', { canonical: 'Zed', aliases: ['x'.repeat(81)] });
     expect(res.status).toBe(400);

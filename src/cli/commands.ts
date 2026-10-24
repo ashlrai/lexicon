@@ -419,8 +419,8 @@ export async function runAdd(
   }
   if (category) term.category = category;
   if (opts.notes) term.notes = opts.notes;
-  const never = (opts.never ?? []).map((w) => w.trim()).filter(Boolean);
-  if (never.length > 0) term.never = never;
+  // Passed as given: addTerm trims them and refuses a blank one, as MCP add_term and POST /add do.
+  if (opts.never && opts.never.length > 0) term.never = [...opts.never];
 
   const result = await addTerm(term, {
     scope,

@@ -54794,9 +54794,24 @@ async function projectWriteTrusted(opts = {}) {
 function prepareIncoming(term) {
   const canonical = term.canonical.trim();
   if (!canonical) throw new InputError("canonical must not be empty");
+  assertNoBlankEntries(term);
   const prepared = { ...term, canonical, aliases: dedupeAliases(term.aliases ?? [], canonical) };
+  const never2 = dedupeCaseInsensitive(term.never ?? []);
+  if (never2.length > 0) prepared.never = never2;
+  else delete prepared.never;
   assertTermFields(prepared);
   return prepared;
+}
+var BLANK_ENTRY_RE = /^[\s\p{Cf}]*$/u;
+function assertNoBlankEntries(term) {
+  for (const field of ["never"]) {
+    const list = term[field] ?? [];
+    const at = list.findIndex((s) => typeof s !== "string" || BLANK_ENTRY_RE.test(s));
+    if (at < 0) continue;
+    throw new InputError(
+      `term not added: ${field}[${at}] (${JSON.stringify(list[at])}) is blank. Nothing was written; drop that entry or give the word and try again.`
+    );
+  }
 }
 function assertTermFields(term) {
   try {
@@ -60921,7 +60936,7 @@ var registerTermTools = (server, ctx) => {
         category: external_exports.enum(TERM_CATEGORIES).optional(),
         notes: external_exports.string().optional().describe(`Free text shown to agents, e.g. "my company; never write Ashlar": one line, at most ${LIMITS.text} characters.`),
         never: external_exports.array(external_exports.string()).optional().describe(
-          `Ordinary words that must never be rewritten to this term even if they sound alike, e.g. ["sauce"] for SaaS; each at most ${LIMITS.word} characters, at most ${LIMITS.aliases} per term.`
+          `Ordinary words that must never be rewritten to this term even if they sound alike, e.g. ["sauce"] for SaaS; each at most ${LIMITS.word} characters, at most ${LIMITS.aliases} per term; a blank one is an error and nothing is written.`
         ),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default, ~/.config/lexicon) or 'project' (.lexicon.yaml in the current repo).")
       }

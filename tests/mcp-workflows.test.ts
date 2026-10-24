@@ -388,6 +388,16 @@ describe('add_term errors', () => {
     expect(res.text).not.toMatch(/addTerm|validateTerm/);
   });
 
+  // Catches: `never: [" "]` answered success and wrote a blank never word.
+  it('refuse a blank never word, naming it, and write nothing', async () => {
+    await call('add_term', { canonical: 'SaaS', aliases: ['sass'] });
+    const before = await fs.readFile(process.env.LEXICON_PATH as string, 'utf8');
+    const res = await call('add_term', { canonical: 'SaaS', never: [' '] });
+    expect(res.isError).toBe(true);
+    expect(res.text).toBe('term not added: never[0] (" ") is blank. Nothing was written; drop that entry or give the word and try again.');
+    expect(await fs.readFile(process.env.LEXICON_PATH as string, 'utf8')).toBe(before);
+  });
+
   it('name the field that is over the schema cap, not an index into the lexicon file', async () => {
     // Two terms already in the file, so a file-level error would say terms[2].
     await call('add_term', { canonical: 'One', aliases: [] });

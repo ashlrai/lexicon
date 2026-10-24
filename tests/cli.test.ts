@@ -494,6 +494,13 @@ describe('add / remove / path', () => {
     expect(io.out).toContain('/tmp/proj/.lexicon.yaml');
   });
 
+  // Catches: `lexicon add X --never " "` dropped the blank word and answered
+  // success, where MCP add_term and POST /add now refuse it: core decides.
+  it('passes --never words to addTerm as given, so a blank one is refused there', async () => {
+    await runAdd('SaaS', ['sass'], { never: ['sauce', ' '] }, makeIO());
+    expect(core.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ never: ['sauce', ' '] }), expect.anything());
+  });
+
   it('does not suggest when aliases are given unless --suggest', async () => {
     await runAdd('Ashlr.AI', ['Ashler'], {}, makeIO());
     expect(core.suggestAliases).not.toHaveBeenCalled();
