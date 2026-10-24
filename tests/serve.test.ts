@@ -2353,6 +2353,28 @@ describe('lexicon serve (CLI)', () => {
     }
   });
 
+  // Catches: the plist and unit were written with the umask (002 on many
+  // shared machines) or the mode of the file they replaced, and launchd
+  // refuses to bootstrap a group- or world-writable plist.
+  it.skipIf(process.platform === 'win32')('--install writes the plist and the unit as 0644, whatever was there', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
+    const umask = process.umask(0o002);
+    try {
+      const cli = await fakeCli(home);
+      const plistPath = launchAgentPath(home, {});
+      await fs.mkdir(path.dirname(plistPath), { recursive: true });
+      await fs.writeFile(plistPath, 'old', { mode: 0o666 });
+      await fs.chmod(plistPath, 0o666);
+      expect(await runServe({ install: true, globalPath: env.globalPath }, memIO(), { platform: 'darwin', home, env: {}, exec: fakeExec([]), uid: 501, cliPath: cli, nodePath: '/usr/bin/node' })).toBe(0);
+      expect((await fs.stat(plistPath)).mode & 0o777).toBe(0o644);
+      expect(await runServe({ install: true, globalPath: env.globalPath }, memIO(), { platform: 'linux', home, env: {}, exec: fakeExec([]), cliPath: cli, nodePath: '/usr/bin/node' })).toBe(0);
+      expect((await fs.stat(systemdUnitPath(home, {}))).mode & 0o777).toBe(0o644);
+    } finally {
+      process.umask(umask);
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
   it('--install on Linux writes the systemd user unit', async () => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
     try {

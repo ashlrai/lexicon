@@ -66670,6 +66670,10 @@ function systemdUnit(nodePath, cliPath, env) {
     ""
   ].join("\n");
 }
+async function writeServiceFile(file2, text) {
+  await import_node_fs26.promises.writeFile(file2, text, { encoding: "utf8", mode: 420 });
+  await import_node_fs26.promises.chmod(file2, 420);
+}
 async function runAndReport(exec, io, cmd, args) {
   line(io, `ran: ${[cmd, ...args].map((a) => safe(a)).join(" ")}`);
   const result = await exec(cmd, args);
@@ -66732,7 +66736,7 @@ async function runServeInstall(opts, io, deps = {}) {
     const logPath = launchAgentLogPath(home);
     await import_node_fs26.promises.mkdir(import_node_path25.default.dirname(plistPath), { recursive: true });
     await import_node_fs26.promises.mkdir(import_node_path25.default.dirname(logPath), { recursive: true });
-    await import_node_fs26.promises.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv), "utf8");
+    await writeServiceFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv));
     line(io, `wrote ${safe(plistPath)}`);
     line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} serve`);
     io.stdout(envReport(serviceEnv));
@@ -66756,7 +66760,7 @@ async function runServeInstall(opts, io, deps = {}) {
   if (platform === "linux") {
     const unitPath = systemdUnitPath(home, env);
     await import_node_fs26.promises.mkdir(import_node_path25.default.dirname(unitPath), { recursive: true });
-    await import_node_fs26.promises.writeFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv), "utf8");
+    await writeServiceFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv));
     line(io, `wrote ${safe(unitPath)}`);
     line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} serve`);
     io.stdout(envReport(serviceEnv));

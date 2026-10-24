@@ -535,6 +535,18 @@ export function systemdUnit(nodePath: string, cliPath: string, env?: Readonly<Re
   ].join('\n');
 }
 
+/**
+ * Write a LaunchAgent plist or a systemd unit as mode 0644 whatever the umask
+ * or the old file's mode. launchd refuses to bootstrap a plist that is group-
+ * or world-writable ("Path had bad ownership/permissions"), and `writeFile`
+ * kept the mode of the file it replaced and took the umask (002 on many
+ * shared machines) for a new one, so such an install failed to load.
+ */
+async function writeServiceFile(file: string, text: string): Promise<void> {
+  await fs.writeFile(file, text, { encoding: 'utf8', mode: 0o644 });
+  await fs.chmod(file, 0o644);
+}
+
 async function runAndReport(exec: ServeExec, io: IO, cmd: string, args: readonly string[]): Promise<ExecResult> {
   line(io, `ran: ${[cmd, ...args].map((a) => safe(a)).join(' ')}`);
   const result = await exec(cmd, args);
@@ -622,7 +634,7 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     const logPath = launchAgentLogPath(home);
     await fs.mkdir(path.dirname(plistPath), { recursive: true });
     await fs.mkdir(path.dirname(logPath), { recursive: true });
-    await fs.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv), 'utf8');
+    await writeServiceFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv));
     line(io, `wrote ${safe(plistPath)}`);
     line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} serve`);
     io.stdout(envReport(serviceEnv));
@@ -647,7 +659,7 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
   if (platform === 'linux') {
     const unitPath = systemdUnitPath(home, env);
     await fs.mkdir(path.dirname(unitPath), { recursive: true });
-    await fs.writeFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv), 'utf8');
+    await writeServiceFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv));
     line(io, `wrote ${safe(unitPath)}`);
     line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} serve`);
     io.stdout(envReport(serviceEnv));
