@@ -6,7 +6,7 @@
 import type { Command } from 'commander';
 import { CORRECTION_EXAMPLES, compareText, computeStats, conflictNote, emptyStatsNote, learnCorrection, learnUnchangedNote, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, LoadedLexicon, TermScope } from '../core/index.js';
-import { conflictLine, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, shownCommand, shownWord, skippedProjectJson, warnSkippedProject } from './io.js';
+import { conflictLine, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, safeMessage, shownCommand, shownWord, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** On stderr: it follows an error, and stdout must stay parseable under --json. */
@@ -200,9 +200,9 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
     }
     if (!result.created && !result.aliasAdded) {
       // It said "learned X -> Y (already known)", which reads as a write.
-      line(io, `${learnUnchangedNote(safe(correction.heard), safe(result.term.canonical), { meant: safe(correction.meant), scope: result.file.scope })} (${result.file.scope}: ${safe(result.file.path)})`);
+      line(io, `${learnUnchangedNote(safe(correction.heard), safe(result.term.canonical), { meant: safe(correction.meant), scope: result.file.scope })} (${result.file.scope}: ${safeMessage(result.file.path)})`);
     } else {
-      line(io, `learned ${safe(correction.heard)} -> ${safe(result.term.canonical)} (${result.created ? 'new term' : 'alias added'}) in ${safe(result.file.path)}`);
+      line(io, `learned ${safe(correction.heard)} -> ${safe(result.term.canonical)} (${result.created ? 'new term' : 'alias added'}) in ${safeMessage(result.file.path)}`);
     }
     line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : '(none)'}`);
     if (result.conflict) line(io, conflictLine(result.conflict));
@@ -210,7 +210,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
     if (u) {
       line(
         io,
-        `warn: the ${u.trust === 'changed' ? 'changed' : 'untrusted'} project lexicon ${safe(u.path)} also claims ${safe(correction.heard)} for another term; ` +
+        `warn: the ${u.trust === 'changed' ? 'changed' : 'untrusted'} project lexicon ${safeMessage(u.path)} also claims ${safe(correction.heard)} for another term; ` +
           'once trusted it wins over this correction. Review it with: lexicon trust',
       );
     }

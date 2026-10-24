@@ -471,9 +471,9 @@ export async function runAdd(
   }
   if (result.unchanged) {
     // The term already had every alias and field given: "merged" read as a change.
-    line(io, `${unchangedTermNote(safe(result.term.canonical))} (${scope}: ${safe(result.file.path)})`);
+    line(io, `${unchangedTermNote(safe(result.term.canonical))} (${scope}: ${safeMessage(result.file.path)})`);
   } else {
-    line(io, `${result.created ? green('created') : green('merged')} ${bold(safe(result.term.canonical))} (${scope}) in ${safe(result.file.path)}`);
+    line(io, `${result.created ? green('created') : green('merged')} ${bold(safe(result.term.canonical))} (${scope}) in ${safeMessage(result.file.path)}`);
   }
   // One aliases line: the suggestions are marked in it rather than listed
   // again on a line of their own (`suggested aliases: Fo` then `aliases: Fo`).
@@ -486,7 +486,7 @@ export async function runAdd(
     marked.length === 0 ? '' : marked.length === saved.length ? ' (suggested)' : ` (suggested: ${safe(marked.join(', '))})`;
   line(io, `aliases: ${saved.length > 0 ? safe(saved.join(', ')) + dim(suggestedNote) : dim('(none)')}`);
   for (const c of conflicts) line(io, conflictLine(c));
-  if (scope === 'project') line(io, dim(`project lexicon trusted at its new content (${safe(result.file.path)})`));
+  if (scope === 'project') line(io, dim(`project lexicon trusted at its new content (${safeMessage(result.file.path)})`));
   return 0;
 }
 
@@ -528,7 +528,7 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
       line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...(untrusted ? { untrustedProject: untrusted } : {}) }, null, 2));
     }
     io.stderr(`lexicon: ${safeMessage(errorMessage(err))}\n`);
-    if (global) io.stderr(`lexicon: to remove only the global copy (${safe(global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--global'])}\n`);
+    if (global) io.stderr(`lexicon: to remove only the global copy (${safeMessage(global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--global'])}\n`);
     return 1;
   }
   const from = removed ? (scope ? holders.find((h) => h.scope === scope) : holders[0]) : undefined;
@@ -545,7 +545,7 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     `lexicon: term "${safe(canonical)}" not found${scope ? ` in ${scope} lexicon` : ''}\n` +
     (missStep ? `lexicon: ${safeMessage(missStep)}\n` : '') +
     (untrusted
-      ? `lexicon: it is in the ${untrusted.trust === 'changed' ? 'changed' : 'untrusted'} project lexicon (${safe(untrusted.path)}), which is not loaded or edited; review it and run lexicon trust before removing it there\n`
+      ? `lexicon: it is in the ${untrusted.trust === 'changed' ? 'changed' : 'untrusted'} project lexicon (${safeMessage(untrusted.path)}), which is not loaded or edited; review it and run lexicon trust before removing it there\n`
       : '');
   const extra = { ...(stillIn.length > 0 ? { stillIn } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
   if (opts.json) {
@@ -560,7 +560,7 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     io.stderr(notFound());
     return 1;
   }
-  line(io, `removed ${bold(safe(canonical))}${from ? ` from ${safe(from.path)}` : ''}`);
+  line(io, `removed ${bold(safe(canonical))}${from ? ` from ${safeMessage(from.path)}` : ''}`);
   for (const h of stillIn) line(io, stillInLine(canonical, h));
   if (untrusted) line(io, untrustedLine(canonical, untrusted));
   return 0;
@@ -626,7 +626,7 @@ async function runRemoveAlias(
     if (elsewhere) io.stderr(`lexicon: ${safeMessage(elsewhere)}\n`);
     if (isProjectTrustError(err)) {
       if (holdsAlias(loaded?.global)) {
-        io.stderr(`lexicon: to remove it only from the global copy (${safe(loaded!.global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--alias', alias, '--global'])}\n`);
+        io.stderr(`lexicon: to remove it only from the global copy (${safeMessage(loaded!.global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--alias', alias, '--global'])}\n`);
       }
     } else if (untrusted) {
       io.stderr(`lexicon: ${untrustedAliasLine(canonical, alias, untrusted).replace(/^warn: /, '')}\n`);
@@ -638,7 +638,7 @@ async function runRemoveAlias(
     line(io, JSON.stringify(jsonOk({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra }), null, 2));
     return 0;
   }
-  line(io, `removed alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safe(paths.join(', '))}`);
+  line(io, `removed alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safeMessage(paths.join(', '))}`);
   line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : dim('(none)')}`);
   if (untrusted) line(io, untrustedAliasLine(result.term.canonical, alias, untrusted));
   return 0;
@@ -1196,7 +1196,7 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
         counted = `${plural(rows, 'row')} from ${plural(terms - without, 'term')}`;
         if (without > 0) counted += `; ${plural(without, 'term')} without an alias wrote no row`;
       }
-      line(io, `wrote ${format} export (${counted}) to ${safe(outPath)}`);
+      line(io, `wrote ${format} export (${counted}) to ${safeMessage(outPath)}`);
     }
   } else if (json) {
     line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, content: text, ...dropped, ...notes }), null, 2));

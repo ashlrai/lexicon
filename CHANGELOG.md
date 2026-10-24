@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon add`, `lexicon remove` (and `--alias`), `lexicon learn` and `lexicon export --out` print the lexicon or output file whole on success, as do their `still in` and untrusted-project warn lines. These paths went through the 200-character display cap, so a deep path ended in an ellipsis.
 - `lexicon remove` and `lexicon edit` print an error that names a long path whole, and `edit` prints the lexicon path whole (the file to edit by hand when no editor is set, the parse error, `your edits are still in`). These lines went through the 200-character display cap, so a deep path ended in `...` mid-sentence and the path to open was not one.
 - `lexicon add` (and MCP `add_term`, serve `POST /add`, `lexicon learn` and `learn_correction`) refuses to make one spelling both an alias and a never word of the same term (`lexicon add Wex wexx --never wexx`), naming the spelling, and writes nothing. The never word blocks the alias, so the alias was saved and listed but never applied. A generated alias that is one of the new term's never words is left out instead.
 - `lexicon edit` with a `$VISUAL` or `$EDITOR` that names no program it can start says which variable named it and where the file is to edit by hand (exit 1). It stopped at `lexicon: spawn <name> ENOENT`.

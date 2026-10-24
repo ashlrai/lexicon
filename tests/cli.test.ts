@@ -662,6 +662,33 @@ describe('add / remove / path', () => {
     expect(full.err).not.toContain('nothing to remove');
   });
 
+  // Catches: add's, remove's and export --out's success lines printed the file through the 200-character display cap, so a deep path ended in an ellipsis.
+  it('add, remove and export --out print a long path whole on success', async () => {
+    const saved = state.globalPath;
+    const deep = `/tmp/${'nested-directory/'.repeat(12)}lexicon.yaml`;
+    state.globalPath = deep;
+    try {
+      const added = makeIO();
+      expect(await runAdd('Ashlr.AI', ['Ashler'], {}, added)).toBe(0);
+      expect(added.out).toContain(`in ${deep}\n`);
+      const removed = makeIO();
+      expect(await runRemove('Ashlr.AI', {}, removed)).toBe(0);
+      expect(removed.out).toContain(`from ${deep}\n`);
+      const alias = makeIO();
+      expect(await runRemove('Ashlr.AI', { alias: 'Ashler' }, alias)).toBe(0);
+      expect(alias.out).toContain(deep);
+      for (const io of [added, removed, alias]) expect(io.out).not.toContain('\u2026');
+    } finally {
+      state.globalPath = saved;
+    }
+    const dir = await tempDir('lexicon-cli-');
+    const out = path.join(dir, ...Array.from({ length: 12 }, () => 'nested-directory'), 'lex.json');
+    const exported = makeIO();
+    expect(await runExport('json', { out }, exported)).toBe(0);
+    expect(exported.out).toContain(`to ${out}\n`);
+    expect(exported.out).not.toContain('\u2026');
+  });
+
   // Catches: remove's error lines went through the 200-character display cap, so a refusal naming a deep project path ended in `...` mid-sentence.
   it('remove prints a long error naming a path whole', async () => {
     const deep = `/tmp/${'nested-directory/'.repeat(12)}.lexicon.yaml`;

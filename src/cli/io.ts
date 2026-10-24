@@ -473,7 +473,7 @@ export function skippedProjectJson(
  */
 export function stillInLine(canonical: string, holder: TermHolder): string {
   const command = shownCommand(['lexicon', 'remove', canonical, `--${holder.scope}`]);
-  return `warn: ${safe(canonical)} is still in the ${holder.scope} lexicon (${safe(holder.path)}) and keeps correcting from there; to remove that copy too: ${command}`;
+  return `warn: ${safe(canonical)} is still in the ${holder.scope} lexicon (${safeMessage(holder.path)}) and keeps correcting from there; to remove that copy too: ${command}`;
 }
 
 /**
@@ -484,7 +484,7 @@ export function stillInLine(canonical: string, holder: TermHolder): string {
 export function untrustedLine(canonical: string, holder: { path: string; trust: 'untrusted' | 'changed' }): string {
   const why = holder.trust === 'changed' ? 'changed since trusted' : 'untrusted';
   return (
-    `warn: ${safe(canonical)} is also in the ${why} project lexicon (${safe(holder.path)}), which is not loaded or edited; ` +
+    `warn: ${safe(canonical)} is also in the ${why} project lexicon (${safeMessage(holder.path)}), which is not loaded or edited; ` +
     'it corrects from there once that file is trusted, so review it before running lexicon trust'
   );
 }
@@ -493,7 +493,7 @@ export function untrustedLine(canonical: string, holder: { path: string; trust: 
 export function untrustedAliasLine(canonical: string, alias: string, holder: { path: string; trust: 'untrusted' | 'changed' }): string {
   const why = holder.trust === 'changed' ? 'changed since trusted' : 'untrusted';
   return (
-    `warn: ${safe(alias)} is also an alias of ${safe(canonical)} in the ${why} project lexicon (${safe(holder.path)}), which is not loaded or edited; ` +
+    `warn: ${safe(alias)} is also an alias of ${safe(canonical)} in the ${why} project lexicon (${safeMessage(holder.path)}), which is not loaded or edited; ` +
     'it corrects from there once that file is trusted, so review it before running lexicon trust'
   );
 }
