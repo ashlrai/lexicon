@@ -243,25 +243,38 @@ export function isTrustContentChangedError(err: unknown): boolean {
   return err instanceof Error && err.name === 'TrustContentChangedError';
 }
 
+/** What `trustProject` pinned: the entry, and whether the registry already held exactly that pin. */
+export interface TrustProjectResult extends TrustEntry {
+  /**
+   * True when the registry already pinned this path at these bytes: nothing
+   * was written and `trustedAt` is the original grant. `trustProject` always
+   * sets it; optional so a stand-in returning a bare `TrustEntry` still fits.
+   */
+  alreadyPinned?: boolean;
+}
+
 /**
  * Register (or re-pin) `projectPath` at its current content hash. The file must exist.
  * With `expectedSha256`, refuses (`TrustContentChangedError`, nothing written)
- * unless the file still holds exactly those bytes.
+ * unless the file still holds exactly those bytes. A path the registry already
+ * pins at these bytes is left as it is (`alreadyPinned: true`).
  */
 export async function trustProject(
   projectPath: string,
   opts: StoreOptions & { expectedSha256?: string } = {},
-): Promise<TrustEntry> {
+): Promise<TrustProjectResult> {
   const key = await canonicalPath(projectPath);
   const sha256 = await hashFile(key);
   if (sha256 === undefined) throw new Error(`cannot read the project lexicon at ${projectPath}`);
   if (opts.expectedSha256 !== undefined && sha256 !== opts.expectedSha256) throw new TrustContentChangedError(projectPath);
   return withTrustLock(async () => {
     const registry = await readTrustRegistry(opts);
+    const existing = registry.trusted[key];
+    if (existing?.sha256 === sha256) return { ...existing, alreadyPinned: true };
     const entry: TrustEntry = { sha256, trustedAt: new Date().toISOString() };
     registry.trusted[key] = entry;
     await writeTrustRegistry(registry, opts);
-    return entry;
+    return { ...entry, alreadyPinned: false };
   }, opts);
 }
 

@@ -48,6 +48,22 @@ function aliasCount(n: number): string {
   return `${n} alias${n === 1 ? '' : 'es'}`;
 }
 
+
+/**
+ * Why `suggest_terms` found nothing, and what produces suggestions: the
+ * second text block of an empty result.
+ */
+function emptySuggestionsNote(historyEntries: number): string {
+  const history =
+    historyEntries === 0
+      ? `there is no voice history yet (only ${cliCommand('voice')} push-to-talk records one)`
+      : `the ${historyEntries} ${historyEntries === 1 ? 'dictation in the voice history holds' : 'dictations in the voice history hold'} no new garble or name`;
+  return (
+    `No suggestions: ${history}, no term is stale yet, and the repo gave no name the lexicon lacks. ` +
+    'Suggestions come from dictations recorded in the voice history, from terms that never fire, and from the repo. ' +
+    'Tell the user, and offer add_term for a name they know is misheard; call suggest_terms again after they have dictated for a while.'
+  );
+}
 export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
   // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
   const { load } = ctx;
@@ -166,7 +182,11 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
           return [];
         });
         const suggestions = await suggestTerms({ loaded, history, cwd: root, ...(limit !== undefined ? { limit } : {}) });
-        return textResult(suggestions);
+        const result = textResult(suggestions);
+        // The result is a bare array by contract (docs/MCP.md, the tests), so an
+        // empty one gets its reason as a second text block rather than a field.
+        if (suggestions.length === 0) result.content.push({ type: 'text', text: emptySuggestionsNote(history.length) });
+        return result;
       }),
   );
 

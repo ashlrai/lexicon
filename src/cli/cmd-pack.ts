@@ -40,7 +40,7 @@ import {
 } from '../core/index.js';
 import { findRegistryRecordMismatch, loadLexicon, registryRecordMismatch } from '../core/index.js';
 import type { InstallPackResult, RegistryDeps, RegistryRecordMismatch, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
-import { bold, dim, exampleAfterMissingArgument, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, safeLines, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
+import { CliRefusal, PACK_NOT_FOUND_NEXT_STEP, bold, dim, exampleAfterMissingArgument, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, safeMessage, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { createPrompter, isInteractive } from './prompt.js';
@@ -323,24 +323,46 @@ function needRegistry(opts: PackRegistryCliOptions, io: IO): boolean {
   return true;
 }
 
+/** Quote one word of a printed command for a POSIX shell, only when it needs it. */
+function shellWord(s: string): string {
+  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * The command that re-runs one community `pack add` or `pack update` with
+ * `--yes`: the ref as given, then `--registry` and `--project` when the run
+ * had them, so the line can be copied as it is.
+ */
+function yesCommand(sub: 'add' | 'update', ref: string, opts: PackRegistryCliOptions): string {
+  const words = ['lexicon', 'pack', sub, ref];
+  if (opts.registry) words.push('--registry', opts.registry);
+  if (opts.project) words.push('--project');
+  words.push('--yes');
+  return safe(words.map(shellWord).join(' '));
+}
+
+/** The answer to a community write: yes, no at the question, or no terminal to ask on. */
+type CommunityConsent = 'yes' | 'no' | 'no-terminal';
+
 async function confirmCommunityWrite(
   io: IO,
   question: string,
+  rerun: string,
   opts: PackRegistryCliOptions,
   deps: PackDeps,
-): Promise<boolean> {
+): Promise<CommunityConsent> {
   // A community pack is a stranger's terms landing in model context: the
   // default answer is no, and off a terminal --yes is the explicit consent.
-  if (opts.yes) return true;
+  if (opts.yes) return 'yes';
   const interactive = (deps.isInteractive ?? isInteractive)();
   if (!interactive) {
-    io.stderr(`lexicon: ${question}: not a terminal; pass --yes to accept, or run on a terminal to review first\n`);
-    return false;
+    io.stderr(`lexicon: ${question}: not a terminal, so nothing was written. Review the list above, then run: ${rerun}\n`);
+    return 'no-terminal';
   }
   const prompter = deps.createPrompter ?? (() => createPrompter({ input: process.stdin, output: process.stdout }));
   const p = prompter();
   try {
-    return await p.confirm(question, false);
+    return (await p.confirm(question, false)) ? 'yes' : 'no';
   } finally {
     if (!deps.createPrompter) p.close();
   }
@@ -362,7 +384,7 @@ interface CommunityPreviewJson {
 type RegistryAddOutcome =
   | { kind: 'installed'; result: InstallPackResult & { ref: string } }
   | { kind: 'preview'; preview: CommunityPreviewJson }
-  | { kind: 'declined'; ref: string };
+  | { kind: 'declined'; ref: string; offTerminal: boolean };
 
 /**
  * Install one community pack: download, checksum-verify, show the full term
@@ -403,8 +425,8 @@ async function runPackAddRegistry(
     printPackTerms(io, pack);
     line(io);
   }
-  const ok = await confirmCommunityWrite(io, `install ${entry.ref} (${pack.lexicon.terms.length} terms)?`, opts, deps);
-  if (!ok) return { kind: 'declined', ref: entry.ref };
+  const consent = await confirmCommunityWrite(io, `install ${entry.ref} (${pack.lexicon.terms.length} terms)?`, yesCommand('add', rawName, opts), opts, deps);
+  if (consent !== 'yes') return { kind: 'declined', ref: entry.ref, offTerminal: consent === 'no-terminal' };
   const result = await installRegistryPack(entry, base, opts.registry as string, {
     cwd,
     scope,
@@ -413,12 +435,22 @@ async function runPackAddRegistry(
     ...(parsed.version !== undefined ? { pinnedVersion: parsed.version } : {}),
   }, deps.registry);
   // Under --json runPackAdd prints the result, so stdout carries one document.
-  if (!opts.json) {
+  if (!opts.json && result.alreadyInstalled) {
+    line(io, alreadyInstalledLine(result.ref, result));
+  } else if (!opts.json) {
     line(io, `installed ${safe(result.ref)} (${entry.title}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`);
     if (parsed.version !== undefined) line(io, dim(`  pinned at version ${parsed.version}; pack update will not move it`));
-    line(io, dim('  the terms are live: normalize_transcript, the hook and the local API pick them up on the next call'));
+    line(io, dim(`  ${TERMS_LIVE}`));
   }
   return { kind: 'installed', result };
+}
+
+/** After an install that wrote something: what picks the terms up, in words a person at a shell can run. */
+const TERMS_LIVE = 'the terms are live: lexicon normalize, the prompt hook and lexicon serve use them from the next call';
+
+/** A reinstall that left the file as it was: say so, with the pack's counts, instead of "0 added, N merged". */
+function alreadyInstalledLine(name: string, result: InstallPackResult): string {
+  return `${safe(name)} is already installed in ${safe(result.path)} (${plural(result.pack.terms, 'term')}, ${result.pack.aliases} ${result.pack.aliases === 1 ? 'alias' : 'aliases'}); nothing was added`;
 }
 
 /** The `--json` record of one community install. */
@@ -446,7 +478,8 @@ interface PackAddFailureJson {
  * refs after it are not attempted and not reported. A community ref that is
  * only previewed (`--json` without `--yes`) or declined at the question writes
  * nothing and does not stop the refs after it, so every ref's outcome is
- * reported.
+ * reported. A community ref declined because there is no terminal to ask on
+ * (no `--yes`) makes the run exit 1 once every ref is reported.
  */
 export async function runPackAdd(names: readonly string[], opts: PackRegistryCliOptions, io: IO, deps: PackDeps = {}): Promise<number> {
   const cwd = resolveCwd(opts);
@@ -460,15 +493,26 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
   let vendored = 0;
   const installed: string[] = [];
   const declined: string[] = [];
+  // A ref declined only because there was no terminal to ask on: the run
+  // needed a consent it could not get, so it exits 1, as `review`, `suggest
+  // --apply` and `import --guided` do off a terminal. A no at the question is
+  // the user's answer and exits 0.
+  let unconfirmed = 0;
   for (const [at, name] of names.entries()) {
     try {
       if (isRegistryRef(name)) {
-        if (!opts.registry) throw new Error(NEED_REGISTRY);
+        if (!opts.registry) {
+          throw new CliRefusal(
+            NEED_REGISTRY,
+            `run: lexicon pack add ${name} --registry <index> (lexicon pack search <query> --registry <index> lists the index's packs)`,
+          );
+        }
         const outcome = await runPackAddRegistry(name, opts, io, deps);
         if (outcome.kind === 'preview') {
           results.push(outcome.preview);
         } else if (outcome.kind === 'declined') {
           declined.push(outcome.ref);
+          if (outcome.offTerminal) unconfirmed += 1;
           if (!opts.json) line(io, dim(names.length > 1 ? `declined ${safe(outcome.ref)}; nothing written for it.` : 'declined; nothing written.'));
         } else {
           const result = outcome.result;
@@ -479,11 +523,13 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
         const result = await installPack(name, { cwd, scope, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...deps });
         results.push(result);
         installed.push(result.pack.name);
-        vendored += 1;
+        if (!result.alreadyInstalled) vendored += 1;
         if (!opts.json) {
           line(
             io,
-            `installed ${safe(result.pack.name)} (${result.pack.title}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`,
+            result.alreadyInstalled
+              ? alreadyInstalledLine(result.pack.name, result)
+              : `installed ${safe(result.pack.name)} (${result.pack.title}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`,
           );
         }
       }
@@ -496,12 +542,12 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
     line(io, JSON.stringify(single ? jsonOk(results[0] as CommunityInstallJson | CommunityPreviewJson) : results, null, 2));
     return 0;
   }
-  if (vendored > 0) line(io, 'the terms are live: normalize_transcript, the hook and the local API pick them up on the next call');
+  if (vendored > 0) line(io, TERMS_LIVE);
   // With several refs, one line that adds them up, so a decline is not read as "nothing was written" when another ref was.
   if (names.length > 1 && declined.length > 0) {
     line(io, `${plural(installed.length, 'pack')} installed${installed.length > 0 ? ` (${installed.map(safe).join(', ')})` : ''}; declined: ${declined.map(safe).join(', ')}`);
   }
-  return 0;
+  return unconfirmed > 0 ? 1 : 0;
 }
 
 /**
@@ -522,7 +568,12 @@ function failPackAdd(
 ): number {
   const ref = names[at]!;
   const message = errorMessage(err);
-  const hint = unreadableLexiconHint(message);
+  // The refusal's own next step (a community ref without --registry), or the
+  // pack list for a name that is no pack at all: `fail` gives every other
+  // command both, and without them `pack add` left a typo with no way on.
+  const hint =
+    unreadableLexiconHint(message) ??
+    (err instanceof CliRefusal ? err.nextStep : err instanceof Error && err.name === 'PackNotFoundError' ? PACK_NOT_FOUND_NEXT_STEP : undefined);
   if (opts.json) {
     const { ok, ...detail } = jsonError(message, hint);
     const entry: PackAddFailureJson = { ref, ok, ...detail };
@@ -530,8 +581,8 @@ function failPackAdd(
     const doc = names.length === 1 ? { ok, ref, ...detail } : [...results, entry];
     line(io, JSON.stringify(doc, null, 2));
   }
-  io.stderr(`lexicon: ${safe(ref)}: ${safeLines(message)}\n`);
-  if (hint) io.stderr(`lexicon: ${hint}\n`);
+  io.stderr(`lexicon: ${safe(ref)}: ${safeMessage(message)}\n`);
+  if (hint) io.stderr(`lexicon: ${safeMessage(hint)}\n`);
   const after = names.slice(at + 1);
   if (after.length > 0) io.stderr(`lexicon: not attempted: ${after.map(safe).join(', ')}\n`);
   return 1;
@@ -595,7 +646,7 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
           reports.push({ ...preview, status: 'preview' });
           continue;
         }
-        const ok = await confirmCommunityWrite(io, `apply the ${preview.ref} update?`, opts, deps);
+        const ok = (await confirmCommunityWrite(io, `apply the ${preview.ref} update?`, yesCommand('update', preview.ref, opts), opts, deps)) === 'yes';
         if (!ok) {
           if (!opts.json) line(io, dim('  skipped; nothing written.'));
           reports.push({ ref: preview.ref, status: 'skipped', from: preview.from, to: preview.to });

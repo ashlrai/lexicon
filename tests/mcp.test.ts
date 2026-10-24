@@ -952,6 +952,20 @@ describe('lexicon MCP server', () => {
       }
     });
 
+    // Catches: a file the registry already pinned at the same bytes came back as 're-pinned'.
+    it('trust_project trust says already-trusted when the pin did not change', async () => {
+      mocks.isTrusted.mockResolvedValue('trusted');
+      mocks.trustProject.mockResolvedValueOnce({ sha256: 'abcdef0123456789', trustedAt: '2026-09-19T00:00:00.000Z', alreadyPinned: true });
+      const { client, close } = await connect();
+      try {
+        const result = await client.callTool({ name: 'trust_project', arguments: { action: 'trust' } });
+        expect(result.isError).toBe(false);
+        expect(JSON.parse(textOf(result))).toMatchObject({ previousStatus: 'trusted', status: 'trusted', result: 'already-trusted', trustedAt: '2026-09-19T00:00:00.000Z' });
+      } finally {
+        await close();
+      }
+    });
+
     it('trust_project trust re-pins an already trusted file without asking', async () => {
       mocks.isTrusted.mockResolvedValue('trusted');
       const { client, close } = await connect();
@@ -1018,6 +1032,8 @@ describe('lexicon MCP server', () => {
         const neither = await client.callTool({ name: 'import_dictionary', arguments: {} });
         expect(neither.isError).toBe(true);
         expect(textOf(neither)).toMatch(/pass path or content/);
+        // Catches: the refusal named the two arguments but not what either one is.
+        expect(textOf(neither)).toContain('path is a dictionary file in this workspace, content the dictionary text itself');
         cli.runImport.mockImplementationOnce(async (_f: string, _o: unknown, io: IO) => {
           io.stderr('lexicon: unknown import format "nope"\n');
           return 1;
@@ -1413,6 +1429,34 @@ describe('lexicon MCP server', () => {
       }
     });
 
+    // Catches: an empty history gave a bare [] and nothing else, so the agent
+    // could not tell the user why nothing came back or what would produce some.
+    it('suggest_terms keeps the bare array and adds a second text block saying why it is empty', async () => {
+      const { client, close } = await connect();
+      try {
+        const withSome = await client.callTool({ name: 'suggest_terms', arguments: {} });
+        expect((withSome.content as unknown[]).length).toBe(1);
+
+        mocks.suggestTerms.mockResolvedValueOnce([]);
+        const empty = await client.callTool({ name: 'suggest_terms', arguments: {} });
+        expect(empty.isError).toBe(false);
+        expect(JSON.parse(textOf(empty))).toEqual([]);
+        const content = empty.content as { type: string; text: string }[];
+        expect(content).toHaveLength(2);
+        expect(content[1]!.type).toBe('text');
+        expect(content[1]!.text).toMatch(/^No suggestions: there is no voice history yet \(only `lexicon voice` \(or `npx @ashlr\/lexicon voice`\) push-to-talk records one\)/);
+        expect(content[1]!.text).toContain('Suggestions come from dictations recorded in the voice history, from terms that never fire, and from the repo.');
+        expect(content[1]!.text).toContain('add_term');
+
+        mocks.loadVoiceHistory.mockResolvedValueOnce([{ at: '2026-10-01T00:00:00.000Z', raw: 'hi', output: 'hi' }]);
+        mocks.suggestTerms.mockResolvedValueOnce([]);
+        const quiet = await client.callTool({ name: 'suggest_terms', arguments: {} });
+        expect((quiet.content as { text: string }[])[1]!.text).toMatch(/^No suggestions: the 1 dictation in the voice history holds no new garble or name/);
+      } finally {
+        await close();
+      }
+    });
+
     // Catches: suggest_terms and add_term's conflict check read only the
     // merged files, yet parsed an untrusted project .lexicon.yaml to skip it.
     it('suggest_terms and the add_term conflict check load without parsing a skipped project file', async () => {
@@ -1519,7 +1563,7 @@ describe('lexicon MCP server', () => {
         expect(body).toEqual({ ...setupPlan, next: expect.stringMatching(/Nothing was written.*apply: true/) });
         expect(body).not.toHaveProperty('summary');
         expect(cli.runSetup).toHaveBeenCalledWith(
-          { cwd: '/fake/repo', yes: true, json: true, company: 'Ashlr.AI', person: 'Mason Wyatt', clients: 'claude,cursor', serve: false, harvestUntrusted: true, dryRun: true },
+          { cwd: '/fake/repo', yes: true, json: true, company: 'Ashlr.AI', person: 'Mason Wyatt', clients: 'claude,cursor', serve: false, harvestUntrusted: true, forAgent: true, dryRun: true },
           expect.objectContaining({ stdout: expect.any(Function) }),
           expect.objectContaining({ cliDir: expect.any(String) }),
         );
@@ -1527,11 +1571,11 @@ describe('lexicon MCP server', () => {
         // apply: false is the same preview; omitted clients preview "none", never "all detected".
         // The plan lists wouldHarvest whether or not harvest is passed (only an apply needs it).
         await client.callTool({ name: 'setup_lexicon', arguments: { apply: false } });
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvestUntrusted: true, dryRun: true }, expect.anything(), expect.anything());
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvestUntrusted: true, forAgent: true, dryRun: true }, expect.anything(), expect.anything());
         await client.callTool({ name: 'setup_lexicon', arguments: { harvest: true } });
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvestUntrusted: true, dryRun: true }, expect.anything(), expect.anything());
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvestUntrusted: true, forAgent: true, dryRun: true }, expect.anything(), expect.anything());
         await client.callTool({ name: 'setup_lexicon', arguments: { harvest: false } });
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false, harvestUntrusted: true, dryRun: true }, expect.anything(), expect.anything());
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false, harvestUntrusted: true, forAgent: true, dryRun: true }, expect.anything(), expect.anything());
       } finally {
         await close();
       }
@@ -1561,25 +1605,44 @@ describe('lexicon MCP server', () => {
         expect(result.isError).toBe(false);
         expect(JSON.parse(textOf(result))).toEqual({ ok: true, applied: true, summary: setupSummary });
         const [opts] = cli.runSetup.mock.calls.at(-1) as [SetupOptions];
-        expect(opts).toEqual({ cwd: '/fake/repo', yes: true, json: true, company: 'Ashlr.AI', person: 'Mason Wyatt', clients: 'claude,cursor', serve: true, harvest: false, harvestUntrusted: true });
+        expect(opts).toEqual({ cwd: '/fake/repo', yes: true, json: true, company: 'Ashlr.AI', person: 'Mason Wyatt', clients: 'claude,cursor', serve: true, harvest: false, harvestUntrusted: true, forAgent: true });
         expect(opts).not.toHaveProperty('dryRun');
 
         // apply without clients installs none; serve and harvest are off unless explicitly true.
         const bare = await client.callTool({ name: 'setup_lexicon', arguments: { apply: true } });
         expect(bare.isError).toBe(false);
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false, harvestUntrusted: true }, expect.anything(), expect.anything());
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false, harvestUntrusted: true, forAgent: true }, expect.anything(), expect.anything());
 
         await client.callTool({ name: 'setup_lexicon', arguments: { apply: true, clients: [], serve: false } });
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false, harvestUntrusted: true }, expect.anything(), expect.anything());
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'none', serve: false, harvest: false, harvestUntrusted: true, forAgent: true }, expect.anything(), expect.anything());
 
         // harvest: true is the only way the apply writes the project lexicon.
         // It is left untrusted: the result relays the trust step, with the npx form.
         cli.runSetup.mockResolvedValueOnce({ code: 0, summary: { ...setupSummary, untrustedProject: '/fake/repo/.lexicon.yaml' } });
         const harvested = await client.callTool({ name: 'setup_lexicon', arguments: { apply: true, clients: ['claude'], harvest: true } });
-        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'claude', serve: false, harvest: true, harvestUntrusted: true }, expect.anything(), expect.anything());
+        expect(cli.runSetup).toHaveBeenLastCalledWith({ cwd: '/fake/repo', yes: true, json: true, clients: 'claude', serve: false, harvest: true, harvestUntrusted: true, forAgent: true }, expect.anything(), expect.anything());
         const body = JSON.parse(textOf(harvested)) as { nextStep?: string };
         expect(body.nextStep).toContain('/fake/repo/.lexicon.yaml, which is not trusted');
         expect(body.nextStep).toContain('`npx @ashlr/lexicon trust`');
+      } finally {
+        await close();
+      }
+    });
+
+    // Catches: the apply result had no step after setup, so an agent never told the
+    // user to add a name; the progress it relayed named CLI flags such as --packs.
+    it('setup_lexicon relays summary.nextStep after the trust step, and passes forAgent', async () => {
+      const step = 'Ask the user for a name they dictate (their company, product or a teammate) and add it with add_term; then ask them to dictate a sentence with it in it.';
+      cli.runSetup.mockResolvedValueOnce({ code: 0, summary: { ...setupSummary, nextStep: step } });
+      const { client, close } = await connect();
+      try {
+        const body = JSON.parse(textOf(await client.callTool({ name: 'setup_lexicon', arguments: { apply: true } }))) as { nextStep?: string };
+        expect(body.nextStep).toBe(step);
+        expect(cli.runSetup).toHaveBeenLastCalledWith(expect.objectContaining({ forAgent: true }), expect.anything(), expect.anything());
+        cli.runSetup.mockResolvedValueOnce({ code: 0, summary: { ...setupSummary, nextStep: step, untrustedProject: '/fake/repo/.lexicon.yaml' } });
+        const both = JSON.parse(textOf(await client.callTool({ name: 'setup_lexicon', arguments: { apply: true, harvest: true } }))) as { nextStep?: string };
+        expect(both.nextStep).toMatch(/which is not trusted.* Then: Ask the user for a name they dictate/);
+        expect(both.nextStep).not.toMatch(/--packs|--harvest/);
       } finally {
         await close();
       }

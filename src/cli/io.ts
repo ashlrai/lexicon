@@ -102,6 +102,21 @@ export function safeLines(s: string): string {
 
 /** Longest line `safeError` prints: PATH_MAX, so a file path in an error is never cut. */
 export const ERROR_LINE_MAX_CHARS = 4096;
+
+/**
+ * `safeLines` for a message this program composed around a path: an error
+ * from `fail`, a `lexicon doctor` check, its summary and next step. Each line
+ * is sanitized like `safe` but capped at ERROR_LINE_MAX_CHARS rather than 200,
+ * because these messages name the command to run after the path, and a deep
+ * repo or home directory pushed the 200th character into that command
+ * (`... or write to the global le…`, `otherwise run: lexicon install c…`).
+ */
+export function safeMessage(s: string): string {
+  return s
+    .split('\n')
+    .map((l) => sanitizeForDisplayMax(l, ERROR_LINE_MAX_CHARS))
+    .join('\n');
+}
 /** Lines of an error `safeError` prints before "... and N more lines". */
 export const ERROR_MAX_LINES = 12;
 
@@ -194,8 +209,8 @@ export function fail(io: IO, err: unknown, json?: boolean): number {
   const message = errorMessage(err);
   const hint = unreadableLexiconHint(message) ?? ownNextStep(err);
   if (json) printJsonError(io, message, hint ?? (isProjectTrustError(err) ? PROJECT_TRUST_NEXT_STEP : undefined));
-  io.stderr(`lexicon: ${safeLines(message)}\n`);
-  if (hint) io.stderr(`lexicon: ${safeLines(hint)}\n`);
+  io.stderr(`lexicon: ${safeMessage(message)}\n`);
+  if (hint) io.stderr(`lexicon: ${safeMessage(hint)}\n`);
   return 1;
 }
 
@@ -372,8 +387,8 @@ export function unknownCommandHint(name: string): string | undefined {
  */
 export function refuse(io: IO, json: boolean | undefined, error: string, nextStep?: string): number {
   if (json) printJsonError(io, error, nextStep);
-  io.stderr(`lexicon: ${safeLines(error)}\n`);
-  if (nextStep) io.stderr(`lexicon: ${safeLines(nextStep)}\n`);
+  io.stderr(`lexicon: ${safeMessage(error)}\n`);
+  if (nextStep) io.stderr(`lexicon: ${safeMessage(nextStep)}\n`);
   return 1;
 }
 
@@ -403,8 +418,15 @@ export function unreadableLexiconEdit(message: string): string | undefined {
 /** One stderr line when a project lexicon exists but was not merged (untrusted or changed). */
 export function warnSkippedProject(loaded: Pick<LoadedLexicon, 'projectTrust' | 'skippedProject'>, io: IO): void {
   if (!loaded.skippedProject) return;
-  const why = loaded.projectTrust === 'changed' ? 'changed since trusted' : 'untrusted';
-  io.stderr(`lexicon: ${why} project lexicon skipped: ${safe(loaded.skippedProject.path)} (run: lexicon trust)\n`);
+  // "changed since trusted project lexicon skipped" did not parse as a
+  // sentence, and did not say the trust had been lost or that trusting again
+  // is the way back.
+  const where = safe(loaded.skippedProject.path);
+  io.stderr(
+    loaded.projectTrust === 'changed'
+      ? `lexicon: project lexicon changed since you trusted it, so it was skipped: ${where} (review it, then run: lexicon trust)\n`
+      : `lexicon: untrusted project lexicon skipped: ${where} (run: lexicon trust)\n`,
+  );
 }
 
 /**

@@ -53955,10 +53955,12 @@ async function trustProject(projectPath, opts = {}) {
   if (opts.expectedSha256 !== void 0 && sha256 !== opts.expectedSha256) throw new TrustContentChangedError(projectPath);
   return withTrustLock(async () => {
     const registry2 = await readTrustRegistry(opts);
+    const existing = registry2.trusted[key];
+    if (existing?.sha256 === sha256) return { ...existing, alreadyPinned: true };
     const entry = { sha256, trustedAt: (/* @__PURE__ */ new Date()).toISOString() };
     registry2.trusted[key] = entry;
     await writeTrustRegistry(registry2, opts);
-    return entry;
+    return { ...entry, alreadyPinned: false };
   }, opts);
 }
 async function refreshTrust(projectPath, opts = {}) {
@@ -54809,6 +54811,7 @@ function mergeTermInto(file2, incoming, scope, opts) {
   const canonical = incoming.canonical;
   const existing = findTerm(file2.lexicon, canonical);
   if (existing && opts.merge !== false) {
+    const before = JSON.stringify(existing);
     existing.aliases = dedupeAliases([...existing.aliases, ...incoming.aliases], existing.canonical);
     existing.phonetic ??= incoming.phonetic;
     existing.category ??= incoming.category;
@@ -54817,7 +54820,7 @@ function mergeTermInto(file2, incoming, scope, opts) {
     if (incoming.never?.length) {
       existing.never = dedupeCaseInsensitive([...existing.never ?? [], ...incoming.never]);
     }
-    return { term: existing, created: false };
+    return JSON.stringify(existing) === before ? { term: existing, created: false, unchanged: true } : { term: existing, created: false };
   }
   if (existing) {
     const replaced = {
@@ -58855,6 +58858,9 @@ function conflictNote(conflicts, audience = "cli") {
     (c) => c.as === "alias" ? `${JSON.stringify(c.spelling)} is also an alias of ${JSON.stringify(c.canonical)} (${c.scope}), so it may still be corrected to that; ` + (audience === "mcp" ? `if the user agrees, call remove_term with canonical ${JSON.stringify(c.canonical)}, alias ${JSON.stringify(c.spelling)}, scope "${c.scope}".` : `if the user agrees, drop it with: ${conflictRemoveCommand(c)}`) : `${JSON.stringify(c.spelling)} is its own term (${c.scope}), so it may still be kept as written; ` + (audience === "mcp" ? `if the user never means it as its own term, call remove_term with canonical ${JSON.stringify(c.canonical)}, scope "${c.scope}".` : `if the user never means it as its own term, drop it with: lexicon remove ${JSON.stringify(c.canonical)} --${c.scope}`)
   ).join(" ");
 }
+function unchangedTermNote(canonical) {
+  return `Nothing was added: ${JSON.stringify(canonical)} already has every alias and field given.`;
+}
 
 // src/core/learn.ts
 var MAX_CORRECTION_LENGTH = 60;
@@ -59815,6 +59821,14 @@ async function writePacksSetting(file2, packs, opts, leaveUntrusted = false) {
     await refreshIndexCache(file2, opts);
   }
 }
+async function readTextIfAny(file2) {
+  try {
+    return await import_node_fs9.promises.readFile(file2, "utf8");
+  } catch (err) {
+    if (isEnoent(err)) return void 0;
+    throw err;
+  }
+}
 async function installLoadedPack(pack, recordAs, opts = {}) {
   const scope = opts.scope ?? "global";
   const leaveUntrusted = opts.leaveUntrusted === true;
@@ -59827,12 +59841,14 @@ async function installLoadedPack(pack, recordAs, opts = {}) {
       return t;
     });
     if (incoming.length === 0) throw new Error(`pack "${pack.name}" has no terms`);
+    const before = await readTextIfAny(targetPath);
     const { file: file2, results } = await addTerms(incoming, { ...storeOpts2, scope, leaveUntrusted });
     const added = results.filter((r) => r.created).length;
     const merged = results.length - added;
     const packs = dedupe([...file2.lexicon.settings?.packs ?? [], recordAs]);
     await writePacksSetting(file2, packs, storeOpts2, leaveUntrusted);
-    return { pack: info(pack), added, merged, path: file2.path, scope };
+    const alreadyInstalled = before !== void 0 && before === await readTextIfAny(file2.path);
+    return { pack: info(pack), added, merged, path: file2.path, scope, alreadyInstalled };
   });
 }
 async function installPack(name, opts = {}) {
@@ -60451,6 +60467,10 @@ var safe = sanitizeForDisplay;
 function safeLines(s) {
   return s.split("\n").map(safe).join("\n");
 }
+var ERROR_LINE_MAX_CHARS = 4096;
+function safeMessage(s) {
+  return s.split("\n").map((l) => sanitizeForDisplayMax(l, ERROR_LINE_MAX_CHARS)).join("\n");
+}
 function plural2(n, word) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
@@ -60485,9 +60505,9 @@ function fail(io, err, json2) {
   const message = errorMessage(err);
   const hint = unreadableLexiconHint(message) ?? ownNextStep(err);
   if (json2) printJsonError(io, message, hint ?? (isProjectTrustError(err) ? PROJECT_TRUST_NEXT_STEP : void 0));
-  io.stderr(`lexicon: ${safeLines(message)}
+  io.stderr(`lexicon: ${safeMessage(message)}
 `);
-  if (hint) io.stderr(`lexicon: ${safeLines(hint)}
+  if (hint) io.stderr(`lexicon: ${safeMessage(hint)}
 `);
   return 1;
 }
@@ -60832,11 +60852,13 @@ var registerTermTools = (server, ctx) => {
       const shown = untrusted && !saved.created ? term : saved.term;
       const conflicts = spellingConflicts((await load({ parseSkipped: false })).merged, shown.aliases, shown.canonical);
       const note = conflictNote(conflicts, "mcp");
+      const unchanged = saved.unchanged === true && !untrusted;
       return textResult({
         term: shown,
         path: saved.file.path,
         created: saved.created,
-        ...conflicts.length > 0 ? { conflicts, note } : {},
+        ...unchanged ? { unchanged: true } : {},
+        ...conflicts.length > 0 ? { conflicts, note } : unchanged ? { note: unchangedTermNote(shown.canonical) } : {},
         ...untrusted ? untrustedWriteFields(saved.file.path, JSON.stringify(shown.canonical)) : {}
       });
     })
@@ -61091,6 +61113,10 @@ var suggestionSchema = external_exports.object({
 function aliasCount(n) {
   return `${n} alias${n === 1 ? "" : "es"}`;
 }
+function emptySuggestionsNote(historyEntries) {
+  const history = historyEntries === 0 ? `there is no voice history yet (only ${cliCommand("voice")} push-to-talk records one)` : `the ${historyEntries} ${historyEntries === 1 ? "dictation in the voice history holds" : "dictations in the voice history hold"} no new garble or name`;
+  return `No suggestions: ${history}, no term is stale yet, and the repo gave no name the lexicon lacks. Suggestions come from dictations recorded in the voice history, from terms that never fire, and from the repo. Tell the user, and offer add_term for a name they know is misheard; call suggest_terms again after they have dictated for a while.`;
+}
 var registerHarvestTools = (server, ctx) => {
   const { load } = ctx;
   server.registerTool(
@@ -61172,7 +61198,9 @@ var registerHarvestTools = (server, ctx) => {
         return [];
       });
       const suggestions = await suggestTerms({ loaded, history, cwd: root, ...limit !== void 0 ? { limit } : {} });
-      return textResult(suggestions);
+      const result = textResult(suggestions);
+      if (suggestions.length === 0) result.content.push({ type: "text", text: emptySuggestionsNote(history.length) });
+      return result;
     })
   );
   server.registerTool(
@@ -61468,7 +61496,7 @@ var registerTrustTools = (server, ctx) => {
         await untrustProject(filePath, { cwd: ctx.cwd });
         throw new Error(`${safePath} changed while it was being trusted; trust was revoked`);
       }
-      const verb = before === "trusted" ? "re-pinned" : before === "changed" ? "updated" : "trusted";
+      const verb = entry.alreadyPinned ? "already-trusted" : before === "trusted" ? "re-pinned" : before === "changed" ? "updated" : "trusted";
       return textResult({
         action,
         path: safePath,
@@ -62813,6 +62841,8 @@ function mcpRunHints(message) {
     (_all, paren, inline, bare) => paren !== void 0 ? `(${mcpCommandHint(paren)})` : inline !== void 0 ? mcpCommandHint(inline) : `: ${cliCommand((bare ?? "").replace(/^lexicon /, ""))}`
   );
 }
+var TRUST_NEXT_STEP_CLI = "Review the project lexicon and trust it: lexicon trust  (it lists the terms and asks before it pins the file)";
+var TRUST_NEXT_STEP_MCP = `Review the project lexicon (trust_project with action "status"), then call trust_project with action "trust", which asks the user directly, or ask them to run ${cliCommand("trust")} in a terminal in that repo`;
 function summarize(checks, state, audience = "cli") {
   const mcp = audience === "mcp";
   const fails = checks.filter((c) => c.level === "fail");
@@ -62829,6 +62859,14 @@ function summarize(checks, state, audience = "cli") {
       // characters and an absolute path can use most of that, so what gets
       // cut has to be the part the check list already showed.
       nextStep: mcp ? `Ask the user to open it and fix the parse error: ${cliCommand(editCommand(first.scope).replace(/^lexicon /, ""))} (setup_lexicon will not repair this). The file is ${first.path}` : `Open it and fix the parse error: ${editCommand(first.scope)}  (lexicon setup will not repair this). The file is ${first.path}`
+    };
+  }
+  if (state.terms === 0 && state.untrustedProject && state.skippedProjectTerms > 0) {
+    const skipped = `${state.skippedProjectTerms} term${state.skippedProjectTerms === 1 ? "" : "s"}`;
+    return {
+      ready: false,
+      summary: `Lexicon has no terms it applies: this repo's project lexicon (${skipped}) is not trusted, so it is not merged and nothing will be corrected.`,
+      nextStep: mcp ? TRUST_NEXT_STEP_MCP : TRUST_NEXT_STEP_CLI
     };
   }
   if (state.terms === 0 && state.wired) {
@@ -62866,7 +62904,7 @@ function summarize(checks, state, audience = "cli") {
     return {
       ready: true,
       summary: `Lexicon is set up with ${counts}. This repo has a project lexicon that has not been trusted, so it is not merged.`,
-      nextStep: mcp ? `Review the project lexicon (trust_project with action "status"), then call trust_project with action "trust", which asks the user directly, or ask them to run ${cliCommand("trust")} in a terminal in that repo` : 'Review the project lexicon (trust_project with action "status"), then run: lexicon trust'
+      nextStep: mcp ? TRUST_NEXT_STEP_MCP : TRUST_NEXT_STEP_CLI
     };
   }
   return {
@@ -62887,6 +62925,7 @@ async function runDoctorReport(opts, deps = {}) {
   };
   let wired = false;
   let untrustedProject = false;
+  let skippedProjectTerms = 0;
   const unreadable = [];
   const paths = resolvePaths({ cwd, env, home });
   const files = [];
@@ -62913,9 +62952,11 @@ async function runDoctorReport(opts, deps = {}) {
         files.push(p);
       } else if (trust === "changed") {
         untrustedProject = true;
+        skippedProjectTerms = p.lexicon.terms.length;
         push2("warn", `project lexicon content changed since trusted; not merged (run lexicon trust again)`);
       } else {
         untrustedProject = true;
+        skippedProjectTerms = p.lexicon.terms.length;
         push2("warn", `project lexicon is untrusted and not merged: ${paths.project} (review it, then run: lexicon trust)`);
       }
     } catch (err) {
@@ -63065,7 +63106,7 @@ async function runDoctorReport(opts, deps = {}) {
     push2("info", "lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)");
   }
   if (opts.audience === "mcp") for (const check2 of checks) check2.message = mcpRunHints(check2.message);
-  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, unreadable }, opts.audience);
+  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, skippedProjectTerms, unreadable }, opts.audience);
   const firstFail = checks.find((c) => c.level === "fail");
   return {
     ok: firstFail === void 0,
@@ -64263,7 +64304,7 @@ async function stepClients(ctx) {
       const failure2 = lastLine(captured.err) || detail || `exit ${code}`;
       ctx.summary.clients.push({ name: client, status: "failed", detail: failure2 });
       ctx.warn(`   ${client}: failed ${safe(failure2)}`);
-      ctx.warn(`   (retry with: lexicon install ${client} --apply)`);
+      ctx.warn(ctx.opts.forAgent ? `   (retry with: install_client with client: "${client}" and apply: true)` : `   (retry with: lexicon install ${client} --apply)`);
     }
   }
 }
@@ -64335,7 +64376,7 @@ async function stepServe(ctx) {
   } else {
     ctx.summary.serve = "failed";
     ctx.warn(`   failed ${safe(lastLine(captured.err) || lastLine(captured.out))}`);
-    ctx.warn("   (retry with: lexicon serve --install)");
+    ctx.warn(ctx.opts.forAgent ? "   (retry with: setup_lexicon with apply: true and serve: true)" : "   (retry with: lexicon serve --install)");
   }
 }
 async function stepExport(ctx) {
@@ -64449,10 +64490,17 @@ function printNext(ctx) {
   const installed = s.clients.filter((c) => c.status === "installed").map((c) => c.name);
   const where = installed.includes("claude") ? "Claude Code" : installed[0] ?? "your agent";
   ctx.say();
-  ctx.say(
-    `${bold("Next:")} open ${safe(where)} and dictate a sentence with ${name ? `"${safe(name)}"` : "one of your names"} in it. That is the whole thing.`
-  );
+  const addName = !name && s.demo?.usedExample === true;
+  if (addName) {
+    ctx.say(`${bold("Next:")} add a name you dictate: lexicon add "Your Co" --suggest  (then open ${safe(where)} and say it in a sentence)`);
+  } else {
+    ctx.say(
+      `${bold("Next:")} open ${safe(where)} and dictate a sentence with ${name ? `"${safe(name)}"` : "one of your names"} in it. That is the whole thing.`
+    );
+  }
   ctx.say(dim("   later: lexicon suggest (names you keep correcting), lexicon stats, lexicon voice (local push-to-talk)"));
+  const quoted = name ? JSON.stringify(name) : void 0;
+  s.nextStep = ctx.opts.forAgent ? addName ? "Ask the user for a name they dictate (their company, product or a teammate) and add it with add_term; then ask them to dictate a sentence with it in it." : `Ask the user to dictate a sentence with ${quoted ?? "one of their names"} in it${installed.length > 0 ? ` in ${where}` : ""}.` : addName ? `add a name you dictate: lexicon add "Your Co" --suggest (then open ${where} and say it in a sentence)` : `open ${where} and dictate a sentence with ${quoted ?? "one of your names"} in it`;
 }
 function printSummary(ctx) {
   const s = ctx.summary;
@@ -64483,6 +64531,7 @@ async function runSetup(opts, io, deps = {}) {
   const ownPrompter = interactive && !deps.createPrompter;
   const prompter = interactive ? (deps.createPrompter ?? (() => createPrompter({ input: process.stdin, output: process.stdout })))() : void 0;
   const say = (s = "") => {
+    if (opts.forAgent) return;
     if (opts.json) io.stderr(`${s}
 `);
     else io.stdout(`${s}
@@ -64654,6 +64703,9 @@ var registerSetupTools = (server, ctx) => {
         // for them to trust: the model relaying a yes is not the user
         // reviewing the names. An already-trusted file stays trusted.
         harvestUntrusted: true,
+        // No progress text naming CLI flags (--packs, --harvest): the plan and the summary
+        // carry the facts, and summary.nextStep names add_term.
+        forAgent: true,
         ...applied ? {} : { dryRun: true }
       };
       const { code, summary, plan } = await runSetup(options, io, cliDir !== void 0 ? { cliDir } : {});
@@ -64666,12 +64718,16 @@ var registerSetupTools = (server, ctx) => {
         });
       }
       const untrusted = summary.untrustedProject;
+      const steps = [
+        ...untrusted !== void 0 ? [untrustedWriteFields(untrusted, "The repo names", true).nextStep] : [],
+        ...summary.nextStep !== void 0 ? [summary.nextStep] : []
+      ];
       return textResult({
         ok: code === 0,
         applied: true,
         summary,
         ...stderr ? { stderr } : {},
-        ...untrusted !== void 0 ? { nextStep: untrustedWriteFields(untrusted, "The repo names", true).nextStep } : {}
+        ...steps.length > 0 ? { nextStep: steps.join(" Then: ") } : {}
       });
     })
   );
@@ -65107,7 +65163,11 @@ var registerPackTools = (server, ctx) => {
       }
     },
     async ({ path: path27, content, format, scope, dryRun }) => guarded(async () => {
-      if (path27 === void 0 && content === void 0) throw new Error("pass path or content");
+      if (path27 === void 0 && content === void 0) {
+        throw new Error(
+          "pass path or content: path is a dictionary file in this workspace, content the dictionary text itself (format defaults to auto); nothing was imported"
+        );
+      }
       const file2 = content === void 0 && path27 !== void 0 ? containedPath(ctx, path27, (f) => `import ${shellWord(f)}`) : path27 ?? "-";
       const io = bufferIO();
       const writeOpts = scope === "project" ? await mcpWriteOpts(ctx) : {};

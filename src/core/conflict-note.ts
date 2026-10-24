@@ -52,3 +52,12 @@ export function conflictNote(conflicts: readonly LearnConflict[], audience: Conf
     )
     .join(' ');
 }
+
+/**
+ * The sentence `lexicon add` and MCP `add_term` give when the term already had
+ * every alias, never-word and field the add gave it (`addTerm`'s
+ * `unchanged`), so the answer is not read as a merge. Unsanitized.
+ */
+export function unchangedTermNote(canonical: string): string {
+  return `Nothing was added: ${JSON.stringify(canonical)} already has every alias and field given.`;
+}

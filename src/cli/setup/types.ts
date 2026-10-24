@@ -79,6 +79,14 @@ export interface SetupOptions extends CommonOptions {
    */
   harvestUntrusted?: boolean;
   /**
+   * The caller is an agent with MCP tools, not a person at a shell (MCP
+   * setup_lexicon). The step-by-step progress, whose hints name CLI flags
+   * such as `--packs`, is not written (the summary or plan carries the
+   * facts), the retry hints of a failed client or login service name the
+   * tool call, and `SetupSummary.nextStep` names `add_term`. Not a CLI flag.
+   */
+  forAgent?: boolean;
+  /**
    * `--serve` / `--no-serve`: install the local API login service. With a
    * prompter, undefined asks (default yes); without one (`--yes`, no TTY,
    * MCP) undefined skips it: a login service is never created silently.
@@ -151,6 +159,12 @@ export interface SetupSummary {
   demo?: SetupDemo;
   /** The project lexicon a `harvestUntrusted` harvest wrote without pinning it (it was not trusted before); untrusted until the user runs `lexicon trust`. */
   untrustedProject?: string;
+  /**
+   * The one thing to do next: the text output's `Next:` line without the
+   * label (with `forAgent`, the same step in tool terms). Absent only if the
+   * run stopped before the summary.
+   */
+  nextStep?: string;
 }
 
 /**

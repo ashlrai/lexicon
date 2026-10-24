@@ -60,6 +60,7 @@ import {
   addTerm,
   addTerms,
   conflictNote,
+  unchangedTermNote,
   diffSummary,
   emptyLexicon,
   isEmptyLexicon,
@@ -402,14 +403,27 @@ export async function runAdd(
     line(
       io,
       JSON.stringify(
-        jsonOk({ term: result.term, path: result.file.path, created: result.created, scope, suggested, ...(conflicts.length > 0 ? { conflicts, note: conflictNote(conflicts) } : {}) }),
+        jsonOk({
+          term: result.term,
+          path: result.file.path,
+          created: result.created,
+          ...(result.unchanged ? { unchanged: true } : {}),
+          scope,
+          suggested,
+          ...(conflicts.length > 0 ? { conflicts, note: conflictNote(conflicts) } : result.unchanged ? { note: unchangedTermNote(result.term.canonical) } : {}),
+        }),
         null,
         2,
       ),
     );
     return 0;
   }
-  line(io, `${result.created ? green('created') : green('merged')} ${bold(safe(result.term.canonical))} (${scope}) in ${safe(result.file.path)}`);
+  if (result.unchanged) {
+    // The term already had every alias and field given: "merged" read as a change.
+    line(io, `${unchangedTermNote(safe(result.term.canonical))} (${scope}: ${safe(result.file.path)})`);
+  } else {
+    line(io, `${result.created ? green('created') : green('merged')} ${bold(safe(result.term.canonical))} (${scope}) in ${safe(result.file.path)}`);
+  }
   // One aliases line: the suggestions are marked in it rather than listed
   // again on a line of their own (`suggested aliases: Fo` then `aliases: Fo`).
   const saved = result.term.aliases;
@@ -616,7 +630,12 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
   }
 
   if (terms.length === 0) {
-    line(io, dim('no terms' + (opts.query || category ? ' match' : ' yet. Try: lexicon add "Ashlr.AI" Ashler')));
+    // With every term in a project file that was skipped, adding a global
+    // term is not what is missing: trusting the file is.
+    const empty = loaded.skippedProject
+      ? ' applied: the project lexicon is not trusted, so its terms are not loaded. Review it and run: lexicon trust'
+      : ' yet. Try: lexicon add "Ashlr.AI" Ashler';
+    line(io, dim('no terms' + (opts.query || category ? ' match' : empty)));
   } else {
     const rows = terms.map((t) => [
       t.canonical,
@@ -715,9 +734,14 @@ export async function runNormalize(
     // bytes must not be rewritten by terms the user never chose.
     const useExample = fromArgs && isEmptyLexicon(loaded.merged);
     if (useExample) {
+      // A skipped project file holds terms; they are just not trusted yet, so
+      // the way to them is `lexicon trust`, not building a lexicon from scratch.
       io.stderr(
-        'lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS).\n' +
-          'lexicon: run `lexicon setup` to build your own; nothing was written.\n',
+        loaded.skippedProject
+          ? 'lexicon: no trusted terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS).\n' +
+              'lexicon: the project lexicon is not trusted, so its terms were not used; review it and run `lexicon trust` to use them. Nothing was written.\n'
+          : 'lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS).\n' +
+              'lexicon: run `lexicon setup` to build your own; nothing was written.\n',
       );
     }
     const result = normalize(text, useExample ? DEMO_LEXICON : loaded.merged, normalizeOpts);

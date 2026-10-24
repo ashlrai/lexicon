@@ -751,7 +751,8 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: project lexicon t
     ]);
     expect(doctor.stdout).toContain('project lexicon content changed since trusted; not merged');
     expect(changed.stdout).toBe('sneak in\n');
-    expect(changed.stderr).toContain('changed since trusted project lexicon skipped');
+    // Catches: the line read "changed since trusted project lexicon skipped".
+    expect(changed.stderr).toContain(`project lexicon changed since you trusted it, so it was skipped: ${projectPath} (review it, then run: lexicon trust)`);
     expect(included.stdout).toBe('Sneaky in\n');
 
     // 6. untrust removes the pin.
@@ -1658,5 +1659,112 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: pack add --json w
     expect(docs).toHaveLength(2);
     expect(docs[0]).toMatchObject({ pack: { name: 'developer' } });
     expect(docs[1]).toMatchObject({ preview: false, ref: 'example/cardiology' });
+  });
+});
+
+describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: pack add refusals name the next step', () => {
+  // Catches: pack add printed only the error for a mistyped pack name (stderr had no
+  // next step, --json the generic one) and for a community ref given without --registry.
+  it('an unknown pack points at pack list, a community ref without --registry at the flag', async () => {
+    const h = await freshHome('pack-refuse');
+    const typo = await runCli(['pack', 'add', 'developr'], { env: h.env });
+    expect(typo.code).toBe(1);
+    expect(typo.stderr).toContain('lexicon: developr: unknown pack "developr"');
+    expect(typo.stderr).toContain('lexicon: run lexicon pack list to see the starter packs');
+    const typoJson = await runCli(['pack', 'add', 'developr', '--json'], { env: h.env });
+    expect(typoJson.code).toBe(1);
+    expect(JSON.parse(typoJson.stdout)).toEqual({
+      ok: false,
+      ref: 'developr',
+      error: expect.stringContaining('unknown pack'),
+      nextStep: expect.stringContaining('run lexicon pack list'),
+    });
+
+    const noRegistry = await runCli(['pack', 'add', 'example/cardiology', '--json'], { env: h.env });
+    expect(noRegistry.code).toBe(1);
+    expect(JSON.parse(noRegistry.stdout)).toMatchObject({
+      ok: false,
+      ref: 'example/cardiology',
+      nextStep: expect.stringContaining('lexicon pack add example/cardiology --registry <index>'),
+    });
+    expect(noRegistry.stderr).toContain('lexicon: run: lexicon pack add example/cardiology --registry <index>');
+  });
+});
+
+describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: a long path does not cut the next step off', () => {
+  // Catches: errors and doctor checks were capped at 200 characters, so in a deep
+  // repo the command after the path was cut ("or write to the global le…").
+  it('add --project and doctor in a deep repo still print the whole command', async () => {
+    const h = await freshHome('deep-path');
+    const deep = path.join(h.repo, 'projects', 'a-fairly-long-organisation-name', 'and-a-fairly-long-repository-name', 'packages', 'service');
+    await fs.mkdir(deep, { recursive: true });
+    // The project file sits in the deep directory, so the messages that name it run past 200 characters.
+    await fs.writeFile(path.join(deep, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Hetzner\n    aliases: [head sner]\n');
+    expect(path.join(deep, '.lexicon.yaml').length).toBeGreaterThan(130);
+    const add = await runCli(['add', 'Foo', '--project'], { env: h.env, cwd: deep });
+    expect(add.code).toBe(1);
+    expect(add.stderr).toContain('or write to the global lexicon instead');
+    expect(add.stderr).not.toContain('…');
+    const doctor = await runCli(['doctor'], { env: h.env, cwd: deep });
+    expect(doctor.stdout).toContain('(review it, then run: lexicon trust)');
+    expect(doctor.stdout).not.toContain('…');
+  });
+});
+
+describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: doctor in a repo whose only terms are untrusted', () => {
+  // Catches: with an empty global lexicon and an untrusted repo .lexicon.yaml, doctor
+  // said "not set up yet ... Run: lexicon setup", which leaves the repo's terms unmerged,
+  // and its trust next step named the MCP tool trust_project to a terminal user.
+  it('names lexicon trust, not lexicon setup, as the next step', async () => {
+    const h = await freshHome('doctor-untrusted');
+    expect((await runCli(['init'], { env: h.env })).code).toBe(0);
+    await fs.writeFile(path.join(h.repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Hetzner\n    aliases: [head sner]\n');
+    const r = await runCli(['doctor', '--json'], { env: h.env, cwd: h.repo });
+    const report = JSON.parse(r.stdout) as { ready: boolean; summary: string; nextStep: string };
+    expect(report.ready).toBe(false);
+    expect(report.summary).toContain('project lexicon (1 term) is not trusted');
+    expect(report.summary).not.toMatch(/not set up yet/);
+    expect(report.nextStep).toContain('lexicon trust');
+    expect(report.nextStep).not.toContain('lexicon setup');
+    expect(report.nextStep).not.toContain('trust_project');
+
+    // Once it is trusted the terms count and the next step moves on.
+    expect((await runCli(['trust', '--yes'], { env: h.env, cwd: h.repo })).code).toBe(0);
+    const after = JSON.parse((await runCli(['doctor', '--json'], { env: h.env, cwd: h.repo })).stdout) as { summary: string; nextStep: string };
+    expect(after.summary).not.toContain('is not trusted');
+    expect(after.nextStep).not.toContain('lexicon trust');
+  });
+});
+
+describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: an empty lexicon next to an untrusted repo file', () => {
+  // Catches: list said "no terms yet. Try: lexicon add" and normalize "run `lexicon setup`"
+  // to a team member whose terms are all in the repo's untrusted .lexicon.yaml.
+  it('list and normalize point at lexicon trust', async () => {
+    const h = await freshHome('empty-untrusted');
+    expect((await runCli(['init'], { env: h.env })).code).toBe(0);
+    await fs.writeFile(path.join(h.repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Hetzner\n    aliases: [head sner]\n');
+    const list = await runCli(['list'], { env: h.env, cwd: h.repo });
+    expect(list.code).toBe(0);
+    expect(list.stdout).toContain('Review it and run: lexicon trust');
+    expect(list.stdout).not.toContain('Try: lexicon add');
+    const norm = await runCli(['normalize', 'deploy to head sner'], { env: h.env, cwd: h.repo });
+    expect(norm.code).toBe(0);
+    expect(norm.stdout).toBe('deploy to head sner\n');
+    expect(norm.stderr).toContain('review it and run `lexicon trust` to use them');
+    expect(norm.stderr).not.toContain('lexicon setup');
+  });
+});
+
+describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: setup --yes with nothing to seed', () => {
+  // Catches: with no git user.name and no --person or --company, setup seeded nothing and
+  // still ended "Next: open your agent and dictate a sentence with one of your names in it".
+  it('ends by naming the add command, not a sentence with names it does not have', async () => {
+    const h = await freshHome('setup-empty');
+    const env = { ...h.env, GIT_CONFIG_NOSYSTEM: '1', GIT_CONFIG_GLOBAL: path.join(h.home, 'no-gitconfig') };
+    const r = await runCli(['setup', '--yes', '--clients', 'none', '--no-harvest', '--app', 'none'], { env, cwd: h.repo });
+    expect(r.code, r.stderr).toBe(0);
+    expect(r.stdout).toContain('terms added: none');
+    expect(r.stdout).toContain('Next: add a name you dictate: lexicon add "Your Co" --suggest');
+    expect(r.stdout).not.toContain('one of your names');
   });
 });

@@ -10,7 +10,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createServer } from '../src/mcp/server.js';
-import { runList } from '../src/cli/commands.js';
+import { runAdd, runList } from '../src/cli/commands.js';
 import { trustProject } from '../src/core/trust.js';
 import { conflictNote } from '../src/core/learn.js';
 import { pathForModel } from '../src/core/schema.js';
@@ -1660,5 +1660,39 @@ describe('apply_suggestion with several suggestions', () => {
     expect(both.isError).toBe(true);
     expect(both.text).toContain('not both');
     await expect(fs.stat(process.env.LEXICON_PATH as string)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
+
+// Catches: adding an alias a term already has answered "merged" (CLI) and
+// `created: false` with no note (MCP add_term), though nothing was written.
+describe('adding an alias the term already has says nothing was added, in the CLI and over MCP alike', () => {
+  it('add_term and lexicon add give the same note, and a real merge still says merged', async () => {
+    expect((await call('add_term', { canonical: 'Hetzner', aliases: ['Hetsner'] })).isError).toBe(false);
+    const before = await fs.readFile(path.join(home, 'lexicon.yaml'), 'utf8');
+
+    const again = await call('add_term', { canonical: 'Hetzner', aliases: ['Hetsner'] });
+    expect(again.isError).toBe(false);
+    const mcp = JSON.parse(again.text) as Record<string, unknown>;
+    expect(mcp).toMatchObject({ created: false, unchanged: true, note: 'Nothing was added: "Hetzner" already has every alias and field given.' });
+
+    const json = makeIO();
+    expect(await runAdd('Hetzner', ['hetsner'], { cwd: repo, json: true }, json)).toBe(0);
+    expect(JSON.parse(json.out)).toMatchObject({ ok: true, created: false, unchanged: true, note: mcp.note });
+
+    const text = makeIO();
+    expect(await runAdd('Hetzner', ['Hetsner'], { cwd: repo }, text)).toBe(0);
+    expect(text.out).toContain(`Nothing was added: "Hetzner" already has every alias and field given. (global: ${path.join(home, 'lexicon.yaml')})`);
+    expect(text.out).not.toContain('merged');
+    expect(await fs.readFile(path.join(home, 'lexicon.yaml'), 'utf8')).toBe(before);
+
+    const grown = makeIO();
+    expect(await runAdd('Hetzner', ['Hezner'], { cwd: repo, json: true }, grown)).toBe(0);
+    const doc = JSON.parse(grown.out) as Record<string, unknown>;
+    expect(doc).toMatchObject({ created: false });
+    expect(doc).not.toHaveProperty('unchanged');
+    expect(doc).not.toHaveProperty('note');
+    const grownText = makeIO();
+    expect(await runAdd('Hetzner', ['Hetzer'], { cwd: repo }, grownText)).toBe(0);
+    expect(grownText.out).toContain('merged');
   });
 });

@@ -134,6 +134,24 @@ describe('pack add (community)', () => {
     expect(existsSync(globalPath)).toBe(false);
   });
 
+  // Catches: off a terminal without --yes, `pack add <ref>` exited 0 with
+  // "declined; nothing written." and a hint that said only "pass --yes", so a
+  // script read success and a person had to rebuild the command, --registry and all.
+  it('off a terminal without --yes writes nothing, prints the full command and exits 1', async () => {
+    const io = makeIO();
+    expect(await runPackAdd(['example/cardiology@1'], { ...baseOpts(), project: true, cwd: dir }, io, { isInteractive: () => false })).toBe(1);
+    expect(io.err).toContain(`not a terminal, so nothing was written. Review the list above, then run: lexicon pack add example/cardiology@1 --registry ${indexPath} --project --yes`);
+    expect(existsSync(path.join(dir, '.lexicon.yaml'))).toBe(false);
+    expect(existsSync(globalPath)).toBe(false);
+    const spaced = makeIO();
+    const odd = path.join(dir, "my reg's", 'index.yaml');
+    mkdirSync(path.dirname(odd));
+    writeFileSync(odd, readFileSync(indexPath));
+    writeFileSync(path.join(path.dirname(odd), 'cardiology.yaml'), PACK);
+    expect(await runPackAdd(['example/cardiology'], { globalPath, registry: odd }, spaced, { isInteractive: () => false })).toBe(1);
+    expect(spaced.err).toContain(`run: lexicon pack add example/cardiology --registry '${dir}/my reg'\\''s/index.yaml' --yes`);
+  });
+
   it('--yes installs after the preview', async () => {
     const io = makeIO();
     expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), yes: true }, io)).toBe(0);
@@ -580,13 +598,13 @@ describe('pack add with a vendored and a previewed or declined community ref rep
 
   it('the human output names the decline and adds up what was installed', async () => {
     const io = makeIO();
-    expect(await runPackAdd(['developer', 'example/cardiology'], { ...baseOpts(), cwd: dir }, io, { isInteractive: () => false })).toBe(0);
+    expect(await runPackAdd(['developer', 'example/cardiology'], { ...baseOpts(), cwd: dir }, io, { isInteractive: () => false })).toBe(1);
     expect(io.out).toContain('installed developer');
     expect(io.out).toContain('declined example/cardiology; nothing written for it.');
     expect(io.out).not.toContain('declined; nothing written.');
     expect(io.out).toContain('the terms are live');
     expect(io.out).toContain('1 pack installed (developer); declined: example/cardiology');
-    expect(io.err).toContain('pass --yes');
+    expect(io.err).toContain(`run: lexicon pack add example/cardiology --registry ${indexPath} --yes`);
     expect(readFileSync(globalPath, 'utf8')).not.toContain('Metoprolol');
   });
 });

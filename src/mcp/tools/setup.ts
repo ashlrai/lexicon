@@ -181,6 +181,9 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
           // for them to trust: the model relaying a yes is not the user
           // reviewing the names. An already-trusted file stays trusted.
           harvestUntrusted: true,
+          // No progress text naming CLI flags (--packs, --harvest): the plan and the summary
+          // carry the facts, and summary.nextStep names add_term.
+          forAgent: true,
           ...(applied ? {} : { dryRun: true }),
         };
         const { code, summary, plan } = await runSetup(options, io, cliDir !== undefined ? { cliDir } : {});
@@ -193,14 +196,17 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
           });
         }
         const untrusted = summary.untrustedProject;
+        // The trust step first (the harvested names wait on it), then the one the summary names.
+        const steps = [
+          ...(untrusted !== undefined ? [untrustedWriteFields(untrusted, 'The repo names', true).nextStep] : []),
+          ...(summary.nextStep !== undefined ? [summary.nextStep] : []),
+        ];
         return textResult({
           ok: code === 0,
           applied: true,
           summary,
           ...(stderr ? { stderr } : {}),
-          ...(untrusted !== undefined
-            ? { nextStep: untrustedWriteFields(untrusted, 'The repo names', true).nextStep }
-            : {}),
+          ...(steps.length > 0 ? { nextStep: steps.join(' Then: ') } : {}),
         });
       }),
   );

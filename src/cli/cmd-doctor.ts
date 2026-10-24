@@ -38,7 +38,7 @@ import {
   serveLabel,
   systemdUnitPath,
 } from './serve-paths.js';
-import { dim, green, line, plural, red, resolveCwd, safeLines, yellow } from './io.js';
+import { dim, green, line, plural, red, resolveCwd, safeMessage, yellow } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** Obvious English words that make terrible aliases (they'd fire constantly). */
@@ -180,7 +180,7 @@ export type DoctorLevel = 'ok' | 'fail' | 'warn' | 'info';
 
 export interface DoctorCheck {
   level: DoctorLevel;
-  /** Unsanitized: quotes paths, canonicals, aliases and error text. Renderers apply `safeLines`. */
+  /** Unsanitized: quotes paths, canonicals, aliases and error text. Renderers apply `safeMessage`. */
   message: string;
 }
 
@@ -409,9 +409,19 @@ function mcpRunHints(message: string): string {
  * point adding terms the agent will never see. The first unmet condition
  * wins; everything else waits for the next run.
  */
+/**
+ * The next step for a project lexicon that is not merged (untrusted or changed).
+ * The terminal one names the command alone: `trust_project` is an MCP tool a
+ * person at a shell cannot call, and `lexicon trust` prints the preview itself.
+ */
+const TRUST_NEXT_STEP_CLI = 'Review the project lexicon and trust it: lexicon trust  (it lists the terms and asks before it pins the file)';
+const TRUST_NEXT_STEP_MCP =
+  'Review the project lexicon (trust_project with action "status"), then call trust_project with action "trust", ' +
+  `which asks the user directly, or ask them to run ${cliCommand('trust')} in a terminal in that repo`;
+
 function summarize(
   checks: readonly DoctorCheck[],
-  state: { terms: number; wired: boolean; untrustedProject: boolean; unreadable: readonly UnreadableLexicon[] },
+  state: { terms: number; wired: boolean; untrustedProject: boolean; skippedProjectTerms: number; unreadable: readonly UnreadableLexicon[] },
   audience: DoctorAudience = 'cli',
 ): { ready: boolean; summary: string; nextStep: string } {
   const mcp = audience === 'mcp';
@@ -440,6 +450,18 @@ function summarize(
           `(setup_lexicon will not repair this). The file is ${first.path}`
         : `Open it and fix the parse error: ${editCommand(first.scope)}  ` +
           `(lexicon setup will not repair this). The file is ${first.path}`,
+    };
+  }
+  // Empty except for a project file this user has not trusted: the terms
+  // exist, they are just not merged. `lexicon setup` and `lexicon add` both
+  // leave them unmerged, so the way on is trust, and saying "not set up yet"
+  // sent a team member to build a lexicon the repo already gives them.
+  if (state.terms === 0 && state.untrustedProject && state.skippedProjectTerms > 0) {
+    const skipped = `${state.skippedProjectTerms} term${state.skippedProjectTerms === 1 ? '' : 's'}`;
+    return {
+      ready: false,
+      summary: `Lexicon has no terms it applies: this repo's project lexicon (${skipped}) is not trusted, so it is not merged and nothing will be corrected.`,
+      nextStep: mcp ? TRUST_NEXT_STEP_MCP : TRUST_NEXT_STEP_CLI,
     };
   }
   // Wired up but empty: setup already ran (with no git user.name and no
@@ -487,10 +509,7 @@ function summarize(
     return {
       ready: true,
       summary: `Lexicon is set up with ${counts}. This repo has a project lexicon that has not been trusted, so it is not merged.`,
-      nextStep: mcp
-        ? 'Review the project lexicon (trust_project with action "status"), then call trust_project with action "trust", ' +
-          `which asks the user directly, or ask them to run ${cliCommand('trust')} in a terminal in that repo`
-        : 'Review the project lexicon (trust_project with action "status"), then run: lexicon trust',
+      nextStep: mcp ? TRUST_NEXT_STEP_MCP : TRUST_NEXT_STEP_CLI,
     };
   }
   return {
@@ -502,7 +521,7 @@ function summarize(
 
 /** Check messages quote paths, canonicals, aliases and error text, so the whole message is sanitized here. */
 function renderCheck(c: DoctorCheck): string {
-  const message = safeLines(c.message);
+  const message = safeMessage(c.message);
   switch (c.level) {
     case 'ok':
       return `${green('✓')} ${message}`;
@@ -524,12 +543,12 @@ export function renderDoctorReport(report: DoctorReport, io: IO): number {
   // The two lines that matter, after the thirty that might: the same
   // `summary` and `nextStep` the MCP tool hands a model, so the terminal and
   // the agent never tell the user different things.
-  line(io, safeLines(report.summary));
+  line(io, safeMessage(report.summary));
   // nextStep quotes check messages, which quote paths, canonicals and aliases
   // from a project file this user may not have written, so it is sanitized
   // like everything else. Each nextStep leads with its command for that
   // reason: the cap can only eat the detail, never the fix.
-  const nextStep = safeLines(report.nextStep);
+  const nextStep = safeMessage(report.nextStep);
   line(io, report.ready && failures === 0 ? dim(nextStep) : yellow(nextStep));
   return failures === 0 ? 0 : 1;
 }
@@ -573,6 +592,8 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
   let wired = false;
   /** True when this repo has a .lexicon.yaml the user has not approved, so its terms are not being applied. */
   let untrustedProject = false;
+  /** Terms in that unmerged project file, so an otherwise empty lexicon is not reported as "not set up yet". */
+  let skippedProjectTerms = 0;
   /** Lexicon files that exist but do not parse. These make every other verdict wrong, so they are reported first. */
   const unreadable: UnreadableLexicon[] = [];
 
@@ -606,9 +627,11 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
         files.push(p);
       } else if (trust === 'changed') {
         untrustedProject = true;
+        skippedProjectTerms = p.lexicon.terms.length;
         push('warn', `project lexicon content changed since trusted; not merged (run lexicon trust again)`);
       } else {
         untrustedProject = true;
+        skippedProjectTerms = p.lexicon.terms.length;
         push('warn', `project lexicon is untrusted and not merged: ${paths.project} (review it, then run: lexicon trust)`);
       }
     } catch (err) {
@@ -786,7 +809,7 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
   // For an agent every check's hint names the tool or the npx form, as
   // `nextStep` does; `lexicon doctor` prints the checks unchanged.
   if (opts.audience === 'mcp') for (const check of checks) check.message = mcpRunHints(check.message);
-  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, unreadable }, opts.audience);
+  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, skippedProjectTerms, unreadable }, opts.audience);
   const firstFail = checks.find((c) => c.level === 'fail');
   return {
     ok: firstFail === undefined,
