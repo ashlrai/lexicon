@@ -53,7 +53,7 @@ interface Harness {
   out: string[];
   err: string[];
   controller: AbortController;
-  done: Promise<void>;
+  done: Promise<unknown>;
 }
 
 function start(initial: string, opts: { dryRun?: boolean; quiet?: boolean; mirror?: boolean } = {}): Harness {
@@ -334,7 +334,7 @@ describe('runClipboardDaemon', () => {
     expect(core.loadLexicon).toHaveBeenCalledTimes(2);
 
     h.controller.abort();
-    await expect(h.done).resolves.toBeUndefined();
+    await expect(h.done).resolves.toBe('abort');
     const reads = h.read.mock.calls.length;
     await vi.advanceTimersByTimeAsync(1000);
     expect(h.read.mock.calls.length).toBe(reads); // timer cleared
@@ -411,6 +411,42 @@ describe('runClipboardDaemon', () => {
       await done;
       expect(exit).not.toHaveBeenCalled();
       expect(process.listenerCount('SIGINT')).toBe(before);
+    } finally {
+      exit.mockRestore();
+    }
+  });
+
+  // Catches: a graceful ctrl-C (or SIGTERM) exited 0 while the forced second
+  // one exited 130 (143), so the status depended on whether a poll was in flight.
+  it('the exit status follows the signal, graceful or forced: 130 for SIGINT, 143 for SIGTERM, 0 for an abort', async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    try {
+      for (const [sig, code] of [['SIGINT', 130], ['SIGTERM', 143]] as const) {
+        const done = runDaemonCommand({ read: async () => 'x', write: async () => undefined, quiet: true, cwd: '/fake' });
+        await vi.advanceTimersByTimeAsync(10);
+        process.emit(sig);
+        expect(await done).toBe(code);
+        expect(await (async () => {
+          const loop = runClipboardDaemon({ read: async () => 'x', write: async () => undefined, quiet: true, cwd: '/fake' });
+          await vi.advanceTimersByTimeAsync(10);
+          process.emit(sig);
+          return loop;
+        })()).toBe(sig);
+      }
+      // A graceful stop with a poll in flight carries the signal too.
+      let release: (s: string) => void = () => undefined;
+      const read = vi.fn(() => new Promise<string>((r) => (release = r)));
+      const waiting = runDaemonCommand({ read, write: async () => undefined, quiet: true, cwd: '/fake' });
+      await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+      process.emit('SIGTERM');
+      release('x');
+      expect(await waiting).toBe(143);
+      const controller = new AbortController();
+      const aborted = runDaemonCommand({ read: async () => 'x', write: async () => undefined, quiet: true, cwd: '/fake', signal: controller.signal });
+      await vi.advanceTimersByTimeAsync(10);
+      controller.abort();
+      expect(await aborted).toBe(0);
+      expect(exit).not.toHaveBeenCalled();
     } finally {
       exit.mockRestore();
     }
