@@ -749,7 +749,21 @@ export async function runEdit(
     return 0;
   }
 
-  const code = await spawnEditor(editor.command, editor.args, target);
+  let code: number;
+  try {
+    code = await spawnEditor(editor.command, editor.args, target);
+  } catch (err) {
+    // A $VISUAL or $EDITOR that names no program on PATH ended the command
+    // with only `spawn <name> ENOENT`: no word on which variable, or where
+    // the file is to edit by hand.
+    const variable = env.VISUAL?.trim() ? '$VISUAL' : '$EDITOR';
+    return refuse(
+      io,
+      false,
+      `could not start the editor ${variable} names (${editor.command}): ${errorMessage(err)}`,
+      `set ${variable} to an editor on your PATH (e.g. ${variable === '$VISUAL' ? 'VISUAL' : 'EDITOR'}=vi), or edit the file directly: ${target}`,
+    );
+  }
   if (code !== 0) io.stderr(`lexicon: ${editor.command} exited with code ${code}; checking the file anyway\n`);
 
   try {

@@ -674,6 +674,20 @@ describe('edit', () => {
     expect(editorCommand({ EDITOR: '""' })).toBeUndefined();
   });
 
+  // Catches: an $EDITOR naming no program ended with only `spawn <name> ENOENT`, thrown, with no variable or file named.
+  it('says which variable names an editor that cannot be started, and where the file is', async () => {
+    const io = makeIO();
+    const spawnFails: SpawnEditor = async () => {
+      throw Object.assign(new Error('spawn nonexistent-ed ENOENT'), { code: 'ENOENT' });
+    };
+    expect(await runEdit({ globalPath }, io, spawnFails, { EDITOR: 'nonexistent-ed -w' })).toBe(1);
+    expect(io.err).toContain('lexicon: could not start the editor $EDITOR names (nonexistent-ed): spawn nonexistent-ed ENOENT');
+    expect(io.err).toContain(`lexicon: set $EDITOR to an editor on your PATH (e.g. EDITOR=vi), or edit the file directly: ${globalPath}`);
+    const visual = makeIO();
+    expect(await runEdit({ globalPath }, visual, spawnFails, { VISUAL: 'nope', EDITOR: 'vi' })).toBe(1);
+    expect(visual.err).toContain('the editor $VISUAL names (nope)');
+  });
+
   it('prints the path when no editor is configured (creating a missing global file)', async () => {
     const io = makeIO();
     expect(await runEdit({ globalPath }, io, undefined, {})).toBe(0);
