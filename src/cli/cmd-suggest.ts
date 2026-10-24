@@ -12,6 +12,7 @@ import {
   AUTO_APPLY_CONFIDENCE,
   ProjectTrustError,
   addTerms,
+  defaultProjectPath,
   loadLexicon,
   removeTerm,
   suggestAliases,
@@ -276,6 +277,13 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
     suggestions = await suggest(input);
   } catch (err) {
     return fail(io, err, opts.json);
+  }
+  // A new term goes to the project lexicon with --project (scopeFor), but
+  // suggestTerms names the global file for one, so `--project --json`
+  // printed the wrong `scope` and `path` for every 'term' suggestion.
+  if (opts.project) {
+    const projectPath = loaded.project?.path ?? loaded.skippedProject?.path ?? defaultProjectPath(cwd);
+    suggestions = suggestions.map((s) => (s.kind === 'term' ? { ...s, scope: 'project' as const, path: projectPath } : s));
   }
 
   if (opts.json && opts.yes) return applyAllJson(suggestions, loaded, opts, store, writers, io);
