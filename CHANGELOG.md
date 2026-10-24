@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- The Claude Code hook's note for a lexicon that does not parse (or cannot be read) stays within SessionStart's 4000-character cap. It quoted the file's full path, so a lexicon under a deep directory put the session context past the cap (4646 characters for a 4000-character path), and the error had no bound. The file is now named by its last components, as the skipped-project note names one, and the error is cut to 1500 characters.
 - Browser extension: on a browser that refuses `matchOriginAsFallback` (Firefox, Chrome before 119), the "Any site" script is no longer unregistered and registered again on every reconcile (install, startup, a permission change). The refusal is remembered in extension storage with the browser's version, so a frames registration without the key is left as it is there, and a browser update that accepts the key gets it on the next reconcile.
 - MCP `setup_lexicon` drops duplicate entries in `clients` and `packs`, keeping the order first named, so `clients: ["claude", "cursor", "claude"]` passes `claude,cursor` to setup instead of naming a client twice.
 - `lexicon pack add` with a name that has a slash but is no `<author>/<name>` ref (`../x`, `Acme/Pack`) says the ref is invalid and what a ref looks like, then names `lexicon pack list`, as MCP `add_pack` now does. It said community packs need `--registry`, for a name that can never be a pack.

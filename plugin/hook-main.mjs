@@ -21987,8 +21987,9 @@ async function loadOrExplain(cwd, staleGlobal = false) {
   try {
     return { loaded: await loadLexicon(staleGlobal ? { cwd, parseSkipped: false, staleGlobal: true } : { cwd, parseSkipped: false }) };
   } catch (err) {
-    const message = neutralizeForModel(err instanceof Error ? err.message : String(err));
-    if (!UNPARSEABLE_LEXICON_RE.test(message)) {
+    const raw = neutralizeForModel(err instanceof Error ? err.message : String(err));
+    const message = loadErrorForModel(raw);
+    if (!UNPARSEABLE_LEXICON_RE.test(raw)) {
       return {
         note: `Lexicon is installed but is correcting nothing, because its lexicon could not be read: ${message}
 Call the lexicon_doctor tool, or tell the user to run ` + cliCommand("doctor") + ", which names the file and what is wrong with it."
@@ -21996,9 +21997,14 @@ Call the lexicon_doctor tool, or tell the user to run ` + cliCommand("doctor") +
     }
     return {
       note: `Lexicon is installed but is correcting nothing, because its file does not parse: ${message}
-Tell the user to run ` + cliCommand(unparseableEditCommand(message)) + " and fix the parse error. Setup will not repair this, and lexicon_doctor will show the same thing."
+Tell the user to run ` + cliCommand(unparseableEditCommand(raw)) + " and fix the parse error. Setup will not repair this, and lexicon_doctor will show the same thing."
     };
   }
+}
+var LOAD_ERROR_NOTE_MAX_CHARS = 1500;
+function loadErrorForModel(message) {
+  const shortened = message.replace(/^((?:Failed to parse lexicon YAML|Invalid lexicon) at )(.+?)(: )/, (_m, lead, file, sep) => `${lead}${pathForModel(file)}${sep}`);
+  return sanitizeForDisplayMax(shortened, LOAD_ERROR_NOTE_MAX_CHARS);
 }
 var UNPARSEABLE_LEXICON_RE = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at /;
 function unparseableEditCommand(message) {
@@ -22222,6 +22228,7 @@ export {
   HOOK_MATCH_BUDGET_MS,
   HOOK_PROMPT_MAX_CHARS,
   HOOK_STDIN_MAX_BYTES,
+  LOAD_ERROR_NOTE_MAX_CHARS,
   ONBOARD_NOTE,
   ONBOARD_NOTE_FILE,
   ONBOARD_NOTE_INTERVAL_MS,

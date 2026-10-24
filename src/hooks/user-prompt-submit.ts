@@ -1018,10 +1018,11 @@ async function loadOrExplain(cwd: string, staleGlobal = false): Promise<{ loaded
     // reports a skipped file by path.
     return { loaded: await loadLexicon(staleGlobal ? { cwd, parseSkipped: false, staleGlobal: true } : { cwd, parseSkipped: false }) };
   } catch (err) {
-    const message = neutralizeForModel(err instanceof Error ? err.message : String(err));
+    const raw = neutralizeForModel(err instanceof Error ? err.message : String(err));
+    const message = loadErrorForModel(raw);
     // Only a store parse/validation error is a file to fix with `lexicon edit`;
     // anything else (a file that cannot be read) used to be reported as one too.
-    if (!UNPARSEABLE_LEXICON_RE.test(message)) {
+    if (!UNPARSEABLE_LEXICON_RE.test(raw)) {
       return {
         note:
           `Lexicon is installed but is correcting nothing, because its lexicon could not be read: ${message}\n` +
@@ -1031,10 +1032,29 @@ async function loadOrExplain(cwd: string, staleGlobal = false): Promise<{ loaded
     return {
       note:
         `Lexicon is installed but is correcting nothing, because its file does not parse: ${message}\n` +
-        'Tell the user to run ' + cliCommand(unparseableEditCommand(message)) + ' and fix the parse error. Setup will not repair this, ' +
+        'Tell the user to run ' + cliCommand(unparseableEditCommand(raw)) + ' and fix the parse error. Setup will not repair this, ' +
         'and lexicon_doctor will show the same thing.',
     };
   }
+}
+
+/**
+ * Most characters of a load error in the hook's note. The note is the whole
+ * SessionStart context, capped at SESSION_CONTEXT_MAX_CHARS like the table.
+ */
+export const LOAD_ERROR_NOTE_MAX_CHARS = 1500;
+
+/**
+ * A load error as the note quotes it: the file a parse error names through
+ * pathForModel (its last components, as the skipped-project note names a
+ * file), then cut to LOAD_ERROR_NOTE_MAX_CHARS. The full path went in as is,
+ * so a lexicon under a deep directory put a SessionStart context past its
+ * 4000-character cap, and a directory name chosen by whoever published a repo
+ * reached the model whole.
+ */
+function loadErrorForModel(message: string): string {
+  const shortened = message.replace(/^((?:Failed to parse lexicon YAML|Invalid lexicon) at )(.+?)(: )/, (_m, lead: string, file: string, sep: string) => `${lead}${pathForModel(file)}${sep}`);
+  return sanitizeForDisplayMax(shortened, LOAD_ERROR_NOTE_MAX_CHARS);
 }
 
 /** The store's messages for a lexicon file that does not parse or validate (src/cli/io.ts unreadableLexiconEdit reads the same two). */

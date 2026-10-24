@@ -1174,6 +1174,35 @@ describe('bug M: a lexicon that does not parse is reported, not swallowed', () =
   });
 });
 
+// Catches: the load error's note quoted the file's full path, so a lexicon
+// under a deep directory put the SessionStart context past its 4000-character
+// cap; and the error itself had no bound.
+describe('a load error note stays within the SessionStart cap', () => {
+  it('names a deep file by its last components and caps a long error', async () => {
+    const { runHook, SESSION_CONTEXT_MAX_CHARS, LOAD_ERROR_NOTE_MAX_CHARS } = await import('../src/hooks/user-prompt-submit.js');
+    const deep = path.join('/fake', ...Array.from({ length: 100 }, (_, i) => `${'d'.repeat(40)}${i}`), 'repo', '.lexicon.yaml');
+    const errors = [
+      new Error(`Failed to parse lexicon YAML at ${deep}: Missing closing "quote at line 3`),
+      new Error(`Invalid lexicon at ${path.join('/fake', 'home', 'lexicon.yaml')}: ${'terms.0.canonical: Required '.repeat(400)}`),
+      new Error(`EACCES: permission denied, open '${deep}'`),
+    ];
+    for (const error of errors) {
+      for (const event of ['SessionStart', 'UserPromptSubmit']) {
+        mocks.loadLexicon.mockRejectedValueOnce(error);
+        const said = context(await runHook(JSON.stringify({ hook_event_name: event, prompt: 'ping Ashler', cwd: '/fake/repo' })));
+        expect(said.length, `${event}: ${error.message.slice(0, 40)}`).toBeLessThanOrEqual(SESSION_CONTEXT_MAX_CHARS);
+        expect(said.length).toBeLessThan(LOAD_ERROR_NOTE_MAX_CHARS + 400);
+        expect(said).toMatch(/lexicon (edit|doctor)/);
+      }
+    }
+    mocks.loadLexicon.mockRejectedValueOnce(errors[0]);
+    const said = context(await runHook(sessionStartPayload()));
+    expect(said).toContain(`at \u2026${path.sep}${'d'.repeat(40)}99${path.sep}repo${path.sep}.lexicon.yaml: Missing closing`);
+    // Still the repo file: the step opens it.
+    expect(said).toContain('`lexicon edit --project`');
+  });
+});
+
 // Catches: a payload `cwd` that is not a string reached loadLexicon, whose
 // TypeError came back to the model as "its file does not parse ... run
 // `lexicon edit`", about a lexicon that was fine; and any other load error
