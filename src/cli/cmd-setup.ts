@@ -123,7 +123,9 @@ function printPlan(ctx: Ctx, p: SetupPlan): void {
   const names = p.wouldHarvest.length > 0 ? safe(p.wouldHarvest.join(', ')) : dim('nothing');
   const onOffer = `${p.wouldHarvest.length} name${p.wouldHarvest.length === 1 ? '' : 's'} on offer: ${names}`;
   ctx.say(
-    p.wouldHarvest.length === 0
+    ctx.opts.harvest === false
+      ? `   repo harvest: ${dim('skipped')} (--no-harvest)`
+      : p.wouldHarvest.length === 0
       ? `   repo harvest: ${dim('nothing to add')}`
       : ctx.opts.harvest === true
         ? `   repo harvest: would add ${names}`

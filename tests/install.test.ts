@@ -2,7 +2,8 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Command } from 'commander';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CliRefusal } from '../src/cli/io.js';
 import {
   CODEX_TABLE,
   codexBlock,
@@ -208,6 +209,58 @@ describe('lexicon install <json client> --apply', () => {
       );
     });
   }
+
+  // Catches: JSON.parse refused a config with a comment or a trailing comma
+  // (VS Code's mcp.json is JSONC), and a write reformatted the whole file
+  // through JSON.stringify: 4-space indents became 2 and every inline array
+  // of the user's other servers was expanded.
+  it('merges into JSON with comments and trailing commas, keeping every other byte', async () => {
+    const file = path.join(home, '.cursor', 'mcp.json');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const before = '{\n    // my servers\n    "mcpServers": {\n        "other": { "command": "x", "args": ["a", "b"] }, /* keep */\n    },\n}\n';
+    await fs.writeFile(file, before);
+    const first = await run('cursor', { apply: true });
+    expect(first.code).toBe(0);
+    const after = await fs.readFile(file, 'utf8');
+    expect(after).toBe(
+      '{\n    // my servers\n    "mcpServers": {\n        "other": { "command": "x", "args": ["a", "b"] }, /* keep */\n' +
+        `        "lexicon": {\n            "command": "node",\n            "args": [\n                ${JSON.stringify(SERVER)}\n            ]\n        },\n    },\n}\n`,
+    );
+    // Idempotent: the second run writes nothing.
+    const second = await run('cursor', { apply: true });
+    expect(second.io.out).toContain('already');
+    expect(await fs.readFile(file, 'utf8')).toBe(after);
+  });
+
+  it('keeps a tab-indented strict JSON file byte for byte outside the lexicon entry', async () => {
+    const file = path.join(home, '.cursor', 'mcp.json');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, '{\n\t"theme": "dark",\n\t"mcpServers": {}\n}');
+    await run('cursor', { apply: true });
+    expect(await fs.readFile(file, 'utf8')).toBe(`{\n\t"theme": "dark",\n\t"mcpServers": {\n\t\t"lexicon": {\n\t\t\t"command": "node",\n\t\t\t"args": [\n\t\t\t\t${JSON.stringify(SERVER)}\n\t\t\t]\n\t\t}\n\t}\n}`);
+  });
+
+  // Catches: a read-only config surfaced as Node's bare
+  // `EACCES: permission denied, open '<file>'`, with no word on what changed
+  // or what to do (tests run as root in CI, so the refusal is simulated).
+  it('a config it may not write is a refusal saying nothing changed and how to go on', async () => {
+    const file = path.join(home, '.cursor', 'mcp.json');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, '{}\n');
+    const denied = Object.assign(new Error(`EACCES: permission denied, open '${file}'`), { code: 'EACCES' });
+    const spy = vi.spyOn(fs, 'writeFile').mockRejectedValue(denied);
+    try {
+      const err = await run('cursor', { apply: true }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(CliRefusal);
+      expect((err as CliRefusal).message).toBe(`could not write ${file} (EACCES): it is read-only or not yours; nothing was changed`);
+      expect((err as CliRefusal).nextStep).toMatch(/^make it writable \(ls -l .* chmod u\+w .*\) and run this again, or add the entry shown above to it by hand$/);
+      const toml = await run('codex', { apply: true }).catch((e: unknown) => e);
+      expect((toml as CliRefusal).message).toMatch(/^could not write .*config\.toml \(EACCES\)/);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await fs.readFile(file, 'utf8')).toBe('{}\n');
+  });
 
   it('refuses to overwrite a file that is not valid JSON', async () => {
     const file = path.join(home, '.cursor', 'mcp.json');
@@ -717,6 +770,28 @@ describe('LEXICON_PATH and LEXICON_CWD reach the installed server', () => {
     expect(merged).toContain(`LEXICON_CWD = ${JSON.stringify(work())}`);
     const again = await run('codex', { apply: true }, lexEnv());
     expect(again.io.out).toContain('nothing changed');
+  });
+
+  // Catches: the undo named only [mcp_servers.lexicon], so following it left
+  // the [mcp_servers.lexicon.env] table the keys went into, which Codex reads
+  // as a server with no command; and no undo said a file this run created
+  // could simply be deleted, or that a server map it added was its own.
+  it('names everything its undo has to remove, leaving nothing behind', async () => {
+    const file = path.join(home, '.codex/config.toml');
+    const created = await run('codex', { apply: true }, lexEnv());
+    expect(created.io.out).toContain(`undo: delete the [${CODEX_TABLE}] table from ${file} (this run created the file, so deleting it undoes this)`);
+    await fs.writeFile(file, ['[mcp_servers.lexicon]', 'command = "node"', 'args = ["/old.js"]', '', '[mcp_servers.lexicon.env]', 'FOO = "bar"', ''].join('\n'));
+    const sub = await run('codex', { apply: true }, lexEnv());
+    expect(sub.io.out).toContain(`undo: delete the [${CODEX_TABLE}] table and its [${CODEX_TABLE}.env] table from ${file}\n`);
+
+    const cursor = path.join(home, '.cursor', 'mcp.json');
+    await fs.mkdir(path.dirname(cursor), { recursive: true });
+    await fs.writeFile(cursor, '{ "theme": "dark" }\n');
+    const added = await run('cursor', { apply: true });
+    expect(added.io.out).toContain(`undo: delete the "lexicon" entry under "mcpServers" in ${cursor}, and "mcpServers" itself, which this run added\n`);
+    await fs.writeFile(cursor, '{ "mcpServers": { "other": {} } }\n');
+    const kept = await run('cursor', { apply: true });
+    expect(kept.io.out).toContain(`undo: delete the "lexicon" entry under "mcpServers" in ${cursor}\n`);
   });
 
   it('passes them to `claude mcp add -e` ahead of --scope', async () => {

@@ -44,6 +44,8 @@ import {
   exportLexicon,
   findRegistryRecordMismatch,
   hasControlChars,
+  findUnencodableChar,
+  UNENCODABLE_NOTE,
   installPack,
   installedPacks,
   resolveExportFormat,
@@ -1167,6 +1169,8 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     // The schema's NonEmptyWord refuses these too, so no stored canonical
     // could carry them; the aliases they would seed would never be accepted.
     if (hasControlChars(canonical)) throw new HttpError(400, 'canonical must not contain control characters or newlines');
+    const unencodable = findUnencodableChar(canonical);
+    if (unencodable) throw new HttpError(400, `canonical must not contain ${unencodable} (${UNENCODABLE_NOTE})`);
     return { canonical, aliases: suggestAliases(canonical) };
   }
 

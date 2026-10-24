@@ -8,6 +8,7 @@
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { errorMessage, isEnoent } from './errors.js';
+import { editJsonText, parseJsonc } from './jsonc.js';
 
 /** A plain object (not null, not an array): the shape every config merge expects. */
 export function isRecord(value: unknown): value is Record<string, unknown> {
@@ -28,9 +29,15 @@ export interface JsonFileRead {
   exists: boolean;
   value?: unknown;
   error?: string;
+  /** The file's text as read, for `writeJsonFile` to edit in place. */
+  text?: string;
 }
 
-/** Read and parse a JSON config file. An empty file parses as `{}`. Never throws. */
+/**
+ * Read and parse a JSON config file. An empty file parses as `{}`. Comments
+ * and trailing commas (JSONC, which VS Code's mcp.json and many hand-edited
+ * configs hold) are accepted. Never throws.
+ */
 export async function readJsonFile(file: string): Promise<JsonFileRead> {
   let raw: string;
   try {
@@ -40,14 +47,19 @@ export async function readJsonFile(file: string): Promise<JsonFileRead> {
     return { exists: true, error: errorMessage(err) };
   }
   try {
-    return { exists: true, value: raw.trim() === '' ? {} : (JSON.parse(raw) as unknown) };
+    return { exists: true, text: raw, value: raw.trim() === '' ? {} : parseJsonc(raw) };
   } catch (err) {
     return { exists: true, error: errorMessage(err) };
   }
 }
 
-/** `mkdir -p` the parent directory and write `value` as formatted JSON. */
-export async function writeJsonFile(file: string, value: unknown): Promise<void> {
+/**
+ * `mkdir -p` the parent directory and write `value` as formatted JSON. With
+ * `original` (the text `readJsonFile` read), only what differs is rewritten
+ * (`editJsonText`): every other byte, comments and the file's own
+ * indentation included, stays as the user left it.
+ */
+export async function writeJsonFile(file: string, value: unknown, original?: string): Promise<void> {
   await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, formatJson(value), 'utf8');
+  await fs.writeFile(file, original === undefined ? formatJson(value) : editJsonText(original, value), 'utf8');
 }

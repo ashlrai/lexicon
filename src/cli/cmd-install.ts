@@ -500,27 +500,61 @@ async function readText(file: string): Promise<{ text: string; existed: boolean 
 }
 
 async function writeText(file: string, text: string): Promise<void> {
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, text, 'utf8');
+  await explainWrite(file, async () => {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, text, 'utf8');
+  });
 }
 
-/** Apply a JSON target. Returns what happened for the report line. */
-async function applyJson(target: InstallTarget): Promise<InstallOutcome> {
+/**
+ * Run `write` for `file`; a permission refusal (a read-only file or
+ * directory, one owned by another user, a read-only volume) becomes a
+ * refusal that says nothing was changed and how to go on. It surfaced as
+ * Node's bare `EACCES: permission denied, open '<file>'`.
+ */
+async function explainWrite(file: string, write: () => Promise<void>): Promise<void> {
+  try {
+    await write();
+  } catch (err) {
+    const code = (err as { code?: unknown }).code;
+    if (code !== 'EACCES' && code !== 'EPERM' && code !== 'EROFS') throw err;
+    throw new CliRefusal(
+      `could not write ${safe(file)} (${code}): it is read-only or not yours; nothing was changed`,
+      `make it writable (ls -l ${shellWord(file)} shows who owns it; chmod u+w ${shellWord(file)}) and run this again, or add the entry shown above to it by hand`,
+    );
+  }
+}
+
+/**
+ * What an apply did, for the report line, and what its undo has to name: a
+ * server map (`mcpServers`, `servers`) the file did not have before, or a
+ * `[mcp_servers.lexicon.env]` sub-table the env keys went into.
+ */
+interface Applied {
+  outcome: InstallOutcome;
+  addedKey?: boolean;
+  envTable?: boolean;
+}
+
+/** Apply a JSON target. */
+async function applyJson(target: InstallTarget): Promise<Applied> {
   const read = await readJsonFile(target.file);
   if (read.error !== undefined) {
     throw new Error(`${target.file} is not valid JSON (${read.error}); fix or remove it first`);
   }
-  const { next, changed } = mergeServerIntoJson(read.exists ? read.value : {}, target.key, target.entry);
-  if (!changed) return 'unchanged';
-  await writeJsonFile(target.file, next);
-  return read.exists ? 'updated' : 'created';
+  const current = read.exists ? read.value : {};
+  const addedKey = !(isRecord(current) && target.key in current);
+  const { next, changed } = mergeServerIntoJson(current, target.key, target.entry);
+  if (!changed) return { outcome: 'unchanged' };
+  await explainWrite(target.file, () => writeJsonFile(target.file, next, read.text));
+  return { outcome: read.exists ? 'updated' : 'created', addedKey };
 }
 
 function mergeChanged(first: MergeResult<string>, second: MergeResult<string>): MergeResult<string> {
   return { next: second.next, changed: first.changed || second.changed };
 }
 
-async function applyToml(target: InstallTarget): Promise<InstallOutcome> {
+async function applyToml(target: InstallTarget): Promise<Applied> {
   const { text, existed } = await readText(target.file);
   const { env, ...launch } = target.entry;
   const envTable = `${CODEX_TABLE}.env`;
@@ -530,9 +564,9 @@ async function applyToml(target: InstallTarget): Promise<InstallOutcome> {
   const subTable = env !== undefined && text.split('\n').some((l) => tomlHeaderRe(envTable).test(l));
   const table = upsertTomlTable(text, CODEX_TABLE, codexBlock(subTable ? launch : target.entry));
   const { next, changed } = subTable && env ? mergeChanged(table, upsertTomlKeys(table.next, envTable, env)) : table;
-  if (!changed) return 'unchanged';
+  if (!changed) return { outcome: 'unchanged', envTable: subTable };
   await writeText(target.file, next);
-  return existed ? 'updated' : 'created';
+  return { outcome: existed ? 'updated' : 'created', envTable: subTable };
 }
 
 // ---------------------------------------------------------------------------
@@ -566,10 +600,19 @@ export function installApplyCommand(client: InstallClient, opts: InstallOptions)
 }
 
 /** How to take the lexicon entry back out of a client's config file by hand. */
-function undoEntry(target: InstallTarget): string {
-  return target.format === 'toml'
-    ? `delete the [${CODEX_TABLE}] table from ${safe(target.file)}`
-    : `delete the "lexicon" entry under "${target.key}" in ${safe(target.file)}`;
+/**
+ * How to take the entry back out, leaving nothing behind: the table or entry,
+ * plus the `[mcp_servers.lexicon.env]` sub-table the env keys went into (left
+ * alone, Codex reads it as a server with no command), the server map this
+ * run added, or the whole file when this run created it.
+ */
+function undoEntry(target: InstallTarget, applied: Applied): string {
+  const file = safe(target.file);
+  const what =
+    target.format === 'toml'
+      ? `delete the [${CODEX_TABLE}] table${applied.envTable ? ` and its [${CODEX_TABLE}.env] table` : ''} from ${file}`
+      : `delete the "lexicon" entry under "${target.key}" in ${file}${applied.addedKey && applied.outcome === 'updated' ? `, and "${target.key}" itself, which this run added` : ''}`;
+  return applied.outcome === 'created' ? `${what} (this run created the file, so deleting it undoes this)` : what;
 }
 
 function printExportHint(io: IO, step: number, client: InstallClient): void {
@@ -737,7 +780,8 @@ async function installText(
   line(io, `   ${opts.apply ? 'merge into' : 'would merge into'} ${safe(target.file)}:`);
   line(io, indent(body, '   '));
   if (opts.apply) {
-    const outcome = target.format === 'toml' ? await applyToml(target) : await applyJson(target);
+    const applied = target.format === 'toml' ? await applyToml(target) : await applyJson(target);
+    const { outcome } = applied;
     deps.onWritten?.(target.file, outcome);
     if (outcome === 'unchanged') {
       line(io, dim(`   ${safe(target.file)}: lexicon entry already present, nothing changed`));
@@ -746,7 +790,7 @@ async function installText(
     }
     // The write named its file but not the way back; the rest of the file is
     // the user's, so the undo is the one entry, not the file.
-    line(io, dim(`   undo: ${undoEntry(target)}`));
+    line(io, dim(`   undo: ${undoEntry(target, applied)}`));
   }
   const caveat = clientCaveat(name, project);
   if (caveat !== undefined) line(io, dim(`   note: ${caveat}`));
@@ -915,14 +959,15 @@ export async function runInstallClaude(
     const existed = read.exists;
     const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, hookTimeout, HOOK_EVENTS);
     if (changed) {
-      await writeJsonFile(settingsPath, settings);
+      await explainWrite(settingsPath, () => writeJsonFile(settingsPath, settings, read.text));
       line(io, green(`   ${existed ? 'updated' : 'created'} ${safe(settingsPath)}: added ${HOOK_EVENTS.join(' + ')} hooks`));
       deps.onWritten?.(settingsPath, existed ? 'updated' : 'created');
     } else {
       line(io, dim(`   ${safe(settingsPath)}: hooks already present, nothing changed`));
       deps.onWritten?.(settingsPath, 'unchanged');
     }
-    line(io, dim(`   undo: delete the lexicon hook entries under ${HOOK_EVENTS.map((e) => `hooks.${e}`).join(' and ')} in ${safe(settingsPath)}`));
+    const createdNote = changed && !existed ? ' (this run created the file, so deleting it undoes step 2)' : '';
+    line(io, dim(`   undo: delete the lexicon hook entries under ${HOOK_EVENTS.map((e) => `hooks.${e}`).join(' and ')} in ${safe(settingsPath)}${createdNote}`));
   }
   line(io);
 

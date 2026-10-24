@@ -47645,6 +47645,20 @@ var CONTROL_RE_G = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g;
 var ANSI_RE = /\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\)|[@-Z\\-_])/g;
 var OTHER_RE = new RegExp("\\p{C}", "gu");
 var DISPLAY_MAX_CHARS = 200;
+var UNENCODABLE_RE = /[\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+var UNENCODABLE_RE_G = new RegExp(UNENCODABLE_RE.source, "g");
+var UNENCODABLE_NOTE = "U+FFFE, U+FFFF and unpaired surrogates fit no file format";
+function findUnencodableChar(s) {
+  const m = UNENCODABLE_RE.exec(s);
+  return m ? `U+${m[0].charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}` : void 0;
+}
+function unencodableMessage(found) {
+  return `must not contain ${found} (${UNENCODABLE_NOTE})`;
+}
+function showTermName(s) {
+  const shown = s.replace(UNENCODABLE_RE_G, (c) => `\\u${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`);
+  return shown.length > 40 ? `${shown.slice(0, 39)}\u2026` : shown;
+}
 function stripInvisible(s) {
   return s.replace(INVISIBLE_RE, "");
 }
@@ -47658,9 +47672,9 @@ function sanitizeForDisplay(s) {
   return sanitizeForDisplayMax(s, DISPLAY_MAX_CHARS);
 }
 function sanitizeForDisplayMax(s, max) {
-  const clean = stripControlChars(s.replace(ANSI_RE, "")).replace(OTHER_RE, "");
-  const chars = Array.from(clean);
-  if (chars.length <= max) return clean;
+  const clean2 = stripControlChars(s.replace(ANSI_RE, "")).replace(OTHER_RE, "");
+  const chars = Array.from(clean2);
+  if (chars.length <= max) return clean2;
   return `${chars.slice(0, Math.max(0, max - 1)).join("")}\u2026`;
 }
 function neutralizeMarkup(s) {
@@ -47668,11 +47682,11 @@ function neutralizeMarkup(s) {
 }
 var MODEL_PATH_MAX_CHARS = 120;
 function pathForModel(p, max = MODEL_PATH_MAX_CHARS) {
-  const clean = neutralizeMarkup(sanitizeForDisplayMax(p, Number.POSITIVE_INFINITY));
-  const parts = clean.split(/[\\/]/).filter((part) => part !== "");
-  let out = clean;
+  const clean2 = neutralizeMarkup(sanitizeForDisplayMax(p, Number.POSITIVE_INFINITY));
+  const parts = clean2.split(/[\\/]/).filter((part) => part !== "");
+  let out = clean2;
   if (parts.length > 3) {
-    const sep2 = clean.lastIndexOf("\\") > clean.lastIndexOf("/") ? "\\" : "/";
+    const sep2 = clean2.lastIndexOf("\\") > clean2.lastIndexOf("/") ? "\\" : "/";
     out = `\u2026${sep2}${parts.slice(-3).join(sep2)}`;
   }
   const chars = Array.from(out);
@@ -47692,15 +47706,31 @@ function NonEmptyWord() {
 function WordList(maxItems, what) {
   return CleanWordList(array(string2()).default([]), maxItems, what);
 }
-function OptionalWordList(maxItems, what) {
-  return CleanWordList(array(string2()), maxItems, what).optional();
+function OptionalWordList(maxItems, what, checkUnencodable = false) {
+  return CleanWordList(array(string2()), maxItems, what, checkUnencodable).optional();
 }
-function CleanWordList(list, maxItems, what) {
+function CleanWordList(list, maxItems, what, checkUnencodable = false) {
+  const word = string2().max(LIMITS.word, `must be at most ${LIMITS.word} characters`).refine((s) => !hasControlChars(s), "must not contain control characters or newlines");
   return list.transform((list2) => (list2 ?? []).map((s) => stripInvisible(s).trim()).filter((s) => s.length > 0)).pipe(
     array(
-      string2().max(LIMITS.word, `must be at most ${LIMITS.word} characters`).refine((s) => !hasControlChars(s), "must not contain control characters or newlines")
+      checkUnencodable ? word.superRefine((s, ctx) => {
+        const found = findUnencodableChar(s);
+        if (found) ctx.addIssue({ code: "custom", message: unencodableMessage(found) });
+      }) : word
     ).max(maxItems, `at most ${maxItems} ${what}`)
   );
+}
+var TERM_TEXT_FIELDS = ["canonical", "aliases", "never", "phonetic", "notes", "createdAt"];
+function refuseUnencodable(term, ctx) {
+  const name = typeof term.canonical === "string" ? showTermName(term.canonical) : "";
+  for (const field of TERM_TEXT_FIELDS) {
+    const value = term[field];
+    const entries2 = Array.isArray(value) ? value.map((v, i) => [String(v), [field, i]]) : typeof value === "string" ? [[value, [field]]] : [];
+    for (const [text, at] of entries2) {
+      const found = findUnencodableChar(text);
+      if (found) ctx.addIssue({ code: "custom", path: at, message: `${unencodableMessage(found)} in term "${name}"` });
+    }
+  }
 }
 var buildCategory = () => _enum2(TERM_CATEGORIES);
 var buildScope = () => _enum2(TERM_SCOPES);
@@ -47736,16 +47766,16 @@ function buildTerm(category, scope, source) {
     // `pinProjectHits` in store.ts.
     hits: number2().int().nonnegative().optional(),
     never: OptionalWordList(LIMITS.aliases, "never words per term")
-  }));
+  }).superRefine(refuseUnencodable));
 }
 function buildSettings() {
   return preprocess(nullKeysAsAbsent([]), object({
     minConfidence: number2().min(0).max(1).optional(),
     phonetic: boolean2().optional(),
     fuzzy: boolean2().optional(),
-    protectedWords: OptionalWordList(LIMITS.protectedWords, "protected words"),
+    protectedWords: OptionalWordList(LIMITS.protectedWords, "protected words", true),
     skipCode: boolean2().optional(),
-    packs: OptionalWordList(LIMITS.aliases, "packs")
+    packs: OptionalWordList(LIMITS.aliases, "packs", true)
   }));
 }
 function buildLexicon(term, settings) {
@@ -53853,6 +53883,241 @@ async function recalledParsedHash(file2) {
 // src/util/json.ts
 var import_node_fs3 = __toESM(require_node_fs());
 var import_node_path2 = __toESM(require_node_path());
+
+// src/util/jsonc.ts
+var Scanner = class {
+  constructor(text) {
+    this.text = text;
+  }
+  text;
+  i = 0;
+  fail(what) {
+    const before = this.text.slice(0, this.i);
+    const line2 = before.split("\n").length;
+    const column = this.i - before.lastIndexOf("\n");
+    throw new Error(`${what} at line ${line2} column ${column}`);
+  }
+  /** Skip whitespace and comments. */
+  skip() {
+    const t = this.text;
+    for (; ; ) {
+      const c = t[this.i];
+      if (c === " " || c === "	" || c === "\n" || c === "\r") this.i++;
+      else if (c === "/" && t[this.i + 1] === "/") {
+        while (this.i < t.length && t[this.i] !== "\n") this.i++;
+      } else if (c === "/" && t[this.i + 1] === "*") {
+        const close = t.indexOf("*/", this.i + 2);
+        if (close < 0) this.fail("unterminated comment");
+        this.i = close + 2;
+      } else return;
+    }
+  }
+  value() {
+    this.skip();
+    const start = this.i;
+    const c = this.text[this.i];
+    if (c === "{") return this.object();
+    if (c === "[") return this.array();
+    if (c === '"') return { kind: "scalar", start, end: this.stringEnd(), value: JSON.parse(this.text.slice(start, this.i)) };
+    const m = /^(?:true|false|null|-?(?:0|[1-9]\d*)(?:\.\d+)?(?:[eE][+-]?\d+)?)/.exec(this.text.slice(this.i, this.i + 400));
+    if (!m) this.fail(this.i >= this.text.length ? "unexpected end of input" : `unexpected ${JSON.stringify(c)}`);
+    this.i += m[0].length;
+    return { kind: "scalar", start, end: this.i, value: JSON.parse(m[0]) };
+  }
+  /** Advance past a string literal starting at `i`; returns its end. */
+  stringEnd() {
+    const t = this.text;
+    this.i++;
+    while (this.i < t.length) {
+      const c = t[this.i];
+      if (c === "\\") this.i += 2;
+      else if (c === '"') return ++this.i;
+      else if (c === "\n") break;
+      else this.i++;
+    }
+    return this.fail("unterminated string");
+  }
+  object() {
+    const start = this.i++;
+    const members2 = [];
+    for (; ; ) {
+      this.skip();
+      if (this.text[this.i] === "}") return { kind: "object", start, end: ++this.i, members: members2 };
+      if (this.text[this.i] !== '"') this.fail('expected a property name or "}"');
+      const keyStart = this.i;
+      this.stringEnd();
+      const key = JSON.parse(this.text.slice(keyStart, this.i));
+      this.skip();
+      if (this.text[this.i] !== ":") this.fail('expected ":"');
+      this.i++;
+      const value = this.value();
+      const at = members2.findIndex((m) => m.key === key);
+      if (at >= 0) members2.splice(at, 1);
+      members2.push({ key, keyStart, value });
+      this.skip();
+      if (this.text[this.i] === ",") this.i++;
+      else if (this.text[this.i] !== "}") this.fail('expected "," or "}"');
+    }
+  }
+  array() {
+    const start = this.i++;
+    const items = [];
+    for (; ; ) {
+      this.skip();
+      if (this.text[this.i] === "]") return { kind: "array", start, end: ++this.i, items };
+      items.push(this.value());
+      this.skip();
+      if (this.text[this.i] === ",") this.i++;
+      else if (this.text[this.i] !== "]") this.fail('expected "," or "]"');
+    }
+  }
+};
+function parseTree(text) {
+  const s = new Scanner(text);
+  const root = s.value();
+  s.skip();
+  if (s.i < text.length) s.fail("unexpected text after the end");
+  return root;
+}
+function toValue(node2) {
+  if (node2.kind === "scalar") return node2.value;
+  if (node2.kind === "array") return node2.items.map(toValue);
+  const out = {};
+  for (const m of node2.members) {
+    Object.defineProperty(out, m.key, { value: toValue(m.value), enumerable: true, writable: true, configurable: true });
+  }
+  return out;
+}
+function parseJsonc(text) {
+  return toValue(parseTree(text));
+}
+var isPlain = (v) => typeof v === "object" && v !== null && !Array.isArray(v);
+var same = (a, b) => JSON.stringify(a) === JSON.stringify(b);
+function indentUnit(text) {
+  let unit;
+  for (const m of text.matchAll(/\n([ \t]+)\S/g)) {
+    const ws = m[1];
+    if (ws.startsWith("	")) return "	";
+    if (unit === void 0 || ws.length < unit.length) unit = ws;
+  }
+  return unit ?? "  ";
+}
+function lineIndent(text, at) {
+  const lineStart2 = text.lastIndexOf("\n", at - 1) + 1;
+  return /^[ \t]*/.exec(text.slice(lineStart2))?.[0] ?? "";
+}
+function render(value, unit, indent2) {
+  return JSON.stringify(value, null, unit).replace(/\n/g, `
+${indent2}`);
+}
+function multiline(text, node2) {
+  return text.slice(node2.start, node2.end).includes("\n");
+}
+function endOfLineComments(text, at) {
+  let i = at;
+  for (; ; ) {
+    while (text[i] === " " || text[i] === "	") i++;
+    if (text.startsWith("//", i)) {
+      const nl = text.indexOf("\n", i);
+      return nl < 0 ? text.length : nl;
+    }
+    if (text.startsWith("/*", i)) {
+      const close = text.indexOf("*/", i + 2);
+      if (close < 0 || text.slice(i, close).includes("\n")) return at;
+      i = close + 2;
+      continue;
+    }
+    return text[i] === "\n" || text[i] === "\r" || i >= text.length ? i : at;
+  }
+}
+function appendTo(text, node2, entries2, lastEnd, unit, firstChildStart) {
+  const close = node2.end - 1;
+  const outer = lineIndent(text, node2.start);
+  if (lastEnd === void 0) {
+    if (!multiline(text, node2) && entries2.length === 1 && !entries2[0]?.includes("\n")) {
+      return [{ start: node2.start + 1, end: close, text: ` ${entries2[0]} ` }];
+    }
+    const inner2 = outer + unit;
+    return [{ start: node2.start + 1, end: close, text: `
+${entries2.map((e) => inner2 + e).join(",\n")}
+${outer}` }];
+  }
+  const scan = new Scanner(text);
+  scan.i = lastEnd;
+  scan.skip();
+  const trailing = text[scan.i] === ",";
+  const after = trailing ? scan.i + 1 : lastEnd;
+  if (!multiline(text, node2)) {
+    const body = entries2.join(", ");
+    return [trailing ? { start: after, end: after, text: ` ${body},` } : { start: after, end: after, text: `, ${body}` }];
+  }
+  const inner = firstChildStart !== void 0 ? lineIndent(text, firstChildStart) : outer + unit;
+  const lines = entries2.map((e) => `
+${inner}${e}`).join(",");
+  const at = endOfLineComments(text, after);
+  if (trailing) return [{ start: at, end: at, text: `${lines},` }];
+  return at === after ? [{ start: at, end: at, text: `,${lines}` }] : [{ start: at, end: at, text: lines }, { start: after, end: after, text: "," }];
+}
+function diff(text, node2, next, unit, edits) {
+  const old = toValue(node2);
+  if (same(old, next)) return;
+  const indent2 = lineIndent(text, node2.start);
+  if (node2.kind === "object" && isPlain(next)) {
+    const keys = Object.keys(next);
+    const kept = node2.members.filter((m) => Object.prototype.hasOwnProperty.call(next, m.key));
+    if (kept.length !== node2.members.length || kept.some((m, i) => keys[i] !== m.key)) {
+      edits.push({ start: node2.start, end: node2.end, text: render(next, unit, indent2) });
+      return;
+    }
+    for (const m of node2.members) diff(text, m.value, next[m.key], unit, edits);
+    const added = keys.slice(node2.members.length);
+    if (added.length > 0) {
+      const first = node2.members[0];
+      const memberIndent = first ? lineIndent(text, first.keyStart) : indent2 + unit;
+      const compact = first !== void 0 && !multiline(text, node2);
+      const entries2 = added.map((k) => `${JSON.stringify(k)}: ${compact ? JSON.stringify(next[k]) : render(next[k], unit, memberIndent)}`);
+      const last = node2.members[node2.members.length - 1];
+      edits.push(...appendTo(text, node2, entries2, last?.value.end, unit, first?.keyStart));
+    }
+    return;
+  }
+  if (node2.kind === "array" && Array.isArray(next) && next.length === node2.items.length) {
+    for (const [i, item] of node2.items.entries()) diff(text, item, next[i], unit, edits);
+    return;
+  }
+  if (node2.kind === "array" && Array.isArray(next) && next.length >= node2.items.length && node2.items.every((item, i) => same(toValue(item), next[i]))) {
+    const first = node2.items[0];
+    const itemIndent = first ? lineIndent(text, first.start) : indent2 + unit;
+    const compact = first !== void 0 && !multiline(text, node2);
+    const entries2 = next.slice(node2.items.length).map((v) => compact ? JSON.stringify(v) : render(v, unit, itemIndent));
+    const last = node2.items[node2.items.length - 1];
+    edits.push(...appendTo(text, node2, entries2, last?.end, unit, first?.start));
+    return;
+  }
+  edits.push({ start: node2.start, end: node2.end, text: render(next, unit, indent2) });
+}
+function editJsonText(text, next) {
+  const plain = `${JSON.stringify(next, null, 2)}
+`;
+  if (text.trim() === "") return plain;
+  let tree;
+  try {
+    tree = parseTree(text);
+  } catch {
+    return plain;
+  }
+  const edits = [];
+  diff(text, tree, next, indentUnit(text), edits);
+  let out = text;
+  for (const e of edits.sort((a, b) => b.start - a.start)) out = out.slice(0, e.start) + e.text + out.slice(e.end);
+  try {
+    if (same(parseJsonc(out), next)) return out;
+  } catch {
+  }
+  return plain;
+}
+
+// src/util/json.ts
 function isRecord(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
 }
@@ -53869,14 +54134,14 @@ async function readJsonFile(file2) {
     return { exists: true, error: errorMessage(err) };
   }
   try {
-    return { exists: true, value: raw.trim() === "" ? {} : JSON.parse(raw) };
+    return { exists: true, text: raw, value: raw.trim() === "" ? {} : parseJsonc(raw) };
   } catch (err) {
     return { exists: true, error: errorMessage(err) };
   }
 }
-async function writeJsonFile(file2, value) {
+async function writeJsonFile(file2, value, original) {
   await import_node_fs3.promises.mkdir(import_node_path2.default.dirname(file2), { recursive: true });
-  await import_node_fs3.promises.writeFile(file2, formatJson(value), "utf8");
+  await import_node_fs3.promises.writeFile(file2, original === void 0 ? formatJson(value) : editJsonText(original, value), "utf8");
 }
 
 // src/core/trust.ts
@@ -54192,7 +54457,7 @@ function parseLexiconText(text, filePath, scope) {
 }
 var PARSE_CACHE_FILE_NAME = "parse-cache.json";
 var PARSE_CACHE_MIN_BYTES = 8 * 1024;
-var PARSE_CACHE_VERSION = 4;
+var PARSE_CACHE_VERSION = 5;
 function cacheChecksum(text) {
   let h = 2166136261;
   for (let i = 0; i < text.length; i++) {
@@ -54271,7 +54536,7 @@ async function promoteCacheEntry(mainPath, id, mainId) {
   await import_node_fs5.promises.rename(cacheSpillPath(mainPath, id), mainPath).catch(() => void 0);
 }
 var PROJECT_PARSE_CACHE_FILE_NAME = "project-parse-cache.json";
-var PROJECT_PARSE_CACHE_VERSION = 2;
+var PROJECT_PARSE_CACHE_VERSION = 3;
 async function readProjectBytes(filePath, globalPath) {
   const read = await readLexiconText(filePath);
   if (read === void 0) return void 0;
@@ -54830,15 +55095,21 @@ async function projectWriteTrusted(opts = {}) {
   return status === "trusted";
 }
 function prepareIncoming(term) {
-  const canonical = term.canonical.trim();
-  if (!canonical) throw new InputError("canonical must not be empty");
+  const trimmed = term.canonical.trim();
+  if (!trimmed) throw new InputError("canonical must not be empty");
   assertNoBlankEntries(term);
-  const prepared = { ...term, canonical, aliases: dedupeAliases(term.aliases ?? [], canonical) };
-  const never2 = dedupeCaseInsensitive(term.never ?? []);
+  const canonical = clean(trimmed) || trimmed;
+  const prepared = { ...term, canonical, aliases: dedupeAliases((term.aliases ?? []).map(clean), canonical) };
+  if (typeof term.phonetic === "string") prepared.phonetic = clean(term.phonetic);
+  if (typeof term.notes === "string") prepared.notes = clean(term.notes);
+  const never2 = dedupeCaseInsensitive((term.never ?? []).map(clean));
   if (never2.length > 0) prepared.never = never2;
   else delete prepared.never;
   assertTermFields(prepared);
   return prepared;
+}
+function clean(s) {
+  return typeof s === "string" ? stripInvisible(s).trim() : s;
 }
 var BLANK_ENTRY_RE = /^[\s\p{Cf}]*$/u;
 function assertNoBlankEntries(term) {
@@ -57843,7 +58114,7 @@ function joinAliasList(aliases) {
   return aliases.map((a) => a.includes(",") || a.trim().startsWith('"') ? `"${a.replace(/"/g, '""')}"` : a).join(", ");
 }
 function mdCell(value) {
-  return value.replace(/\|/g, "\\|").replace(/\r\n|[\n\r\u0085\u2028\u2029]/g, " ");
+  return value.replace(/\|/g, (_pipe2, at) => at > 0 && value[at - 1] === "\\" ? "\u200B\\|" : "\\|").replace(/\r\n|[\n\r\u0085\u2028\u2029]/g, " ");
 }
 
 // src/core/exporters/assemblyai.ts
@@ -57920,22 +58191,40 @@ function exportCsv(lexicon, _opts = {}) {
 
 // src/core/exporters/deepgram.ts
 function exportDeepgram(lexicon, _opts = {}) {
-  const keywords = sortByImportance(lexicon.terms).map(
-    (t) => `${t.canonical}:${isProperNounCategory(t.category) ? 2 : 1}`
-  );
+  const keywords = [];
+  for (const t of sortByImportance(lexicon.terms)) {
+    const keyword = t.canonical.replace(/:/g, " ").replace(/\s+/g, " ").trim();
+    if (keyword) keywords.push(`${keyword}:${isProperNounCategory(t.category) ? 2 : 1}`);
+  }
   return JSON.stringify({ keywords }, null, 2) + "\n";
 }
 
 // src/core/exporters/espanso.ts
 var import_yaml2 = __toESM(require_dist2());
+var ESPANSO_VAR_RE = /\{\{\s*(\w+)(\.(\w+))?\s*\}\}/;
+function espansoRenders(body) {
+  if (ESPANSO_VAR_RE.test(body)) return void 0;
+  return body.replaceAll("\\{\\{", "{{").replaceAll("\\}\\}", "}}");
+}
+function espansoEscape(canonical) {
+  return canonical.replace(/\{{2,}/g, (run) => (run.length % 2 === 1 ? "{" : "") + "\\{\\{".repeat(Math.floor(run.length / 2)));
+}
 function exportEspanso(lexicon, _opts = {}) {
-  const matches = aliasPairs(lexicon).map(({ alias, canonical }) => ({
-    trigger: alias,
-    replace: canonical,
-    word: true,
-    propagate_case: false
-  }));
-  return (0, import_yaml2.stringify)({ matches }, { lineWidth: 0 });
+  const leftOut = [];
+  const matches = [];
+  for (const { alias, canonical } of aliasPairs(lexicon)) {
+    const replace = espansoEscape(canonical);
+    const typed = espansoRenders(replace);
+    if (typed !== canonical) {
+      const as = typed === void 0 ? "read a variable in it" : `type it as ${JSON.stringify(typed)}`;
+      leftOut.push(`# left out ${JSON.stringify(alias)} -> ${JSON.stringify(canonical)}: espanso would ${as}`);
+      continue;
+    }
+    matches.push({ trigger: alias, replace, word: true, propagate_case: false });
+  }
+  const body = (0, import_yaml2.stringify)({ matches }, { lineWidth: 0 });
+  return leftOut.length > 0 ? `${leftOut.join("\n")}
+${body}` : body;
 }
 
 // src/core/exporters/google.ts
@@ -61866,6 +62155,10 @@ function hookConfigFor(command, timeout = 5, events = ["UserPromptSubmit"]) {
   for (const event of events) hooks[event] = [{ hooks: [{ type: "command", command, timeout }] }];
   return { hooks };
 }
+var INSTALLED_HOOK_COMMAND = /^node\s+(?:"[^"]*|[^\s"]*)(?:[\\/]plugin[\\/]hook\.mjs|[\\/]hooks[\\/]user-prompt-submit\.js)"?$|^npx\s+-y\s+@ashlr\/lexicon(?:@\S+)?\s+hook$/;
+function isInstalledLexiconHook(command) {
+  return INSTALLED_HOOK_COMMAND.test(command.trim());
+}
 function mergeHookIntoSettings(settings, command, timeout = 5, events = ["UserPromptSubmit"]) {
   const base = isRecord(settings) ? structuredClone(settings) : {};
   if (base.hooks !== void 0 && !isRecord(base.hooks)) {
@@ -61879,13 +62172,33 @@ function mergeHookIntoSettings(settings, command, timeout = 5, events = ["UserPr
       throw new Error(`settings.hooks.${event} is not an array; refusing to overwrite it`);
     }
     const groups = Array.isArray(existing) ? existing : [];
-    const alreadyPresent = groups.some(
-      (g) => isRecord(g) && Array.isArray(g.hooks) && g.hooks.some((h) => isRecord(h) && h.command === command)
-    );
-    if (alreadyPresent) continue;
-    groups.push({ hooks: [{ type: "command", command, timeout }] });
-    hooks[event] = groups;
-    changed = true;
+    const ours = (h) => isRecord(h) && typeof h.command === "string" && (h.command === command || isInstalledLexiconHook(h.command));
+    const found = groups.flatMap((g) => isRecord(g) && Array.isArray(g.hooks) ? g.hooks.filter(ours) : []);
+    if (found.length === 0) {
+      groups.push({ hooks: [{ type: "command", command, timeout }] });
+      hooks[event] = groups;
+      changed = true;
+      continue;
+    }
+    const keep = found.find((h) => h.command === command) ?? found[0];
+    if (keep && keep.command !== command) {
+      keep.command = command;
+      keep.timeout = timeout;
+      changed = true;
+    }
+    if (found.length > 1) {
+      const next = [];
+      for (const g of groups) {
+        if (!isRecord(g) || !Array.isArray(g.hooks) || !g.hooks.some((h) => ours(h) && h !== keep)) {
+          next.push(g);
+          continue;
+        }
+        const left = g.hooks.filter((h) => !ours(h) || h === keep);
+        if (left.length > 0) next.push({ ...g, hooks: left });
+      }
+      hooks[event] = next;
+      changed = true;
+    }
   }
   if (changed) base.hooks = hooks;
   return { settings: base, changed };
@@ -62198,7 +62511,7 @@ function installHint(platform, missing = { ffmpeg: true, whisper: true }) {
 // src/cli/doctor-config-read.ts
 var import_node_fs20 = __toESM(require_node_fs());
 var DOCTOR_CONFIG_MAX_BYTES = 1024 * 1024;
-var same = (a, b) => a.dev === b.dev && a.ino === b.ino && a.mode === b.mode && a.uid === b.uid && a.gid === b.gid && a.nlink === b.nlink && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
+var same2 = (a, b) => a.dev === b.dev && a.ino === b.ino && a.mode === b.mode && a.uid === b.uid && a.gid === b.gid && a.nlink === b.nlink && a.size === b.size && a.mtimeNs === b.mtimeNs && a.ctimeNs === b.ctimeNs;
 async function readDoctorConfigText(file2) {
   let inspected = false;
   let handle;
@@ -62212,7 +62525,7 @@ async function readDoctorConfigText(file2) {
     handle = await import_node_fs20.promises.open(file2, import_node_fs20.constants.O_RDONLY | noFollow | nonBlock);
     try {
       const opened = await handle.stat({ bigint: true });
-      if (!opened.isFile() || !same(before, opened)) return { status: "unconfirmed", reason: "changed" };
+      if (!opened.isFile() || !same2(before, opened)) return { status: "unconfirmed", reason: "changed" };
       const size = Number(opened.size);
       const bytes = Buffer.alloc(size + 1);
       let offset = 0;
@@ -62221,7 +62534,7 @@ async function readDoctorConfigText(file2) {
         if (bytesRead === 0) break;
         offset += bytesRead;
       }
-      if (offset !== size || !same(opened, await handle.stat({ bigint: true })) || !same(opened, await import_node_fs20.promises.lstat(file2, { bigint: true }))) return { status: "unconfirmed", reason: "changed" };
+      if (offset !== size || !same2(opened, await handle.stat({ bigint: true })) || !same2(opened, await import_node_fs20.promises.lstat(file2, { bigint: true }))) return { status: "unconfirmed", reason: "changed" };
       try {
         return { status: "read", text: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes.subarray(0, size)) };
       } catch {
@@ -62240,7 +62553,7 @@ async function readDoctorConfigJson(file2) {
   if (read.status === "missing") return { exists: false };
   if (read.status === "unconfirmed") return { exists: true, error: read.reason };
   try {
-    return { exists: true, value: read.text.trim() === "" ? {} : JSON.parse(read.text) };
+    return { exists: true, value: read.text.trim() === "" ? {} : parseJsonc(read.text) };
   } catch {
     return { exists: true, error: "invalid-json" };
   }
@@ -62528,18 +62841,34 @@ async function readText2(file2) {
   }
 }
 async function writeText(file2, text) {
-  await import_node_fs21.promises.mkdir(import_node_path20.default.dirname(file2), { recursive: true });
-  await import_node_fs21.promises.writeFile(file2, text, "utf8");
+  await explainWrite(file2, async () => {
+    await import_node_fs21.promises.mkdir(import_node_path20.default.dirname(file2), { recursive: true });
+    await import_node_fs21.promises.writeFile(file2, text, "utf8");
+  });
+}
+async function explainWrite(file2, write) {
+  try {
+    await write();
+  } catch (err) {
+    const code = err.code;
+    if (code !== "EACCES" && code !== "EPERM" && code !== "EROFS") throw err;
+    throw new CliRefusal(
+      `could not write ${safe(file2)} (${code}): it is read-only or not yours; nothing was changed`,
+      `make it writable (ls -l ${shellWord2(file2)} shows who owns it; chmod u+w ${shellWord2(file2)}) and run this again, or add the entry shown above to it by hand`
+    );
+  }
 }
 async function applyJson(target) {
   const read = await readJsonFile(target.file);
   if (read.error !== void 0) {
     throw new Error(`${target.file} is not valid JSON (${read.error}); fix or remove it first`);
   }
-  const { next, changed } = mergeServerIntoJson(read.exists ? read.value : {}, target.key, target.entry);
-  if (!changed) return "unchanged";
-  await writeJsonFile(target.file, next);
-  return read.exists ? "updated" : "created";
+  const current = read.exists ? read.value : {};
+  const addedKey = !(isRecord(current) && target.key in current);
+  const { next, changed } = mergeServerIntoJson(current, target.key, target.entry);
+  if (!changed) return { outcome: "unchanged" };
+  await explainWrite(target.file, () => writeJsonFile(target.file, next, read.text));
+  return { outcome: read.exists ? "updated" : "created", addedKey };
 }
 function mergeChanged(first, second) {
   return { next: second.next, changed: first.changed || second.changed };
@@ -62551,9 +62880,9 @@ async function applyToml(target) {
   const subTable = env !== void 0 && text.split("\n").some((l) => tomlHeaderRe(envTable).test(l));
   const table = upsertTomlTable(text, CODEX_TABLE, codexBlock(subTable ? launch : target.entry));
   const { next, changed } = subTable && env ? mergeChanged(table, upsertTomlKeys(table.next, envTable, env)) : table;
-  if (!changed) return "unchanged";
+  if (!changed) return { outcome: "unchanged", envTable: subTable };
   await writeText(target.file, next);
-  return existed ? "updated" : "created";
+  return { outcome: existed ? "updated" : "created", envTable: subTable };
 }
 function jsonSnippet(key, entry) {
   return JSON.stringify({ [key]: { lexicon: entry } }, null, 2);
@@ -62571,8 +62900,10 @@ function installApplyCommand(client, opts) {
   words.push("--apply");
   return safe(words.map(shellWord2).join(" "));
 }
-function undoEntry(target) {
-  return target.format === "toml" ? `delete the [${CODEX_TABLE}] table from ${safe(target.file)}` : `delete the "lexicon" entry under "${target.key}" in ${safe(target.file)}`;
+function undoEntry(target, applied) {
+  const file2 = safe(target.file);
+  const what = target.format === "toml" ? `delete the [${CODEX_TABLE}] table${applied.envTable ? ` and its [${CODEX_TABLE}.env] table` : ""} from ${file2}` : `delete the "lexicon" entry under "${target.key}" in ${file2}${applied.addedKey && applied.outcome === "updated" ? `, and "${target.key}" itself, which this run added` : ""}`;
+  return applied.outcome === "created" ? `${what} (this run created the file, so deleting it undoes this)` : what;
 }
 function printExportHint(io, step, client) {
   line(io, bold(`${step}. Give ${labelFor(client)} the vocabulary`));
@@ -62688,14 +63019,15 @@ async function installText(client, opts, io, deps) {
   line(io, `   ${opts.apply ? "merge into" : "would merge into"} ${safe(target.file)}:`);
   line(io, indent(body, "   "));
   if (opts.apply) {
-    const outcome = target.format === "toml" ? await applyToml(target) : await applyJson(target);
+    const applied = target.format === "toml" ? await applyToml(target) : await applyJson(target);
+    const { outcome } = applied;
     deps.onWritten?.(target.file, outcome);
     if (outcome === "unchanged") {
       line(io, dim(`   ${safe(target.file)}: lexicon entry already present, nothing changed`));
     } else {
       line(io, green(`   ${outcome} ${safe(target.file)}: ${target.format === "toml" ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
     }
-    line(io, dim(`   undo: ${undoEntry(target)}`));
+    line(io, dim(`   undo: ${undoEntry(target, applied)}`));
   }
   const caveat = clientCaveat(name, project);
   if (caveat !== void 0) line(io, dim(`   note: ${caveat}`));
@@ -62783,14 +63115,15 @@ async function runInstallClaude(opts, io, deps = {}) {
     const existed = read.exists;
     const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, hookTimeout, HOOK_EVENTS);
     if (changed) {
-      await writeJsonFile(settingsPath, settings);
+      await explainWrite(settingsPath, () => writeJsonFile(settingsPath, settings, read.text));
       line(io, green(`   ${existed ? "updated" : "created"} ${safe(settingsPath)}: added ${HOOK_EVENTS.join(" + ")} hooks`));
       deps.onWritten?.(settingsPath, existed ? "updated" : "created");
     } else {
       line(io, dim(`   ${safe(settingsPath)}: hooks already present, nothing changed`));
       deps.onWritten?.(settingsPath, "unchanged");
     }
-    line(io, dim(`   undo: delete the lexicon hook entries under ${HOOK_EVENTS.map((e) => `hooks.${e}`).join(" and ")} in ${safe(settingsPath)}`));
+    const createdNote = changed && !existed ? " (this run created the file, so deleting it undoes step 2)" : "";
+    line(io, dim(`   undo: delete the lexicon hook entries under ${HOOK_EVENTS.map((e) => `hooks.${e}`).join(" and ")} in ${safe(settingsPath)}${createdNote}`));
   }
   line(io);
   line(io, bold("3. Add to your CLAUDE.md"));
@@ -63007,7 +63340,7 @@ function codexDeclaration(text) {
 function registersLexicon(client, text) {
   if (client === "codex") return declaresTransport(codexDeclaration(text));
   try {
-    const cfg = JSON.parse(text);
+    const cfg = parseJsonc(text);
     if (!isRecord(cfg)) return false;
     const servers = client === "vscode" ? cfg.servers : cfg.mcpServers;
     return isRecord(servers) && declaresTransport(servers.lexicon);
@@ -63017,7 +63350,7 @@ function registersLexicon(client, text) {
 }
 function parsesAsJson(text) {
   try {
-    JSON.parse(text);
+    parseJsonc(text);
     return true;
   } catch {
     return false;
@@ -63485,13 +63818,13 @@ function createPrompter(io = {}) {
   };
   const chooseMany = async (question, choices) => {
     const selected = choices.map(() => true);
-    const render = () => {
+    const render2 = () => {
       write(`${bold2(question)}
 `);
       choices.forEach((c, i) => write(`  ${selected[i] ? "[x]" : "[ ]"} ${i + 1}) ${c.label}
 `));
     };
-    render();
+    render2();
     for (; ; ) {
       const answer = (await readLine(`${dim2("toggle numbers (e.g. 2,3), a=all, n=none, Enter=done")} `)).trim().toLowerCase();
       if (answer === "") break;
@@ -63517,7 +63850,7 @@ function createPrompter(io = {}) {
           selected[idx] = !selected[idx];
         }
       }
-      render();
+      render2();
     }
     return choices.filter((_, i) => selected[i]).map((c) => c.value);
   };
@@ -63637,6 +63970,8 @@ function setupNameProblem(value) {
   const name = stripInvisible(value).trim();
   if (name === "") return "must not be blank";
   if (hasControlChars(name)) return "must be one line, with no control characters";
+  const unencodable = findUnencodableChar(name);
+  if (unencodable) return `must not contain ${unencodable} (${UNENCODABLE_NOTE})`;
   if (name.length > LIMITS.word) return `must be at most ${LIMITS.word} characters (it has ${name.length})`;
   return void 0;
 }
@@ -63644,6 +63979,8 @@ function setupHintProblem(value) {
   const hint = stripInvisible(value).trim();
   if (hint === "") return void 0;
   if (hasControlChars(hint)) return "must be one line, with no control characters";
+  const unencodable = findUnencodableChar(hint);
+  if (unencodable) return `must not contain ${unencodable} (${UNENCODABLE_NOTE})`;
   if (hint.length > LIMITS.text) return `must be at most ${LIMITS.text} characters (it has ${hint.length})`;
   return void 0;
 }
@@ -64787,7 +65124,7 @@ function printPlan(ctx, p) {
   const names = p.wouldHarvest.length > 0 ? safe(p.wouldHarvest.join(", ")) : dim("nothing");
   const onOffer = `${p.wouldHarvest.length} name${p.wouldHarvest.length === 1 ? "" : "s"} on offer: ${names}`;
   ctx.say(
-    p.wouldHarvest.length === 0 ? `   repo harvest: ${dim("nothing to add")}` : ctx.opts.harvest === true ? `   repo harvest: would add ${names}` : asks("harvest") ? `   repo harvest: ${dim("asks")} (default no), ${onOffer}` : `   repo harvest: ${dim("nothing added")} (--harvest adds them), ${onOffer}`
+    ctx.opts.harvest === false ? `   repo harvest: ${dim("skipped")} (--no-harvest)` : p.wouldHarvest.length === 0 ? `   repo harvest: ${dim("nothing to add")}` : ctx.opts.harvest === true ? `   repo harvest: would add ${names}` : asks("harvest") ? `   repo harvest: ${dim("asks")} (default no), ${onOffer}` : `   repo harvest: ${dim("nothing added")} (--harvest adds them), ${onOffer}`
   );
   ctx.say(`   detected clients: ${p.detectedClients.length > 0 ? p.detectedClients.join(", ") : dim("none")}`);
   ctx.say(

@@ -13547,6 +13547,20 @@ var CONTROL_RE = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/;
 var CONTROL_RE_G = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g;
 var ANSI_RE = /\u001B(?:\[[0-?]*[ -/]*[@-~]|\][^\u0007\u001B]*(?:\u0007|\u001B\\)|[@-Z\\-_])/g;
 var OTHER_RE = new RegExp("\\p{C}", "gu");
+var UNENCODABLE_RE = /[\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+var UNENCODABLE_RE_G = new RegExp(UNENCODABLE_RE.source, "g");
+var UNENCODABLE_NOTE = "U+FFFE, U+FFFF and unpaired surrogates fit no file format";
+function findUnencodableChar(s) {
+  const m = UNENCODABLE_RE.exec(s);
+  return m ? `U+${m[0].charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}` : void 0;
+}
+function unencodableMessage(found) {
+  return `must not contain ${found} (${UNENCODABLE_NOTE})`;
+}
+function showTermName(s) {
+  const shown = s.replace(UNENCODABLE_RE_G, (c) => `\\u${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`);
+  return shown.length > 40 ? `${shown.slice(0, 39)}\u2026` : shown;
+}
 function stripInvisible(s) {
   return s.replace(INVISIBLE_RE, "");
 }
@@ -13594,15 +13608,31 @@ function NonEmptyWord() {
 function WordList(maxItems, what) {
   return CleanWordList(array(string2()).default([]), maxItems, what);
 }
-function OptionalWordList(maxItems, what) {
-  return CleanWordList(array(string2()), maxItems, what).optional();
+function OptionalWordList(maxItems, what, checkUnencodable = false) {
+  return CleanWordList(array(string2()), maxItems, what, checkUnencodable).optional();
 }
-function CleanWordList(list, maxItems, what) {
+function CleanWordList(list, maxItems, what, checkUnencodable = false) {
+  const word = string2().max(LIMITS.word, `must be at most ${LIMITS.word} characters`).refine((s) => !hasControlChars(s), "must not contain control characters or newlines");
   return list.transform((list2) => (list2 ?? []).map((s) => stripInvisible(s).trim()).filter((s) => s.length > 0)).pipe(
     array(
-      string2().max(LIMITS.word, `must be at most ${LIMITS.word} characters`).refine((s) => !hasControlChars(s), "must not contain control characters or newlines")
+      checkUnencodable ? word.superRefine((s, ctx) => {
+        const found = findUnencodableChar(s);
+        if (found) ctx.addIssue({ code: "custom", message: unencodableMessage(found) });
+      }) : word
     ).max(maxItems, `at most ${maxItems} ${what}`)
   );
+}
+var TERM_TEXT_FIELDS = ["canonical", "aliases", "never", "phonetic", "notes", "createdAt"];
+function refuseUnencodable(term, ctx) {
+  const name = typeof term.canonical === "string" ? showTermName(term.canonical) : "";
+  for (const field of TERM_TEXT_FIELDS) {
+    const value = term[field];
+    const entries2 = Array.isArray(value) ? value.map((v, i) => [String(v), [field, i]]) : typeof value === "string" ? [[value, [field]]] : [];
+    for (const [text, at] of entries2) {
+      const found = findUnencodableChar(text);
+      if (found) ctx.addIssue({ code: "custom", path: at, message: `${unencodableMessage(found)} in term "${name}"` });
+    }
+  }
 }
 var buildCategory = () => _enum(TERM_CATEGORIES);
 var buildScope = () => _enum(TERM_SCOPES);
@@ -13638,16 +13668,16 @@ function buildTerm(category, scope, source) {
     // `pinProjectHits` in store.ts.
     hits: number2().int().nonnegative().optional(),
     never: OptionalWordList(LIMITS.aliases, "never words per term")
-  }));
+  }).superRefine(refuseUnencodable));
 }
 function buildSettings() {
   return preprocess(nullKeysAsAbsent([]), object({
     minConfidence: number2().min(0).max(1).optional(),
     phonetic: boolean2().optional(),
     fuzzy: boolean2().optional(),
-    protectedWords: OptionalWordList(LIMITS.protectedWords, "protected words"),
+    protectedWords: OptionalWordList(LIMITS.protectedWords, "protected words", true),
     skipCode: boolean2().optional(),
-    packs: OptionalWordList(LIMITS.aliases, "packs")
+    packs: OptionalWordList(LIMITS.aliases, "packs", true)
   }));
 }
 function buildLexicon(term, settings) {
@@ -19942,7 +19972,7 @@ function parseLexiconText(text, filePath, scope) {
 }
 var PARSE_CACHE_FILE_NAME = "parse-cache.json";
 var PARSE_CACHE_MIN_BYTES = 8 * 1024;
-var PARSE_CACHE_VERSION = 4;
+var PARSE_CACHE_VERSION = 5;
 function cacheChecksum(text) {
   let h = 2166136261;
   for (let i = 0; i < text.length; i++) {
@@ -20018,7 +20048,7 @@ async function promoteCacheEntry(mainPath, id, mainId) {
   await import_node_fs5.promises.rename(cacheSpillPath(mainPath, id), mainPath).catch(() => void 0);
 }
 var PROJECT_PARSE_CACHE_FILE_NAME = "project-parse-cache.json";
-var PROJECT_PARSE_CACHE_VERSION = 2;
+var PROJECT_PARSE_CACHE_VERSION = 3;
 async function readProjectBytes(filePath, globalPath) {
   const read = await readLexiconText(filePath);
   if (read === void 0) return void 0;
@@ -20464,7 +20494,7 @@ function joinAliasList(aliases) {
   return aliases.map((a) => a.includes(",") || a.trim().startsWith('"') ? `"${a.replace(/"/g, '""')}"` : a).join(", ");
 }
 function mdCell(value) {
-  return value.replace(/\|/g, "\\|").replace(/\r\n|[\n\r\u0085\u2028\u2029]/g, " ");
+  return value.replace(/\|/g, (_pipe, at) => at > 0 && value[at - 1] === "\\" ? "\u200B\\|" : "\\|").replace(/\r\n|[\n\r\u0085\u2028\u2029]/g, " ");
 }
 
 // src/core/exporters/assemblyai.ts
@@ -20523,22 +20553,40 @@ function exportCsv(lexicon, _opts = {}) {
 
 // src/core/exporters/deepgram.ts
 function exportDeepgram(lexicon, _opts = {}) {
-  const keywords = sortByImportance(lexicon.terms).map(
-    (t) => `${t.canonical}:${isProperNounCategory(t.category) ? 2 : 1}`
-  );
+  const keywords = [];
+  for (const t of sortByImportance(lexicon.terms)) {
+    const keyword = t.canonical.replace(/:/g, " ").replace(/\s+/g, " ").trim();
+    if (keyword) keywords.push(`${keyword}:${isProperNounCategory(t.category) ? 2 : 1}`);
+  }
   return JSON.stringify({ keywords }, null, 2) + "\n";
 }
 
 // src/core/exporters/espanso.ts
 var import_yaml2 = __toESM(require_dist());
+var ESPANSO_VAR_RE = /\{\{\s*(\w+)(\.(\w+))?\s*\}\}/;
+function espansoRenders(body) {
+  if (ESPANSO_VAR_RE.test(body)) return void 0;
+  return body.replaceAll("\\{\\{", "{{").replaceAll("\\}\\}", "}}");
+}
+function espansoEscape(canonical) {
+  return canonical.replace(/\{{2,}/g, (run) => (run.length % 2 === 1 ? "{" : "") + "\\{\\{".repeat(Math.floor(run.length / 2)));
+}
 function exportEspanso(lexicon, _opts = {}) {
-  const matches = aliasPairs(lexicon).map(({ alias, canonical }) => ({
-    trigger: alias,
-    replace: canonical,
-    word: true,
-    propagate_case: false
-  }));
-  return (0, import_yaml2.stringify)({ matches }, { lineWidth: 0 });
+  const leftOut = [];
+  const matches = [];
+  for (const { alias, canonical } of aliasPairs(lexicon)) {
+    const replace = espansoEscape(canonical);
+    const typed = espansoRenders(replace);
+    if (typed !== canonical) {
+      const as = typed === void 0 ? "read a variable in it" : `type it as ${JSON.stringify(typed)}`;
+      leftOut.push(`# left out ${JSON.stringify(alias)} -> ${JSON.stringify(canonical)}: espanso would ${as}`);
+      continue;
+    }
+    matches.push({ trigger: alias, replace, word: true, propagate_case: false });
+  }
+  const body = (0, import_yaml2.stringify)({ matches }, { lineWidth: 0 });
+  return leftOut.length > 0 ? `${leftOut.join("\n")}
+${body}` : body;
 }
 
 // src/core/exporters/google.ts

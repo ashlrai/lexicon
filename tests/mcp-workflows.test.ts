@@ -398,6 +398,19 @@ describe('add_term errors', () => {
     expect(await fs.readFile(process.env.LEXICON_PATH as string, 'utf8')).toBe(before);
   });
 
+  // Catches: U+FFFE, U+FFFF and an unpaired surrogate were written (the schema let them through).
+  it('refuse U+FFFE, U+FFFF and an unpaired surrogate, naming the term, and write nothing', async () => {
+    await call('add_term', { canonical: 'SaaS', aliases: ['sass'] });
+    const before = await fs.readFile(process.env.LEXICON_PATH as string, 'utf8');
+    const res = await call('add_term', { canonical: 'SaaS', aliases: ['sa\uFFFEss'] });
+    expect(res.isError).toBe(true);
+    expect(res.text).toMatch(/^term not added: aliases\[0\] \(.*\): must not contain U\+FFFE \(U\+FFFE, U\+FFFF and unpaired surrogates fit no file format\) in term "SaaS"\. Nothing was written/);
+    const learn = await call('learn_correction', { heard: 'sa\uD800s', meant: 'SaaS' });
+    expect(learn.isError).toBe(true);
+    expect(learn.text).toMatch(/must not contain U\+D800/);
+    expect(await fs.readFile(process.env.LEXICON_PATH as string, 'utf8')).toBe(before);
+  });
+
   // Catches: `aliases: ["  "]` was dropped silently and the call answered success.
   it('refuse a blank alias, naming it, and write nothing', async () => {
     await call('add_term', { canonical: 'SaaS', aliases: ['sass'] });

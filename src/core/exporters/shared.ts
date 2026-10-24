@@ -76,11 +76,6 @@ export function xmlEscape(value: string): string {
 }
 
 /**
- * Escape a table cell so pipes and line breaks cannot break the markdown table.
- * Schema validation already rejects line breaks; this also covers a Lexicon
- * built in memory, and treats U+2028/U+2029/NEL as the newlines they render as.
- */
-/**
  * Join aliases into a `, `-separated list that the markdown importer can split
  * back. An alias holding a comma (or starting with a double quote) is wrapped
  * in double quotes with inner quotes doubled, CSV style; every other alias is
@@ -92,6 +87,21 @@ export function joinAliasList(aliases: readonly string[]): string {
     .join(', ');
 }
 
+/**
+ * Escape a table cell so pipes and line breaks cannot break the markdown table.
+ * Schema validation already rejects line breaks; this also covers a Lexicon
+ * built in memory, and treats U+2028/U+2029/NEL as the newlines they render as.
+ *
+ * A pipe becomes `\|`. A pipe right after a backslash (`a\|b`) cannot be
+ * written that way: GFM reads `a\\|b` as an escaped backslash and then a cell
+ * boundary, and the markdown importer reads only `\|` as an escape, so the
+ * GFM spelling of a backslash (`\\`) would come back doubled. A zero-width
+ * space (U+200B) goes between them instead: GFM keeps one cell (a backslash
+ * escapes only ASCII punctuation), and the schema strips it on the way back in
+ * (`stripInvisible`), so the import stores `a\|b`.
+ */
 export function mdCell(value: string): string {
-  return value.replace(/\|/g, '\\|').replace(/\r\n|[\n\r\u0085\u2028\u2029]/g, ' ');
+  return value
+    .replace(/\|/g, (_pipe, at: number) => (at > 0 && value[at - 1] === '\\' ? '\u200B\\|' : '\\|'))
+    .replace(/\r\n|[\n\r\u0085\u2028\u2029]/g, ' ');
 }

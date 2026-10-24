@@ -22,7 +22,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { isMap, isScalar, isSeq, parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml';
 import type { Document, YAMLMap } from 'yaml';
-import { emptyLexicon, parseLexicon } from './schema.js';
+import { emptyLexicon, parseLexicon, stripInvisible } from './schema.js';
 import { buildIndex } from './matcher.js';
 import type { MatcherIndex } from './matcher.js';
 import { INDEX_FORMAT_VERSION, deserializeIndex, indexKey, serializeIndex } from './matcher/serialize.js';
@@ -258,10 +258,11 @@ export const PARSE_CACHE_MIN_BYTES = 8 * 1024;
 /**
  * Entry format. 1 was keyed by a sha256 of the text, 2 held the lexicon as an
  * object and re-validated it, 3 held a parse that gave every term `never: []`
- * (and settings `protectedWords: []`, `packs: []`); all are simply reparsed
- * and replaced.
+ * (and settings `protectedWords: []`, `packs: []`), 4 held a parse made
+ * before the schema refused U+FFFE, U+FFFF and unpaired surrogates; all are
+ * simply reparsed and replaced.
  */
-export const PARSE_CACHE_VERSION = 4;
+export const PARSE_CACHE_VERSION = 5;
 
 /**
  * 32-bit FNV-1a of `text`'s UTF-16 code units, as 8 hex digits. A corruption
@@ -439,9 +440,10 @@ export const PROJECT_PARSE_CACHE_FILE_NAME = 'project-parse-cache.json';
 
 /**
  * Entry format of PROJECT_PARSE_CACHE_FILE_NAME. 1 held a parse that gave
- * every term `never: []`; such an entry is reparsed and replaced.
+ * every term `never: []`, 2 one made before the schema refused U+FFFE,
+ * U+FFFF and unpaired surrogates; such an entry is reparsed and replaced.
  */
-export const PROJECT_PARSE_CACHE_VERSION = 2;
+export const PROJECT_PARSE_CACHE_VERSION = 3;
 
 /** A project file read for `loadLexicon`, and whether its parse came from the cache. */
 interface ProjectRead {
@@ -1531,16 +1533,28 @@ export type AddTermOptions = StoreOptions & {
  * throws on an empty canonical or a blank alias or never word (see assertNoBlankEntries).
  */
 function prepareIncoming(term: Term): Term {
-  const canonical = term.canonical.trim();
-  if (!canonical) throw new InputError('canonical must not be empty');
+  const trimmed = term.canonical.trim();
+  if (!trimmed) throw new InputError('canonical must not be empty');
   assertNoBlankEntries(term);
-  const prepared: Term = { ...term, canonical, aliases: dedupeAliases(term.aliases ?? [], canonical) };
+  // Cleaned as the schema cleans them on the next read (stripInvisible, then
+  // trim), so `Ash\u200bler` is a duplicate of `Ashler` and the file never
+  // holds a character its next read drops. A canonical of invisible
+  // characters only is left for assertTermFields to refuse.
+  const canonical = clean(trimmed) || trimmed;
+  const prepared: Term = { ...term, canonical, aliases: dedupeAliases((term.aliases ?? []).map(clean), canonical) };
+  if (typeof term.phonetic === 'string') prepared.phonetic = clean(term.phonetic);
+  if (typeof term.notes === 'string') prepared.notes = clean(term.notes);
   // A never word in the wrong case or with spaces around it once is still one word.
-  const never = dedupeCaseInsensitive(term.never ?? []);
+  const never = dedupeCaseInsensitive((term.never ?? []).map(clean));
   if (never.length > 0) prepared.never = never;
   else delete prepared.never;
   assertTermFields(prepared);
   return prepared;
+}
+
+/** `s` as the schema reads a word: invisible characters removed, then trimmed. Non-strings pass through for the schema to refuse. */
+function clean(s: string): string {
+  return typeof s === 'string' ? stripInvisible(s).trim() : s;
 }
 
 /**

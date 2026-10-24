@@ -6,6 +6,7 @@ import { constants, promises as fs, type BigIntStats } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import { isEnoent } from '../util/errors.js';
 import type { JsonFileRead } from '../util/json.js';
+import { parseJsonc } from '../util/jsonc.js';
 
 export const DOCTOR_CONFIG_MAX_BYTES = 1024 * 1024;
 export type DoctorConfigRead = { status: 'read'; text: string }
@@ -59,6 +60,6 @@ export async function readDoctorConfigJson(file: string): Promise<JsonFileRead> 
   const read = await readDoctorConfigText(file);
   if (read.status === 'missing') return { exists: false };
   if (read.status === 'unconfirmed') return { exists: true, error: read.reason };
-  try { return { exists: true, value: read.text.trim() === '' ? {} : JSON.parse(read.text) as unknown }; }
+  try { return { exists: true, value: read.text.trim() === '' ? {} : parseJsonc(read.text) }; }
   catch { return { exists: true, error: 'invalid-json' }; }
 }

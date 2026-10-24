@@ -1334,6 +1334,37 @@ describe('mergeHookIntoSettings', () => {
     expect(existing.hooks.UserPromptSubmit).toHaveLength(1);
   });
 
+  // Catches: only an identical command counted as present, so reinstalling
+  // from another location (a checkout, then npm i -g; npx, then a global
+  // install; a plugin version) added a second lexicon hook and every prompt
+  // ran the hook twice.
+  it('repoints a hook an earlier install wrote from another location instead of adding a second', () => {
+    const user = { type: 'command', command: 'bash ~/bin/my-lexicon-notes.sh' };
+    const existing = {
+      hooks: {
+        UserPromptSubmit: [
+          { hooks: [user] },
+          { hooks: [{ type: 'command', command: 'node /old/checkout/dist/hooks/user-prompt-submit.js', timeout: 5 }] },
+        ],
+        SessionStart: [
+          { hooks: [{ type: 'command', command: 'npx -y @ashlr/lexicon@0.5.1 hook', timeout: 15 }] },
+          { matcher: 'startup', hooks: [{ type: 'command', command: 'node "C:\\old\\plugin\\hook.mjs"' }, { type: 'command', command: 'echo keep' }] },
+        ],
+      },
+    };
+    const { settings, changed } = mergeHookIntoSettings(existing, cmd, 5, ['UserPromptSubmit', 'SessionStart']);
+    expect(changed).toBe(true);
+    expect(settings.hooks?.UserPromptSubmit).toEqual([{ hooks: [user] }, { hooks: [{ type: 'command', command: cmd, timeout: 5 }] }]);
+    expect(settings.hooks?.SessionStart).toEqual([
+      { hooks: [{ type: 'command', command: cmd, timeout: 5 }] },
+      { matcher: 'startup', hooks: [{ type: 'command', command: 'echo keep' }] },
+    ]);
+    // A rerun changes nothing, and the exact command keeps the timeout the user gave it.
+    expect(mergeHookIntoSettings(settings, cmd, 5, ['UserPromptSubmit', 'SessionStart']).changed).toBe(false);
+    const tuned = { hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: cmd, timeout: 9 }] }] } };
+    expect(mergeHookIntoSettings(tuned, cmd).changed).toBe(false);
+  });
+
   it('refuses to clobber a malformed hooks section', () => {
     expect(() => mergeHookIntoSettings({ hooks: 'nope' }, cmd)).toThrow(/hooks/);
     expect(() => mergeHookIntoSettings({ hooks: { UserPromptSubmit: {} } }, cmd)).toThrow(/UserPromptSubmit/);
@@ -1372,12 +1403,34 @@ describe('install-claude', () => {
     const written = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as { hooks: { UserPromptSubmit: unknown[] } };
     expect(written.hooks.UserPromptSubmit).toHaveLength(1);
     expect(io.out).toContain('created');
+    // Catches: the undo named the hook entries only, though this run created the file.
+    expect(io.out).toContain('(this run created the file, so deleting it undoes step 2)');
 
     const io2 = makeIO();
     await runInstallClaude({ apply: true }, io2, { cliDir: '/x/dist/cli', settingsPath, exec });
     expect(io2.out).toContain('already present');
     const again = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as { hooks: { UserPromptSubmit: unknown[] } };
     expect(again.hooks.UserPromptSubmit).toHaveLength(1);
+  });
+
+  // Catches: the merge rewrote settings.json through JSON.stringify, so a
+  // user's 4-space file, inline arrays and key spacing came back reformatted.
+  it('--apply changes nothing in settings.json outside the hooks it adds', async () => {
+    const dir = await tempDir('lexicon-settings-bytes-');
+    const settingsPath = path.join(dir, '.claude', 'settings.json');
+    await fs.mkdir(path.dirname(settingsPath), { recursive: true });
+    const before = '{\n    "model": "opus",\n    "permissions": { "allow": ["Bash(ls)", "Read"] },\n    "hooks": {\n        "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "echo pre" }] }]\n    }\n}\n';
+    await fs.writeFile(settingsPath, before);
+    const exec = vi.fn(() => 'Added stdio MCP server lexicon');
+    expect(await runInstallClaude({ apply: true }, makeIO(), { cliDir: '/x/dist/cli', settingsPath, exec })).toBe(0);
+    const after = await fs.readFile(settingsPath, 'utf8');
+    expect(after.startsWith('{\n    "model": "opus",\n    "permissions": { "allow": ["Bash(ls)", "Read"] },\n    "hooks": {\n        "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "echo pre" }] }],\n        "UserPromptSubmit": [\n')).toBe(true);
+    expect(after.endsWith('\n    }\n}\n')).toBe(true);
+    const parsed = JSON.parse(after) as { hooks: Record<string, unknown[]> };
+    expect(Object.keys(parsed.hooks)).toEqual(['PreToolUse', 'UserPromptSubmit', 'SessionStart']);
+    // A second run leaves the bytes alone.
+    await runInstallClaude({ apply: true }, makeIO(), { cliDir: '/x/dist/cli', settingsPath, exec });
+    expect(await fs.readFile(settingsPath, 'utf8')).toBe(after);
   });
 
   // install_client / setup_lexicon called from a plugin session (and `lexicon
@@ -1534,9 +1587,19 @@ describe('doctor: other MCP clients', () => {
     const home = await tempDir('lexicon-badjson-');
     await fs.mkdir(path.join(home, '.cursor'));
     const file = path.join(home, '.cursor', 'mcp.json');
-    await fs.writeFile(file, '{ // comment\n "mcpServers": {} }');
+    await fs.writeFile(file, '{ "mcpServers": { ');
     const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '/nonexistent' }, exec: () => '', home });
     expect(report.checks).toContainEqual({ level: 'warn', message: 'could not parse cursor client configuration as JSON, so a lexicon entry there was not checked' });
+  });
+
+  // Catches: `lexicon install` now writes into a config with comments and
+  // trailing commas (JSONC), so doctor must read one back too.
+  it('reads a lexicon entry from a client config with comments and trailing commas', async () => {
+    const home = await tempDir('lexicon-jsonc-');
+    await fs.mkdir(path.join(home, '.cursor'));
+    await fs.writeFile(path.join(home, '.cursor', 'mcp.json'), '{ // mine\n "mcpServers": { "lexicon": { "command": "lexicon-mcp", }, }, }');
+    const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '/nonexistent' }, exec: () => '', home });
+    expect(report.checks).toContainEqual({ level: 'ok', message: `lexicon MCP server configuration found for cursor: ${path.join(home, '.cursor', 'mcp.json')}` });
   });
 
   it('still fails when no client has lexicon registered', async () => {

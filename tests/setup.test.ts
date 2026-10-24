@@ -476,6 +476,12 @@ describe('runSetup --yes', () => {
       await expect(run({ yes: true, dryRun, clients: 'none', person: 'Mason\nWyatt' }, f)).rejects.toThrow(
         /^--person must be one line, with no control characters/,
       );
+      await expect(run({ yes: true, dryRun, clients: 'none', company: 'Ashlr\uFFFE' }, f)).rejects.toThrow(
+        /^--company must not contain U\+FFFE \(U\+FFFE, U\+FFFF and unpaired surrogates fit no file format\); nothing was written/,
+      );
+      await expect(run({ yes: true, dryRun, clients: 'none', company: 'Ashlr.AI', phonetic: 'ASH\uD800' }, f)).rejects.toThrow(
+        /^--phonetic must not contain U\+D800/,
+      );
     }
     expect(existsSync(globalPath)).toBe(false);
     expect(f.installed).toEqual([]);
@@ -686,6 +692,20 @@ describe('runSetup --dry-run', () => {
     expect(io.out).toContain('repo harvest: nothing added (--harvest adds them)');
     expect(io.out).toContain('login service: skipped (--serve installs it)');
     expect(io.out).toContain('nothing here is prompted for');
+  });
+
+  // Catches: with --no-harvest the plan said "repo harvest: nothing to add",
+  // as if the repo had been scanned and held no names, while the run itself
+  // says "skipped (--no-harvest)".
+  it('a dry run with --no-harvest says the harvest is skipped, as the run does', async () => {
+    const f = fakes({
+      harvest: async () => [
+        { canonical: 'Fernwold', category: 'brand', source: 'harvest:repo', evidence: ['README.md'], count: 2, suggestedAliases: [] },
+      ],
+    });
+    const { io } = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI', harvest: false }, f);
+    expect(io.out).toContain('repo harvest: skipped (--no-harvest)');
+    expect(io.out).not.toContain('repo harvest: nothing to add');
   });
 
   // Catches: the plan card ended "run again without --dry-run to apply", so the

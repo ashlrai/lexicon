@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import { parse as parseYaml } from 'yaml';
 import { importLexicon } from '../src/core/importers/index.js';
+import { parseLexicon } from '../src/core/schema.js';
 import {
   EXPORT_ALIAS_ROW_FORMATS,
   EXPORT_FORMAT_INFO,
@@ -201,6 +202,57 @@ describe('exportLexicon', () => {
     expect(parsed.matches.find((m) => m.trigger === 'Open "Claw"')?.replace).toBe('OpenClaw');
   });
 
+  // Catches: a canonical holding `{{name}}` was written as is, and espanso
+  // reads `{{name}}` in a replace as a variable injection: the expansion
+  // failed or typed the variable's value instead of the name.
+  it('espanso: braces in a canonical are escaped so espanso types them as written', () => {
+    // espanso-render: a body matching VAR_REGEX is a variable injection; every
+    // body then has `\{\{` and `\}\}` unescaped (renderer/mod.rs and util.rs).
+    const VAR_REGEX = /\{\{\s*(\w+)(\.(\w+))?\s*\}\}/;
+    const render = (body: string): string | undefined =>
+      VAR_REGEX.test(body) ? undefined : body.replaceAll('\\{\\{', '{{').replaceAll('\\}\\}', '}}');
+    const names = ['{{name}}', 'a {{{b}}} c', '{{ x.y }}', '{x}', '{{', '}}', 'p\\}q}}', 'r\\{{s}}'];
+    const lex: Lexicon = { version: 1, terms: names.map((canonical, i) => ({ canonical, aliases: [`alias${i}`] })) };
+    const parsed = parseYaml(exportLexicon(lex, 'espanso')) as { matches: { trigger: string; replace: string }[] };
+    expect(parsed.matches).toHaveLength(names.length);
+    for (const [i, canonical] of names.entries()) {
+      const match = parsed.matches.find((m) => m.trigger === `alias${i}`);
+      expect(render(match?.replace ?? '')).toBe(canonical);
+    }
+    // A name espanso cannot be made to type as written is left out, with a comment saying so.
+    const odd: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'x\\{\\{y', aliases: ['odd'] },
+        { canonical: 'p\\}\\}q', aliases: ['odder'] },
+        { canonical: 'Fine', aliases: ['fine'] },
+      ],
+    };
+    const text = exportLexicon(odd, 'espanso');
+    expect((parseYaml(text) as { matches: { trigger: string }[] }).matches.map((m) => m.trigger)).toEqual(['fine']);
+    expect(text).toMatch(/^# left out "odd" -> "x\\\\\{\\\\\{y": espanso would type it as "x\{\{y"/m);
+    expect(text).toMatch(/^# left out "odder" -> "p\\\\\}\\\\\}q": espanso would type it as "p\}\}q"/m);
+    // A name without braces is written as before.
+    expect(exportLexicon(lexicon, 'espanso')).not.toContain('# left out');
+  });
+
+  // Catches: `canonical:boost` with a colon in the canonical (`Win:2`) read
+  // as another keyword and boost: Deepgram's keywords have no escape for it.
+  it('deepgram: a colon in a canonical becomes a space, so each keyword has one colon, before its boost', () => {
+    const lex: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'Ashlr:AI', aliases: [], category: 'brand' },
+        { canonical: 'Win:2', aliases: [] },
+        { canonical: 'a :: b', aliases: [] },
+        { canonical: ':', aliases: [] },
+      ],
+    };
+    const out = JSON.parse(exportLexicon(lex, 'deepgram')) as { keywords: string[] };
+    expect(out.keywords).toEqual(['Ashlr AI:2', 'a b:1', 'Win 2:1']);
+    for (const k of out.keywords) expect(k.split(':')).toHaveLength(2);
+  });
+
   it('handles an empty lexicon in every format', () => {
     const empty: Lexicon = { version: 1, terms: [] };
     expect(exportLexicon(empty, 'wispr').trim()).toBe('word,replacement');
@@ -310,6 +362,55 @@ describe('exports a real user would re-import', () => {
     );
     // A note that does not end in a parenthesis is written as before.
     expect(out).toContain('| E | e1 | plain |');
+  });
+});
+
+/**
+ * The cells GFM (micromark's gfm-table, as GitHub renders) splits a table row
+ * into: a backslash escapes the character after it, so `\\` is one escaped
+ * backslash and the `|` after it ends the cell; `\|` is a literal pipe. Checked
+ * against micromark-extension-gfm-table 2: `a\\|b` splits, `a\\\|b` does not.
+ */
+function gfmCells(row: string): string[] {
+  const text = row.trim().replace(/^\|/, '').replace(/\|$/, '');
+  const cells: string[] = [];
+  let cell = '';
+  for (let i = 0; i < text.length; i++) {
+    if (text[i] === '\\' && i + 1 < text.length) {
+      cell += text[i] + text[i + 1];
+      i++;
+    } else if (text[i] === '|') {
+      cells.push(cell);
+      cell = '';
+    } else cell += text[i];
+  }
+  cells.push(cell);
+  return cells;
+}
+
+describe('claude-md table cells', () => {
+  // Catches: mdCell escaped `|` but not a backslash right before it, so the
+  // alias `a\|b` became `a\\|b`, which GFM reads as an escaped backslash and a
+  // cell boundary: the row split into four cells and the note column shifted.
+  it('a backslash before a pipe stays in one GFM cell and round-trips through the markdown importer', () => {
+    const lex: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'Back\\|slash', aliases: ['a\\|b', 'c\\\\|d', 'plain|pipe', 'end\\'], notes: 'n\\|m' },
+        { canonical: 'Other', aliases: ['o'] },
+      ],
+    };
+    const out = exportLexicon(lex, 'claude-md');
+    const row = out.split('\n').find((l) => l.startsWith('| Back'));
+    expect(row).toBeDefined();
+    expect(gfmCells(row as string)).toHaveLength(3);
+    // Read back as `lexicon import` stores it: the importer, then the schema.
+    const back = parseLexicon({ version: 1, terms: importLexicon(out, 'markdown').terms });
+    const term = back.terms.find((t) => t.canonical === 'Back\\|slash');
+    expect(term?.aliases).toEqual(['a\\|b', 'c\\\\|d', 'plain|pipe', 'end\\']);
+    expect(term?.notes).toBe('n\\|m');
+    // A pipe with no backslash before it is written as before.
+    expect(out).toContain('plain\\|pipe');
   });
 });
 
