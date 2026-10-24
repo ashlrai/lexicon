@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon serve --install` runs a Homebrew node through `<prefix>/opt/node/bin/node` (or `opt/node@<N>`), the symlink that follows upgrades. Node reports its own path with symlinks resolved, so the service was pinned to the versioned `Cellar/node/<version>` directory, which `brew upgrade` and `brew cleanup` delete, and the login service then crash-looped on a missing binary. Other node paths (nvm, a system node) are written as before.
 - `lexicon serve --install` writes the LaunchAgent plist and the systemd unit as mode 0644. They took the umask (002 on many shared machines) or kept the mode of the file they replaced, and launchd refuses to bootstrap a group- or world-writable plist, so such an install wrote the file and then failed to load it.
 - `lexicon serve --install` on Linux doubles a `$` in the CLI path it writes into the unit's `ExecStart=`. systemd expands `${NAME}` in an argument and reads `$$` as one `$`, so a path holding either was started as another path. The node path (which systemd does not expand) and `Environment=` values are written as before, and `lexicon doctor` reads the doubled form back.
 - `lexicon serve --install` on Linux restarts the systemd unit after writing it (`systemctl --user enable`, then `restart`). It ran `enable --now`, which starts a stopped unit but leaves a running one alone, so reinstalling after an upgrade, a move or a new `LEXICON_PATH` kept the old process serving until the next login.

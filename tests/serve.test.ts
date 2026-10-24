@@ -79,6 +79,7 @@ import {
 } from '../src/cli/cmd-serve.js';
 import { programPathFromPlist, programPathFromUnit } from '../src/cli/serve-paths.js';
 import type { ExecResult, ServeExec } from '../src/cli/cmd-serve.js';
+import { stableNodePath } from '../src/cli/cmd-serve.js';
 import type { IO } from '../src/cli/commands.js';
 import { FileLockError } from '../src/util/atomic.js';
 import { InputError } from '../src/util/errors.js';
@@ -2373,6 +2374,19 @@ describe('lexicon serve (CLI)', () => {
       process.umask(umask);
       await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
+  });
+
+  // Catches: process.execPath of a Homebrew node is its versioned Cellar
+  // directory, which brew upgrade and brew cleanup delete, so the service
+  // was left pointing at a node that no longer exists.
+  it('stableNodePath runs a Homebrew node through its opt/ symlink when there is one', () => {
+    const there = new Set(['/opt/homebrew/opt/node/bin/node', '/home/linuxbrew/.linuxbrew/opt/node@20/bin/node']);
+    const exists = (p: string): boolean => there.has(p);
+    expect(stableNodePath('/opt/homebrew/Cellar/node/22.9.0/bin/node', exists)).toBe('/opt/homebrew/opt/node/bin/node');
+    expect(stableNodePath('/home/linuxbrew/.linuxbrew/Cellar/node@20/20.18.0_1/bin/node', exists)).toBe('/home/linuxbrew/.linuxbrew/opt/node@20/bin/node');
+    expect(stableNodePath('/usr/local/Cellar/node/22.9.0/bin/node', exists)).toBe('/usr/local/Cellar/node/22.9.0/bin/node');
+    expect(stableNodePath('/home/me/.nvm/versions/node/v22.9.0/bin/node', exists)).toBe('/home/me/.nvm/versions/node/v22.9.0/bin/node');
+    expect(stableNodePath('/usr/bin/node', exists)).toBe('/usr/bin/node');
   });
 
   it('--install on Linux writes the systemd user unit', async () => {

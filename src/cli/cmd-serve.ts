@@ -6,7 +6,7 @@
  * Handlers are exported for tests; registerServeCommands() only wires commander.
  */
 import { spawn } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import { homeDir } from '../util/xdg.js';
 import path from 'node:path';
@@ -77,7 +77,7 @@ export interface ServeDeps {
    * program path does not exist, whichever way it was resolved.
    */
   cliPath?: string;
-  /** Node binary used by the service. Default process.execPath. */
+  /** Node binary used by the service. Default `stableNodePath(process.execPath)`. */
   nodePath?: string;
   /** Version of `nodePath` (`v20.18.0`), for the Windows `--env-file` gate. Default process.version. */
   nodeVersion?: string;
@@ -321,6 +321,21 @@ export async function runServePair(opts: ServeOptions, io: IO, deps: ServeDeps =
 
 function xmlEscape(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
+ * The node binary a login service should run, for `execPath` (this node's
+ * own, symlinks resolved). A Homebrew node resolves into its versioned Cellar
+ * directory (`<prefix>/Cellar/node/22.9.0/bin/node`, or `node@20/...`), which
+ * `brew upgrade` and `brew cleanup` delete, leaving the service crash-looping
+ * on a missing binary; its `<prefix>/opt/<formula>/bin/node` symlink follows
+ * upgrades, so that is used when it exists. Any other path is returned as is.
+ */
+export function stableNodePath(execPath: string, exists: (p: string) => boolean = existsSync): string {
+  const m = /^(.*)\/Cellar\/(node(?:@\d+)?)\/[^/]+\/bin\/node$/.exec(execPath);
+  if (!m) return execPath;
+  const stable = `${m[1]}/opt/${m[2]}/bin/node`;
+  return exists(stable) ? stable : execPath;
 }
 
 /**
@@ -606,7 +621,7 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
   const home = deps.home ?? homeDir();
   const env = deps.env ?? process.env;
   const exec = deps.exec ?? defaultServeExec;
-  const nodePath = deps.nodePath ?? process.execPath;
+  const nodePath = deps.nodePath ?? stableNodePath(process.execPath);
   let cliPath: string;
   try {
     cliPath = resolveCliEntry({ env, ...(deps.cliPath !== undefined ? { cliPath: deps.cliPath } : {}) });

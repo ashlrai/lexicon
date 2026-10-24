@@ -66525,6 +66525,12 @@ var defaultServeExec = (cmd, args) => new Promise((resolve5) => {
 function xmlEscape2(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
+function stableNodePath(execPath, exists = import_node_fs26.existsSync) {
+  const m = /^(.*)\/Cellar\/(node(?:@\d+)?)\/[^/]+\/bin\/node$/.exec(execPath);
+  if (!m) return execPath;
+  const stable = `${m[1]}/opt/${m[2]}/bin/node`;
+  return exists(stable) ? stable : execPath;
+}
 var SERVE_PASSTHROUGH_ENV = ["LEXICON_PATH", "XDG_CONFIG_HOME"];
 var SERVE_ENV_FILE_NAME = "serve.env";
 function nodeSupportsEnvFile(version2) {
@@ -66714,7 +66720,7 @@ async function runServeInstall(opts, io, deps = {}) {
   const home = deps.home ?? homeDir();
   const env = deps.env ?? process.env;
   const exec = deps.exec ?? defaultServeExec;
-  const nodePath = deps.nodePath ?? process.execPath;
+  const nodePath = deps.nodePath ?? stableNodePath(process.execPath);
   let cliPath;
   try {
     cliPath = resolveCliEntry({ env, ...deps.cliPath !== void 0 ? { cliPath: deps.cliPath } : {} });
