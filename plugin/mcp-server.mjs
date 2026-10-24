@@ -66500,6 +66500,7 @@ var import_node_path24 = __toESM(require_node_path());
 init_redact();
 init_atomic();
 init_json();
+init_errors3();
 var SERVE_FILE_MODE = 384;
 var SERVE_FILE_NAME = "serve.json";
 var DEFAULT_PORT = 41733;
@@ -66525,6 +66526,24 @@ function parseServeConfig(raw) {
 }
 function parseServeJson(text) {
   return JSON.parse(text.replace(/^\uFEFF/, ""));
+}
+function unusableServeConfigReason(file2) {
+  let text;
+  try {
+    text = (0, import_node_fs25.readFileSync)(file2, "utf8");
+  } catch (err) {
+    const code = err.code;
+    if (code === "ENOENT") return "does not exist; lexicon serve creates it";
+    return `could not be read (${typeof code === "string" ? code : errorMessage(err)}); make it a readable file, or remove it so lexicon serve makes a new token`;
+  }
+  if (text.replace(/^\uFEFF/, "").trim() === "") return "is empty; lexicon serve replaces it";
+  let raw;
+  try {
+    raw = parseServeJson(text);
+  } catch {
+    return "is not valid JSON; fix it, or delete it and lexicon serve makes a new token";
+  }
+  return `has no usable token (${tokenProblem(raw)}); lexicon serve replaces it`;
 }
 async function readServeConfig(opts = {}) {
   let text;
@@ -68194,7 +68213,9 @@ var import_node_path29 = __toESM(require_node_path());
 async function serveTarget() {
   const config2 = await readServeConfig();
   const port = config2 !== void 0 && config2.port > 0 ? config2.port : DEFAULT_PORT;
-  return { base: serveUrl(port), ...config2?.token ? { token: config2.token } : {} };
+  const configPath = getServePath();
+  const notConfigured = config2 === void 0 ? { configured: false, configPath, note: `serve is not configured: ${configPath} ${unusableServeConfigReason(configPath)}` } : {};
+  return { base: serveUrl(port), ...config2?.token ? { token: config2.token } : {}, notConfigured };
 }
 var registerSetupTools = (server, ctx) => {
   const { load } = ctx;
@@ -68396,15 +68417,15 @@ var registerSetupTools = (server, ctx) => {
     "serve_status",
     {
       title: "Local API status",
-      description: "Check whether the local lexicon API (the CLI serve command, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); { up: false, error } when nothing answers, or when something other than lexicon serve answers on the port. Every result carries `url`, the /health address probed, and every up: false result carries `hint`, the next step. Call when a non-MCP surface is not correcting text.",
+      description: "Check whether the local lexicon API (the CLI serve command, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); { up: false, error } when nothing answers, or when something other than lexicon serve answers on the port. Every result carries `url`, the /health address probed, and every up: false result carries `hint`, the next step. When serve.json is missing or unusable (not valid JSON, no usable token, unreadable) the result adds `configured: false`, `configPath` and `note` saying why and what fixes it, as the CLI serve --status --json does. Call when a non-MCP surface is not correcting text.",
       inputSchema: {}
     },
     async () => guarded(async () => {
-      const { base, token } = await serveTarget();
+      const { base, token, notConfigured } = await serveTarget();
       const url2 = `${base}/health`;
       const probe = await probeHealth(base, token !== void 0 ? { token } : {});
-      if (probe.state === "up" && isLexiconHealth(probe.body)) return textResult({ up: true, url: url2, ...isRecord(probe.body) ? probe.body : {} });
-      if (probe.state === "up") return textResult({ up: false, url: url2, error: FOREIGN_HEALTH_ERROR, hint: SERVE_STATUS_HINTS.foreign });
+      if (probe.state === "up" && isLexiconHealth(probe.body)) return textResult({ up: true, url: url2, ...isRecord(probe.body) ? probe.body : {}, ...notConfigured });
+      if (probe.state === "up") return textResult({ up: false, url: url2, error: FOREIGN_HEALTH_ERROR, hint: SERVE_STATUS_HINTS.foreign, ...notConfigured });
       if (probe.state === "failing") {
         return textResult({
           up: false,
@@ -68412,7 +68433,8 @@ var registerSetupTools = (server, ctx) => {
           url: url2,
           status: probe.status,
           error: probe.error,
-          hint: SERVE_STATUS_HINTS.failing
+          hint: SERVE_STATUS_HINTS.failing,
+          ...notConfigured
         });
       }
       const cliDir = cliDirForInstall();
@@ -68421,7 +68443,8 @@ var registerSetupTools = (server, ctx) => {
         up: false,
         url: url2,
         error: probe.error,
-        hint: blocked ? `Start it with ${cliCommand("serve")}. A login service that keeps it running cannot be installed from this copy: ${blocked}.` : `${SERVE_STATUS_HINTS.down} setup_lexicon with serve: true does the same.`
+        hint: blocked ? `Start it with ${cliCommand("serve")}. A login service that keeps it running cannot be installed from this copy: ${blocked}.` : `${SERVE_STATUS_HINTS.down} setup_lexicon with serve: true does the same.`,
+        ...notConfigured
       });
     })
   );
