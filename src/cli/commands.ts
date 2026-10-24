@@ -448,7 +448,10 @@ export async function runAdd(
           created: result.created,
           ...(result.unchanged ? { unchanged: true } : {}),
           scope,
-          suggested,
+          // The suggestions this call applied: the fallback ones only when it
+          // created the term, as the text output marks them. They used to be
+          // listed for an existing term too, where none was added.
+          suggested: !fallbackOnly || result.created ? suggested : [],
           ...(conflicts.length > 0 ? { conflicts, note: conflictNote(conflicts) } : result.unchanged ? { note: unchangedTermNote(result.term.canonical) } : {}),
         }),
         null,

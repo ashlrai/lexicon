@@ -507,6 +507,24 @@ describe('add / remove / path', () => {
     expect(core.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ aliases: ['Ashler', '  '] }), expect.anything());
   });
 
+  // Catches: `add Ashlr.AI --never ashes --json` on an existing term listed
+  // six `suggested` spellings, though none was added (the text marks none).
+  it('--json suggested is empty when the fallback suggestions were not applied to an existing term', async () => {
+    vi.mocked(core.addTerm).mockImplementationOnce(async (term) => ({
+      file: { path: '/tmp/g/lexicon.yaml', scope: 'global', lexicon: { version: 1, terms: [] }, exists: true },
+      term: { ...term, aliases: ['Ashler'] },
+      created: false,
+    }));
+    const io = makeIO();
+    expect(await runAdd('Ashlr.AI', [], { never: ['ashes'], json: true }, io)).toBe(0);
+    expect(core.addTerm).toHaveBeenLastCalledWith(expect.anything(), expect.objectContaining({ defaultAliases: ['Ashler', 'Ashlar', 'Ashlr AI'] }));
+    expect(JSON.parse(io.out)).toMatchObject({ created: false, suggested: [] });
+
+    const fresh = makeIO();
+    expect(await runAdd('Ashlr.AI', [], { json: true }, fresh)).toBe(0);
+    expect(JSON.parse(fresh.out)).toMatchObject({ created: true, suggested: ['Ashler', 'Ashlar', 'Ashlr AI'] });
+  });
+
   it('does not suggest when aliases are given unless --suggest', async () => {
     await runAdd('Ashlr.AI', ['Ashler'], {}, makeIO());
     expect(core.suggestAliases).not.toHaveBeenCalled();
