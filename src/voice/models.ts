@@ -35,11 +35,24 @@ function repoModelsDir(): string | undefined {
 }
 
 /**
- * Model names whisper.cpp publishes, named when a download answers 404 (a
- * misspelt `--model`). Not a list `--model` is checked against: a name not
- * here is still fetched, so a model published later works.
+ * Model names whisper.cpp publishes, named when a `--model` name is refused
+ * (isWhisperModelName) or a download answers 404.
  */
 export const KNOWN_MODELS: readonly string[] = ['tiny.en', 'base.en', 'small.en', 'medium.en', 'tiny', 'base', 'small', 'medium', 'large-v3', 'large-v3-turbo'];
+
+/**
+ * Whether `name` has the shape of a model whisper.cpp publishes: a size
+ * (`tiny`, `base`, `small`, `medium`) with an optional `.en`, or `large-v<N>`
+ * with an optional `-turbo`, either with an optional quantization (`-q5_1`,
+ * `-q8_0`). Checked offline before `lexicon voice` records, so a misspelt
+ * `--model` (`base-en`, `bse.en`) is refused before the user speaks rather
+ * than after, when the download answers 404. A shape and not a fixed list, so
+ * a later `large-v4` still downloads. A name that is not a whisper.cpp model
+ * still works when its file is already in the models directory.
+ */
+export function isWhisperModelName(name: string): boolean {
+  return /^(?:(?:tiny|base|small|medium)(?:\.en)?|large-v\d+(?:-turbo)?)(?:-q\d_\d)?$/.test(name);
+}
 
 export function modelFileName(name: string): string {
   return `ggml-${name}.bin`;

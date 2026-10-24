@@ -1402,6 +1402,27 @@ describe('lexicon voice (foreground)', () => {
     expect(whisperCall(h)!.args).toEqual(expect.arrayContaining(['-m', path.join(h.dir, 'models', 'ggml-small.en.bin')]));
   });
 
+  // Catches: a misspelt --model was found out only after the user had spoken, when the download answered 404.
+  it('refuses a --model name no whisper model has before recording, and keeps a model file of that name in the models dir working', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    let downloads = 0;
+    h.deps.download = async () => {
+      downloads += 1;
+    };
+    expect(await runVoice({ ...h.opts, model: 'base-en' }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.err.join('')).toContain('lexicon voice: there is no whisper model named base-en\n  pass one that exists with --model, such as tiny.en, base.en');
+    expect(h.spawnCalls).toEqual([]);
+    expect(downloads).toBe(0);
+    expect(await runVoiceToggle({ ...h.opts, model: 'base-en' }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.spawnCalls).toEqual([]);
+
+    // A custom model the user put in the models directory is used as before.
+    await fs.writeFile(path.join(h.dir, 'models', 'ggml-my-finetune.bin'), Buffer.concat([GGML_MAGIC, Buffer.from('x')]));
+    expect(await runVoice({ ...h.opts, model: 'my-finetune' }, h.io, h.deps)).toBe(EXIT_OK);
+    expect(whisperCall(h)!.args).toEqual(expect.arrayContaining(['-m', path.join(h.dir, 'models', 'ggml-my-finetune.bin')]));
+  });
+
   // Catches: a failed download reported only "fetch failed", with no way forward.
   it('a failed model download names the network, the file to save by hand and --model', async () => {
     const h = await harness();

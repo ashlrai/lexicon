@@ -37,7 +37,7 @@ import { ExecError, detectClipboardBackend } from '../daemon/clipboard-backends.
 import type { ClipboardExec } from '../daemon/clipboard-backends.js';
 import { formatDeviceList, listAudioDevices } from './devices.js';
 import { appendHistory } from './history.js';
-import { DEFAULT_MODEL, isModelPath, modelsDir, resolveModel } from './models.js';
+import { DEFAULT_MODEL, KNOWN_MODELS, isModelPath, isWhisperModelName, modelsDir, resolveModel } from './models.js';
 import type { Downloader } from './models.js';
 import {
   defaultExec,
@@ -616,6 +616,16 @@ function refuseMissingModelPath(opts: VoiceOptions, io: VoiceIO, r: Resolved, de
       const error = `whisper model ${named.path} is not usable: ${named.problem}`;
       io.stderr(`lexicon voice: ${error}\n`);
       return failed(r, EXIT_ERROR, error, `delete ${named.path} to download it again, or delete ${named.path}.sha256.json to keep using it`);
+    }
+    // A name no download can fetch (a typo) was found out only after the
+    // recording, when the download answered 404 and the dictation was lost.
+    if (!named.present && !isWhisperModelName(spec)) {
+      return refuseWith(
+        r,
+        io,
+        `there is no whisper model named ${sanitizeForDisplay(spec)}`,
+        `pass one that exists with --model, such as ${KNOWN_MODELS.join(', ')}, or a ggml file you have`,
+      );
     }
     return undefined;
   }
