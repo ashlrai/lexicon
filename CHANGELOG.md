@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon edit` runs a `$VISUAL` or `$EDITOR` whose quoted editor path has a space in it (`"/Applications/Sublime Text.app/.../subl" -w`, `"C:\Program Files\Notepad++\notepad++.exe"`). The value was split at every space, so it ran `"/Applications/Sublime` and failed with ENOENT.
 - `lexicon voice --device <index>` on macOS with an index no listed avfoundation device has stops before recording, naming the range and `--list-devices`, as it does on Linux and Windows. The number went to ffmpeg as `:N` unchecked.
 - `lexicon voice --model <name>` (and `--toggle`) with a name no whisper model has (`base-en`, `bse.en`) is refused before recording, offline, naming models that exist. The check came only after the user had spoken, when the download answered 404. A model file of that name already in the models directory is still used.
 - `voice/history.jsonl` survives a read that fails for any reason but a missing file (EIO, EACCES): the new entry is dropped and the file kept. Every read error was taken as an empty history, so the next dictation rewrote the file with its one entry and the rest of the history was gone.

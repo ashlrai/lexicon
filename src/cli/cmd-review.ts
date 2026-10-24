@@ -658,11 +658,36 @@ export const spawnEditorInherit: SpawnEditor = (command, args, filePath) =>
     child.once('exit', (code, signal) => resolve(code ?? (signal ? 1 : 0)));
   });
 
-/** `$VISUAL` then `$EDITOR`, split on whitespace so `code --wait` works. */
+/**
+ * `$VISUAL` then `$EDITOR`, split on whitespace so `code --wait` works, with
+ * a single- or double-quoted part kept whole (quotes removed), as a shell
+ * reads it: `"/Applications/Sublime Text.app/.../subl" -w` and
+ * `"C:\Program Files\Notepad++\notepad++.exe"`. Split on every space, a
+ * quoted editor path with a space in it was run as `"/Applications/Sublime`
+ * and failed with ENOENT. Backslashes are kept as written (Windows paths).
+ */
 export function editorCommand(env: NodeJS.ProcessEnv = process.env): { command: string; args: string[] } | undefined {
   const raw = (env.VISUAL?.trim() || env.EDITOR?.trim()) ?? '';
   if (!raw) return undefined;
-  const [command, ...args] = raw.split(/\s+/);
+  const words: string[] = [];
+  let word: string | undefined;
+  let quote: string | undefined;
+  for (const ch of raw) {
+    if (quote !== undefined) {
+      if (ch === quote) quote = undefined;
+      else word += ch;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      word ??= '';
+    } else if (/\s/.test(ch)) {
+      if (word !== undefined) words.push(word);
+      word = undefined;
+    } else {
+      word = (word ?? '') + ch;
+    }
+  }
+  if (word !== undefined) words.push(word);
+  const [command, ...args] = words;
   return command ? { command, args } : undefined;
 }
 

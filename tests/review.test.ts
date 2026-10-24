@@ -659,6 +659,21 @@ describe('edit', () => {
     expect(editorCommand({})).toBeUndefined();
   });
 
+  // Catches: a quoted editor path with a space in it was split at the space and run as `"/Applications/Sublime`, failing with ENOENT.
+  it('editorCommand keeps a quoted editor path with spaces whole', () => {
+    expect(editorCommand({ EDITOR: '"/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl" -w' })).toEqual({
+      command: '/Applications/Sublime Text.app/Contents/SharedSupport/bin/subl',
+      args: ['-w'],
+    });
+    expect(editorCommand({ EDITOR: '"C:\\Program Files\\Notepad++\\notepad++.exe" -multiInst' })).toEqual({
+      command: 'C:\\Program Files\\Notepad++\\notepad++.exe',
+      args: ['-multiInst'],
+    });
+    expect(editorCommand({ VISUAL: "'/opt/my editor/ed' --title 'Lexicon file'" })).toEqual({ command: '/opt/my editor/ed', args: ['--title', 'Lexicon file'] });
+    expect(editorCommand({ EDITOR: 'code   --wait  ' })).toEqual({ command: 'code', args: ['--wait'] });
+    expect(editorCommand({ EDITOR: '""' })).toBeUndefined();
+  });
+
   it('prints the path when no editor is configured (creating a missing global file)', async () => {
     const io = makeIO();
     expect(await runEdit({ globalPath }, io, undefined, {})).toBe(0);
