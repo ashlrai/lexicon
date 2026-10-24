@@ -111,7 +111,7 @@ describe('editable', () => {
     expect(flatten(document.getElementById('e')!).text).toBe('one two\n\nthree\nfour');
   });
 
-  it('rewrites a textarea through the native setter and fires input', async () => {
+  it('rewrites a textarea and fires input', async () => {
     document.body.innerHTML = '<textarea id="t"></textarea>';
     const t = document.getElementById('t') as HTMLTextAreaElement;
     t.value = 'ping ashler now';

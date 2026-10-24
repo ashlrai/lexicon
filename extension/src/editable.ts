@@ -5,9 +5,11 @@
  * Quill on Gemini) own their DOM. Replacing innerHTML desyncs their state,
  * so corrections are applied as ranged `insertText` edits, which every one
  * of them observes like a native IME or spellcheck replacement. Textareas
- * get the React-safe native value setter plus an `input` event.
+ * get `insertText` or `setRangeText` (the browser's own edit, so undo keeps
+ * working), and the React-safe native value setter plus an `input` event
+ * only when neither takes.
  */
-import { CODE_SELECTOR, isTextField } from './adapters.js';
+import { CODE_SELECTOR, deepActiveElement, isTextField } from './adapters.js';
 import type { Correction } from './shared.js';
 
 const BLOCK_TAGS = new Set(['P', 'DIV', 'LI', 'PRE', 'BLOCKQUOTE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'TR', 'SECTION']);
@@ -194,14 +196,54 @@ function setFieldValue(el: HTMLTextAreaElement | HTMLInputElement, value: string
   fireInput(el, 'insertReplacementText', value);
 }
 
+/**
+ * Replace [start, end) of a text field with the browser's own edit, so it
+ * goes on the field's undo stack and Ctrl+Z takes it back: `insertText`
+ * (`delete` for an empty replacement) while the field has focus, else
+ * `setRangeText` and an `input` event (no undo entry, but the history the
+ * user typed is kept, where assigning `value` drops it in Firefox and
+ * Chromium). True when the field then holds `next`; false otherwise, and
+ * the caller sets the value as before.
+ */
+function editFieldNatively(doc: Document, el: HTMLTextAreaElement | HTMLInputElement, start: number, end: number, replacement: string, next: string): boolean {
+  const value = el.value;
+  if (typeof doc.execCommand === 'function' && deepActiveElement(doc) === el) {
+    try {
+      el.setSelectionRange(start, end);
+      const ok = replacement === '' ? doc.execCommand('delete', false) : doc.execCommand('insertText', false, replacement);
+      if (ok && el.value === next) return true;
+    } catch {
+      // input types without selection support, or no editing command
+    }
+    if (el.value !== value) return false;
+  }
+  if (typeof el.setRangeText !== 'function') return false;
+  try {
+    el.setRangeText(replacement, start, end, 'end');
+  } catch {
+    return false;
+  }
+  if (el.value !== next) return false;
+  fireInput(el, 'insertReplacementText', replacement);
+  return true;
+}
+
 /** Replace [start, end) in a text field; keeps the caret sensible. */
-function replaceInField(el: HTMLTextAreaElement | HTMLInputElement, start: number, end: number, replacement: string): void {
+function replaceInField(doc: Document, el: HTMLTextAreaElement | HTMLInputElement, start: number, end: number, replacement: string): void {
   const value = el.value;
   const caretBefore = el.selectionEnd ?? value.length;
   const next = value.slice(0, start) + replacement + value.slice(end);
   let caret = caretBefore;
   if (caretBefore >= end) caret = caretBefore + (replacement.length - (end - start));
   else if (caretBefore > start) caret = start + replacement.length;
+  if (editFieldNatively(doc, el, start, end, replacement, next)) {
+    try {
+      el.setSelectionRange(caret, caret);
+    } catch {
+      // input types without selection support
+    }
+    return;
+  }
   setFieldValue(el, next, caret);
 }
 
@@ -284,7 +326,7 @@ function settle(doc: Document): Promise<void> {
 export async function applyCorrections(doc: Document, el: HTMLElement, corrections: readonly Correction[], expected: string): Promise<string> {
   const ordered = [...corrections].sort((a, b) => b.start - a.start);
   if (isTextField(el)) {
-    for (const c of ordered) replaceInField(el, c.start, c.end, c.replacement);
+    for (const c of ordered) replaceInField(doc, el, c.start, c.end, c.replacement);
     if (el.value !== expected) setFieldValue(el, expected);
     return el.value;
   }
