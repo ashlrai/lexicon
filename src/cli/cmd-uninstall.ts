@@ -433,6 +433,11 @@ async function uninstallText(client: string | undefined, opts: UninstallOptions,
   if (scope !== 'user' && scope !== 'project') {
     throw new CliRefusal(`--scope must be "user" or "project" (got "${scope}")`, 'pass --scope user or --scope project');
   }
+  // --project was dropped without a word, so the user config was edited for
+  // someone asking about the repo-level file. Install refuses this too.
+  if (scope === 'user' && opts.project === true) {
+    throw new CliRefusal('--scope user and --project contradict each other; nothing was changed', 'pass one of them: --scope user for your own config, or --project (--scope project) for the repo-level file');
+  }
   const project = scope === 'project';
   const env = deps.env ?? process.env;
   const home = opts.home ? path.resolve(opts.home) : homeDir();

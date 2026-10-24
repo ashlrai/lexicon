@@ -130,6 +130,23 @@ describe('lexicon uninstall <json client>', () => {
     await expect(uninstall('generic')).rejects.toThrow(/unknown client/);
   });
 
+  // Catches: --scope user --project dropped --project without a word and
+  // removed the user-config entry; install refuses the same contradiction.
+  it('refuses --scope user with --project, removing nothing', async () => {
+    await install('cursor');
+    await install('cursor', { project: true });
+    const userFile = path.join(home, '.cursor', 'mcp.json');
+    const projectFile = path.join(cwd, '.cursor', 'mcp.json');
+    const userBefore = await fs.readFile(userFile, 'utf8');
+    const projectBefore = await fs.readFile(projectFile, 'utf8');
+    await expect(uninstall('cursor', { scope: 'user', project: true })).rejects.toThrow(/--scope user and --project contradict each other; nothing was changed/);
+    const json = await uninstall('cursor', { scope: 'user', project: true, json: true });
+    expect(json.code).toBe(1);
+    expect(JSON.parse(json.io.out)).toMatchObject({ ok: false, nextStep: expect.stringContaining('pass one of them') });
+    expect(await fs.readFile(userFile, 'utf8')).toBe(userBefore);
+    expect(await fs.readFile(projectFile, 'utf8')).toBe(projectBefore);
+  });
+
   it('--json prints the changes', async () => {
     await install('windsurf');
     const { code, io } = await uninstall('windsurf', { json: true, dryRun: true });
