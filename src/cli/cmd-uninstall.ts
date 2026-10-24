@@ -313,7 +313,11 @@ async function uninstallClaude(
       line(io, dim(`   to remove it by hand: claude mcp remove --scope ${scope} lexicon`));
     } else if (own === null) {
       got = undefined;
-      report(ctx, { file: where, entry, outcome: 'absent' }, `the lexicon server is registered at ${shadow} scope, not ${scope} (pass --scope ${shadow === 'local' ? 'user' : shadow} for it, or claude mcp remove --scope ${shadow} lexicon)`);
+      // lexicon install never registers at local scope, and no --scope of
+      // this command reaches one: `--scope user` (what it said) finds the
+      // same local registration again.
+      const how = shadow === 'local' ? `remove it with claude mcp remove --scope local lexicon` : `pass --scope ${shadow} for it, or claude mcp remove --scope ${shadow} lexicon`;
+      report(ctx, { file: where, entry, outcome: 'absent' }, `the lexicon server is registered at ${shadow} scope, not ${scope} (${how})`);
     } else {
       got = own;
     }

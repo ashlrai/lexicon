@@ -210,7 +210,7 @@ describe('lexicon uninstall claude', () => {
   it('leaves a foreign registration, one at another scope and an unregistered one alone', async () => {
     for (const [out, expected] of [
       [get('/me/mine.js'), 'lexicon server was not written by lexicon install (node /me/mine.js); left as it is'],
-      [get(SERVER, 'Project config (shared via .mcp.json)'), 'the lexicon server is registered at project scope, not user'],
+      [get(SERVER, 'Project config (shared via .mcp.json)'), 'the lexicon server is registered at project scope, not user (pass --scope project for it, or claude mcp remove --scope project lexicon)'],
     ] as const) {
       const calls: string[][] = [];
       const exec = (_f: string, args: readonly string[]): string => {
@@ -290,6 +290,17 @@ describe('lexicon uninstall claude', () => {
     const { io } = await uninstall('claude', { scope: 'project' }, { env: { PATH: '' }, exec });
     expect(calls.at(-1)).toEqual(['mcp', 'remove', '--scope', 'project', 'lexicon']);
     expect(io.out).toContain('removed lexicon server from claude mcp (project scope)');
+  });
+
+  // Catches: a local-scope registration was told to pass --scope user, which
+  // is the run that just reported it (no --scope of uninstall reaches local).
+  it('names claude mcp remove --scope local for a local-scope registration, at either scope', async () => {
+    const exec = (_f: string, args: readonly string[]): string => (args[1] === 'get' ? get(SERVER, 'Local config (private to you in this project)') : '');
+    for (const scope of ['user', 'project'] as const) {
+      const { io } = await uninstall('claude', { scope }, { env: { PATH: '' }, exec });
+      expect(io.out).toContain(`the lexicon server is registered at local scope, not ${scope} (remove it with claude mcp remove --scope local lexicon)`);
+      expect(io.out).not.toContain('pass --scope');
+    }
   });
 
   it('at project scope reads the repo settings.json', async () => {

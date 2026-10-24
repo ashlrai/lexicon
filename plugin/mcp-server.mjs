@@ -67820,7 +67820,8 @@ async function uninstallClaude(ctx, scope, settingsPath, exec, files) {
       line(io, dim(`   to remove it by hand: claude mcp remove --scope ${scope} lexicon`));
     } else if (own2 === null) {
       got = void 0;
-      report(ctx, { file: where, entry, outcome: "absent" }, `the lexicon server is registered at ${shadow} scope, not ${scope} (pass --scope ${shadow === "local" ? "user" : shadow} for it, or claude mcp remove --scope ${shadow} lexicon)`);
+      const how = shadow === "local" ? `remove it with claude mcp remove --scope local lexicon` : `pass --scope ${shadow} for it, or claude mcp remove --scope ${shadow} lexicon`;
+      report(ctx, { file: where, entry, outcome: "absent" }, `the lexicon server is registered at ${shadow} scope, not ${scope} (${how})`);
     } else {
       got = own2;
     }
