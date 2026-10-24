@@ -192,7 +192,7 @@ One file handles both events, dispatched on `hook_event_name`. The prompt is not
 
 These fix the text before any agent sees it, at the cost of being per-machine (daemon) or per-app (export). Importers run the export path backwards so an existing dictionary seeds the lexicon instead of being retyped; `text`, `csv`, `macos` and `json` round-trip.
 
-The daemon runs on macOS, Linux and Windows. `clipboard-backends.ts` picks the tool from the platform, `WAYLAND_DISPLAY` and PATH (no process is spawned to detect), and every backend treats an empty or non-text clipboard as `''`. `lexicon daemon --once` is the shortcut-friendly form: one read, one write if anything changed, a diff on stdout, exit 0; `--paste` (macOS) sends Cmd+V through `osascript`, which is the only part that needs a permission (Accessibility). The loop mode keeps the same guard against rewriting its own output and re-reads the lexicon at most every 5s.
+The daemon runs on macOS, Linux and Windows. `clipboard-backends.ts` picks the tool from the platform, `WAYLAND_DISPLAY` and PATH (no process is spawned to detect), and every backend treats an empty or non-text clipboard as `''`. `lexicon daemon --once` is the shortcut-friendly form: one read, one write if anything changed, a diff on stdout, exit 0; `--paste` (macOS) sends Cmd+V through `osascript`, which is the only part that needs a permission (Accessibility). The loop mode keeps the same guard against rewriting its own output and re-reads the lexicon when a lexicon file or `trust.json` changed (checked by `stat` before correcting a new clipboard text), and every 5s as a backstop.
 
 ### 4. Local API, browser extension and LexiconBar
 

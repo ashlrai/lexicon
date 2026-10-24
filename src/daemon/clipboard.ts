@@ -11,7 +11,8 @@
  * The platform tools live in ./clipboard-backends.ts. Read/write stay
  * injectable so the loop can be tested without touching a real clipboard.
  */
-import { FIRST_TERM_STEP, TRUST_STEP, diffSummary, loadLexicon, noTermsYet, normalize, recordHits } from '../core/index.js';
+import { statSync } from 'node:fs';
+import { FIRST_TERM_STEP, TRUST_STEP, diffSummary, getTrustPath, loadLexicon, noTermsYet, normalize, recordHits, resolvePaths } from '../core/index.js';
 import type { LoadedLexicon, NormalizeResult } from '../core/index.js';
 import {
   checkClipboardBackend,
@@ -68,8 +69,38 @@ export interface ClipboardOnceOptions extends ClipboardCommonOptions {
 
 /** Skip clipboard payloads larger than this (bytes of UTF-16 units, i.e. string length). */
 export const MAX_CLIPBOARD_CHARS = 20_000;
-/** Re-read the lexicon files at most this often. */
+/**
+ * Re-read the lexicon files at least this often. A change to a lexicon file
+ * or to trust.json is seen sooner, on the next clipboard change to correct
+ * (lexiconFilesStamp); this is the backstop for a file system whose times did
+ * not move.
+ */
 export const LEXICON_RELOAD_MS = 5_000;
+
+/**
+ * What the loop compares to see a lexicon edit: size, modification time and
+ * inode of the global lexicon, the project lexicon for `cwd` (found again
+ * each time, so a new `.lexicon.yaml` counts) and trust.json, `-` for a file
+ * that is not there. A few `stat` calls, made only when a new clipboard text
+ * is about to be corrected, never on an unchanged poll. An edit used to wait
+ * for the 5 s reload, so a term just learned was not used on the next copy.
+ */
+export function lexiconFilesStamp(cwd: string): string {
+  const paths = resolvePaths({ cwd });
+  const files = [paths.global, paths.project ?? '', getTrustPath({ cwd })];
+  // Synchronous: three stats of small local files cost microseconds, and the
+  // poll then never waits on the I/O queue between reading and correcting.
+  const stamps = files.map((file) => {
+    if (file === '') return '-';
+    try {
+      const st = statSync(file, { throwIfNoEntry: false });
+      return st ? `${st.size}:${st.mtimeMs}:${st.ino}` : '-';
+    } catch {
+      return '-';
+    }
+  });
+  return `${paths.project ?? ''}|${stamps.join('|')}`;
+}
 
 /** macOS `pbpaste` (kept for callers of the old API; prefers the backend module). */
 export function pbpaste(): Promise<string> {
@@ -208,20 +239,25 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
   let lastWritten: string | undefined; // what we last wrote (loop guard)
   let lexicon: LoadedLexicon | undefined;
   let lexiconLoadedAt = -Infinity;
+  let lexiconStamp: string | undefined;
 
   async function currentLexicon(): Promise<LoadedLexicon> {
     const now = Date.now();
-    if (!lexicon || now - lexiconLoadedAt >= LEXICON_RELOAD_MS) {
+    // Taken before the load, so an edit that lands during it is seen next time.
+    const stamp = lexiconFilesStamp(cwd);
+    if (!lexicon || stamp !== lexiconStamp || now - lexiconLoadedAt >= LEXICON_RELOAD_MS) {
       try {
         // parseSkipped: false: only the merged terms are used, so an untrusted
         // or changed project file is never parsed, on this or any reload.
         lexicon = await loadLexicon({ cwd, parseSkipped: false });
         lexiconLoadedAt = now;
+        lexiconStamp = stamp;
       } catch (e) {
         // Keep serving the previous lexicon (if any) while the file is broken.
         if (!lexicon) throw e;
         if (!quiet) err(`[${timestamp()}] lexicon reload failed, using previous: ${message(e)}\n`);
         lexiconLoadedAt = now;
+        lexiconStamp = stamp;
       }
     }
     return lexicon;

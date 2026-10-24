@@ -24,8 +24,14 @@ vi.mock('../src/core/index.js', async () => {
     diffSummary: vi.fn((r: NormalizeResult) => r.replacements.map((x) => `"${x.original}" -> "${x.replacement}"`).join('\n')),
     loadLexicon: vi.fn(async () => ({ merged: lexicon, global: { path: '/g', scope: 'global', lexicon, exists: true } })),
     recordHits: vi.fn(async () => undefined),
+    // The files the loop stats to see an edit: a temp file a test can change.
+    resolvePaths: vi.fn(() => ({ global: watched.global })),
+    getTrustPath: vi.fn(() => watched.trust),
   };
 });
+
+// Hoisted with the mock above: the paths it reports, set per test.
+const watched = vi.hoisted(() => ({ global: '/nonexistent/lexicon.yaml', trust: '/nonexistent/trust.json' }));
 
 import * as core from '../src/core/index.js';
 import { main as daemonMain, runClipboardDaemon, runClipboardOnce, runDaemonCommand } from '../src/daemon/clipboard.js';
@@ -288,6 +294,42 @@ describe('runClipboardDaemon', () => {
     const reads = h.read.mock.calls.length;
     await vi.advanceTimersByTimeAsync(1000);
     expect(h.read.mock.calls.length).toBe(reads); // timer cleared
+  });
+
+  // Catches: an edit to the lexicon file was seen only by the next 5 s
+  // reload, so a term just learned was not used on the next copy.
+  it('reloads the lexicon on the next copy after a lexicon file changes', async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = mkdtempSync(join(tmpdir(), 'lexicon-daemon-reload-'));
+    watched.global = join(dir, 'lexicon.yaml');
+    watched.trust = join(dir, 'trust.json');
+    writeFileSync(watched.global, 'version: 1\nterms: []\n');
+    try {
+      const h = start('a Ashler');
+      await vi.advanceTimersByTimeAsync(0);
+      await vi.waitFor(() => expect(core.loadLexicon).toHaveBeenCalledTimes(1));
+      h.clipboard = 'b Ashler';
+      await vi.advanceTimersByTimeAsync(250);
+      await vi.waitFor(() => expect(h.write).toHaveBeenCalledTimes(2));
+      expect(core.loadLexicon).toHaveBeenCalledTimes(1);
+      writeFileSync(watched.global, 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n');
+      h.clipboard = 'c Ashler';
+      await vi.advanceTimersByTimeAsync(250);
+      await vi.waitFor(() => expect(core.loadLexicon).toHaveBeenCalledTimes(2));
+      // A new trust.json counts too (a project file trusted from another shell).
+      writeFileSync(watched.trust, '{}\n');
+      h.clipboard = 'd Ashler';
+      await vi.advanceTimersByTimeAsync(250);
+      await vi.waitFor(() => expect(core.loadLexicon).toHaveBeenCalledTimes(3));
+      h.controller.abort();
+      await h.done;
+    } finally {
+      watched.global = '/nonexistent/lexicon.yaml';
+      watched.trust = '/nonexistent/trust.json';
+      rmSync(dir, { recursive: true, force: true });
+    }
   });
 
   it('resolves immediately when started with an already-aborted signal', async () => {
