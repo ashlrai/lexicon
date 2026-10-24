@@ -294,7 +294,7 @@ export const PAIR_HEADERS: Readonly<Record<string, string>> = {
   'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
   'Referrer-Policy': 'no-referrer',
 };
-/** Bounded so a client cycling `cwd` values cannot grow the cache without limit. */
+/** Bounded so a client cycling `cwd` values cannot grow the cache without limit; the least recently used cwd goes first. */
 const MAX_CACHED_CWDS = 32;
 
 /** Content type per exporter file extension (`EXPORT_FORMAT_INFO[format].ext`). */
@@ -1028,16 +1028,23 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   async function loadEntry(cwd: string): Promise<CachedLexicon> {
     const now = Date.now();
     const hit = cache.get(cwd);
-    if (hit && now - hit.at < reloadMs) return hit;
+    if (hit && now - hit.at < reloadMs) {
+      // A Map iterates in insertion order: moving a hit to the end makes the
+      // first key the least recently used one, which is what eviction drops.
+      cache.delete(cwd);
+      cache.set(cwd, hit);
+      return hit;
+    }
     // No route reads a skipped project file's terms (each names it by path
     // only), so an untrusted or changed one is never parsed, as in the hook.
     const startedAt = generation;
     const loaded = await loadLexicon({ cwd, ...storeOpts, parseSkipped: false });
     const entry: CachedLexicon = { loaded, at: now };
     if (generation !== startedAt) return entry;
-    if (cache.size >= MAX_CACHED_CWDS && !cache.has(cwd)) {
-      const oldest = cache.keys().next().value;
-      if (oldest !== undefined) cache.delete(oldest);
+    cache.delete(cwd);
+    if (cache.size >= MAX_CACHED_CWDS) {
+      const leastRecent = cache.keys().next().value;
+      if (leastRecent !== undefined) cache.delete(leastRecent);
     }
     cache.set(cwd, entry);
     return entry;
