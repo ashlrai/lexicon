@@ -64165,8 +64165,13 @@ async function stepLexicon(ctx) {
     if (name === void 0) return void 0;
     const problem = setupNameProblem(name);
     if (problem === void 0) return name;
-    companySkipped = true;
-    ctx.say(dim(`   skipped the company term: the guessed name ${problem}; pass --company "Your Co", or later: lexicon add "Your Co" --category brand`));
+    const prompted = ctx.prompter !== void 0 && !ctx.plan;
+    companySkipped = !prompted;
+    ctx.say(
+      dim(
+        prompted ? `   not suggesting the guessed company name: it ${problem}; type the name you want at the prompt below (Enter to skip)` : `   skipped the company term: the guessed name ${problem}; pass --company "Your Co", or later: lexicon add "Your Co" --category brand`
+      )
+    );
     return void 0;
   };
   if (ctx.plan) {

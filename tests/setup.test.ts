@@ -1195,6 +1195,35 @@ describe('runSetup starter packs', () => {
     expect(io.out).not.toContain('no company term (add one later');
   });
 
+  // Catches: on a terminal the note said "pass --company" right before the
+  // company prompt appeared, naming a flag the user no longer needed.
+  it('on a terminal, a refused company guess points at the prompt that follows, not at --company', async () => {
+    const longOrg = 'a'.repeat(120);
+    const terminal = (p: ReturnType<typeof scripted>) =>
+      fakes({
+        isInteractive: () => true,
+        createPrompter: () => p,
+        exec: (file, args) => {
+          if (file === 'git' && args.join(' ') === 'config --global user.name') return 'Mason Wyatt';
+          if (file === 'git' && args.join(' ') === `-C ${cwd} remote get-url origin`) return `https://github.com/${longOrg}/repo.git`;
+          if (file === 'git') throw new Error('exit 1');
+          throw new Error(`unexpected exec: ${file} ${args.join(' ')}`);
+        },
+      });
+    const p = scripted(['y', 'Acme', '', 'n']);
+    const f = terminal(p);
+    const { code, summary, io } = await run({ clients: 'none', packs: false, harvest: false, app: 'none', serve: false }, f);
+    expect(code).toBe(0);
+    expect(summary.termsAdded).toEqual(['Mason Wyatt', 'Acme']);
+    expect(io.out).toMatch(/not suggesting the guessed company name: it must be at most 80 characters \(it has 120\); type the name you want at the prompt below \(Enter to skip\)/);
+    expect(io.out).not.toContain('pass --company');
+    expect(p.asked.some((q) => q.includes('Your company or product name'))).toBe(true);
+    // Enter at the prompt still says how to add one later.
+    const skip = scripted(['y', '', 'n']);
+    const skipped = await run({ clients: 'none', packs: false, harvest: false, app: 'none', serve: false }, terminal(skip));
+    expect(skipped.io.out).toContain('no company term (add one later: lexicon add "Your Co" --category brand)');
+  });
+
   it('goes through deps.listPacks / deps.installPack when injected, with global scope', async () => {
     const calls: { name: string; opts: unknown }[] = [];
     const f = fakes({

@@ -208,8 +208,17 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
     if (name === undefined) return undefined;
     const problem = setupNameProblem(name);
     if (problem === undefined) return name;
-    companySkipped = true;
-    ctx.say(dim(`   skipped the company term: the guessed name ${problem}; pass --company "Your Co", or later: lexicon add "Your Co" --category brand`));
+    // On a terminal the company prompt comes next, so name that, not a flag;
+    // skipping it there still gets the "add one later" note.
+    const prompted = ctx.prompter !== undefined && !ctx.plan;
+    companySkipped = !prompted;
+    ctx.say(
+      dim(
+        prompted
+          ? `   not suggesting the guessed company name: it ${problem}; type the name you want at the prompt below (Enter to skip)`
+          : `   skipped the company term: the guessed name ${problem}; pass --company "Your Co", or later: lexicon add "Your Co" --category brand`,
+      ),
+    );
     return undefined;
   };
   if (ctx.plan) {
