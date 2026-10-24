@@ -25,6 +25,7 @@ import {
   refreshIndexCache,
   refreshTrust,
   resolvePaths,
+  spellingKey,
   writeLexiconFile,
 } from '../core/index.js';
 import type { HarvestCandidate, Lexicon, LexiconFile, Term, TermCategory, TermScope } from '../core/index.js';
@@ -370,8 +371,9 @@ async function fileDigest(filePath: string): Promise<string | undefined> {
   }
 }
 
+/** A term's identity as the store compares canonicals: trimmed, lowercased and NFC. */
 function termKey(t: Term): string {
-  return t.canonical.trim().toLowerCase();
+  return spellingKey(t.canonical);
 }
 
 /** Key-order-independent JSON of a term, for change detection. */
