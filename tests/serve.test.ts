@@ -1979,6 +1979,15 @@ describe('lexicon serve (CLI)', () => {
       expect(await runServe({ install: true, globalPath: env.globalPath }, io2, { platform: 'darwin', home, env: {}, exec: exec2, cliPath: cli, uid: 501 })).toBe(0);
       expect(calls2[2]).toEqual(['launchctl', 'load', plistPath]);
 
+      // Catches: both failing said "load it manually" without the command.
+      const io2b = memIO();
+      const failing: ServeExec = async (_cmd, args) =>
+        args[0] === 'bootout' ? { code: 0, stdout: '', stderr: '' } : { code: 5, stdout: '', stderr: 'Input/output error' };
+      expect(await runServe({ install: true, globalPath: env.globalPath }, io2b, { platform: 'darwin', home, env: {}, exec: failing, cliPath: cli, uid: 501 })).toBe(1);
+      expect(io2b.err.join('')).toContain(
+        `lexicon: could not load the LaunchAgent; the plist is in place, so load it with: launchctl bootstrap gui/501 ${plistPath} (or log out and in), then check with: lexicon serve --status\n`,
+      );
+
       // uninstall
       const calls3: string[][] = [];
       const io3 = memIO();

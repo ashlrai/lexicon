@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon serve --install` on macOS, when launchd loads neither way, names the command to load the plist (`launchctl bootstrap gui/<uid> <plist>`) and `lexicon serve --status` to check. It said "load it manually".
 - The browser extension Options page (Test connection, Sync from local API, the "Any site" box) and the /pair page, when the request to the extension's background itself fails (as when the extension was reloaded under the page), say to reload the page and then Lexicon on the extensions page. They showed a bare `extension messaging failed`.
 - `lexicon pending accept` and `reject` with an id the queue does not hold say to run `lexicon pending list` to see the ids. They said only `no pending alias with id <id>`.
 - LexiconBar onboarding, when the starter packs cannot be loaded, has a Try again button and says the packs come from the local API (check it with `lexicon serve --status`), or to skip the step and add packs later with `lexicon pack add <name>`.
