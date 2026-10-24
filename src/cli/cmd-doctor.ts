@@ -68,6 +68,16 @@ function declaresTransport(entry: unknown): boolean {
     && (entry.type === undefined || entry.type === 'http' || entry.type === 'sse');
 }
 
+/**
+ * Whether `claude mcp list` output names a server called exactly `lexicon`
+ * (`lexicon: <command> - <status>`), or a plugin's (`plugin:<plugin>:lexicon:
+ * ...`). Any mention of the word passed before, so a `lexicon-foo` server, or
+ * a path holding "lexicon" in another server's command, read as registered.
+ */
+function claudeListsLexiconServer(out: string): boolean {
+  return out.split(/\r?\n/).some((row) => /^(?:plugin:[^:\s]+:)?lexicon:(?:\s|$)/.test(row.trim()));
+}
+
 function withoutTomlComment(line: string): string {
   let quote: string | undefined;
   for (let i = 0; i < line.length; i++) {
@@ -927,7 +937,7 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
     push('ok', `claude CLI found: ${claudeBin}`);
     try {
       const out = exec('claude', ['mcp', 'list']);
-      if (/lexicon/i.test(out)) {
+      if (claudeListsLexiconServer(out)) {
         wired = true;
         push('ok', 'lexicon MCP server is registered with claude');
       } else if (pluginId) push('warn', `lexicon MCP server not listed by "claude mcp list"; the ${pluginId} plugin provides it when enabled`);

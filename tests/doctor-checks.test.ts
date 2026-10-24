@@ -56,3 +56,28 @@ describe('doctor conflict summary', () => {
     expect(report.checks.some((c) => c.message === 'no alias/canonical conflicts')).toBe(false);
   });
 });
+
+describe('doctor and claude mcp list', () => {
+  function withClaude(): ReturnType<typeof setup> {
+    const t = setup();
+    const claude = path.join(t.bin, 'claude');
+    writeFileSync(claude, '#!/bin/sh\nexit 0\n');
+    chmodSync(claude, 0o755);
+    t.env = { ...t.env, PATH: t.bin };
+    return t;
+  }
+  const registered = (report: Awaited<ReturnType<typeof runDoctorReport>>): boolean =>
+    report.checks.some((c) => c.message === 'lexicon MCP server is registered with claude');
+
+  // Catches: any output holding the word "lexicon" (a `lexicon-foo` server,
+  // or a path in another server's command) read as lexicon registered.
+  it('takes only a server named exactly lexicon as registered', async () => {
+    const t = withClaude();
+    const run = (out: string) => runDoctorReport({ cwd: t.repo }, { home: t.home, env: t.env, platform: 'linux', exec: () => out });
+    const foreign = await run('Checking MCP server health...\n\nlexicon-foo: node /opt/lexicon-foo/server.js - ✓ Connected\nnotes: node /home/me/lexicon/notes.js - ✓ Connected\n');
+    expect(registered(foreign)).toBe(false);
+    expect(foreign.checks).toContainEqual({ level: 'fail', message: 'lexicon MCP server not registered with claude (run: lexicon install claude --apply)' });
+    expect(registered(await run('Checking MCP server health...\n\nlexicon: node /opt/lexicon/plugin/mcp-server.mjs - ✓ Connected\n'))).toBe(true);
+    expect(registered(await run('plugin:lexicon:lexicon: node /x/plugin/mcp-server.mjs - ✓ Connected\n'))).toBe(true);
+  });
+});

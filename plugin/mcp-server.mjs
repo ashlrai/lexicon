@@ -65733,6 +65733,9 @@ function declaresTransport(entry) {
   }
   return typeof entry.url === "string" && entry.url.trim() !== "" && entry.args === void 0 && (entry.type === void 0 || entry.type === "http" || entry.type === "sse");
 }
+function claudeListsLexiconServer(out) {
+  return out.split(/\r?\n/).some((row) => /^(?:plugin:[^:\s]+:)?lexicon:(?:\s|$)/.test(row.trim()));
+}
 function withoutTomlComment(line2) {
   let quote;
   for (let i = 0; i < line2.length; i++) {
@@ -66221,7 +66224,7 @@ async function runDoctorReport(opts, deps = {}) {
     push2("ok", `claude CLI found: ${claudeBin}`);
     try {
       const out = exec("claude", ["mcp", "list"]);
-      if (/lexicon/i.test(out)) {
+      if (claudeListsLexiconServer(out)) {
         wired = true;
         push2("ok", "lexicon MCP server is registered with claude");
       } else if (pluginId) push2("warn", `lexicon MCP server not listed by "claude mcp list"; the ${pluginId} plugin provides it when enabled`);
