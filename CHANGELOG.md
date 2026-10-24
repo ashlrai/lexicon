@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- LexiconBar, when the local API cannot be reached, says to check it with `lexicon serve --status` and start it with `lexicon serve`, then gives the cause; when the API answers with a body LexiconBar does not understand, it says the two are likely different releases and to update one and restart `lexicon serve`. It said only "Local API unreachable: <cause>" and "Local API returned an unexpected body."
 - `lexicon pack validate` on a path that does not exist says to check the path (a relative one resolves against the current directory) and, since it takes a pack file rather than a pack name, to run `lexicon pack list` to see the packs. It said only `file not found: <path>`; under `--json` the `nextStep` was the generic one.
 - `lexicon serve --install` on Windows, when `schtasks /Create` fails, says to fix the schtasks error shown above and rerun `lexicon serve --install`, or to run `lexicon serve` in the foreground. It said only "nothing is installed".
 - `lexicon serve --install` on macOS, when launchd loads neither way, names the command to load the plist (`launchctl bootstrap gui/<uid> <plist>`) and `lexicon serve --status` to check. It said "load it manually".

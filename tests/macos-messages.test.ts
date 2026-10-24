@@ -37,6 +37,11 @@ describe('LexiconBar messages name a next step', () => {
     ['App.swift', '(token ? "" : ". Run `lexicon serve --show` to create it.")'],
     ['Onboarding/OnboardingViews.swift', 'Button("Try again") { model.loadPacks() }'],
     ['Onboarding/OnboardingViews.swift', 'add packs later with `lexicon pack add <name>`.'],
+    ['FixEverywhere/NormalizeClient.swift', '"Local API unreachable; check it with `lexicon serve --status` and start it with `lexicon serve`. Cause: \\(why)"'],
+    [
+      'FixEverywhere/NormalizeClient.swift',
+      '"Local API returned an unexpected body, so `lexicon serve` and LexiconBar are likely different releases; update lexicon (npm i -g @ashlr/lexicon) or LexiconBar, then restart `lexicon serve`."',
+    ],
   ])('%s: %s', (file, text) => {
     expect(source(file)).toContain(text);
   });
