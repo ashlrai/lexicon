@@ -13,6 +13,8 @@ export interface ExecResult {
   code: number | null;
   stdout: string;
   stderr: string;
+  /** True when ExecOptions.timeoutMs ran out and the child was killed (code is then null). */
+  timedOut?: boolean;
 }
 
 export interface ExecOptions {
@@ -70,11 +72,12 @@ export function defaultExec(cmd: string, args: readonly string[], opts: ExecOpti
     let size = 0;
     let settled = false;
     let timer: NodeJS.Timeout | undefined;
+    let timedOut = false;
     const finish = (code: number | null): void => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
-      resolve({ code, stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8') });
+      resolve({ code, stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8'), ...(timedOut ? { timedOut: true } : {}) });
     };
     child.once('error', (e) => {
       if (settled) return;
@@ -95,7 +98,10 @@ export function defaultExec(cmd: string, args: readonly string[], opts: ExecOpti
     });
     child.once('close', (code) => finish(code));
     if (opts.timeoutMs !== undefined) {
-      timer = setTimeout(() => child.kill('SIGKILL'), opts.timeoutMs);
+      timer = setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGKILL');
+      }, opts.timeoutMs);
     }
     if (opts.signal) {
       const stop = (): void => {

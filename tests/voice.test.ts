@@ -55,7 +55,7 @@ import {
   findOrphanRecorder,
   recorderFingerprint,
 } from '../src/voice/recorder.js';
-import { cleanTranscript, parseWhisperOutput, whisperArgs } from '../src/voice/transcribe.js';
+import { WHISPER_TIMEOUT_BASE_MS, WHISPER_TIMEOUT_PER_AUDIO_SECOND_MS, cleanTranscript, parseWhisperOutput, whisperArgs, whisperTimeoutMs } from '../src/voice/transcribe.js';
 import {
   EXIT_ERROR,
   EXIT_MISSING_TOOL,
@@ -951,6 +951,30 @@ describe('lexicon voice (foreground)', () => {
     expect(wav).toMatch(/^lexicon-voice-.*\.wav$/);
     expect(h.err.join('')).toContain(`lexicon voice: interrupted while transcribing; the recording is kept at ${kept}\n`);
     expect(JSON.parse(h.out[0])).toMatchObject({ ok: false, code: EXIT_ERROR, error: `interrupted while transcribing (audio kept at ${kept})` });
+  });
+
+  // Catches: whisper-cli ran with no timeout, so a hung one held the run forever.
+  it('stops a whisper-cli that runs past a timeout proportional to the audio, with a clear error', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    const exec = h.deps.exec!;
+    let timeoutMs: number | undefined;
+    let wavSize = 0;
+    h.deps.exec = async (cmd, args, opts) => {
+      if (path.basename(cmd) !== 'whisper-cli') return exec(cmd, args, opts);
+      timeoutMs = opts?.timeoutMs;
+      wavSize = (await fs.stat(args[args.indexOf('-f') + 1])).size;
+      return { code: null, stdout: '', stderr: '', timedOut: true };
+    };
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(timeoutMs).toBe(whisperTimeoutMs((wavSize - 44) / 32_000));
+    expect(timeoutMs).toBe(WHISPER_TIMEOUT_BASE_MS + Math.ceil(((wavSize - 44) / 32_000) * WHISPER_TIMEOUT_PER_AUDIO_SECOND_MS));
+    const doc = JSON.parse(h.out[0]) as { error: string; nextStep: string };
+    expect(doc.error).toMatch(/^whisper-cli did not finish within 120 s on 0 s of audio, so it was stopped \(audio kept at .*\.wav\)$/);
+    expect(doc.nextStep).toContain('a smaller model (--model base.en or tiny.en) transcribes faster');
+    expect(h.err.join('')).toContain('whisper-cli did not finish within 120 s');
+    expect(whisperTimeoutMs(600)).toBe(120_000 + 6_000_000);
+    expect(whisperTimeoutMs(Number.NaN)).toBe(120_000);
   });
 
   it('the transcription interrupt listener is released after an ordinary run', async () => {

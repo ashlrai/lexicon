@@ -24,3 +24,13 @@ describe('defaultExec', () => {
     expect(r).toMatchObject({ code: 0, stdout: 'ok' });
   });
 });
+
+describe('defaultExec timeout', () => {
+  // Catches: a child killed at timeoutMs read exactly like one killed by any other signal.
+  it('says timedOut when timeoutMs ran out', async () => {
+    const r = await defaultExec(node, ['-e', 'setTimeout(() => {}, 20000)'], { timeoutMs: 100 });
+    expect(r).toMatchObject({ code: null, timedOut: true });
+    const quick = await defaultExec(node, ['-e', '0'], { timeoutMs: 10_000 });
+    expect(quick.timedOut).toBeUndefined();
+  });
+});

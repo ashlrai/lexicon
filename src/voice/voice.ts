@@ -75,7 +75,7 @@ import {
   findOrphanRecorder,
 } from './recorder.js';
 import type { RecordingState, WavCheck } from './recorder.js';
-import { MissingToolError, TranscribeInterruptedError, WhisperExitError, transcribeFile } from './transcribe.js';
+import { MissingToolError, TranscribeInterruptedError, WhisperExitError, WhisperTimeoutError, transcribeFile } from './transcribe.js';
 import type { TranscribeOptions, TranscribeResult } from './transcribe.js';
 
 export const EXIT_OK = 0;
@@ -744,6 +744,9 @@ function shellWord(arg: string): string {
  */
 function whisperExitStep(e: WhisperExitError, wav: string, spec: string): string {
   const rerun = `run \`${shellWord(e.whisperCli)} -m ${shellWord(e.modelPath)} -f ${shellWord(wav)}\` to see whisper's full output`;
+  if (e instanceof WhisperTimeoutError) {
+    return `${rerun} and whether it finishes; a smaller model (--model base.en or tiny.en) transcribes faster`;
+  }
   const model = isModelPath(spec)
     ? 'check that the model file is a whole ggml model, or pass another with --model <name|path>'
     : `if the model file is damaged, delete ${e.modelPath} so the next \`lexicon voice\` downloads it again, or pass another with --model <name|path>`;

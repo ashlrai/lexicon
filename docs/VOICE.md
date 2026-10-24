@@ -24,7 +24,10 @@ microphone -> ffmpeg (16 kHz mono s16 WAV) -> whisper.cpp (--prompt <canonicals>
    your merged lexicon, comma-separated, capped at 100). Whisper biases toward
    spellings it sees in the prompt; on the audio benchmark that alone lifts
    `base.en` term recall from 42% to 67% (see below). Bracketed tags like
-   `[BLANK_AUDIO]` and noise annotations like `(applause)` are stripped.
+   `[BLANK_AUDIO]` and noise annotations like `(applause)` are stripped. whisper-cli
+   gets 2 minutes plus 10 seconds per second of audio; past that it is stopped and the
+   capture is kept. Ctrl-C while it runs stops it and keeps the capture as well; both
+   name the file.
 3. **Correct.** `normalize()` applies the lexicon (alias, phonetic, fuzzy) to what
    Whisper wrote. Matched terms get a `hits` bump like every other entry point.
    With no terms in the lexicon yet, stderr says `nothing was corrected` and how

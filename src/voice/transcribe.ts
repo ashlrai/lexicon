@@ -101,6 +101,8 @@ export interface TranscribeOptions {
   log?: (line: string) => void;
   /** Picks the install hint of a whisper-cli that cannot be started. Default process.platform. */
   platform?: NodeJS.Platform;
+  /** How long whisper-cli may run before it is stopped; default whisperTimeoutMs of the WAV's length. */
+  timeoutMs?: number;
   /**
    * Aborts the transcription (Ctrl-C): a model download or whisper-cli in
    * progress is stopped and TranscribeInterruptedError is thrown. The WAV is
@@ -143,6 +145,50 @@ export class WhisperExitError extends Error {
   ) {
     super(message);
     this.name = 'WhisperExitError';
+  }
+}
+
+/**
+ * How long whisper-cli may run on a capture: WHISPER_TIMEOUT_BASE_MS plus
+ * WHISPER_TIMEOUT_PER_AUDIO_SECOND_MS for every second of audio. whisper-cli
+ * had no timeout, so a run that hung (a GPU driver stuck, a model that
+ * loads forever) held `lexicon voice`, and the hotkey's stop press, with no
+ * end and no message. Ten times the audio's length is far past the larger
+ * models on a CPU; the base covers loading the model.
+ */
+export const WHISPER_TIMEOUT_BASE_MS = 120_000;
+export const WHISPER_TIMEOUT_PER_AUDIO_SECOND_MS = 10_000;
+
+/** The whisper-cli timeout for `audioSeconds` of audio (see WHISPER_TIMEOUT_BASE_MS). */
+export function whisperTimeoutMs(audioSeconds: number): number {
+  const seconds = Number.isFinite(audioSeconds) && audioSeconds > 0 ? audioSeconds : 0;
+  return WHISPER_TIMEOUT_BASE_MS + Math.ceil(seconds * WHISPER_TIMEOUT_PER_AUDIO_SECOND_MS);
+}
+
+/** Seconds of 16 kHz mono 16-bit audio in the WAV at `wav`, from its size (0 when it cannot be read). */
+async function wavSeconds(wav: string): Promise<number> {
+  try {
+    const { size } = await fs.stat(wav);
+    return Math.max(0, size - 44) / 32_000;
+  } catch {
+    return 0;
+  }
+}
+
+/** whisper-cli ran past its timeout (whisperTimeoutMs) and was stopped. */
+export class WhisperTimeoutError extends WhisperExitError {
+  constructor(
+    readonly timeoutMs: number,
+    readonly audioSeconds: number,
+    whisperCli: string,
+    modelPath: string,
+  ) {
+    super(
+      `whisper-cli did not finish within ${Math.round(timeoutMs / 1000)} s on ${Math.round(audioSeconds)} s of audio, so it was stopped`,
+      whisperCli,
+      modelPath,
+    );
+    this.name = 'WhisperTimeoutError';
   }
 }
 
@@ -193,10 +239,12 @@ export async function transcribeFile(wav: string, opts: TranscribeOptions): Prom
   const outBase = path.join(tmpDir, `lexicon-voice-${process.pid}-${Date.now().toString(36)}`);
   const args = whisperArgs({ modelPath: model.path, wav, outBase, lang: opts.lang ?? 'en', translate: opts.translate ?? false, prompt });
 
+  const audioSeconds = await wavSeconds(wav);
+  const timeoutMs = opts.timeoutMs ?? whisperTimeoutMs(audioSeconds);
   const t0 = Date.now();
   let r;
   try {
-    r = signal ? await exec(opts.whisperCli, args, { signal }) : await exec(opts.whisperCli, args);
+    r = await exec(opts.whisperCli, args, { timeoutMs, ...(signal ? { signal } : {}) });
   } catch (e) {
     // The hint was `brew install whisper-cpp` on every platform.
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new MissingToolError('whisper-cli', installHint(opts.platform ?? process.platform, { ffmpeg: false, whisper: true }));
@@ -213,6 +261,7 @@ export async function transcribeFile(wav: string, opts: TranscribeOptions): Prom
   await fs.rm(jsonPath, { force: true }).catch(() => undefined);
   if (r.code === null) await settleAbort(signal, 200);
   if (signal?.aborted) throw new TranscribeInterruptedError();
+  if (r.timedOut) throw new WhisperTimeoutError(timeoutMs, audioSeconds, opts.whisperCli, model.path);
   if (r.code !== 0 && json === undefined) {
     const tail = r.stderr.trim().split('\n').slice(-5).join('\n');
     throw new WhisperExitError(`whisper-cli exited ${r.code ?? 'null'}${tail ? `: ${tail}` : ''}`, opts.whisperCli, model.path);
