@@ -1075,6 +1075,9 @@ export async function runInstallClaude(
       return 0;
     }
   }
+  // Read before step 1, so a settings.json the hooks cannot go into stops
+  // the install before the server is registered.
+  if (opts.apply) await readHookSettings(settingsPath);
   const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
   // In the directory the install is for: `claude mcp add --scope project`
   // writes that directory's .mcp.json, and ran in the process's own, so
@@ -1135,14 +1138,11 @@ export async function runInstallClaude(
     line(io, dim('    npm i -g @ashlr/lexicon, then rerun this, to make it instant.)'));
   }
   if (opts.apply) {
-    const read = await readJsonFile(settingsPath);
-    if (read.error !== undefined) {
-      throw new Error(`could not read ${settingsPath}: ${read.error}`);
-    }
+    const read = await readHookSettings(settingsPath);
     const existed = read.exists;
-    const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, hookTimeout, HOOK_EVENTS);
+    const { settings, changed } = mergeHookIntoSettings(read.exists ? read.value : {}, hookCommand, hookTimeout, HOOK_EVENTS);
     if (changed) {
-      await explainWrite(settingsPath, () => writeJsonFile(settingsPath, settings, read.text));
+      await explainWrite(settingsPath, () => writeJsonFile(settingsPath, settings, read.exists ? read.text : undefined));
       line(io, green(`   ${existed ? 'updated' : 'created'} ${safePath(settingsPath)}: added ${HOOK_EVENTS.join(' + ')} hooks`));
       deps.onWritten?.(settingsPath, existed ? 'updated' : 'created');
     } else {
@@ -1169,6 +1169,27 @@ export async function runInstallClaude(
     line(io, dim(`to perform steps 1 and 2, run: ${command}`));
   }
   return failed ? 1 : 0;
+}
+
+/**
+ * Claude's settings.json for the hooks. One that does not parse, or parses
+ * to something other than an object (`[]`, `null`, a string), is refused
+ * naming the file: merging into it replaced the whole file with `{ hooks }`.
+ */
+async function readHookSettings(settingsPath: string): Promise<{ exists: false } | { exists: true; value: Record<string, unknown>; text: string }> {
+  const read = await readJsonFile(settingsPath);
+  if (read.error !== undefined) {
+    throw new Error(`could not read ${settingsPath}: ${read.error}`);
+  }
+  if (!read.exists) return { exists: false };
+  if (!isRecord(read.value)) {
+    const kind = read.value === null ? 'null' : Array.isArray(read.value) ? 'an array' : `a ${typeof read.value}`;
+    throw new CliRefusal(
+      `${settingsPath} holds ${kind}, not a JSON object, so the hooks cannot be added to it; nothing was changed`,
+      `make ${settingsPath} a JSON object (or remove it), then run this again`,
+    );
+  }
+  return { exists: true, value: read.value, text: read.text ?? '' };
 }
 
 /**

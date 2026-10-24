@@ -65181,6 +65181,7 @@ async function runInstallClaude(opts, io, deps = {}) {
       return 0;
     }
   }
+  if (opts.apply) await readHookSettings(settingsPath);
   const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
   const claudeCwd = import_node_path19.default.resolve(opts.cwd ?? process.cwd());
   const exec = deps.exec ?? ((file2, args) => defaultExec(file2, args, { cwd: claudeCwd }));
@@ -65225,14 +65226,11 @@ async function runInstallClaude(opts, io, deps = {}) {
     line(io, dim("    npm i -g @ashlr/lexicon, then rerun this, to make it instant.)"));
   }
   if (opts.apply) {
-    const read = await readJsonFile(settingsPath);
-    if (read.error !== void 0) {
-      throw new Error(`could not read ${settingsPath}: ${read.error}`);
-    }
+    const read = await readHookSettings(settingsPath);
     const existed = read.exists;
-    const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, hookTimeout, HOOK_EVENTS);
+    const { settings, changed } = mergeHookIntoSettings(read.exists ? read.value : {}, hookCommand, hookTimeout, HOOK_EVENTS);
     if (changed) {
-      await explainWrite(settingsPath, () => writeJsonFile(settingsPath, settings, read.text));
+      await explainWrite(settingsPath, () => writeJsonFile(settingsPath, settings, read.exists ? read.text : void 0));
       line(io, green(`   ${existed ? "updated" : "created"} ${safePath(settingsPath)}: added ${HOOK_EVENTS.join(" + ")} hooks`));
       deps.onWritten?.(settingsPath, existed ? "updated" : "created");
     } else {
@@ -65257,6 +65255,21 @@ async function runInstallClaude(opts, io, deps = {}) {
     line(io, dim(`to perform steps 1 and 2, run: ${command}`));
   }
   return failed ? 1 : 0;
+}
+async function readHookSettings(settingsPath) {
+  const read = await readJsonFile(settingsPath);
+  if (read.error !== void 0) {
+    throw new Error(`could not read ${settingsPath}: ${read.error}`);
+  }
+  if (!read.exists) return { exists: false };
+  if (!isRecord(read.value)) {
+    const kind = read.value === null ? "null" : Array.isArray(read.value) ? "an array" : `a ${typeof read.value}`;
+    throw new CliRefusal(
+      `${settingsPath} holds ${kind}, not a JSON object, so the hooks cannot be added to it; nothing was changed`,
+      `make ${settingsPath} a JSON object (or remove it), then run this again`
+    );
+  }
+  return { exists: true, value: read.value, text: read.text ?? "" };
 }
 async function refreshClaudeRegistration(io, exec, scope, mcpArgs, launch, files) {
   let got;
