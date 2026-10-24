@@ -494,6 +494,20 @@ describe('lexicon MCP server', () => {
     }
   });
 
+  // Catches: category other left out a term with no category, which
+  // export_lexicon and the rest of the code count as other.
+  it('list_terms with category other returns the terms without a category', async () => {
+    const mixed: Lexicon = { version: 1, terms: [...fixtureLexicon.terms, { canonical: 'Plain', aliases: ['plane'], scope: 'global' }] };
+    mocks.loadLexicon.mockResolvedValueOnce({ ...loaded, merged: mixed });
+    const { client, close } = await connect();
+    try {
+      const payload = JSON.parse(textOf(await client.callTool({ name: 'list_terms', arguments: { category: 'other' } }))) as { terms: Term[] };
+      expect(payload.terms.map((t) => t.canonical)).toEqual(['Plain']);
+    } finally {
+      await close();
+    }
+  });
+
   it('list_terms filters case-insensitively over canonical and aliases', async () => {
     const { client, close } = await connect();
     try {

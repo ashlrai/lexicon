@@ -717,7 +717,8 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
   warnSkippedProject(loaded, io);
   let terms = loaded.merged.terms;
   const category = parseCategory(opts.category);
-  if (category) terms = terms.filter((t) => t.category === category);
+  // A term without a category is an `other` one, as for export --category.
+  if (category) terms = terms.filter((t) => (t.category ?? 'other') === category);
   // Trimmed, as MCP list_terms trims it: a pasted " Ashler" matched nothing
   // here while the agent's list_terms found the term, and a query of only
   // spaces filters nothing in either.

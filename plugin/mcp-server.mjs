@@ -63353,7 +63353,7 @@ var registerTermTools = (server, ctx) => {
       description: "List the user's lexicon terms, global and project merged. Optional case-insensitive substring filter over canonical spellings and aliases, plus a category filter. WHEN TO CALL: to show the user what is already known, to check whether a name is covered before adding it, or to find the exact canonical another tool needs. Read-only and safe to call unprompted; filter rather than listing everything. WHAT IT CHANGES: nothing. WHAT IT WILL NOT DO: it does not include an untrusted project .lexicon.yaml -- if one was skipped the result says so in `note`, and trust_project is how the user reviews it. Returns { terms, counts: { matched, total, global, project }, paths: { global, project? } }, plus `projectTrust`, `skippedProject` and `note` for a skipped file, or a `note` saying why `terms` is empty (no terms yet, the filter matched none, or `offset` is past the last match). A blank `query` filters nothing. Every matching term comes back unless `offset` or `limit` is given; then `terms` is that page of the matches (in the same order), and `page: { offset, limit?, returned, nextOffset? }` says where it started and, while more matches remain, the `offset` that gets the next page (`counts.matched` is how many there are in all).",
       inputSchema: {
         query: external_exports.string().optional().describe("Case-insensitive substring matched against canonical and aliases."),
-        category: external_exports.enum(TERM_CATEGORIES).optional(),
+        category: external_exports.enum(TERM_CATEGORIES).optional().describe("Only terms in this category; a term without one counts as other."),
         offset: external_exports.number().int().nonnegative().optional().describe("Matching terms to skip before the page starts (0 when omitted); pass `page.nextOffset` to get the next page."),
         limit: external_exports.number().int().positive().optional().describe("Most terms to return. Omitted with `offset` omitted too: every matching term.")
       }
@@ -63362,7 +63362,7 @@ var registerTermTools = (server, ctx) => {
       const loaded = await load({ parseSkipped: false });
       const needle = query?.trim().toLowerCase();
       const matched = loaded.merged.terms.filter((t) => {
-        if (category && t.category !== category) return false;
+        if (category && (t.category ?? "other") !== category) return false;
         if (!needle) return true;
         if (t.canonical.toLowerCase().includes(needle)) return true;
         return t.aliases.some((a) => a.toLowerCase().includes(needle));
