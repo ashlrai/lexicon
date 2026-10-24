@@ -87,12 +87,46 @@ export async function touchPrivateFile(file: string): Promise<void> {
   }
 }
 
+/**
+ * Create `file` new and empty with mode 0600, refusing (EEXIST) when anything
+ * is already at that path, a symlink included: `O_CREAT | O_EXCL` never
+ * follows one. For a file in a directory other accounts can write to (the
+ * foreground WAV in the temp directory), where touchPrivateFile would open a
+ * file or symlink someone else put there first.
+ */
+export async function createPrivateFile(file: string): Promise<void> {
+  const handle = await fs.open(file, 'wx', VOICE_FILE_MODE);
+  try {
+    await handle.chmod(VOICE_FILE_MODE);
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
+ * Create `file` empty with mode 0600, emptying one that is already there.
+ * The detached recorder's stderr log is opened for append, and it was never
+ * emptied: it grew by every recording's errors, and a recording that failed
+ * without a word quoted an earlier recording's last lines as `ffmpeg said:`.
+ */
+export async function resetPrivateFile(file: string): Promise<void> {
+  const handle = await fs.open(file, 'w', VOICE_FILE_MODE);
+  try {
+    await handle.chmod(VOICE_FILE_MODE);
+  } finally {
+    await handle.close();
+  }
+}
+
 /** Parse a state file at an explicit path (the live one, or a claimed copy). */
 async function readStateFile(file: string): Promise<RecordingState | undefined> {
   try {
     const parsed = JSON.parse(await fs.readFile(file, 'utf8')) as Partial<RecordingState>;
     if (typeof parsed.wav !== 'string' || typeof parsed.startedAt !== 'string') return undefined;
-    if (parsed.pid !== undefined && typeof parsed.pid !== 'number') return undefined;
+    // A pid is a positive integer. `-1` or `0` in a damaged file would reach
+    // process.kill as "every process this user owns" or "this process group"
+    // when the toggle stops the recorder, and a fraction is no process at all.
+    if (parsed.pid !== undefined && !(Number.isSafeInteger(parsed.pid) && (parsed.pid as number) > 0)) return undefined;
     return { ...(parsed.pid !== undefined ? { pid: parsed.pid } : {}), wav: parsed.wav, startedAt: parsed.startedAt };
   } catch {
     return undefined;
@@ -167,16 +201,48 @@ export async function claimStop(globalPath: string): Promise<RecordingState | un
     voiceDir(globalPath),
     `${STOPPING_PREFIX}${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.json`,
   );
+  // Rename alone is not exclusive on Windows: libuv renames through a handle
+  // to the file, so a press that opened the state file before another press
+  // renamed it goes on to rename the already-claimed file a second time, and
+  // both presses read it (one capture delivered twice). An O_EXCL lock file is
+  // exclusive on every platform, so only its creator goes on to rename. A lock
+  // left by a press that died is past STOPPING_TTL_MS and is broken here (and
+  // swept by sweepVoiceDir, which shares the prefix and suffix).
+  const lock = path.join(voiceDir(globalPath), `${STOPPING_PREFIX}lock.json`);
+  if (!(await takeClaimLock(lock))) return undefined;
   try {
-    await fs.rename(stateFilePath(globalPath), claimed);
-  } catch {
-    return undefined;
-  }
-  try {
-    return await readStateFile(claimed);
+    try {
+      await fs.rename(stateFilePath(globalPath), claimed);
+    } catch {
+      return undefined;
+    }
+    try {
+      return await readStateFile(claimed);
+    } finally {
+      await fs.rm(claimed, { force: true }).catch(() => undefined);
+    }
   } finally {
-    await fs.rm(claimed, { force: true }).catch(() => undefined);
+    await fs.rm(lock, { force: true }).catch(() => undefined);
   }
+}
+
+async function takeClaimLock(lock: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await fs.mkdir(path.dirname(lock), { recursive: true });
+      await (await fs.open(lock, 'wx')).close();
+      return true;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') return false;
+      const age = await fs
+        .stat(lock)
+        .then((st) => Date.now() - st.mtimeMs)
+        .catch(() => 0);
+      if (age <= STOPPING_TTL_MS) return false;
+      await fs.rm(lock, { force: true }).catch(() => undefined);
+    }
+  }
+  return false;
 }
 
 /** A claim breadcrumb older than this was left by a press that died mid-stop. */
@@ -245,8 +311,20 @@ export interface ResolveInputOptions {
 }
 
 /**
+ * Throw for a `--device <index>` that no listed device has; undefined for a
+ * name, which the caller passes on as it is. An index that matched nothing
+ * recorded from the default microphone without a word on Linux with pulse,
+ * and went to ffmpeg as a device name (`audio=7`, `-i 7`) everywhere else.
+ */
+function noSuchIndex(devices: readonly AudioDevice[], device: string): undefined {
+  if (!/^\d+$/.test(device.trim())) return undefined;
+  const range = devices.length === 0 ? 'none' : devices.length === 1 ? 'only index 0' : `0 to ${devices.length - 1}`;
+  throw new Error(`no audio input device has index ${device.trim()} (the list has ${range}); run lexicon voice --list-devices to see them`);
+}
+
+/**
  * Decide the ffmpeg input for this platform and `--device`.
- * - darwin: avfoundation `:default` (or `:N` / `:Name`)
+ * - darwin: avfoundation `:default` (or `:N` for a listed index, `:Name`)
  * - linux: pulse `default` when ffmpeg has the pulse demuxer, else alsa `default`
  * - win32: dshow `audio=<name>`; without `--device` the first listed input is used
  */
@@ -255,16 +333,17 @@ export async function resolveInput(opts: ResolveInputOptions): Promise<InputSpec
   switch (platform) {
     case 'darwin': {
       if (!device) return { format: 'avfoundation', input: ':default' };
-      if (/^\d+$/.test(device.trim())) return { format: 'avfoundation', input: `:${device.trim()}` };
+      // An index is looked up like a name: one no listed device has went to
+      // ffmpeg as `:N`, which avfoundation then failed on after the user spoke.
       const devices = opts.devices ?? (await listAudioDevices(opts));
-      const picked = pickDevice(devices, device);
+      const picked = pickDevice(devices, device) ?? noSuchIndex(devices, device);
       // avfoundation also matches a bare name; fall back to that when the list lookup misses.
       return { format: 'avfoundation', input: picked ? picked.id : `:${device}` };
     }
     case 'win32': {
       if (device) {
         const devices = opts.devices ?? (await listAudioDevices(opts));
-        const picked = pickDevice(devices, device);
+        const picked = pickDevice(devices, device) ?? noSuchIndex(devices, device);
         return { format: 'dshow', input: `audio=${picked ? picked.id : device}` };
       }
       const devices = opts.devices ?? (await listAudioDevices(opts));
@@ -278,14 +357,15 @@ export async function resolveInput(opts: ResolveInputOptions): Promise<InputSpec
         if (device && !/^\d+$/.test(device.trim())) return { format: 'pulse', input: device };
         if (device) {
           const devices = opts.devices ?? (await listAudioDevices(opts));
-          const picked = pickDevice(devices, device);
-          return { format: 'pulse', input: picked ? picked.id : 'default' };
+          const picked = pickDevice(devices, device) ?? noSuchIndex(devices, device);
+          // With no pulse sources listed the list is arecord's, whose ids are ALSA's.
+          return { format: picked?.backend === 'alsa' ? 'alsa' : 'pulse', input: picked ? picked.id : 'default' };
         }
         return { format: 'pulse', input: 'default' };
       }
       if (device) {
         const devices = opts.devices ?? (await listAudioDevices(opts));
-        const picked = pickDevice(devices, device);
+        const picked = pickDevice(devices, device) ?? noSuchIndex(devices, device);
         return { format: 'alsa', input: picked ? picked.id : device };
       }
       return { format: 'alsa', input: 'default' };

@@ -694,6 +694,20 @@ describe('runSuggest', () => {
     expect(store.inputs[1].cwd).toBe(path.resolve('/tmp/other-repo'));
   });
 
+  // Catches: a new term's aliases were joined and then cut at the
+  // 200-character display cap, so with several long aliases the last ones
+  // shown were cut mid-alias with an ellipsis or not shown at all.
+  it('shows every alias of a new term whole, each one sanitized on its own', async () => {
+    const aliases = Array.from({ length: 6 }, (_, i) => `Siobhan Reilly Of The Long Dictated Spelling ${i}`);
+    const store = mockStore([{ ...FIXED[1], aliases: [...aliases, 'Reilli\x1b[31m'] }]);
+    const io = makeIO();
+    expect(await runSuggest({ yes: true }, io, store.deps)).toBe(0);
+    for (const a of aliases) expect(io.out).toContain(a);
+    expect(io.out).toContain(', Reilli)');
+    expect(io.out).not.toContain('\x1b');
+    expect(io.out).not.toContain('\u2026');
+  });
+
   it('--yes applies every suggestion at or above 0.80 through the store and never removes a term', async () => {
     const store = mockStore();
     const io = makeIO();
@@ -760,6 +774,42 @@ describe('runSuggest', () => {
     ]);
   });
 
+  // Catches: scopeFor matched canonicals by trim and lowercase only, so a suggestion naming a project term in another
+  // Unicode form (Cafe plus U+0301 for Café, as MCP apply_suggestion and the store already treat as one term) went to the global file.
+  it('--yes writes an alias to the project term it names in any Unicode form', async () => {
+    const lexicon = makeLexicon([{ canonical: 'Caf\u00e9', aliases: [], hits: 0, createdAt: OLD, scope: 'project' }]);
+    const nfd: TermSuggestion = { kind: 'alias', canonical: 'Cafe\u0301', alias: 'kafay', reason: 'r', confidence: 0.9, evidence: [], count: 3 };
+    const store = mockStore([nfd], lexicon);
+    expect(await runSuggest({ yes: true }, makeIO(), store.deps)).toBe(0);
+    expect(store.added.map((a) => a.scope)).toEqual(['project']);
+  });
+
+  // Catches: `suggest --project --json` named the global file as `scope` and
+  // `path` of every new-term suggestion, though applying it with --project
+  // writes the project lexicon.
+  it('--project --json names the project lexicon as the file a new term goes to', async () => {
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-suggest-project-'));
+    try {
+      await fs.mkdir(path.join(repo, '.git'));
+      const targeted = FIXED.map((f) => ({ ...f, scope: 'global' as const, path: '/tmp/mock/lexicon.yaml' }));
+      const io = makeIO();
+      expect(await runSuggest({ json: true, project: true, cwd: repo }, io, mockStore(targeted).deps)).toBe(0);
+      const out = JSON.parse(io.out) as TermSuggestion[];
+      expect(out.map((o) => [o.kind, o.canonical, o.scope, o.path])).toEqual([
+        ['alias', 'Vercel', 'global', '/tmp/mock/lexicon.yaml'],
+        ['term', 'Siobhan Reilly', 'project', path.join(repo, '.lexicon.yaml')],
+        ['alias', 'Ashlr.AI', 'global', '/tmp/mock/lexicon.yaml'],
+        ['never', 'Locus', 'global', '/tmp/mock/lexicon.yaml'],
+        ['stale', 'Zebrafish Labs', 'global', '/tmp/mock/lexicon.yaml'],
+      ]);
+      const plain = makeIO();
+      await runSuggest({ json: true, cwd: repo }, plain, mockStore(targeted).deps);
+      expect((JSON.parse(plain.out) as TermSuggestion[])[1]).toMatchObject({ scope: 'global', path: '/tmp/mock/lexicon.yaml' });
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
+  });
+
   it('--apply walks the suggestions with y/n/a/q and applies each kind through the right store call', async () => {
     const store = mockStore();
     const io = makeIO();
@@ -810,7 +860,7 @@ describe('runSuggest', () => {
     expect(store.removed).toEqual([{ canonical: 'Zebrafish Labs', scope: 'project' }]);
     expect(io.out).toContain('removed Zebrafish Labs from /tmp/proj/.lexicon.yaml');
     expect(io.out).toContain('warn: Zebrafish Labs is still in the global lexicon (/tmp/mock/lexicon.yaml)');
-    expect(io.out).toContain('to remove that copy too: lexicon remove "Zebrafish Labs"');
+    expect(io.out).toContain("to remove that copy too: lexicon remove 'Zebrafish Labs'");
 
     // One copy only: no warning.
     const single = mockStore([FIXED[4]]);

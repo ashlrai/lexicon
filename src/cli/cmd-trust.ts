@@ -29,10 +29,12 @@ import {
   trustProject,
   untrustProject,
   isTrustContentChangedError,
+  isTrustRegistryUnreadableError,
   parsedContentHash,
+  trustRegistryProblem,
 } from '../core/index.js';
 import type { LexiconFile, Term } from '../core/index.js';
-import { jsonError, jsonOk, line, renderTable, resolveCwd, safe, safeLines, unreadableLexiconHint } from './io.js';
+import { jsonError, jsonOk, line, renderTable, resolveCwd, safeMessage, safePath, unreadableLexiconHint } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { PromptClosedError, createPrompter, isInteractive } from './prompt.js';
 import type { Prompter } from './prompt.js';
@@ -78,7 +80,7 @@ function previewAliases(term: Term): string {
 
 function renderPreview(file: LexiconFile, write: (s: string) => void): void {
   const terms = file.lexicon.terms;
-  write(`${safe(file.path)}: ${terms.length} term${terms.length === 1 ? '' : 's'}\n`);
+  write(`${safePath(file.path)}: ${terms.length} term${terms.length === 1 ? '' : 's'}\n`);
   if (terms.length === 0) return;
   const rows = terms.slice(0, PREVIEW_ROWS).map((t) => [t.canonical, previewAliases(t), t.notes ? 'has notes' : '']);
   write(renderTable(rows, ['canonical', 'first alias', '']));
@@ -93,7 +95,10 @@ function printJson(io: IO, payload: unknown): void {
  * A refusal: the stderr line(s) as always, and under --json one
  * `{ ok: false, error, nextStep?, action, path? }` document on stdout too, so
  * a script that parses stdout is not left with nothing, and reads `ok` as it
- * does on every other command. Always exit code 1.
+ * does on every other command. Always exit code 1. The lines go through
+ * `safeMessage` and every path this command prints through `safePath`: the
+ * 200-character display cap cut a deep path off, so the file being trusted
+ * (or the one an error names) could not be read whole.
  */
 function fail(
   io: IO,
@@ -104,9 +109,22 @@ function fail(
   nextStep?: string,
 ): number {
   if (json) printJson(io, { ...jsonError(error, nextStep), action, ...(filePath !== undefined ? { path: filePath } : {}) });
-  io.stderr(`lexicon: ${safeLines(error)}\n`);
-  if (nextStep) io.stderr(`lexicon: ${safeLines(nextStep)}\n`);
+  io.stderr(`lexicon: ${safeMessage(error)}\n`);
+  if (nextStep) io.stderr(`lexicon: ${safeMessage(nextStep)}\n`);
   return 1;
+}
+
+/** A `TrustRegistryUnreadableError`: the registry file is named whole and was not touched. */
+function registryFail(io: IO, json: boolean | undefined, action: 'trust' | 'untrust', filePath: string, err: unknown): number {
+  const { path: registryPath, problem } = err as { path: string; problem: string };
+  return fail(
+    io,
+    json,
+    action,
+    filePath,
+    `the trust registry at ${registryPath} ${problem}; it was left as it is and nothing was ${action === 'trust' ? 'trusted' : 'untrusted'}`,
+    `fix the JSON in ${registryPath}, or move it aside (every project then reads as untrusted until you run \`lexicon trust\` in it again), and retry`,
+  );
 }
 
 /**
@@ -118,7 +136,7 @@ async function confirmTrust(filePath: string, opts: TrustOptions, deps: TrustDep
   const own = deps.createPrompter === undefined;
   const p = deps.createPrompter?.() ?? createPrompter({ input: process.stdin, output: opts.json ? process.stderr : process.stdout });
   try {
-    return await p.confirm(`trust ${safe(filePath)}? its terms will be applied to every prompt in this repo`, false);
+    return await p.confirm(`trust ${safePath(filePath)}? its terms will be applied to every prompt in this repo`, false);
   } catch (err) {
     if (err instanceof PromptClosedError) return false;
     throw err;
@@ -152,9 +170,15 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
     return fail(io, opts.json, 'trust', filePath, `refusing to trust an invalid lexicon: ${message}`, unreadableLexiconHint(message));
   }
 
+  const registry = getTrustPath({ cwd });
+  // A broken registry is refused by trustProject anyway; say so before the
+  // preview and the question, not after the person has answered yes.
+  const registryProblem = await trustRegistryProblem({ cwd });
+  if (registryProblem !== undefined) {
+    return registryFail(io, opts.json, 'trust', filePath, { path: registry, problem: registryProblem });
+  }
   const shownSha = (await parsedContentHash(file)) ?? (await hashFile(filePath));
   const before = await isTrusted(file, { cwd });
-  const registry = getTrustPath({ cwd });
   // The table is for the person deciding; under --json it goes to stderr, and
   // only when there is a question to answer, so stdout stays one document.
   // A file that already reads trusted gains nothing from a yes (MCP
@@ -180,6 +204,7 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
   try {
     entry = await trustProject(filePath, { cwd, ...(shownSha !== undefined ? { expectedSha256: shownSha } : {}) });
   } catch (err) {
+    if (isTrustRegistryUnreadableError(err)) return registryFail(io, opts.json, 'trust', filePath, err);
     if (!isTrustContentChangedError(err)) throw err;
     return fail(io, opts.json, 'trust', filePath, `${filePath} changed while it was being trusted; nothing was trusted`, 'review it and run: lexicon trust');
   }
@@ -211,9 +236,9 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
     return 0;
   }
   if (entry.alreadyPinned) {
-    io.stdout(`already trusted: ${safe(filePath)} (sha256 ${entry.sha256.slice(0, 12)}, since ${entry.trustedAt}) in ${safe(registry)}; nothing changed\n`);
+    io.stdout(`already trusted: ${safePath(filePath)} (sha256 ${entry.sha256.slice(0, 12)}, since ${entry.trustedAt}) in ${safePath(registry)}; nothing changed\n`);
   } else {
-    io.stdout(`${verb} ${safe(filePath)} (sha256 ${entry.sha256.slice(0, 12)}) in ${safe(registry)}\n`);
+    io.stdout(`${verb} ${safePath(filePath)} (sha256 ${entry.sha256.slice(0, 12)}) in ${safePath(registry)}\n`);
   }
   io.stdout('It will be merged into the lexicon until its content changes; then run `lexicon trust` again.\n');
   return 0;
@@ -223,7 +248,13 @@ export async function runUntrust(target: string | undefined, opts: CommonOptions
   const cwd = resolveCwd(opts);
   const filePath = resolveTarget(target, cwd);
   if (!filePath) return fail(io, opts.json, 'untrust', undefined, `no project .lexicon.yaml found from ${cwd}`, 'pass the path of the .lexicon.yaml to untrust (lexicon trust --list shows the trusted ones)');
-  const removed = await untrustProject(filePath, { cwd });
+  let removed: boolean;
+  try {
+    removed = await untrustProject(filePath, { cwd });
+  } catch (err) {
+    if (isTrustRegistryUnreadableError(err)) return registryFail(io, opts.json, 'untrust', filePath, err);
+    throw err;
+  }
   if (opts.json) {
     // `ok: true`, then the object MCP trust_project returns for action 'untrust'.
     printJson(io, jsonOk({
@@ -236,28 +267,40 @@ export async function runUntrust(target: string | undefined, opts: CommonOptions
     return 0;
   }
   if (!removed) {
-    io.stdout(`${safe(filePath)} was not trusted; nothing to do\n`);
+    io.stdout(`${safePath(filePath)} was not trusted; nothing to do\n`);
     return 0;
   }
-  io.stdout(`untrusted ${safe(filePath)}; it will no longer be merged\n`);
+  io.stdout(`untrusted ${safePath(filePath)}; it will no longer be merged\n`);
   return 0;
 }
 
 async function runTrustList(cwd: string, opts: TrustOptions, io: IO): Promise<number> {
+  // A broken registry reads as empty, so the list said "no trusted project
+  // lexicons (run: lexicon trust)", and lexicon trust then refused the file.
+  const problem = await trustRegistryProblem({ cwd });
+  if (problem !== undefined) {
+    const registryPath = getTrustPath({ cwd });
+    const error = `the trust registry at ${registryPath} ${problem}, so the trusted project lexicons cannot be listed; every project reads as untrusted until it is fixed`;
+    const nextStep = `fix the JSON in ${registryPath}, or move it aside (then run \`lexicon trust\` in each project again)`;
+    if (opts.json) printJson(io, { ...jsonError(error, nextStep), registry: registryPath });
+    io.stderr(`lexicon: ${safeMessage(error)}\n`);
+    io.stderr(`lexicon: ${safeMessage(nextStep)}\n`);
+    return 1;
+  }
   const entries = await listTrusted({ cwd });
   if (opts.json) {
     // `ok: true`, then the registry fields of MCP trust_project's 'status' result.
     printJson(io, jsonOk({ registry: getTrustPath({ cwd }), trustAll: trustAllEnabled(), trusted: entries }));
     return 0;
   }
-  io.stdout(`registry: ${safe(getTrustPath({ cwd }))}\n`);
+  io.stdout(`registry: ${safePath(getTrustPath({ cwd }))}\n`);
   if (trustAllEnabled()) io.stdout('LEXICON_TRUST_ALL is set: every project lexicon is treated as trusted\n');
   if (entries.length === 0) {
     io.stdout('no trusted project lexicons (run: lexicon trust)\n');
     return 0;
   }
   const rows = entries.map((e) => [e.path, e.status, e.trustedAt]);
-  io.stdout(renderTable(rows, ['path', 'status', 'trusted at']));
+  io.stdout(renderTable(rows, ['path', 'status', 'trusted at'], { pathColumns: [0] }));
   return 0;
 }
 

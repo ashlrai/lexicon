@@ -44,7 +44,7 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Command } from 'commander';
 import { LIMITS, listPacks } from '../core/index.js';
-import { bold, dim, fail, jsonError, safe, shownCommand, tildify } from './io.js';
+import { bold, dim, fail, jsonError, safe, safeMessage, safePath, shownCommand, tildify } from './io.js';
 import { errorMessage } from '../util/errors.js';
 import type { IO } from './io.js';
 import { PromptClosedError, createPrompter, isInteractive, onlyStdoutRedirected } from './prompt.js';
@@ -62,7 +62,7 @@ import {
 } from './setup/steps.js';
 
 /**
- * The wizard's vocabulary, its machine detection and its six steps live under
+ * The wizard's vocabulary, its machine detection and its seven steps live under
  * ./setup/; re-exported here because cmd-setup.js is the import path the MCP
  * `setup_lexicon` tool, index.ts and the tests already use.
  */
@@ -108,7 +108,7 @@ function printPlan(ctx: Ctx, p: SetupPlan): void {
         : '   this is what the same command without --dry-run does; nothing here is prompted for.',
     ),
   );
-  ctx.say(`   lexicon: ${safe(tildify(p.lexiconPath, ctx.home))}${p.lexiconExists ? '' : dim(' (would be created)')}`);
+  ctx.say(`   lexicon: ${safePath(tildify(p.lexiconPath, ctx.home))}${p.lexiconExists ? '' : dim(' (would be created)')}`);
   ctx.say(`   would seed: ${p.wouldSeed.length > 0 ? safe(p.wouldSeed.join(', ')) : dim('nothing')}`);
   const packs = p.wouldInstallPacks.length > 0 ? p.wouldInstallPacks.join(', ') : dim('none');
   ctx.say(
@@ -141,12 +141,12 @@ function printPlan(ctx: Ctx, p: SetupPlan): void {
   );
   ctx.say(
     p.serveBlocked !== undefined
-      ? `   login service: would not install (${safe(p.serveBlocked)})`
+      ? `   login service: would not install (${safeMessage(p.serveBlocked)})`
       : asks('serve')
         ? `   login service: ${dim('asks')} (default yes) would install a login service that runs the local API`
         : `   login service: ${p.wouldInstallServe ? 'would install' : dim('skipped (--serve installs it)')}`,
   );
-  const exports = p.wouldExport.length > 0 ? safe(p.wouldExport.map((e) => tildify(e.path, ctx.home)).join(', ')) : dim('nothing');
+  const exports = p.wouldExport.length > 0 ? safeMessage(p.wouldExport.map((e) => tildify(e.path, ctx.home)).join(', ')) : dim('nothing');
   ctx.say(
     asks('export')
       ? `   dictation export: ${dim('asks')} which app, and Enter writes ${exports}`
@@ -240,6 +240,21 @@ function printStopped(ctx: Ctx): void {
   ctx.say(`${bold('Next:')} ${ctx.summary.nextStep}`);
 }
 
+/**
+ * The card for a run a step failed in: the error, what the finished steps
+ * wrote, and that a rerun picks up from there once the error is fixed.
+ */
+function printFailed(ctx: Ctx): void {
+  ctx.say();
+  ctx.say(bold(`Failed at "${ctx.summary.failedAt ?? ''}": ${safeMessage(ctx.summary.error ?? '')}; nothing after it ran.`));
+  printWritten(ctx);
+  ctx.summary.nextStep = ctx.opts.forAgent
+    ? 'Tell the user what the error names; once it is fixed, call setup_lexicon again: every step skips what is already done.'
+    : 'fix what the error names, then run lexicon setup again; every step skips what is already done';
+  ctx.say();
+  ctx.say(`${bold('Next:')} ${ctx.summary.nextStep}`);
+}
+
 /** Step h: the summary card. */
 function printSummary(ctx: Ctx): void {
   ctx.say();
@@ -251,7 +266,7 @@ function printSummary(ctx: Ctx): void {
 /** What this run wrote, one line per kind, for the summary and the stopped card. */
 function printWritten(ctx: Ctx): void {
   const s = ctx.summary;
-  ctx.say(`   lexicon: ${safe(tildify(s.lexiconPath, ctx.home))}`);
+  ctx.say(`   lexicon: ${safePath(tildify(s.lexiconPath, ctx.home))}`);
   ctx.say(`   terms added: ${s.termsAdded.length > 0 ? safe(s.termsAdded.join(', ')) : dim('none')}`);
   ctx.say(`   packs: ${s.packs.length > 0 ? s.packs.map((p) => `${p.name} (${p.added} added)`).join(', ') : dim('none')}`);
   const installed = s.clients.filter((c) => c.status === 'installed').map((c) => c.name);
@@ -260,7 +275,7 @@ function printWritten(ctx: Ctx): void {
     `   clients: ${installed.length > 0 ? installed.join(', ') : dim('none')}${failed.length > 0 ? ` (failed: ${failed.join(', ')})` : ''}`,
   );
   ctx.say(`   local API: ${s.serve}`);
-  ctx.say(`   exports: ${s.exports.length > 0 ? safe(s.exports.map((e) => tildify(e.path, ctx.home)).join(', ')) : dim('none')}`);
+  ctx.say(`   exports: ${s.exports.length > 0 ? safeMessage(s.exports.map((e) => tildify(e.path, ctx.home)).join(', ')) : dim('none')}`);
 }
 
 /**
@@ -268,7 +283,9 @@ function printWritten(ctx: Ctx): void {
  * summary (also printed as JSON under `opts.json`). Exit 1 when any client
  * or the serve install failed; the steps still all run. A prompt cancelled
  * at a terminal (its input closed) stops the run at that step, with a card
- * of what the finished steps wrote and `summary.stoppedAt`; exit 1. Under `opts.dryRun`
+ * of what the finished steps wrote and `summary.stoppedAt`; exit 1. A step
+ * that throws stops the run the same way, with `summary.failedAt` and
+ * `summary.error` (a dry run still throws: it wrote nothing). Under `opts.dryRun`
  * nothing is written, the summary stays empty and `plan` says what a real
  * run with the same options would do (printed as the JSON under `--json`).
  */
@@ -384,19 +401,31 @@ export async function runSetup(
         // ctrl-C or ctrl-D at a prompt closes its input. That surfaced as
         // `lexicon: input closed before the prompt was answered` and exit 1,
         // with no word of what the earlier steps had already written.
-        if (!(err instanceof PromptClosedError)) throw err;
-        ctx.summary.stoppedAt = title;
+        if (err instanceof PromptClosedError) {
+          ctx.summary.stoppedAt = title;
+          break;
+        }
+        // A step that failed part way (an export directory that cannot be
+        // written, a pack that will not install) threw out of the run, so the
+        // only output was the error: nothing said that the lexicon, the packs
+        // or the clients before it were already done. A dry run wrote
+        // nothing, so its error is still the whole story.
+        if (ctx.plan) throw err;
+        ctx.summary.failedAt = title;
+        ctx.summary.error = errorMessage(err);
+        ctx.warn(`lexicon setup: ${title}: ${safeMessage(ctx.summary.error)}`);
         break;
       }
     }
     if (ctx.plan) printPlan(ctx, ctx.plan);
     else if (ctx.summary.stoppedAt !== undefined) printStopped(ctx);
+    else if (ctx.summary.failedAt !== undefined) printFailed(ctx);
     else printSummary(ctx);
   } finally {
     if (ownPrompter) prompter?.close();
   }
   const failed =
-    ctx.summary.stoppedAt !== undefined || ctx.summary.serve === 'failed' || ctx.summary.clients.some((c) => c.status === 'failed');
+    ctx.summary.stoppedAt !== undefined || ctx.summary.failedAt !== undefined || ctx.summary.serve === 'failed' || ctx.summary.clients.some((c) => c.status === 'failed');
   // `ok` leads the document so a script reads success the same way it reads
   // the `{ ok: false, error, nextStep }` refusal; false when a client or serve failed (exit 1).
   if (opts.json) io.stdout(`${JSON.stringify({ ok: !failed, ...(ctx.plan ?? ctx.summary) }, null, 2)}\n`);

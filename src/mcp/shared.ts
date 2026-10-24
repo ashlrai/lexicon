@@ -4,12 +4,12 @@
  * discovery. Split out of server.ts so each `tools/*.ts` module can be read on
  * its own; server.ts keeps the resources, the prompts and the wiring.
  */
-import { realpathSync } from 'node:fs';
-import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { existsSync, realpathSync } from 'node:fs';
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { projectWriteTrusted, resolvePaths, skippedProjectNote } from '../core/index.js';
+import { defaultProjectPath, pathForModel, projectWriteTrusted, resolvePaths, skippedProjectNote } from '../core/index.js';
 import type { ImportFormat, LoadOptions, LoadedLexicon, TermSuggestion } from '../core/index.js';
 import type { IO } from '../cli/commands.js';
 import { unreadableLexiconEdit } from '../cli/io.js';
@@ -158,11 +158,18 @@ function errorResult(err: unknown): CallToolResult {
 /**
  * A store error for a lexicon file that does not parse or validate, which
  * already names the file, with the fix appended on a second line: the
- * `lexicon edit` command that opens it and `lexicon doctor` to check it.
+ * `lexicon edit` command that opens it and `lexicon doctor` to check it. A
+ * file that cannot be read at all gets the path or LEXICON_PATH fix instead.
  * Any other message is returned unchanged. Tools, resources and prompts all
  * report a broken file this way, so a model reading any of them can relay it.
  */
 export function withLexiconFix(message: string): string {
+  // A file that could not be read at all (store.ts `Cannot read lexicon at
+  // <path>: ...`: a LEXICON_PATH under a file, a permission error) has no
+  // parse error for an editor to fix; the path itself is the fix.
+  if (/^Cannot read lexicon at /.test(message)) {
+    return `${message}\nNothing was read or changed. Ask the user to make that path readable, or to point LEXICON_PATH in this server's environment at a file in an existing directory (or unset it), then check it with lexicon_doctor.`;
+  }
   const edit = unreadableLexiconEdit(message);
   if (!edit) return message;
   return `${message}\nNothing was read or changed. Ask the user to fix that file by running ${cliCommand(edit.replace(/^lexicon /, ''))}, then check it with lexicon_doctor.`;
@@ -236,6 +243,22 @@ export function containedPath(ctx: Pick<ToolContext, 'cwd' | 'roots'>, path: str
 }
 
 /**
+ * Whether a tool may write the lexicon file `file`, a project file found or
+ * created for a model-chosen directory: when it is this server's own project
+ * file (the one add_term with scope "project" writes), or when it lies inside
+ * one of `readableRoots`, symlinks resolved (the file's own target too, when it
+ * exists). A `.lexicon.yaml` found by walking up from an allowed directory, or
+ * a new one at its git root, can be above every root.
+ */
+export function writableProjectFile(ctx: Pick<ToolContext, 'cwd' | 'roots'>, file: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  const own = resolvePaths({ cwd: ctx.cwd }).project ?? defaultProjectPath(ctx.cwd);
+  if (realOrResolved(file) === realOrResolved(own)) return true;
+  const roots = readableRoots(ctx, env);
+  const real = existsSync(file) ? realOrResolved(file) : join(realOrResolved(dirname(file)), basename(file));
+  return roots.some((root) => isWithin(real, root));
+}
+
+/**
  * The store option every MCP write passes: `{ leaveUntrusted: true }` unless
  * the project file the write would land in is already trusted. A model must
  * not be the one that creates and trusts a project `.lexicon.yaml`, so a new,
@@ -286,7 +309,8 @@ export function filePathsInUse(loaded: LoadedLexicon): { global: string; project
 
 /**
  * `{ projectTrust, skippedProject, note }` when a project lexicon exists but
- * was not merged, else `{}`. The path only, never the untrusted file's text.
+ * was not merged, else `{}`. The path only (through `pathForModel`), never the
+ * untrusted file's text.
  */
 export function skippedProjectFields(
   loaded: LoadedLexicon,
@@ -295,5 +319,8 @@ export function skippedProjectFields(
 ): { projectTrust?: LoadedLexicon['projectTrust']; skippedProject?: string; note?: string } {
   const note = skippedProjectNote(loaded, consequence, { who: 'the user can ', trust: cliCommand('trust') });
   if (!loaded.skippedProject || note === undefined) return {};
-  return { projectTrust: loaded.projectTrust, skippedProject: loaded.skippedProject.path, note };
+  // The path goes through pathForModel, as lexicon://me's note does: the
+  // directory is named by whoever published the repo, and JSON escaping
+  // leaves a bidi override, a fake tag or kilobytes of text in it intact.
+  return { projectTrust: loaded.projectTrust, skippedProject: pathForModel(loaded.skippedProject.path), note };
 }

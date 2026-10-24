@@ -94,11 +94,22 @@ fi
 
 # 3. Verify -------------------------------------------------------------------
 if ! have lexicon; then
-  NPM_BIN="$(npm prefix -g 2>/dev/null)/bin"
-  if [ -x "${NPM_BIN}/lexicon" ]; then
+  NPM_PREFIX="$(npm prefix -g 2>/dev/null || true)"
+  case "$(uname -s 2>/dev/null || echo unknown)" in
+    MINGW*|MSYS*|CYGWIN*)
+      # npm on Windows puts its shims in the prefix itself, not in a bin/
+      # under it, and prints the prefix as a Windows path.
+      NPM_BIN="$NPM_PREFIX"
+      if [ -n "$NPM_BIN" ] && have cygpath; then NPM_BIN="$(cygpath -u "$NPM_BIN" 2>/dev/null || printf '%s' "$NPM_PREFIX")"; fi
+      BIN_HINT="the directory npm prefix -g prints (npm on Windows has no bin/ under it)" ;;
+    *)
+      NPM_BIN="${NPM_PREFIX}/bin"
+      BIN_HINT="the bin directory under: npm prefix -g" ;;
+  esac
+  if [ -n "$NPM_PREFIX" ] && [ -x "${NPM_BIN}/lexicon" ]; then
     say "lexicon is installed in ${NPM_BIN} but that directory is not on PATH; add it, then run: lexicon setup" >&2
   fi
-  fail "lexicon not on PATH; open a new terminal (or run: hash -r) and run: lexicon --version, and if it is still missing, add the bin directory under: npm prefix -g"
+  fail "lexicon not on PATH; open a new terminal (or run: hash -r) and run: lexicon --version, and if it is still missing, add ${BIN_HINT}"
 fi
 INSTALLED_VERSION="$(lexicon --version)" || fail "the installed lexicon did not answer --version; run lexicon --version to see its error, then rerun this installer"
 if [ -n "$EXPECTED_VERSION" ] && [ "$INSTALLED_VERSION" != "$EXPECTED_VERSION" ]; then

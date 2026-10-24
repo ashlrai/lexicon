@@ -724,8 +724,8 @@ function Numbers() {
             six sentences in the corpus are deliberately adversarial and are excluded.
           </p>
           <p>
-            <span className="text-paper-2">And the synthetic corpus.</span> On 398 cases sampled
-            from known speech-to-text failures, term recall goes 5.1% to 96.5% with 0 of 95 clean
+            <span className="text-paper-2">And the synthetic corpus.</span> On 402 cases sampled
+            from known speech-to-text failures, term recall goes 5.1% to 96.8% with 0 of 95 clean
             sentences changed. The 5.1% baseline is low by construction, because the corpus is
             built from failures, so it is not a general accuracy figure for any recognizer.
           </p>

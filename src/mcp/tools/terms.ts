@@ -21,6 +21,8 @@ import {
   learnCorrection,
   loadMatcherIndex,
   noTermMatchesNote,
+  offsetPastEndNote,
+  pageTermList,
   normalizeWithIndex,
   recordHits,
   removeAlias,
@@ -29,6 +31,7 @@ import {
   EXPORT_ALIAS_ROW_FORMATS,
   EXPORT_MAX_LIMIT,
   conflictNote,
+  reversedCorrectionNote,
   unchangedTermNote,
   spellingConflicts,
   suggestAliases,
@@ -74,6 +77,15 @@ export const MCP_NORMALIZE_BUDGET_MS = 1_000;
  */
 export const MCP_NORMALIZE_MAX_CHARS = 100_000;
 
+/**
+ * Most characters of `text` normalize_transcript accepts at all: longer text
+ * is refused, nothing checked, as `lexicon serve`'s /normalize refuses a body
+ * over its 1 MB limit. Below it, text past MCP_NORMALIZE_MAX_CHARS is
+ * returned unchanged with `incomplete` saying so; with no maximum a pasted
+ * 50 MB file was taken and echoed back whole in `output`.
+ */
+export const MCP_NORMALIZE_INPUT_MAX_CHARS = 1_000_000;
+
 /** How far back from the cap a cut looks for whitespace, so a word is not matched as a fragment. */
 const CUT_LOOKBACK_CHARS = 64;
 
@@ -91,6 +103,12 @@ export function normalizeCut(text: string, max: number): number {
     if (/\s/.test(text.charAt(i - 1))) return i;
   }
   return cut;
+}
+
+/** The canonical as `file` spells it, when it holds `canonical` (compared as the store compares). */
+function storedCanonical(file: { lexicon: { terms: readonly Term[] } } | undefined, canonical: string): string | undefined {
+  const key = spellingKey(canonical);
+  return file?.lexicon.terms.find((t) => spellingKey(t.canonical) === key)?.canonical;
 }
 
 /** Canonical lookup, case-insensitive and in NFC, matching how the store compares canonicals. */
@@ -157,12 +175,19 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'counter. Use the `output` field as the message you act on, and mention the correction only if it changes what you are about to do. ' +
         "WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails (unless the lexicon's settings.skipCode is false), and it never invents a " +
         'term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. ' +
-        `Only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. ` +
+        `Text over ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters is refused, nothing checked. Below that, only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. ` +
         'Returns { output, changed, replacements, summary }, plus a `note` when `text` is empty or only whitespace; when `changed` is false the text was already correct and you should carry on silently ' +
         '(except with dryRun: true, where nothing is applied, so `output` is the input and `changed` is false even when `replacements` lists corrections: read `replacements` for what a real call would fix), ' +
         'unless the result also carries `skippedProject`: then this repo has a project lexicon that is not trusted yet, so tell the user once that ' + cliCommand('trust') + ' would enable it.',
       inputSchema: {
-        text: z.string().describe('The dictated or transcribed text to correct.'),
+        text: z
+          .string()
+          .max(MCP_NORMALIZE_INPUT_MAX_CHARS, {
+            error: `text is longer than ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters, so nothing was checked; call again with it in pieces of at most ${MCP_NORMALIZE_MAX_CHARS} characters (only that many are checked per call)`,
+          })
+          .describe(
+            `The dictated or transcribed text to correct: at most ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters (longer is refused), of which the first ${MCP_NORMALIZE_MAX_CHARS} are checked.`,
+          ),
         dryRun: z
           .boolean()
           .optional()
@@ -417,7 +442,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         // removeTerm edits one file (the project one first without a scope). A
         // term with a copy in both files keeps correcting from the other copy,
         // so name it rather than let `removed: true` read as gone.
-        const before = termHolders(await load(), canonical);
+        const loadedBefore = await load();
+        const before = termHolders(loadedBefore, canonical);
         let removed: boolean;
         try {
           removed = await removeTerm(canonical, opts);
@@ -432,24 +458,27 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         const loadedAfter = await load();
         const after = termHolders(loadedAfter, canonical);
         const from = before.find((b) => !after.some((a) => a.path === b.path));
+        // The spelling the file held, not the one the caller typed (`remove_term yod` removes "Yod").
+        const stored = from ? storedCanonical(from.scope === 'project' ? loadedBefore.project : loadedBefore.global, canonical) : undefined;
+        const name = stored ?? canonical;
         // A copy in the skipped (untrusted) project file is not loaded and is
         // never edited, but it wins the merge once the user trusts the file.
         // Path and trust only: none of that file's contents are reported.
         const untrustedProject = untrustedTermHolder(loadedAfter, canonical);
-        if (after.length === 0 && !untrustedProject) return textResult({ canonical, removed, ...(from ? { path: from.path } : {}) });
+        if (after.length === 0 && !untrustedProject) return textResult({ canonical: name, removed, ...(from ? { path: from.path } : {}) });
         const notes = after.map(
           (h) =>
-            `"${canonical}" is still in the ${h.scope} lexicon (${h.path}) and keeps correcting from there; ` +
+            `"${name}" is still in the ${h.scope} lexicon (${h.path}) and keeps correcting from there; ` +
             `if the user wants it gone too, call remove_term again with scope "${h.scope}".`,
         );
         if (untrustedProject) {
           notes.push(
-            `"${canonical}" is also in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === 'changed' ? 'changed since it was trusted' : 'not trusted'}, ` +
+            `"${name}" is also in the project lexicon (${untrustedProject.path}), which is ${untrustedProject.trust === 'changed' ? 'changed since it was trusted' : 'not trusted'}, ` +
               'so it was neither loaded nor edited; that copy corrects again once the user runs ' + cliCommand('trust') + ', so tell them to review the file first.',
           );
         }
         return textResult({
-          canonical,
+          canonical: name,
           removed,
           ...(from ? { path: from.path } : {}),
           ...(after.length > 0 ? { stillIn: after } : {}),
@@ -472,38 +501,51 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'WHAT IT WILL NOT DO: it does not include an untrusted project .lexicon.yaml -- if one was skipped the result says so in ' +
         '`note`, and trust_project is how the user reviews it. ' +
         'Returns { terms, counts: { matched, total, global, project }, paths: { global, project? } }, plus `projectTrust`, `skippedProject` and `note` for a skipped file, ' +
-        'or a `note` saying why `terms` is empty (no terms yet, or the filter matched none). A blank `query` filters nothing.',
+        'or a `note` saying why `terms` is empty (no terms yet, the filter matched none, or `offset` is past the last match). A blank `query` filters nothing. ' +
+        'Every matching term comes back unless `offset` or `limit` is given; then `terms` is that page of the matches (in the same order), and ' +
+        '`page: { offset, limit?, returned, nextOffset? }` says where it started and, while more matches remain, the `offset` that gets the next page (`counts.matched` is how many there are in all).',
       inputSchema: {
         query: z.string().optional().describe('Case-insensitive substring matched against canonical and aliases.'),
-        category: z.enum(TERM_CATEGORIES).optional(),
+        category: z.enum(TERM_CATEGORIES).optional().describe('Only terms in this category; a term without one counts as other.'),
+        offset: z.number().int().nonnegative().optional().describe('Matching terms to skip before the page starts (0 when omitted); pass `page.nextOffset` to get the next page.'),
+        limit: z.number().int().positive().optional().describe('Most terms to return. Omitted with `offset` omitted too: every matching term.'),
       },
     },
-    async ({ query, category }) =>
+    async ({ query, category, offset, limit }) =>
       guarded(async () => {
         // Path only for a skipped project file (skippedProjectFields), so it is never parsed.
         const loaded = await load({ parseSkipped: false });
         const needle = query?.trim().toLowerCase();
-        const terms = loaded.merged.terms.filter((t) => {
-          if (category && t.category !== category) return false;
+        const matched = loaded.merged.terms.filter((t) => {
+          // A term without a category is an `other` one, as for export_lexicon.
+          if (category && (t.category ?? 'other') !== category) return false;
           if (!needle) return true;
           if (t.canonical.toLowerCase().includes(needle)) return true;
           return t.aliases.some((a) => a.toLowerCase().includes(needle));
         });
+        // The whole list unless a page was asked for (lexicon list --full pages the same way).
+        const { items: terms, page } = pageTermList(matched, {
+          ...(offset !== undefined ? { offset } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+        });
         return textResult({
           terms,
           counts: {
-            matched: terms.length,
+            matched: matched.length,
             total: loaded.merged.terms.length,
             global: loaded.global.lexicon.terms.length,
             project: loaded.project?.lexicon.terms.length ?? 0,
           },
           paths: filePathsInUse(loaded),
+          ...(page ? { page } : {}),
           ...skippedProjectFields(loaded),
           // Why nothing came back, as `lexicon list` says it: no terms at
-          // all, or a filter that matched none of them.
+          // all, a filter that matched none of them, or a page past the end.
           ...(terms.length > 0 || loaded.skippedProject
             ? {}
-            : loaded.merged.terms.length === 0
+            : matched.length > 0
+              ? { note: offsetPastEndNote(page?.offset ?? 0, matched.length) }
+              : loaded.merged.terms.length === 0
               ? { note: emptyLexiconNote('add_term or setup_lexicon adds some.') }
               : {
                   note: noTermMatchesNote({
@@ -655,6 +697,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         // argument put a stray newline or padding into the summary.
         const saved = learned.aliasAdded
           ? `"${heardText}" -> "${term.canonical}" saved`
+          : learned.reversed && !untrusted
+            ? reversedCorrectionNote(heardText, meantText, term.canonical, learned.file.scope, 'mcp').replace(/^Nothing was added: /, '').replace(/\.$/, '')
           : heardText.toLowerCase() === term.canonical.toLowerCase()
             ? `"${term.canonical}" is already the canonical spelling; "${heardText}" is corrected to it`
             : `"${heardText}" was already an alias of "${term.canonical}"`;
@@ -675,6 +719,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           path: learned.file.path,
           created: learned.created,
           aliasAdded: learned.aliasAdded,
+          ...(learned.reversed && !untrusted ? { reversed: true } : {}),
           ...(conflict ? { conflict } : {}),
           ...(untrustedProject ? { untrustedProject } : {}),
           ...(pending ?? {}),

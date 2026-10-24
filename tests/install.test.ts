@@ -293,6 +293,35 @@ describe('lexicon install <json client> --apply', () => {
   });
 });
 
+// Catches: the JSON and TOML writers wrote the client config in place, which
+// truncates it first, so a write that failed partway (a full disk) left the
+// user's whole config cut short. They now write a temp file and rename it.
+describe('a config write that fails partway leaves the old file', () => {
+  for (const [client, rel, original] of [
+    ['claude-desktop', 'Library/Application Support/Claude/claude_desktop_config.json', '{\n  "mcpServers": { "other": { "command": "x", "args": [] } },\n  "theme": "dark"\n}\n'],
+    ['codex', '.codex/config.toml', 'model = "o3"\n\n[mcp_servers.other]\ncommand = "x"\n'],
+  ] as const) {
+    it(client, async () => {
+      const file = path.join(home, rel);
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, original);
+      const realWrite = fs.writeFile.bind(fs);
+      const spy = vi.spyOn(fs, 'writeFile').mockImplementation(async (target, data, options) => {
+        // Half the bytes reach the disk, then it is full.
+        await realWrite(target, String(data).slice(0, 10), options);
+        throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+      });
+      try {
+        await expect(run(client, { apply: true })).rejects.toThrow('ENOSPC');
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await fs.readFile(file, 'utf8')).toBe(original);
+      expect(await fs.readdir(path.dirname(file))).toEqual([path.basename(file)]);
+    });
+  }
+});
+
 describe('lexicon install codex --apply (TOML)', () => {
   const rel = '.codex/config.toml';
   const block = `[${CODEX_TABLE}]\ncommand = "node"\nargs = [${JSON.stringify(SERVER)}]`;
@@ -361,6 +390,53 @@ describe('lexicon install codex --apply (TOML)', () => {
     expect(text).toBe(`model = "o3"\n\n[mcp_servers.other]\ncommand = "other"\n\n${block}\n`);
   });
 
+  // Catches: only a literal `[mcp_servers.lexicon]` header was recognised, so
+  // a quoted spelling of the same table got a second one appended, and Codex
+  // refuses a config.toml that defines a table twice.
+  it.each([
+    ['[mcp_servers."lexicon"]'],
+    ["[ mcp_servers . 'lexicon' ]  # mine"],
+    ['["mcp_servers".lexicon]'],
+  ])('replaces the lexicon table spelled %s instead of adding a second one', async (header) => {
+    const file = path.join(home, rel);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, `model = "o3"\n\n${header}\ncommand = "node"\nargs = ["/old/server.js"]\n\n[mcp_servers.other]\ncommand = "other"\n`);
+    await run('codex', { apply: true });
+    const text = await fs.readFile(file, 'utf8');
+    expect(text).toBe(`model = "o3"\n\n${block}\n\n[mcp_servers.other]\ncommand = "other"\n`);
+    expect((await run('codex', { apply: true })).io.out).toContain('nothing changed');
+  });
+
+  // Catches: an inline or dotted definition of the server under
+  // [mcp_servers] got a [mcp_servers.lexicon] table appended beside it.
+  it.each([
+    ['an inline table', '[mcp_servers]\nlexicon = { command = "node", args = ["/mine.js"] }\n', /an inline table under \[mcp_servers\] on line 2/],
+    ['a quoted inline table', '[mcp_servers]\n"lexicon" = { command = "node" }\n', /an inline table under \[mcp_servers\] on line 2/],
+    ['dotted keys', '[mcp_servers]\nlexicon.command = "node"\nlexicon.args = []\n', /dotted keys under \[mcp_servers\] on line 2/],
+    ['root dotted keys', 'model = "o3"\nmcp_servers.lexicon.command = "node"\n', /dotted keys in the root table on line 2/],
+    ['an inline mcp_servers', 'mcp_servers = { other = { command = "x" } }\n', /defines \[mcp_servers\] as an inline table on line 1/],
+    ['an array of tables', '[[mcp_servers.lexicon]]\ncommand = "node"\n', /array of tables/],
+  ])('refuses, writing nothing, when config.toml holds %s', async (_label, original, problem) => {
+    const file = path.join(home, rel);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, original);
+    const err = await run('codex', { apply: true }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CliRefusal);
+    expect((err as CliRefusal).message).toMatch(problem);
+    expect((err as CliRefusal).message).toContain(`${file} already `);
+    expect((err as CliRefusal).nextStep).toContain(`[${CODEX_TABLE}] table shown above`);
+    expect(await fs.readFile(file, 'utf8')).toBe(original);
+  });
+
+  it('is not misled by keys under other tables or multi-line arrays', async () => {
+    const file = path.join(home, rel);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const original = '[mcp_servers.other]\nlexicon = "a value"\nargs = [\n  "lexicon",\n]\n';
+    await fs.writeFile(file, original);
+    await run('codex', { apply: true });
+    expect(await fs.readFile(file, 'utf8')).toBe(`${original}\n${block}\n`);
+  });
+
   it('writes ./.codex/config.toml with --project', async () => {
     await run('codex', { apply: true, project: true });
     expect(await fs.readFile(path.join(cwd, '.codex', 'config.toml'), 'utf8')).toBe(`${block}\n`);
@@ -372,6 +448,14 @@ describe('platform-specific paths', () => {
     const ctx = { home: 'C:\\Users\\me', cwd: 'C:\\repo', platform: 'win32' as const, env: { APPDATA: 'C:\\AppData' }, project: false };
     expect(configPathFor('claude-desktop', ctx)).toBe(path.join('C:\\AppData', 'Claude', 'claude_desktop_config.json'));
     expect(configPathFor('vscode', ctx)).toBe(path.join('C:\\AppData', 'Code', 'User', 'mcp.json'));
+  });
+
+  // Catches: a blank APPDATA passed `??`, so the path came out relative and
+  // the config was written under the current directory.
+  it('falls back to <home>/AppData/Roaming when APPDATA is blank', () => {
+    const ctx = { home: 'C:\\Users\\me', cwd: 'C:\\repo', platform: 'win32' as const, env: { APPDATA: ' ' }, project: false };
+    expect(configPathFor('claude-desktop', ctx)).toBe(path.join('C:\\Users\\me', 'AppData', 'Roaming', 'Claude', 'claude_desktop_config.json'));
+    expect(configPathFor('vscode', { ...ctx, env: { APPDATA: '' } })).toBe(path.join('C:\\Users\\me', 'AppData', 'Roaming', 'Code', 'User', 'mcp.json'));
   });
 
   it('uses ~/.config on Linux for VS Code and Claude Desktop', () => {
@@ -492,6 +576,11 @@ describe('generic, claude and the commander wiring', () => {
       ok: false,
       error: '--apply --project needs a client: with none named, lexicon install only prints the generic configuration and writes nothing',
       nextStep: 'name the client to write, e.g. lexicon install cursor --apply --project (one of: claude, codex, cursor, windsurf, gemini, claude-desktop, vscode)',
+    });
+    // Catches: `--scope project` with no client was refused as `--project needs a client`, a flag never typed.
+    await expect(run('generic', { scope: 'project' })).rejects.toMatchObject({
+      message: expect.stringMatching(/^--scope project needs a client/),
+      nextStep: expect.stringContaining('lexicon install cursor --scope project ('),
     });
     expect(await fs.readdir(home)).toEqual([]);
     expect(await fs.readdir(cwd)).toEqual([]);
@@ -674,6 +763,19 @@ describe('a preview names the full command that applies it', () => {
     expect(scoped.io.out).not.toContain('run again with --apply');
   });
 
+  // Catches: --scope user with --project previewed the repo file, named an
+  // --apply line (--scope user) that wrote the user file, and --json said user.
+  it('refuses --scope user with --project, writing nothing', async () => {
+    for (const client of ['cursor', 'claude'] as const) {
+      await expect(run(client, { scope: 'user', project: true, apply: true })).rejects.toThrow(/--scope user and --project contradict each other; nothing was changed/);
+    }
+    const json = await run('cursor', { scope: 'user', project: true, json: true });
+    expect(json.code).toBe(1);
+    expect(JSON.parse(json.io.out)).toMatchObject({ ok: false, nextStep: expect.stringContaining('pass one of them') });
+    await expect(fs.access(path.join(cwd, '.cursor', 'mcp.json'))).rejects.toThrow();
+    await expect(fs.access(path.join(home, '.cursor', 'mcp.json'))).rejects.toThrow();
+  });
+
   it('quotes a path that needs it and names no --cwd for the current directory', async () => {
     const io = makeIO();
     const spaced = path.join(home, "it's here");
@@ -758,11 +860,62 @@ describe('install claude --scope project writes the repo hooks', () => {
     expect(io.out).toContain(`in ${projectSettings} (this run created the file, so deleting it undoes step 2)`);
   });
 
+  // Catches: the hooks' settings.json was found through process.env's
+  // CLAUDE_CONFIG_DIR, not the environment the install was given (which
+  // uninstall uses), so the two named different files.
+  it('finds settings.json through the environment it was given, as uninstall does', async () => {
+    const elsewhere = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-install-elsewhere-'));
+    const given = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-install-given-'));
+    vi.stubEnv('CLAUDE_CONFIG_DIR', elsewhere);
+    try {
+      await runInstall('claude', { apply: true, home, cwd }, makeIO(), { cliDir: CLI_DIR, env: { PATH: '' }, exec: () => 'Added' });
+      expect(Object.keys((await readJson(path.join(home, '.claude', 'settings.json'))).hooks as object)).toContain('UserPromptSubmit');
+      await runInstall('claude', { apply: true, cwd }, makeIO(), { cliDir: CLI_DIR, env: { PATH: '', CLAUDE_CONFIG_DIR: given }, exec: () => 'Added' });
+      expect(Object.keys((await readJson(path.join(given, 'settings.json'))).hooks as object)).toContain('UserPromptSubmit');
+      expect(await fs.readdir(elsewhere)).toEqual([]);
+    } finally {
+      vi.unstubAllEnvs();
+      await fs.rm(elsewhere, { recursive: true, force: true });
+      await fs.rm(given, { recursive: true, force: true });
+    }
+  });
+
   it('a user-scope install still uses the home settings.json', async () => {
     const io = makeIO();
     await runInstall('claude', { apply: true, home, cwd }, io, { cliDir: CLI_DIR, env: { PATH: '' }, exec: () => 'Added' });
     expect(Object.keys((await readJson(path.join(home, '.claude', 'settings.json'))).hooks as object)).toContain('UserPromptSubmit');
     await expect(fs.access(path.join(cwd, '.claude', 'settings.json'))).rejects.toThrow();
+  });
+});
+
+// Catches: `claude mcp add --scope project` ran in the process's own
+// directory, so `lexicon --cwd <repo> install claude --scope project` wrote
+// another directory's .mcp.json while the hooks went into <repo>'s.
+describe.skipIf(process.platform === 'win32')('claude runs in the directory the install is for', () => {
+  it('install and uninstall run claude with --cwd as its working directory', async () => {
+    const bin = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-install-bin-'));
+    const log = path.join(bin, 'claude.log');
+    const savedPath = process.env.PATH;
+    const savedLog = process.env.TEST_CLAUDE_LOG;
+    try {
+      await fs.writeFile(
+        path.join(bin, 'claude'),
+        `#!/bin/sh\nprintf '%s %s\\n' "$(pwd -P)" "$2" >> "$TEST_CLAUDE_LOG"\ncase "$2" in get) printf 'lexicon:\\n  Scope: Project config\\n  Command: node\\n  Args: /x/plugin/mcp-server.mjs\\n' ;; *) printf 'ok\\n' ;; esac\n`,
+        { mode: 0o755 },
+      );
+      process.env.PATH = `${bin}${path.delimiter}${savedPath ?? ''}`;
+      process.env.TEST_CLAUDE_LOG = log;
+      expect(await runInstall('claude', { apply: true, home, cwd, scope: 'project' }, makeIO(), { cliDir: CLI_DIR, env: { PATH: '' } })).toBe(0);
+      const { runUninstall } = await import('../src/cli/cmd-uninstall.js');
+      expect(await runUninstall('claude', { home, cwd, scope: 'project' }, makeIO(), { env: { PATH: '' } })).toBe(0);
+      const real = await fs.realpath(cwd);
+      expect((await fs.readFile(log, 'utf8')).trim().split('\n')).toEqual([`${real} add`, `${real} get`, `${real} remove`]);
+    } finally {
+      process.env.PATH = savedPath;
+      if (savedLog === undefined) delete process.env.TEST_CLAUDE_LOG;
+      else process.env.TEST_CLAUDE_LOG = savedLog;
+      await fs.rm(bin, { recursive: true, force: true });
+    }
   });
 });
 
@@ -821,7 +974,7 @@ describe('claude registration is idempotent', () => {
     for (const [got, expected] of [
       [getOutput('node', SERVER), 'already registered with claude, nothing changed'],
       [getOutput('python3', '/home/me/my-lexicon.py'), 'a "lexicon" server that lexicon install did not write is registered with claude (python3 /home/me/my-lexicon.py); left as it is'],
-      [getOutput('node', '/old/plugin/mcp-server.mjs', 'Local config (private to you in this project)'), 'already registered with claude at local scope (node /old/plugin/mcp-server.mjs), nothing changed at user scope'],
+      [getOutput('node', '/old/plugin/mcp-server.mjs', 'Local config (private to you in this project)'), 'already registered with claude at user scope, nothing changed (claude mcp get shows the local-scope one)'],
       ['something else entirely', 'claude mcp get did not show its command to compare'],
     ] as const) {
       const { calls, exec } = claudeWith(got);
@@ -830,6 +983,30 @@ describe('claude registration is idempotent', () => {
       expect(io.out).toContain(expected);
       expect(calls.some((c) => c[1] === 'remove')).toBe(false);
     }
+  });
+
+  // Catches: `claude mcp get` shows the local-scope registration over the
+  // user-scope one `claude mcp add` refused on, and the local one was the one
+  // compared, so a stale user-scope registration was never repointed.
+  it('repoints a stale user-scope registration under a local-scope one, read from .claude.json', async () => {
+    const local = getOutput('python3', '/me/local.py', 'Local config (private to you in this project)');
+    await fs.writeFile(path.join(home, '.claude.json'), JSON.stringify({ mcpServers: { lexicon: { type: 'stdio', command: 'node', args: ['/old/checkout/plugin/mcp-server.mjs'] } } }));
+    const { calls, exec } = claudeWith(local);
+    const io = makeIO();
+    expect(await runInstall('claude', { apply: true, home, cwd }, io, { cliDir: CLI_DIR, env: { PATH: '' }, exec })).toBe(0);
+    expect(calls.map((c) => c.slice(0, 2).join(' '))).toEqual(['mcp add', 'mcp get', 'mcp remove', 'mcp add']);
+    expect(calls[2]).toEqual(['mcp', 'remove', '--scope', 'user', 'lexicon']);
+    expect(io.out).toContain(`repointed lexicon: node /old/checkout/plugin/mcp-server.mjs -> node ${SERVER}`);
+    expect(io.out).toContain('note: a local-scope lexicon registration takes precedence over the user-scope one here; to use this one: claude mcp remove --scope local lexicon');
+
+    // Already current at user scope: nothing changed, with the same note.
+    await fs.writeFile(path.join(home, '.claude.json'), JSON.stringify({ mcpServers: { lexicon: { command: 'node', args: [SERVER] } } }));
+    const same = claudeWith(local);
+    const io2 = makeIO();
+    expect(await runInstall('claude', { apply: true, home, cwd }, io2, { cliDir: CLI_DIR, env: { PATH: '' }, exec: same.exec })).toBe(0);
+    expect(io2.out).toContain('already registered with claude, nothing changed');
+    expect(io2.out).toContain('takes precedence over the user-scope one here');
+    expect(same.calls.some((c) => c[1] === 'remove')).toBe(false);
   });
 
   it('fails, naming the add to run, when the old registration was removed but the new add failed', async () => {
@@ -910,6 +1087,17 @@ describe('LEXICON_PATH and LEXICON_CWD reach the installed server', () => {
     expect(again.io.out).toContain('nothing changed');
   });
 
+  it('adds missing env keys to a quoted [mcp_servers."lexicon".env] sub-table', async () => {
+    const file = path.join(home, '.codex/config.toml');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, ['[mcp_servers."lexicon"]', 'command = "node"', 'args = ["/old.js"]', '', '[mcp_servers."lexicon".env]', 'FOO = "bar"', ''].join('\n'));
+    await run('codex', { apply: true }, lexEnv());
+    const merged = await fs.readFile(file, 'utf8');
+    expect(merged).not.toContain('env = {');
+    expect(merged).toContain(`[mcp_servers."lexicon".env]\nFOO = "bar"\nLEXICON_PATH = ${JSON.stringify(path.resolve(cwd, 'lex/my.yaml'))}\n`);
+    expect((await run('codex', { apply: true }, lexEnv())).io.out).toContain('nothing changed');
+  });
+
   // Catches: the undo named only [mcp_servers.lexicon], so following it left
   // the [mcp_servers.lexicon.env] table the keys went into, which Codex reads
   // as a server with no command; and no undo said a file this run created
@@ -949,4 +1137,30 @@ describe('LEXICON_PATH and LEXICON_CWD reach the installed server', () => {
     ]);
     expect(args.indexOf('lexicon')).toBeGreaterThan(args.indexOf('--scope'));
   });
+});
+
+// Catches: a settings.json that parsed to something other than an object
+// ([], null, a string) was replaced with { hooks }, losing what it held, and
+// after the server had already been registered.
+describe('install claude refuses a settings.json that is not an object', () => {
+  for (const text of ['[]\n', 'null\n', '"x"\n']) {
+    it(`refuses ${text.trim()}, naming the file, writing nothing`, async () => {
+      const settings = path.join(home, '.claude', 'settings.json');
+      await fs.mkdir(path.dirname(settings), { recursive: true });
+      await fs.writeFile(settings, text);
+      const calls: string[][] = [];
+      const run = runInstall('claude', { apply: true, home, cwd }, makeIO(), {
+        cliDir: CLI_DIR,
+        env: { PATH: '' },
+        exec: (_file, args) => {
+          calls.push([...args]);
+          return 'Added stdio MCP server lexicon to user config';
+        },
+      });
+      await expect(run).rejects.toThrow(CliRefusal);
+      await expect(run).rejects.toThrow(`${settings} holds`);
+      expect(await fs.readFile(settings, 'utf8')).toBe(text);
+      expect(calls).toEqual([]);
+    });
+  }
 });

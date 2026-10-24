@@ -5,7 +5,7 @@
  * injected deps so no launchctl/systemctl is ever spawned.
  */
 import { spawn } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { promises as fs, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
@@ -49,6 +49,7 @@ import {
   pairPageHtml,
   pairPortNote,
   readServeConfig,
+  readServeConfigResult,
   unusableServeConfigReason,
   DEFAULT_PORT,
   EXPORT_NOTE_HEADER,
@@ -58,6 +59,8 @@ import {
 } from '../src/serve/index.js';
 import type { LexiconHttpServer, ServeStartInfo } from '../src/serve/index.js';
 import {
+  BOOTOUT_POLL_MS,
+  BOOTOUT_POLL_TRIES,
   browserOpenCommand,
   launchAgentPath,
   launchAgentLogPath,
@@ -79,6 +82,7 @@ import {
 } from '../src/cli/cmd-serve.js';
 import { programPathFromPlist, programPathFromUnit } from '../src/cli/serve-paths.js';
 import type { ExecResult, ServeExec } from '../src/cli/cmd-serve.js';
+import { capServiceLog, launchAgentPlist, stableNodePath, SERVE_LOG_MAX_BYTES } from '../src/cli/cmd-serve.js';
 import type { IO } from '../src/cli/commands.js';
 import { FileLockError } from '../src/util/atomic.js';
 import { InputError } from '../src/util/errors.js';
@@ -105,6 +109,8 @@ function memIO(): IO & { out: string[]; err: string[] } {
 
 function fakeExec(calls: string[][], code = 0): ServeExec {
   return async (cmd, args): Promise<ExecResult> => {
+    // `launchctl print` after a bootout: the label is gone, as launchd answers once it is.
+    if (cmd === 'launchctl' && args[0] === 'print') return { code: 113, stdout: '', stderr: 'Could not find service' };
     calls.push([cmd, ...args]);
     return { code, stdout: '', stderr: code === 0 ? '' : 'nope' };
   };
@@ -226,6 +232,121 @@ describe('serve.json', () => {
     }
   });
 
+  // Catches: a serve.json whose token was unusable (a hand edit, a truncated
+  // copy) was replaced with a fresh token without a word, so every paired
+  // client was answered 401 and nothing said why.
+  it('says when an unusable token is replaced, and why; nothing for a missing or empty file', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-replace-'));
+    try {
+      const gp = path.join(dir, 'lexicon.yaml');
+      const servePath = getServePath({ globalPath: gp });
+      const notices: string[] = [];
+      const hooks = { onTokenReplaced: (m: string) => notices.push(m) };
+      await ensureServeConfig({ globalPath: gp }, hooks);
+      expect(notices).toEqual([]);
+      await fs.writeFile(servePath, '\n');
+      await ensureServeConfig({ globalPath: gp }, hooks);
+      expect(notices).toEqual([]);
+      const before = (await ensureServeConfig({ globalPath: gp }, hooks)).token;
+      expect(notices).toEqual([]);
+
+      await fs.writeFile(servePath, JSON.stringify({ port: 41733, token: 'short' }));
+      const fresh = await ensureServeConfig({ globalPath: gp }, hooks);
+      expect(fresh.token).not.toBe(before);
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toContain(`${servePath} had no usable token ("token" is not 32 to 128 hex characters`);
+      expect(notices[0]).toContain('lexicon serve --pair');
+      expect(notices[0]).toContain('lexicon serve --show');
+
+      await fs.writeFile(servePath, JSON.stringify({ port: 41733 }));
+      await ensureServeConfig({ globalPath: gp }, hooks);
+      expect(notices[1]).toContain('(it has no "token" key)');
+
+      // The CLI says it on stderr; --show's stdout is unchanged.
+      await fs.writeFile(servePath, JSON.stringify({ port: 41733, token: 42 }));
+      const io = memIO();
+      expect(await runServe({ show: true, globalPath: gp }, io)).toBe(0);
+      expect(io.err.join('')).toContain('lexicon: warning: ');
+      expect(io.err.join('')).toContain('("token" is not a string)');
+      expect(io.out.join('')).not.toContain('warning');
+
+      // So does a starting server, quiet or not.
+      await fs.writeFile(servePath, JSON.stringify({ port: 41733, token: 'nope' }));
+      const lines: string[] = [];
+      const server = createServer({ port: 0, globalPath: gp, quiet: true, log: (l) => lines.push(l) });
+      await server.start();
+      await server.stop();
+      expect(lines.some((l) => l.startsWith('[serve] warning: ') && l.includes('had no usable token'))).toBe(true);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Catches: when the bound port differed from serve.json's, start() wrote
+  // back the copy it had read before binding, with only the port changed, so
+  // an edit made in between (a hand-added allowedOrigins, a token minted by
+  // --show after the file was deleted) was undone and that token refused.
+  it('recording the bound port re-reads serve.json and changes only the port', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-port-'));
+    try {
+      const gp = path.join(dir, 'lexicon.yaml');
+      await fs.writeFile(gp, 'version: 1\nterms: []\n');
+      const servePath = getServePath({ globalPath: gp });
+      await fs.writeFile(servePath, JSON.stringify({ port: 41733, token: 'ab'.repeat(16), createdAt: '2026-01-01T00:00:00.000Z' }), { mode: 0o600 });
+      const edited = { port: 41733, token: 'cd'.repeat(16), createdAt: '2026-02-02T00:00:00.000Z', allowedOrigins: ['https://example.test'], note: 'kept' };
+      const server = createServer({ port: 0, globalPath: gp, cwd: dir, quiet: true, log: () => {} });
+      // The edit lands after start() read serve.json and before it records the port.
+      const listen = server.server.listen.bind(server.server) as (...args: unknown[]) => http.Server;
+      (server.server as unknown as { listen: (...args: unknown[]) => http.Server }).listen = (...args: unknown[]) => {
+        writeFileSync(servePath, JSON.stringify(edited), { mode: 0o600 });
+        return listen(...args);
+      };
+      const started = await server.start();
+      try {
+        const onDisk = JSON.parse(await fs.readFile(servePath, 'utf8'));
+        expect(onDisk).toEqual({ ...edited, port: started.port });
+        expect(started.token).toBe(edited.token);
+        expect((await fetch(`${started.url}/stats`, { headers: { Authorization: `Bearer ${edited.token}` } })).status).toBe(200);
+        const preflight = await fetch(`${started.url}/stats`, { method: 'OPTIONS', headers: { Origin: 'https://example.test', 'Access-Control-Request-Method': 'GET' } });
+        expect(preflight.headers.get('access-control-allow-origin')).toBe('https://example.test');
+      } finally {
+        await server.stop();
+      }
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Catches: TOKEN_RE took lower-case hex only, so a token hand-edited to
+  // upper case was "no usable token" and replaced, breaking every client
+  // given it. Upper case is kept; the bearer check stays exact.
+  it('keeps an upper-case hex token and still compares it exactly', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-upper-'));
+    try {
+      const gp = path.join(dir, 'lexicon.yaml');
+      await fs.writeFile(gp, 'version: 1\nterms: []\n');
+      const servePath = getServePath({ globalPath: gp });
+      const token = 'AB12'.repeat(8);
+      await fs.writeFile(servePath, JSON.stringify({ port: 41733, token, createdAt: '2026-01-01T00:00:00.000Z' }), { mode: 0o600 });
+      const notices: string[] = [];
+      expect((await readServeConfig({ globalPath: gp }))?.token).toBe(token);
+      expect((await ensureServeConfig({ globalPath: gp }, { onTokenReplaced: (m) => notices.push(m) })).token).toBe(token);
+      expect(notices).toEqual([]);
+      const server = createServer({ port: 0, globalPath: gp, quiet: true, log: () => {} });
+      const info = await server.start();
+      try {
+        expect(info.token).toBe(token);
+        expect((await fetch(`${info.url}/stats`, { headers: { Authorization: `Bearer ${token}` } })).status).toBe(200);
+        expect((await fetch(`${info.url}/stats`, { headers: { Authorization: `Bearer ${token.toLowerCase()}` } })).status).toBe(401);
+      } finally {
+        await server.stop();
+      }
+      expect(JSON.parse(await fs.readFile(servePath, 'utf8')).token).toBe(token);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   // Catches: a serve.json saved with a byte order mark (Windows Notepad,
   // PowerShell Out-File) or with a typo after a hand edit read as missing, so
   // the next start minted a new token over it: allowedOrigins was dropped and
@@ -249,13 +370,57 @@ describe('serve.json', () => {
       expect(unusableServeConfigReason(servePath)).toBe('is not valid JSON; fix it, or delete it and lexicon serve makes a new token');
 
       await fs.writeFile(servePath, JSON.stringify({ ...doc, token: 'short' }));
-      expect(unusableServeConfigReason(servePath)).toBe('has no usable token; lexicon serve replaces it');
+      // Catches: the reason said only "has no usable token", not why, as onTokenReplaced does.
+      expect(unusableServeConfigReason(servePath)).toBe('has no usable token ("token" is not 32 to 128 hex characters (0-9, a-f, A-F)); lexicon serve replaces it');
+      await fs.writeFile(servePath, JSON.stringify({ port: 41733 }));
+      expect(unusableServeConfigReason(servePath)).toBe('has no usable token (it has no "token" key); lexicon serve replaces it');
+      await fs.writeFile(servePath, JSON.stringify({ ...doc, token: 'short' }));
       const fresh = await ensureServeConfig({ globalPath: gp });
       expect(fresh.token).toMatch(/^[0-9a-f]{32}$/);
       expect(fresh.allowedOrigins).toEqual(['https://ok.example']);
 
       await fs.writeFile(servePath, '  \n');
       expect((await ensureServeConfig({ globalPath: gp })).token).toMatch(/^[0-9a-f]{32}$/);
+
+      // Catches: a serve.json that exists but cannot be read (here a directory) was reported as missing.
+      await fs.rm(servePath);
+      expect(unusableServeConfigReason(servePath)).toBe('does not exist; lexicon serve creates it');
+      await fs.mkdir(servePath);
+      expect(unusableServeConfigReason(servePath)).toBe('could not be read (EISDIR); make it a readable file, or remove it so lexicon serve makes a new token');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Catches: readServeConfig swallowed every read and parse error, so a
+  // caller could not tell a serve.json that is simply not there yet from one
+  // that is broken (unreadable, a directory, not JSON, no usable token).
+  it('readServeConfigResult tells a missing serve.json from a broken one, in one read', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-result-'));
+    try {
+      const gp = path.join(dir, 'lexicon.yaml');
+      const servePath = getServePath({ globalPath: gp });
+      expect(await readServeConfigResult({ globalPath: gp })).toEqual({
+        status: 'missing',
+        path: servePath,
+        reason: 'does not exist; lexicon serve creates it',
+      });
+      const token = 'ab'.repeat(16);
+      await fs.writeFile(servePath, JSON.stringify({ port: 4000, token, createdAt: '2026-01-01T00:00:00.000Z' }));
+      expect(await readServeConfigResult({ globalPath: gp })).toMatchObject({ status: 'ok', path: servePath, config: { port: 4000, token } });
+      await fs.writeFile(servePath, '{ nope');
+      expect(await readServeConfigResult({ globalPath: gp })).toEqual({
+        status: 'unusable',
+        path: servePath,
+        reason: 'is not valid JSON; fix it, or delete it and lexicon serve makes a new token',
+      });
+      // The old shape stays: undefined for broken and missing alike.
+      expect(await readServeConfig({ globalPath: gp })).toBeUndefined();
+      await fs.writeFile(servePath, JSON.stringify({ token: 'short' }));
+      expect(await readServeConfigResult({ globalPath: gp })).toMatchObject({ status: 'unusable', reason: expect.stringContaining('has no usable token') });
+      await fs.rm(servePath);
+      await fs.mkdir(servePath);
+      expect(await readServeConfigResult({ globalPath: gp })).toMatchObject({ status: 'unusable', reason: expect.stringContaining('could not be read (EISDIR)') });
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
@@ -770,7 +935,7 @@ describe('POST /learn and POST /add', () => {
       expect(res.status).toBe(200);
       const body = (await res.json()) as { conflict?: unknown; note?: string };
       expect(body.conflict).toEqual({ canonical: 'Ashlr.AI', scope: 'global', as: 'alias', spelling: 'Ashler' });
-      expect(body.note).toContain('lexicon remove "Ashlr.AI" --alias "Ashler" --global');
+      expect(body.note).toContain('lexicon remove Ashlr.AI --alias Ashler --global');
       // No conflict, no note.
       const clean = (await (await api('POST', '/learn', { heard: 'zork mid', meant: 'Zorkmid', scope: 'project', cwd: repo })).json()) as Record<string, unknown>;
       expect(clean).not.toHaveProperty('conflict');
@@ -2084,6 +2249,21 @@ describe('lexicon serve (CLI)', () => {
     expect(await fs.readdir(dir)).toEqual([]);
   });
 
+  // Catches: --pair took any `{ ok: true }` /health for lexicon serve, so another program on the port had its page opened as the pairing page.
+  it('--pair refuses a port where something other than lexicon serve answers', async () => {
+    const calls: string[][] = [];
+    const foreignFetch = (async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch;
+    const text = memIO();
+    expect(await runServe({ pair: true, port: info.port, globalPath: env.globalPath }, text, { platform: 'darwin', exec: fakeExec(calls), fetch: foreignFetch })).toBe(1);
+    expect(calls).toEqual([]);
+    expect(text.err.join('')).toContain('something else answers on that port');
+    expect(text.err.join('')).toContain('lexicon serve --port <n>');
+    const json = memIO();
+    expect(await runServe({ pair: true, json: true, port: info.port, globalPath: env.globalPath }, json, { platform: 'darwin', exec: fakeExec(calls), fetch: foreignFetch })).toBe(1);
+    expect(JSON.parse(json.out.join(''))).toMatchObject({ ok: false, up: false, error: expect.stringContaining('something else answers on that port'), nextStep: expect.stringContaining('lexicon serve --port <n>') });
+    expect(calls).toEqual([]);
+  });
+
   it('--pair exits 1 with a start hint when the server is down, and when no browser opens', async () => {
     const closed = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
     const c = await closed.start();
@@ -2127,6 +2307,59 @@ describe('lexicon serve (CLI)', () => {
     expect(await run).toBe(0);
     expect(io.out.join('')).toContain(`lexicon serve listening on ${seen!.url} (token in ~/.config/lexicon/serve.json)`);
     expect(io.err.join('')).not.toContain('warning');
+  });
+
+  // Catches: the LaunchAgent sent stdout and stderr to serve.log and ran
+  // `serve` without --quiet, so every request added a line and the file grew
+  // without limit; --quiet also dropped the stop line the service log needs.
+  it('the service runs serve --quiet, and a serve.log over the cap is rotated at start', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-log-'));
+    try {
+      expect(launchAgentPlist('/n', '/c', '/l')).toContain('<string>serve</string>\n    <string>--quiet</string>\n  </array>');
+      expect(systemdUnit('/n', '/c')).toContain('ExecStart="/n" "/c" serve --quiet\n');
+      expect(scheduledTaskXml('C:\\n.exe', 'C:\\c.js')).toContain('<Arguments>&quot;C:\\c.js&quot; serve --quiet</Arguments>');
+
+      const logPath = launchAgentLogPath(home);
+      await fs.mkdir(path.dirname(logPath), { recursive: true });
+      await fs.writeFile(logPath, 'x'.repeat(SERVE_LOG_MAX_BYTES + 1));
+      const other = path.join(home, 'other.log');
+      await fs.writeFile(other, 'y'.repeat(SERVE_LOG_MAX_BYTES + 1));
+      const otherHandle = await fs.open(other, 'a');
+      const handle = await fs.open(logPath, 'a');
+      try {
+        // Another file on the descriptor is never touched.
+        expect(await capServiceLog(logPath, otherHandle.fd)).toBe(false);
+        expect((await fs.stat(other)).size).toBe(SERVE_LOG_MAX_BYTES + 1);
+
+        const io = memIO();
+        const controller = new AbortController();
+        controller.abort();
+        expect(await runServe({ port: 0, quiet: true, cwd: env.cwd, globalPath: env.globalPath }, io, { home, signal: controller.signal, logFd: handle.fd })).toBe(0);
+        expect((await fs.stat(logPath)).size).toBe(0);
+        expect((await fs.stat(`${logPath}.1`)).size).toBe(SERVE_LOG_MAX_BYTES + 1);
+        expect(io.out.join('')).toContain('lexicon serve stopped');
+        // Under the cap, nothing moves.
+        await handle.write('small\n');
+        expect(await capServiceLog(logPath, handle.fd)).toBe(false);
+        expect(await fs.readFile(logPath, 'utf8')).toBe('small\n');
+        // A descriptor that cannot set the end of file (append-only on
+        // Windows, read-only here) still gets the file emptied, by path.
+        await fs.writeFile(logPath, 'z'.repeat(SERVE_LOG_MAX_BYTES + 1));
+        const readOnly = await fs.open(logPath, 'r');
+        try {
+          expect(await capServiceLog(logPath, readOnly.fd)).toBe(true);
+        } finally {
+          await readOnly.close();
+        }
+        expect((await fs.stat(logPath)).size).toBe(0);
+        expect((await fs.stat(`${logPath}.1`)).size).toBe(SERVE_LOG_MAX_BYTES + 1);
+      } finally {
+        await handle.close();
+        await otherHandle.close();
+      }
+    } finally {
+      await fs.rm(home, { recursive: true, force: true });
+    }
   });
 
   // Catches: the --json listening line had no `ok`, though a failed start prints `{ ok: false, error }`.
@@ -2221,6 +2454,7 @@ describe('lexicon serve (CLI)', () => {
       const calls2: string[][] = [];
       const io2 = memIO();
       const exec2: ServeExec = async (cmd, args) => {
+        if (args[0] === 'print') return { code: 113, stdout: '', stderr: '' };
         calls2.push([cmd, ...args]);
         return args[0] === 'bootstrap' ? { code: 5, stdout: '', stderr: 'Input/output error' } : { code: 0, stdout: '', stderr: '' };
       };
@@ -2248,6 +2482,117 @@ describe('lexicon serve (CLI)', () => {
     }
   });
 
+  // Catches: the plist and unit were written with the umask (002 on many
+  // shared machines) or the mode of the file they replaced, and launchd
+  // refuses to bootstrap a group- or world-writable plist.
+  it.skipIf(process.platform === 'win32')('--install writes the plist and the unit as 0644, whatever was there', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
+    const umask = process.umask(0o002);
+    try {
+      const cli = await fakeCli(home);
+      const plistPath = launchAgentPath(home, {});
+      await fs.mkdir(path.dirname(plistPath), { recursive: true });
+      await fs.writeFile(plistPath, 'old', { mode: 0o666 });
+      await fs.chmod(plistPath, 0o666);
+      expect(await runServe({ install: true, globalPath: env.globalPath }, memIO(), { platform: 'darwin', home, env: {}, exec: fakeExec([]), uid: 501, cliPath: cli, nodePath: '/usr/bin/node' })).toBe(0);
+      expect((await fs.stat(plistPath)).mode & 0o777).toBe(0o644);
+      expect(await runServe({ install: true, globalPath: env.globalPath }, memIO(), { platform: 'linux', home, env: {}, exec: fakeExec([]), cliPath: cli, nodePath: '/usr/bin/node' })).toBe(0);
+      expect((await fs.stat(systemdUnitPath(home, {}))).mode & 0o777).toBe(0o644);
+    } finally {
+      process.umask(umask);
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
+  // Catches: bootout returns before launchd has removed the job, and the
+  // bootstrap right after it raced that teardown ("Bootstrap failed: 5").
+  it('--install on macOS waits, bounded, for the booted-out label to go before bootstrap', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
+    try {
+      const cli = await fakeCli(home);
+      const run = async (stillThere: number) => {
+        const calls: string[] = [];
+        const sleeps: number[] = [];
+        let prints = 0;
+        const exec: ServeExec = async (_cmd, args) => {
+          calls.push(args[0] as string);
+          if (args[0] === 'print') return { code: ++prints <= stillThere ? 0 : 113, stdout: '', stderr: '' };
+          return { code: 0, stdout: '', stderr: '' };
+        };
+        const io = memIO();
+        const code = await runServe({ install: true, globalPath: env.globalPath }, io, {
+          platform: 'darwin', home, env: {}, exec, cliPath: cli, nodePath: '/usr/bin/node', uid: 501,
+          sleep: async (ms) => {
+            sleeps.push(ms);
+          },
+        });
+        return { code, calls, sleeps, err: io.err.join('') };
+      };
+      const soon = await run(2);
+      expect(soon.code).toBe(0);
+      expect(soon.calls).toEqual(['bootout', 'print', 'print', 'print', 'bootstrap']);
+      expect(soon.sleeps).toEqual([BOOTOUT_POLL_MS, BOOTOUT_POLL_MS]);
+      expect(soon.err).toBe('');
+
+      const never = await run(Infinity);
+      expect(never.code).toBe(0);
+      expect(never.calls.filter((c) => c === 'print')).toHaveLength(BOOTOUT_POLL_TRIES);
+      expect(never.calls.at(-1)).toBe('bootstrap');
+      expect(never.err).toContain('was still loaded 5s after launchctl bootout; bootstrapping anyway');
+    } finally {
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
+  // Catches: the plist and unit were written in place, which truncates them
+  // first, so a full disk or a killed install left a cut-short service file.
+  it('--install writes the plist and the unit through a temp file', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
+    try {
+      const cli = await fakeCli(home);
+      const files = { darwin: launchAgentPath(home, {}), linux: systemdUnitPath(home, {}) } as const;
+      for (const platform of ['darwin', 'linux'] as const) {
+        const file = files[platform];
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        await fs.writeFile(file, 'previous service file\n');
+        // writeFileAtomic writes beside the realpath of the target, and on
+        // macOS (/var -> /private/var) and Windows (8.3 short names in TEMP)
+        // that differs from the path as given, so match both spellings.
+        const dirs = [path.dirname(file), await fs.realpath(path.dirname(file))];
+        const realWrite = fs.writeFile.bind(fs);
+        const spy = vi.spyOn(fs, 'writeFile').mockImplementation(async (target, data, options) => {
+          if (!dirs.some((d) => String(target).startsWith(d))) return realWrite(target, data, options);
+          await realWrite(target, String(data).slice(0, 5), options);
+          throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+        });
+        const io = memIO();
+        try {
+          expect(await runServe({ install: true, globalPath: env.globalPath }, io, { platform, home, env: {}, exec: fakeExec([]), uid: 501, cliPath: cli, nodePath: '/usr/bin/node' })).toBe(1);
+        } finally {
+          spy.mockRestore();
+        }
+        expect(io.err.join('')).toContain('ENOSPC');
+        expect(await fs.readFile(file, 'utf8')).toBe('previous service file\n');
+        expect(await fs.readdir(path.dirname(file))).toEqual([path.basename(file)]);
+      }
+    } finally {
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
+  // Catches: process.execPath of a Homebrew node is its versioned Cellar
+  // directory, which brew upgrade and brew cleanup delete, so the service
+  // was left pointing at a node that no longer exists.
+  it('stableNodePath runs a Homebrew node through its opt/ symlink when there is one', () => {
+    const there = new Set(['/opt/homebrew/opt/node/bin/node', '/home/linuxbrew/.linuxbrew/opt/node@20/bin/node']);
+    const exists = (p: string): boolean => there.has(p);
+    expect(stableNodePath('/opt/homebrew/Cellar/node/22.9.0/bin/node', exists)).toBe('/opt/homebrew/opt/node/bin/node');
+    expect(stableNodePath('/home/linuxbrew/.linuxbrew/Cellar/node@20/20.18.0_1/bin/node', exists)).toBe('/home/linuxbrew/.linuxbrew/opt/node@20/bin/node');
+    expect(stableNodePath('/usr/local/Cellar/node/22.9.0/bin/node', exists)).toBe('/usr/local/Cellar/node/22.9.0/bin/node');
+    expect(stableNodePath('/home/me/.nvm/versions/node/v22.9.0/bin/node', exists)).toBe('/home/me/.nvm/versions/node/v22.9.0/bin/node');
+    expect(stableNodePath('/usr/bin/node', exists)).toBe('/usr/bin/node');
+  });
+
   it('--install on Linux writes the systemd user unit', async () => {
     const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
     try {
@@ -2272,14 +2617,22 @@ describe('lexicon serve (CLI)', () => {
       expect(unit).toContain(`ExecStart="/usr/bin/node" "${cli.replace(/\\/g, '\\\\')}" serve`);
       expect(unit).toContain('WantedBy=default.target');
       expect(unit).not.toContain('Environment=');
+      // Catches: `enable --now` leaves a running unit as it is, so a
+      // reinstall kept the old process (old node, old CLI path) serving.
       expect(calls).toEqual([
         ['systemctl', '--user', 'daemon-reload'],
-        ['systemctl', '--user', 'enable', '--now', SYSTEMD_UNIT_NAME],
+        ['systemctl', '--user', 'enable', SYSTEMD_UNIT_NAME],
+        ['systemctl', '--user', 'restart', SYSTEMD_UNIT_NAME],
       ]);
       expect(io.out.join('')).toContain(`wrote ${unitPath}`);
 
       const failing = memIO();
       expect(await runServe({ install: true, globalPath: env.globalPath }, failing, { platform: 'linux', home, env: {}, exec: fakeExec([], 1), cliPath: cli })).toBe(1);
+      expect(failing.err.join('')).toContain(`could not enable the unit; the file is in place, run \`systemctl --user enable ${SYSTEMD_UNIT_NAME} && systemctl --user restart ${SYSTEMD_UNIT_NAME}\` manually`);
+      const restartFails: ServeExec = async (_cmd, args) => ({ code: args[1] === 'restart' ? 1 : 0, stdout: '', stderr: '' });
+      const noStart = memIO();
+      expect(await runServe({ install: true, globalPath: env.globalPath }, noStart, { platform: 'linux', home, env: {}, exec: restartFails, cliPath: cli })).toBe(1);
+      expect(noStart.err.join('')).toContain('could not start the unit; the file is in place');
 
       const calls2: string[][] = [];
       expect(await runServe({ uninstall: true, globalPath: env.globalPath }, memIO(), { platform: 'linux', home, env: {}, exec: fakeExec(calls2) })).toBe(0);
@@ -2413,7 +2766,13 @@ describe('lexicon serve (CLI)', () => {
         nodePath: 'C:\\node\\node.exe',
       });
       expect(code).toBe(0);
-      expect(calls).toHaveLength(1);
+      // Catches: the task was created but not started (only a logon starts
+      // it), and /Create /F left an earlier install's instance running.
+      expect(calls).toHaveLength(3);
+      expect(calls.slice(1)).toEqual([
+        ['schtasks', '/End', '/TN', SCHEDULED_TASK_NAME],
+        ['schtasks', '/Run', '/TN', SCHEDULED_TASK_NAME],
+      ]);
       const [cmd, ...args] = calls[0];
       expect(cmd).toBe('schtasks');
       // /XML rather than /TR: the command line holds two quoted absolute paths
@@ -2443,6 +2802,46 @@ describe('lexicon serve (CLI)', () => {
       expect(err).toContain(
         'lexicon: could not create the Scheduled Task "Lexicon"; nothing is installed. Fix the schtasks /Create error above and rerun `lexicon serve --install`, or run `lexicon serve` to start the local API in the foreground\n',
       );
+    } finally {
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
+  it('--install on Windows says which of /End and /Run failed, and a task that is not running is fine', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-schtasks-'));
+    try {
+      const cli = await fakeCli(home);
+      const run = async (fail: Record<string, string>) => {
+        const io = memIO();
+        const calls: string[] = [];
+        const exec: ServeExec = async (_cmd, args) => {
+          calls.push(args[0] as string);
+          const why = fail[args[0] as string];
+          return why === undefined ? { code: 0, stdout: '', stderr: '' } : { code: 1, stdout: '', stderr: why };
+        };
+        const code = await runServe({ install: true, globalPath: env.globalPath }, io, {
+          platform: 'win32',
+          home,
+          env: { USERNAME: 'me' },
+          exec,
+          cliPath: cli,
+          nodePath: 'C:\\node\\node.exe',
+        });
+        return { code, calls, err: io.err.join(''), out: io.out.join('') };
+      };
+      const idle = await run({ '/End': 'ERROR: The task is not currently running.' });
+      expect(idle.code).toBe(0);
+      expect(idle.calls).toEqual(['/Create', '/End', '/Query', '/Run']);
+
+      const end = await run({ '/End': 'ERROR: Access is denied.' });
+      expect(end.code).toBe(1);
+      expect(end.calls).toEqual(['/Create', '/End', '/Query']);
+      expect(end.err).toContain('could not end its running instance (schtasks /End failed, see above)');
+
+      const start = await run({ '/Run': 'ERROR: Access is denied.' });
+      expect(start.code).toBe(1);
+      expect(start.err).toContain('could not start it (schtasks /Run failed, see above); it starts at your next logon');
+      expect(start.out).not.toContain('installed Lexicon;');
     } finally {
       await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
@@ -2526,6 +2925,15 @@ describe('lexicon serve (CLI)', () => {
       expect(programPathFromUnit(unit)).toBe('/opt/100%/index.js');
     });
 
+    // Catches: systemd expands `${NAME}` in an ExecStart argument and reads
+    // `$$` as `$`, so a CLI path holding either was started as another path.
+    it('systemd: a $ in the CLI path is doubled (not in the node path) and still round-trips', () => {
+      const unit = systemdUnit('/opt/n$de/bin/node', '/opt/a${HOME}$$b/index.js', { LEXICON_PATH: '/x/$y.yaml' });
+      expect(unit).toContain('ExecStart="/opt/n$de/bin/node" "/opt/a$${HOME}$$$$b/index.js" serve');
+      expect(unit).toContain('Environment="LEXICON_PATH=/x/$y.yaml"');
+      expect(programPathFromUnit(unit)).toBe('/opt/a${HOME}$$b/index.js');
+    });
+
     it('Windows: a serve.env next to serve.json, loaded with node --env-file', async () => {
       const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-schtasks-'));
       const envFile = path.join(path.dirname(env.globalPath), SERVE_ENV_FILE_NAME);
@@ -2534,7 +2942,7 @@ describe('lexicon serve (CLI)', () => {
         const io = memIO();
         let xml = '';
         const exec: ServeExec = async (_cmd, args) => {
-          xml = Buffer.from(await fs.readFile(args[4])).toString('utf16le').replace(/^\ufeff/, '');
+          if (args[0] === '/Create') xml = Buffer.from(await fs.readFile(args[4])).toString('utf16le').replace(/^\ufeff/, '');
           return { code: 0, stdout: '', stderr: '' };
         };
         expect(
@@ -2582,8 +2990,58 @@ describe('lexicon serve (CLI)', () => {
             nodePath: 'C:\\node\\node.exe',
           }),
         ).toBe(0);
-        expect(xml).toContain(`<Arguments>&quot;${cli}&quot; serve</Arguments>`);
+        expect(xml).toContain(`<Arguments>&quot;${cli}&quot; serve --quiet</Arguments>`);
         await expect(fs.access(envFile)).rejects.toThrow();
+      } finally {
+        await fs.rm(envFile, { force: true });
+        await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      }
+    });
+
+    // Catches: serve.env was written in place under the umask (0644 here,
+    // beside a 0600 serve.json), so a write cut short truncated it, and
+    // --uninstall left it behind.
+    it('Windows: serve.env is written 0600 through a temp file and removed on uninstall', async () => {
+      const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-schtasks-'));
+      const envFile = path.join(path.dirname(env.globalPath), SERVE_ENV_FILE_NAME);
+      const deps = {
+        platform: 'win32' as const,
+        home,
+        env: { ...shellEnv, USERNAME: 'me' },
+        exec: fakeExec([]),
+        nodePath: 'C:\\node\\node.exe',
+        nodeVersion: 'v22.11.0',
+      };
+      try {
+        const cli = await fakeCli(home);
+        await fs.mkdir(path.dirname(envFile), { recursive: true });
+        await fs.writeFile(envFile, 'OLD=1\n', { mode: 0o644 });
+        await fs.chmod(envFile, 0o644);
+        const realWrite = fs.writeFile.bind(fs);
+        const spy = vi.spyOn(fs, 'writeFile').mockImplementation(async (target, data, options) => {
+          if (String(target).includes(SERVE_ENV_FILE_NAME)) {
+            await realWrite(target, String(data).slice(0, 3), options);
+            throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+          }
+          return realWrite(target, data, options);
+        });
+        try {
+          const failed = memIO();
+          expect(await runServe({ install: true, globalPath: env.globalPath, cwd }, failed, { ...deps, cliPath: cli })).toBe(1);
+          expect(failed.err.join('')).toContain('ENOSPC');
+        } finally {
+          spy.mockRestore();
+        }
+        expect(await fs.readFile(envFile, 'utf8')).toBe('OLD=1\n');
+
+        expect(await runServe({ install: true, globalPath: env.globalPath, cwd }, memIO(), { ...deps, cliPath: cli })).toBe(0);
+        if (process.platform !== 'win32') expect((await fs.stat(envFile)).mode & 0o777).toBe(0o600);
+        expect(await fs.readFile(envFile, 'utf8')).toBe(serveEnvFile({ LEXICON_PATH: lexPath, XDG_CONFIG_HOME: xdg }));
+
+        const io = memIO();
+        expect(await runServe({ uninstall: true, globalPath: env.globalPath }, io, deps)).toBe(0);
+        await expect(fs.access(envFile)).rejects.toThrow();
+        expect(io.out.join('')).toContain(`removed ${envFile}`);
       } finally {
         await fs.rm(envFile, { force: true });
         await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
@@ -2641,17 +3099,99 @@ describe('lexicon serve (CLI)', () => {
       home: 'C:\\Users\\me',
       exec: fakeExec(ok),
     })).toBe(0);
-    expect(ok).toEqual([['schtasks', '/Delete', '/TN', 'Lexicon', '/F']]);
+    // Catches: /Delete alone left the task's running instance serving.
+    expect(ok).toEqual([
+      ['schtasks', '/End', '/TN', 'Lexicon'],
+      ['schtasks', '/Delete', '/TN', 'Lexicon', '/F'],
+    ]);
     expect(io.out.join('')).toContain('removed Scheduled Task Lexicon');
 
-    const missing: string[][] = [];
+    const ioEnd = memIO();
+    const endDenied: ServeExec = async (_cmd, args) =>
+      args[0] === '/End' ? { code: 1, stdout: '', stderr: 'ERROR: Access is denied.' } : { code: 0, stdout: '', stderr: '' };
+    expect(await runServe({ uninstall: true, globalPath: env.globalPath }, ioEnd, {
+      platform: 'win32',
+      home: 'C:\\Users\\me',
+      exec: endDenied,
+    })).toBe(1);
+    expect(ioEnd.out.join('')).toContain('removed Scheduled Task Lexicon');
+    expect(ioEnd.err.join('')).toContain('could not end the running instance of the Scheduled Task "Lexicon"');
+
     const io2 = memIO();
+    const missing: ServeExec = async () => ({ code: 1, stdout: '', stderr: 'ERROR: The system cannot find the file specified.\r\n' });
     expect(await runServe({ uninstall: true, globalPath: env.globalPath }, io2, {
       platform: 'win32',
       home: 'C:\\Users\\me',
-      exec: fakeExec(missing, 1),
+      exec: missing,
     })).toBe(0);
     expect(io2.out.join('')).toContain('was not installed');
+
+    // Catches: every /Delete failure (access denied, the scheduler down) was
+    // reported as "was not installed" with exit 0, the task still in place.
+    const io3 = memIO();
+    const denied: ServeExec = async (_cmd, args) =>
+      args[0] === '/Query' ? { code: 0, stdout: '', stderr: '' } : { code: 1, stdout: '', stderr: 'ERROR: Access is denied.' };
+    expect(await runServe({ uninstall: true, globalPath: env.globalPath }, io3, {
+      platform: 'win32',
+      home: 'C:\\Users\\me',
+      exec: denied,
+    })).toBe(1);
+    expect(io3.out.join('')).not.toContain('was not installed');
+    expect(io3.err.join('')).toContain('lexicon: could not remove the Scheduled Task "Lexicon": ERROR: Access is denied.');
+  });
+
+  // Catches: whether /End had nothing to end and whether /Delete found no
+  // task was read from schtasks' English messages only, so on a localized
+  // Windows (here German) install and uninstall exited 1 for a task that was
+  // not running or not there. schtasks /Query's exit status and the task's
+  // Last Result (267009 while it runs) decide now, in any language.
+  it('--install and --uninstall on Windows read schtasks /Query, not its English messages', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-schtasks-'));
+    try {
+      const cli = await fakeCli(home);
+      const row = (lastResult: string) => `"BOX","\\Lexicon","N/A","Bereit","Interaktiv","24.10.2026 09:00:00","${lastResult}","me","C:\\node\\node.exe"\r\n`;
+      const run = async (action: 'install' | 'uninstall', answers: Record<string, { code: number; stdout?: string; stderr?: string }>) => {
+        const io = memIO();
+        const calls: string[] = [];
+        const exec: ServeExec = async (_cmd, args) => {
+          calls.push(args[0] as string);
+          const a = answers[args[0] as string];
+          return a ? { code: a.code, stdout: a.stdout ?? '', stderr: a.stderr ?? '' } : { code: 0, stdout: '', stderr: '' };
+        };
+        const code = await runServe({ [action]: true, globalPath: env.globalPath }, io, {
+          platform: 'win32',
+          home,
+          env: { USERNAME: 'me' },
+          exec,
+          cliPath: cli,
+          nodePath: 'C:\\node\\node.exe',
+        });
+        return { code, calls, out: io.out.join(''), err: io.err.join('') };
+      };
+      const notRunning = { code: 1, stderr: 'FEHLER: Die Aufgabe wird derzeit nicht ausgef\u00fchrt.' };
+      const notFound = { code: 1, stderr: 'FEHLER: Das System kann die angegebene Datei nicht finden.' };
+
+      const idle = await run('install', { '/End': notRunning, '/Query': { code: 0, stdout: row('0') } });
+      expect(idle.code).toBe(0);
+      expect(idle.calls).toEqual(['/Create', '/End', '/Query', '/Run']);
+      // A running task whose /End failed still fails, in any language.
+      const busy = await run('install', { '/End': { code: 1, stderr: 'FEHLER: Zugriff verweigert' }, '/Query': { code: 0, stdout: row('267009') } });
+      expect(busy.code).toBe(1);
+      expect(busy.err).toContain('could not end its running instance');
+
+      const gone = await run('uninstall', { '/End': notFound, '/Delete': notFound, '/Query': notFound });
+      expect(gone.code).toBe(0);
+      expect(gone.out).toContain('Scheduled Task Lexicon was not installed');
+      const stopped = await run('uninstall', { '/End': notRunning, '/Query': { code: 0, stdout: row('0') } });
+      expect(stopped.code).toBe(0);
+      expect(stopped.out).toContain('removed Scheduled Task Lexicon');
+      // The task is there and /Delete failed: reported, exit 1.
+      const kept = await run('uninstall', { '/Delete': { code: 1, stderr: 'FEHLER: Zugriff verweigert' }, '/Query': { code: 0, stdout: row('0') } });
+      expect(kept.code).toBe(1);
+      expect(kept.err).toContain('could not remove the Scheduled Task "Lexicon": FEHLER: Zugriff verweigert');
+    } finally {
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
   });
 
   it('the task XML round-trips its program path and binds the trigger to one user', () => {
@@ -2661,7 +3201,7 @@ describe('lexicon serve (CLI)', () => {
     // means one thing on all three platforms.
     expect(programPathFromTaskXml(xml)).toBe('C:\\lex & co\\index.js');
     expect(xml).toContain('<Command>C:\\Program Files\\nodejs\\node.exe</Command>');
-    expect(xml).toContain('<Arguments>&quot;C:\\lex &amp; co\\index.js&quot; serve</Arguments>');
+    expect(xml).toContain('<Arguments>&quot;C:\\lex &amp; co\\index.js&quot; serve --quiet</Arguments>');
     expect(xml).toContain('<UserId>BOX\\me</UserId>');
     expect(xml).toContain('<LogonTrigger>');
     // Task Scheduler's default 72-hour kill would take the server down.

@@ -54,6 +54,8 @@ import {
   effectiveHits,
   findTerm,
   getHitsPath,
+  hitsRegistryProblem,
+  MAX_HITS_BYTES,
   loadLexicon,
   mergeLexicons,
   readLexiconFile,
@@ -79,6 +81,7 @@ import {
 import { getTrustPath, hashFile, isTrusted, readTrustRegistry, trustProject, untrustProject } from '../src/core/trust.js';
 import { BACKUP_SUFFIX, LOCK_SUFFIX, isFileLockError, withFileLock } from '../src/util/atomic.js';
 import { usableHome, xdgConfigHome, xdgDataHome, xdgStateHome } from '../src/util/xdg.js';
+import { unreadableLexiconHint } from '../src/cli/io.js';
 
 let tmp: string;
 let globalPath: string;
@@ -111,6 +114,23 @@ async function makeRepo(): Promise<{ root: string; nested: string }> {
   await fs.mkdir(nested, { recursive: true });
   return { root, nested };
 }
+
+describe('an unreadable lexicon path', () => {
+  // Catches: a LEXICON_PATH under a file reached list, stats, export and learn as Node's bare
+  // `ENOTDIR: not a directory, stat '<path>'` with the generic "fix what error names" next step.
+  it('names the lexicon and the file in the way, and the CLI says what to fix', async () => {
+    const notes = path.join(tmp, 'notes.txt');
+    await fs.writeFile(notes, 'not a directory\n', 'utf8');
+    const under = path.join(notes, 'lexicon.yaml');
+    const err = await loadLexicon({ cwd: tmp, globalPath: under }).then(
+      () => undefined,
+      (e: unknown) => e as NodeJS.ErrnoException,
+    );
+    expect(err?.message).toBe(`Cannot read lexicon at ${under}: ${notes} is not a directory, so no lexicon file can be there`);
+    expect(err?.code).toBe('ENOTDIR');
+    expect(unreadableLexiconHint(err!.message)).toMatch(/LEXICON_PATH.*lexicon doctor/);
+  });
+});
 
 describe('resolvePaths', () => {
   it('uses LEXICON_PATH when set', () => {
@@ -666,6 +686,25 @@ describe('addTerm', () => {
     expect(explicit.term.aliases).toEqual(['Versal']);
   });
 
+  // Catches: an alias that is also one of the term's never words was saved and reported, though the never word blocks it, so it never applied.
+  it('refuses an alias that would also be a never word of the term, writing nothing', async () => {
+    const message = /"wexx" would be both an alias and a never word of "Wex".*the alias would never apply/;
+    await expect(addTerm({ canonical: 'Wex', aliases: ['wexx'], never: ['Wexx'] }, { cwd: tmp, globalPath })).rejects.toThrow(message);
+    await expect(fs.stat(globalPath)).rejects.toThrow();
+    await addTerm({ canonical: 'Wex', aliases: ['wexx'] }, { cwd: tmp, globalPath });
+    const before = await fs.readFile(globalPath, 'utf8');
+    // A never word that is an alias already, and an alias that is a never word already.
+    await expect(addTerm({ canonical: 'wex', aliases: [], never: ['WEXX'] }, { cwd: tmp, globalPath })).rejects.toThrow(/"WEXX" would be both an alias and a never word of "Wex"/);
+    await addTerm({ canonical: 'Vox', aliases: [], never: ['voxx'] }, { cwd: tmp, globalPath });
+    await expect(addTerm({ canonical: 'Vox', aliases: ['Voxx'] }, { cwd: tmp, globalPath })).rejects.toThrow(/"Voxx" would be both an alias and a never word of "Vox"/);
+    expect((await readLexiconFile(globalPath, 'global')).lexicon.terms.find((t) => t.canonical === 'Wex')?.never).toBeUndefined();
+    expect(before).toContain('wexx');
+    // A generated alias that is a never word is left out, not refused.
+    const created = await addTerm({ canonical: 'SaaS', aliases: [], never: ['sass'] }, { cwd: tmp, globalPath, defaultAliases: ['sass', 'SaS'] });
+    expect(created.term.aliases).toEqual(['SaS']);
+    expect(created.term.never).toEqual(['sass']);
+  });
+
   it('creates a new term in the global file with defaults', async () => {
     const term: Term = { canonical: ' Ashlr.AI ', aliases: [' Ashler ', 'ashler', 'ASHLR.AI', 'Ashlar'] };
     const result = await addTerm(term, { cwd: tmp, globalPath });
@@ -1064,6 +1103,16 @@ describe('recordHits', () => {
     expect(await readGlobalHits({ globalPath })).toEqual({ g: 1 });
   });
 
+  // Catches: any integer was taken as a count, so a hand-edited 1e300 (or 2**60) read as a real hit total.
+  it('drops a hits.json count that is not a positive safe integer', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(
+      getHitsPath({ globalPath }),
+      `{"version":1,"projects":{},"global":{"a":1e300,"b":${2 ** 60},"c":-3,"d":0,"e":1.5,"f":"4","g":7}}`,
+    );
+    expect(await readGlobalHits({ globalPath })).toEqual({ g: 7 });
+  });
+
   it('keeps a count already in the global file as a floor and forgets a removed global term', async () => {
     await fs.mkdir(path.dirname(globalPath), { recursive: true });
     await fs.writeFile(globalPath, 'version: 1\nterms:\n  - canonical: Legacy\n    aliases: []\n    hits: 10\n');
@@ -1082,14 +1131,55 @@ describe('recordHits', () => {
     await expect(recordHits([], { cwd: tmp, globalPath: path.join(tmp, 'dir-does-not-exist', 'x.yaml') })).resolves.toBeUndefined();
   });
 
-  it('treats a corrupt sidecar as no counts rather than failing a correction', async () => {
+  // Catches: a hits.json that is not valid JSON read as empty for the write too, so the next recordHits replaced every count in it.
+  it('reads a corrupt sidecar as no counts but never overwrites it', async () => {
     const { nested, projectPath } = await counted();
-    await fs.mkdir(path.dirname(getHitsPath({ globalPath })), { recursive: true });
-    await fs.writeFile(getHitsPath({ globalPath }), '{ not json');
+    const hitsPath = getHitsPath({ globalPath });
+    await fs.mkdir(path.dirname(hitsPath), { recursive: true });
+    const corrupt = '{ "version": 1, "projects": { "x": { "p": 40 } }, oops';
+    await fs.writeFile(hitsPath, corrupt);
     expect(await readProjectHits(projectPath, { globalPath })).toEqual({});
     await expect(loadLexicon({ cwd: nested, globalPath })).resolves.toBeDefined();
+    await expect(recordHits(['p', 'g'], { cwd: nested, globalPath })).resolves.toBeUndefined();
+    expect(await removeTerm('G', { cwd: nested, globalPath })).toBe(true);
+    expect(await fs.readFile(hitsPath, 'utf8')).toBe(corrupt);
+    expect(await hitsRegistryProblem({ globalPath })).toMatch(/^is not valid JSON/);
+  });
+
+  // Catches: hits.json read whatever its size, so a huge one stalled the prompt hook on every matching prompt.
+  it('does not read a hits.json over MAX_HITS_BYTES, and does not overwrite it', async () => {
+    const { nested, projectPath } = await counted();
     await recordHits(['p'], { cwd: nested, globalPath });
-    expect(await readProjectHits(projectPath, { globalPath })).toEqual({ p: 1 });
+    const hitsPath = getHitsPath({ globalPath });
+    const body = JSON.parse(await fs.readFile(hitsPath, 'utf8')) as Record<string, unknown>;
+    const big = JSON.stringify({ ...body, pad: 'x'.repeat(MAX_HITS_BYTES) });
+    await fs.writeFile(hitsPath, big);
+    expect(await readProjectHits(projectPath, { globalPath })).toEqual({});
+    await recordHits(['p'], { cwd: nested, globalPath });
+    expect((await fs.stat(hitsPath)).size).toBe(Buffer.byteLength(big));
+    expect(await hitsRegistryProblem({ globalPath })).toMatch(/over the \d+ byte limit/);
+  });
+
+  // Catches: any read error, not only a missing file, read as no counts, so the write that followed replaced every count in hits.json with the few being added.
+  it('keeps hits.json when it cannot be read, dropping the new counts instead', async () => {
+    const { nested, projectPath } = await counted();
+    await recordHits(['p', 'p', 'g'], { cwd: nested, globalPath });
+    const hitsPath = getHitsPath({ globalPath });
+    const before = await fs.readFile(hitsPath, 'utf8');
+    const realRead = fs.readFile.bind(fs);
+    const spy = vi.spyOn(fs, 'readFile').mockImplementation((async (p: unknown, ...rest: unknown[]) => {
+      if (p === hitsPath) throw Object.assign(new Error('EIO: i/o error, read'), { code: 'EIO' });
+      return (realRead as (...a: unknown[]) => Promise<unknown>)(p, ...rest);
+    }) as typeof fs.readFile);
+    try {
+      await expect(recordHits(['p', 'g'], { cwd: nested, globalPath })).resolves.toBeUndefined();
+      expect(await removeTerm('G', { cwd: nested, globalPath })).toBe(true);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await fs.readFile(hitsPath, 'utf8')).toBe(before);
+    expect(await readProjectHits(projectPath, { globalPath })).toEqual({ p: 2 });
+    expect(await readGlobalHits({ globalPath })).toEqual({ g: 1 });
   });
 
   it('forgets a removed project term, so re-adding it does not inherit the tally', async () => {

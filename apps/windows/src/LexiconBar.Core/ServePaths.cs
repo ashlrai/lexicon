@@ -46,9 +46,10 @@ public sealed record ServeCredentials(int Port, string Token)
 /// Where <c>serve.json</c> lives on Windows.
 ///
 /// This is worth spelling out because the obvious guess is wrong. The Node side
-/// (<c>src/core/store.ts</c>, <c>resolvePaths</c>) computes its config home as
-/// <c>process.env.XDG_CONFIG_HOME || path.join(os.homedir(), '.config')</c> with
-/// **no <c>win32</c> branch at all**, and <c>src/serve/config.ts</c> writes
+/// (<c>src/core/store.ts</c>, <c>resolvePaths</c>, through <c>xdgConfigHome</c>
+/// in <c>src/util/xdg.ts</c>) computes its config home as <c>XDG_CONFIG_HOME</c>
+/// when it is absolute once trimmed, else <c>path.join(os.homedir(), '.config')</c>,
+/// with **no <c>win32</c> branch at all**, and <c>src/serve/config.ts</c> writes
 /// <c>serve.json</c> next to the global lexicon. On Windows
 /// <c>os.homedir()</c> is <c>%USERPROFILE%</c>, so the real path the CLI writes
 /// is:
@@ -83,7 +84,13 @@ public static class ServePaths
             if (DirectoryOf(lexiconPath) is string directory) Add(Path.Combine(directory, FileName));
         }
 
-        if (Value(env, "XDG_CONFIG_HOME") is string xdg) Add(Path.Combine(xdg, "lexicon", FileName));
+        // Only when absolute once trimmed, as xdgConfigHome decides on the Node
+        // side: a blank or relative value falls back to ~/.config there, which
+        // the line below already covers.
+        if (Value(env, "XDG_CONFIG_HOME")?.Trim() is { Length: > 0 } xdg && IsAbsolute(xdg))
+        {
+            Add(Path.Combine(xdg, "lexicon", FileName));
+        }
 
         // What the CLI actually writes today.
         if (!string.IsNullOrEmpty(home)) Add(Path.Combine(home, ".config", "lexicon", FileName));
@@ -133,6 +140,22 @@ public static class ServePaths
         int slash = path.LastIndexOfAny(new[] { '\\', '/' });
         if (slash <= 0) return null;
         return path[..slash];
+    }
+
+    /// <summary>
+    /// Node's <c>path.win32.isAbsolute</c>, written out so it gives the same
+    /// answer on the Mac the tests run on: a leading <c>\</c> or <c>/</c>
+    /// (rooted, UNC included), or a drive letter, a colon and a separator.
+    /// <c>C:foo</c> is drive-relative and is not absolute.
+    /// </summary>
+    internal static bool IsAbsolute(string path)
+    {
+        if (path.Length == 0) return false;
+        if (path[0] is '\\' or '/') return true;
+        return path.Length >= 3
+               && char.IsAsciiLetter(path[0])
+               && path[1] == ':'
+               && path[2] is '\\' or '/';
     }
 
     private static string? Value(IReadOnlyDictionary<string, string?> env, string name) =>

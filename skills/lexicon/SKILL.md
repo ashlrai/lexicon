@@ -37,7 +37,7 @@ corrected prompt. (With many MCP servers the first lexicon call also costs a
 ToolSearch turn, so this matters.) The hook does not always check the whole
 prompt: past its first 50,000 characters it adds "Lexicon checked only the
 first N of this prompt's M characters", and when matching runs out of time
-"Lexicon stopped checking this prompt ... after its 100 ms budget". With
+"Lexicon stopped checking this prompt ... after its N ms budget". With
 either line, the rest was never looked at: if a name there looks garbled, call
 `normalize_transcript` on that part only.
 
@@ -154,7 +154,7 @@ note says a project file was skipped as untrusted or changed:
 | Record a correction the user just made | `learn_correction { heard, meant, scope? }` |
 | "Did you mean X?" for an unknown garble | `suggest_canonical { heard }` |
 | Add a new term with metadata | `add_term { canonical, aliases?, phonetic?, category?, notes?, never?, scope? }` |
-| Look something up | `list_terms { query?, category? }` |
+| Look something up | `list_terms { query?, category?, offset?, limit? }` |
 | Seed from a repo | `harvest_repo { path?, limit?, minCount?, add? }` |
 | First-run onboarding (plan, then apply) | `setup_lexicon { company?, person?, clients?, packs?, harvest?, serve?, apply? }` |
 | "Is it set up?" / nothing gets corrected | `lexicon_doctor {}` |

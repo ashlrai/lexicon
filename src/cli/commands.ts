@@ -50,10 +50,11 @@
  *    src/util/ (`errorMessage`, `isRecord`, `findOnPath`, ...). If you find
  *    yourself writing a second copy of one, import it instead.
  */
-import { existsSync, promises as fs } from 'node:fs';
+import { existsSync, promises as fs, statSync } from 'node:fs';
 import path from 'node:path';
 import {
   DEMO_LEXICON,
+  commandLine,
   EXPORT_ALIAS_ROW_FORMATS,
   EXPORT_FORMATS,
   TERM_CATEGORIES,
@@ -71,7 +72,8 @@ import {
   exportLexiconWithNotes,
   selectExportTerms,
   resolveExportFormat,
-  harvestRepo,
+  harvestReport,
+  harvestTruncatedNote,
   loadLexicon,
   normalize,
   isProjectTrustError,
@@ -83,6 +85,8 @@ import {
   untrustedAliasHolder,
   untrustedTermHolder,
   noTermMatchesNote,
+  offsetPastEndNote,
+  pageTermList,
   noTermsYet,
   onlyUntrustedTerms,
   resolvePaths,
@@ -90,6 +94,7 @@ import {
   suggestAliases,
   trustProject,
   withLexiconLock,
+  spellingKey,
   writeLexiconFile,
 } from '../core/index.js';
 import { EXPORT_MAX_LIMIT, HARVEST_MAX_LIMIT } from '../core/index.js';
@@ -125,6 +130,7 @@ import {
   safe,
   safeLines,
   safeMessage,
+  shownCommand,
   skippedProjectJson,
   wholeNumber,
   stillInLine,
@@ -158,7 +164,7 @@ export { checkLoginService, renderDoctorReport, runDoctor, runDoctorReport } fro
 export type { DoctorAudience, DoctorCheck, DoctorCliOptions, DoctorDeps, DoctorLevel, DoctorReport, DoctorReportOptions } from './cmd-doctor.js';
 export { CLAUDE_MD_SNIPPET, runInstallClaude } from './cmd-install.js';
 export type { InstallClaudeDeps, InstallClaudeOptions, InstallOutcome } from './cmd-install.js';
-import { runHarvestInteractive } from './cmd-review.js';
+import { noHarvestCandidatesLine, runHarvestInteractive } from './cmd-review.js';
 import { PromptClosedError, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
 import { errorMessage, isInputError } from '../util/errors.js';
@@ -192,6 +198,14 @@ function parseIntOption(value: string | number | undefined, flag: string, max?: 
   const n = typeof value === 'number' ? value : wholeNumber(value);
   if (n === undefined || !Number.isSafeInteger(n) || n <= 0) throw new Error(`${flag} must be a positive integer`);
   if (max !== undefined && n > max) throw new Error(`${flag} must be at most ${max}`);
+  return n;
+}
+
+/** An `--offset`: like parseIntOption, but 0 (the first term) is allowed. */
+function parseOffsetOption(value: string | number | undefined, flag: string): number | undefined {
+  if (value === undefined) return undefined;
+  const n = typeof value === 'number' ? value : wholeNumber(value);
+  if (n === undefined || !Number.isSafeInteger(n) || n < 0) throw new Error(`${flag} must be a whole number (0 or more)`);
   return n;
 }
 
@@ -338,6 +352,9 @@ function addInputClosed(err: unknown, canonical: string, io: IO): number {
   return 0;
 }
 
+/** Why `runAdd` reports an alias as dropped (`droppedAliases[].reason` under --json). */
+const SAME_AS_CANONICAL_REASON = 'differs from the canonical only in case, and matching already ignores case';
+
 export async function runAdd(
   canonical: string,
   aliasArgs: readonly string[],
@@ -365,7 +382,9 @@ export async function runAdd(
   // term (addTerm's defaultAliases), so `add X --never w` on an existing X adds none.
   const fallbackOnly = !opts.suggest && aliases.length === 0 && !p;
   if (opts.suggest || aliases.length === 0) {
-    const have = new Set(aliases.map((a) => a.toLowerCase()));
+    // A never word is excluded as given (`--suggest --never sass` on SaaS): the
+    // store refuses an alias that is also a never word, since it never applies.
+    const have = new Set([...aliases, ...(opts.never ?? []).map((w) => w.trim())].map((a) => a.toLowerCase()));
     suggested = suggestAliases(trimmed).filter((s) => {
       const key = s.toLowerCase();
       if (key === trimmed.toLowerCase() || have.has(key)) return false;
@@ -442,6 +461,12 @@ export async function runAdd(
     (loaded) => spellingConflicts(loaded.merged, result.term.aliases, result.term.canonical),
     () => [],
   );
+  // An alias that is the canonical in another case (`add Yod yod`) is
+  // dropped by addTerm, since matching ignores case: say so instead of
+  // printing `aliases: (none)` as if it had been taken.
+  const canonicalKey = spellingKey(result.term.canonical);
+  const sameAsCanonical = [...new Set(aliases.filter((a) => a.trim() !== '' && spellingKey(a) === canonicalKey))];
+  const droppedAliases = sameAsCanonical.map((alias) => ({ alias, reason: SAME_AS_CANONICAL_REASON }));
   if (opts.json) {
     line(
       io,
@@ -457,6 +482,7 @@ export async function runAdd(
           // listed for an existing term too, where none was added.
           suggested: !fallbackOnly || result.created ? suggested : [],
           ...(conflicts.length > 0 ? { conflicts, note: conflictNote(conflicts) } : result.unchanged ? { note: unchangedTermNote(result.term.canonical) } : {}),
+          ...(droppedAliases.length > 0 ? { droppedAliases } : {}),
         }),
         null,
         2,
@@ -466,9 +492,9 @@ export async function runAdd(
   }
   if (result.unchanged) {
     // The term already had every alias and field given: "merged" read as a change.
-    line(io, `${unchangedTermNote(safe(result.term.canonical))} (${scope}: ${safe(result.file.path)})`);
+    line(io, `${unchangedTermNote(safe(result.term.canonical))} (${scope}: ${safeMessage(result.file.path)})`);
   } else {
-    line(io, `${result.created ? green('created') : green('merged')} ${bold(safe(result.term.canonical))} (${scope}) in ${safe(result.file.path)}`);
+    line(io, `${result.created ? green('created') : green('merged')} ${bold(safe(result.term.canonical))} (${scope}) in ${safeMessage(result.file.path)}`);
   }
   // One aliases line: the suggestions are marked in it rather than listed
   // again on a line of their own (`suggested aliases: Fo` then `aliases: Fo`).
@@ -480,8 +506,9 @@ export async function runAdd(
   const suggestedNote =
     marked.length === 0 ? '' : marked.length === saved.length ? ' (suggested)' : ` (suggested: ${safe(marked.join(', '))})`;
   line(io, `aliases: ${saved.length > 0 ? safe(saved.join(', ')) + dim(suggestedNote) : dim('(none)')}`);
+  for (const alias of sameAsCanonical) line(io, `note: ${safe(alias)} was not added as an alias of ${safe(result.term.canonical)}: it ${SAME_AS_CANONICAL_REASON}`);
   for (const c of conflicts) line(io, conflictLine(c));
-  if (scope === 'project') line(io, dim(`project lexicon trusted at its new content (${safe(result.file.path)})`));
+  if (scope === 'project') line(io, dim(`project lexicon trusted at its new content (${safeMessage(result.file.path)})`));
   return 0;
 }
 
@@ -519,14 +546,17 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     // the global copy is still removable on its own.
     const global = holders.find((h) => h.scope === 'global');
     if (opts.json) {
-      const nextStep = global ? `run lexicon remove ${JSON.stringify(canonical)} --global to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}` : PROJECT_TRUST_NEXT_STEP;
+      const nextStep = global ? `run ${commandLine(['lexicon', 'remove', canonical, '--global'])} to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}` : PROJECT_TRUST_NEXT_STEP;
       line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...(untrusted ? { untrustedProject: untrusted } : {}) }, null, 2));
     }
-    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
-    if (global) io.stderr(`lexicon: to remove only the global copy (${safe(global.path)}): lexicon remove ${JSON.stringify(safe(canonical))} --global\n`);
+    io.stderr(`lexicon: ${safeMessage(errorMessage(err))}\n`);
+    if (global) io.stderr(`lexicon: to remove only the global copy (${safeMessage(global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--global'])}\n`);
     return 1;
   }
   const from = removed ? (scope ? holders.find((h) => h.scope === scope) : holders[0]) : undefined;
+  // The spelling the file held, not the one typed: `lexicon remove yod` removes "Yod".
+  const fromFile = from && loaded ? (from.scope === 'project' ? loaded.project : loaded.global) : undefined;
+  const removedName = fromFile?.lexicon.terms.find((t) => spellingKey(t.canonical) === spellingKey(canonical))?.canonical ?? canonical;
   const stillIn = removed ? holders.filter((h) => h !== from) : [];
   const other = scope ? holders.find((h) => h.scope !== scope) : undefined;
   // What to do about a miss, also the `nextStep` under --json: the flag for
@@ -538,16 +568,16 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
       : (emptyLexiconRemoveStep(loaded) ?? 'run lexicon list to see the exact canonical spellings');
   const notFound = (): string =>
     `lexicon: term "${safe(canonical)}" not found${scope ? ` in ${scope} lexicon` : ''}\n` +
-    (missStep ? `lexicon: ${safeLines(missStep)}\n` : '') +
+    (missStep ? `lexicon: ${safeMessage(missStep)}\n` : '') +
     (untrusted
-      ? `lexicon: it is in the ${untrusted.trust === 'changed' ? 'changed' : 'untrusted'} project lexicon (${safe(untrusted.path)}), which is not loaded or edited; review it and run lexicon trust before removing it there\n`
+      ? `lexicon: it is in the ${untrusted.trust === 'changed' ? 'changed' : 'untrusted'} project lexicon (${safeMessage(untrusted.path)}), which is not loaded or edited; review it and run lexicon trust before removing it there\n`
       : '');
   const extra = { ...(stillIn.length > 0 ? { stillIn } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
   if (opts.json) {
     // A miss is a failure document like every other --json refusal: `ok: false` and `error` lead it;
     // a removal leads with `ok: true`.
     const failure = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ''}`, missStep);
-    line(io, JSON.stringify(removed ? jsonOk({ canonical, removed, ...extra }) : { ...failure, canonical, removed, ...extra }, null, 2));
+    line(io, JSON.stringify(removed ? jsonOk({ canonical: removedName, removed, ...extra }) : { ...failure, canonical, removed, ...extra }, null, 2));
     if (!removed) io.stderr(notFound());
     return removed ? 0 : 1;
   }
@@ -555,9 +585,9 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     io.stderr(notFound());
     return 1;
   }
-  line(io, `removed ${bold(safe(canonical))}${from ? ` from ${safe(from.path)}` : ''}`);
-  for (const h of stillIn) line(io, stillInLine(canonical, h));
-  if (untrusted) line(io, untrustedLine(canonical, untrusted));
+  line(io, `removed ${bold(safe(removedName))}${from ? ` from ${safeMessage(from.path)}` : ''}`);
+  for (const h of stillIn) line(io, stillInLine(removedName, h));
+  if (untrusted) line(io, untrustedLine(removedName, untrusted));
   return 0;
 }
 
@@ -585,6 +615,24 @@ function emptyLexiconRemoveStep(loaded: LoadedLexicon | undefined): string | und
     : `${noTermsYet({ lower: true, so: 'there is nothing to remove' })}; run lexicon setup, or add one with: lexicon add <canonical> <alias>`;
 }
 
+/**
+ * The next step after `remove <canonical> --alias <alias>` missed on a
+ * lexicon that has terms: the aliases the term does have (with the command
+ * that removes one), or, when no loaded file in reach holds the term, how to
+ * find its exact spelling. It used to be the generic "fix what error names".
+ */
+function aliasMissStep(loaded: LoadedLexicon | undefined, scope: TermScope | undefined, canonical: string): string | undefined {
+  if (loaded === undefined) return undefined;
+  const key = spellingKey(canonical);
+  const files = scope === 'project' ? [loaded.project] : scope === 'global' ? [loaded.global] : [loaded.project, loaded.global];
+  const term = files.flatMap((f) => f?.lexicon.terms ?? []).find((t) => spellingKey(t.canonical) === key);
+  if (!term) return `run ${commandLine(['lexicon', 'list', '--query', canonical.trim()])} to see the exact spellings of the terms`;
+  if (term.aliases.length === 0) {
+    return `"${term.canonical}" has no aliases; to remove the term itself, run ${commandLine(['lexicon', 'remove', term.canonical, ...(scope ? [`--${scope}`] : [])])}`;
+  }
+  return `the aliases of "${term.canonical}" are: ${term.aliases.join(', ')}; remove one with ${commandLine(['lexicon', 'remove', term.canonical])} --alias <alias>${scope ? ` --${scope}` : ''}`;
+}
+
 async function runRemoveAlias(
   canonical: string,
   alias: string,
@@ -602,9 +650,12 @@ async function runRemoveAlias(
     result = await removeAlias(canonical, alias, scope ? { scope, cwd } : { cwd });
   } catch (err) {
     const message = errorMessage(err);
+    // Compared as the store compares spellings (spellingKey: trimmed,
+    // lowercased, NFC): `Cafe` plus U+0301 typed for a stored `Café` missed
+    // here though removeAlias would find it, so the --global hint was lost.
     const holdsAlias = (file: LexiconFile | undefined): boolean =>
       file?.lexicon.terms.some(
-        (t) => t.canonical.trim().toLowerCase() === canonical.trim().toLowerCase() && t.aliases.some((a) => a.trim().toLowerCase() === alias.trim().toLowerCase()),
+        (t) => spellingKey(t.canonical) === spellingKey(canonical) && t.aliases.some((a) => spellingKey(a) === spellingKey(alias)),
       ) === true;
     // --project or --global named a file whose copy lacks the term or the
     // alias while the other (loaded) file's copy has it: name that file and
@@ -614,14 +665,14 @@ async function runRemoveAlias(
       isInputError(err) && other && holdsAlias(other)
         ? `it is an alias of "${canonical}" in the ${other.scope} lexicon (${other.path}); run with --${other.scope} to remove it there, or with neither flag to remove it from every file whose copy has it`
         : isInputError(err) && !untrusted
-          ? emptyLexiconRemoveStep(loaded)
+          ? (emptyLexiconRemoveStep(loaded) ?? aliasMissStep(loaded, scope, canonical))
           : undefined;
     if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere), canonical, alias, removed: false, ...extra }, null, 2));
-    io.stderr(`lexicon: ${safeLines(message)}\n`);
-    if (elsewhere) io.stderr(`lexicon: ${safeLines(elsewhere)}\n`);
+    io.stderr(`lexicon: ${safeMessage(message)}\n`);
+    if (elsewhere) io.stderr(`lexicon: ${safeMessage(elsewhere)}\n`);
     if (isProjectTrustError(err)) {
       if (holdsAlias(loaded?.global)) {
-        io.stderr(`lexicon: to remove it only from the global copy (${safe(loaded!.global.path)}): lexicon remove ${JSON.stringify(safe(canonical))} --alias ${JSON.stringify(safe(alias))} --global\n`);
+        io.stderr(`lexicon: to remove it only from the global copy (${safeMessage(loaded!.global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--alias', alias, '--global'])}\n`);
       }
     } else if (untrusted) {
       io.stderr(`lexicon: ${untrustedAliasLine(canonical, alias, untrusted).replace(/^warn: /, '')}\n`);
@@ -633,7 +684,7 @@ async function runRemoveAlias(
     line(io, JSON.stringify(jsonOk({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra }), null, 2));
     return 0;
   }
-  line(io, `removed alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safe(paths.join(', '))}`);
+  line(io, `removed alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safeMessage(paths.join(', '))}`);
   line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : dim('(none)')}`);
   if (untrusted) line(io, untrustedAliasLine(result.term.canonical, alias, untrusted));
   return 0;
@@ -653,16 +704,24 @@ export interface ListOptions extends CommonOptions {
   full?: boolean;
   category?: string;
   query?: string;
+  /** Matching terms to skip first, as MCP list_terms `offset` (0 when omitted). */
+  offset?: number | string;
+  /** Most terms to print, as MCP list_terms `limit` (every one when omitted). */
+  limit?: number | string;
 }
 
 export async function runList(opts: ListOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
   // A skipped project file is named by path only, so it is never parsed.
+  // Checked before the lexicon is read, as the other integer options are.
+  const offset = parseOffsetOption(opts.offset, '--offset');
+  const limit = parseIntOption(opts.limit, '--limit');
   const loaded = await loadLexicon({ cwd, parseSkipped: false });
   warnSkippedProject(loaded, io);
   let terms = loaded.merged.terms;
   const category = parseCategory(opts.category);
-  if (category) terms = terms.filter((t) => t.category === category);
+  // A term without a category is an `other` one, as for export --category.
+  if (category) terms = terms.filter((t) => (t.category ?? 'other') === category);
   // Trimmed, as MCP list_terms trims it: a pasted " Ashler" matched nothing
   // here while the agent's list_terms found the term, and a query of only
   // spaces filters nothing in either.
@@ -679,15 +738,24 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
     ...(query ? [`--query ${JSON.stringify(query)}`] : []),
   ];
   const total = loaded.merged.terms.length;
+  const matched = terms.length;
+  // The whole list unless a page was asked for, as MCP list_terms pages it.
+  const { items: pageItems, page } = pageTermList(terms, {
+    ...(offset !== undefined ? { offset } : {}),
+    ...(limit !== undefined ? { limit } : {}),
+  });
+  terms = pageItems;
   // Why the list is empty, as MCP list_terms says it in `note`: "no terms
   // match" for a lexicon that had none at all sent a first user to fix the
   // filter, and a filter that missed named no way to see what is there.
   const emptyNote =
     terms.length > 0 || loaded.skippedProject
       ? undefined
-      : total === 0
-        ? emptyLexiconNote()
-        : noTermMatchesNote({ filter: filters.join(' '), filters: filters.length, total });
+      : matched > 0
+        ? offsetPastEndNote(page?.offset ?? 0, matched)
+        : total === 0
+          ? emptyLexiconNote()
+          : noTermMatchesNote({ filter: filters.join(' '), filters: filters.length, total });
 
   if (opts.full) {
     // The MCP list_terms shape; plain --json keeps the bare array scripts already parse.
@@ -695,12 +763,13 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
     const payload = {
       terms,
       counts: {
-        matched: terms.length,
+        matched,
         total: loaded.merged.terms.length,
         global: loaded.global.lexicon.terms.length,
         project: loaded.project?.lexicon.terms.length ?? 0,
       },
       paths: { global: loaded.global.path, ...(loaded.project ? { project: loaded.project.path } : {}) },
+      ...(page ? { page } : {}),
       ...skipped,
       ...(emptyNote ? { note: emptyNote } : {}),
     };
@@ -712,7 +781,9 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
     return 0;
   }
 
-  if (terms.length === 0) {
+  if (terms.length === 0 && matched > 0) {
+    line(io, dim(offsetPastEndNote(page?.offset ?? 0, matched)));
+  } else if (terms.length === 0) {
     // With every term in a project file that was skipped, adding a global
     // term is not what is missing: trusting the file is.
     const empty = loaded.skippedProject
@@ -734,6 +805,11 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
       String(t.hits ?? 0),
     ]);
     io.stdout(renderTable(rows, ['canonical', 'aliases', 'category', 'hits']));
+    if (page) {
+      const first = page.offset + 1;
+      const more = page.nextOffset !== undefined ? `; the next page is --offset ${page.nextOffset}` : '';
+      line(io, dim(`terms ${first} to ${page.offset + page.returned} of ${matched}${more}`));
+    }
   }
   line(io);
   line(io, `global: ${safe(loaded.global.path)}`);
@@ -766,7 +842,9 @@ export interface NormalizeCliOptions extends CommonOptions {
 export function buildNormalizeOptions(opts: NormalizeCliOptions): NormalizeOptions {
   const out: NormalizeOptions = {};
   if (opts.minConfidence !== undefined) {
-    const n = typeof opts.minConfidence === 'number' ? opts.minConfidence : Number(opts.minConfidence);
+    // A blank value is refused: Number('') is 0, so `--min-confidence ""`
+    // (an unset shell variable) accepted every fuzzy and phonetic match.
+    const n = typeof opts.minConfidence === 'number' ? opts.minConfidence : opts.minConfidence.trim() === '' ? Number.NaN : Number(opts.minConfidence);
     if (!Number.isFinite(n) || n < 0 || n > 1) {
       throw new Error('--min-confidence must be a number between 0 and 1');
     }
@@ -870,7 +948,7 @@ export async function runNormalize(
     // different answers and exit 0 made them indistinguishable: a script, a
     // watcher or a person saw silence and concluded it was working.
     const message = errorMessage(err);
-    io.stderr(`lexicon: ${safeLines(message)}\n`);
+    io.stderr(`lexicon: ${safeMessage(message)}\n`);
     io.stderr('lexicon: no corrections were applied and the text is unchanged (run: lexicon doctor)\n');
     if (opts.json) {
       // `{ ok: false, error, nextStep }` and then the unchanged NormalizeResult,
@@ -930,6 +1008,11 @@ export async function runHarvest(
   if (!existsSync(target)) {
     return refuse(io, json, `harvest: path does not exist: ${target}`, 'pass a directory that exists, or leave the path out to harvest the current directory');
   }
+  // A file (package.json, a README) is refused here with the same hint: the
+  // scan's own `not a directory` came with the generic next step.
+  if (!statSync(target).isDirectory()) {
+    return refuse(io, json, `harvest: not a directory: ${target}`, 'pass a directory (the repository root, not a file in it), or leave the path out to harvest the current directory');
+  }
 
   const tty = (deps.isInteractive ?? isInteractive)();
   if (opts.interactive && !tty) {
@@ -939,6 +1022,15 @@ export async function runHarvest(
   }
   if (opts.interactive && json) throw new Error('harvest: --interactive and --json cannot be combined');
   const interactive = opts.interactive === true || (opts.add === true && !opts.yes && !json && tty);
+
+  // The flags first: a bad --limit or --min-count is the error to report,
+  // not the project-trust refusal below, which fixing the flag cannot clear.
+  const harvestOpts: HarvestOptions = {};
+  const limit = parseIntOption(opts.limit, '--limit', HARVEST_MAX_LIMIT);
+  const minCount = parseIntOption(opts.minCount, '--min-count');
+  if (limit !== undefined) harvestOpts.limit = limit;
+  if (minCount !== undefined) harvestOpts.minCount = minCount;
+  if (opts.symbols) harvestOpts.symbols = true;
 
   // `--add` writes to the project file, which refuses an untrusted one. Check
   // up front, as the interactive walk does: the table (or the --json array)
@@ -951,28 +1043,26 @@ export async function runHarvest(
       if (status !== 'trusted') {
         const message = new ProjectTrustError(projectPath, status).message;
         if (json) line(io, JSON.stringify({ ...jsonError(message, `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again`), added: false, path: projectPath, projectTrust: status }, null, 2));
-        io.stderr(`lexicon: ${safeLines(message)}\n`);
+        io.stderr(`lexicon: ${safeMessage(message)}\n`);
         return 1;
       }
     }
   }
 
-  const harvestOpts: HarvestOptions = {};
-  const limit = parseIntOption(opts.limit, '--limit', HARVEST_MAX_LIMIT);
-  const minCount = parseIntOption(opts.minCount, '--min-count');
-  if (limit !== undefined) harvestOpts.limit = limit;
-  if (minCount !== undefined) harvestOpts.minCount = minCount;
-  if (opts.symbols) harvestOpts.symbols = true;
-
-  const candidates: HarvestCandidate[] = await harvestRepo(target, harvestOpts);
+  const report = await harvestReport(target, harvestOpts);
+  const candidates: HarvestCandidate[] = report.candidates;
+  // The 5000-file cap was never reported, so a large tree looked fully scanned.
+  const truncatedLine = report.truncated ? `warn: ${harvestTruncatedNote(target)}` : undefined;
+  const scan = { root: target, minCount: harvestOpts.minCount ?? 2, filesScanned: report.filesScanned, belowMinCount: report.belowMinCount, symbolsOnly: report.symbolsOnly };
 
   if (interactive) {
     // The walkthrough is the display; the table would only repeat it.
     const prompter = (deps.createPrompter ?? (() => createPrompter({ input: process.stdin, output: process.stdout })))();
     try {
+      if (truncatedLine) line(io, safeMessage(truncatedLine));
       return await runHarvestInteractive(
         candidates,
-        { cwd: target, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}) },
+        { cwd: target, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}), harvest: scan },
         io,
         prompter,
       );
@@ -987,7 +1077,7 @@ export async function runHarvest(
   } else if (opts.json) {
     line(io, JSON.stringify(candidates, null, 2));
   } else if (candidates.length === 0) {
-    line(io, dim(`no candidates found in ${safe(target)}`));
+    line(io, dim(noHarvestCandidatesLine(scan)));
   } else {
     const rows = candidates.map((c) => [
       c.canonical,
@@ -996,7 +1086,12 @@ export async function runHarvest(
       c.suggestedAliases.join(', '),
       c.evidence[0] ?? '',
     ]);
-    io.stdout(renderTable(rows, ['canonical', 'category', 'count', 'suggested aliases', 'evidence']));
+    io.stdout(renderTable(rows, ['canonical', 'category', 'count', 'suggested aliases', 'evidence'], { pathColumns: [4] }));
+  }
+
+  if (truncatedLine) {
+    if (json) io.stderr(`lexicon: ${safeMessage(truncatedLine.replace(/^warn: /, ''))}\n`);
+    else line(io, safeMessage(truncatedLine));
   }
 
   let created = 0;
@@ -1020,14 +1115,20 @@ export async function runHarvest(
         else merged += 1;
       }
     } catch (err) {
-      if (!json) throw err;
-      // The one --json document for a write that failed: the error and the
-      // counts (0: the batch writes all or none), never the candidate array.
+      // A trust refusal names its own next step (fail prints it); any other
+      // write failure says, as --json does, that nothing was added. It was
+      // thrown raw in text mode, so a user saw `disk full` with no word of
+      // whether part of the batch was written.
+      if (!json && isProjectTrustError(err)) throw err;
       const message = errorMessage(err);
       const hint = unreadableLexiconHint(message);
-      const where = filePath ? { path: filePath } : {};
-      line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where }, null, 2));
-      io.stderr(`lexicon: ${safeLines(message)}\n`);
+      if (json) {
+        // The one --json document for a write that failed: the error and the
+        // counts (0: the batch writes all or none), never the candidate array.
+        const where = filePath ? { path: filePath } : {};
+        line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where }, null, 2));
+      }
+      io.stderr(`lexicon: ${safeMessage(message)}\n`);
       if (hint) io.stderr(`lexicon: ${hint}\n`);
       io.stderr('lexicon: nothing was added: the candidates are written together, so none of them are in the project lexicon\n');
       return 1;
@@ -1042,7 +1143,8 @@ export async function runHarvest(
   if (!opts.full && opts.json && opts.add) line(io, JSON.stringify(candidates, null, 2));
   if (opts.full) {
     const addResult = opts.add ? { added: created + merged, created, merged, ...(filePath ? { path: filePath } : {}) } : {};
-    line(io, JSON.stringify(jsonOk({ root: target, candidates, count: candidates.length, ...addResult }), null, 2));
+    const truncated = report.truncated ? { truncated: true as const, note: harvestTruncatedNote(target) } : {};
+    line(io, JSON.stringify(jsonOk({ root: target, candidates, count: candidates.length, ...truncated, ...addResult }), null, 2));
   }
   return 0;
 }
@@ -1126,7 +1228,18 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
 
   const exportOpts: ExportOptions = {};
   if (opts.category && opts.category.length > 0) {
-    exportOpts.categories = opts.category.map((c) => parseCategory(c)).filter((c): c is TermCategory => !!c);
+    // Space- or comma-separated, as GET /export/:format?category=brand,person
+    // takes them: `--category brand,person` was refused as one unknown
+    // category. A blank piece of a comma list is skipped, as the API skips it.
+    const categories: TermCategory[] = [];
+    for (const value of opts.category) {
+      const pieces = value.includes(',') ? value.split(',').filter((v) => v.trim() !== '') : [value];
+      for (const piece of pieces) {
+        const category = parseCategory(piece);
+        if (category && !categories.includes(category)) categories.push(category);
+      }
+    }
+    exportOpts.categories = categories;
   }
   const limit = parseIntOption(opts.limit, '--limit', EXPORT_MAX_LIMIT);
   if (limit !== undefined) exportOpts.limit = limit;
@@ -1144,7 +1257,9 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
   const dropped = exported.notes.length > 0 ? { dropped: exported.notes } : {};
   // The terms actually exported: the same category filter and cap exportLexicon applies.
   const selected = selectExportTerms(merged, exportOpts, format);
-  const terms = selected.length;
+  // A name-list format reports the names it wrote: the selected count also
+  // held the names its prompt-token window or default cap left out.
+  const terms = exported.names ?? selected.length;
   // An alias-row format writes one row per non-blank alias (aliasPairs), so a
   // term without one writes nothing: "wrote csv export (2 terms)" counted it.
   const aliasRows = EXPORT_ALIAS_ROW_FORMATS.includes(format)
@@ -1180,7 +1295,7 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
         counted = `${plural(rows, 'row')} from ${plural(terms - without, 'term')}`;
         if (without > 0) counted += `; ${plural(without, 'term')} without an alias wrote no row`;
       }
-      line(io, `wrote ${format} export (${counted}) to ${safe(outPath)}`);
+      line(io, `wrote ${format} export (${counted}) to ${safeMessage(outPath)}`);
     }
   } else if (json) {
     line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, content: text, ...dropped, ...notes }), null, 2));
@@ -1192,11 +1307,23 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
 
 /** `p` resolved through links when it exists, case-folded where the filesystem usually ignores case. */
 async function samePathKey(p: string): Promise<string> {
-  let real = path.resolve(p);
-  try {
-    real = await fs.realpath(real);
-  } catch {
-    // Not there yet: compare the path as given.
+  const resolved = path.resolve(p);
+  // Not there yet: resolve the nearest ancestor that exists and keep the rest
+  // as given, so an --out reaching a lexicon path that does not exist yet
+  // through a symlinked directory (`link/lexicon.yaml`, `link` -> its
+  // directory) still compares equal. The path as given missed it.
+  let real = resolved;
+  const rest: string[] = [];
+  for (let dir = resolved; ; ) {
+    try {
+      real = path.join(await fs.realpath(dir), ...rest);
+      break;
+    } catch {
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      rest.unshift(path.basename(dir));
+      dir = parent;
+    }
   }
   return process.platform === 'win32' || process.platform === 'darwin' ? real.toLowerCase().normalize('NFC') : real;
 }

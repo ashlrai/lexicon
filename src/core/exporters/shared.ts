@@ -13,6 +13,8 @@ import type { Lexicon, Term, TermCategory } from '../types.js';
 export interface ExportSink {
   notes: string[];
   rows?: number;
+  /** For a one-line name list (`whisper-prompt`, `openai`): the names the line holds, after its caps. */
+  names?: number;
 }
 
 const CATEGORY_ORDER: Record<TermCategory, number> = {
@@ -144,6 +146,16 @@ export function xmlEscape(value: string): string {
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;')
     .replace(/'/g, '&apos;');
+}
+
+/**
+ * One item of a `, `-separated list that has no quoting rule of its own (the
+ * whisper-prompt and openai lines): an item holding a comma, or starting with
+ * a double quote, wrapped in double quotes with inner quotes doubled, CSV
+ * style, so it reads as one item; any other item as is.
+ */
+export function listItem(value: string): string {
+  return value.includes(',') || value.trim().startsWith('"') ? `"${value.replace(/"/g, '""')}"` : value;
 }
 
 /**

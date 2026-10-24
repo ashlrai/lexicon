@@ -4,6 +4,7 @@ import type { Lexicon, NormalizeResult } from '../src/core/types.js';
 vi.mock('../src/core/index.js', async () => {
   // The shared note wording (core/notes.ts) is used as is.
   const notes = await vi.importActual<typeof import('../src/core/notes.js')>('../src/core/notes.js');
+  const { sanitizeForDisplayMax } = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
   const lexicon: Lexicon = { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }] };
   const normalize = (text: string): NormalizeResult => {
     const output = text.replace(/Ashler/g, 'Ashlr.AI');
@@ -20,6 +21,7 @@ vi.mock('../src/core/index.js', async () => {
   };
   return {
     ...notes,
+    sanitizeForDisplayMax,
     normalize: vi.fn(normalize),
     diffSummary: vi.fn((r: NormalizeResult) => r.replacements.map((x) => `"${x.original}" -> "${x.replacement}"`).join('\n')),
     loadLexicon: vi.fn(async () => ({ merged: lexicon, global: { path: '/g', scope: 'global', lexicon, exists: true } })),
@@ -51,7 +53,7 @@ interface Harness {
   out: string[];
   err: string[];
   controller: AbortController;
-  done: Promise<void>;
+  done: Promise<unknown>;
 }
 
 function start(initial: string, opts: { dryRun?: boolean; quiet?: boolean; mirror?: boolean } = {}): Harness {
@@ -99,6 +101,17 @@ describe('runClipboardDaemon', () => {
 
     h.controller.abort();
     await h.done;
+  });
+
+  // Catches: an --interval under 20 ms was raised to 20 without a word.
+  it('warns on stderr when the interval is raised to the 20 ms minimum', async () => {
+    const err: string[] = [];
+    const controller = new AbortController();
+    const done = runClipboardDaemon({ intervalMs: 5, read: async () => '', write: async () => undefined, signal: controller.signal, quiet: true, err: (s) => err.push(s) });
+    await vi.advanceTimersByTimeAsync(50);
+    controller.abort();
+    await done;
+    expect(err.join('')).toContain('clipboard daemon: --interval 5 is below the 20 ms minimum; polling every 20 ms\n');
   });
 
   // Catches: with no terms the daemon watched in silence and never said
@@ -163,6 +176,48 @@ describe('runClipboardDaemon', () => {
     expect(h.err).toHaveLength(2);
     expect(h.err[1]).toMatch(/working again/);
 
+    h.controller.abort();
+    await h.done;
+  });
+
+  // Catches: lastSeen was set before the lexicon load, so with a lexicon that would not load the next poll
+  // skipped the text, printed "working again" though nothing worked, and the text was never corrected once fixed.
+  it('retries the text after a lexicon that would not load, and says working again only once it does', async () => {
+    let broken = true;
+    vi.mocked(core.loadLexicon).mockImplementation(async () => {
+      if (broken) throw new Error('Failed to parse lexicon YAML at /g: bad indentation');
+      const lexicon = { version: 1 as const, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }] };
+      return { merged: lexicon, global: { path: '/g', scope: 'global', lexicon, exists: true } };
+    });
+    try {
+      const h = start('meet Ashler');
+      await vi.advanceTimersByTimeAsync(250 * 4);
+      expect(h.write).not.toHaveBeenCalled();
+      expect(h.err).toHaveLength(1);
+      expect(h.err[0]).toContain('bad indentation');
+      broken = false;
+      await vi.advanceTimersByTimeAsync(250);
+      expect(h.write).toHaveBeenCalledWith('meet Ashlr.AI');
+      expect(h.err).toHaveLength(2);
+      expect(h.err[1]).toMatch(/working again/);
+      h.controller.abort();
+      await h.done;
+    } finally {
+      broken = false;
+    }
+  });
+
+  // Catches: error lines were written as they came, so an escape sequence in a clipboard tool's stderr or a
+  // lexicon path (a directory named after one) reached the terminal and could retitle or recolour it.
+  it('prints a failure without its control characters', async () => {
+    const h = start('');
+    h.read.mockImplementation(async () => {
+      throw new Error('xclip exited with code 1: \u001b]0;pwned\u0007bad \u001b[31mdisplay');
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.err).toHaveLength(1);
+    expect(h.err[0]).toContain('xclip exited with code 1: bad display');
+    expect(h.err[0]).not.toMatch(/[\u001b\u0007]/);
     h.controller.abort();
     await h.done;
   });
@@ -290,7 +345,7 @@ describe('runClipboardDaemon', () => {
     expect(core.loadLexicon).toHaveBeenCalledTimes(2);
 
     h.controller.abort();
-    await expect(h.done).resolves.toBeUndefined();
+    await expect(h.done).resolves.toBe('abort');
     const reads = h.read.mock.calls.length;
     await vi.advanceTimersByTimeAsync(1000);
     expect(h.read.mock.calls.length).toBe(reads); // timer cleared
@@ -367,6 +422,42 @@ describe('runClipboardDaemon', () => {
       await done;
       expect(exit).not.toHaveBeenCalled();
       expect(process.listenerCount('SIGINT')).toBe(before);
+    } finally {
+      exit.mockRestore();
+    }
+  });
+
+  // Catches: a graceful ctrl-C (or SIGTERM) exited 0 while the forced second
+  // one exited 130 (143), so the status depended on whether a poll was in flight.
+  it('the exit status follows the signal, graceful or forced: 130 for SIGINT, 143 for SIGTERM, 0 for an abort', async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    try {
+      for (const [sig, code] of [['SIGINT', 130], ['SIGTERM', 143]] as const) {
+        const done = runDaemonCommand({ read: async () => 'x', write: async () => undefined, quiet: true, cwd: '/fake' });
+        await vi.advanceTimersByTimeAsync(10);
+        process.emit(sig);
+        expect(await done).toBe(code);
+        expect(await (async () => {
+          const loop = runClipboardDaemon({ read: async () => 'x', write: async () => undefined, quiet: true, cwd: '/fake' });
+          await vi.advanceTimersByTimeAsync(10);
+          process.emit(sig);
+          return loop;
+        })()).toBe(sig);
+      }
+      // A graceful stop with a poll in flight carries the signal too.
+      let release: (s: string) => void = () => undefined;
+      const read = vi.fn(() => new Promise<string>((r) => (release = r)));
+      const waiting = runDaemonCommand({ read, write: async () => undefined, quiet: true, cwd: '/fake' });
+      await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+      process.emit('SIGTERM');
+      release('x');
+      expect(await waiting).toBe(143);
+      const controller = new AbortController();
+      const aborted = runDaemonCommand({ read: async () => 'x', write: async () => undefined, quiet: true, cwd: '/fake', signal: controller.signal });
+      await vi.advanceTimersByTimeAsync(10);
+      controller.abort();
+      expect(await aborted).toBe(0);
+      expect(exit).not.toHaveBeenCalled();
     } finally {
       exit.mockRestore();
     }
@@ -567,6 +658,21 @@ describe('runClipboardOnce', () => {
     expect(result.written).toBe(true);
     expect(h.err.join('')).toMatch(/macOS-only/);
   });
+
+  // Catches: off macOS, --paste said "the text is on the clipboard" when the
+  // clipboard held binary data or nothing, which was never looked at.
+  it('--paste off macOS does not claim text is on a clipboard that holds none', async () => {
+    for (const [content, why] of [
+      ['', 'clipboard is empty or not text'],
+      ['PNG\u0000\u0001data', 'clipboard holds binary data, not text'],
+    ] as const) {
+      const { h, read, write, out, err } = onceHarness(content);
+      await runClipboardOnce({ read, write, out, err, paste: true, platform: 'linux' });
+      const said = h.err.join('');
+      expect(said).not.toContain('the text is on the clipboard');
+      expect(said).toBe(`--paste is macOS-only (uses osascript), and the clipboard holds no text to paste (${why}); it was left as it was (platform: linux)\n`);
+    }
+  });
 });
 
 describe('runDaemonCommand', () => {
@@ -622,6 +728,23 @@ describe('runDaemonCommand', () => {
     const { h, read, write, out, err } = onceHarness('meet Ashler');
     expect(await runDaemonCommand({ once: true, read, write, out, err })).toBe(0);
     expect(h.clipboard).toBe('meet Ashlr.AI');
+  });
+
+  // Catches: --dry-run --paste pasted the uncorrected clipboard into the
+  // frontmost app without a word.
+  it('--once --paste --dry-run is refused before the clipboard is read or anything is pasted', async () => {
+    const read = vi.fn(async () => 'meet Ashler');
+    const sendPaste = vi.fn(async () => undefined);
+    const write = vi.fn(async () => undefined);
+    for (const run of [
+      () => runDaemonCommand({ once: true, paste: true, dryRun: true, read, write, sendPaste, platform: 'darwin' }),
+      () => runClipboardOnce({ paste: true, dryRun: true, read, write, sendPaste, platform: 'darwin' }),
+    ]) {
+      await expect(run()).rejects.toThrow('--paste cannot be combined with --dry-run');
+    }
+    expect(read).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+    expect(sendPaste).not.toHaveBeenCalled();
   });
 
   it('--paste without --once is rejected', async () => {
@@ -874,6 +997,39 @@ describe('a clipboard too large to correct', () => {
     }
   }, 20_000);
 
+  // Catches: a read kept every byte the tool printed on stderr, unbounded,
+  // while a write's was capped.
+  it('a failed read keeps at most the capped stderr in its error', async () => {
+    const big = backends.MAX_CLIPBOARD_WRITE_STDERR_BYTES * 4;
+    const err = (await backends
+      .defaultClipboardExec(process.execPath, ['-e', `process.stderr.write('e'.repeat(${big}), () => process.exit(2))`])
+      .catch((e: unknown) => e)) as InstanceType<typeof backends.ExecError>;
+    expect(err).toMatchObject({ name: 'ExecError', exitCode: 2 });
+    expect(err.stderr.length).toBe(backends.MAX_CLIPBOARD_WRITE_STDERR_BYTES);
+  }, 20_000);
+
+  // Catches: a write's stderr was 'ignore', so a clipboard tool that refused
+  // the write (no display, a locked pasteboard) was reported only as
+  // "exited with code N". Its stderr is now kept, bounded, in the error; and
+  // a child the tool forks with the pipe inherited (xclip -i) still does not
+  // hold the write open.
+  it('a failed write names what the tool printed on stderr, bounded, and a forked child does not hold a write open', async () => {
+    await expect(
+      backends.defaultClipboardExec(process.execPath, ['-e', "process.stdin.resume(); process.stdin.on('end', () => { process.stderr.write('Error: Can\\'t open display: :0\\n'); process.exit(1); })"], 'text'),
+    ).rejects.toMatchObject({ name: 'ExecError', exitCode: 1, message: expect.stringContaining("Can't open display: :0") });
+    const big = backends.MAX_CLIPBOARD_WRITE_STDERR_BYTES * 4;
+    const err = (await backends
+      .defaultClipboardExec(process.execPath, ['-e', `process.stderr.write('e'.repeat(${big}), () => process.exit(2))`], 'text')
+      .catch((e: unknown) => e)) as InstanceType<typeof backends.ExecError>;
+    expect(err).toMatchObject({ name: 'ExecError', exitCode: 2 });
+    expect(err.stderr.length).toBe(backends.MAX_CLIPBOARD_WRITE_STDERR_BYTES);
+    // The parent exits at once; the grandchild keeps stderr open for 4 s.
+    const started = Date.now();
+    const forker = `require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 4000)'], { detached: true, stdio: ['ignore', 'ignore', 'inherit'] }).unref(); process.exit(0)`;
+    await expect(backends.defaultClipboardExec(process.execPath, ['-e', forker], 'text')).resolves.toBe('');
+    expect(Date.now() - started).toBeLessThan(3_000);
+  }, 20_000);
+
   it('the loop skips a too-large clipboard without reporting an error, then corrects the next copy', async () => {
     let bytes = 17 * 1024 * 1024;
     const { exec, writes } = bigExec(() => bytes, 'meet Ashler');
@@ -910,5 +1066,36 @@ describe('standalone main --cwd', () => {
     await expect(daemonMain(['--cwd', '--once'])).rejects.toThrow('--cwd expects a directory (got "--once")');
     await expect(daemonMain(['--cwd='])).rejects.toThrow('--cwd expects a directory (got "")');
     await expect(daemonMain(['--cwd', '  '])).rejects.toThrow('--cwd expects a directory');
+  });
+});
+
+// Catches: pbpaste and pbcopy ran with the caller's environment, so under
+// launchd, cron or `env -i` (no LANG, LC_CTYPE or LC_ALL) they used a legacy
+// encoding and a non-ASCII clipboard (Zoë, 東京) came back as mojibake.
+describe('pbcopy locale', () => {
+  it('passes a UTF-8 LANG and LC_CTYPE to pbpaste and pbcopy when the caller names no locale', async () => {
+    const seen: { cmd: string; env?: NodeJS.ProcessEnv }[] = [];
+    const exec: ClipboardExec = async (cmd, _args, _stdin, opts) => {
+      seen.push({ cmd, env: opts?.env });
+      return '';
+    };
+    const bare = backends.pbcopyBackend(exec, { PATH: '/usr/bin' });
+    await bare.read();
+    await bare.write('Zoë');
+    expect(seen.map((s) => [s.cmd, s.env?.LANG, s.env?.LC_CTYPE, s.env?.PATH])).toEqual([
+      ['pbpaste', 'en_US.UTF-8', 'en_US.UTF-8', '/usr/bin'],
+      ['pbcopy', 'en_US.UTF-8', 'en_US.UTF-8', '/usr/bin'],
+    ]);
+    // A locale the caller set is kept as is.
+    seen.length = 0;
+    await backends.createClipboardBackend('pbcopy', exec, 'powershell', { LANG: 'de_DE.UTF-8' }).read();
+    expect(seen[0].env).toEqual({ LANG: 'de_DE.UTF-8' });
+    expect(backends.utf8LocaleEnv({ LC_ALL: 'C' })).toEqual({ LC_ALL: 'C' });
+    expect(backends.utf8LocaleEnv({ LANG: '' })).toMatchObject({ LANG: 'en_US.UTF-8', LC_CTYPE: 'en_US.UTF-8' });
+  });
+
+  it('defaultClipboardExec runs the child with the env it is given', async () => {
+    const out = await backends.defaultClipboardExec(process.execPath, ['-e', 'process.stdout.write(String(process.env.LEXICON_PB_PROBE))'], undefined, { env: { ...process.env, LEXICON_PB_PROBE: 'yes' } });
+    expect(out).toBe('yes');
   });
 });

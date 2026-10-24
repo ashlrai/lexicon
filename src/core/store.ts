@@ -31,7 +31,7 @@ import { isTrusted, refreshTrust, trustProject, untrustedByPath } from './trust.
 import { recalledParsedHash, rememberParsedBytes, rememberParsedHash, shareParsedHash } from './parsed-hash.js';
 import type { TrustStatus } from './trust.js';
 import { InputError, errorMessage, isEnoent } from '../util/errors.js';
-import { withFileLock, writeFileAtomic } from '../util/atomic.js';
+import { blockingFile, withFileLock, writeFileAtomic } from '../util/atomic.js';
 import type { FileLockOptions } from '../util/atomic.js';
 import { isBoundedReadError, readBoundedRegularFile } from '../util/bounded-read.js';
 import { formatJson } from '../util/json.js';
@@ -197,7 +197,14 @@ async function readLexiconText(filePath: string): Promise<{ text: string; mode: 
     const { bytes, mode } = await readBoundedRegularFile(filePath, MAX_LEXICON_BYTES);
     return { text: bytes.toString('utf8'), mode, bytes };
   } catch (err) {
-    if (isEnoent(err)) return undefined;
+    if (isEnoent(err)) {
+      // Windows answers a path under a regular file (`notes.txt\lexicon.yaml`)
+      // with ENOENT, not ENOTDIR, so the lexicon read as missing and a write
+      // later failed. Name the file in the way there as well.
+      const inTheWay = await fileInTheWay(path.dirname(filePath));
+      if (inTheWay === undefined) return undefined;
+      throw Object.assign(new Error(`Cannot read lexicon at ${filePath}: ${inTheWay} is not a directory, so no lexicon file can be there`, { cause: err }), { code: 'ENOTDIR' });
+    }
     if (isBoundedReadError(err)) {
       throw new Error(
         err.reason === 'not-regular'
@@ -205,7 +212,42 @@ async function readLexiconText(filePath: string): Promise<{ text: string; mode: 
           : `Refusing to read lexicon at ${filePath}: ${err.size ?? 'more than'} bytes exceeds the ${MAX_LEXICON_BYTES} byte limit`,
       );
     }
-    throw err;
+    throw await unreadableLexiconError(filePath, err);
+  }
+}
+
+/**
+ * A read that failed other than for a missing file, explained the way a lock
+ * that cannot be created is: which lexicon, and why. A LEXICON_PATH under a
+ * file (`~/notes.txt/lexicon.yaml`) reached list, stats, export and learn as
+ * Node's bare `ENOTDIR: not a directory, stat '<path>'`. The errno `code` is
+ * kept on the error.
+ */
+async function unreadableLexiconError(filePath: string, err: unknown): Promise<Error> {
+  const code = (err as NodeJS.ErrnoException | undefined)?.code;
+  if (typeof code !== 'string') return err instanceof Error ? err : new Error(errorMessage(err));
+  const detail =
+    code === 'ENOTDIR'
+      ? `${await blockingFile(path.dirname(filePath))} is not a directory, so no lexicon file can be there`
+      : code === 'EACCES' || code === 'EPERM'
+        ? `permission denied (${code})`
+        : errorMessage(err);
+  return Object.assign(new Error(`Cannot read lexicon at ${filePath}: ${detail}`, { cause: err }), { code });
+}
+
+/**
+ * The nearest existing ancestor of `dir` (itself included) when it is not a
+ * directory, else undefined: a missing lexicon under a missing directory is
+ * just missing.
+ */
+async function fileInTheWay(dir: string): Promise<string | undefined> {
+  for (let p = dir; ; p = path.dirname(p)) {
+    try {
+      return (await fs.stat(p)).isDirectory() ? undefined : p;
+    } catch {
+      // missing (or unreadable): look further up
+    }
+    if (path.dirname(p) === p) return undefined;
   }
 }
 
@@ -876,6 +918,34 @@ function indexHeadProject(head: string): string | null | undefined {
 const INDEX_CACHE_HEAD_BYTES = 8192;
 
 /**
+ * Why the index cache beside `globalPath` (INDEX_CACHE_FILE_NAME) cannot be
+ * used: `is not a file` (a directory there is never replaced, so every match
+ * builds the index again), `cannot be read (EACCES)`, or `does not start the
+ * way an index cache does` (damaged; it is rebuilt on a match). Undefined
+ * when it is missing or reads as a cache entry of any version (an older
+ * version's entry is simply rebuilt). Reads only the head. For `lexicon doctor`.
+ */
+export async function indexCacheProblem(globalPath: string): Promise<string | undefined> {
+  const cachePath = path.join(path.dirname(globalPath), INDEX_CACHE_FILE_NAME);
+  let handle: fs.FileHandle | undefined;
+  try {
+    const st = await fs.stat(cachePath);
+    if (!st.isFile()) return 'is not a file';
+    handle = await fs.open(cachePath, 'r');
+    const buf = Buffer.alloc(64);
+    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+    if (bytesRead === 0) return undefined;
+    return /^\{"version":\d+,/.test(buf.toString('utf8', 0, bytesRead)) ? undefined : 'does not start the way an index cache does';
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return undefined;
+    return `cannot be read (${code ?? errorMessage(e)})`;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+/**
  * After a write to a lexicon file, rebuild an existing index cache entry for
  * the merge the next prompt will match against, so it reads the entry instead
  * of building the index (about 55 ms for 2000 terms, plus writing it back).
@@ -1290,26 +1360,95 @@ function emptyHitsRegistry(): HitsRegistry {
 }
 
 /**
- * Read the registry. Missing, unparseable or malformed all yield an empty one:
- * these are counters, and the safe failure mode for a counter is zero.
+ * The most `hits.json` is read. The prompt hook reads it on every matching
+ * prompt and must finish in 200ms, so a file grown (or replaced) past this is
+ * not read at all. A real one stays far below it: one short key and a count
+ * per term the user has dictated, per project.
  */
-async function readHitsRegistry(opts: StoreOptions): Promise<HitsRegistry> {
+export const MAX_HITS_BYTES = 2 * 1024 * 1024;
+
+interface HitsRegistryRead {
+  registry: HitsRegistry;
+  /** Set when the file exists but could not be used; `registry` is then empty. */
+  problem?: string;
+}
+
+async function loadHitsRegistry(opts: StoreOptions): Promise<HitsRegistryRead> {
+  const hitsPath = getHitsPath(opts);
+  const tooLarge = (size: number): HitsRegistryRead => ({
+    registry: emptyHitsRegistry(),
+    problem: `is ${size} bytes, over the ${MAX_HITS_BYTES} byte limit`,
+  });
+  let text: string;
+  try {
+    // The size is checked before the read so an oversized file costs one
+    // stat, not a parse, and again on what was read in case it grew.
+    const st = await fs.stat(hitsPath);
+    if (st.isDirectory()) return { registry: emptyHitsRegistry(), problem: 'cannot be read (EISDIR)' };
+    if (!st.isFile()) return { registry: emptyHitsRegistry(), problem: 'is not a regular file' };
+    if (st.size > MAX_HITS_BYTES) return tooLarge(st.size);
+    text = await fs.readFile(hitsPath, 'utf8');
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return { registry: emptyHitsRegistry() };
+    return { registry: emptyHitsRegistry(), problem: `cannot be read (${code ?? errorMessage(e)})` };
+  }
+  if (Buffer.byteLength(text, 'utf8') > MAX_HITS_BYTES) return tooLarge(Buffer.byteLength(text, 'utf8'));
+  text = text.replace(/^\uFEFF/, '');
+  // An empty file holds no counts, so there is nothing a write could lose.
+  if (text.trim() === '') return { registry: emptyHitsRegistry() };
   let raw: unknown;
   try {
-    raw = JSON.parse(await fs.readFile(getHitsPath(opts), 'utf8'));
-  } catch {
-    return emptyHitsRegistry();
+    raw = JSON.parse(text);
+  } catch (e) {
+    return { registry: emptyHitsRegistry(), problem: `is not valid JSON (${errorMessage(e)})` };
+  }
+  if (!isPlainObject(raw)) return { registry: emptyHitsRegistry(), problem: 'is not a JSON object' };
+  if (raw.projects !== undefined && !isPlainObject(raw.projects)) {
+    return { registry: emptyHitsRegistry(), problem: '"projects" is not an object' };
+  }
+  if (raw.global !== undefined && !isPlainObject(raw.global)) {
+    return { registry: emptyHitsRegistry(), problem: '"global" is not an object' };
   }
   const out = emptyHitsRegistry();
-  const projects = isPlainObject(raw) ? raw.projects : undefined;
-  if (isPlainObject(projects)) {
-    for (const [file, counts] of Object.entries(projects)) {
+  if (isPlainObject(raw.projects)) {
+    for (const [file, counts] of Object.entries(raw.projects)) {
       if (isPlainObject(counts)) out.projects[file] = validCounts(counts);
     }
   }
-  const global = isPlainObject(raw) ? raw.global : undefined;
-  if (isPlainObject(global)) out.global = validCounts(global);
-  return out;
+  if (isPlainObject(raw.global)) out.global = validCounts(raw.global);
+  return { registry: out };
+}
+
+/**
+ * Read the registry. For a read-only caller (the prompt hook, `lexicon
+ * stats`) missing, unreadable, oversized or malformed all yield an empty one:
+ * these are counters, and the safe failure mode for a counter is zero.
+ * `forWrite` (a read-modify-write under the lock) throws instead whenever the
+ * file exists but cannot be used, and the file is left exactly as it is: an
+ * EIO read, or a hand edit that broke the JSON, read as empty, and the write
+ * that followed replaced every count in the file with the few being added.
+ * Every writer is best effort, so the throw only stops counting until the
+ * file is fixed (`lexicon doctor` names the problem).
+ */
+async function readHitsRegistry(opts: StoreOptions, forWrite = false): Promise<HitsRegistry> {
+  const { registry, problem } = await loadHitsRegistry(opts);
+  if (forWrite && problem !== undefined) {
+    throw new Error(`${getHitsPath(opts)} ${problem}; left as it is and no counts were written`);
+  }
+  return registry;
+}
+
+/**
+ * Why `hits.json` cannot be used (`is not valid JSON (...)`, `cannot be read
+ * (EACCES)`, `is not a JSON object`, `is N bytes, over the ... limit`, ...),
+ * or undefined when it is missing, empty or fine. With a problem the reader
+ * above takes it as no counts, so every term reads as never used, and no new
+ * hits are counted until it is fixed (the file is never overwritten). For
+ * `lexicon doctor`.
+ */
+export async function hitsRegistryProblem(opts: StoreOptions = {}): Promise<string | undefined> {
+  return (await loadHitsRegistry(opts)).problem;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {
@@ -1317,7 +1456,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 }
 
 /**
- * The valid counts of one `hits.json` entry, keyed by `hitKey`. A key written
+ * The valid counts of one `hits.json` entry, keyed by `hitKey`: positive
+ * safe integers only, so a hand-edited `1e300` (an integer to
+ * `Number.isInteger`, and past every count arithmetic can still raise) is
+ * dropped rather than shown and summed as a count. A key written
  * before hitKey folded to NFC (a canonical typed with a combining accent) is
  * folded the same way, and two keys that fold together are added up, so an
  * old file keeps its counts; the next write stores the folded keys.
@@ -1325,9 +1467,10 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
 function validCounts(counts: Record<string, unknown>): Record<string, number> {
   const entry: Record<string, number> = {};
   for (const [canonical, n] of Object.entries(counts)) {
-    if (typeof n !== 'number' || !Number.isInteger(n) || n <= 0) continue;
+    if (typeof n !== 'number' || !Number.isSafeInteger(n) || n <= 0) continue;
     const key = hitKey(canonical);
-    entry[key] = (entry[key] ?? 0) + n;
+    // Two keys that fold together cannot add up past what a count can hold.
+    entry[key] = Math.min((entry[key] ?? 0) + n, Number.MAX_SAFE_INTEGER);
   }
   return entry;
 }
@@ -1393,7 +1536,7 @@ async function dropProjectHits(projectPath: string, canonical: string, opts: Sto
     const hitsPath = getHitsPath(opts);
     const key = await canonicalPath(projectPath);
     await withFileLock(hitsPath, async () => {
-      const registry = await readHitsRegistry(opts);
+      const registry = await readHitsRegistry(opts, true);
       const entry = registry.projects[key];
       if (!entry || !(hitKey(canonical) in entry)) return;
       delete entry[hitKey(canonical)];
@@ -1409,7 +1552,7 @@ async function dropGlobalHits(canonical: string, opts: StoreOptions): Promise<vo
   try {
     const hitsPath = getHitsPath(opts);
     await withFileLock(hitsPath, async () => {
-      const registry = await readHitsRegistry(opts);
+      const registry = await readHitsRegistry(opts, true);
       if (!registry.global || !(hitKey(canonical) in registry.global)) return;
       delete registry.global[hitKey(canonical)];
       await writeFileAtomic(hitsPath, formatJson(registry));
@@ -1805,10 +1948,13 @@ function mergeTermInto(file: LexiconFile, incoming: Term, scope: TermScope, opts
     return { term: replaced, created: false };
   }
 
+  // A generated alias that is one of the term's never words would be blocked
+  // by it (see assertNoNeverAliasClash), so it is not offered at all.
+  const neverKeys = new Set((incoming.never ?? []).map(foldKey));
   const created: Term = {
     ...incoming,
     ...(incoming.aliases.length === 0 && opts.defaultAliases?.length
-      ? { aliases: dedupeAliases([...opts.defaultAliases], canonical) }
+      ? { aliases: dedupeAliases(opts.defaultAliases.filter((a) => !neverKeys.has(foldKey(a))), canonical) }
       : {}),
     scope,
     source: incoming.source ?? 'user',
@@ -1834,10 +1980,33 @@ export async function addTerm(
   return withLexiconLock(targetPath, async () => {
     const file = await readLexiconFileForWrite(targetPath, scope);
     if (!opts.leaveUntrusted) await assertParsedProjectWritable(file, opts);
+    assertNoNeverAliasClash(file, incoming, opts);
     const result = mergeTermInto(file, incoming, scope, opts);
     await writeAddedFile(file, opts);
     return { file, ...result };
   });
+}
+
+/**
+ * Refuse an add that makes one spelling both an alias and a never word of the
+ * same term. The matcher checks a term's never words before its aliases, so
+ * such an alias is never applied, while the add answered success and listed
+ * it (`lexicon add Wex wexx --never wexx`, or `learn wexx Wex` on a term that
+ * never rewrites `wexx`). Only a clash this call brings in is refused: a file
+ * that already holds one (a hand edit) is still written to, and a replacing
+ * write (`merge: false`, the recase `learn` does) carries the term as it is.
+ */
+function assertNoNeverAliasClash(file: LexiconFile, incoming: Term, opts: AddTermOptions): void {
+  if (opts.merge === false) return;
+  const existing = findTerm(file.lexicon, incoming.canonical);
+  const never = new Set([...(existing?.never ?? []), ...(incoming.never ?? [])].map(foldKey));
+  const aliases = new Set([...(existing?.aliases ?? []), ...incoming.aliases].map(foldKey));
+  const clash = incoming.aliases.find((a) => never.has(foldKey(a))) ?? (incoming.never ?? []).find((w) => aliases.has(foldKey(w)));
+  if (clash === undefined) return;
+  throw new InputError(
+    `term not added: "${clash}" would be both an alias and a never word of "${existing?.canonical ?? incoming.canonical}", ` +
+      'and a never word stops every correction of that spelling to the term, so the alias would never apply; drop it from one of the two',
+  );
 }
 
 /**
@@ -2131,7 +2300,7 @@ export async function recordHits(
     // not).
     const hitsPath = getHitsPath(opts);
     await withFileLock(hitsPath, async () => {
-      const registry = await readHitsRegistry(opts);
+      const registry = await readHitsRegistry(opts, true);
       if (project) {
         const entry = { ...(registry.projects[project.key] ?? {}) };
         for (const [canonical, n] of project.counts) entry[canonical] = (entry[canonical] ?? 0) + n;

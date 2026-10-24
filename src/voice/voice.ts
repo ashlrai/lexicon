@@ -27,17 +27,18 @@
  * (`ok: false, error, nextStep?, code`) for every other non-zero exit. The stderr lines
  * and the exit codes are the same with or without `--json`.
  */
+import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { commandLine, diffSummary, loadLexicon, recordHits, resolvePaths, sanitizeForDisplay } from '../core/index.js';
+import { commandLine, diffSummary, loadLexicon, recordHits, resolvePaths, sanitizeForDisplay, sanitizeForDisplayMax } from '../core/index.js';
 import type { Lexicon, LoadedLexicon } from '../core/index.js';
 import { PASTE_APPLESCRIPT, emptyLexiconHint } from '../daemon/clipboard.js';
 import { ExecError, detectClipboardBackend } from '../daemon/clipboard-backends.js';
 import type { ClipboardExec } from '../daemon/clipboard-backends.js';
 import { formatDeviceList, listAudioDevices } from './devices.js';
 import { appendHistory } from './history.js';
-import { DEFAULT_MODEL, isModelPath, modelsDir, resolveModel } from './models.js';
+import { DEFAULT_MODEL, KNOWN_MODELS, isModelPath, isWhisperModelName, modelsDir, resolveModel } from './models.js';
 import type { Downloader } from './models.js';
 import {
   defaultExec,
@@ -63,11 +64,13 @@ import {
   isStaleProvisional,
   readState,
   recorderLogPath,
+  resetPrivateFile,
   resolveInput,
   startRecorder,
   stateFilePath,
   stopRecorder,
   sweepVoiceDir,
+  createPrivateFile,
   touchPrivateFile,
   voiceDir,
   writeState,
@@ -417,13 +420,11 @@ export async function deliver(
   };
   if (!opts.json) io.stdout(`${result.output}\n`);
 
-  let wantCopy = opts.copy === true || opts.paste === true;
+  const wantCopy = opts.copy === true || opts.paste === true;
   let wantPaste = opts.paste === true;
-  if (wantPaste && r.platform !== 'darwin') {
-    io.stderr(`lexicon voice: --paste is not supported yet on ${r.platform}; the text is on the clipboard, paste it with your usual shortcut\n`);
-    wantPaste = false;
-    wantCopy = true;
-  }
+  /** --paste where it cannot paste: copy only, and say so once the copy has run. */
+  const pasteUnsupported = wantPaste && r.platform !== 'darwin';
+  if (pasteUnsupported) wantPaste = false;
   if (wantCopy) {
     try {
       const write =
@@ -434,10 +435,13 @@ export async function deliver(
         });
       await write(result.output);
     } catch (e) {
+      // Said before the copy ran, "the text is on the clipboard" was false here.
+      if (pasteUnsupported) io.stderr(`lexicon voice: --paste is not supported yet on ${r.platform}, and the copy it falls back to failed, so the text is not on the clipboard\n`);
       io.stderr(`lexicon voice: could not copy to the clipboard: ${message(e)}\n`);
       printJson(jsonFailure(EXIT_ERROR, `could not copy to the clipboard: ${message(e)}`, 'the corrected text is in output; run `lexicon doctor` to check the clipboard backend'));
       return EXIT_ERROR;
     }
+    if (pasteUnsupported) io.stderr(`lexicon voice: --paste is not supported yet on ${r.platform}; the text is on the clipboard, paste it with your usual shortcut\n`);
   }
   if (wantPaste) {
     try {
@@ -579,6 +583,16 @@ function micPermissionHint(r: Resolved, launcher: string): string {
     : '';
 }
 
+/**
+ * `<ffmpeg> -version` quoted for the user's shell and made safe for a
+ * terminal. The path went in as is, so an ffmpeg under a directory with a
+ * space (`C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe`, `~/My Tools/ffmpeg`)
+ * printed a command that ran something else.
+ */
+function ffmpegVersionCommand(ffmpeg: string, platform: NodeJS.Platform): string {
+  return sanitizeForDisplayMax(commandLine([ffmpeg, '-version'], platform), Number.POSITIVE_INFINITY);
+}
+
 /** The --json `nextStep` for an input device ffmpeg could not resolve. */
 const DEVICE_HINT = 'run `lexicon voice --list-devices` and pass one of them with --device <name|index>';
 
@@ -605,6 +619,16 @@ function refuseMissingModelPath(opts: VoiceOptions, io: VoiceIO, r: Resolved, de
       const error = `whisper model ${named.path} is not usable: ${named.problem}`;
       io.stderr(`lexicon voice: ${error}\n`);
       return failed(r, EXIT_ERROR, error, `delete ${named.path} to download it again, or delete ${named.path}.sha256.json to keep using it`);
+    }
+    // A name no download can fetch (a typo) was found out only after the
+    // recording, when the download answered 404 and the dictation was lost.
+    if (!named.present && !isWhisperModelName(spec)) {
+      return refuseWith(
+        r,
+        io,
+        `there is no whisper model named ${sanitizeForDisplay(spec)}`,
+        `pass one that exists with --model, such as ${KNOWN_MODELS.join(', ')}, or a ggml file you have`,
+      );
     }
     return undefined;
   }
@@ -797,6 +821,19 @@ function transcribeFailed(r: Resolved, io: VoiceIO, e: unknown, wav: string, opt
 // ---------------------------------------------------------------------------
 // Foreground mode
 
+/** A new 0600 `<tmpDir>/lexicon-voice-<pid>-<t>-<random>.wav`, never one that was already there. */
+async function createForegroundWav(r: Resolved): Promise<string> {
+  for (let attempt = 0; ; attempt++) {
+    const wav = path.join(r.tmpDir, `lexicon-voice-${process.pid}-${r.clock().toString(36)}-${randomBytes(6).toString('hex')}.wav`);
+    try {
+      await createPrivateFile(wav);
+      return wav;
+    } catch (e) {
+      if ((e as NodeJS.ErrnoException).code !== 'EEXIST' || attempt >= 4) throw e;
+    }
+  }
+}
+
 /** Record until Enter, Ctrl-C or `--seconds`, then transcribe, normalize and output. Returns the exit code. */
 export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps = {}): Promise<number> {
   return runReported(opts, io, deps, (tracked, r) => recordForeground(opts, tracked, deps, r));
@@ -823,9 +860,12 @@ async function recordForeground(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps
   }
 
   await fs.mkdir(r.tmpDir, { recursive: true });
-  const wav = path.join(r.tmpDir, `lexicon-voice-${process.pid}-${r.clock().toString(36)}.wav`);
-  // Created 0600 before ffmpeg opens it (O_TRUNC keeps the mode): the audio is the user's.
-  await touchPrivateFile(wav);
+  // Created new and 0600 before ffmpeg opens it (O_TRUNC keeps the mode): the
+  // audio is the user's. The name was the pid and the time alone, opened
+  // whether or not something was there, so in a shared temp directory (/tmp
+  // on Linux) a file or symlink another account put at that name first was
+  // used: a symlink sent the recording over the file it pointed to.
+  const wav = await createForegroundWav(r);
   const seconds = opts.seconds !== undefined && opts.seconds > 0 ? opts.seconds : undefined;
   const t0 = r.clock();
   const child = startRecorder({ ffmpeg: tools.ffmpeg, spawn: r.spawn, input, wav, detached: false, ...(seconds !== undefined ? { seconds } : {}) });
@@ -1158,6 +1198,17 @@ async function recoverDeadRecorder(
  * next press starts cleanly.
  */
 async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r: Resolved): Promise<number | 'lost'> {
+  // A detached capture is spawned with `-t MAX_TOGGLE_SECONDS` at most. A longer
+  // --seconds was cut to that without a word, so a user who asked for fifteen
+  // minutes lost everything said after ten. Refused before anything records.
+  if (opts.seconds !== undefined && opts.seconds > MAX_TOGGLE_SECONDS) {
+    return refuseWith(
+      r,
+      io,
+      `--toggle records at most ${MAX_TOGGLE_SECONDS} seconds; --seconds ${opts.seconds} is longer`,
+      `use --seconds ${MAX_TOGGLE_SECONDS} or less with --toggle, or run \`lexicon voice --seconds ${opts.seconds}\` without --toggle`,
+    );
+  }
   const tools = await requireTools(r, io, deps, { ffmpeg: true, whisper: true });
   if (!tools) return EXIT_MISSING_TOOL;
   const noModel = refuseMissingModelPath(opts, io, r, deps);
@@ -1182,13 +1233,14 @@ async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r
   try {
     // Both files exist 0600 before ffmpeg touches them; ffmpeg keeps the mode.
     await touchPrivateFile(wav);
-    await touchPrivateFile(logFile);
+    // Emptied, so what it holds is this recording's ffmpeg output only.
+    await resetPrivateFile(logFile);
     child = startRecorder({ ffmpeg: tools.ffmpeg, spawn: r.spawn, input, wav, seconds, detached: true, logFile });
     if (child.pid === undefined) throw new Error('could not start ffmpeg');
   } catch (e) {
     await clearState(r.globalPath);
     await fs.rm(wav, { force: true }).catch(() => undefined);
-    return refuseWith(r, io, message(e), `check ffmpeg (\`${tools.ffmpeg} -version\`) and the input device (\`lexicon voice --list-devices\`), then try again`);
+    return refuseWith(r, io, message(e), `check ffmpeg (\`${ffmpegVersionCommand(tools.ffmpeg, r.platform)}\`) and the input device (\`lexicon voice --list-devices\`), then try again`);
   }
   await writeState(r.globalPath, { pid: child.pid, wav, startedAt: startedAt.toISOString() });
   // Sweep what is provably worthless (zero-byte captures, a claim breadcrumb a
@@ -1253,6 +1305,6 @@ async function listDevices(opts: VoiceOptions, io: VoiceIO, r: Resolved, deps: V
     else io.stdout(formatDeviceList(devices));
     return EXIT_OK;
   } catch (e) {
-    return refuseWith(r, io, `could not list devices: ${message(e)}`, `check ffmpeg with \`${tools.ffmpeg} -version\`, or skip the list and pass the device by name: lexicon voice --device <name>`);
+    return refuseWith(r, io, `could not list devices: ${message(e)}`, `check ffmpeg with \`${ffmpegVersionCommand(tools.ffmpeg, r.platform)}\`, or skip the list and pass the device by name: lexicon voice --device <name>`);
   }
 }

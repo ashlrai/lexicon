@@ -29,7 +29,8 @@ import {
   parsePulseSources,
   pickDevice,
 } from '../src/voice/devices.js';
-import { HISTORY_MAX_BYTES, HISTORY_MAX_LINES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
+import { HISTORY_MAX_BYTES, HISTORY_MAX_LINES, HISTORY_READ_MAX_BYTES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
+import { VOICE_HISTORY_READ_MAX_BYTES, loadVoiceHistory } from '../src/core/suggestTerms.js';
 import { GGML_MAGIC, STALE_PART_MS, checkModelHashRecord, defaultDownloader, expandTilde, modelFileName, modelUrl, modelsDir, resolveModel } from '../src/voice/models.js';
 import type { Downloader } from '../src/voice/models.js';
 import { installHint, locateWhisperCli, makeProcessDescribe, makeProcessList } from '../src/voice/process.js';
@@ -55,6 +56,7 @@ import {
   confirmRecorder,
   findOrphanRecorder,
   recorderFingerprint,
+  resolveInput,
 } from '../src/voice/recorder.js';
 import { WHISPER_TIMEOUT_BASE_MS, WHISPER_TIMEOUT_PER_AUDIO_SECOND_MS, cleanTranscript, parseWhisperOutput, whisperArgs, whisperTimeoutMs } from '../src/voice/transcribe.js';
 import {
@@ -396,6 +398,23 @@ describe('lexicon voice --toggle', () => {
     expect(stateFilePath(h.globalPath)).toBe(path.join(h.dir, 'voice', 'recording.json'));
   });
 
+  it('refuses --seconds over the toggle limit before recording, rather than cutting it short silently', async () => {
+    const h = await harness();
+    h.opts.seconds = 900;
+    const code = await runVoiceToggle(h.opts, h.io, h.deps);
+    expect(code).toBe(EXIT_ERROR);
+    expect(h.err.join('')).toContain('--toggle records at most 600 seconds; --seconds 900 is longer');
+    expect(h.spawnCalls).toEqual([]);
+    expect(await readState(h.globalPath)).toBeUndefined();
+  });
+
+  it('records with --seconds at the toggle limit', async () => {
+    const h = await harness();
+    h.opts.seconds = 600;
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.spawnCalls[0].args).toEqual(expect.arrayContaining(['-t', '600']));
+  });
+
   it('stops the recorder on the second call, transcribes, normalizes and clears the state file', async () => {
     const h = await harness();
     await runVoiceToggle(h.opts, h.io, h.deps);
@@ -474,6 +493,24 @@ describe('lexicon voice --toggle', () => {
     expect(await readState(h.globalPath)).toBeUndefined();
     // Nothing was in it, so nothing is kept.
     await expect(fs.access(wav)).rejects.toThrow();
+  });
+
+  // Catches: recorder.log was opened for append and never emptied, so a recording that failed quoted an earlier one's error.
+  it('starts each recording with an empty recorder log, so a failure never quotes an earlier one', async () => {
+    const h = await harness();
+    await ensureVoiceDir(h.globalPath);
+    await fs.writeFile(recorderLogPath(h.globalPath), '[AVFoundation indev @ 0x1] Error opening input: from yesterday\n');
+
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(await fs.readFile(recorderLogPath(h.globalPath), 'utf8')).toBe('');
+    if (process.platform !== 'win32') expect(await modeOf(recorderLogPath(h.globalPath))).toBe(0o600);
+
+    // This recording leaves nothing usable and ffmpeg logged nothing for it.
+    const wav = (await readState(h.globalPath))?.wav ?? '';
+    await fs.writeFile(wav, Buffer.alloc(0));
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.err.join('')).toContain('recording failed');
+    expect(h.err.join('')).not.toContain('from yesterday');
   });
 
   it('keeps a capture it cannot parse rather than deleting the user audio', async () => {
@@ -813,6 +850,11 @@ describe('lexicon voice --toggle start race', () => {
     expect(await readState(h.globalPath)).toEqual({ wav: 'a.wav', startedAt: 't' });
     await fs.writeFile(stateFilePath(h.globalPath), JSON.stringify({ pid: 'nope', wav: 'a.wav', startedAt: 't' }));
     expect(await readState(h.globalPath)).toBeUndefined();
+    // Catches: any number was taken as the recorder's pid, so a damaged file's -1 or 0 reached process.kill on the stop press (every process of the user, or the process group).
+    for (const pid of [-1, 0, 1.5, 2 ** 60]) {
+      await fs.writeFile(stateFilePath(h.globalPath), JSON.stringify({ pid, wav: 'a.wav', startedAt: 't' }));
+      expect(await readState(h.globalPath)).toBeUndefined();
+    }
     const now = Date.parse('2026-09-19T12:00:00.000Z');
     expect(isStaleProvisional({ wav: 'a', startedAt: '2026-09-19T12:00:00.000Z' }, now + PROVISIONAL_TTL_MS)).toBe(false);
     expect(isStaleProvisional({ wav: 'a', startedAt: '2026-09-19T12:00:00.000Z' }, now + PROVISIONAL_TTL_MS + 1)).toBe(true);
@@ -879,6 +921,54 @@ describe('lexicon voice (foreground)', () => {
     expect(h.spawnCalls[0].opts.detached).toBe(false);
     expect(h.kills).toEqual([{ pid: 4242, signal: 'SIGINT' }]);
     expect(h.out).toEqual(['ping Ashlr.AI about the Kubernetes rollout\n']);
+  });
+
+  // Catches: whisper-cli wrote the transcript to a predictable
+  // `<tmpDir>/lexicon-voice-<pid>-<t>.json` straight in the temp directory
+  // (/tmp, shared on Linux) under the umask, so another account could read
+  // the dictation or plant that file first and have it read back as the
+  // transcript. It goes into a fresh 0700 directory, removed afterwards.
+  it('has whisper-cli write its transcript inside a private directory of its own, removed afterwards', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    const seen: Array<{ dir: string; mode: number; entries: string[] }> = [];
+    const exec = h.deps.exec!;
+    h.deps.exec = async (cmd, args, o) => {
+      if (path.basename(cmd) === 'whisper-cli') {
+        const dir = path.dirname(args[args.indexOf('-of') + 1] as string);
+        seen.push({ dir, mode: (await fs.stat(dir)).mode & 0o777, entries: await fs.readdir(dir) });
+      }
+      return exec(cmd, args, o);
+    };
+    expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.out).toEqual(['ping Ashlr.AI about the Kubernetes rollout\n']);
+    expect(seen).toHaveLength(1);
+    const { dir, mode, entries } = seen[0]!;
+    expect(path.dirname(dir)).toBe(h.deps.tmpDir);
+    expect(entries).toEqual([]);
+    if (process.platform !== 'win32') expect(mode).toBe(0o700);
+    await expect(fs.stat(dir)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  // Catches: the foreground WAV was <tmpDir>/lexicon-voice-<pid>-<t>.wav,
+  // opened whether or not something was already there, so in a shared temp
+  // directory a symlink another account planted at that name first was
+  // followed: chmod 0600 and the recording landed on the file it named.
+  it.skipIf(process.platform === 'win32')('records to a WAV it created new, never a file or symlink already at the name', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    h.deps.clock = () => 1_000_000;
+    await fs.mkdir(h.deps.tmpDir!, { recursive: true });
+    const victim = path.join(h.dir, 'victim.txt');
+    await fs.writeFile(victim, 'keep me', { mode: 0o644 });
+    await fs.chmod(victim, 0o644);
+    await fs.symlink(victim, path.join(h.deps.tmpDir!, `lexicon-voice-${process.pid}-${(1_000_000).toString(36)}.wav`));
+    expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(await fs.readFile(victim, 'utf8')).toBe('keep me');
+    expect((await fs.stat(victim)).mode & 0o777).toBe(0o644);
+    const wav = h.spawnCalls[0]!.args.at(-1) as string;
+    expect(path.dirname(wav)).toBe(h.deps.tmpDir);
+    expect(path.basename(wav)).toMatch(/^lexicon-voice-\d+-[0-9a-z]+-[0-9a-f]{12}\.wav$/);
   });
 
   it('does not re-signal ffmpeg after Ctrl-C (it already got the SIGINT)', async () => {
@@ -1341,6 +1431,21 @@ describe('lexicon voice (foreground)', () => {
     expect(h.spawnCalls[0].args).toEqual(expect.arrayContaining(['-f', 'pulse', '-i', 'default']));
   });
 
+  // Catches: off darwin, --paste said "the text is on the clipboard" before
+  // the copy ran, so a copy that then failed left that line false.
+  it('--paste off darwin says the text is on the clipboard only after the copy worked', async () => {
+    const h = await harness({ platform: 'linux' });
+    h.deps.waitForStop = async () => 'enter';
+    h.deps.clipboardWrite = async () => {
+      throw new Error('no clipboard tool');
+    };
+    expect(await runVoice({ ...h.opts, paste: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+    const err = h.err.join('');
+    expect(err).not.toContain('the text is on the clipboard');
+    expect(err).toContain('--paste is not supported yet on linux, and the copy it falls back to failed, so the text is not on the clipboard');
+    expect(err).toContain('could not copy to the clipboard: no clipboard tool');
+  });
+
   it('--device picks the avfoundation index by name', async () => {
     const h = await harness();
     h.deps.waitForStop = async () => 'enter';
@@ -1364,6 +1469,27 @@ describe('lexicon voice (foreground)', () => {
     expect(h.err.join('')).toContain('whisper model small.en not found; fetching');
     expect(h.err.join('')).toContain('downloading ggml-small.en.bin 100%');
     expect(whisperCall(h)!.args).toEqual(expect.arrayContaining(['-m', path.join(h.dir, 'models', 'ggml-small.en.bin')]));
+  });
+
+  // Catches: a misspelt --model was found out only after the user had spoken, when the download answered 404.
+  it('refuses a --model name no whisper model has before recording, and keeps a model file of that name in the models dir working', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    let downloads = 0;
+    h.deps.download = async () => {
+      downloads += 1;
+    };
+    expect(await runVoice({ ...h.opts, model: 'base-en' }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.err.join('')).toContain('lexicon voice: there is no whisper model named base-en\n  pass one that exists with --model, such as tiny.en, base.en');
+    expect(h.spawnCalls).toEqual([]);
+    expect(downloads).toBe(0);
+    expect(await runVoiceToggle({ ...h.opts, model: 'base-en' }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.spawnCalls).toEqual([]);
+
+    // A custom model the user put in the models directory is used as before.
+    await fs.writeFile(path.join(h.dir, 'models', 'ggml-my-finetune.bin'), Buffer.concat([GGML_MAGIC, Buffer.from('x')]));
+    expect(await runVoice({ ...h.opts, model: 'my-finetune' }, h.io, h.deps)).toBe(EXIT_OK);
+    expect(whisperCall(h)!.args).toEqual(expect.arrayContaining(['-m', path.join(h.dir, 'models', 'ggml-my-finetune.bin')]));
   });
 
   // Catches: a failed download reported only "fetch failed", with no way forward.
@@ -1622,6 +1748,32 @@ describe('lexicon voice --json failures', () => {
     expect(dshow.err.join('').match(/--list-devices/g)).toHaveLength(1);
   });
 
+  // Catches: the ffmpeg path went into `<ffmpeg> -version` as is, so a path with a space printed a command that ran something else.
+  it('quotes the ffmpeg path in the -version step for the platform shell', async () => {
+    for (const platform of ['darwin', 'win32'] as const) {
+      const ffmpeg = '/fake/bin/My Tools/ffmpeg';
+      const listFails = await harness({ platform });
+      listFails.deps.env = { PATH: listFails.binDir, LEXICON_FFMPEG_BIN: ffmpeg, LEXICON_WHISPER_BIN: '/fake/bin/whisper-cli' };
+      listFails.deps.exec = async () => {
+        throw new Error('boom');
+      };
+      expect(await runVoiceListDevices({ ...listFails.opts, json: true }, listFails.io, listFails.deps)).toBe(EXIT_ERROR);
+      const shown = commandLine([ffmpeg, '-version'], platform);
+      expect(shown).not.toBe(`${ffmpeg} -version`);
+      expect(listFails.err.join('')).toContain(`check ffmpeg with \`${shown}\`, or skip`);
+      expect(onlyDocument(listFails)).toMatchObject({ nextStep: expect.stringContaining(`\`${shown}\``) });
+
+      const spawnFails = await harness({ platform });
+      spawnFails.deps.env = { PATH: spawnFails.binDir, LEXICON_FFMPEG_BIN: ffmpeg, LEXICON_WHISPER_BIN: '/fake/bin/whisper-cli' };
+      spawnFails.deps.spawn = () => {
+        throw new Error('spawn ENOENT');
+      };
+      spawnFails.opts = { ...spawnFails.opts, device: 'MacBook Pro Microphone' };
+      expect(await runVoiceToggle(spawnFails.opts, spawnFails.io, spawnFails.deps)).toBe(EXIT_ERROR);
+      expect(spawnFails.err.join('')).toContain(`check ffmpeg (\`${shown}\`) and the input device`);
+    }
+  });
+
   it('without --json stdout stays empty on a failure', async () => {
     const h = await harness({ missing: ['whisper-cli', 'whisper-cpp'] });
     expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_MISSING_TOOL);
@@ -1681,6 +1833,65 @@ describe('device parsers', () => {
     expect(formatDeviceList(alsa)).toBe('[0] HDA Intel PCH (ALC295 Analog)  (hw:0,0)\n[1] Yeti Stereo Microphone (USB Audio)  (hw:1,0)\n');
     expect(formatDeviceList([])).toBe('no audio input devices found\n');
   });
+
+  // Catches: an index no device has recorded the default microphone (pulse) or reached ffmpeg as a device name (alsa, dshow).
+  it('refuses a --device index that no listed device has, before recording', async () => {
+    for (const platform of ['linux', 'win32'] as const) {
+      const h = await harness({ platform });
+      h.deps.env = { PATH: h.binDir, LEXICON_FFMPEG_BIN: '/fake/bin/ffmpeg', LEXICON_WHISPER_BIN: '/fake/bin/whisper-cli' };
+      expect(await runVoice({ ...h.opts, device: '7', json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+      expect(h.spawnCalls).toEqual([]);
+      expect(h.err.join('')).toContain('no audio input device has index 7 (the list has 0 to 1)');
+      expect(JSON.parse(h.out.join(''))).toMatchObject({ ok: false, code: EXIT_ERROR, error: expect.stringContaining('--list-devices') });
+    }
+    const exec: VoiceExec = async () => ({ code: 0, stdout: '', stderr: '' });
+    const alsa = parseArecordList(ARECORD_LIST);
+    await expect(resolveInput({ platform: 'linux', ffmpeg: 'ffmpeg', exec, device: '2', devices: alsa })).rejects.toThrow(/index 2/);
+    // A name is still passed on as it is, and an index that exists still resolves.
+    expect(await resolveInput({ platform: 'linux', ffmpeg: 'ffmpeg', exec, device: 'hw:3,0', devices: alsa })).toEqual({ format: 'alsa', input: 'hw:3,0' });
+    expect(await resolveInput({ platform: 'linux', ffmpeg: 'ffmpeg', exec, device: '1', devices: alsa })).toEqual({ format: 'alsa', input: 'hw:1,0' });
+    // ffmpeg has pulse but no pulse source was listed: the arecord id goes to the alsa demuxer, not to pulse.
+    const pulseExec: VoiceExec = async () => ({ code: 0, stdout: ' D  pulse           Pulse audio input\n', stderr: '' });
+    expect(await resolveInput({ platform: 'linux', ffmpeg: 'ffmpeg', exec: pulseExec, device: '1', devices: alsa })).toEqual({ format: 'alsa', input: 'hw:1,0' });
+  });
+
+  // Catches: on macOS an index no listed device has went to ffmpeg as `:7`, which failed only once recording started.
+  it('refuses a --device index that no listed device has on macOS too, before recording', async () => {
+    const h = await harness({ platform: 'darwin' });
+    h.deps.waitForStop = async () => 'enter';
+    expect(await runVoice({ ...h.opts, device: '7', json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.spawnCalls).toEqual([]);
+    expect(h.err.join('')).toContain('no audio input device has index 7 (the list has 0 to 2)');
+    const exec: VoiceExec = async () => ({ code: 1, stdout: '', stderr: AVFOUNDATION_LIST });
+    const devices = parseAvfoundationDevices(AVFOUNDATION_LIST);
+    await expect(resolveInput({ platform: 'darwin', ffmpeg: 'ffmpeg', exec, device: '3', devices })).rejects.toThrow(/index 3 \(the list has 0 to 2\)/);
+    // A listed index, a listed name and a name avfoundation may still know resolve as before.
+    expect(await resolveInput({ platform: 'darwin', ffmpeg: 'ffmpeg', exec, device: '1', devices })).toEqual({ format: 'avfoundation', input: ':1' });
+    expect(await resolveInput({ platform: 'darwin', ffmpeg: 'ffmpeg', exec, device: 'MacBook Pro Microphone', devices })).toEqual({ format: 'avfoundation', input: ':2' });
+    expect(await resolveInput({ platform: 'darwin', ffmpeg: 'ffmpeg', exec, device: 'Studio Mic', devices })).toEqual({ format: 'avfoundation', input: ':Studio Mic' });
+  });
+
+  // Catches: devices were numbered by card, so two inputs on one card shared an index and --device <index> reached only the first.
+  it('numbers arecord devices by position, so two inputs on one card each get an index', () => {
+    const list = [
+      '**** List of CAPTURE Hardware Devices ****',
+      'card 0: PCH [HDA Intel PCH], device 0: ALC3246 Analog [ALC3246 Analog]',
+      '  Subdevices: 1/1',
+      'card 0: PCH [HDA Intel PCH], device 2: ALC3246 Alt Analog [ALC3246 Alt Analog]',
+      '  Subdevices: 1/1',
+      'card 2: Yeti [Yeti Stereo Microphone], device 0: USB Audio [USB Audio]',
+      '',
+    ].join('\n');
+    const alsa = parseArecordList(list);
+    expect(alsa.map((d) => [d.index, d.id])).toEqual([
+      [0, 'hw:0,0'],
+      [1, 'hw:0,2'],
+      [2, 'hw:2,0'],
+    ]);
+    expect(pickDevice(alsa, '1')?.id).toBe('hw:0,2');
+    expect(pickDevice(alsa, '2')?.id).toBe('hw:2,0');
+    expect(formatDeviceList(alsa).split('\n').filter(Boolean).map((l) => l.slice(0, 3))).toEqual(['[0]', '[1]', '[2]']);
+  });
 });
 
 describe('history', () => {
@@ -1708,6 +1919,27 @@ describe('history', () => {
     expect((await fs.readdir(voiceDir(h.globalPath))).filter((n) => n.includes('lock'))).toEqual([]);
   });
 
+  // Catches: any read error, not only a missing file, was taken as an empty history, so the append replaced every earlier entry with one.
+  it('keeps the history when it cannot be read, dropping the new entry instead', async () => {
+    const h = await harness();
+    await appendHistory(h.globalPath, entry(0));
+    await appendHistory(h.globalPath, entry(1));
+    const file = historyPath(h.globalPath);
+    const before = await fs.readFile(file, 'utf8');
+    const realOpen = fs.open.bind(fs);
+    const spy = vi.spyOn(fs, 'open').mockImplementation((async (p: unknown, ...rest: unknown[]) => {
+      if (p === file) throw Object.assign(new Error('EIO: i/o error, open'), { code: 'EIO' });
+      return (realOpen as (...a: unknown[]) => Promise<unknown>)(p, ...rest);
+    }) as typeof fs.open);
+    try {
+      await appendHistory(h.globalPath, entry(2));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await fs.readFile(file, 'utf8')).toBe(before);
+    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t0', 't1']);
+  });
+
   // Catches: a truncated last line (a crash or a full disk mid-write) and foreign lines were carried forward forever, and readHistory returned JSON that was not an entry.
   it('drops truncated and foreign lines on the next append, and reads only entries', async () => {
     const h = await harness();
@@ -1718,6 +1950,30 @@ describe('history', () => {
     await appendHistory(h.globalPath, entry(1));
     const text = await fs.readFile(historyPath(h.globalPath), 'utf8');
     expect(text).toBe(`${good}\n${JSON.stringify(entry(1))}\n`);
+  });
+
+  // Catches: appendHistory and readHistory read the whole file before the 4 MiB cap applied, so a file grown past it (another program, an older version) was loaded whole on every dictation, and past V8's string limit every append failed.
+  it('reads only the last HISTORY_READ_MAX_BYTES of an oversized file, never all of it', async () => {
+    const h = await harness();
+    await ensureVoiceDir(h.globalPath);
+    const file = historyPath(h.globalPath);
+    const junk = `${'z'.repeat(1024)}\n`.repeat(HISTORY_READ_MAX_BYTES / 1024 + 1024);
+    await fs.writeFile(file, `${JSON.stringify(entry(99))}\n${junk}${JSON.stringify(entry(0))}\n${JSON.stringify(entry(1))}\n`);
+    const realRead = fs.readFile.bind(fs);
+    const whole: unknown[] = [];
+    const spy = vi.spyOn(fs, 'readFile').mockImplementation((async (p: unknown, ...rest: unknown[]) => {
+      if (p === file) whole.push(p);
+      return (realRead as (...a: unknown[]) => Promise<unknown>)(p, ...rest);
+    }) as typeof fs.readFile);
+    try {
+      expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t0', 't1']);
+      await appendHistory(h.globalPath, entry(2));
+      expect(whole).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await fs.stat(file)).size).toBeLessThanOrEqual(HISTORY_MAX_BYTES);
+    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t0', 't1', 't2']);
   });
 
   // Catches: only the line count was capped, so long dictations grew the file (read and rewritten on every append) without bound.
@@ -1731,6 +1987,25 @@ describe('history', () => {
     expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t3', 't4', 't5']);
     await appendHistory(h.globalPath, entry(9, 'y'.repeat(HISTORY_MAX_BYTES)));
     expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t9']);
+  });
+
+  // Catches: lexicon suggest read the newest 8 MiB and the writer kept a newest entry of up to 16 MiB, so an entry between the two was cut and suggest saw no history.
+  it('keeps a newest entry over HISTORY_MAX_BYTES readable by lexicon suggest too', async () => {
+    const h = await harness();
+    expect(HISTORY_READ_MAX_BYTES).toBe(VOICE_HISTORY_READ_MAX_BYTES);
+    await appendHistory(h.globalPath, entry(0));
+    await appendHistory(h.globalPath, entry(1, 'y'.repeat(10 * 1024 * 1024)));
+    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t1']);
+    expect((await loadVoiceHistory(h.globalPath)).map((e) => e.at)).toEqual(['t1']);
+  });
+
+  // Catches: an entry larger than any reader looks at was written, and the byte cap dropped every older entry to make room, leaving a history nobody could read.
+  it('does not write an entry larger than HISTORY_READ_MAX_BYTES, keeping the older history', async () => {
+    const h = await harness();
+    await appendHistory(h.globalPath, entry(0));
+    const before = await fs.readFile(historyPath(h.globalPath), 'utf8');
+    await appendHistory(h.globalPath, entry(1, 'y'.repeat(HISTORY_READ_MAX_BYTES)));
+    expect(await fs.readFile(historyPath(h.globalPath), 'utf8')).toBe(before);
   });
 });
 
@@ -1857,6 +2132,32 @@ describe('model download', () => {
     expect(checkModelHashRecord(dest)).toBeUndefined();
     const record = JSON.parse(await fs.readFile(`${dest}.sha256.json`, 'utf8')) as { sha256: string };
     expect(record.sha256).toBe(createHash('sha256').update(got).digest('hex'));
+  });
+
+  // Catches: on Windows the rename into place failed with EPERM while the
+  // other download was renaming over the same file, failing a finished,
+  // checked download.
+  it('retries a rename into place that Windows refuses for a moment', async () => {
+    const dest = path.join(dir, 'ggml-tiny.bin');
+    const body = model(200_000, 3);
+    vi.stubGlobal('fetch', async () => new Response(new Uint8Array(body), { status: 200, headers: { 'content-length': String(body.length) } }));
+    const realRename = fs.rename.bind(fs);
+    let refused = 0;
+    const spy = vi.spyOn(fs, 'rename').mockImplementation(async (from, to) => {
+      if (refused < 2) {
+        refused++;
+        throw Object.assign(new Error('EPERM: operation not permitted, rename'), { code: 'EPERM' });
+      }
+      return realRename(from, to);
+    });
+    try {
+      await defaultDownloader('https://example.invalid/m', dest, () => undefined);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(refused).toBe(2);
+    expect((await fs.readFile(dest)).equals(body)).toBe(true);
+    expect(checkModelHashRecord(dest)).toBeUndefined();
   });
 });
 
@@ -2484,6 +2785,24 @@ describe('two hotkey presses, one recording', () => {
     // The claim moves the file aside and removes it; nothing is left behind.
     expect((await fs.readdir(voiceDir(h.globalPath))).filter((f) => f.startsWith('stopping-'))).toEqual([]);
     expect(await claimStop(h.globalPath)).toBeUndefined();
+  });
+
+  // Catches a claim that is exclusive only by rename. On Windows a rename goes
+  // through a handle to the file, so a press that opened the state file before
+  // the other renamed it then renames the already-claimed file again, and both
+  // presses read it: two deliveries of one capture (main run 40114339868).
+  it('claimStop stays exclusive over many simultaneous pairs of presses', async () => {
+    const h = await harness();
+    const state = { pid: 4242, wav: 'a.wav', startedAt: '2026-09-19T12:00:00.000Z' };
+    let doubles = 0;
+    for (let i = 0; i < 200; i += 1) {
+      await writeState(h.globalPath, state);
+      const claims = await Promise.all([claimStop(h.globalPath), claimStop(h.globalPath)]);
+      if (claims.filter((c) => c !== undefined).length > 1) doubles += 1;
+      expect(await readState(h.globalPath)).toBeUndefined();
+    }
+    expect(doubles).toBe(0);
+    expect((await fs.readdir(voiceDir(h.globalPath))).filter((f) => f.startsWith('stopping-'))).toEqual([]);
   });
 
   it('a press that loses the state file stands down instead of starting a second recorder', async () => {

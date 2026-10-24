@@ -7,7 +7,8 @@
  */
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, promises as fs } from 'node:fs';
+import { existsSync, promises as fs, statSync } from 'node:fs';
+import path from 'node:path';
 import type { Command } from 'commander';
 import {
   ProjectTrustError,
@@ -17,19 +18,22 @@ import {
   effectiveHits,
   emptyLexicon,
   isTrusted,
+  loadLexicon,
+  parsedContentHash,
   readLexiconFile,
   readHitsFor,
   withLexiconLock,
   refreshIndexCache,
   refreshTrust,
   resolvePaths,
+  spellingKey,
   writeLexiconFile,
 } from '../core/index.js';
-import type { HarvestCandidate, LexiconFile, Term, TermCategory, TermScope } from '../core/index.js';
+import type { HarvestCandidate, Lexicon, LexiconFile, Term, TermCategory, TermScope } from '../core/index.js';
 import { PromptClosedError, askKey, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
 import { errorMessage } from '../util/errors.js';
-import { CliRefusal, bold, dim, line, parseCategory, plural, refuse, resolveCwd, safe, safeLines } from './io.js';
+import { CliRefusal, bold, dim, line, parseCategory, plural, refuse, resolveCwd, safe, safeMessage } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 function isCategory(value: string): value is TermCategory {
@@ -67,7 +71,51 @@ function storeOpts(opts: InteractiveOptions, cwd: string): { cwd: string; global
 // harvest --interactive
 // ---------------------------------------------------------------------------
 
-export type HarvestInteractiveOptions = InteractiveOptions;
+/**
+ * What the harvest behind a walk saw (`HarvestReport`'s counts, the root and
+ * the `minCount` it ran with), so a walk with no candidates can say why.
+ */
+export interface HarvestScanContext {
+  root: string;
+  minCount: number;
+  filesScanned: number;
+  belowMinCount: number;
+  symbolsOnly: number;
+}
+
+export interface HarvestInteractiveOptions extends InteractiveOptions {
+  /** The scan the candidates came from; without it an empty walk says only that there was nothing to review. */
+  harvest?: HarvestScanContext;
+}
+
+/**
+ * The line for a harvest that proposed nothing, saying why and what to try:
+ * names left out for `--min-count` or as code symbols only (`--symbols`), no
+ * readable file at all, or files scanned and no name in them. `harvest -i`
+ * said only "no candidates to review", and plain `harvest` only "no
+ * candidates found in <root>". Display-safe.
+ */
+export function noHarvestCandidatesLine(scan: HarvestScanContext): string {
+  const head = `no candidates found in ${safe(scan.root)}`;
+  const left = [
+    ...(scan.belowMinCount > 0 ? [`${plural(scan.belowMinCount, 'name')} seen fewer than ${scan.minCount} times (to include them: --min-count 1)`] : []),
+    ...(scan.symbolsOnly > 0 ? [`${plural(scan.symbolsOnly, 'name')} found only as code symbols (to include them: --symbols)`] : []),
+  ];
+  if (left.length > 0) return `${head}: left out ${left.join(' and ')}`;
+  if (scan.filesScanned === 0) {
+    return `${head}: it holds no package manifest, README or source file, and neither its name nor the git log gave one; harvest a project directory, or add a name with: lexicon add <canonical> <alias>`;
+  }
+  return `${head}: ${plural(scan.filesScanned, 'file')} scanned and no name in them to propose; add one yourself with: lexicon add <canonical> <alias>`;
+}
+
+/** `c` is already a term of `lexicon` with every alias the harvest suggests. */
+function knownCandidate(lexicon: Lexicon, c: HarvestCandidate): boolean {
+  const fold = (s: string): string => s.trim().toLowerCase().normalize('NFC');
+  const term = lexicon.terms.find((t) => fold(t.canonical) === fold(c.canonical));
+  if (!term) return false;
+  const have = new Set([term.canonical, ...term.aliases].map(fold));
+  return c.suggestedAliases.every((a) => have.has(fold(a)));
+}
 
 /** The next step after `harvest -i` or `review` changed the lexicon. */
 const NEXT_LIST = 'next: run lexicon list to see the terms';
@@ -96,7 +144,20 @@ export async function runHarvestInteractive(
   const store = storeOpts(opts, cwd);
 
   if (candidates.length === 0) {
-    line(io, dim('no candidates to review'));
+    line(io, dim(opts.harvest ? noHarvestCandidatesLine(opts.harvest) : 'no candidates to review'));
+    return 0;
+  }
+  // Every candidate already a term with its aliases: the walk could only
+  // merge nothing into each, one prompt at a time.
+  const loadedForKnown = await loadLexicon(store).catch(() => undefined);
+  if (loadedForKnown && candidates.every((c) => knownCandidate(loadedForKnown.merged, c))) {
+    line(
+      io,
+      dim(
+        `nothing to review: ${candidates.length === 1 ? 'the 1 candidate is' : `all ${candidates.length} candidates are`} already in the lexicon with ${candidates.length === 1 ? 'its' : 'their'} suggested aliases. ` +
+          'To see them: lexicon list; to go over existing terms: lexicon review',
+      ),
+    );
     return 0;
   }
 
@@ -106,7 +167,7 @@ export async function runHarvestInteractive(
   if (projectPath && existsSync(projectPath)) {
     const status = await isTrusted({ path: projectPath, scope: 'project', lexicon: emptyLexicon(), exists: true }, store);
     if (status !== 'trusted') {
-      io.stderr(`lexicon: ${safeLines(new ProjectTrustError(projectPath, status).message)}\n`);
+      io.stderr(`lexicon: ${safeMessage(new ProjectTrustError(projectPath, status).message)}\n`);
       return 1;
     }
   }
@@ -129,13 +190,21 @@ export async function runHarvestInteractive(
     else merged += 1;
     line(io, `  ${result.created ? 'added' : 'merged'} ${bold(safe(result.term.canonical))}`);
   };
-  /** False after printing a ProjectTrustError (nothing in the call was written); any other error is thrown. */
+  /**
+   * A write that failed for any other reason (a full disk, a read-only or
+   * unreadable file): it stops the walk, and the summary still says what the
+   * earlier answers wrote. Thrown, it ended the walk with only the error, so
+   * the terms already added went unmentioned.
+   */
+  let writeError: unknown;
+  /** False after printing why the write was refused or failed (nothing in the call was written). */
   const refused = (err: unknown): false => {
     if (err instanceof ProjectTrustError) {
-      io.stderr(`lexicon: ${safeLines(err.message)}\n`);
+      io.stderr(`lexicon: ${safeMessage(err.message)}\n`);
       return false;
     }
-    throw err;
+    writeError = err;
+    return false;
   };
 
   const add = async (c: HarvestCandidate): Promise<boolean> => {
@@ -173,7 +242,7 @@ export async function runHarvestInteractive(
   let current = 0;
   let closedAt: number | undefined;
   try {
-    for (let i = 0; i < work.length && !quit && !addAll; i += 1) {
+    walk: for (let i = 0; i < work.length && !quit && !addAll; i += 1) {
       current = i;
       const c = work[i];
       showCandidate(io, c, i, work.length);
@@ -182,7 +251,11 @@ export async function runHarvestInteractive(
         const key = await askKey(prompter, `  add? ${dim('[y/n/e/c/a/q]')}`, HARVEST_KEYS, 'y', keyHelp(io, HARVEST_HELP, 'y'));
         switch (key) {
           case 'y':
-            if (!(await add(c))) return 1;
+            if (!(await add(c))) {
+              if (writeError === undefined) return 1;
+              skipped += work.length - i;
+              break walk;
+            }
             decided = true;
             break;
           case 'n':
@@ -203,7 +276,11 @@ export async function runHarvestInteractive(
             break;
           case 'a':
             addAll = true;
-            if (!(await addRest(i))) return 1;
+            if (!(await addRest(i))) {
+              if (writeError === undefined) return 1;
+              skipped += work.length - i;
+              break walk;
+            }
             decided = true;
             break;
           case 'q':
@@ -232,13 +309,18 @@ export async function runHarvestInteractive(
     const kept = created + merged > 0 ? 'the terms added before it stay in the project lexicon' : 'nothing was added';
     line(io, `input closed at candidate ${closedAt + 1} of ${work.length}; ${kept}`);
   }
+  if (writeError !== undefined) {
+    line(io);
+    const kept = created + merged > 0 ? 'the terms added before it stay in the project lexicon' : 'nothing was added';
+    io.stderr(`lexicon: could not write the project lexicon at candidate ${current + 1} of ${work.length} (${safeMessage(errorMessage(writeError))}); ${kept}\n`);
+  }
 
   const where = filePath ? ` in ${safe(filePath)}` : '';
   line(io, `added ${plural(created, 'new term')}, merged ${merged}, skipped ${skipped}${where}`);
   if (filePath) line(io, dim(`project lexicon trusted (${safe(filePath)})`));
   // One way on, and only when there is something new to look at.
   if (created + merged > 0) line(io, dim(NEXT_LIST));
-  return 0;
+  return writeError === undefined ? 0 : 1;
 }
 
 // ---------------------------------------------------------------------------
@@ -290,8 +372,9 @@ async function fileDigest(filePath: string): Promise<string | undefined> {
   }
 }
 
+/** A term's identity as the store compares canonicals: trimmed, lowercased and NFC. */
 function termKey(t: Term): string {
-  return t.canonical.trim().toLowerCase();
+  return spellingKey(t.canonical);
 }
 
 /** Key-order-independent JSON of a term, for change detection. */
@@ -402,7 +485,7 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   if (file.scope === 'project') {
     const status = await isTrusted(file, store);
     if (status !== 'trusted') {
-      io.stderr(`lexicon: ${safeLines(new ProjectTrustError(file.path, status).message)}\n`);
+      io.stderr(`lexicon: ${safeMessage(new ProjectTrustError(file.path, status).message)}\n`);
       return 1;
     }
   }
@@ -416,8 +499,9 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   // this user's sidecar. `--never-hit` would otherwise offer every term for
   // deletion, including the ones that fire every day.
   const hits = await readHitsFor(file, store);
+  // A term without a category is an `other` one, as for list and export.
   const subject = file.lexicon.terms.filter(
-    (t) => (!opts.neverHit || effectiveHits(t, hits) === 0) && (category === undefined || t.category === category),
+    (t) => (!opts.neverHit || effectiveHits(t, hits) === 0) && (category === undefined || (t.category ?? 'other') === category),
   );
   if (subject.length === 0) {
     // Which of the two it is, as `lexicon list` says it: an empty file wants
@@ -530,9 +614,16 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   } finally {
     if (own) p.close();
   }
-  const notReviewed = subject.length - stoppedAt;
+  // The term on screen when `q` or ctrl-D came is not "left as it was" when
+  // an `e`, `p` or `n` already changed it: that edit is kept and written.
+  const editedInProgress = stoppedAt < subject.length && editedTerms.has(subject[stoppedAt]) ? 1 : 0;
+  const notReviewed = subject.length - stoppedAt - editedInProgress;
 
   let mergedElsewhere = 0;
+  /** Set when the project file was rewritten during the review into something not trusted; nothing is written. */
+  let untrustedOnDisk: string | undefined;
+  /** Set when the file changed during the review and cannot be re-read to merge; nothing is written. */
+  let unreadableOnDisk: string | undefined;
   if (changed) {
     // The lock goes here and not around the session. A review is interactive
     // and can sit open for minutes, so holding the file for its duration would
@@ -542,30 +633,69 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
     // and the write. Without the lock a writer landing between the re-read and
     // the write is merged against a copy that is already stale, and the write
     // renames it away while reporting the merge succeeded.
-    await withLexiconLock(file.path, async () => {
-      if (digestAtStart !== undefined && (await fileDigest(file.path)) !== digestAtStart) {
-        try {
-          const disk = await readLexiconFile(file.path, file.scope);
+    try {
+      await withLexiconLock(file.path, async () => {
+        if (digestAtStart !== undefined && (await fileDigest(file.path)) !== digestAtStart) {
+          let disk: LexiconFile;
+          try {
+            disk = await readLexiconFile(file.path, file.scope);
+          } catch (err) {
+            // Writing the reviewed version here replaced what the other
+            // writer put there, which is lost for good: leave it alone.
+            unreadableOnDisk = errorMessage(err);
+            return;
+          }
+          // A project file rewritten by something that does not re-pin trust
+          // (a git pull, a hand edit) holds terms nobody reviewed. Merged, they
+          // were written back and trusted by the refreshTrust below.
+          if (file.scope === 'project') {
+            const status = await isTrusted(disk, store);
+            if (status !== 'trusted') {
+              untrustedOnDisk = status;
+              return;
+            }
+          }
           const merged = reconcileReview(file.lexicon.terms, snapshot, disk.lexicon.terms, editedTerms, deleted);
           // The session never touches settings, so the on-disk ones win too.
           file.lexicon = { ...disk.lexicon, terms: merged.terms };
           mergedElsewhere = merged.changes;
-        } catch (err) {
-          io.stderr(
-            `lexicon: ${safe(file.path)} changed during review but could not be re-read (${safeLines(errorMessage(err))}); writing the reviewed version\n`,
-          );
+        } else {
           file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
         }
-      } else {
-        file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
-      }
-      await writeLexiconFile(file);
-    });
+        await writeLexiconFile(file);
+      });
+    } catch (err) {
+      // Thrown, it ended the review with only the error, not saying that
+      // every answer given was lost with the write.
+      io.stderr(
+        `lexicon: could not write ${safeMessage(file.path)} (${safeMessage(errorMessage(err))}); nothing was written, ` +
+          `so this review's ${plural(deleted.size, 'removal')} and ${plural(edited, 'edit')} were not saved\n`,
+      );
+      return 1;
+    }
+    if (unreadableOnDisk !== undefined) {
+      io.stderr(
+        `lexicon: ${safeMessage(file.path)} changed during review and cannot be read (${safeMessage(unreadableOnDisk)}), so nothing was written and ` +
+          `this review's ${plural(deleted.size, 'removal')} and ${plural(edited, 'edit')} were not saved; ` +
+          `fix the file (lexicon doctor names the problem), then run lexicon review${file.scope === 'project' ? ' --project' : ''} again\n`,
+      );
+      return 1;
+    }
+    if (untrustedOnDisk !== undefined) {
+      io.stderr(
+        `lexicon: ${safeMessage(file.path)} changed during review and is not trusted (${untrustedOnDisk}), so nothing was written and ` +
+          `this review's ${plural(deleted.size, 'removal')} and ${plural(edited, 'edit')} were not saved; ` +
+          'run lexicon trust to look at the new version, then lexicon review --project again\n',
+      );
+      return 1;
+    }
     // The user's own edit must not flip a trusted project file to 'changed'.
     // Then the cached matcher index the hook reads next (a no-op where there
     // is none); writeLexiconFile already refreshed it for a global file.
+    // Pinned to the bytes this write produced, so a lock-less writer (a git
+    // pull, a hand edit) landing since is left 'changed', not blessed.
     if (file.scope === 'project') {
-      await refreshTrust(file.path, store);
+      await refreshTrust(file.path, { ...store, expectedSha256: await parsedContentHash(file) });
       await refreshIndexCache(file, store);
     }
   }
@@ -593,19 +723,141 @@ export interface EditOptions extends InteractiveOptions {
 /** Runs `command args... filePath` attached to the terminal and resolves with its exit code. */
 export type SpawnEditor = (command: string, args: readonly string[], filePath: string) => Promise<number>;
 
+/** What `spawnEditorInherit` runs: the program, its argv and whether Node must pass that argv as written. */
+export interface EditorSpawn {
+  file: string;
+  args: string[];
+  windowsVerbatimArguments: boolean;
+}
+
+/** cmd.exe metacharacters, each escaped with `^` (the qntm.org/cmd scheme, as cross-spawn does it). */
+const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
+
+/** One argument for a cmd.exe command line: quoted for the CRT parser, then every metacharacter `^`-escaped. */
+function cmdQuote(arg: string): string {
+  let quoted = arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, '$1$1');
+  quoted = `"${quoted}"`;
+  return quoted.replace(CMD_META, '^$1');
+}
+
+/** An env lookup that ignores case, as Windows does (`Path`, `PATHEXT`). */
+function envValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  if (env[name] !== undefined) return env[name];
+  const key = Object.keys(env).find((k) => k.toUpperCase() === name);
+  return key === undefined ? undefined : env[key];
+}
+
+/**
+ * The editor's real file on win32: `command` as given when it names an
+ * extension, else the first PATHEXT match, in the directory it names or on
+ * PATH. The current directory is not searched, so a `code.cmd` planted in a
+ * repository is not run in place of the one on PATH.
+ */
+function resolveWindowsCommand(command: string, env: NodeJS.ProcessEnv, isFile: (p: string) => boolean): string | undefined {
+  const exts = (envValue(env, 'PATHEXT') ?? '.COM;.EXE;.BAT;.CMD')
+    .split(';')
+    .map((e) => e.trim())
+    .filter((e) => e.startsWith('.'));
+  const hasExt = path.win32.extname(command) !== '';
+  const candidates = (base: string): string[] => (hasExt ? [base] : exts.map((e) => base + e));
+  const dirs = /[\\/]/.test(command) ? [''] : (envValue(env, 'PATH') ?? '').split(';').filter((d) => d.trim() !== '');
+  for (const dir of dirs) {
+    const base = dir ? path.win32.join(dir.replace(/^"(.*)"$/, '$1'), command) : command;
+    for (const candidate of candidates(base)) if (isFile(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+/**
+ * How to start `command args... filePath` without a shell. On POSIX that is
+ * the command itself. On win32 an editor that resolves (PATHEXT, PATH) to a
+ * `.cmd` or `.bat` shim, as `code`, `subl` and npm-installed editors do,
+ * cannot be spawned directly (ENOENT, or EINVAL since Node's CVE-2024-27980
+ * fix), so it runs through `%ComSpec%` (`cmd.exe /d /s /c "<line>"`) with
+ * every part quoted and its cmd metacharacters escaped, so a file path with
+ * `&`, `%` or spaces reaches the editor as one argument.
+ */
+export function resolveEditorSpawn(
+  command: string,
+  args: readonly string[],
+  filePath: string,
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+  isFile: (p: string) => boolean = (p) => {
+    try {
+      return statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  },
+): EditorSpawn {
+  const direct: EditorSpawn = { file: command, args: [...args, filePath], windowsVerbatimArguments: false };
+  if (platform !== 'win32') return direct;
+  const resolved = resolveWindowsCommand(command, env, isFile);
+  if (!resolved || !/\.(cmd|bat)$/i.test(resolved)) return direct;
+  const cmdLine = [resolved.replace(CMD_META, '^$1'), ...[...args, filePath].map(cmdQuote)].join(' ');
+  return { file: envValue(env, 'COMSPEC') || 'cmd.exe', args: ['/d', '/s', '/c', `"${cmdLine}"`], windowsVerbatimArguments: true };
+}
+
 export const spawnEditorInherit: SpawnEditor = (command, args, filePath) =>
   new Promise<number>((resolve, reject) => {
-    const child = spawn(command, [...args, filePath], { stdio: 'inherit' });
+    const run = resolveEditorSpawn(command, args, filePath);
+    const child = spawn(run.file, run.args, { stdio: 'inherit', windowsVerbatimArguments: run.windowsVerbatimArguments });
     child.once('error', reject);
     child.once('exit', (code, signal) => resolve(code ?? (signal ? 1 : 0)));
   });
 
-/** `$VISUAL` then `$EDITOR`, split on whitespace so `code --wait` works. */
+/**
+ * `$VISUAL` then `$EDITOR`, split on whitespace so `code --wait` works, with
+ * a single- or double-quoted part kept whole (quotes removed), as a shell
+ * reads it: `"/Applications/Sublime Text.app/.../subl" -w` and
+ * `"C:\Program Files\Notepad++\notepad++.exe"`. Split on every space, a
+ * quoted editor path with a space in it was run as `"/Applications/Sublime`
+ * and failed with ENOENT. Backslashes are kept as written (Windows paths).
+ */
 export function editorCommand(env: NodeJS.ProcessEnv = process.env): { command: string; args: string[] } | undefined {
   const raw = (env.VISUAL?.trim() || env.EDITOR?.trim()) ?? '';
   if (!raw) return undefined;
-  const [command, ...args] = raw.split(/\s+/);
+  const words: string[] = [];
+  let word: string | undefined;
+  let quote: string | undefined;
+  for (const ch of raw) {
+    if (quote !== undefined) {
+      if (ch === quote) quote = undefined;
+      else word += ch;
+    } else if (ch === '"' || ch === "'") {
+      quote = ch;
+      word ??= '';
+    } else if (/\s/.test(ch)) {
+      if (word !== undefined) words.push(word);
+      word = undefined;
+    } else {
+      word = (word ?? '') + ch;
+    }
+  }
+  if (word !== undefined) words.push(word);
+  const [command, ...args] = words;
   return command ? { command, args } : undefined;
+}
+
+/** Editors that run in the terminal they are started from (lower case, no `.exe`). */
+const TERMINAL_EDITORS = new Set([
+  'vi', 'vim', 'nvim', 'lvim', 'view', 'ex', 'nvi', 'elvis', 'vis', 'nano', 'pico', 'micro', 'joe', 'jed', 'jove',
+  'ne', 'mg', 'zile', 'kak', 'hx', 'helix', 'ed', 'mcedit', 'tilde', 'amp',
+]);
+
+/**
+ * True when `command args` is an editor that runs in the terminal: one of
+ * TERMINAL_EDITORS (but not `vim -g`, which opens gvim), `emacs` with `-nw`,
+ * `-t` or `--no-window-system`, or `emacsclient` with `-t`, `-nw` or `--tty`.
+ * A GUI editor (`code --wait`, `subl -w`, `gvim -f`, plain `emacs`) is false.
+ */
+export function isTerminalEditor(command: string, args: readonly string[]): boolean {
+  const name = path.basename(command.replace(/\\/g, '/')).toLowerCase().replace(/\.exe$/, '');
+  if (TERMINAL_EDITORS.has(name)) return !(/^(vim|nvim|vi|view)$/.test(name) && args.includes('-g'));
+  if (name === 'emacs') return args.some((a) => a === '-nw' || a === '-t' || a === '--no-window-system');
+  if (name === 'emacsclient') return args.some((a) => a === '-t' || a === '-nw' || a === '--tty');
+  return false;
 }
 
 /**
@@ -619,6 +871,7 @@ export async function runEdit(
   io: IO,
   spawnEditor: SpawnEditor = spawnEditorInherit,
   env: NodeJS.ProcessEnv = process.env,
+  interactive: () => boolean = isInteractive,
 ): Promise<number> {
   if (opts.json) return refuse(io, true, 'edit opens an editor and has no --json output', EDIT_NON_INTERACTIVE_NEXT_STEP);
   const cwd = resolveCwd(opts);
@@ -635,6 +888,20 @@ export async function runEdit(
     scope = 'global';
   }
 
+  const editor = editorCommand(env);
+  // Without a terminal on both ends (a pipe, CI, an agent's shell) a
+  // terminal editor waits for keys that never come, so the command hung.
+  // Checked before anything is created. A GUI editor opens its own window.
+  if (editor && isTerminalEditor(editor.command, editor.args) && !interactive()) {
+    const variable = env.VISUAL?.trim() ? '$VISUAL' : '$EDITOR';
+    return refuse(
+      io,
+      false,
+      `${variable} (${editor.command}) is a terminal editor, and stdin and stdout are not both a terminal, so it would wait for input that never comes`,
+      `run lexicon edit in a terminal, set VISUAL to an editor that opens a window and waits (e.g. VISUAL="code --wait"), or edit the file directly: ${target}`,
+    );
+  }
+
   // The existence check and the create are one locked step, the way `runInit`
   // does it. Apart, a `lexicon add` landing between them wrote the file this
   // had just decided was missing, and the empty lexicon written here was
@@ -642,17 +909,16 @@ export async function runEdit(
   await withLexiconLock(target, async () => {
     if (existsSync(target)) return;
     await writeLexiconFile({ path: target, scope, lexicon: emptyLexicon(), exists: false });
-    line(io, `created ${scope} lexicon: ${safe(target)}`);
+    line(io, `created ${scope} lexicon: ${safeMessage(target)}`);
   });
   const trustedBefore =
     scope === 'project'
       ? (await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, store)) === 'trusted'
       : true;
 
-  const editor = editorCommand(env);
   if (!editor) {
     line(io, `no $VISUAL or $EDITOR set; edit the file directly:`);
-    line(io, safe(target));
+    line(io, safeMessage(target));
     // Nothing checks the file afterwards on this path, and a hand edit leaves
     // a project file untrusted (its terms unused) until it is trusted again.
     line(
@@ -666,23 +932,60 @@ export async function runEdit(
     return 0;
   }
 
-  const code = await spawnEditor(editor.command, editor.args, target);
-  if (code !== 0) io.stderr(`lexicon: ${editor.command} exited with code ${code}; checking the file anyway\n`);
+  let code: number;
+  try {
+    code = await spawnEditor(editor.command, editor.args, target);
+  } catch (err) {
+    // A $VISUAL or $EDITOR that names no program on PATH ended the command
+    // with only `spawn <name> ENOENT`: no word on which variable, or where
+    // the file is to edit by hand.
+    const variable = env.VISUAL?.trim() ? '$VISUAL' : '$EDITOR';
+    return refuse(
+      io,
+      false,
+      `could not start the editor ${variable} names (${editor.command}): ${errorMessage(err)}`,
+      `set ${variable} to an editor on your PATH (e.g. ${variable === '$VISUAL' ? 'VISUAL' : 'EDITOR'}=vi), or edit the file directly: ${target}`,
+    );
+  }
+  if (code !== 0) {
+    // A non-zero exit is how an editor says the edit was abandoned (vim `:cq`,
+    // a killed `code --wait`). Re-trusting the file then would bless whatever
+    // an earlier `:w` in that session left there, which the user just backed
+    // out of, so nothing is checked or re-trusted.
+    io.stderr(
+      `lexicon: ${safe(editor.command)} exited with code ${code}, so the edit is treated as aborted` +
+        `${scope === 'project' && trustedBefore ? ' and the project lexicon was not re-trusted' : ''}\n`,
+    );
+    if (scope === 'project' && trustedBefore && (await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, store)) !== 'trusted') {
+      io.stderr(`lexicon: ${safeMessage(target)} changed anyway, so its terms are not used until you review it and run: lexicon trust\n`);
+    }
+    io.stderr(`lexicon: to edit it again, run: lexicon edit${opts.project ? ' --project' : ''}\n`);
+    return 1;
+  }
 
+  /** sha256 of the bytes just checked, the edit the user made: what re-trusting pins. */
+  let checkedSha: string | undefined;
   try {
     const file = await readLexiconFile(target, scope);
-    line(io, `ok: ${plural(file.lexicon.terms.length, 'term')} in ${safe(target)}`);
+    checkedSha = await parsedContentHash(file);
+    line(io, `ok: ${plural(file.lexicon.terms.length, 'term')} in ${safeMessage(target)}`);
   } catch (err) {
-    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
-    io.stderr(`lexicon: your edits are still in ${safe(target)}; fix the file and run: lexicon edit${opts.project ? ' --project' : ''}\n`);
+    io.stderr(`lexicon: ${safeMessage(errorMessage(err))}\n`);
+    io.stderr(`lexicon: your edits are still in ${safeMessage(target)}; fix the file and run: lexicon edit${opts.project ? ' --project' : ''}\n`);
     return 1;
   }
 
   if (scope === 'project') {
     if (trustedBefore) {
       // The user just edited it themselves; that is the approval `lexicon trust` records.
-      await refreshTrust(target, store);
-      line(io, dim(`project lexicon re-trusted (${safe(target)})`));
+      // Only the bytes checked above: a file rewritten since then by
+      // someone else keeps its old pin and reads 'changed'.
+      await refreshTrust(target, { ...store, ...(checkedSha !== undefined ? { expectedSha256: checkedSha } : {}) });
+      if ((await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, store)) === 'trusted') {
+        line(io, dim(`project lexicon re-trusted (${safeMessage(target)})`));
+      } else {
+        io.stderr(`lexicon: ${safeMessage(target)} changed again after the edit was checked, so it was not re-trusted; review it and run: lexicon trust\n`);
+      }
     } else {
       line(io, dim(`project lexicon is not trusted yet; review it and run: lexicon trust`));
     }

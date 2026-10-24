@@ -76,7 +76,7 @@ directory in every working directory); a repo checkout
 also looks in `bench/audio/models/` so the benchmark's download is reused. A missing
 named model is fetched from
 `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-<name>.bin` with a
-progress line on stderr (`base.en` is 148 MB, `small.en` 488 MB). A model file that is
+progress line on stderr (`base.en` is 148 MB, `small.en` 488 MB). A name Hugging Face answers 404 for (a misspelt `--model`) is said to be no whisper model, with names that exist. A model file that is
 already there is used only when it starts with the ggml magic bytes: an empty file or a
 saved error page is downloaded again (a named model) or refused before recording (a
 `--model` path), and `lexicon doctor` warns about it.
@@ -128,6 +128,10 @@ lexicon voice --toggle --paste           # press once: "recording"; press again:
 lexicon voice --status                   # "recording since <time>" (exit 0) or "idle" (exit 1)
 ```
 
+With `--json`, `--status` prints `{ ok: true, recording: true, since, pid }` while a
+recording runs and `{ ok: false, recording: false }` when idle: `ok` follows the exit
+code, as `lexicon serve --status --json` does, and an idle answer carries no `error`.
+
 The first call spawns ffmpeg detached, writes
 `~/.config/lexicon/voice/recording.json` (`{ pid, wav, startedAt }`), prints
 `recording` and exits immediately. The second call takes the state file, stops that
@@ -135,6 +139,14 @@ pid, waits up to 3 s, transcribes, outputs, and removes the WAV. The recorded le
 reported in `--json` and in `history.jsonl` is wall clock for a recording this command
 stopped, and the audio's own length (bytes over 32000 a second) for one that had
 already ended on its own.
+
+Each press reads its own flags. The press that starts records with its `--device`
+and `--seconds` (and refuses a `--model` path that is not there); the press that
+stops transcribes and delivers with its own `--model`, `--lang`, `--translate`,
+`--no-prompt`, `--no-history`, `--copy` and `--paste`. `--json` shapes each press's
+own output. Nothing from the first press is remembered, so a `--paste` given only to
+the start press is not applied: bind one command line with every flag to the hotkey
+and both presses run it.
 
 Stopping differs by platform. On macOS and Linux the recorder gets SIGINT and ffmpeg
 finalizes the WAV header on its way out. Windows has no equivalent: Node maps every
@@ -197,7 +209,7 @@ refuses to transcribe is kept too, because a refusal is a parser's opinion about
 container and the audio is the user's. Those kept captures add up, and nothing here
 deletes them for you: a start sweeps away only what cannot hold audio (zero-byte
 captures) and then says how many recordings are still sitting in `voice/` and how much
-space they take. ffmpeg's stderr for a toggle recording goes to `voice/recorder.log`.
+space they take. ffmpeg's stderr for a toggle recording goes to `voice/recorder.log`, which each start empties, so it holds the current recording's output only.
 
 ### Hotkey recipes
 

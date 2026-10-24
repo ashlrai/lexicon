@@ -14,13 +14,15 @@
  * estimate, and keeps names, most important first, only while the whole line
  * stays within WHISPER_PROMPT_TOKEN_BUDGET.
  *
- * The `, ` join is not a delimiter Whisper parses: the prompt is read as text
- * already heard, so a canonical holding `, ` biases the same spelling either
- * way, and nothing reads the line back. Left as is and documented in
- * docs/EXPORTS.md rather than switching separators for every lexicon.
+ * Neither Whisper nor OpenAI's prompting guide defines a separator for the
+ * list, so a canonical holding a comma (`Crosby, Stills & Nash`) could not be
+ * told from two names in the line. Such a name, or one starting with a double
+ * quote, is written in double quotes with inner quotes doubled
+ * (`listItem`, the CSV style `joinAliasList` uses for `, ` lists), and its
+ * quotes count toward the token window. Every other name is written as is.
  */
 import type { ExportOptions, Lexicon } from '../types.js';
-import { canonicalList, quotedNames, sortByImportance } from './shared.js';
+import { canonicalList, listItem, quotedNames, sortByImportance } from './shared.js';
 import type { ExportSink } from './shared.js';
 
 export const WHISPER_PROMPT_DEFAULT_LIMIT = 100;
@@ -51,15 +53,33 @@ export function estimateWhisperTokens(text: string): number {
 
 export function exportWhisperPrompt(lexicon: Lexicon, opts: ExportOptions = {}, sink?: ExportSink): string {
   const limit = opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT;
-  const names = canonicalList(sortByImportance(lexicon.terms))
-    .slice(0, Math.max(0, limit))
-    .map((c) => c.canonical.replace(/\s+/g, ' ').trim());
+  // Whitespace collapsed, then each name once: canonicals that differ only
+  // in whitespace (`Ashlr  AI`, a no-break space) each spent prompt tokens on
+  // the same name, and each took a place under the cap.
+  const all: string[] = [];
+  const seen = new Set<string>();
+  const repeats: string[] = [];
+  for (const { canonical } of canonicalList(sortByImportance(lexicon.terms))) {
+    const name = canonical.replace(/\s+/g, ' ').trim();
+    if (!name) continue;
+    if (seen.has(name)) {
+      repeats.push(canonical);
+      continue;
+    }
+    seen.add(name);
+    all.push(name);
+  }
+  const names = all.slice(0, Math.max(0, limit));
+  // Past the default cap: a `limit` the caller gave was applied before the
+  // exporter (applyOptions) and is what they asked for, but the default one
+  // left names out without a word, and the window note undercounted.
+  const pastDefault = opts.limit === undefined ? all.slice(names.length) : [];
   const kept: string[] = [];
   const dropped: string[] = [];
   let used = 0;
   for (const name of names) {
     // `, ` before every name but the first: the comma is a token, the space joins the word.
-    const cost = estimateWhisperTokens(kept.length > 0 ? `, ${name}` : name);
+    const cost = estimateWhisperTokens(kept.length > 0 ? `, ${listItem(name)}` : listItem(name));
     if (dropped.length === 0 && used + cost <= WHISPER_PROMPT_TOKEN_BUDGET) {
       kept.push(name);
       used += cost;
@@ -67,10 +87,21 @@ export function exportWhisperPrompt(lexicon: Lexicon, opts: ExportOptions = {}, 
       dropped.push(name);
     }
   }
+  if (repeats.length > 0) {
+    sink?.notes.push(
+      `left out ${repeats.length} name${repeats.length === 1 ? '' : 's'} that read as one already listed once whitespace is collapsed: ${quotedNames(repeats)}`,
+    );
+  }
+  if (pastDefault.length > 0) {
+    sink?.notes.push(
+      `left out ${pastDefault.length} name${pastDefault.length === 1 ? '' : 's'} past the ${WHISPER_PROMPT_DEFAULT_LIMIT} a prompt holds by default (the most used kept): ${quotedNames(pastDefault)}`,
+    );
+  }
   if (dropped.length > 0) {
     sink?.notes.push(
       `left out ${dropped.length} name${dropped.length === 1 ? '' : 's'} past the ${WHISPER_PROMPT_TOKEN_BUDGET} prompt tokens Whisper reads (an offline estimate): ${quotedNames(dropped)}`,
     );
   }
-  return kept.join(', ');
+  if (sink) sink.names = kept.length;
+  return kept.map(listItem).join(', ');
 }

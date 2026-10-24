@@ -148,6 +148,13 @@ describe('remove_term', () => {
     expect(JSON.parse(miss.text)).toMatchObject({ removed: false, note: expect.stringContaining('list_terms') });
   });
 
+  // Catches: remove_term reported the canonical as the agent typed it ("yod"), not the term the file held ("Yod").
+  it('reports the stored spelling of the canonical it removed', async () => {
+    expect((await call('add_term', { canonical: 'Yod', aliases: ['yodd'] })).isError).toBe(false);
+    const hit = await call('remove_term', { canonical: 'yod' });
+    expect(JSON.parse(hit.text)).toMatchObject({ canonical: 'Yod', removed: true });
+  });
+
   it('tells the agent where a term lives when the requested scope does not hold it', async () => {
     await trustedProjectFile();
     const added = await call('add_term', { canonical: 'Kubectl', aliases: ['cube control'], scope: 'project' });
@@ -219,7 +226,7 @@ describe('remove_term', () => {
     expect(first.note).toMatch(/scope "global"/);
 
     const second = JSON.parse((await call('remove_term', { canonical: 'kubectl', scope: 'global' })).text) as Record<string, unknown>;
-    expect(second).toEqual({ canonical: 'kubectl', removed: true, path: path.join(home, 'lexicon.yaml') });
+    expect(second).toEqual({ canonical: 'Kubectl', removed: true, path: path.join(home, 'lexicon.yaml') });
     const listed = JSON.parse((await call('list_terms', { query: 'kubectl' })).text) as { terms: unknown[] };
     expect(listed.terms).toEqual([]);
   });
@@ -233,7 +240,7 @@ describe('remove_term', () => {
 
     const result = JSON.parse((await call('remove_term', { canonical: 'kubectl', scope: 'global' })).text) as Record<string, unknown>;
     expect(result).toMatchObject({
-      canonical: 'kubectl',
+      canonical: 'Kubectl',
       removed: true,
       path: path.join(home, 'lexicon.yaml'),
       untrustedProject: { path: projectFile, trust: 'untrusted' },
@@ -350,7 +357,7 @@ describe('suggest_canonical with an untrusted project lexicon', () => {
       projectTrust?: string;
     };
     expect(payload.suggestions).toEqual([]);
-    expect(payload.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+    expect(payload.skippedProject).toBe(pathForModel(path.join(repo, '.lexicon.yaml')));
     expect(payload.projectTrust).toBe('untrusted');
     expect(JSON.stringify(payload)).not.toContain('Kubectl');
   });
@@ -469,7 +476,7 @@ describe('normalize_transcript with an untrusted project lexicon', () => {
     const payload = JSON.parse(res.text) as { output: string; changed: boolean; skippedProject?: string; projectTrust?: string; note?: string };
     expect(payload.output).toBe('ask fantom');
     expect(payload.changed).toBe(false);
-    expect(payload.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+    expect(payload.skippedProject).toBe(pathForModel(path.join(repo, '.lexicon.yaml')));
     expect(payload.projectTrust).toBe('untrusted');
     expect(payload.note).toMatch(/lexicon trust/);
     expect(res.text).not.toContain('Fantom');
@@ -634,7 +641,7 @@ describe('lexicon_stats and voice-context with an untrusted project lexicon', ()
     const stats = await call('lexicon_stats', {});
     const payload = JSON.parse(stats.text) as { termCount: number; skippedProject?: string; note?: string };
     expect(payload.termCount).toBe(0);
-    expect(payload.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+    expect(payload.skippedProject).toBe(pathForModel(path.join(repo, '.lexicon.yaml')));
     expect(payload.note).toMatch(/lexicon trust/);
     expect(stats.text).not.toContain('Fantom');
 
@@ -708,6 +715,22 @@ describe('normalize_transcript limits', () => {
     const payload = await callWith({}, { text: 'ask Hetsner' });
     expect(payload.output).toBe('ask Hetzner');
     expect(payload.incomplete).toBeUndefined();
+  });
+
+  // Catches: `text` had no maximum, so a pasted 50 MB file was taken whole
+  // and echoed back in `output` although only 100000 characters were checked.
+  it('refuses text over the input maximum without echoing it, and takes text at it', async () => {
+    const { MCP_NORMALIZE_INPUT_MAX_CHARS, MCP_NORMALIZE_MAX_CHARS } = await import('../src/mcp/tools/terms.js');
+    const over = `Hetsner ${'x'.repeat(MCP_NORMALIZE_INPUT_MAX_CHARS)}`;
+    const res = await call('normalize_transcript', { text: over });
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain(`longer than ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters, so nothing was checked`);
+    expect(res.text).toContain(`pieces of at most ${MCP_NORMALIZE_MAX_CHARS} characters`);
+    expect(res.text.length).toBeLessThan(5000);
+    const at = `Hetsner ${'x'.repeat(MCP_NORMALIZE_INPUT_MAX_CHARS - 8)}`;
+    const payload = await callWith({ normalizeBudgetMs: 60_000 }, { text: at });
+    expect((payload.output as string).startsWith('Hetzner ')).toBe(true);
+    expect(payload.incomplete).toMatchObject({ reasons: ['length'], totalChars: MCP_NORMALIZE_INPUT_MAX_CHARS });
   });
 
   it('applies the default length cap', async () => {
@@ -890,6 +913,17 @@ describe('learn_correction when another term already claims `heard`', () => {
     expect(payload.summary).toContain('remove_term with canonical "The \\"Verse\\" Co", alias "Ver\\"sel", scope "global"');
   });
 
+  // Catches: heard the canonical and meant one of its aliases ("it's Ashlr
+  // not ashlr.ai") said the canonical spelling was already in place.
+  it('says a correction runs the other way round from the lexicon, and how to flip it', async () => {
+    await call('add_term', { canonical: 'Ashlr.AI', aliases: ['Ashlr'] });
+    const payload = JSON.parse((await call('learn_correction', { heard: 'ashlr.ai', meant: 'Ashlr' })).text) as { reversed?: boolean; aliasAdded: boolean; summary: string };
+    expect(payload).toMatchObject({ reversed: true, aliasAdded: false, created: false });
+    expect(payload.summary).toMatch(/^"Ashlr" is an alias of "Ashlr.AI", so it is already corrected to "Ashlr.AI", the other way round/);
+    expect(payload.summary).toContain('call remove_term with canonical "Ashlr.AI"');
+    expect(payload.summary).not.toContain('already the canonical spelling');
+  });
+
   it('names a term whose canonical is the heard spelling, which no alias can override', async () => {
     await call('add_term', { canonical: 'Verse', aliases: ['vurse'] });
     const payload = JSON.parse((await call('learn_correction', { heard: 'Verse', meant: 'Vercel' })).text) as { conflict?: { canonical: string; as: string }; summary: string };
@@ -964,7 +998,7 @@ describe('tool and resource descriptions agree with what the code does', () => {
       const parsed = JSON.parse(text) as { version: number; terms: unknown[]; skippedProject?: string; projectTrust?: string; note?: string };
       expect(parsed.terms).toEqual([]);
       expect(parsed.version).toBe(1);
-      expect(parsed.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+      expect(parsed.skippedProject).toBe(pathForModel(path.join(repo, '.lexicon.yaml')));
       expect(parsed.projectTrust).toBe('untrusted');
       expect(parsed.note).toMatch(/lexicon trust/);
       // Catches: with the global file empty too, the note named the skipped
@@ -1125,7 +1159,7 @@ describe('list_packs with an untrusted project lexicon', () => {
     };
     expect(payload.packs.find((p) => p.name === 'developer')?.installed).toBe(false);
     expect(payload.projectTrust).toBe('untrusted');
-    expect(payload.skippedProject).toBe(projectFile);
+    expect(payload.skippedProject).toBe(pathForModel(projectFile));
     expect(payload.note).toMatch(/lexicon trust/);
     expect(payload.note).toMatch(/shows as not installed/);
     expect(JSON.stringify(payload)).not.toContain('Kubectl');
@@ -1153,10 +1187,15 @@ describe('lexicon list --full and MCP list_terms', () => {
     expect(ok).toBe(true);
     expect(Object.keys(JSON.parse(full.out) as object)[0]).toBe('ok');
     expect(Object.keys(cli).sort()).toEqual(Object.keys(mcp).sort());
-    const { note: cliNote, ...cliRest } = cli;
-    const { note: mcpNote, ...mcpRest } = mcp;
+    // The CLI prints the skipped file's path whole; MCP gives the model the
+    // path through pathForModel (its last components), so on a deep temp dir
+    // (macOS /private/var/folders/..., Windows AppData\Local\Temp) they differ.
+    const { note: cliNote, skippedProject: cliSkipped, ...cliRest } = cli;
+    const { note: mcpNote, skippedProject: mcpSkipped, ...mcpRest } = mcp;
     expect(cliRest).toEqual(mcpRest);
-    expect(cliRest).toMatchObject({ counts: { matched: 1, total: 2, global: 2, project: 0 }, projectTrust: 'untrusted', skippedProject: path.join(repo, '.lexicon.yaml') });
+    expect(cliRest).toMatchObject({ counts: { matched: 1, total: 2, global: 2, project: 0 }, projectTrust: 'untrusted' });
+    expect(cliSkipped).toBe(path.join(repo, '.lexicon.yaml'));
+    expect(mcpSkipped).toBe(pathForModel(path.join(repo, '.lexicon.yaml')));
     expect(cliNote).toMatch(/lexicon trust/);
     expect(mcpNote).toMatch(/lexicon trust/);
     expect(full.out).not.toContain('Secret');
@@ -1226,6 +1265,36 @@ describe('voice-context and lexicon://me', () => {
       await server.close();
     }
   });
+
+  // Catches: lexicon://json and the tools' `skippedProject` carried the path
+  // raw, so a bidi override or a long directory name chosen by whoever
+  // published the repo reached the model as is (lexicon://me bounded it).
+  it('lexicon://json and list_terms pass the skipped project path through pathForModel', async () => {
+    const nasty = path.join(repo, 'a', 'b', `evil\u202ename${'x'.repeat(200)}`);
+    await fs.mkdir(path.join(nasty, '.git'), { recursive: true });
+    await fs.writeFile(path.join(nasty, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Phantom\n    aliases: [Fantom]\n');
+    const server = createServer({ cwd: nasty });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const json = (await client.readResource({ uri: 'lexicon://json' })).contents.map((c) => ('text' in c ? String(c.text) : '')).join('\n');
+      const tool = (await client.callTool({ name: 'list_terms', arguments: {} })) as ToolResult;
+      const listed = (tool.content ?? []).map((c) => c.text ?? '').join('\n');
+      const expected = pathForModel(path.join(nasty, '.lexicon.yaml'));
+      for (const t of [json, listed]) {
+        const payload = JSON.parse(t) as { skippedProject?: string };
+        expect(payload.skippedProject).toBe(expected);
+        expect(payload.skippedProject).not.toContain('\u202e');
+        expect(t).not.toContain(nasty);
+        expect(t).not.toContain('Fantom');
+      }
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
 });
 
 describe('a lexicon file that does not parse', () => {
@@ -1256,6 +1325,37 @@ describe('a lexicon file that does not parse', () => {
       // The onboard prompt reads no lexicon and still works.
       expect((await client.getPrompt({ name: 'onboard' })).messages.length).toBe(1);
     } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  // Catches: a lexicon that could not be read at all (LEXICON_PATH under a
+  // regular file) reached the model as the bare store error, with no fix.
+  it('a lexicon that cannot be read names the path and LEXICON_PATH, not lexicon edit', async () => {
+    const saved = process.env.LEXICON_PATH;
+    const blocker = path.join(repo, 'notes.txt');
+    await fs.writeFile(blocker, 'not a directory\n', 'utf8');
+    process.env.LEXICON_PATH = path.join(blocker, 'lexicon.yaml');
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const failures: string[] = [];
+      failures.push(await client.readResource({ uri: 'lexicon://json' }).then(() => 'resolved', (e: unknown) => (e as Error).message));
+      const tool = (await client.callTool({ name: 'list_terms', arguments: {} })) as ToolResult;
+      expect(tool.isError).toBe(true);
+      failures.push((tool.content ?? []).map((c) => c.text ?? '').join('\n'));
+      for (const message of failures) {
+        expect(message).toContain('Cannot read lexicon at');
+        expect(message).toContain('Ask the user to make that path readable, or to point LEXICON_PATH');
+        expect(message).toContain('then check it with lexicon_doctor');
+        expect(message).not.toContain('lexicon edit');
+      }
+    } finally {
+      process.env.LEXICON_PATH = saved;
       await client.close();
       await server.close();
     }
@@ -1473,7 +1573,7 @@ describe('project-scope writes from MCP never trust the project file', () => {
     expect(await trustStatus()).toBe('untrusted');
     const listed = JSON.parse((await call('list_terms', {})).text) as { terms: unknown[]; skippedProject?: string };
     expect(listed.terms).toEqual([]);
-    expect(listed.skippedProject).toBe(projectPath);
+    expect(listed.skippedProject).toBe(pathForModel(projectPath));
   });
 
   // Catches: a write into an existing untrusted file returned the file's own
@@ -1635,12 +1735,27 @@ describe('harvest_repo and suggest_terms on a model-chosen path', () => {
     // Not merged: list_terms sees only the (empty) global lexicon and names the skipped file.
     const listed = JSON.parse((await call('list_terms', {})).text) as { terms: unknown[]; skippedProject?: string };
     expect(listed.terms).toEqual([]);
-    expect(listed.skippedProject).toBe(projectPath);
+    expect(listed.skippedProject).toBe(pathForModel(projectPath));
 
     // A second harvest merges into the untrusted file rather than failing the trust gate.
     const again = await call('harvest_repo', { add: true, minCount: 1 });
     expect(again.isError).toBe(false);
     expect(JSON.parse(again.text)).toMatchObject({ trusted: false });
+  });
+
+  // Catches: add: true with no candidates returned added: 0 and no note, which
+  // read like a write that dropped every name rather than nothing to write.
+  it('add: true with no candidates says nothing was written', async () => {
+    // Two letters: too short to propose as the project name, and nothing else in it.
+    const empty = path.join(repo, 'x2');
+    await fs.mkdir(empty);
+    const res = await call('harvest_repo', { path: empty, add: true });
+    expect(res.isError).toBe(false);
+    const payload = JSON.parse(res.text) as { count: number; added: number; note?: string; path?: string };
+    expect(payload).toMatchObject({ count: 0, added: 0 });
+    expect(payload).not.toHaveProperty('path');
+    expect(payload.note).toBe('No candidates were found, so nothing was written to the project lexicon');
+    await expect(fs.access(path.join(repo, '.lexicon.yaml'))).rejects.toThrow();
   });
 
   // Catches: add: true never pinned, so a project file the user had already
@@ -1666,6 +1781,63 @@ describe('harvest_repo and suggest_terms on a model-chosen path', () => {
     expect(again.trusted).toBe(false);
     const after = JSON.parse((await call('trust_project', { action: 'status' })).text) as { status: string };
     expect(after.status).toBe('changed');
+  });
+
+  // Catches: add: true wrote the .lexicon.yaml found by walking up from
+  // `path` (or a new one at its git root), which can be above every allowed
+  // root: a LEXICON_HARVEST_ROOTS subdirectory wrote its parent repo's file.
+  it('add: true never writes a project file outside the allowed roots', async () => {
+    await fs.mkdir(path.join(outside, '.git'));
+    process.env.LEXICON_HARVEST_ROOTS = path.join(outside, 'other');
+    const above = path.join(outside, '.lexicon.yaml');
+
+    // No file yet: the new one would be at the git root, above the allowed root.
+    const created = await call('harvest_repo', { path: path.join(outside, 'other'), add: true, minCount: 1 });
+    expect(created.isError, created.text).toBe(true);
+    expect(created.text).toContain(`add: true would write ${above}`);
+    expect(created.text).toContain('nothing was read or written');
+    expect(created.text).toContain('harvest_repo without add');
+    await expect(fs.stat(above)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    // An existing file above the root, found by walking up, is left as it was.
+    await fs.writeFile(above, 'version: 1\nterms: []\n');
+    const walked = await call('harvest_repo', { path: path.join(outside, 'other'), add: true, minCount: 1 });
+    expect(walked.isError, walked.text).toBe(true);
+    expect(await fs.readFile(above, 'utf8')).toBe('version: 1\nterms: []\n');
+
+    // The preview still works, and a repo of its own inside the root takes the write.
+    expect((await call('harvest_repo', { path: path.join(outside, 'other'), minCount: 1 })).isError).toBe(false);
+    await fs.mkdir(path.join(outside, 'other', '.git'));
+    const own = await call('harvest_repo', { path: path.join(outside, 'other'), add: true, minCount: 1 });
+    expect(own.isError, own.text).toBe(false);
+    expect(JSON.parse(own.text)).toMatchObject({ path: path.join(outside, 'other', '.lexicon.yaml') });
+    expect(await fs.readFile(above, 'utf8')).toBe('version: 1\nterms: []\n');
+  });
+
+  // Catches: apply_suggestion's suggestion schema was not strict, so a
+  // misspelt key (`aliass` for `aliases`) was dropped and the suggestion was
+  // applied without it, reported as saved.
+  it('apply_suggestion takes a suggest_terms suggestion back whole and refuses a misspelt key', async () => {
+    const sug = await call('suggest_terms', { cwd: 'app' });
+    expect(sug.isError, sug.text).toBe(false);
+    const suggestions = JSON.parse(sug.text) as Array<Record<string, unknown>>;
+    const term = suggestions.find((s) => s.kind === 'term' && s.category !== undefined && Array.isArray(s.aliases));
+    expect(term, sug.text).toBeDefined();
+    // Every field the round trip carries, as suggest_terms returned it.
+    for (const key of ['kind', 'canonical', 'reason', 'confidence', 'evidence', 'count', 'aliases', 'category', 'scope', 'path']) expect(term).toHaveProperty(key);
+
+    const misspelt = { ...term, aliass: ['made up'] };
+    for (const args of [{ suggestion: misspelt }, { suggestions: [misspelt] }]) {
+      const bad = await call('apply_suggestion', args);
+      expect(bad.isError, bad.text).toBe(true);
+      expect(bad.text).toContain('aliass');
+    }
+    const listed = JSON.parse((await call('list_terms', {})).text) as { terms: unknown[] };
+    expect(listed.terms).toEqual([]);
+
+    const ok = await call('apply_suggestion', { suggestion: term });
+    expect(ok.isError, ok.text).toBe(false);
+    expect(JSON.parse(ok.text)).toMatchObject({ path: process.env.LEXICON_PATH });
   });
 
   // Catches: `path` was resolved and read wherever it pointed (a probe read /etc).

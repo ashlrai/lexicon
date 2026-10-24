@@ -87,6 +87,9 @@ jobs:
       # CLI, the real hook and the real MCP server as child processes and runs
       # on every event. Any change to dependencies, configs, fixtures or CI
       # falls back to the full suite, and pushes to main always run it.
+      # So does any change to serve, install, setup or uninstall code or the
+      # atomic writer: their tests depend on per-OS paths (realpath, temp
+      # dirs) that the import graph does not capture (main went red at e894620).
       # One vitest invocation: e2e is the slowest file (~40-80 s) and runs in
       # one worker while the other workers take the remaining files. Run as a
       # separate step it added its whole duration to the job; a failure is
@@ -100,7 +103,7 @@ jobs:
           # sources under tsx: same code, half the e2e time (no loader per spawn).
           LEXICON_E2E_DIST: '1'
         run: |
-          if [ "$EVENT" = "pull_request" ] && ! git diff --name-only "$BASE...HEAD" | grep -Eq '^(package(-lock)?\.json|vitest\.config\.ts|tsconfig[^/]*\.json|tests/fixtures/|examples/|packs/|registry/|\.github/)'; then
+          if [ "$EVENT" = "pull_request" ] && ! git diff --name-only "$BASE...HEAD" | grep -Eq '^(package(-lock)?\.json|vitest\.config\.ts|tsconfig[^/]*\.json|tests/fixtures/|examples/|packs/|registry/|\.github/|src/serve/|src/cli/(cmd-(serve|install|setup|uninstall)\.ts|serve-paths\.ts|setup/)|src/util/atomic\.ts)'; then
             # A failed listing must fail the step, never shrink the run to e2e.
             list="$(npx vitest list --changed "$BASE" --filesOnly)"
             mapfile -t affected <<< "$list"

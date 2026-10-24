@@ -12,7 +12,7 @@ import { statSync } from 'node:fs';
 import { InvalidArgumentError } from 'commander';
 import type { Command } from 'commander';
 import path from 'node:path';
-import { TERM_CATEGORIES, commandLine, isProjectTrustError, sanitizeForDisplay, sanitizeForDisplayMax, skippedProjectNote } from '../core/index.js';
+import { TERM_CATEGORIES, commandLine, isProjectTrustError, sanitizeForDisplay, sanitizeForDisplayMax, shellWord, skippedProjectNote } from '../core/index.js';
 import type { LearnConflict, LoadedLexicon, TermCategory, TermHolder } from '../core/index.js';
 import { errorMessage } from '../util/errors.js';
 
@@ -107,6 +107,16 @@ export function shownCommand(words: readonly string[], platform: NodeJS.Platform
   return sanitizeForDisplayMax(commandLine(words, platform), Number.POSITIVE_INFINITY);
 }
 
+/**
+ * One word quoted for this platform's shell, for a command line written
+ * around a placeholder. shownCommand([word]) is a whole command: on Windows
+ * a quoted first word gets PowerShell's call operator, which put
+ * `lexicon learn <heard> & 'Zoë'` on screen.
+ */
+export function shownWord(word: string, platform: NodeJS.Platform = process.platform): string {
+  return sanitizeForDisplayMax(shellWord(word, platform), Number.POSITIVE_INFINITY);
+}
+
 /** `safe` per line, for text whose line breaks are the point (diff summaries, multi-line errors). */
 export function safeLines(s: string): string {
   return s.split('\n').map(safe).join('\n');
@@ -129,6 +139,16 @@ export function safeMessage(s: string): string {
     .map((l) => sanitizeForDisplayMax(l, ERROR_LINE_MAX_CHARS))
     .join('\n');
 }
+/**
+ * One file path on one line: sanitized like `safe` (line breaks included, so
+ * a directory name cannot start a line of its own) but capped at
+ * ERROR_LINE_MAX_CHARS (PATH_MAX) rather than 200, so a deep path keeps its
+ * file name.
+ */
+export function safePath(p: string): string {
+  return sanitizeForDisplayMax(p, ERROR_LINE_MAX_CHARS);
+}
+
 /** Lines of an error `safeError` prints before "... and N more lines". */
 export const ERROR_MAX_LINES = 12;
 
@@ -177,12 +197,20 @@ export function ensureNewline(s: string): string {
  * trimmed so the output is diff-friendly. Ends with a newline. Every cell is
  * passed through `safe` (escape sequences, control and invisible characters
  * dropped, 200-char cap) before it is measured, so a hostile alias can neither
- * recolour the terminal nor misalign the column it sits in.
+ * recolour the terminal nor misalign the column it sits in. A cell in one of
+ * `opts.pathColumns` (0-based) is a file path: it is sanitized the same way
+ * but capped at ERROR_LINE_MAX_CHARS (PATH_MAX) instead of 200, since the cap
+ * cut from the end and took the file name off a deep path.
  */
-export function renderTable(rows: readonly (readonly string[])[], header?: readonly string[]): string {
-  const all: (readonly string[])[] = header
-    ? [header.map(safe), ...rows.map((r) => r.map(safe))]
-    : rows.map((r) => r.map(safe));
+export function renderTable(
+  rows: readonly (readonly string[])[],
+  header?: readonly string[],
+  opts: { pathColumns?: readonly number[] } = {},
+): string {
+  const pathColumns = new Set(opts.pathColumns ?? []);
+  const cell = (r: readonly string[]): string[] =>
+    r.map((c, i) => (pathColumns.has(i) ? safePath(c) : safe(c)));
+  const all: (readonly string[])[] = header ? [header.map(safe), ...rows.map(cell)] : rows.map(cell);
   if (all.length === 0) return '';
   const cols = Math.max(...all.map((r) => r.length));
   const widths: number[] = new Array<number>(cols).fill(0);
@@ -308,16 +336,18 @@ export class CliRefusal extends Error {
 }
 
 /**
- * A `--category` value, lowercased; undefined when the flag is absent. An
- * unknown one is a CliRefusal naming the categories, so every command that
- * takes `--category` (list, add, export, review) gives the same next step.
+ * A `--category` value, trimmed and lowercased; undefined when the flag is
+ * absent. An unknown one is a CliRefusal naming the categories, so every
+ * command that takes `--category` (list, add, export, review) gives the same
+ * next step. Trimmed as the local API trims `?category=`: `--category " brand"`
+ * (a quoted shell list) was refused there but taken by the HTTP API.
  */
 export function parseCategory(value: string | undefined): TermCategory | undefined {
   if (value === undefined) return undefined;
-  const lower = value.toLowerCase();
+  const lower = value.trim().toLowerCase();
   if (!(TERM_CATEGORIES as readonly string[]).includes(lower)) {
     throw new CliRefusal(
-      `unknown category "${value}" (expected one of: ${TERM_CATEGORIES.join(', ')})`,
+      `unknown category "${value.trim()}" (expected one of: ${TERM_CATEGORIES.join(', ')})`,
       `pass one of ${TERM_CATEGORIES.join(', ')} to --category, or leave --category out`,
     );
   }
@@ -412,6 +442,9 @@ export function refuse(io: IO, json: boolean | undefined, error: string, nextSte
  * `.lexicon.yaml`, so the basename picks the `edit` flag that opens it.
  */
 export function unreadableLexiconHint(message: string): string | undefined {
+  if (/^Cannot read lexicon at /.test(message)) {
+    return 'the command stopped and nothing was changed; make that path readable or point LEXICON_PATH at a file in an existing directory (or unset it), then check it with: lexicon doctor';
+  }
   const edit = unreadableLexiconEdit(message);
   return edit ? `the command stopped and nothing was changed; fix that file first (run: ${edit}), then check it with: lexicon doctor` : undefined;
 }
@@ -462,8 +495,8 @@ export function skippedProjectJson(
  * copy: `--project` or `--global`.
  */
 export function stillInLine(canonical: string, holder: TermHolder): string {
-  const command = `lexicon remove ${JSON.stringify(safe(canonical))} --${holder.scope}`;
-  return `warn: ${safe(canonical)} is still in the ${holder.scope} lexicon (${safe(holder.path)}) and keeps correcting from there; to remove that copy too: ${command}`;
+  const command = shownCommand(['lexicon', 'remove', canonical, `--${holder.scope}`]);
+  return `warn: ${safe(canonical)} is still in the ${holder.scope} lexicon (${safeMessage(holder.path)}) and keeps correcting from there; to remove that copy too: ${command}`;
 }
 
 /**
@@ -474,7 +507,7 @@ export function stillInLine(canonical: string, holder: TermHolder): string {
 export function untrustedLine(canonical: string, holder: { path: string; trust: 'untrusted' | 'changed' }): string {
   const why = holder.trust === 'changed' ? 'changed since trusted' : 'untrusted';
   return (
-    `warn: ${safe(canonical)} is also in the ${why} project lexicon (${safe(holder.path)}), which is not loaded or edited; ` +
+    `warn: ${safe(canonical)} is also in the ${why} project lexicon (${safeMessage(holder.path)}), which is not loaded or edited; ` +
     'it corrects from there once that file is trusted, so review it before running lexicon trust'
   );
 }
@@ -483,7 +516,7 @@ export function untrustedLine(canonical: string, holder: { path: string; trust: 
 export function untrustedAliasLine(canonical: string, alias: string, holder: { path: string; trust: 'untrusted' | 'changed' }): string {
   const why = holder.trust === 'changed' ? 'changed since trusted' : 'untrusted';
   return (
-    `warn: ${safe(alias)} is also an alias of ${safe(canonical)} in the ${why} project lexicon (${safe(holder.path)}), which is not loaded or edited; ` +
+    `warn: ${safe(alias)} is also an alias of ${safe(canonical)} in the ${why} project lexicon (${safeMessage(holder.path)}), which is not loaded or edited; ` +
     'it corrects from there once that file is trusted, so review it before running lexicon trust'
   );
 }
@@ -514,6 +547,15 @@ export function positiveIntOption(flag: string, example: number, max?: number): 
     const n = wholeNumber(value);
     if (n === undefined || n <= 0) throw new InvalidArgumentError(`expected a positive integer, e.g. ${flag} ${example}`);
     if (max !== undefined && n > max) throw new InvalidArgumentError(`expected a positive integer of at most ${max}, e.g. ${flag} ${example}`);
+    return n;
+  };
+}
+
+/** Like positiveIntOption, but 0 is allowed (an `--offset` that starts at the first item). */
+export function nonNegativeIntOption(flag: string, example: number): (value: string) => number {
+  return (value: string): number => {
+    const n = wholeNumber(value);
+    if (n === undefined) throw new InvalidArgumentError(`expected a whole number (0 or more), e.g. ${flag} ${example}`);
     return n;
   };
 }

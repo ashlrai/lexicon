@@ -34,6 +34,26 @@ function repoModelsDir(): string | undefined {
   return root ? path.join(root, 'bench', 'audio', 'models') : undefined;
 }
 
+/**
+ * Model names whisper.cpp publishes, named when a `--model` name is refused
+ * (isWhisperModelName) or a download answers 404.
+ */
+export const KNOWN_MODELS: readonly string[] = ['tiny.en', 'base.en', 'small.en', 'medium.en', 'tiny', 'base', 'small', 'medium', 'large-v3', 'large-v3-turbo'];
+
+/**
+ * Whether `name` has the shape of a model whisper.cpp publishes: a size
+ * (`tiny`, `base`, `small`, `medium`) with an optional `.en`, or `large-v<N>`
+ * with an optional `-turbo`, either with an optional quantization (`-q5_1`,
+ * `-q8_0`). Checked offline before `lexicon voice` records, so a misspelt
+ * `--model` (`base-en`, `bse.en`) is refused before the user speaks rather
+ * than after, when the download answers 404. A shape and not a fixed list, so
+ * a later `large-v4` still downloads. A name that is not a whisper.cpp model
+ * still works when its file is already in the models directory.
+ */
+export function isWhisperModelName(name: string): boolean {
+  return /^(?:(?:tiny|base|small|medium)(?:\.en)?|large-v\d+(?:-turbo)?)(?:-q\d_\d)?$/.test(name);
+}
+
 export function modelFileName(name: string): string {
   return `ggml-${name}.bin`;
 }
@@ -378,12 +398,39 @@ export function claimedSha256(headers: Headers): string | undefined {
   return undefined;
 }
 
+/**
+ * `rename` that waits out Windows: replacing a file another process is
+ * renaming into place, reading or scanning (an antivirus) fails there with
+ * EPERM, EACCES or EBUSY for a moment, so two `lexicon voice` runs fetching
+ * the same model at once failed one download that had finished and checked
+ * out. Retried a few times over about a second; any other error, or the same
+ * one past that, is thrown as before.
+ */
+async function renameOver(from: string, to: string): Promise<void> {
+  for (let attempt = 0; ; attempt++) {
+    try {
+      await fs.rename(from, to);
+      return;
+    } catch (e) {
+      const code = (e as NodeJS.ErrnoException).code;
+      if (attempt >= 10 || (code !== 'EPERM' && code !== 'EACCES' && code !== 'EBUSY')) throw e;
+      await new Promise((r) => setTimeout(r, 20 * (attempt + 1)));
+    }
+  }
+}
+
 export async function defaultDownloader(url: string, dest: string, onProgress: (p: DownloadProgress) => void, signal?: AbortSignal): Promise<void> {
   await fs.mkdir(path.dirname(dest), { recursive: true });
   await sweepStaleParts(dest);
-  const res = await fetch(url, { redirect: 'follow', ...(signal ? { signal } : {}) });
-  if (!res.ok || !res.body) throw new Error(`download failed: ${res.status} ${res.statusText} (${url})`);
-  const total = Number(res.headers.get('content-length')) || undefined;
+  // Identity is asked for, but a proxy or CDN may compress anyway. fetch then
+  // decodes the body while Content-Length still counts the encoded bytes, so
+  // comparing the two rejected every such download as cut short. The length
+  // is only checked (and shown as progress) when no encoding was applied; the
+  // ggml magic and the server's sha256 still check the decoded file.
+  const res = await fetch(url, { redirect: 'follow', headers: { 'accept-encoding': 'identity' }, ...(signal ? { signal } : {}) });
+  if (!res.ok || !res.body) throw Object.assign(new Error(`download failed: ${res.status} ${res.statusText} (${url})`), { status: res.status });
+  const encoding = (res.headers.get('content-encoding') ?? '').trim().toLowerCase();
+  const total = encoding === '' || encoding === 'identity' ? Number(res.headers.get('content-length')) || undefined : undefined;
   const claimed = claimedSha256(res.headers);
   const hash = createHash('sha256');
   let received = 0;
@@ -408,7 +455,7 @@ export async function defaultDownloader(url: string, dest: string, onProgress: (
       throw new Error(`the file downloaded does not match the sha256 the server gave for it (${claimed}; the download's is ${sha256}) (${url})`);
     }
     const { ino } = await fs.stat(tmp);
-    await fs.rename(tmp, dest);
+    await renameOver(tmp, dest);
     writeModelHashRecord(dest, sha256, ino);
   } catch (e) {
     await fs.rm(tmp, { force: true });
@@ -452,8 +499,10 @@ export async function ensureModel(spec: string, opts: EnsureModelOptions): Promi
       : `whisper model ${resolved.name} not found; fetching ${resolved.url} -> ${resolved.path}`,
   );
   let lastPct = -1;
+  let total: number | undefined;
   try {
     await download(resolved.url, resolved.path, (p) => {
+      total = p.total;
       const pct = p.total ? Math.floor((p.received / p.total) * 100) : Math.floor(p.received / 8_388_608);
       if (pct !== lastPct) {
         lastPct = pct;
@@ -462,6 +511,23 @@ export async function ensureModel(spec: string, opts: EnsureModelOptions): Promi
     }, opts.signal);
   } catch (e) {
     if (opts.signal?.aborted) throw new Error(`the download of whisper model ${resolved.name} was interrupted; nothing was kept`);
+    // "Check the network" was the advice for every failure: a misspelt model
+    // name (a 404) and a full disk were sent to look at their network.
+    const status = (e as { status?: unknown } | null)?.status;
+    if (status === 404) {
+      throw new Error(
+        `there is no whisper model named ${resolved.name} (${resolved.url} answered 404); ` +
+          `pass one that exists with --model, such as ${KNOWN_MODELS.join(', ')}, or a ggml file you have`,
+      );
+    }
+    const code = (e as NodeJS.ErrnoException | null)?.code;
+    if (code === 'ENOSPC' || code === 'EDQUOT') {
+      throw new Error(
+        `could not download whisper model ${resolved.name}: there is no space left for it in ${path.dirname(resolved.path)}` +
+          `${total ? ` (it is ${mb(total)})` : ''}; nothing was kept. Free some space and try again, ` +
+          'or set LEXICON_WHISPER_MODELS to a directory on a disk with room',
+      );
+    }
     // The failure alone ("fetch failed") said nothing about what to do next.
     const why = e instanceof Error ? e.message : String(e);
     throw new Error(

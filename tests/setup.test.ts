@@ -276,6 +276,30 @@ describe('runSetup --yes', () => {
     expect(summary.serve).toBe('installed');
   });
 
+  // Catches: a step's failure line went through `safe`, which cuts at 200
+  // characters, so a reason naming a deep path (a long TMPDIR, as macOS CI
+  // has) ended in "...does not e…" and lost the file name and the rest.
+  it('prints a failing step\'s reason whole, however long the path in it', async () => {
+    const deep = path.join(home, 'a'.repeat(120), 'b'.repeat(120), 'index.js');
+    const serveWhy = `lexicon: refusing to install the login service: ${deep} does not exist`;
+    const clientWhy = `failed: could not write ${deep}: EACCES`;
+    const f = fakes({
+      installClient: async (_client, _opts, io) => {
+        io.stderr(`   ${clientWhy}\n`);
+        return 1;
+      },
+      installServe: async (_o, io) => {
+        io.stderr(`${serveWhy}\n`);
+        return 1;
+      },
+    });
+    const { code, io } = await run({ yes: true, clients: 'claude', company: 'Ashlr.AI', serve: true }, f);
+    expect(code).toBe(1);
+    expect(io.err).toContain(`   failed ${serveWhy}\n`);
+    expect(io.err).toContain(`   claude: failed ${clientWhy}\n`);
+    expect(io.err).not.toContain('\u2026');
+  });
+
   it('marks serve as failed when the installer fails and skips it on Windows', async () => {
     const f = fakes({ installServe: async (_o, io) => { io.stderr('launchctl: nope\n'); return 1; } });
     const { code, summary } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', serve: true }, f);
@@ -406,7 +430,7 @@ describe('runSetup --yes', () => {
       cliDir,
       installServe: (opts, io, serveDeps) => {
         seen = serveDeps;
-        return runServeInstall(opts, io, { ...serveDeps, exec: async (cmd, args) => { calls.push([cmd, ...args]); return { code: 0, stdout: '', stderr: '' }; }, nodePath: '/usr/local/bin/node', uid: 501 });
+        return runServeInstall(opts, io, { ...serveDeps, exec: async (cmd, args) => { if (args[0] === 'print') return { code: 113, stdout: '', stderr: '' }; calls.push([cmd, ...args]); return { code: 0, stdout: '', stderr: '' }; }, nodePath: '/usr/local/bin/node', uid: 501 });
       },
     });
     const { summary, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', serve: true }, f);
@@ -420,6 +444,8 @@ describe('runSetup --yes', () => {
     expect(existsSync(args[2])).toBe(true);
     expect(calls[0]).toEqual(['launchctl', 'bootout', 'gui/501/ai.ashlr.lexicon.serve']);
     expect(io.out).toContain('installed ai.ashlr.lexicon.serve');
+    // Catches: the step's own "installed" prefix doubled the installer's.
+    expect(io.out).not.toContain('installed installed');
 
     // A cliDir without a built index.js (the plugin bundle's "next to me" mistake): refused, nothing written, no bootout.
     const broken = path.join(home, 'plugin');
@@ -591,6 +617,21 @@ describe('runSetup --yes', () => {
     // At the cap is fine.
     const ok = await run({ yes: true, dryRun: true, clients: 'none', company: ` ${'x'.repeat(80)} ` }, f);
     expect(ok.code).toBe(0);
+  });
+
+  // Catches: --phonetic with no company term to put it on was dropped without a word.
+  it('says --phonetic was not used when no company term is seeded', async () => {
+    const f = fakes({
+      exec: (file, args) => {
+        if (file === 'git' && args.join(' ') === 'config --global user.name') return 'Mason Wyatt';
+        throw new Error(`no ${file}`);
+      },
+    });
+    const { code, io } = await run({ yes: true, clients: 'none', phonetic: 'ASH-ler' }, f);
+    expect(code).toBe(0);
+    expect(io.out).toContain('--phonetic was not used: it is the hint for the company term, and no company term was seeded');
+    const seeded = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', phonetic: 'ASH-ler' }, fakes());
+    expect(seeded.io.out).not.toContain('--phonetic was not used');
   });
 
   // Catches: a multi-line or over-cap --phonetic created the lexicon and
@@ -882,6 +923,31 @@ describe('runSetup dictation export', () => {
     expect(io.out).toMatch(/wrote .*lexicon-wispr\.csv \(1 row\)/);
     expect(io.err).toContain('left out 1 pair a spreadsheet would run as a formula');
     expect(io.err).toContain('"=Ashlar -> Ashlr.AI"');
+  });
+});
+
+describe('runSetup with a step that fails', () => {
+  // Catches: a step that threw (here an export directory that is a file) ended the run with the error alone, saying nothing of the lexicon and clients already done.
+  it('stops at the failed step and says what was already written', async () => {
+    const exportDir = path.join(home, 'not-a-dir');
+    await fs.writeFile(exportDir, 'a file where the export directory should be\n');
+    const f = fakes();
+    const { code, summary, io } = await run({ yes: true, clients: 'claude', company: 'Ashlr.AI', app: 'wispr', exportDir }, f);
+    expect(code).toBe(1);
+    expect(summary.failedAt).toBe('Dictation app');
+    expect(summary.error).toEqual(expect.any(String));
+    expect(summary.termsAdded).toContain('Ashlr.AI');
+    expect(f.installed.length).toBeGreaterThan(0);
+    expect(io.err).toContain('lexicon setup: Dictation app: ');
+    expect(io.out).toContain('Failed at "Dictation app": ');
+    expect(io.out).toContain('terms added: ');
+    expect(io.out).toContain('Next: fix what the error names, then run lexicon setup again; every step skips what is already done');
+    expect(io.out).not.toContain('7. Does it work?');
+    expect(io.out).not.toContain('Done.');
+
+    const json = await run({ yes: true, clients: 'claude', company: 'Ashlr.AI', app: 'wispr', exportDir, json: true }, fakes());
+    expect(json.code).toBe(1);
+    expect(JSON.parse(json.io.out)).toMatchObject({ ok: false, failedAt: 'Dictation app', error: expect.any(String) });
   });
 });
 
@@ -1232,7 +1298,7 @@ describe('runSetup starter packs', () => {
       await fs.rm(globalPath, { force: true });
       const { io, plan, summary } = await run({ ...opts, dryRun }, noGitName);
       expect((dryRun ? plan?.demo : summary.demo)?.usedExample, String(dryRun)).toBe(true);
-      expect(io.out).toContain('add one now, what speech-to-text writes for it: lexicon add "Acme" "<misspelling>"');
+      expect(io.out).toContain("add one now, what speech-to-text writes for it: lexicon add Acme '<misspelling>'");
       expect(io.out).not.toContain('Your Co');
     }
   });

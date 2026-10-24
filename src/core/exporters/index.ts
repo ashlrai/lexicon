@@ -104,6 +104,8 @@ export interface ExportResult {
   text: string;
   notes: string[];
   rows?: number;
+  /** `whisper-prompt` and `openai`: the names the prompt line holds, fewer than the terms selected when a cap left some out or two canonicals wrote the same name. */
+  names?: number;
 }
 
 const EXPORTERS: Record<ExportFormat, Exporter> = {
@@ -160,7 +162,7 @@ export function exportLexiconWithNotes(lexicon: Lexicon, format: ExportFormat, o
   }
   const sink: ExportSink = { notes: [] };
   const text = exporter(applyOptions(lexicon, opts, format), opts, sink);
-  return { text, notes: sink.notes, ...(sink.rows !== undefined ? { rows: sink.rows } : {}) };
+  return { text, notes: sink.notes, ...(sink.rows !== undefined ? { rows: sink.rows } : {}), ...(sink.names !== undefined ? { names: sink.names } : {}) };
 }
 
 /**
@@ -187,7 +189,9 @@ function applyOptions(lexicon: Lexicon, opts: ExportOptions, format?: ExportForm
   let terms: Term[] = lexicon.terms;
   if (opts.categories && opts.categories.length > 0) {
     const allowed = new Set(opts.categories);
-    terms = terms.filter((t) => t.category !== undefined && allowed.has(t.category));
+    // A term without a category is an `other` one, as everywhere else
+    // (categoryRank): `--category other` dropped it.
+    terms = terms.filter((t) => allowed.has(t.category ?? 'other'));
   }
   if (opts.limit !== undefined) {
     const candidates = format !== undefined && EXPORT_ALIAS_ROW_FORMATS.includes(format) ? terms.filter(hasAliasRow) : terms;

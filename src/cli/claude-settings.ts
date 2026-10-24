@@ -14,7 +14,7 @@ import os from 'node:os';
 import { homeDir, usableHome } from '../util/xdg.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isRecord } from '../util/json.js';
+import { isRecord, readJsonFile } from '../util/json.js';
 import { PACKAGE_NAME, UNKNOWN_VERSION, packageVersion } from '../util/package.js';
 import { findPackageRoot } from './cli-entry.js';
 
@@ -99,12 +99,69 @@ export function hookConfigFor(
  * (quoted or not, either separator) or `npx -y @ashlr/lexicon[@<version>] hook`.
  * Narrower than LEXICON_HOOK_COMMAND, which also matches a user's own script
  * with "lexicon" in its name: only these are replaced on a reinstall.
+ *
+ * Matched on the command's words, parsed as launchCommandLine quotes them
+ * (inside double quotes a backslash escapes `"`, `\`, `$` and a backtick), so
+ * a path holding an escaped `"` is recognised. The pattern over the raw
+ * string stopped at that `"`, and a reinstall added a second hook.
  */
-const INSTALLED_HOOK_COMMAND =
-  /^node\s+(?:"[^"]*|[^\s"]*)(?:[\\/]plugin[\\/]hook\.mjs|[\\/]hooks[\\/]user-prompt-submit\.js)"?$|^npx\s+-y\s+@ashlr\/lexicon(?:@\S+)?\s+hook$/;
+const INSTALLED_HOOK_SCRIPT = /[\\/](?:plugin[\\/]hook\.mjs|hooks[\\/]user-prompt-submit\.js)$/;
 
 export function isInstalledLexiconHook(command: string): boolean {
-  return INSTALLED_HOOK_COMMAND.test(command.trim());
+  const words = commandWords(command);
+  if (!words) return false;
+  if (words.length === 2 && words[0] === 'node') return INSTALLED_HOOK_SCRIPT.test(words[1] ?? '');
+  return words.length === 4 && words[0] === 'npx' && words[1] === '-y' && /^@ashlr\/lexicon(?:@\S+)?$/.test(words[2] ?? '') && words[3] === 'hook';
+}
+
+/**
+ * The words of a command line as launchCommandLine writes one: split on
+ * whitespace; a double-quoted run (a backslash escapes `"`, `\`, `$` and a
+ * backtick in it, and is kept before any other character, as in a Windows
+ * path) or a single-quoted run is part of its word. A backslash outside quotes
+ * is kept as it is. Undefined when a quote is not closed.
+ */
+function commandWords(command: string): string[] | undefined {
+  const words: string[] = [];
+  let word = '';
+  let inWord = false;
+  let i = 0;
+  while (i < command.length) {
+    const c = command[i] as string;
+    if (/\s/.test(c)) {
+      if (inWord) words.push(word);
+      word = '';
+      inWord = false;
+      i += 1;
+      continue;
+    }
+    inWord = true;
+    if (c === '"') {
+      i += 1;
+      while (i < command.length && command[i] !== '"') {
+        const next = command[i + 1];
+        if (command[i] === '\\' && next !== undefined && '"\\$`'.includes(next)) {
+          word += next;
+          i += 2;
+        } else {
+          word += command[i];
+          i += 1;
+        }
+      }
+      if (i >= command.length) return undefined;
+      i += 1;
+    } else if (c === "'") {
+      const end = command.indexOf("'", i + 1);
+      if (end < 0) return undefined;
+      word += command.slice(i + 1, end);
+      i = end + 1;
+    } else {
+      word += c;
+      i += 1;
+    }
+  }
+  if (inWord) words.push(word);
+  return words;
 }
 
 /**
@@ -150,6 +207,55 @@ export function parseClaudeMcpGet(out: string): ClaudeMcpRegistration {
   if (command) result.command = command;
   const args = field('Args');
   if (args !== undefined) result.args = args;
+  return result;
+}
+
+/**
+ * The file Claude Code keeps user- and local-scope MCP servers in:
+ * `$CLAUDE_CONFIG_DIR/.claude.json` when that is set, else `~/.claude.json`.
+ */
+export function claudeUserConfigPath(env: NodeJS.ProcessEnv = process.env, home?: string): string {
+  const override = env.CLAUDE_CONFIG_DIR?.trim();
+  return override ? path.join(override, '.claude.json') : path.join(home === undefined ? homeDir() : usableHome(home), '.claude.json');
+}
+
+/** Where `readClaudeRegistrationAt` looks: the user config file and the project directory holding `.mcp.json`. */
+export interface ClaudeRegistrationFiles {
+  /** `claudeUserConfigPath(...)`: its top-level `mcpServers` is the user scope. */
+  userConfig: string;
+  /** The project directory: `<cwd>/.mcp.json`'s `mcpServers` is the project scope. */
+  cwd: string;
+}
+
+/** The file `readClaudeRegistrationAt(scope, files)` reads. */
+export function claudeRegistrationFile(scope: 'user' | 'project', files: ClaudeRegistrationFiles): string {
+  return scope === 'user' ? files.userConfig : path.join(files.cwd, '.mcp.json');
+}
+
+/**
+ * The `lexicon` server registered at exactly `scope`, read from the file that
+ * scope lives in, for when `claude mcp get lexicon` shows another one: it has
+ * no `--scope` and prints the registration that takes precedence (local, then
+ * project, then user), so a user-scope one under a local-scope one cannot be
+ * seen through it. `args` is joined by spaces as `claude mcp get` prints it.
+ * null when the file has no lexicon server (or does not exist); undefined when
+ * it cannot be read or parsed.
+ */
+export async function readClaudeRegistrationAt(
+  scope: 'user' | 'project',
+  files: ClaudeRegistrationFiles,
+): Promise<ClaudeMcpRegistration | null | undefined> {
+  const read = await readJsonFile(claudeRegistrationFile(scope, files));
+  if (!read.exists) return null;
+  if (read.error !== undefined) return undefined;
+  const servers = isRecord(read.value) ? read.value.mcpServers : undefined;
+  const entry = isRecord(servers) ? servers.lexicon : undefined;
+  if (entry === undefined) return null;
+  const result: ClaudeMcpRegistration = { scope };
+  if (!isRecord(entry)) return result;
+  if (typeof entry.command === 'string' && entry.command !== '') result.command = entry.command;
+  if (Array.isArray(entry.args) && entry.args.every((a) => typeof a === 'string')) result.args = entry.args.join(' ');
+  else if (entry.args === undefined) result.args = '';
   return result;
 }
 
@@ -365,9 +471,9 @@ export function launchCommandLine(launch: StdioLaunch, platform: NodeJS.Platform
  * reason ("MCP server lexicon already exists in user config") lives on the
  * child's output, so that is what the caller gets to show.
  */
-export function defaultExec(file: string, args: readonly string[]): string {
+export function defaultExec(file: string, args: readonly string[], opts: { cwd?: string } = {}): string {
   try {
-    return execFileSync(file, [...args], { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'] });
+    return execFileSync(file, [...args], { encoding: 'utf8', timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'], ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}) });
   } catch (err) {
     const text = (stream: unknown): string => (typeof stream === 'string' ? stream.trim() : '');
     const detail = text((err as { stderr?: unknown }).stderr) || text((err as { stdout?: unknown }).stdout);

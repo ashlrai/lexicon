@@ -17,11 +17,12 @@ import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Command } from 'commander';
+import { writeFileAtomic } from '../util/atomic.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord, readJsonFile, writeJsonFile } from '../util/json.js';
 import { homeDir, xdgConfigHome } from '../util/xdg.js';
 import { posixShellWord, powerShellWord } from '../core/index.js';
-import { CliRefusal, bold, dim, green, indent, jsonError, line, red, safe, safeLines, safeMessage, shownCommand, yellow } from './io.js';
+import { CliRefusal, bold, dim, green, indent, jsonError, line, red, safe, safeLines, safeMessage, safePath, shownCommand, yellow } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   HOOK_EVENTS,
@@ -35,9 +36,12 @@ import {
   launchFor,
   mergeHookIntoSettings,
   parseClaudeMcpGet,
+  claudeRegistrationFile,
+  claudeUserConfigPath,
+  readClaudeRegistrationAt,
   resolveIntegrationPaths,
 } from './claude-settings.js';
-import type { ClaudeMcpRegistration } from './claude-settings.js';
+import type { ClaudeMcpRegistration, ClaudeRegistrationFiles } from './claude-settings.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -177,9 +181,15 @@ interface PathContext {
   project: boolean;
 }
 
-/** %APPDATA% on Windows, with a sane fallback when the variable is unset. */
+/**
+ * %APPDATA% on Windows, with a sane fallback when the variable is unset or
+ * blank. A blank one (`set APPDATA=`) passed `??`, so the config path came
+ * out relative (`Claude\claude_desktop_config.json`) and was written under
+ * the current directory, where Claude Desktop never looks.
+ */
 function appData(ctx: PathContext): string {
-  return ctx.env.APPDATA ?? path.join(ctx.home, 'AppData', 'Roaming');
+  const value = ctx.env.APPDATA?.trim();
+  return value ? value : path.join(ctx.home, 'AppData', 'Roaming');
 }
 
 /** `$CODEX_HOME` when set, else `~/.codex`. */
@@ -446,9 +456,121 @@ export function upsertTomlKeys(text: string, header: string, values: Record<stri
   return { next, changed: next !== text };
 }
 
-function tomlHeaderRe(header: string): RegExp {
-  const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`^\\s*\\[\\s*${escaped}\\s*\\]\\s*(#.*)?$`);
+/**
+ * Read a TOML dotted key (`a.b`, `a."b"`, `'a' . b`) from `text` at `from`,
+ * up to the first character after it that is not whitespace. Undefined when
+ * there is no key there.
+ */
+function readTomlKey(text: string, from: number): { parts: string[]; end: number } | undefined {
+  const parts: string[] = [];
+  let i = from;
+  for (;;) {
+    while (text[i] === ' ' || text[i] === '\t') i += 1;
+    const c = text[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (j < text.length && text[j] !== '"') j += text[j] === '\\' ? 2 : 1;
+      if (j >= text.length) return undefined;
+      try {
+        parts.push(JSON.parse(text.slice(i, j + 1)) as string);
+      } catch {
+        return undefined;
+      }
+      i = j + 1;
+    } else if (c === "'") {
+      const j = text.indexOf("'", i + 1);
+      if (j < 0) return undefined;
+      parts.push(text.slice(i + 1, j));
+      i = j + 1;
+    } else {
+      const m = /^[A-Za-z0-9_-]+/.exec(text.slice(i));
+      if (!m) return undefined;
+      parts.push(m[0]);
+      i += m[0].length;
+    }
+    while (text[i] === ' ' || text[i] === '\t') i += 1;
+    if (text[i] !== '.') return { parts, end: i };
+    i += 1;
+  }
+}
+
+/** The key of a `[table]` (or, with `array`, `[[table]]`) header line; undefined for any other line. */
+function tomlHeaderKey(line: string): { parts: string[]; array: boolean } | undefined {
+  const m = /^\s*(\[\[?)/.exec(line);
+  if (!m) return undefined;
+  const array = m[1] === '[[';
+  const key = readTomlKey(line, (m[0] ?? '').length);
+  if (!key) return undefined;
+  const close = array ? ']]' : ']';
+  if (!line.startsWith(close, key.end)) return undefined;
+  return /^\s*(#.*)?$/.test(line.slice(key.end + close.length)) ? { parts: key.parts, array } : undefined;
+}
+
+function sameKey(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((p, i) => p === b[i]);
+}
+
+/**
+ * Matches the `[header]` line of the table `header` (a dotted key of bare
+ * parts) however its key is spelled: `[mcp_servers."lexicon"]`,
+ * `[ mcp_servers . 'lexicon' ]`. Only `[mcp_servers.lexicon]` matched, so a
+ * quoted spelling of the same table got a second one appended, and Codex
+ * refuses a file that defines a table twice.
+ */
+function tomlHeaderRe(header: string): { test(line: string): boolean } {
+  return { test: (line: string): boolean => isTomlTableHeader(line, header) };
+}
+
+/**
+ * True when `line` is the `[header]` line of the table `header` (a dotted key
+ * of bare parts) however its key is spelled, or with `orSubTable` the header
+ * of one of its sub-tables (`[header.env]`). Never an array-of-tables header.
+ * Shared by install and uninstall so both see the same table.
+ */
+export function isTomlTableHeader(line: string, header: string, opts: { orSubTable?: boolean } = {}): boolean {
+  const want = header.split('.');
+  const key = tomlHeaderKey(line);
+  if (key === undefined || key.array) return false;
+  return opts.orSubTable ? sameKey(key.parts.slice(0, want.length), want) : sameKey(key.parts, want);
+}
+
+/**
+ * Where `text` defines the lexicon server other than through its own
+ * `[mcp_servers.lexicon]` table and sub-tables: an inline table or dotted
+ * keys under `[mcp_servers]` (`lexicon = { ... }`, `lexicon.command = ...`),
+ * dotted keys in the root table (`mcp_servers.lexicon.command = ...`) or an
+ * array of tables. A table appended beside any of these defines the server
+ * twice. Lines inside multi-line strings are not told apart, so one that
+ * looks like such a key there is reported too (a refusal, never a write).
+ */
+export function codexServerElsewhere(text: string): string | undefined {
+  const own = CODEX_TABLE.split('.');
+  const lines = text.split('\n');
+  let table: string[] = [];
+  for (const [n, l] of lines.entries()) {
+    const header = tomlHeaderKey(l);
+    if (header) {
+      table = header.parts;
+      if (header.array && sameKey(header.parts.slice(0, 2), own)) {
+        return `defines the lexicon server as an array of tables ([[${header.parts.join('.')}]]) on line ${n + 1}`;
+      }
+      continue;
+    }
+    if (isBlankOrComment(l)) continue;
+    const key = readTomlKey(l, 0);
+    if (!key || l[key.end] !== '=') continue;
+    if (sameKey(table.slice(0, 2), own)) continue;
+    const full = [...table, ...key.parts];
+    if (sameKey(full, own.slice(0, 1))) {
+      // `mcp_servers = { ... }`: an inline table cannot be extended by a table header.
+      return `defines [${own[0]}] as an inline table on line ${n + 1}, and a [${CODEX_TABLE}] table cannot be added to one`;
+    }
+    if (!sameKey(full.slice(0, 2), own)) continue;
+    const where = table.length === 0 ? 'in the root table' : `under [${table.join('.')}]`;
+    const inline = full.length === 2 && /^\s*\{/.test(l.slice(key.end + 1));
+    return `defines the lexicon server as ${inline ? 'an inline table' : 'dotted keys'} ${where} on line ${n + 1}`;
+  }
+  return undefined;
 }
 
 /**
@@ -504,10 +626,9 @@ async function readText(file: string): Promise<{ text: string; existed: boolean 
 }
 
 async function writeText(file: string, text: string): Promise<void> {
-  await explainWrite(file, async () => {
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, text, 'utf8');
-  });
+  // Through a temp file and a rename, as writeJsonFile does: an in-place
+  // write that failed partway left config.toml cut short.
+  await explainWrite(file, () => writeFileAtomic(file, text));
 }
 
 /**
@@ -523,7 +644,7 @@ export async function explainWrite(file: string, write: () => Promise<void>): Pr
     const code = (err as { code?: unknown }).code;
     if (code !== 'EACCES' && code !== 'EPERM' && code !== 'EROFS') throw err;
     throw new CliRefusal(
-      `could not write ${safe(file)} (${code}): it is read-only or not yours; nothing was changed`,
+      `could not write ${file} (${code}): it is read-only or not yours; nothing was changed`,
       `make it writable (ls -l ${posixShellWord(file)} shows who owns it; chmod u+w ${posixShellWord(file)}) and run this again, or add the entry shown above to it by hand`,
     );
   }
@@ -560,6 +681,13 @@ function mergeChanged(first: MergeResult<string>, second: MergeResult<string>): 
 
 /** Codex's config.toml `text` with the lexicon table merged in, and whether the env keys went into a sub-table. */
 function planToml(text: string, target: InstallTarget): MergeResult<string> & { subTable: boolean } {
+  const elsewhere = codexServerElsewhere(text);
+  if (elsewhere) {
+    throw new CliRefusal(
+      `${target.file} already ${elsewhere}; nothing was changed`,
+      `replace that definition with the [${CODEX_TABLE}] table shown above (or remove it), then run this again`,
+    );
+  }
   const { env, ...launch } = target.entry;
   const envTable = `${CODEX_TABLE}.env`;
   // A user who keeps the server's variables in a `[mcp_servers.lexicon.env]`
@@ -630,7 +758,7 @@ export function installApplyCommand(client: InstallClient, opts: InstallOptions)
  * run added, or the whole file when this run created it.
  */
 function undoEntry(target: InstallTarget, applied: Applied): string {
-  const file = safe(target.file);
+  const file = safePath(target.file);
   const what =
     target.format === 'toml'
       ? `delete the [${CODEX_TABLE}] table${applied.envTable ? ` and its [${CODEX_TABLE}.env] table` : ''} from ${file}`
@@ -759,7 +887,12 @@ async function installText(
   if (scope !== 'user' && scope !== 'project') {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
-  const project = scope === 'project' || opts.project === true;
+  // Taken as project, the preview showed the repo file while the --apply line
+  // it printed (--scope user) wrote the user one, and --json said "user".
+  if (scope === 'user' && opts.project === true) {
+    throw new CliRefusal('--scope user and --project contradict each other; nothing was changed', 'pass one of them: --scope user for your own config, or --project (--scope project) for the repo-level file');
+  }
+  const project = scope === 'project';
 
   const name = (client ?? 'generic').toLowerCase();
   if (!isInstallClient(name)) {
@@ -773,7 +906,9 @@ async function installText(
     // would print the snippet and write nothing, exit 0, though the printout
     // said "add --apply to write the config".
     if (opts.apply || project) {
-      const flags = [opts.apply ? '--apply' : '', project ? '--project' : ''].filter(Boolean).join(' ');
+      // Name the flag as typed: `--scope project` was reported as `--project`.
+      const scopeFlag = opts.project === true ? '--project' : '--scope project';
+      const flags = [opts.apply ? '--apply' : '', project ? scopeFlag : ''].filter(Boolean).join(' ');
       const clients = INSTALL_CLIENTS.filter((c) => c !== 'generic');
       throw new CliRefusal(
         `${flags} needs a client: with none named, lexicon install only prints the generic configuration and writes nothing`,
@@ -790,7 +925,11 @@ async function installText(
       ...(deps.cliDir ? { cliDir: deps.cliDir } : {}),
       // A project-scope install writes the repo's .claude/settings.json (see
       // claudeSettingsPathFor), whatever the home directory.
-      ...(opts.home && !project ? { settingsPath: path.join(claudeConfigDir(process.env, home), 'settings.json') } : {}),
+      // `env`, the environment this install was given, not process.env, as
+      // uninstall reads it: a CLAUDE_CONFIG_DIR only the process had sent the
+      // hooks to a file the given environment (and uninstall) never names.
+      ...(opts.home && !project ? { settingsPath: path.join(claudeConfigDir(env, home), 'settings.json') } : {}),
+      ...(opts.home ? { claudeUserConfig: claudeUserConfigPath(env, home) } : {}),
       ...(deps.onWritten ? { onWritten: deps.onWritten } : {}),
       ...(deps.exec ? { exec: deps.exec } : {}),
       env,
@@ -805,9 +944,9 @@ async function installText(
   // A preview of an entry the file already holds read as work still to do.
   const installed = !opts.apply && (await alreadyInstalled(target));
   if (installed) {
-    line(io, `   already installed in ${safe(target.file)}: the lexicon entry there matches, nothing to write`);
+    line(io, `   already installed in ${safePath(target.file)}: the lexicon entry there matches, nothing to write`);
   } else {
-    line(io, `   ${opts.apply ? 'merge into' : 'would merge into'} ${safe(target.file)}:`);
+    line(io, `   ${opts.apply ? 'merge into' : 'would merge into'} ${safePath(target.file)}:`);
     line(io, indent(body, '   '));
   }
   if (opts.apply) {
@@ -815,9 +954,9 @@ async function installText(
     const { outcome } = applied;
     deps.onWritten?.(target.file, outcome);
     if (outcome === 'unchanged') {
-      line(io, dim(`   ${safe(target.file)}: lexicon entry already present, nothing changed`));
+      line(io, dim(`   ${safePath(target.file)}: lexicon entry already present, nothing changed`));
     } else {
-      line(io, green(`   ${outcome} ${safe(target.file)}: ${target.format === 'toml' ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
+      line(io, green(`   ${outcome} ${safePath(target.file)}: ${target.format === 'toml' ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
     }
     // The write named its file but not the way back; the rest of the file is
     // the user's, so the undo is the one entry, not the file.
@@ -881,10 +1020,12 @@ export interface InstallClaudeDeps {
   exec?: (file: string, args: readonly string[]) => string;
   /** Called once per config file touched under `--apply` (setup uses it for its summary). */
   onWritten?: (file: string, outcome: InstallOutcome) => void;
-  /** Environment whose LEXICON_PATH / LEXICON_CWD are passed to `claude mcp add -e`. Default process.env. */
+  /** Environment whose LEXICON_PATH / LEXICON_CWD are passed to `claude mcp add -e`, and whose CLAUDE_CONFIG_DIR locates the user settings.json. Default process.env. */
   env?: NodeJS.ProcessEnv;
   /** Claude's plugin registry. Default `plugins/installed_plugins.json` beside `settingsPath`. */
   installedPluginsPath?: string;
+  /** Claude's user config (`.claude.json`), read when `claude mcp get` shows a registration at another scope. Default `claudeUserConfigPath(env)`. */
+  claudeUserConfig?: string;
 }
 
 /**
@@ -921,7 +1062,7 @@ export async function runInstallClaude(
   if (scope !== 'user' && scope !== 'project') {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
-  const settingsPath = deps.settingsPath ?? claudeSettingsPathFor(scope, path.resolve(opts.cwd ?? process.cwd()));
+  const settingsPath = deps.settingsPath ?? claudeSettingsPathFor(scope, path.resolve(opts.cwd ?? process.cwd()), deps.env ?? process.env);
   // The plugin already runs the MCP server and both hooks for every session.
   // A user-scope registration on top of it doubled the hook notes on every
   // prompt and added a second `lexicon` server (setup_lexicon from a plugin
@@ -941,8 +1082,16 @@ export async function runInstallClaude(
       return 0;
     }
   }
+  // Read before step 1, so a settings.json the hooks cannot go into stops
+  // the install before the server is registered.
+  if (opts.apply) await readHookSettings(settingsPath);
   const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
-  const exec = deps.exec ?? defaultExec;
+  // In the directory the install is for: `claude mcp add --scope project`
+  // writes that directory's .mcp.json, and ran in the process's own, so
+  // `lexicon --cwd <repo> install claude --scope project` registered the
+  // server in another project from the one that got the hooks.
+  const claudeCwd = path.resolve(opts.cwd ?? process.cwd());
+  const exec = deps.exec ?? ((file: string, args: readonly string[]): string => defaultExec(file, args, { cwd: claudeCwd }));
   let failed = false;
 
   // 1. MCP server registration ------------------------------------------------
@@ -960,7 +1109,7 @@ export async function runInstallClaude(
   else if (bundled) line(io, dim('   (self-contained bundle: no node_modules needed at runtime)'));
   if (opts.apply) {
     if (!serverLaunch.viaNpx && !existsSync(serverPath)) {
-      line(io, yellow(`   note: ${safe(serverPath)} does not exist yet (run npm run build first)`));
+      line(io, yellow(`   note: ${safePath(serverPath)} does not exist yet (run npm run build first)`));
     }
     try {
       const out = exec('claude', mcpArgs).trim();
@@ -972,7 +1121,8 @@ export async function runInstallClaude(
         // `claude mcp add` refuses to overwrite an existing entry. With the same
         // launch that is the idempotent case; one an earlier install wrote from
         // another location (a reinstall, a move to `npm i -g`) is repointed.
-        if (!refreshClaudeRegistration(io, exec, scope, mcpArgs, serverLaunch)) failed = true;
+        const files = { userConfig: deps.claudeUserConfig ?? claudeUserConfigPath(deps.env ?? process.env), cwd: path.resolve(opts.cwd ?? process.cwd()) };
+        if (!(await refreshClaudeRegistration(io, exec, scope, mcpArgs, serverLaunch, files))) failed = true;
         line(io, dim(`   undo: claude mcp remove --scope ${scope} lexicon`));
       } else {
         failed = true;
@@ -988,29 +1138,26 @@ export async function runInstallClaude(
   const hookCommand = launchCommandLine(hookLaunch);
   const hookTimeout = hookTimeoutFor(hookLaunch);
   line(io, bold(`2. Add the ${HOOK_EVENTS.join(' and ')} hooks`));
-  line(io, `   ${opts.apply ? 'merge into' : 'would merge into'} ${safe(settingsPath)}${scope === 'project' ? ' (project scope: the repo\'s shared settings, read for this project only)' : ''}:`);
+  line(io, `   ${opts.apply ? 'merge into' : 'would merge into'} ${safePath(settingsPath)}${scope === 'project' ? ' (project scope: the repo\'s shared settings, read for this project only)' : ''}:`);
   line(io, indent(JSON.stringify(hookConfigFor(hookCommand, hookTimeout, HOOK_EVENTS), null, 2), '   '));
   if (hookLaunch.viaNpx) {
     line(io, dim(`   (npx re-resolves the package each prompt: ~1s, hence the ${hookTimeout}s timeout.`));
     line(io, dim('    npm i -g @ashlr/lexicon, then rerun this, to make it instant.)'));
   }
   if (opts.apply) {
-    const read = await readJsonFile(settingsPath);
-    if (read.error !== undefined) {
-      throw new Error(`could not read ${safe(settingsPath)}: ${safeLines(read.error)}`);
-    }
+    const read = await readHookSettings(settingsPath);
     const existed = read.exists;
-    const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, hookTimeout, HOOK_EVENTS);
+    const { settings, changed } = mergeHookIntoSettings(read.exists ? read.value : {}, hookCommand, hookTimeout, HOOK_EVENTS);
     if (changed) {
-      await explainWrite(settingsPath, () => writeJsonFile(settingsPath, settings, read.text));
-      line(io, green(`   ${existed ? 'updated' : 'created'} ${safe(settingsPath)}: added ${HOOK_EVENTS.join(' + ')} hooks`));
+      await explainWrite(settingsPath, () => writeJsonFile(settingsPath, settings, read.exists ? read.text : undefined));
+      line(io, green(`   ${existed ? 'updated' : 'created'} ${safePath(settingsPath)}: added ${HOOK_EVENTS.join(' + ')} hooks`));
       deps.onWritten?.(settingsPath, existed ? 'updated' : 'created');
     } else {
-      line(io, dim(`   ${safe(settingsPath)}: hooks already present, nothing changed`));
+      line(io, dim(`   ${safePath(settingsPath)}: hooks already present, nothing changed`));
       deps.onWritten?.(settingsPath, 'unchanged');
     }
     const createdNote = changed && !existed ? ' (this run created the file, so deleting it undoes step 2)' : '';
-    line(io, dim(`   undo: delete the lexicon hook entries under ${HOOK_EVENTS.map((e) => `hooks.${e}`).join(' and ')} in ${safe(settingsPath)}${createdNote}`));
+    line(io, dim(`   undo: delete the lexicon hook entries under ${HOOK_EVENTS.map((e) => `hooks.${e}`).join(' and ')} in ${safePath(settingsPath)}${createdNote}`));
   }
   line(io);
 
@@ -1032,6 +1179,27 @@ export async function runInstallClaude(
 }
 
 /**
+ * Claude's settings.json for the hooks. One that does not parse, or parses
+ * to something other than an object (`[]`, `null`, a string), is refused
+ * naming the file: merging into it replaced the whole file with `{ hooks }`.
+ */
+async function readHookSettings(settingsPath: string): Promise<{ exists: false } | { exists: true; value: Record<string, unknown>; text: string }> {
+  const read = await readJsonFile(settingsPath);
+  if (read.error !== undefined) {
+    throw new Error(`could not read ${settingsPath}: ${read.error}`);
+  }
+  if (!read.exists) return { exists: false };
+  if (!isRecord(read.value)) {
+    const kind = read.value === null ? 'null' : Array.isArray(read.value) ? 'an array' : `a ${typeof read.value}`;
+    throw new CliRefusal(
+      `${settingsPath} holds ${kind}, not a JSON object, so the hooks cannot be added to it; nothing was changed`,
+      `make ${settingsPath} a JSON object (or remove it), then run this again`,
+    );
+  }
+  return { exists: true, value: read.value, text: read.text ?? '' };
+}
+
+/**
  * `claude mcp add` said a `lexicon` server is already registered: read it
  * back with `claude mcp get lexicon` and, when it is one an install of this
  * tool wrote (isInstalledLexiconServer) at this scope but with another
@@ -1042,13 +1210,14 @@ export async function runInstallClaude(
  * tool did not write and one that cannot be read back are left alone. Returns
  * false only when the refresh was attempted and failed.
  */
-function refreshClaudeRegistration(
+async function refreshClaudeRegistration(
   io: IO,
   exec: (file: string, args: readonly string[]) => string,
   scope: 'user' | 'project',
   mcpArgs: readonly string[],
   launch: { command: string; args: string[] },
-): boolean {
+  files: ClaudeRegistrationFiles,
+): Promise<boolean> {
   let got: ClaudeMcpRegistration;
   try {
     got = parseClaudeMcpGet(exec('claude', ['mcp', 'get', 'lexicon']));
@@ -1056,6 +1225,25 @@ function refreshClaudeRegistration(
     line(io, dim(`   already registered with claude, nothing changed (could not read it back with claude mcp get to compare: ${safeLines(errorMessage(err))})`));
     return true;
   }
+  // `claude mcp add` refused because this scope has one, but `claude mcp get`
+  // shows the registration that takes precedence (local, then project, then
+  // user), so the one at this scope is read from its file instead. Comparing
+  // the other one left a stale registration here never repointed.
+  const shadow = got.scope !== undefined && got.scope !== scope ? got.scope : undefined;
+  if (shadow !== undefined) {
+    const own = await readClaudeRegistrationAt(scope, files);
+    if (!own) {
+      const why = own === undefined ? `${safePath(claudeRegistrationFile(scope, files))} could not be read to compare` : `claude mcp get shows the ${shadow}-scope one`;
+      line(io, dim(`   already registered with claude at ${scope} scope, nothing changed (${why})`));
+      return true;
+    }
+    got = own;
+  }
+  const shadowNote = (): void => {
+    if (shadow !== undefined) {
+      line(io, dim(`   note: a ${shadow}-scope lexicon registration takes precedence over the ${scope}-scope one here; to use this one: claude mcp remove --scope ${shadow} lexicon`));
+    }
+  };
   const wanted = launch.args.join(' ');
   if (got.command === undefined || got.args === undefined) {
     line(io, dim('   already registered with claude, nothing changed (claude mcp get did not show its command to compare)'));
@@ -1063,13 +1251,10 @@ function refreshClaudeRegistration(
   }
   if (got.command === launch.command && got.args === wanted) {
     line(io, dim('   already registered with claude, nothing changed'));
+    shadowNote();
     return true;
   }
-  const old = safe(`${got.command} ${got.args}`.trim());
-  if (got.scope !== undefined && got.scope !== scope) {
-    line(io, dim(`   already registered with claude at ${got.scope} scope (${old}), nothing changed at ${scope} scope`));
-    return true;
-  }
+  const old = safePath(`${got.command} ${got.args}`.trim());
   if (!isInstalledLexiconServer(got.command, got.args)) {
     line(io, yellow(`   a "lexicon" server that lexicon install did not write is registered with claude (${old}); left as it is`));
     line(io, dim(`   to replace it: claude mcp remove --scope ${scope} lexicon, then run this again`));
@@ -1088,7 +1273,8 @@ function refreshClaudeRegistration(
     line(io, `   run: claude ${mcpArgs.map((a) => quoteArg(a)).join(' ')}`);
     return false;
   }
-  line(io, green(`   repointed lexicon: ${old} -> ${safe(`${launch.command} ${wanted}`)}`));
+  line(io, green(`   repointed lexicon: ${old} -> ${safePath(`${launch.command} ${wanted}`)}`));
+  shadowNote();
   return true;
 }
 

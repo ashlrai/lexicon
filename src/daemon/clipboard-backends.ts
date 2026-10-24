@@ -37,7 +37,27 @@ export function isClipboardBackendName(value: string): value is ClipboardBackend
  * Must reject with an `ExecError` (or an Error carrying `code: 'ENOENT'`) on a
  * non-zero exit or a missing binary.
  */
-export type ClipboardExec = (cmd: string, args: readonly string[], stdin?: string) => Promise<string>;
+export type ClipboardExec = (cmd: string, args: readonly string[], stdin?: string, opts?: ClipboardExecOptions) => Promise<string>;
+
+/** What a backend may ask of `exec` beyond the command. */
+export interface ClipboardExecOptions {
+  /** The child's whole environment; default the caller's (`process.env`). */
+  env?: NodeJS.ProcessEnv;
+}
+
+/**
+ * `env` with a UTF-8 `LANG` and `LC_CTYPE` when it names no locale at all (no
+ * `LC_ALL`, `LC_CTYPE` or `LANG`), as under launchd, cron or a bare `env -i`.
+ * pbpaste and pbcopy pick their text encoding from the locale and, with none,
+ * read and wrote non-ASCII text (`Zoë`, `東京`) in a legacy encoding, so a
+ * corrected clipboard came back as mojibake. A locale the caller did set is
+ * left alone.
+ */
+export function utf8LocaleEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const named = (k: string): boolean => (env[k] ?? '') !== '';
+  if (named('LC_ALL') || named('LC_CTYPE') || named('LANG')) return env;
+  return { ...env, LANG: 'en_US.UTF-8', LC_CTYPE: 'en_US.UTF-8' };
+}
 
 export class ExecError extends Error {
   constructor(
@@ -112,9 +132,22 @@ export function isClipboardTooLarge(err: unknown): boolean {
 }
 
 /**
- * Default process runner. Writes (a `stdin` payload) ignore stdout/stderr and
+ * Most stderr bytes a failed read or write keeps for its error message. A
+ * write's stderr was ignored, so a refused write said only "exited with code
+ * N"; a read's was kept whole, however much the tool printed.
+ */
+export const MAX_CLIPBOARD_WRITE_STDERR_BYTES = 4 * 1024;
+/** How long a failed write waits for the rest of its stderr after the exit. */
+const WRITE_STDERR_GRACE_MS = 200;
+
+/**
+ * Default process runner. Writes (a `stdin` payload) ignore stdout and
  * resolve as soon as the process exits: `xclip -i` forks a child that keeps
- * the selection alive and would otherwise hold the pipes open forever. A read
+ * the selection alive and would otherwise hold the pipes open forever. A
+ * read's or write's stderr is kept, at most MAX_CLIPBOARD_WRITE_STDERR_BYTES of
+ * it, so a failure names why; the pipe is let go of at the exit (after up to
+ * 200 ms for the rest of a failed write's message), so a forked child that
+ * inherited it cannot keep the process alive. A read
  * whose stdout passes MAX_CLIPBOARD_READ_BYTES kills the tool and rejects with
  * a ClipboardTooLargeError.
  */
@@ -122,13 +155,15 @@ export function defaultClipboardExec(
   cmd: string,
   args: readonly string[],
   stdin?: string,
-  timeoutMs: number = CLIPBOARD_EXEC_TIMEOUT_MS,
+  opts: number | (ClipboardExecOptions & { timeoutMs?: number }) = {},
 ): Promise<string> {
   const isWrite = stdin !== undefined;
+  const { timeoutMs = CLIPBOARD_EXEC_TIMEOUT_MS, env } = typeof opts === 'number' ? { timeoutMs: opts, env: undefined } : opts;
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, [...args], {
-      stdio: [isWrite ? 'pipe' : 'ignore', isWrite ? 'ignore' : 'pipe', isWrite ? 'ignore' : 'pipe'],
+      stdio: [isWrite ? 'pipe' : 'ignore', isWrite ? 'ignore' : 'pipe', 'pipe'],
       windowsHide: true,
+      ...(env ? { env } : {}),
     });
     const out: Buffer[] = [];
     const errChunks: Buffer[] = [];
@@ -154,13 +189,42 @@ export function defaultClipboardExec(
       }
       out.push(chunk);
     });
-    child.stderr?.on('data', (chunk: Buffer) => errChunks.push(chunk));
-    child.once(isWrite ? 'exit' : 'close', (code: number | null) => {
+    let errSize = 0;
+    // Bounded for a read as well: a tool that floods stderr while reading
+    // (a looping warning) was buffered whole until it exited or timed out.
+    child.stderr?.on('data', (chunk: Buffer) => {
+      const room = MAX_CLIPBOARD_WRITE_STDERR_BYTES - errSize;
+      if (room <= 0) return;
+      const kept = chunk.length > room ? chunk.subarray(0, room) : chunk;
+      errChunks.push(kept);
+      errSize += kept.length;
+    });
+    const finish = (code: number | null): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       if (code === 0) resolve(Buffer.concat(out).toString('utf8'));
       else reject(new ExecError(cmd, code, Buffer.concat(errChunks).toString('utf8')));
+    };
+    child.once(isWrite ? 'exit' : 'close', (code: number | null) => {
+      if (settled) return;
+      if (!isWrite || code === 0 || !child.stderr || child.stderr.readableEnded) {
+        child.stderr?.destroy();
+        finish(code);
+        return;
+      }
+      // A failed write: what it printed may still be in the pipe. It has
+      // exited, so the timeout no longer applies.
+      clearTimeout(timer);
+      const stderr = child.stderr;
+      const done = (): void => {
+        clearTimeout(grace);
+        stderr.destroy();
+        finish(code);
+      };
+      const grace = setTimeout(done, WRITE_STDERR_GRACE_MS);
+      stderr.once('end', done);
+      stderr.once('error', done);
     });
     if (isWrite && child.stdin) {
       // EPIPE when the tool exits early; the exit code tells the real story.
@@ -178,9 +242,9 @@ export function defaultClipboardExec(
  * and so does a ClipboardTooLargeError: swallowed, a clipboard over the read
  * cap was reported as empty while a smaller oversized one was "too large".
  */
-async function readOrEmpty(exec: ClipboardExec, cmd: string, args: readonly string[]): Promise<string> {
+async function readOrEmpty(exec: ClipboardExec, cmd: string, args: readonly string[], opts?: ClipboardExecOptions): Promise<string> {
   try {
-    return await exec(cmd, args);
+    return await (opts ? exec(cmd, args, undefined, opts) : exec(cmd, args));
   } catch (e) {
     if (isEnoent(e) || isClipboardTooLarge(e) || isClipboardTimeout(e)) throw e;
     if (e instanceof ExecError && /display|DISPLAY|WAYLAND_DISPLAY|compositor|not allowed|permission/i.test(e.stderr)) throw e;
@@ -188,13 +252,15 @@ async function readOrEmpty(exec: ClipboardExec, cmd: string, args: readonly stri
   }
 }
 
-export function pbcopyBackend(exec: ClipboardExec = defaultClipboardExec): ClipboardBackend {
+/** pbpaste / pbcopy, run with `utf8LocaleEnv(env)` so non-ASCII text survives a caller with no locale. */
+export function pbcopyBackend(exec: ClipboardExec = defaultClipboardExec, env: NodeJS.ProcessEnv = process.env): ClipboardBackend {
+  const opts = { env: utf8LocaleEnv(env) };
   return {
     name: 'pbcopy',
     description: 'pbpaste / pbcopy (macOS)',
-    read: () => readOrEmpty(exec, 'pbpaste', []),
+    read: () => readOrEmpty(exec, 'pbpaste', [], opts),
     write: async (text) => {
-      await exec('pbcopy', [], text);
+      await exec('pbcopy', [], text, opts);
     },
   };
 }
@@ -346,11 +412,16 @@ export async function powershellShell(which: (bin: string) => Promise<boolean>):
   return (await which('pwsh')) ? 'pwsh' : 'powershell';
 }
 
-/** Build a backend by name, for `--backend`. `shell` is the PowerShell to run for `powershell` (default `powershell`). */
-export function createClipboardBackend(name: ClipboardBackendName, exec: ClipboardExec = defaultClipboardExec, shell: 'powershell' | 'pwsh' = 'powershell'): ClipboardBackend {
+/** Build a backend by name, for `--backend`. `shell` is the PowerShell to run for `powershell` (default `powershell`); `env` the caller's environment, for pbcopy's locale. */
+export function createClipboardBackend(
+  name: ClipboardBackendName,
+  exec: ClipboardExec = defaultClipboardExec,
+  shell: 'powershell' | 'pwsh' = 'powershell',
+  env: NodeJS.ProcessEnv = process.env,
+): ClipboardBackend {
   switch (name) {
     case 'pbcopy':
-      return pbcopyBackend(exec);
+      return pbcopyBackend(exec, env);
     case 'wl':
       return wlBackend(exec);
     case 'xclip':
@@ -389,7 +460,7 @@ export async function detectClipboardBackend(
       if (!(await has('pbpaste')) || !(await has('pbcopy'))) {
         throw new Error('pbpaste/pbcopy not found on PATH (they ship with macOS; check your PATH)');
       }
-      return pbcopyBackend(exec);
+      return pbcopyBackend(exec, env);
     }
     case 'win32': {
       if (await has('powershell')) return powershellBackend(exec, 'powershell');

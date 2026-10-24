@@ -12,10 +12,12 @@ import {
   AUTO_APPLY_CONFIDENCE,
   ProjectTrustError,
   addTerms,
+  defaultProjectPath,
   loadLexicon,
   removeTerm,
   suggestAliases,
   suggestTerms,
+  spellingKey,
   termHolders,
   SUGGEST_MAX_LIMIT,
 } from '../core/index.js';
@@ -62,7 +64,7 @@ function describe(s: TermSuggestion): string {
     case 'never':
       return `protect ${bold(safe(s.alias ?? ''))} from ${bold(safe(s.canonical))} (never)`;
     case 'term':
-      return `new term ${bold(safe(s.canonical))}${s.aliases?.length ? dim(` (aliases: ${safe(s.aliases.join(', '))})`) : ''}`;
+      return `new term ${bold(safe(s.canonical))}${s.aliases?.length ? dim(` (aliases: ${s.aliases.map(safe).join(', ')})`) : ''}`;
     case 'stale':
       return `remove ${bold(safe(s.canonical))}`;
     default:
@@ -86,7 +88,8 @@ export function renderSuggestions(suggestions: readonly TermSuggestion[]): strin
 /** The file a suggestion writes to: the term's own file, or the project file for new terms with --project. */
 function scopeFor(s: TermSuggestion, loaded: LoadedLexicon, opts: SuggestCliOptions): TermScope {
   if (s.kind === 'term') return opts.project ? 'project' : 'global';
-  const existing = loaded.merged.terms.find((t) => t.canonical.trim().toLowerCase() === s.canonical.trim().toLowerCase());
+  const key = spellingKey(s.canonical);
+  const existing = loaded.merged.terms.find((t) => spellingKey(t.canonical) === key);
   return existing?.scope ?? 'global';
 }
 
@@ -276,6 +279,13 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
     suggestions = await suggest(input);
   } catch (err) {
     return fail(io, err, opts.json);
+  }
+  // A new term goes to the project lexicon with --project (scopeFor), but
+  // suggestTerms names the global file for one, so `--project --json`
+  // printed the wrong `scope` and `path` for every 'term' suggestion.
+  if (opts.project) {
+    const projectPath = loaded.project?.path ?? loaded.skippedProject?.path ?? defaultProjectPath(cwd);
+    suggestions = suggestions.map((s) => (s.kind === 'term' ? { ...s, scope: 'project' as const, path: projectPath } : s));
   }
 
   if (opts.json && opts.yes) return applyAllJson(suggestions, loaded, opts, store, writers, io);

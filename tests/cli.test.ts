@@ -50,6 +50,7 @@ vi.mock('../src/core/index.js', async (importOriginal) => {
     const output = text.replace(re, 'Ashlr.AI');
     return { input: text, output, replacements, changed: output !== text };
   };
+  const harvestRepo = vi.fn(async () => []);
   return {
     ...actual,
     normalize: vi.fn(normalize),
@@ -83,7 +84,9 @@ vi.mock('../src/core/index.js', async (importOriginal) => {
     }),
     isProjectTrustError: actual.isProjectTrustError,
     findTerm: vi.fn(),
-    harvestRepo: vi.fn(async () => []),
+    harvestRepo,
+    // runHarvest reads the report; the candidates still come from the harvestRepo mock.
+    harvestReport: async (...args: unknown[]) => ({ candidates: await (harvestRepo as (...a: unknown[]) => Promise<unknown>)(...args), truncated: false, filesScanned: 0, belowMinCount: 0, symbolsOnly: 0 }),
     exportLexicon: vi.fn((_l: Lexicon, format: string) => `export:${format}`),
     exportLexiconWithNotes: vi.fn((_l: Lexicon, format: string) => ({
       text: `export:${format}`,
@@ -258,8 +261,9 @@ describe('normalize', () => {
     expect(json.err).toBe('');
   });
 
-  // Catches: `normalize --json --min-confidence 5` printed `{ ok: false, error }` with no nextStep.
-  it.each([5, 'high', -1])('refuses --min-confidence %s with a nextStep, before reading stdin', async (value) => {
+  // Catches: `normalize --json --min-confidence 5` printed `{ ok: false, error }` with no nextStep,
+  // and a blank value ('' or spaces, as an unset shell variable gives) was read as 0.
+  it.each([5, 'high', -1, '', '  '])('refuses --min-confidence %s with a nextStep, before reading stdin', async (value) => {
     const json = makeIO();
     const readInput = vi.fn(async () => 'meet Ashler');
     expect(await runNormalize([], { json: true, minConfidence: value }, json, readInput)).toBe(1);
@@ -293,6 +297,16 @@ describe('normalize', () => {
    * could tell them apart, and a person watching a pipeline saw silence and
    * concluded it was working.
    */
+  // Catches: the load error went through the 200-character display cap, so a deep lexicon path cut it off before the reason.
+  it('prints a load error naming a long path whole', async () => {
+    const message = `Failed to parse lexicon YAML at /tmp/${'nested-directory/'.repeat(12)}lexicon.yaml: bad indentation`;
+    vi.mocked(core.loadLexicon).mockRejectedValueOnce(new Error(message));
+    const io = makeIO();
+    expect(await runNormalize(['meet Ashler'], {}, io)).toBe(1);
+    expect(io.err).toContain(message);
+    expect(io.err).not.toContain('\u2026');
+  });
+
   it('passes text through byte-exactly but exits 1 when the lexicon fails to load', async () => {
     vi.mocked(core.loadLexicon).mockRejectedValueOnce(new Error('bad yaml'));
     const io = makeIO();
@@ -367,6 +381,27 @@ describe('list', () => {
     expect(io.out).toContain('Mason Wyatt');
     expect(io.out).toContain(`global: ${state.globalPath}`);
     expect(io.out).toContain('project: (none)');
+  });
+
+  // Catches: `--category other` left out a term with no category, which
+  // export --category and the rest of the code count as other.
+  it('--category other lists the terms without a category', async () => {
+    const mixed: Lexicon = { version: 1, terms: [...FIXED_LEXICON.terms, { canonical: 'Plain', aliases: ['plane'], scope: 'global' }] };
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({
+      merged: mixed,
+      global: { path: state.globalPath, scope: 'global', lexicon: mixed, exists: true },
+    });
+    const io = makeIO();
+    expect(await runList({ category: 'other', json: true }, io)).toBe(0);
+    expect((JSON.parse(io.out) as Array<{ canonical: string }>).map((t) => t.canonical)).toEqual(['Plain']);
+  });
+
+  // Catches: --category " brand" (a quoted shell list) was refused as an
+  // unknown category while the local API trims ?category= and takes it.
+  it('--category trims the value as the local API does', async () => {
+    const io = makeIO();
+    expect(await runList({ category: ' Brand ', json: true }, io)).toBe(0);
+    expect((JSON.parse(io.out) as Array<{ canonical: string }>).map((t) => t.canonical)).toEqual(['Ashlr.AI']);
   });
 
   it('shows the project path when one is present', async () => {
@@ -482,6 +517,51 @@ describe('list', () => {
     expect(await runList({ category: 'brand', full: true }, hit)).toBe(0);
     expect(JSON.parse(hit.out)).not.toHaveProperty('note');
   });
+
+  // Catches: `lexicon list --full` (and MCP list_terms) had no way to take a
+  // page of a large lexicon; the whole list stays the default.
+  it('pages the matching terms with --offset and --limit, the whole list by default', async () => {
+    const whole = makeIO();
+    await runList({ full: true }, whole);
+    const wholeOut = JSON.parse(whole.out) as { terms: { canonical: string }[]; page?: unknown };
+    expect(wholeOut.terms.map((t) => t.canonical)).toEqual(['Ashlr.AI', 'Mason Wyatt']);
+    expect(wholeOut).not.toHaveProperty('page');
+
+    const first = makeIO();
+    expect(await runList({ full: true, limit: 1 }, first)).toBe(0);
+    expect(JSON.parse(first.out)).toMatchObject({
+      terms: [{ canonical: 'Ashlr.AI' }],
+      counts: { matched: 2, total: 2 },
+      page: { offset: 0, limit: 1, returned: 1, nextOffset: 1 },
+    });
+
+    const second = makeIO();
+    await runList({ full: true, offset: '1', limit: '1' }, second);
+    const secondOut = JSON.parse(second.out) as { terms: { canonical: string }[]; page: Record<string, unknown> };
+    expect(secondOut.terms.map((t) => t.canonical)).toEqual(['Mason Wyatt']);
+    expect(secondOut.page).toEqual({ offset: 1, limit: 1, returned: 1 });
+
+    const past = makeIO();
+    await runList({ full: true, offset: 5 }, past);
+    expect(JSON.parse(past.out)).toMatchObject({
+      terms: [],
+      page: { offset: 5, returned: 0 },
+      note: 'No term at offset 5: only 2 terms matched, at offsets 0 to 1.',
+    });
+
+    const array = makeIO();
+    await runList({ json: true, offset: 1 }, array);
+    expect((JSON.parse(array.out) as { canonical: string }[]).map((t) => t.canonical)).toEqual(['Mason Wyatt']);
+
+    const table = makeIO();
+    await runList({ limit: 1 }, table);
+    expect(table.out).toContain('Ashlr.AI');
+    expect(table.out).not.toContain('Mason Wyatt');
+    expect(table.out).toContain('terms 1 to 1 of 2; the next page is --offset 1');
+
+    await expect(runList({ offset: '-1' }, makeIO())).rejects.toThrow('--offset must be a whole number');
+    await expect(runList({ limit: '0' }, makeIO())).rejects.toThrow('--limit must be a positive integer');
+  });
 });
 
 describe('add / remove / path', () => {
@@ -532,6 +612,12 @@ describe('add / remove / path', () => {
     expect(JSON.parse(fresh.out)).toMatchObject({ created: true, suggested: ['Ashler', 'Ashlar', 'Ashlr AI'] });
   });
 
+  // Catches: `add X --suggest --never <w>` put a suggested spelling that is also a never word among the aliases, where the never word blocks it.
+  it('--suggest leaves out a suggestion that is one of the --never words', async () => {
+    await runAdd('Ashlr.AI', ['Ashler'], { suggest: true, never: [' ashlar '] }, makeIO());
+    expect(core.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ aliases: ['Ashler', 'Ashlr AI'] }), expect.anything());
+  });
+
   it('does not suggest when aliases are given unless --suggest', async () => {
     await runAdd('Ashlr.AI', ['Ashler'], {}, makeIO());
     expect(core.suggestAliases).not.toHaveBeenCalled();
@@ -561,7 +647,7 @@ describe('add / remove / path', () => {
     // remove call; the CLI's JSON had the conflicts and no way out.
     expect(JSON.parse(json.out).note).toBe(
       '"Ashler" is also an alias of "Ashlr.AI" (global), so it may still be corrected to that; ' +
-        'if the user agrees, drop it with: lexicon remove "Ashlr.AI" --alias "Ashler" --global',
+        'if the user agrees, drop it with: lexicon remove Ashlr.AI --alias Ashler --global',
     );
     expect(io.out).toContain('lexicon remove Ashlr.AI --alias Ashler --global');
 
@@ -653,6 +739,47 @@ describe('add / remove / path', () => {
     expect(full.err).not.toContain('nothing to remove');
   });
 
+  // Catches: add's, remove's and export --out's success lines printed the file through the 200-character display cap, so a deep path ended in an ellipsis.
+  it('add, remove and export --out print a long path whole on success', async () => {
+    const saved = state.globalPath;
+    const deep = `/tmp/${'nested-directory/'.repeat(12)}lexicon.yaml`;
+    state.globalPath = deep;
+    try {
+      const added = makeIO();
+      expect(await runAdd('Ashlr.AI', ['Ashler'], {}, added)).toBe(0);
+      expect(added.out).toContain(`in ${deep}\n`);
+      const removed = makeIO();
+      expect(await runRemove('Ashlr.AI', {}, removed)).toBe(0);
+      expect(removed.out).toContain(`from ${deep}\n`);
+      const alias = makeIO();
+      expect(await runRemove('Ashlr.AI', { alias: 'Ashler' }, alias)).toBe(0);
+      expect(alias.out).toContain(deep);
+      for (const io of [added, removed, alias]) expect(io.out).not.toContain('\u2026');
+    } finally {
+      state.globalPath = saved;
+    }
+    const dir = await tempDir('lexicon-cli-');
+    const out = path.join(dir, ...Array.from({ length: 12 }, () => 'nested-directory'), 'lex.json');
+    const exported = makeIO();
+    expect(await runExport('json', { out }, exported)).toBe(0);
+    expect(exported.out).toContain(`to ${out}\n`);
+    expect(exported.out).not.toContain('\u2026');
+  });
+
+  // Catches: remove's error lines went through the 200-character display cap, so a refusal naming a deep project path ended in `...` mid-sentence.
+  it('remove prints a long error naming a path whole', async () => {
+    const deep = `/tmp/${'nested-directory/'.repeat(12)}.lexicon.yaml`;
+    vi.mocked(core.removeTerm).mockRejectedValueOnce(new core.ProjectTrustError(deep, 'untrusted'));
+    const term = makeIO();
+    expect(await runRemove('Ashlr.AI', {}, term)).toBe(1);
+    expect(term.err).toContain(new core.ProjectTrustError(deep, 'untrusted').message);
+    expect(term.err).not.toContain('\u2026');
+    vi.mocked(core.removeAlias).mockRejectedValueOnce(new core.ProjectTrustError(deep, 'untrusted'));
+    const alias = makeIO();
+    expect(await runRemove('Ashlr.AI', { alias: 'Ashler' }, alias)).toBe(1);
+    expect(alias.err).toContain(new core.ProjectTrustError(deep, 'untrusted').message);
+  });
+
   // Catches: every `remove --json` failure document (not found, unknown alias,
   // refused untrusted copy) lacked `ok: false`, the key every other --json
   // refusal leads with, so a script had to special-case remove.
@@ -673,7 +800,7 @@ describe('add / remove / path', () => {
     vi.mocked(core.removeTerm).mockRejectedValueOnce(new core.ProjectTrustError('/tmp/proj/.lexicon.yaml', 'untrusted'));
     const trust = makeIO();
     expect(await runRemove('Ashlr.AI', { json: true }, trust)).toBe(1);
-    expect(JSON.parse(trust.out)).toMatchObject({ ok: false, error: expect.stringContaining('untrusted'), nextStep: `run lexicon remove "Ashlr.AI" --global to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}`, canonical: 'Ashlr.AI', removed: false });
+    expect(JSON.parse(trust.out)).toMatchObject({ ok: false, error: expect.stringContaining('untrusted'), nextStep: `run lexicon remove Ashlr.AI --global to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}`, canonical: 'Ashlr.AI', removed: false });
     // Success leads with ok: true (it had no ok key, so `ok` only told failures apart).
     const ok = makeIO();
     expect(await runRemove('Ashlr.AI', { json: true }, ok)).toBe(0);
@@ -711,6 +838,35 @@ describe('add / remove / path', () => {
     expect(ok.err).toContain('added 1 new term, merged 0');
   });
 
+  // Catches: in text mode a write failure other than a trust refusal was
+  // thrown raw, so `harvest --add` said `disk full` with no word of whether
+  // part of the batch was written, unlike --json.
+  it('harvest --add says nothing was added when the write fails in text mode', async () => {
+    vi.mocked(core.harvestRepo).mockResolvedValueOnce([{ canonical: 'Quokka', category: 'product', count: 2, suggestedAliases: [], evidence: [], source: 'harvest:repo' }]);
+    vi.mocked(core.addTerms).mockRejectedValueOnce(new Error('disk full'));
+    const io = makeIO();
+    const code = await runHarvest(os.tmpdir(), { add: true, yes: true }, io, { isInteractive: () => false }).catch((err: unknown) => fail(io, err));
+    expect(code).toBe(1);
+    expect(io.err).toContain('lexicon: disk full\n');
+    expect(io.err).toContain('nothing was added: the candidates are written together');
+
+    // A trust refusal is still thrown, for fail to print with its own next step.
+    vi.mocked(core.harvestRepo).mockResolvedValueOnce([{ canonical: 'Quokka', category: 'product', count: 2, suggestedAliases: [], evidence: [], source: 'harvest:repo' }]);
+    vi.mocked(core.addTerms).mockRejectedValueOnce(new core.ProjectTrustError('/tmp/proj/.lexicon.yaml', 'untrusted'));
+    await expect(runHarvest(os.tmpdir(), { add: true, yes: true }, makeIO(), { isInteractive: () => false })).rejects.toThrow('untrusted');
+  });
+
+  // Catches: the harvest table cut each cell at 200 characters from the end,
+  // so evidence naming a deep file lost the file name.
+  it('harvest prints a long evidence path whole', async () => {
+    const evidence = `${'packages/very-deep-directory/'.repeat(10)}package.json#dependencies`;
+    vi.mocked(core.harvestRepo).mockResolvedValueOnce([{ canonical: 'Quokka', category: 'product', count: 2, suggestedAliases: [], evidence: [evidence], source: 'harvest:package' }]);
+    const io = makeIO();
+    expect(await runHarvest(os.tmpdir(), {}, io, { isInteractive: () => false })).toBe(0);
+    expect(io.out).toContain(evidence);
+    expect(io.out).not.toContain('\u2026');
+  });
+
   it('add --json and remove --json print parseable JSON on stdout', async () => {
     const added = makeIO();
     expect(await runAdd('Ashlr.AI', ['Ashler'], { json: true }, added)).toBe(0);
@@ -742,7 +898,7 @@ describe('add / remove / path', () => {
     expect(await runRemove('Ashlr.AI', {}, io)).toBe(0);
     expect(io.out).toContain('removed Ashlr.AI from /tmp/proj/.lexicon.yaml');
     expect(io.out).toContain(`warn: Ashlr.AI is still in the global lexicon (${state.globalPath})`);
-    expect(io.out).toContain('to remove that copy too: lexicon remove "Ashlr.AI"');
+    expect(io.out).toContain('to remove that copy too: lexicon remove Ashlr.AI');
 
     vi.mocked(core.loadLexicon).mockResolvedValueOnce(loaded);
     const json = makeIO();
@@ -785,7 +941,7 @@ describe('add / remove / path', () => {
     expect(await runRemove('Ashlr.AI', { global: true }, io)).toBe(0);
     expect(core.removeTerm).toHaveBeenCalledWith('Ashlr.AI', expect.objectContaining({ scope: 'global' }));
     expect(io.out).toContain(`removed Ashlr.AI from ${state.globalPath}`);
-    expect(io.out).toContain('to remove that copy too: lexicon remove "Ashlr.AI" --project');
+    expect(io.out).toContain('to remove that copy too: lexicon remove Ashlr.AI --project');
   });
 
   it('remove --global and --alias --global pass the global scope; --global with --project is refused', async () => {
@@ -851,7 +1007,7 @@ describe('add / remove / path', () => {
       const io = makeIO();
       expect(await runRemove('Ashlr.AI', { json }, io)).toBe(1);
       expect(io.err).toContain('has changed since it was trusted');
-      expect(io.err).toContain('lexicon remove "Ashlr.AI" --global');
+      expect(io.err).toContain('lexicon remove Ashlr.AI --global');
       if (json) {
         expect(JSON.parse(io.out)).toMatchObject({
           ok: false,
@@ -940,7 +1096,7 @@ describe('add / remove / path', () => {
       const io = makeIO();
       expect(await runRemove('Ashlr.AI', { alias: 'Ashler', json }, io)).toBe(1);
       expect(io.err).toContain('has changed since it was trusted');
-      expect(io.err).toContain('lexicon remove "Ashlr.AI" --alias "Ashler" --global');
+      expect(io.err).toContain('lexicon remove Ashlr.AI --alias Ashler --global');
       if (json) {
         expect(JSON.parse(io.out)).toMatchObject({
           ok: false,
@@ -1028,6 +1184,14 @@ describe('export', () => {
     expect(io2.out).toContain('wrote json export');
   });
 
+  // Catches: --category brand,person (the form GET /export/:format?category=
+  // takes) was refused as one unknown category "brand,person".
+  it('--category takes a comma-separated list too', async () => {
+    const io = makeIO();
+    expect(await runExport('wispr', { category: ['brand, person', 'brand', 'other,'] }, io)).toBe(0);
+    expect(core.exportLexiconWithNotes).toHaveBeenCalledWith(expect.anything(), 'wispr', { categories: ['brand', 'person', 'other'] });
+  });
+
   // Catches: --out was written in place (an export cut short left a truncated
   // file where the last good one was), a directory failed with a bare EISDIR,
   // and --out naming the lexicon file itself replaced every term with the export.
@@ -1067,6 +1231,31 @@ describe('export', () => {
       expect(await runExport('csv', { out: state.projectPath }, proj)).toBe(1);
       expect(proj.err).toContain('is the project lexicon file the export reads');
       expect(existsSync(state.projectPath)).toBe(false);
+    } finally {
+      state.globalPath = saved;
+    }
+  });
+
+  // Catches: when neither the lexicon file nor --out existed yet, the paths
+  // were compared as given, so --out reaching the lexicon path through a
+  // symlinked directory was written as the lexicon file.
+  it('--out refuses the lexicon path reached through a symlinked directory before either exists', async () => {
+    const dir = await fs.realpath(await tempDir('lexicon-cli-out-link-'));
+    const real = path.join(dir, 'real');
+    await fs.mkdir(real);
+    const link = path.join(dir, 'link');
+    try {
+      await fs.symlink(real, link, 'dir');
+    } catch {
+      return; // no symlinks here (Windows without the privilege)
+    }
+    const saved = state.globalPath;
+    try {
+      state.globalPath = path.join(real, 'sub', 'lexicon.yaml');
+      const io = makeIO();
+      expect(await runExport('json', { out: path.join(link, 'sub', 'lexicon.yaml') }, io)).toBe(1);
+      expect(io.err).toContain('is the global lexicon file the export reads, so nothing was written');
+      expect(existsSync(state.globalPath)).toBe(false);
     } finally {
       state.globalPath = saved;
     }
@@ -1362,6 +1551,17 @@ describe('renderTable', () => {
     expect(col(lines[0], 3)).toBe(lines[2].indexOf('3'));
   });
 
+  // Catches: every cell went through the 200-character display cap, which
+  // cuts from the end, so a deep path in the stats files table or harvest
+  // evidence lost its file name to an ellipsis.
+  it('keeps a long path whole in a path column, and still caps the others', () => {
+    const deep = `/home/u/${'very-deep-directory/'.repeat(15)}.lexicon.yaml`;
+    const out = renderTable([['project', deep, `${'x'.repeat(300)}`]], undefined, { pathColumns: [1] });
+    expect(out).toContain(deep);
+    expect(out).toContain(`${'x'.repeat(199)}\u2026`);
+    expect(renderTable([['\x1b[31m', deep]], undefined, { pathColumns: [1] })).not.toContain('\x1b');
+  });
+
   it('handles ragged rows and no header', () => {
     expect(renderTable([['a'], ['bb', 'c']])).toBe('a\nbb  c\n');
     expect(renderTable([])).toBe('');
@@ -1611,6 +1811,20 @@ describe('doctor', () => {
     expect(typeof report.nextStep).toBe('string');
     expect(io.out).not.toContain('✗');
     expect(report).toEqual(JSON.parse(JSON.stringify(await runDoctorReport({}, deps))));
+  });
+
+  // Catches: the ambiguous-alias warning printed the folded keys, `alias "ashler" belongs to several terms: ashlr.ai, ashlar co`.
+  it('names an alias several terms share, and those terms, as the lexicon spells them', async () => {
+    const shared: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'Ashlr.AI', aliases: ['Ashler'] },
+        { canonical: 'Ashlar Co', aliases: ['ashler'] },
+      ],
+    };
+    vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: shared, exists: true });
+    const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '' }, exec: () => 'no servers', home: doctorHome });
+    expect(report.checks).toContainEqual({ level: 'warn', message: 'alias "Ashler" belongs to several terms: Ashlr.AI, Ashlar Co (ambiguous)' });
   });
 
   it('warns about an alias its own never list blocks', async () => {
@@ -1981,6 +2195,45 @@ describe('runDoctorReport', () => {
       // The check line leads with its fix, because rendering caps it at 200 characters.
       const failed = report.checks.find((c) => c.level === 'fail');
       expect(failed?.message).toMatch(/^global lexicon does not parse \(run: lexicon edit\): /);
+    });
+
+    /**
+     * Regression: a lexicon that cannot be read at all (store.ts `Cannot read
+     * lexicon at <path>: ...`, a LEXICON_PATH under a file or a permission
+     * error) was reported as "does not parse (run: lexicon edit)". There is no
+     * parse error, and an editor cannot fix the path.
+     */
+    it('says an unreadable lexicon cannot be read and points at the path or LEXICON_PATH, not lexicon edit', async () => {
+      vi.mocked(core.readLexiconFile).mockRejectedValue(
+        new Error(`Cannot read lexicon at ${state.globalPath}: permission denied (EACCES)`),
+      );
+      const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '/nonexistent' }, exec: () => '' });
+      expect(report.ready).toBe(false);
+      expect(report.summary).toMatch(/^The global lexicon cannot be read, so no corrections are happening: permission denied \(EACCES\)/);
+      expect(report.summary).not.toMatch(/parse/);
+      expect(report.nextStep).toMatch(/LEXICON_PATH/);
+      expect(report.nextStep).toContain(state.globalPath);
+      expect(report.nextStep).not.toMatch(/lexicon edit/);
+      const failed = report.checks.find((c) => c.level === 'fail');
+      expect(failed?.message).toMatch(/^global lexicon cannot be read \(make that path readable or point LEXICON_PATH/);
+      expect(failed?.message).not.toMatch(/parse|lexicon edit/);
+
+      const mcp = await runDoctorReport({ audience: 'mcp' }, { platform: 'linux', env: { PATH: '/nonexistent' }, exec: () => '' });
+      expect(mcp.nextStep).toMatch(/^Ask the user to make that path readable or point LEXICON_PATH/);
+      expect(mcp.nextStep).not.toMatch(/edit/);
+    });
+
+    it('names only the path (not LEXICON_PATH) when the unreadable one is the project file', async () => {
+      state.projectPath = '/tmp/proj/.lexicon.yaml';
+      vi.mocked(core.readLexiconFile).mockImplementation(async (p: string, scope: string) => {
+        if (scope === 'project') throw new Error(`Cannot read lexicon at ${p}: permission denied (EACCES)`);
+        return { path: p, scope, lexicon: FIXED_LEXICON, exists: true } as never;
+      });
+      const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '/nonexistent' }, exec: () => '' });
+      expect(report.summary).toMatch(/^The project lexicon cannot be read/);
+      expect(report.nextStep).toMatch(/^Make that path readable, then run: lexicon doctor/);
+      expect(report.nextStep).not.toMatch(/LEXICON_PATH|lexicon edit/);
+      expect(report.nextStep).toContain('/tmp/proj/.lexicon.yaml');
     });
 
     it('names the project file and `lexicon edit --project` when that is the broken one', async () => {
@@ -2403,6 +2656,20 @@ describe('doctor: login service', () => {
     const check = await checkLoginService({ platform: 'darwin', env: {}, exec, home: h, uid: 501 });
     expect(check).toEqual({ level: 'ok', message: `login service ai.ashlr.lexicon.serve loaded (${cli} exists)` });
     expect(calls).toEqual([['launchctl', 'print', 'gui/501/ai.ashlr.lexicon.serve']]);
+  });
+
+  // Catches: a unit file that is there but cannot be read was taken as missing: "no login service installed", or "loaded, but not from this install (no service file at <it>)".
+  it('linux: warns that a service file it cannot read was not checked, loaded or not', async () => {
+    const h = await home();
+    const unit = path.join(h, '.config', 'systemd', 'user', 'lexicon-serve.service');
+    await fs.mkdir(unit, { recursive: true });
+    for (const exec of [() => 'active', fail]) {
+      const check = await checkLoginService({ platform: 'linux', env: {}, exec, home: h });
+      expect(check).toEqual({
+        level: 'warn',
+        message: `login service lexicon-serve.service file cannot be read (EISDIR), so the program it runs was not checked (run: lexicon serve --uninstall && lexicon serve --install): ${unit}`,
+      });
+    }
   });
 
   it('darwin: fails with the reinstall hint when the loaded service points at a missing file', async () => {
@@ -2838,6 +3105,35 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
     }
   });
 
+  // Catches: `export whisper-prompt --json` (and `--out`) reported `terms` as
+  // the names selected, though the prompt-token window and the default cap
+  // left most of them out of the line.
+  it('export whisper-prompt and openai --json count the names the line holds', async () => {
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-wp-'));
+    try {
+      const globalPath = path.join(tmp, 'lexicon.yaml');
+      const names = Array.from({ length: 150 }, (_, i) => `Supercalifragilistic Name${String(i).padStart(3, '0')}`);
+      await fs.writeFile(globalPath, `version: 1\nterms:\n${names.map((n) => `  - canonical: ${n}\n    aliases: []\n`).join('')}`);
+      for (const format of ['whisper-prompt', 'openai']) {
+        const printed = lexicon(['export', format, '--json', '--cwd', tmp], globalPath);
+        expect(printed.status).toBe(0);
+        const doc = JSON.parse(printed.stdout) as { terms: number; content: string };
+        const written = doc.content.trim().split(', ').length;
+        expect(written).toBeLessThan(100);
+        expect(doc.terms).toBe(written);
+
+        const out = path.join(tmp, `${format}.txt`);
+        const toFile = lexicon(['export', format, '--out', out, '--json', '--cwd', tmp], globalPath);
+        expect(toFile.status).toBe(0);
+        expect((JSON.parse(toFile.stdout) as { terms: number }).terms).toBe((await fs.readFile(out, 'utf8')).trim().split(', ').length);
+        const human = lexicon(['export', format, '--out', out, '--cwd', tmp], globalPath);
+        expect(human.stdout).toContain(`wrote ${format} export (${written} terms)`);
+      }
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
   // Catches: `--full` implies --json on list and harvest, but a failure under
   // --full alone (a usage error, or a handler that threw) printed only the
   // stderr line, so a script parsing stdout got an empty document.
@@ -2862,10 +3158,44 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       });
       expect(missing.stderr).toContain('lexicon: pass a directory that exists');
 
+      // Catches: a file named as the root got the scan's bare `not a directory` and the generic next step.
+      const file = path.join(tmp, 'package.json');
+      await fs.writeFile(file, '{}\n');
+      const notDir = lexicon(['harvest', file, '--full', '--cwd', tmp], globalPath);
+      expect(notDir.status).toBe(1);
+      expect(JSON.parse(notDir.stdout)).toEqual({
+        ok: false,
+        error: `harvest: not a directory: ${file}`,
+        nextStep: 'pass a directory (the repository root, not a file in it), or leave the path out to harvest the current directory',
+      });
+      expect(notDir.stderr).toContain('lexicon: pass a directory (the repository root');
+
       // A command without --full keeps an empty stdout for it: there it is just an unknown option.
       const other = lexicon(['stats', '--full', '--cwd', tmp], globalPath);
       expect(other.status).toBe(1);
       expect(other.stdout).toBe('');
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
+  // Catches: the wrong-scope hint compared spellings with trim and lowercase
+  // only, so a canonical or alias typed in another Unicode form (NFD
+  // `Cafe` plus U+0301 for a stored NFC `Café`) lost the hint naming the file
+  // and flag, though the store matches them as one spelling.
+  it('remove --alias with the wrong scope names the other file for a spelling in another Unicode form', async () => {
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-alias-nfc-'));
+    try {
+      const repo = path.join(tmp, 'repo');
+      const globalPath = path.join(tmp, 'config', 'lexicon.yaml');
+      await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+      expect(lexicon(['add', 'Caf\u00e9', 'kaf\u00e9', '--cwd', repo], globalPath).status).toBe(0);
+
+      const wrong = lexicon(['remove', 'Cafe\u0301', '--alias', 'KAFE\u0301', '--project', '--json', '--cwd', repo], globalPath);
+      expect(wrong.status).toBe(1);
+      expect(JSON.parse(wrong.stdout).nextStep).toBe(
+        `it is an alias of "Cafe\u0301" in the global lexicon (${globalPath}); run with --global to remove it there, or with neither flag to remove it from every file whose copy has it`,
+      );
     } finally {
       await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
@@ -2894,10 +3224,10 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       });
       expect(wrong.stderr).toContain('lexicon: it is an alias of "Kubectl" in the global lexicon');
 
-      // An alias no file has gets the generic next step only.
+      // An alias no file has: the next step names the aliases the term does have.
       const nowhere = lexicon(['remove', 'Kubectl', '--alias', 'nope', '--global', '--json', '--cwd', repo], globalPath);
       expect(nowhere.status).toBe(1);
-      expect(JSON.parse(nowhere.stdout).nextStep).toBe(DEFAULT_NEXT_STEP);
+      expect(JSON.parse(nowhere.stdout).nextStep).toBe('the aliases of "Kubectl" are: cube control; remove one with lexicon remove Kubectl --alias <alias> --global');
 
       const ok = lexicon(['remove', 'Kubectl', '--alias', 'cube control', '--global', '--json', '--cwd', repo], globalPath);
       expect(ok.status).toBe(0);

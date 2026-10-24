@@ -162,9 +162,15 @@ Options:
                          and then the object MCP list_terms returns, plus
                          projectTrust, skippedProject and note when an untrusted
                          project lexicon was left out, or note alone when
-                         nothing matched (implies --json)
+                         nothing matched, and page { offset, limit?, returned,
+                         nextOffset? } with --offset or --limit (nextOffset is
+                         the next page's --offset, while matches remain)
+                         (implies --json)
   --category <category>  only this category
   --query <text>         only terms whose canonical or aliases contain this text
+  --offset <n>           skip this many matching terms first (default 0)
+  --limit <n>            print at most this many matching terms (default: every
+                         one)
   -h, --help             display help for command
 ```
 
@@ -237,7 +243,7 @@ export the merged lexicon for another tool (run without a format to list them)
 
 Options:
   --out <file>                write to a file instead of stdout
-  --category <categories...>  only these categories
+  --category <categories...>  only these categories, space- or comma-separated
   --limit <n>                 cap the number of terms, applied after --category,
                               keeping the most hits first (at equal hits brand,
                               person and product terms first, then canonical A
@@ -319,7 +325,8 @@ Options:
                     after dictating)
   --paste           with --once: send Cmd+V afterwards (macOS only; needs
                     Accessibility permission)
-  --interval <ms>   poll interval in milliseconds (default: 250)
+  --interval <ms>   poll interval in milliseconds (at least 20; a smaller value
+                    is raised to 20, with a warning) (default: 250)
   --dry-run         report corrections without writing to the clipboard
   --quiet           do not print corrections
   --backend <name>  force a clipboard backend: pbcopy|wl|xclip|xsel|powershell
@@ -461,8 +468,9 @@ Arguments:
 
 Options:
   --from <sentence>  parse a natural-language correction, e.g. "it's Ashlr.AI
-                     not Ashler"
-  --project          write to the project lexicon instead of the global one
+                     not Ashler" (instead of <heard> <meant>, not with them)
+  --project          write to the project lexicon (default: the file that
+                     already holds the meant term, else the global one)
   --json             print the result as JSON
   -h, --help         display help for command
 ```
@@ -513,7 +521,8 @@ Options:
   --json         print the listening info (or the --show, --status, --pair,
                  --install or --uninstall result) as JSON, led by ok (for
                  --status, ok equals up)
-  --quiet        do not log requests (only when running the server; refused with
+  --quiet        do not log each request; failures and start/stop are still
+                 printed (the installed service runs with it; refused with
                  --show, --status, --pair, --install, --uninstall)
   --show         print the URL and bearer token (for the extension options page)
                  and exit
@@ -536,12 +545,16 @@ with the lexicon
 
 Options:
   --toggle               hotkey mode: first call starts recording in the
-                         background, second call stops and transcribes
+                         background, second call stops and transcribes. the
+                         first call records with its --device and --seconds, the
+                         second transcribes and delivers with its own --model,
+                         --lang, --translate, --no-prompt, --no-history, --copy
+                         and --paste, so give both calls the same flags
   --status               print "recording since <time>" (exit 0) or "idle" (exit
                          1)
   --list-devices         print the audio input devices ffmpeg can see
   --seconds <n>          stop recording after n seconds instead of waiting for
-                         Enter
+                         Enter (with --toggle, at most 600)
   --device <name|index>  input device (default: the system default microphone)
   --model <name|path>    whisper model: a name like base.en or small.en
                          (auto-downloaded) or a ggml file (default: "base.en")
@@ -555,10 +568,13 @@ Options:
                          Accessibility permission)
   --json                 print { ok: true, raw, output, replacements, summary,
                          model, seconds, ms } as JSON (with --toggle, a press
-                         that starts prints {"status":"recording"}); every
-                         failure prints { ok: false, error, nextStep?, code }
-                         with code the exit code (over the result when there is
-                         text, e.g. nothing heard or a failed --paste)
+                         that starts prints {"status":"recording"}; with
+                         --status, { ok: true, recording: true, since, pid }
+                         while recording or { ok: false, recording: false } when
+                         idle); every failure prints { ok: false, error,
+                         nextStep?, code } with code the exit code (over the
+                         result when there is text, e.g. nothing heard or a
+                         failed --paste)
   --quiet                no status lines on stderr
   -h, --help             display help for command
 ```

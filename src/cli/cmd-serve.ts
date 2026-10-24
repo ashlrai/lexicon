@@ -6,7 +6,7 @@
  * Handlers are exported for tests; registerServeCommands() only wires commander.
  */
 import { spawn } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { existsSync, fstatSync, ftruncateSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import { homeDir } from '../util/xdg.js';
 import path from 'node:path';
@@ -17,7 +17,8 @@ import { resolveCliEntry } from './cli-entry.js';
 import { lexiconServerEnv } from './cmd-install.js';
 import { isVolatileEntry } from './claude-settings.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
-import { fail, jsonError, jsonOk, line, refuse, safe, safeError, safeLines, tildify } from './io.js';
+import { writeFileAtomic } from '../util/atomic.js';
+import { fail, jsonError, jsonOk, line, refuse, safe, safeError, safeLines, safeMessage, tildify } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   LAUNCH_AGENT_LABEL,
@@ -77,7 +78,7 @@ export interface ServeDeps {
    * program path does not exist, whichever way it was resolved.
    */
   cliPath?: string;
-  /** Node binary used by the service. Default process.execPath. */
+  /** Node binary used by the service. Default `stableNodePath(process.execPath)`. */
   nodePath?: string;
   /** Version of `nodePath` (`v20.18.0`), for the Windows `--env-file` gate. Default process.version. */
   nodeVersion?: string;
@@ -89,7 +90,55 @@ export interface ServeDeps {
   signal?: AbortSignal;
   /** Called once the server is listening (tests). */
   onListening?: (info: { port: number; url: string; token: string }) => void;
+  /** Waits between `launchctl print` polls after a bootout. Default a timer. */
+  sleep?: (ms: number) => Promise<void>;
+  /** The descriptor the server's log goes to, for `capServiceLog`. Default 2 (stderr). */
+  logFd?: number;
 }
+
+/**
+ * The service's arguments after the CLI entry. `--quiet` keeps the per-request
+ * line out of the service log (launchd's `serve.log`, the journal), which
+ * otherwise grew by one line a request; failures and the start and stop lines
+ * are still written.
+ */
+export const SERVICE_SERVE_ARGS = ['serve', '--quiet'] as const;
+
+/** `serve.log` past this size is moved to `serve.log.1` and emptied when the server starts. */
+export const SERVE_LOG_MAX_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Cap the LaunchAgent log when it is where this server's log goes: when `fd`
+ * is that file (same device and inode as `logPath`) and it is over `max`
+ * bytes, copy it to `<logPath>.1` (replacing an older one) and truncate it.
+ * launchd opens the file for appending, so later writes land at the new end.
+ * Returns true when it rotated; any error leaves the file alone (the server
+ * still starts).
+ */
+export async function capServiceLog(logPath: string, fd: number, max: number = SERVE_LOG_MAX_BYTES): Promise<boolean> {
+  try {
+    // bigint: Windows file ids can pass 2^53, where number stats round.
+    const target = fstatSync(fd, { bigint: true });
+    if (!target.isFile() || target.size <= BigInt(max) || target.ino === 0n) return false;
+    const file = await fs.stat(logPath, { bigint: true });
+    if (file.dev !== target.dev || file.ino !== target.ino) return false;
+    await fs.copyFile(logPath, `${logPath}.1`);
+    try {
+      ftruncateSync(fd, 0);
+    } catch {
+      // A descriptor opened for appending only (Windows) cannot set the end
+      // of file; truncating by path does the same to the same file.
+      await fs.truncate(logPath, 0);
+    }
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+/** How often, and how many times, `--install` asks launchd whether a booted-out label is gone. */
+export const BOOTOUT_POLL_MS = 100;
+export const BOOTOUT_POLL_TRIES = 50;
 
 function red(s: string, env: NodeJS.ProcessEnv): string {
   return process.stderr.isTTY && !env.NO_COLOR ? `\x1b[31m${s}\x1b[0m` : s;
@@ -127,7 +176,7 @@ export const defaultServeExec: ServeExec = (cmd, args) =>
 
 export async function runServeShow(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
   const home = deps.home ?? homeDir();
-  const config = await ensureServeConfig(storeOpts(opts));
+  const config = await ensureServeConfig(storeOpts(opts), { onTokenReplaced: (message) => io.stderr(`lexicon: warning: ${safeMessage(message)}\n`) });
   const port = opts.port ?? config.port;
   const url = serveUrl(port, opts.host ?? DEFAULT_HOST);
   const configPath = getServePath(storeOpts(opts));
@@ -251,13 +300,28 @@ export async function runServePair(opts: ServeOptions, io: IO, deps: ServeDeps =
   const healthUrl = `${serveUrl(port, DEFAULT_HOST)}/health`;
 
   let up = false;
+  let foreign = false;
   let reason = '';
   try {
     const res = await doFetch(healthUrl, { signal: AbortSignal.timeout(STATUS_TIMEOUT_MS) });
     if (!res.ok) reason = `HTTP ${res.status}`;
-    else up = ((await res.json()) as { ok?: unknown }).ok === true;
+    else {
+      // lexicon serve's /health shape, as --status checks it: any `{ ok: true }`
+      // counted, so another program on the port had its page opened as the
+      // pairing page and the output said the extension would pair there.
+      const body: unknown = await res.json().catch(() => undefined);
+      up = isLexiconHealth(body);
+      foreign = !up;
+    }
   } catch (err) {
     reason = errorMessage(err);
+  }
+  if (foreign) {
+    const error = `${FOREIGN_HEALTH_ERROR} (${healthUrl})`;
+    if (opts.json) line(io, JSON.stringify({ ...jsonError(error, SERVE_STATUS_HINTS.foreign), up: false, url, reason: 'unexpected /health response' }, null, 2));
+    io.stderr(`lexicon: ${safeMessage(error)}\n`);
+    io.stderr(`lexicon: ${SERVE_STATUS_HINTS.foreign}\n`);
+    return 1;
   }
   if (!up) {
     if (opts.json) {
@@ -306,6 +370,21 @@ export async function runServePair(opts: ServeOptions, io: IO, deps: ServeDeps =
 
 function xmlEscape(s: string): string {
   return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
+}
+
+/**
+ * The node binary a login service should run, for `execPath` (this node's
+ * own, symlinks resolved). A Homebrew node resolves into its versioned Cellar
+ * directory (`<prefix>/Cellar/node/22.9.0/bin/node`, or `node@20/...`), which
+ * `brew upgrade` and `brew cleanup` delete, leaving the service crash-looping
+ * on a missing binary; its `<prefix>/opt/<formula>/bin/node` symlink follows
+ * upgrades, so that is used when it exists. Any other path is returned as is.
+ */
+export function stableNodePath(execPath: string, exists: (p: string) => boolean = existsSync): string {
+  const m = /^(.*)\/Cellar\/(node(?:@\d+)?)\/[^/]+\/bin\/node$/.exec(execPath);
+  if (!m) return execPath;
+  const stable = `${m[1]}/opt/${m[2]}/bin/node`;
+  return exists(stable) ? stable : execPath;
 }
 
 /**
@@ -362,7 +441,7 @@ export function launchAgentPlist(
   label: string = LAUNCH_AGENT_LABEL,
   env?: Readonly<Record<string, string>>,
 ): string {
-  const args = [nodePath, cliPath, 'serve'].map((a) => `    <string>${xmlEscape(a)}</string>`).join('\n');
+  const args = [nodePath, cliPath, ...SERVICE_SERVE_ARGS].map((a) => `    <string>${xmlEscape(a)}</string>`).join('\n');
   const envBlock =
     env && Object.keys(env).length > 0
       ? [
@@ -418,7 +497,7 @@ export function launchAgentPlist(
  */
 export function scheduledTaskXml(nodePath: string, cliPath: string, userId?: string, envFile?: string): string {
   // The task has no environment of its own; node loads the variables itself.
-  const args = `${envFile ? `--env-file="${envFile}" ` : ''}"${cliPath}" serve`;
+  const args = `${envFile ? `--env-file="${envFile}" ` : ''}"${cliPath}" ${SERVICE_SERVE_ARGS.join(' ')}`;
   const principal = [
     '  <Principals>',
     '    <Principal id="Author">',
@@ -487,6 +566,18 @@ function unitQuote(s: string): string {
   return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%')}"`;
 }
 
+/**
+ * An `ExecStart=` argument after the executable: `unitQuote`, with `$` doubled.
+ * systemd expands `${NAME}` (and `$NAME` as a word of its own) in arguments
+ * and reads `$$` as one `$`, so a CLI path holding `${...}` or `$$` was
+ * started as some other path. The executable itself is not expanded
+ * (`systemd-analyze verify` looks for a doubled `$$` literally), and
+ * `Environment=` values are never expanded, so both keep a single `$`.
+ */
+function unitArg(s: string): string {
+  return unitQuote(s).replace(/\$/g, '$$$$');
+}
+
 /** The systemd user unit, with one `Environment=` line per entry of `env`. */
 export function systemdUnit(nodePath: string, cliPath: string, env?: Readonly<Record<string, string>>): string {
   const envLines = Object.entries(env ?? {}).map(([name, value]) => `Environment=${unitQuote(`${name}=${value}`)}`);
@@ -498,7 +589,7 @@ export function systemdUnit(nodePath: string, cliPath: string, env?: Readonly<Re
     '[Service]',
     'Type=simple',
     ...envLines,
-    `ExecStart=${unitQuote(nodePath)} ${unitQuote(cliPath)} serve`,
+    `ExecStart=${unitQuote(nodePath)} ${unitArg(cliPath)} ${SERVICE_SERVE_ARGS.join(' ')}`,
     'Restart=on-failure',
     'RestartSec=2',
     '',
@@ -506,6 +597,20 @@ export function systemdUnit(nodePath: string, cliPath: string, env?: Readonly<Re
     'WantedBy=default.target',
     '',
   ].join('\n');
+}
+
+/**
+ * Write a LaunchAgent plist or a systemd unit as mode 0644 whatever the umask
+ * or the old file's mode. launchd refuses to bootstrap a plist that is group-
+ * or world-writable ("Path had bad ownership/permissions"), and `writeFile`
+ * kept the mode of the file it replaced and took the umask (002 on many
+ * shared machines) for a new one, so such an install failed to load.
+ */
+async function writeServiceFile(file: string, text: string): Promise<void> {
+  // Through a temp file and a rename: an in-place write truncated the file
+  // first, so a full disk or a killed install left launchd or systemd a cut
+  // short plist or unit. The temp file is created and chmod'ed 0644.
+  await writeFileAtomic(file, text, { mode: 0o644 });
 }
 
 async function runAndReport(exec: ServeExec, io: IO, cmd: string, args: readonly string[]): Promise<ExecResult> {
@@ -567,7 +672,7 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
   const home = deps.home ?? homeDir();
   const env = deps.env ?? process.env;
   const exec = deps.exec ?? defaultServeExec;
-  const nodePath = deps.nodePath ?? process.execPath;
+  const nodePath = deps.nodePath ?? stableNodePath(process.execPath);
   let cliPath: string;
   try {
     cliPath = resolveCliEntry({ env, ...(deps.cliPath !== undefined ? { cliPath: deps.cliPath } : {}) });
@@ -585,7 +690,7 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     return 1;
   }
   // Make sure the token exists before the service starts, so `--show` right after works.
-  await ensureServeConfig(storeOpts(opts));
+  await ensureServeConfig(storeOpts(opts), { onTokenReplaced: (message) => io.stderr(`lexicon: warning: ${safeMessage(message)}\n`) });
   // The service must read the lexicon and serve.json this shell does (see SERVE_PASSTHROUGH_ENV).
   const serviceEnv = lexiconServerEnv(env, path.resolve(opts.cwd ?? process.cwd()), SERVE_PASSTHROUGH_ENV);
 
@@ -595,14 +700,27 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     const logPath = launchAgentLogPath(home);
     await fs.mkdir(path.dirname(plistPath), { recursive: true });
     await fs.mkdir(path.dirname(logPath), { recursive: true });
-    await fs.writeFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv), 'utf8');
+    await writeServiceFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv));
     line(io, `wrote ${safe(plistPath)}`);
-    line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} serve`);
+    line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} ${SERVICE_SERVE_ARGS.join(' ')}`);
     io.stdout(envReport(serviceEnv));
-    line(io, `  RunAtLoad + KeepAlive, logs in ${safe(logPath)}`);
+    line(io, `  RunAtLoad + KeepAlive, failures and start/stop logged in ${safe(logPath)} (moved to serve.log.1 at start once over ${SERVE_LOG_MAX_BYTES / 1024 / 1024} MiB)`);
     const uid = deps.uid ?? process.getuid?.() ?? 501;
     // A previous install must be booted out before bootstrap accepts the new plist.
-    await exec('launchctl', ['bootout', `gui/${uid}/${label}`]);
+    const target = `gui/${uid}/${label}`;
+    const bootout = await exec('launchctl', ['bootout', target]);
+    // bootout returns before launchd has finished tearing the job down, and a
+    // bootstrap in that window fails ("Bootstrap failed: 5: Input/output
+    // error"). Wait, bounded, until `launchctl print` no longer finds it.
+    if (bootout.code === 0) {
+      const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+      let gone = false;
+      for (let i = 0; i < BOOTOUT_POLL_TRIES && !gone; i += 1) {
+        gone = (await exec('launchctl', ['print', target])).code !== 0;
+        if (!gone) await sleep(BOOTOUT_POLL_MS);
+      }
+      if (!gone) io.stderr(`lexicon: warning: ${safe(label)} was still loaded ${(BOOTOUT_POLL_MS * BOOTOUT_POLL_TRIES) / 1000}s after launchctl bootout; bootstrapping anyway\n`);
+    }
     const bootstrap = await runAndReport(exec, io, 'launchctl', ['bootstrap', `gui/${uid}`, plistPath]);
     if (bootstrap.code !== 0) {
       const load = await runAndReport(exec, io, 'launchctl', ['load', plistPath]);
@@ -620,14 +738,21 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
   if (platform === 'linux') {
     const unitPath = systemdUnitPath(home, env);
     await fs.mkdir(path.dirname(unitPath), { recursive: true });
-    await fs.writeFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv), 'utf8');
+    await writeServiceFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv));
     line(io, `wrote ${safe(unitPath)}`);
-    line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} serve`);
+    line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} ${SERVICE_SERVE_ARGS.join(' ')}`);
     io.stdout(envReport(serviceEnv));
     await runAndReport(exec, io, 'systemctl', ['--user', 'daemon-reload']);
-    const enable = await runAndReport(exec, io, 'systemctl', ['--user', 'enable', '--now', SYSTEMD_UNIT_NAME]);
-    if (enable.code !== 0) {
-      io.stderr('lexicon: could not enable the unit; the file is in place, run `systemctl --user enable --now lexicon-serve.service` manually\n');
+    // `enable --now` starts a stopped unit but leaves a running one as it is,
+    // so a reinstall (a new node or CLI path, new Environment= lines) kept the
+    // old process serving until the next login. `restart` starts it either
+    // way, as bootout + bootstrap does on macOS.
+    const enable = await runAndReport(exec, io, 'systemctl', ['--user', 'enable', SYSTEMD_UNIT_NAME]);
+    const started = enable.code === 0 ? await runAndReport(exec, io, 'systemctl', ['--user', 'restart', SYSTEMD_UNIT_NAME]) : enable;
+    if (started.code !== 0) {
+      io.stderr(
+        `lexicon: could not ${enable.code !== 0 ? 'enable' : 'start'} the unit; the file is in place, run \`systemctl --user enable ${SYSTEMD_UNIT_NAME} && systemctl --user restart ${SYSTEMD_UNIT_NAME}\` manually\n`,
+      );
       return 1;
     }
     line(io, `installed ${SYSTEMD_UNIT_NAME}; check with: lexicon serve --status`);
@@ -651,8 +776,11 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
         } catch (err) {
           return fail(io, `cannot carry the environment into the Scheduled Task: ${errorMessage(err)}; nothing is installed`);
         }
-        envFile = path.join(path.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
-        await fs.writeFile(envFile, text, 'utf8');
+        envFile = serveEnvPath(opts);
+        // 0600 like serve.json beside it (it names the user's lexicon paths),
+        // and through a temp file: a plain write took the umask and, cut
+        // short, left the running task a truncated env file.
+        await writeFileAtomic(envFile, text, { mode: 0o600 });
       }
     }
     const xml = scheduledTaskXml(nodePath, cliPath, taskUserId(env), envFile);
@@ -677,14 +805,84 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     }
     line(io, `created Scheduled Task ${safe(taskName)} (trigger: at logon)`);
     line(io, `  Command:   ${safe(nodePath)}`);
-    line(io, `  Arguments: ${envFile ? `--env-file="${safe(envFile)}" ` : ''}"${safe(cliPath)}" serve`);
+    line(io, `  Arguments: ${envFile ? `--env-file="${safe(envFile)}" ` : ''}"${safe(cliPath)}" ${SERVICE_SERVE_ARGS.join(' ')}`);
     io.stdout(envFile ? envReport(serviceEnv) : '');
+    // /Create /F replaces the definition but leaves a running instance (an
+    // earlier install's node and CLI path) serving, and only a logon starts
+    // the task, so a fresh install served nothing until then. End the old
+    // instance, then start the new one, as bootout + bootstrap and restart do.
+    const ended = await runAndReport(exec, io, 'schtasks', ['/End', '/TN', taskName]);
+    if (ended.code !== 0 && !(await schtasksNothingToEnd(exec, taskName, ended))) {
+      io.stderr(
+        `lexicon: created the Scheduled Task "${safe(taskName)}" but could not end its running instance (schtasks /End failed, see above), ` +
+          `so the old one may still be serving; run \`schtasks /End /TN "${safe(taskName)}"\` then \`schtasks /Run /TN "${safe(taskName)}"\`\n`,
+      );
+      return 1;
+    }
+    const run = await runAndReport(exec, io, 'schtasks', ['/Run', '/TN', taskName]);
+    if (run.code !== 0) {
+      io.stderr(
+        `lexicon: created the Scheduled Task "${safe(taskName)}" but could not start it (schtasks /Run failed, see above); ` +
+          `it starts at your next logon, or run \`schtasks /Run /TN "${safe(taskName)}"\`\n`,
+      );
+      return 1;
+    }
     line(io, `installed ${taskName}; check with: lexicon serve --status`);
     return 0;
   }
 
   io.stderr(`lexicon: serve --install is not supported on ${platform}; run \`lexicon serve\` from your session startup instead\n`);
   return 1;
+}
+
+/**
+ * True when a failed `schtasks /End` only means there was nothing to end:
+ * the task is not running (or, on a first install, did not exist). The
+ * English message is a fallback: schtasks words its errors in the system
+ * language, so on a localized Windows a task that was not running failed
+ * install and uninstall. `schtasksTaskState` asks first.
+ */
+async function schtasksNothingToEnd(exec: ServeExec, taskName: string, result: ExecResult): Promise<boolean> {
+  const state = await schtasksTaskState(exec, taskName);
+  if (!state.exists || state.running === false) return true;
+  return schtasksNotFound(result) || /not (currently )?running|no running instance/i.test(`${result.stderr}\n${result.stdout}`);
+}
+
+/** Task Scheduler's "the task is currently running" result (SCHED_S_TASK_RUNNING, 0x41301). */
+const SCHED_S_TASK_RUNNING = '267009';
+
+/**
+ * Whether the Scheduled Task exists and is running, from `schtasks /Query
+ * /TN <name> /FO CSV /NH /V`: its exit status says whether the task exists,
+ * and a running task's Last Result is SCHED_S_TASK_RUNNING (267009), a number
+ * in every language where the Status column is translated. `running` is
+ * undefined when the output has no row to read.
+ */
+export async function schtasksTaskState(exec: ServeExec, taskName: string): Promise<{ exists: boolean; running?: boolean }> {
+  let result: ExecResult;
+  try {
+    result = await exec('schtasks', ['/Query', '/TN', taskName, '/FO', 'CSV', '/NH', '/V']);
+  } catch {
+    return { exists: false };
+  }
+  if (result.code !== 0) return { exists: false };
+  const rows = result.stdout
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('"'))
+    .map((l) => [...l.matchAll(/"((?:[^"]|"")*)"/g)].map((m) => (m[1] ?? '').replace(/""/g, '"')));
+  if (rows.length === 0) return { exists: true };
+  return { exists: true, running: rows.some((fields) => fields.some((f) => f.trim() === SCHED_S_TASK_RUNNING)) };
+}
+
+/** The serve.env the Windows Scheduled Task loads with --env-file, beside serve.json. */
+function serveEnvPath(opts: ServeOptions): string {
+  return path.join(path.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
+}
+
+/** True when a failed schtasks command means the task does not exist (the English message; see schtasksTaskState). */
+function schtasksNotFound(result: ExecResult): boolean {
+  return /cannot find|does not exist/i.test(`${result.stderr}\n${result.stdout}`);
 }
 
 /**
@@ -708,12 +906,29 @@ async function removeServiceFile(file: string, io: IO): Promise<boolean> {
   }
 }
 
+/**
+ * Remove the serve.env an install wrote for the Scheduled Task; uninstall
+ * left it behind. Missing is fine and says nothing. False (reported) when it
+ * is there and cannot be removed.
+ */
+async function removeServeEnv(opts: ServeOptions, io: IO): Promise<boolean> {
+  const file = serveEnvPath(opts);
+  try {
+    await fs.unlink(file);
+    line(io, `removed ${safe(file)}`);
+    return true;
+  } catch (err) {
+    if (isEnoent(err)) return true;
+    io.stderr(`lexicon: could not remove ${safe(file)}: ${safeLines(errorMessage(err))}\n`);
+    return false;
+  }
+}
+
 export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
   const platform = deps.platform ?? process.platform;
   const home = deps.home ?? homeDir();
   const env = deps.env ?? process.env;
   const exec = deps.exec ?? defaultServeExec;
-  void opts;
 
   if (platform === 'darwin') {
     const plistPath = launchAgentPath(home, env);
@@ -734,12 +949,32 @@ export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeD
 
   if (platform === 'win32') {
     const taskName = scheduledTaskName(env);
+    // Deleting a task leaves its running instance serving (until logout), as
+    // bootout and disable --now do not on the other two platforms: end it first.
+    const ended = await runAndReport(exec, io, 'schtasks', ['/End', '/TN', taskName]);
+    const endFailed = ended.code !== 0 && !(await schtasksNothingToEnd(exec, taskName, ended));
+    if (endFailed) {
+      io.stderr(`lexicon: could not end the running instance of the Scheduled Task "${safe(taskName)}" (schtasks /End failed, see above); it keeps serving until you log out or end it in Task Manager\n`);
+    }
     const deleted = await runAndReport(exec, io, 'schtasks', ['/Delete', '/TN', taskName, '/F']);
+    if (deleted.code === 0) {
+      line(io, `removed Scheduled Task ${safe(taskName)}`);
+      return (await removeServeEnv(opts, io)) && !endFailed ? 0 : 1;
+    }
     // schtasks exits non-zero when the task is not there, which is the same
-    // "was not installed" case the other two platforms report rather than fail.
-    if (deleted.code === 0) line(io, `removed Scheduled Task ${safe(taskName)}`);
-    else line(io, `Scheduled Task ${safe(taskName)} was not installed`);
-    return 0;
+    // "was not installed" case the other two platforms report rather than
+    // fail. Any other failure (access denied, the scheduler service down)
+    // left the task in place and was reported as not installed, exit 0.
+    // Whether the task is still there is asked of schtasks /Query, whose
+    // exit status is the same in every language; the English message is
+    // the fallback.
+    if (!(await schtasksTaskState(exec, taskName)).exists || schtasksNotFound(deleted)) {
+      line(io, `Scheduled Task ${safe(taskName)} was not installed`);
+      return (await removeServeEnv(opts, io)) ? 0 : 1;
+    }
+    const why = (deleted.stderr || deleted.stdout).trim() || `exit ${deleted.code ?? 'error'}`;
+    io.stderr(`lexicon: could not remove the Scheduled Task "${safe(taskName)}": ${safeLines(why)}\n`);
+    return 1;
   }
 
   io.stderr(`lexicon: serve --uninstall is not supported on ${platform}\n`);
@@ -759,6 +994,8 @@ export async function runServeForeground(opts: ServeOptions, io: IO, deps: Serve
       `${red('warning:', env)} binding to ${safe(opts.host)} exposes the lexicon API to the network; anyone with the token can read and change your lexicon\n`,
     );
   }
+  // The LaunchAgent sends stdout and stderr to serve.log; keep it bounded.
+  await capServiceLog(launchAgentLogPath(home), deps.logFd ?? 2);
   const server = createServer({
     host,
     ...(opts.port !== undefined ? { port: opts.port } : {}),
@@ -797,7 +1034,9 @@ export async function runServeForeground(opts: ServeOptions, io: IO, deps: Serve
     deps.signal?.addEventListener('abort', stop, { once: true });
   });
   await server.stop();
-  if (!opts.quiet && !opts.json) line(io, 'lexicon serve stopped');
+  // Printed under --quiet too: it silences request lines only, and the
+  // service (which runs with it) should still record when it stopped.
+  if (!opts.json) line(io, 'lexicon serve stopped');
   return 0;
 }
 
@@ -903,7 +1142,7 @@ export function registerServeCommands(program: Command, io: IO): void {
     .option('--port <n>', `port to listen on (default ${DEFAULT_PORT}; 0 picks a free port)`, parsePort)
     .option('--host <host>', 'interface to bind (default 127.0.0.1; anything else is exposed to the network)')
     .option('--json', 'print the listening info (or the --show, --status, --pair, --install or --uninstall result) as JSON, led by ok (for --status, ok equals up)')
-    .option('--quiet', 'do not log requests (only when running the server; refused with --show, --status, --pair, --install, --uninstall)')
+    .option('--quiet', 'do not log each request; failures and start/stop are still printed (the installed service runs with it; refused with --show, --status, --pair, --install, --uninstall)')
     .option('--show', 'print the URL and bearer token (for the extension options page) and exit')
     .option('--status', 'check whether the server is up and exit')
     .option('--pair', `open http://127.0.0.1:${DEFAULT_PORT}/pair in your browser so the extension pairs itself, and exit`)

@@ -166,6 +166,15 @@ export interface SetupSummary {
    */
   stoppedAt?: string;
   /**
+   * The step that failed (it threw: an export directory that cannot be
+   * written, a lexicon file that does not parse), by its title, with `error`,
+   * when the run stopped there. The steps before it are done and recorded
+   * above; nothing after it ran.
+   */
+  failedAt?: string;
+  /** With `failedAt`: what the step failed on. */
+  error?: string;
+  /**
    * The one thing to do next: the text output's `Next:` line without the
    * label (with `forAgent`, the same step in tool terms). Absent only if the
    * run stopped before the summary.

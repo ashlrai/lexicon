@@ -45,7 +45,7 @@ import type {
   RemoveOptions,
 } from './commands.js';
 import type { InstallOptions } from './cmd-install.js';
-import { CliRefusal, argvRequestsJson, cwdOptionProblem, exampleAfterMissingArgument, fail, jsonFlagsOf, line, optsRequestJson, positiveIntOption, refuse, unknownCommandHint, usageErrorJson } from './io.js';
+import { CliRefusal, argvRequestsJson, cwdOptionProblem, exampleAfterMissingArgument, fail, jsonFlagsOf, line, optsRequestJson, nonNegativeIntOption, positiveIntOption, refuse, unknownCommandHint, usageErrorJson } from './io.js';
 
 
 interface DaemonCliOptions {
@@ -140,9 +140,11 @@ program
   .alias('ls')
   .description('list terms from the merged global + project lexicon')
   .option('--json', 'print terms as JSON (a bare array)')
-  .option('--full', 'print { ok: true, terms, counts, paths } as JSON, ok and then the object MCP list_terms returns, plus projectTrust, skippedProject and note when an untrusted project lexicon was left out, or note alone when nothing matched (implies --json)')
+  .option('--full', 'print { ok: true, terms, counts, paths } as JSON, ok and then the object MCP list_terms returns, plus projectTrust, skippedProject and note when an untrusted project lexicon was left out, or note alone when nothing matched, and page { offset, limit?, returned, nextOffset? } with --offset or --limit (nextOffset is the next page\'s --offset, while matches remain) (implies --json)')
   .option('--category <category>', 'only this category')
   .option('--query <text>', 'only terms whose canonical or aliases contain this text')
+  .option('--offset <n>', 'skip this many matching terms first (default 0)', nonNegativeIntOption('--offset', 50))
+  .option('--limit <n>', 'print at most this many matching terms (default: every one)', positiveIntOption('--limit', 50))
   .action(async (opts: ListOptions) => done(await runList(withGlobals(opts), io)));
 
 program
@@ -179,7 +181,7 @@ program
   .description('export the merged lexicon for another tool (run without a format to list them)')
   .argument('[format]')
   .option('--out <file>', 'write to a file instead of stdout')
-  .option('--category <categories...>', 'only these categories')
+  .option('--category <categories...>', 'only these categories, space- or comma-separated')
   .option('--limit <n>', `cap the number of terms, applied after --category, keeping the most hits first (at equal hits brand, person and product terms first, then canonical A to Z); csv, wispr, superwhisper, macos and espanso (one row per alias) count only terms that have an alias; at most ${EXPORT_MAX_LIMIT}`, positiveIntOption('--limit', 50, EXPORT_MAX_LIMIT))
   .option('--json', 'print { ok: true, format, terms, bytes, path } after writing --out, or { ok: true, format, terms, bytes, content } with the export as a string without it; { ok: true, formats } with no format (plus rows for the one-row-per-alias formats, dropped (one sentence per kind of entry the format left out to fit its target, also printed on stderr without --json), and projectTrust, skippedProject and note when an untrusted project lexicon was left out)')
   .action(async (format: string | undefined, opts: ExportCliOptions) =>
@@ -220,7 +222,7 @@ program
   .description('watch the clipboard (macOS, Linux, Windows) and correct dictated text in place')
   .option('--once', 'correct the clipboard once and exit (for a keyboard shortcut after dictating)')
   .option('--paste', 'with --once: send Cmd+V afterwards (macOS only; needs Accessibility permission)')
-  .option('--interval <ms>', 'poll interval in milliseconds', positiveIntOption('--interval', 250), 250)
+  .option('--interval <ms>', 'poll interval in milliseconds (at least 20; a smaller value is raised to 20, with a warning)', positiveIntOption('--interval', 250), 250)
   .option('--dry-run', 'report corrections without writing to the clipboard')
   .option('--quiet', 'do not print corrections')
   .option('--backend <name>', 'force a clipboard backend: pbcopy|wl|xclip|xsel|powershell', (v: string) => {

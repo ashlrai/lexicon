@@ -93,11 +93,33 @@ describe('lexicon stats (CLI)', () => {
     expect(text).toContain('Cold19, and 10 more');
   });
 
+  // Catches: the never-hit list was joined and then cut at the 200-character
+  // display cap, so with longer names the last ones shown were cut off with
+  // an ellipsis while `and N more` counted only the ones past NEVER_HIT_CAP.
+  it('lists every never-hit name it counts as shown, however long the list', () => {
+    const cold: Term[] = Array.from({ length: 25 }, (_, i) => ({ canonical: `Rarely Dictated Name ${String(i).padStart(2, '0')}`, aliases: [] }));
+    const text = renderStats(computeStats(loadedOf(cold)));
+    for (let i = 0; i < NEVER_HIT_CAP; i += 1) expect(text).toContain(`Rarely Dictated Name ${String(i).padStart(2, '0')}`);
+    expect(text).toContain(`Rarely Dictated Name ${String(NEVER_HIT_CAP - 1).padStart(2, '0')}, and 5 more`);
+    expect(text).not.toContain('\u2026');
+  });
+
+  // Catches: the files table cut each cell at 200 characters from the end, so
+  // a deep project path lost its `.lexicon.yaml` to an ellipsis.
+  it('prints a deep lexicon file path whole in the files table', () => {
+    const deep = `/home/u/${'very-deep-directory/'.repeat(15)}.lexicon.yaml`;
+    const loaded = loadedOf(sample);
+    const text = renderStats(computeStats({ ...loaded, project: { ...loaded.project!, path: deep } }));
+    expect(text).toContain(deep);
+  });
+
   it('says so when no hits were recorded', () => {
     const text = renderStats(computeStats(loadedOf([{ canonical: 'Zoë', aliases: [] }])));
     expect(text).toContain('no hits yet');
     // Catches: the hint named normalize_transcript, an MCP tool a person at a shell cannot call.
-    expect(text).toContain('counted when lexicon normalize, the prompt hook or the MCP server fixes something');
+    // Catches: it then named `lexicon normalize`, which records no hits, so a
+    // user who tried it saw the counts never move.
+    expect(text).toContain('counted when the prompt hook, the MCP server, lexicon voice, the clipboard daemon or lexicon serve fixes something; lexicon normalize does not count');
     expect(text).not.toContain('normalize_transcript');
   });
 

@@ -9,7 +9,7 @@ import path from 'node:path';
 import { createHash } from 'node:crypto';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { runDoctorReport } from '../src/cli/cmd-doctor.js';
-import { GGML_MAGIC, REPO_MODELS_DIR, checkModelHashRecord, claimedSha256, defaultDownloader, ensureModel, inspectModelFile, modelFileName, modelHashPath, resolveModel } from '../src/voice/models.js';
+import { GGML_MAGIC, REPO_MODELS_DIR, checkModelHashRecord, claimedSha256, defaultDownloader, ensureModel, inspectModelFile, isWhisperModelName, modelFileName, modelHashPath, resolveModel } from '../src/voice/models.js';
 
 const dirs: string[] = [];
 afterEach(() => {
@@ -174,5 +174,71 @@ describe('the sha256 of a downloaded model', () => {
     // Changed size: no hash needed.
     appendFileSync(dest, 'x');
     expect(checkModelHashRecord(dest)).toMatch(/^it changed since Lexicon downloaded it \(\d+ bytes now, \d+ then\)/);
+  });
+});
+
+describe('a compressed model download', () => {
+  // Catches: fetch decodes a gzip or br body while Content-Length counts the encoded bytes, so every compressed download was rejected as cut short.
+  it('is kept when fetch decoded it, asks for identity, and a short identity download is still refused', async () => {
+    const d = tmp();
+    const dest = path.join(d, modelFileName('tiny.en'));
+    let asked: string | null = null;
+    vi.stubGlobal('fetch', async (_u: string, init?: RequestInit) => {
+      asked = new Headers(init?.headers).get('accept-encoding');
+      return new Response(new Uint8Array(MODEL), { status: 200, headers: { 'content-encoding': 'gzip', 'content-length': String(MODEL.length - 3), 'x-linked-etag': `"${sha(MODEL)}"` } });
+    });
+    const seen: Array<number | undefined> = [];
+    await defaultDownloader('https://example.invalid/m', dest, (p) => seen.push(p.total));
+    expect(asked).toBe('identity');
+    expect(readFileSync(dest)).toEqual(MODEL);
+    expect(seen.every((t) => t === undefined)).toBe(true);
+
+    const short = path.join(d, modelFileName('base.en'));
+    vi.stubGlobal('fetch', async () => new Response(new Uint8Array(MODEL), { status: 200, headers: { 'content-length': String(MODEL.length + 5) } }));
+    await expect(defaultDownloader('https://example.invalid/m', short, () => undefined)).rejects.toThrow(`the download ended after ${MODEL.length} of ${MODEL.length + 5} bytes`);
+    expect(existsSync(short)).toBe(false);
+  });
+});
+
+describe('a download that fails says why', () => {
+  // Catches: every failed download said "check the network", for a misspelt model name (a 404) and a full disk alike.
+  it('names a model that does not exist instead of blaming the network', async () => {
+    const d = tmp();
+    vi.stubGlobal('fetch', async () => new Response('Entry not found', { status: 404, statusText: 'Not Found' }));
+    const err = await defaultDownloader('https://example.invalid/ggml-base-en.bin', path.join(d, 'm.bin'), () => undefined).catch((e: unknown) => e);
+    expect(err).toMatchObject({ status: 404 });
+
+    const globalPath = path.join(d, 'lexicon.yaml');
+    const opts = { globalPath, env: {}, fallbackDirs: [], log: () => undefined, progress: () => undefined };
+    const thrown = await ensureModel('base-en', opts).catch((e: unknown) => (e as Error).message);
+    expect(thrown).toContain('there is no whisper model named base-en');
+    expect(thrown).toContain('base.en');
+    expect(thrown).not.toContain('check the network');
+  });
+
+  it('says the disk is full, with the model size, rather than blaming the network', async () => {
+    const d = tmp();
+    const globalPath = path.join(d, 'lexicon.yaml');
+    const download = async (_url: string, _dest: string, onProgress: (p: { received: number; total?: number }) => void): Promise<void> => {
+      onProgress({ received: 1_048_576, total: 147_951_465 });
+      throw Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' });
+    };
+    const thrown = await ensureModel('base.en', { globalPath, env: {}, fallbackDirs: [], download, log: () => undefined, progress: () => undefined }).catch(
+      (e: unknown) => (e as Error).message,
+    );
+    expect(thrown).toContain(`there is no space left for it in ${path.join(d, 'models')} (it is 141 MB)`);
+    expect(thrown).toContain('LEXICON_WHISPER_MODELS');
+    expect(thrown).not.toContain('check the network');
+  });
+});
+
+describe('isWhisperModelName', () => {
+  it('accepts the names whisper.cpp publishes, quantized ones and later large versions, and nothing else', () => {
+    for (const n of ['tiny', 'tiny.en', 'base.en', 'small.en-q5_1', 'medium-q8_0', 'large-v1', 'large-v3', 'large-v3-turbo', 'large-v3-turbo-q5_0', 'large-v4']) {
+      expect(isWhisperModelName(n), n).toBe(true);
+    }
+    for (const n of ['base-en', 'bse.en', 'base.em', 'Base.en', 'large', 'base.en ', 'small.en;rm', '']) {
+      expect(isWhisperModelName(n), n).toBe(false);
+    }
   });
 });

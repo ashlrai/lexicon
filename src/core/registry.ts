@@ -32,6 +32,7 @@ import path from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import * as z from 'zod';
 import { HARVEST_STOPLIST } from './harvest.js';
+import { compareText } from './collate.js';
 import { PACK_NAME_RE, installLoadedPack, parsePackText, uninstallLoadedPack } from './packs.js';
 import type { InstallPackResult, Pack, UninstallPackResult } from './packs.js';
 import { defaultProjectPath, MAX_LEXICON_BYTES, resolvePaths, resolveScopeWritePath, withLexiconLock } from './store.js';
@@ -274,7 +275,7 @@ function parseIndexYaml(text: string, source: string): RegistryIndex {
     seen.add(ref);
     packs.push({ ref, ...e });
   }
-  packs.sort((a, b) => a.ref.localeCompare(b.ref));
+  packs.sort((a, b) => compareText(a.ref, b.ref));
   return { packs };
 }
 
@@ -365,7 +366,7 @@ export function searchRegistryIndex(index: RegistryIndex, query: string): Regist
     else if (entry.description.toLowerCase().includes(q)) rank = 3;
     if (rank >= 0) scored.push({ entry, rank });
   }
-  scored.sort((a, b) => a.rank - b.rank || a.entry.ref.localeCompare(b.entry.ref));
+  scored.sort((a, b) => a.rank - b.rank || compareText(a.entry.ref, b.entry.ref));
   return scored.map((s) => s.entry);
 }
 
@@ -622,6 +623,21 @@ export async function downloadPack(
   return bytes;
 }
 
+/**
+ * The index source as the registry state records it: an http(s) URL as
+ * given, a local path or `file://` URL as the absolute path it was read from
+ * (`loadRegistryIndex` resolves it the same way). A relative `--registry` was
+ * recorded as typed, so `pack update` and `pack remove` run from any other
+ * directory looked for a different file ("registry index not found"), and
+ * MCP never counted it as a registry the user chose (canonicalRegistrySource
+ * matches no relative path).
+ */
+export function recordedRegistrySource(source: string): string {
+  const s = source.trim();
+  if (/^https?:\/\//i.test(s)) return s;
+  return path.resolve(s.startsWith('file://') ? s.slice('file://'.length) : s);
+}
+
 async function writeCache(ref: string, bytes: Buffer, opts: RegistryStoreOptions): Promise<string> {
   const dest = cachedPackPath(ref, opts);
   await fs.mkdir(path.dirname(dest), { recursive: true });
@@ -679,7 +695,7 @@ async function commitPack(
       state.packs[entry.ref] = {
         checksum: entry.checksum, version: entry.version,
         ...(pinnedVersion !== undefined ? { pinnedVersion } : {}),
-        indexSource, installedAt: new Date().toISOString(),
+        indexSource: recordedRegistrySource(indexSource), installedAt: new Date().toISOString(),
       };
       await writeRegistryState(state, opts);
       return result;
@@ -824,6 +840,20 @@ export async function previewRegistryUpdates(
     }
   }
   return previews;
+}
+
+/**
+ * The canonicals of an installed community pack, from its cached file in
+ * `opts.scope`'s registry directory (checked against the pinned checksum), or
+ * undefined when it has no record or no cache. Used by `pack remove` to keep
+ * the terms another installed pack still has.
+ */
+export async function cachedPackCanonicals(ref: string, opts: RegistryStoreOptions = {}): Promise<string[] | undefined> {
+  const parsed = parseRegistryRef(ref);
+  const pinned = (await readRegistryState(opts)).packs[parsed.ref];
+  if (!pinned) return undefined;
+  const pack = await readCachedPack(parsed.ref, opts, pinned.checksum);
+  return pack?.lexicon.terms.map((t) => t.canonical);
 }
 
 async function readCachedPack(ref: string, opts: RegistryStoreOptions, checksum: string): Promise<Pack | undefined> {

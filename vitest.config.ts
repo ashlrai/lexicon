@@ -10,6 +10,18 @@ const nodeMajor = Number(process.versions.node.split('.')[0]);
 const PERF_FILES = ['tests/matcher-perf.test.ts', 'tests/matcher-linear-perf.test.ts'];
 
 export default defineConfig({
+  // The extension imports examples/lexicon.example.yaml as text (esbuild's
+  // text loader in scripts/build-extension.mjs); the same here, so a suite can
+  // load the Options page as it ships.
+  plugins: [
+    {
+      name: 'yaml-as-text',
+      enforce: 'pre',
+      transform(code: string, id: string) {
+        return id.endsWith('.yaml') ? { code: `export default ${JSON.stringify(code)};`, map: null } : undefined;
+      },
+    },
+  ],
   test: {
     environment: 'node',
     // Vitest's default is 5s. Several suites do real filesystem work (mkdtemp,
@@ -25,7 +37,7 @@ export default defineConfig({
         test: {
           name: 'unit',
           include: ['tests/**/*.test.ts', 'src/**/*.test.ts', 'bench/**/*.test.ts'],
-          exclude: ['**/node_modules/**', ...(nodeMajor < 22 ? ['tests/extension.test.ts', 'tests/extension-api-health.test.ts', 'tests/exporters-xml.test.ts'] : []), ...PERF_FILES],
+          exclude: ['**/node_modules/**', ...(nodeMajor < 22 ? ['tests/extension.test.ts', 'tests/extension-api-health.test.ts', 'tests/extension-frames.test.ts', 'tests/extension-editing.test.ts', 'tests/extension-storage-write.test.ts', 'tests/exporters-xml.test.ts'] : []), ...PERF_FILES],
           sequence: { groupOrder: 0 },
         },
       },

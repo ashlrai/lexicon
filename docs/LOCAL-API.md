@@ -44,7 +44,11 @@ with a byte order mark (Windows Notepad) reads as usual. One that is not valid
 JSON after a hand edit stops `lexicon serve` with an error naming it, rather
 than being replaced with a new token (which would have dropped your
 `allowedOrigins` and left every paired client with a stale token); fix it, or
-delete it to get a new token:
+delete it to get a new token. One that parses but has no usable token (none,
+or not 32 to 128 hex characters; either case is kept, and the token is
+still compared exactly) gets a new token, keeping `allowedOrigins`,
+and `lexicon serve`, `--show` and `--install` say so on stderr with the reason
+and how paired clients get the new token (`lexicon serve --pair` or `--show`):
 
 ```json
 {
@@ -68,7 +72,10 @@ IP address as well); anything else is 403 on every route, which is what stops
 a DNS rebinding page. Every request except `GET /health` (without `?cwd=`),
 `GET /pair` and an `OPTIONS` preflight needs `Authorization: Bearer <token>`;
 `OPTIONS` answers 204 with no body on any path, carrying the CORS headers
-only for an allowed origin. Requests and responses are JSON
+only for an allowed origin (and, when the preflight asks with
+`Access-Control-Request-Private-Network: true`,
+`Access-Control-Allow-Private-Network: true`, again only for an allowed
+origin). Requests and responses are JSON
 (`Content-Type: application/json`) unless noted. Every GET route also answers
 `HEAD` (`curl -I`) with the status and headers GET would send, `Content-Length`
 included, and no body. Errors are
@@ -79,7 +86,7 @@ included, and no body. Errors are
 | GET | `/health` | | `{ ok: true, version, terms, projectTrust?, port }` (no auth; `?cwd=` needs the token, 401 without it) |
 | GET | `/pair` | | the extension pairing page, `text/html`; carries the token in `<meta name="lexicon-token">` plus `lexicon-port` and `lexicon-version` (no auth; 403 unless the client is loopback, `Host` is exactly `127.0.0.1:<port>` or `localhost:<port>`, and the request is not a cross-origin fetch; never sent with CORS headers) |
 | POST | `/normalize` | `{ text, dryRun?, minConfidence?, cwd? }` | `NormalizeResult` (`input`, `output`, `replacements[]`, `changed`) plus `summary`. Matching stops after 1 s, so a huge text gets the corrections from its start, and the response then adds `incomplete` (`{ reasons: ['time'], checkedChars?, totalChars, note }`; the unchecked rest is unchanged). Plus `projectTrust?` and `skippedProject?` (path only) as `/stats` gives them, so an unchanged result in a repo whose `.lexicon.yaml` was skipped says why its names were left alone. On a lexicon with no terms, `hint` names `lexicon setup` (or `lexicon trust` when only a skipped project file has terms) |
-| POST | `/learn` | `{ heard, meant, scope? , cwd? }` | `{ term, created, aliasAdded, path, unchanged?, conflict?, note?, untrustedProject? }` (`unchanged: true` when `heard` was already an alias of the term, or its canonical in another case, and nothing was written, with `note` `Nothing was added: "<heard>" was already an alias of "<canonical>".` or `Nothing was added: "<canonical>" is already the canonical spelling; "<heard>" is corrected to it.`, the reasons MCP `learn_correction` gives, and any conflict note after it; `conflict`: another term that also holds `heard`, with `note` naming the command that drops the alias from that term's file, `lexicon remove "<canonical>" --alias "<alias>" --global` or `--project`, as `lexicon learn --json` gives it; `untrustedProject`: the untrusted project lexicon also claims it, path only). `heard` or `meant` over 60 characters is a 400 that says to send only the misspelled name as `heard`, not the sentence around it |
+| POST | `/learn` | `{ heard, meant, scope? , cwd? }` | `{ term, created, aliasAdded, path, unchanged?, reversed?, conflict?, note?, untrustedProject? }` (`unchanged: true` when `heard` was already an alias of the term, or its canonical in another case, and nothing was written, with `note` `Nothing was added: "<heard>" was already an alias of "<canonical>".` or `Nothing was added: "<canonical>" is already the canonical spelling; "<heard>" is corrected to it.` (with `reversed: true` and a note saying the lexicon already corrects the other way, when `meant` is an alias of the term and `heard` its canonical), the reasons MCP `learn_correction` gives, and any conflict note after it; `conflict`: another term that also holds `heard`, with `note` naming the command that drops the alias from that term's file, `lexicon remove <canonical> --alias <alias> --global` (or `--project`), each word quoted for the shell, as `lexicon learn --json` gives it; `untrustedProject`: the untrusted project lexicon also claims it, path only). `heard` or `meant` over 60 characters is a 400 that says to send only the misspelled name as `heard`, not the sentence around it |
 | POST | `/add` | `{ canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }` | `{ term, path, created, unchanged?, note?, conflicts? }`. With `aliases` omitted, a new term gets the spellings STT is likely to produce (as `GET /aliases` gives them, listed in `term.aliases`), as `lexicon add <canonical>` does; an existing term gains no alias that way. `aliases: []` adds the term with no aliases and generates none, as MCP `add_term` does. (`unchanged: true` and `note`, `Nothing was added: "<canonical>" already has every alias and field given.`, when the term already had everything sent and nothing was written, as `lexicon add --json` and MCP `add_term` say it; `conflicts`: `{ canonical, scope, as, spelling }` for each alias another term also holds, so it may still be corrected to that term, as MCP `add_term` reports it). A blank alias or `never` word is a 400 naming it (`term not added: never[0] (" ") is blank. ...`) and nothing is written; so is any field holding U+FFFE, U+FFFF or an unpaired surrogate (`term not added: aliases[0] (...): must not contain U+FFFE (...) in term "<canonical>". ...`). |
 | GET | `/lexicon` | | `{ lexicon, paths: { global, project? }, projectTrust?, skippedProject?, note? }`; `note` names `lexicon trust` when a project file was skipped, else `lexicon add` and `lexicon setup` when the lexicon has no terms, as `lexicon list --full` does |
 | GET | `/stats` | | `LexiconStats`, plus `projectTrust?` and `skippedProject?` (path only) as `/lexicon` gives them: the counts leave a skipped project file out. Plus `note?`: the `lexicon trust` step for a skipped project file, else, for a lexicon with no terms, the note `lexicon stats --json` gives (naming `lexicon setup`) |
@@ -96,7 +103,8 @@ says nothing was written, and gives both ways on: `lexicon trust` and a retry,
 or a retry with `"scope": "global"` in the body, `?scope=global` on a DELETE), or `/pair` with a non-loopback client
 / a cross-origin `Origin`, 404 unknown route (the `error` lists every route as
 `METHOD /path`) or export format,
-405 wrong method (with an `Allow` header naming the route's methods: `GET, HEAD` on a GET route, `POST`, or `POST, DELETE` on `/packs/:name`), 413 body over 1 MB, 415 a compressed body (any `Content-Encoding` but `identity`; bodies are read as UTF-8 JSON, a leading byte order mark allowed), 500 a problem on the server's side,
+405 wrong method (with an `Allow` header naming the route's methods: `GET, HEAD` on a GET route, `POST`, or `POST, DELETE` on `/packs/:name`), 413 body over 1 MB (a client that sends `Expect: 100-continue` with a larger `Content-Length` gets the 413 before it sends the body, and no `100 Continue`), 415 a compressed body (any `Content-Encoding` but `identity`; bodies are read as UTF-8 JSON, a leading byte order mark allowed), 500 a problem on the server's side,
+a request the HTTP parser cannot read is answered `{ error }` too, with 400 (431 for headers over Node's limit, 408 for one that did not arrive in time) and `Connection: close`;
 503 more than 64 requests in flight, a lexicon file another writer still holds the lock on, or any route but plain `/health` before the server has finished starting (in each case nothing was written; the `error` says to retry after the `Retry-After` seconds, 1).
 
 400 always means the request itself is wrong: fix the input and do not retry
@@ -106,8 +114,9 @@ missing, mistyped or unknown) ends with the fields that route takes, such as
 lexicon file does not parse (`internal error: Failed to parse lexicon YAML at
 <path>: ...`), or the file or its lock cannot be read or written. The message names the cause and the file, so fix
 that and retry. An unauthenticated `/health` that hits the same problem gets
-only `internal error (the lexicon serve log has the detail)`; the detail is
-on the server's stderr either way.
+only `internal error (the lexicon serve log has the detail)`, or, for a lexicon
+file that does not parse, ``internal error: a lexicon file does not parse; run `lexicon serve --status` (or `lexicon doctor`) for the file and the line, then fix it``
+(no path); the detail is on the server's stderr either way.
 
 A write that waited out a lock another writer (the prompt hook, the MCP
 server, a CLI command) still holds is a 503 with `Retry-After: 1`, not a 500:
@@ -224,7 +233,8 @@ installed; the CLI adds SIGINT/SIGTERM handling around it.
 
 Loopback only, bearer token stored 0600, CORS restricted to browser
 extensions (never `*`), no TLS because nothing leaves the machine, 1 MB body
-cap, 64 concurrent requests. Anyone who can read `serve.json` is already the
+cap, 64 concurrent requests, and a request must arrive within 30 seconds
+(headers within 10), else it gets 408 with `{ error }`. Anyone who can read `serve.json` is already the
 same user and could edit the lexicon file directly; the API grants nothing
 beyond that. `/pair` hands the same token to a loopback browser tab whose
 `Host` names this server, which is the same boundary. See `SECURITY.md`.

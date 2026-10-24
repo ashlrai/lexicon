@@ -57,10 +57,10 @@ export function registerVoiceCommands(program: Command, io: IO): void {
   program
     .command('voice')
     .description('dictate locally: record the microphone, transcribe with whisper.cpp, correct with the lexicon')
-    .option('--toggle', 'hotkey mode: first call starts recording in the background, second call stops and transcribes')
+    .option('--toggle', 'hotkey mode: first call starts recording in the background, second call stops and transcribes. the first call records with its --device and --seconds, the second transcribes and delivers with its own --model, --lang, --translate, --no-prompt, --no-history, --copy and --paste, so give both calls the same flags')
     .option('--status', 'print "recording since <time>" (exit 0) or "idle" (exit 1)')
     .option('--list-devices', 'print the audio input devices ffmpeg can see')
-    .option('--seconds <n>', 'stop recording after n seconds instead of waiting for Enter', positiveNumber)
+    .option('--seconds <n>', 'stop recording after n seconds instead of waiting for Enter (with --toggle, at most 600)', positiveNumber)
     .option('--device <name|index>', 'input device (default: the system default microphone)')
     .option('--model <name|path>', 'whisper model: a name like base.en or small.en (auto-downloaded) or a ggml file', 'base.en')
     .option('--lang <code>', 'spoken language', 'en')
@@ -69,7 +69,7 @@ export function registerVoiceCommands(program: Command, io: IO): void {
     .option('--no-history', 'do not append to voice/history.jsonl')
     .option('--copy', 'also put the corrected text on the clipboard')
     .option('--paste', 'copy and paste into the frontmost app (macOS; needs Accessibility permission)')
-    .option('--json', 'print { ok: true, raw, output, replacements, summary, model, seconds, ms } as JSON (with --toggle, a press that starts prints {"status":"recording"}); every failure prints { ok: false, error, nextStep?, code } with code the exit code (over the result when there is text, e.g. nothing heard or a failed --paste)')
+    .option('--json', 'print { ok: true, raw, output, replacements, summary, model, seconds, ms } as JSON (with --toggle, a press that starts prints {"status":"recording"}; with --status, { ok: true, recording: true, since, pid } while recording or { ok: false, recording: false } when idle); every failure prints { ok: false, error, nextStep?, code } with code the exit code (over the result when there is text, e.g. nothing heard or a failed --paste)')
     .option('--quiet', 'no status lines on stderr')
     .action(async (opts: VoiceCliOptions, cmd: Command) => {
       // One mode per call: `--status --toggle` answered the status and dropped

@@ -11,7 +11,8 @@
  * `#prompt-textarea` (ProseMirror), Claude.ai, Poe, Copilot (all behind a
  * login wall on that date), Grok on x.com.
  */
-import { hostKey } from './shared.js';
+import { hostKey, siteEnabled } from './shared.js';
+import type { Settings } from './shared.js';
 
 export interface SiteAdapter {
   id: string;
@@ -101,6 +102,127 @@ export const BUILTIN_MATCHES: readonly string[] = [
   'https://copilot.microsoft.com/*',
 ];
 
+/**
+ * True when `url` is a page the manifest's own content script covers (one of
+ * BUILTIN_MATCHES: scheme, exact host, and the path, a trailing `*` matching
+ * any rest). Anything else is reached only through the "any site"
+ * registration.
+ */
+export function builtinPage(url: string): boolean {
+  let u: URL;
+  try {
+    u = new URL(url);
+  } catch {
+    return false;
+  }
+  return BUILTIN_MATCHES.some((pattern) => {
+    const m = /^(https?):\/\/([^/]+)(\/.*)$/.exec(pattern);
+    if (!m) return false;
+    const [, scheme, host, path] = m;
+    if (u.protocol !== `${scheme}:` || u.hostname !== host) return false;
+    const rest = u.pathname + u.search;
+    return path.endsWith('*') ? rest.startsWith(path.slice(0, -1)) : u.pathname === path;
+  });
+}
+
+/**
+ * Whether the composer guard should run on `url`: its site switch is on, and
+ * the page is a built-in chat site or "any site" is on. The content script
+ * read only the site switch, so turning "any site" off unregistered the
+ * script for new pages while every open tab of another site kept rewriting
+ * text until it was reloaded.
+ */
+export function guardActive(settings: Pick<Settings, 'sites' | 'anySite'>, url: string): boolean {
+  let hostname = '';
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    return false;
+  }
+  return siteEnabled(settings, hostname) && (builtinPage(url) || settings.anySite);
+}
+
+/**
+ * The popup's line under its site switch for the active tab's `url`. It said
+ * "Corrections run before each send." on any site with the switch on, also
+ * where no content script runs (a site that is not built in, with "any
+ * site" off).
+ */
+export function siteNote(settings: Pick<Settings, 'sites' | 'anySite'>, url: string): string {
+  let hostname = '';
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    // no URL: the switch is off below
+  }
+  if (!hostname || !siteEnabled(settings, hostname)) return 'Paused on this site.';
+  if (!guardActive(settings, url)) return 'Not one of the built-in chat sites: turn on "Any site" in Options to correct text here.';
+  return 'Corrections run before each send.';
+}
+
+/**
+ * The focused element, looking through open shadow roots: `doc.activeElement`
+ * is the shadow host when focus sits in a field inside one, and the host is
+ * not editable, so a composer in a web component was never found.
+ */
+export function deepActiveElement(doc: Document): Element | null {
+  let el: Element | null = doc.activeElement;
+  while (el?.shadowRoot?.activeElement) el = el.shadowRoot.activeElement;
+  return el;
+}
+
+/**
+ * The selection that holds the caret in `node`'s tree: inside an open shadow
+ * root its own (`ShadowRoot.getSelection`, Chromium), because
+ * `document.getSelection()` there is retargeted to the shadow host, so the
+ * caret read as outside the composer; else the document's.
+ */
+export function selectionFor(doc: Document, node: Node): Selection | null {
+  const root = typeof node.getRootNode === 'function' ? node.getRootNode() : null;
+  if (root && root !== doc && typeof (root as { getSelection?: unknown }).getSelection === 'function') {
+    const sel = (root as unknown as { getSelection(): Selection | null }).getSelection();
+    if (sel) return sel;
+  }
+  return doc.getSelection?.() ?? null;
+}
+
+/** The node an event really started at: the first of `composedPath()` (inside an open shadow root), else its target. */
+export function eventOrigin(ev: Event): EventTarget | null {
+  const path = typeof ev.composedPath === 'function' ? ev.composedPath() : [];
+  return path[0] ?? ev.target;
+}
+
+/** One row of the Options site list. `anySite`: reached through "Any site", not a built-in chat site. */
+export interface SiteRow {
+  label: string;
+  host: string;
+  anySite?: boolean;
+}
+
+/**
+ * The Options site list: every built-in chat site, then each host with a
+ * stored switch, then each host the guard ran on through "Any site"
+ * (`seen`, see the background's `rememberAnySiteHost`). It listed only the
+ * first two, so a site reached through "Any site" could be paused from the
+ * popup but never from Options.
+ */
+export function siteRows(sites: Record<string, boolean>, seen: readonly string[]): SiteRow[] {
+  const rows: SiteRow[] = [];
+  const known = new Set<string>();
+  for (const a of ADAPTERS) {
+    for (const host of a.hosts) {
+      known.add(host);
+      rows.push({ label: a.label, host });
+    }
+  }
+  for (const host of [...Object.keys(sites), ...seen]) {
+    if (known.has(host)) continue;
+    known.add(host);
+    rows.push({ label: host, host, anySite: true });
+  }
+  return rows;
+}
+
 export function adapterFor(hostname: string): SiteAdapter {
   const key = hostKey(hostname);
   return ADAPTERS.find((a) => a.hosts.includes(key)) ?? GENERIC;
@@ -169,7 +291,7 @@ export function holdsCode(doc: Document, root: HTMLElement): boolean {
   // An embedded code editor (CodeMirror, Monaco, Ace) owns its DOM: a rewrite
   // of the page around it could still replace the editor's nodes.
   if (root.querySelector(CODE_EDITOR_SELECTOR)) return true;
-  const anchor = doc.getSelection?.()?.anchorNode ?? null;
+  const anchor = selectionFor(doc, root)?.anchorNode ?? null;
   if (!anchor || !root.contains(anchor)) return false;
   const el = anchor.nodeType === 1 ? (anchor as Element) : anchor.parentElement;
   const code = el?.closest(CODE_SELECTOR) ?? null;
@@ -215,11 +337,12 @@ export function editableRoot(node: Node | null): HTMLElement | null {
 export function findComposer(doc: Document, adapter: SiteAdapter): HTMLElement | null {
   if (adapter.editor) {
     const matches = Array.from(doc.querySelectorAll(adapter.editor)).filter(visible);
-    const focused = matches.find((m) => m === doc.activeElement || m.contains(doc.activeElement));
+    const active = deepActiveElement(doc);
+    const focused = matches.find((m) => m === active || m.contains(active));
     const pick = focused ?? matches[0];
     if (pick && isEditable(pick)) return pick;
   }
-  const active = editableRoot(doc.activeElement);
+  const active = editableRoot(deepActiveElement(doc));
   if (active && (!adapter.editor || adapter.id === GENERIC.id) && !(adapter.editor === '' && holdsCode(doc, active))) return active;
   return null;
 }

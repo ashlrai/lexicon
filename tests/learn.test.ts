@@ -14,7 +14,9 @@ import {
   CORRECTION_EXAMPLES,
   conflictNote,
   learnCorrection,
+  learnUnchangedNote,
   parseCorrection,
+  spellingsAlike,
   suggestCanonicalFor,
 } from '../src/core/learn.js';
 import { correctionFromArgs, runLearn } from '../src/cli/cmd-learn.js';
@@ -127,9 +129,9 @@ describe('parseCorrection', () => {
     ['replace ashler with Ashlr.AI', { heard: 'ashler', meant: 'Ashlr.AI' }],
     ['replace the ashler with the Ashlr team', { heard: 'the ashler', meant: 'the Ashlr team' }],
     ['replace cube control with k8s', { heard: 'cube control', meant: 'k8s' }],
-    ['replace icon with logo', { heard: 'icon', meant: 'logo' }],
+    ['replace aikon with icon', { heard: 'aikon', meant: 'icon' }],
     ['ashler should be ashlr', { heard: 'ashler', meant: 'ashlr' }],
-    ['the ashler should be re-frame', { heard: 'the ashler', meant: 're-frame' }],
+    ['the re frame should be re-frame', { heard: 'the re frame', meant: 're-frame' }],
     // ...unless a side is quoted, which is explicit.
     ['replace "the icon" with "the new logo"', { heard: 'the icon', meant: 'the new logo' }],
     ['replace the icon with `the new logo`', { heard: 'the icon', meant: 'the new logo' }],
@@ -173,6 +175,74 @@ describe('parseCorrection', () => {
     '   ',
   ])('rejects %j', (text) => {
     expect(parseCorrection(text)).toBeUndefined();
+  });
+
+  // Catches: "it's the API not the UI" parsed as a spelling correction and
+  // learned "the UI" as an alias of "the API", so every later "the UI" the
+  // user dictated was rewritten. Two bare sides must look or sound alike.
+  it.each([
+    "it's the API not the UI",
+    "it's Linux not Windows",
+    "it's Postgres not MySQL",
+    "I meant Python not JavaScript",
+    'replace icon with logo',
+    'the ashler should be re-frame',
+    'not GitLab, Jira',
+  ])('rejects %j: the bare sides neither look nor sound alike', (text) => {
+    expect(parseCorrection(text)).toBeUndefined();
+    expect(parseCorrection(text, { allowUnrelated: true })).toBeDefined();
+  });
+
+  // The gate must not cost a real speech-to-text correction.
+  it.each([
+    ["it's Ashlr.AI not Ashler", 'Ashler', 'Ashlr.AI'],
+    ["it's Kubernetes not Cooper Netties", 'Cooper Netties', 'Kubernetes'],
+    ["it's Supabase not super base", 'super base', 'Supabase'],
+    ["it's PostgreSQL not post gress", 'post gress', 'PostgreSQL'],
+    ["it's nginx not engine x", 'engine x', 'nginx'],
+    ["it's Claude not cloud", 'cloud', 'Claude'],
+    ["it's Anthropic not and throw pick", 'and throw pick', 'Anthropic'],
+    ["it's Tauri not tory", 'tory', 'Tauri'],
+    ["it's SQLite not sequel light", 'sequel light', 'SQLite'],
+    ["it's Zoë not Zoey", 'Zoey', 'Zoë'],
+    ["it's AWS not a w s", 'a w s', 'AWS'],
+    ["it's k8s not kates", 'kates', 'k8s'],
+    ["it's Ashlr.AI not actually i", 'actually i', 'Ashlr.AI'],
+    ['Get Hub -> GitHub', 'Get Hub', 'GitHub'],
+    ["it's JSON not Jason", 'Jason', 'JSON'],
+  ])('still parses the STT correction %j', (text, heard, meant) => {
+    expect(parseCorrection(text)).toEqual({ heard, meant });
+  });
+
+  it('keeps an unrelated pair when a side is quoted (explicit)', () => {
+    expect(parseCorrection('it\'s "the API" not "the UI"')).toEqual({ heard: 'the UI', meant: 'the API' });
+    expect(spellingsAlike('the UI', 'the API')).toBe(false);
+    expect(spellingsAlike('Versel', 'Vercel')).toBe(true);
+  });
+
+  it('takes a name STT wrote by sound when the loose keys meet', () => {
+    expect(parseCorrection("it's Siobhan not Shivon")).toEqual({ heard: 'Shivon', meant: 'Siobhan' });
+    expect(parseCorrection("it's Saoirse, not Seersha")).toEqual({ heard: 'Seersha', meant: 'Saoirse' });
+  });
+
+  it('takes a dissimilar name only when the lexicon holds the meant side', () => {
+    const lex = { terms: [{ canonical: 'Niamh', aliases: [] }, { canonical: 'Postgres', aliases: ['postgress'] }, { canonical: 'API', aliases: [] }, { canonical: 'Redis', aliases: [] }] };
+    expect(parseCorrection("it's Niamh not Neve")).toBeUndefined();
+    expect(parseCorrection("it's Niamh not Neve", { lexicon: lex })).toEqual({ heard: 'Neve', meant: 'Niamh' });
+    // An alias of the term counts as a spelling it holds.
+    expect(parseCorrection("it's postgress not MySQL", { lexicon: lex })).toBeUndefined();
+  });
+
+  it.each([
+    ["it's the API not the UI"],
+    ["it's Monday not Tuesday"],
+    ["it's Postgres not MySQL"],
+    ["it's Kafka not Redis"],
+    ["it's Siobhan not seven"],
+  ])('still refuses the change of meaning %j, with or without the lexicon', (text) => {
+    const lex = { terms: [{ canonical: 'API', aliases: [] }, { canonical: 'Monday', aliases: [] }, { canonical: 'Postgres', aliases: [] }, { canonical: 'Kafka', aliases: [] }, { canonical: 'Redis', aliases: [] }, { canonical: 'Siobhan', aliases: [] }] };
+    expect(parseCorrection(text)).toBeUndefined();
+    expect(parseCorrection(text, { lexicon: lex })).toBeUndefined();
   });
 
   it('strips trailing punctuation and collapses whitespace', () => {
@@ -237,7 +307,73 @@ describe('learnCorrection: an untrusted project lexicon that claims heard', () =
   });
 });
 
+describe('runLearn: a long lexicon path', () => {
+  // Catches: the success and warn lines printed the file through the 200-character display cap, so a deep path ended in an ellipsis.
+  it('prints the file whole', async () => {
+    const deep = `/fake/${'nested-directory/'.repeat(12)}global.yaml`;
+    store.addTerm.mockImplementationOnce(async (term: Term) => ({
+      file: { path: deep, scope: 'global', lexicon, exists: true },
+      term: { ...term, scope: 'global' },
+      created: true,
+    }));
+    const { io, out } = captureIO();
+    expect(await runLearn(['Versel', 'Vercel'], { cwd: '/fake/repo' }, io)).toBe(0);
+    expect(out()).toContain(`in ${deep}\n`);
+    expect(out()).not.toContain('\u2026');
+  });
+});
+
+describe('runLearn: a name the lexicon holds, written by sound', () => {
+  it('learns "it\'s Niamh not Neve" when Niamh is a term, and refuses it when not', async () => {
+    const withNiamh: Lexicon = { version: 1, terms: [...lexicon.terms, { canonical: 'Niamh', aliases: [], scope: 'global' }] };
+    store.loadLexicon.mockResolvedValue({ ...loaded, merged: withNiamh, global: { ...loaded.global, lexicon: withNiamh } });
+    const ok = captureIO();
+    expect(await runLearn(["it's Niamh not Neve"], { cwd: '/fake/repo' }, ok.io)).toBe(0);
+    expect(store.addTerm).toHaveBeenCalledWith(expect.objectContaining({ canonical: 'Niamh', aliases: ['Neve'] }), expect.anything());
+
+    store.loadLexicon.mockResolvedValue(loaded);
+    const refused = captureIO();
+    expect(await runLearn(["it's Niamh not Neve"], { cwd: '/fake/repo' }, refused.io)).toBe(1);
+  });
+});
+
 describe('learnCorrection', () => {
+  // Catches: "it's Ashler not ashlr.ai" (meant an alias of Ashlr.AI, heard its
+  // canonical) reported "Ashlr.AI is already the canonical spelling; ashlr.ai
+  // is corrected to it", as if the correction were in place, while the
+  // lexicon corrects Ashler to Ashlr.AI: the other way round.
+  it('reports a reversed correction and writes nothing', async () => {
+    const r = await learnCorrection({ heard: 'ashlr.ai', meant: 'Ashler' });
+    expect(r).toMatchObject({ created: false, aliasAdded: false, reversed: true, term: { canonical: 'Ashlr.AI' }, file: { scope: 'global' } });
+    expect(store.addTerm).not.toHaveBeenCalled();
+    // An ordinary case-only repeat is not reversed.
+    expect((await learnCorrection({ heard: 'Ashler', meant: 'Ashlr.AI' })).reversed).toBeUndefined();
+  });
+
+  it('says what is really the case, and how to make meant the canonical', () => {
+    expect(learnUnchangedNote('ashlr.ai', 'Ashlr.AI', { meant: 'Ashler', scope: 'global', platform: 'linux' })).toBe(
+      'Nothing was added: "Ashler" is an alias of "Ashlr.AI", so it is already corrected to "Ashlr.AI", the other way round from this correction ("ashlr.ai" to "Ashler"). ' +
+        'If you want "Ashler" written instead, make it the canonical: run lexicon edit and rename the term "Ashlr.AI" to "Ashler", keeping "Ashlr.AI" as an alias.',
+    );
+    expect(learnUnchangedNote('ashlr.ai', 'Ashlr.AI', { meant: 'Ashler', scope: 'project' })).toContain('run lexicon edit --project and rename');
+    expect(learnUnchangedNote('ashlr.ai', 'Ashlr.AI', { meant: 'Ashler', scope: 'global', audience: 'mcp' })).toContain(
+      'call remove_term with canonical "Ashlr.AI", scope "global", and add_term with canonical "Ashler", scope "global", and aliases "Ashlr.AI" plus',
+    );
+    // Without meant, or with meant the canonical, the old sentences.
+    expect(learnUnchangedNote('ashlr.ai', 'Ashlr.AI')).toBe('Nothing was added: "Ashlr.AI" is already the canonical spelling; "ashlr.ai" is corrected to it.');
+    expect(learnUnchangedNote('ashlr.ai', 'Ashlr.AI', { meant: 'ASHLR.AI' })).toContain('is already the canonical spelling');
+  });
+
+  it('lexicon learn prints the reversed sentence, text and --json', async () => {
+    const text = captureIO();
+    expect(await runLearn(["it's Ashler not ashlr.ai"], { cwd: '/fake/repo' }, text.io)).toBe(0);
+    expect(text.out()).toContain('Nothing was added: "Ashler" is an alias of "Ashlr.AI", so it is already corrected to "Ashlr.AI", the other way round');
+    expect(text.out()).not.toContain('already the canonical spelling');
+    const json = captureIO();
+    expect(await runLearn(['ashlr.ai', 'Ashler'], { cwd: '/fake/repo', json: true }, json.io)).toBe(0);
+    expect(JSON.parse(json.out())).toMatchObject({ unchanged: true, reversed: true, note: expect.stringContaining('the other way round') });
+  });
+
   it('adds heard as an alias of an existing canonical (in its own scope)', async () => {
     const result = await learnCorrection({ heard: 'Ashlur', meant: 'ashlr.ai' }, { cwd: '/fake/repo' });
     expect(store.addTerm).toHaveBeenCalledWith(
@@ -418,7 +554,7 @@ describe('conflictNote', () => {
 
   it('names the scoped lexicon remove command for an alias by default', () => {
     expect(conflictNote([alias])).toBe(
-      '"Ashler" is also an alias of "Ashlr.AI" (global), so it may still be corrected to that; if the user agrees, drop it with: lexicon remove "Ashlr.AI" --alias "Ashler" --global',
+      '"Ashler" is also an alias of "Ashlr.AI" (global), so it may still be corrected to that; if the user agrees, drop it with: lexicon remove Ashlr.AI --alias Ashler --global',
     );
   });
 
@@ -432,7 +568,7 @@ describe('conflictNote', () => {
   // stopped there, with no way out, while an alias conflict names the remove.
   it('says a canonical conflict keeps the spelling as written and how to remove that term, one sentence per conflict', () => {
     expect(conflictNote([own, alias])).toMatch(
-      /^"Ashley" is its own term \(project\), so it may still be kept as written; if the user never means it as its own term, drop it with: lexicon remove "Ashley" --project "Ashler" is also/,
+      /^"Ashley" is its own term \(project\), so it may still be kept as written; if the user never means it as its own term, drop it with: lexicon remove Ashley --project "Ashler" is also/,
     );
     expect(conflictNote([own], 'mcp')).toBe(
       '"Ashley" is its own term (project), so it may still be kept as written; if the user never means it as its own term, call remove_term with canonical "Ashley", scope "project".',
@@ -515,6 +651,12 @@ describe('lexicon learn (CLI)', () => {
       error: '"that should be Ashlr.AI" names the intended spelling (Ashlr.AI) but not what was heard',
       nextStep: 'run: lexicon learn <heard> Ashlr.AI',
     });
+    // Catches: the text-mode `run:` line lacked the `lexicon: ` prefix every other refusal carries.
+    const text = captureIO();
+    expect(await runLearn([], { from: 'that should be Ashlr.AI', cwd: '/fake/repo' }, text.io)).toBe(1);
+    expect(text.err()).toBe(
+      'lexicon: "that should be Ashlr.AI" names the intended spelling (Ashlr.AI) but not what was heard\nlexicon: run: lexicon learn <heard> Ashlr.AI\n',
+    );
   });
 
   // Catches: learn allows unknown options (so a bare `->` is a word), and
@@ -536,6 +678,20 @@ describe('lexicon learn (CLI)', () => {
     // The arrows are still words.
     expect(await runLearn(['Ashlur', '->', 'Ashlr.AI'], { cwd: '/fake/repo' }, captureIO().io)).toBe(0);
     expect(await runLearn(['Ashlur', '=>', 'Ashlr.AI'], { cwd: '/fake/repo' }, captureIO().io)).toBe(0);
+  });
+
+  // Catches: words given with --from were dropped without a word, so
+  // `lexicon learn Ashler Ashlr.AI --from "..."` learned only the sentence.
+  it('refuses words given with --from and writes nothing', async () => {
+    const { io, out, err } = captureIO();
+    expect(await runLearn(['Ashler', 'Ashlr.AI'], { from: "it's Vercel not Versel", json: true, cwd: '/fake/repo' }, io)).toBe(1);
+    expect(JSON.parse(out())).toEqual({
+      ok: false,
+      error: '--from and the words Ashler Ashlr.AI were both given; learn takes one correction, so nothing was learned',
+      nextStep: 'pass either <heard> <meant> or --from "<sentence>", not both',
+    });
+    expect(err()).toContain('lexicon: --from and the words');
+    expect(store.addTerm).not.toHaveBeenCalled();
   });
 
   it('--from learns a parsed correction', async () => {
@@ -567,7 +723,7 @@ describe('lexicon learn (CLI)', () => {
     await runLearn(['Kubernetes', 'Kubectl'], { cwd: '/fake/repo', json: true }, json.io);
     expect(JSON.parse(json.out())).toMatchObject({ conflict: { canonical: 'Kubernetes', scope: 'project', as: 'canonical', spelling: 'Kubernetes' } });
     expect(JSON.parse(json.out()).note).toBe(
-      '"Kubernetes" is its own term (project), so it may still be kept as written; if the user never means it as its own term, drop it with: lexicon remove "Kubernetes" --project',
+      '"Kubernetes" is its own term (project), so it may still be kept as written; if the user never means it as its own term, drop it with: lexicon remove Kubernetes --project',
     );
 
     // Regression: `learn --json` had the conflict and no remove command, while
@@ -576,7 +732,7 @@ describe('lexicon learn (CLI)', () => {
     expect(await runLearn(['ashler', 'Ashley'], { cwd: '/fake/repo', json: true }, alias.io)).toBe(0);
     expect(JSON.parse(alias.out()).note).toBe(
       '"Ashler" is also an alias of "Ashlr.AI" (global), so it may still be corrected to that; ' +
-        'if the user agrees, drop it with: lexicon remove "Ashlr.AI" --alias "Ashler" --global',
+        'if the user agrees, drop it with: lexicon remove Ashlr.AI --alias Ashler --global',
     );
 
     // No conflict: no note.
@@ -610,6 +766,23 @@ describe('lexicon learn (CLI)', () => {
       nextStep: "run: lexicon learn 'Mason White' <meant>, where <meant> is the spelling you want",
     });
     expect(json.err()).not.toContain('usage:');
+    expect(store.addTerm).not.toHaveBeenCalled();
+  });
+
+  // Catches: `lexicon learn --from "it's the API not the UI"` learned "the UI"
+  // as an alias of "the API"; it now says why nothing was learned and the
+  // explicit two-word command for a user who really means it.
+  it('refuses a correction whose sides neither look nor sound alike, naming the explicit command', async () => {
+    const { io, out, err } = captureIO();
+    expect(await runLearn([], { from: "it's the API not the UI", cwd: '/fake/repo' }, io)).toBe(1);
+    expect(err()).toBe(
+      'lexicon: "the UI" and "the API" neither look nor sound alike, so this reads as a change of meaning, not a spelling speech-to-text got wrong; nothing was learned\n' +
+        `lexicon: if speech-to-text really writes "the UI" for "the API", run: lexicon learn 'the UI' 'the API'\n`,
+    );
+    expect(out()).toBe('');
+    const json = captureIO();
+    expect(await runLearn(["it's", 'the', 'API', 'not', 'the', 'UI'], { json: true, cwd: '/fake/repo' }, json.io)).toBe(1);
+    expect(JSON.parse(json.out())).toMatchObject({ ok: false, error: expect.stringContaining('neither look nor sound alike'), nextStep: expect.stringContaining("lexicon learn 'the UI' 'the API'") });
     expect(store.addTerm).not.toHaveBeenCalled();
   });
 

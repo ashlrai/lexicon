@@ -79,9 +79,7 @@ final class LocalAPI: @unchecked Sendable {
 
     /// `GET /aliases?canonical=X` -> the STT misspellings the CLI would guess.
     func aliases(for canonical: String, completion: @escaping (Result<[String], Failure>) -> Void) {
-        var components = URLComponents(string: "/aliases")!
-        components.queryItems = [URLQueryItem(name: "canonical", value: canonical)]
-        send("GET", path: components.string ?? "/aliases") { result in
+        send("GET", path: aliasesRequestPath(canonical: canonical)) { result in
             completion(result.flatMap { object in
                 guard let aliases = object["aliases"] as? [String] else { return .failure(.badBody) }
                 return .success(aliases)

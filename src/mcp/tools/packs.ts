@@ -135,8 +135,11 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
     async ({ name, scope, registry, confirm, previewDigest }) =>
       guarded(async () => {
         if (isRegistryRef(name)) {
-          if (!registry) throw new Error('a community pack ref needs the registry parameter (the index it was listed from)');
+          // The ref is checked first: "../etc" was answered with "needs the
+          // registry parameter", so an agent went looking for a registry for
+          // a name that can never be a pack.
           const parsed = parseRegistryRef(name);
+          if (!registry) throw new Error('a community pack ref needs the registry parameter (the index it was listed from)');
           await assertUserRegistry(registry, { cwd: ctx.cwd });
           const { index, base } = await loadRegistryIndex(registry);
           const entry = findRegistryEntry(index, parsed.ref);

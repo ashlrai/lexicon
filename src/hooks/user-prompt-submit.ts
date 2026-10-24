@@ -27,16 +27,23 @@
 import { promises as fs, readSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { codeSpanRanges, collectRanges, diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, pathForModel, phoneticKey, queueCorrections, recordHits, resolvePaths, sanitizeForDisplayMax, similarity } from '../core/index.js';
-import type { Correction, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
+import { codeSpanRanges, collectRanges, diffSummary, exportClaudeMdWithin, exportLexicon, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, pathForModel, phoneticKey, queueCorrections, recordHits, resolvePaths, sanitizeForDisplayMax, similarity } from '../core/index.js';
+import type { Correction, CorrectionLexicon, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
 import { packageVersion } from '../util/package.js';
 import { cliCommand } from '../util/cli-hint.js';
 
 export interface HookOptions {
   /** Overrides the payload's `cwd` when resolving the project lexicon. */
   cwd?: string;
-  /** Overrides HOOK_MATCH_BUDGET_MS. */
+  /** Overrides HOOK_MATCH_BUDGET_MS (and the hookMatchBudget accounting). */
   matchBudgetMs?: number;
+  /**
+   * Milliseconds the hook process has run so far. When given (`main()`
+   * passes the process uptime), the match budget is what is left of
+   * HOOK_TOTAL_BUDGET_MS (see hookMatchBudget); without it the match gets
+   * the whole HOOK_MATCH_BUDGET_MS, counted from the scan start.
+   */
+  elapsedMs?: () => number;
   /**
    * Starts a background refresh of the parse and index caches for `cwd`
    * (`main()` passes `spawnCacheRefresh`, a detached `--refresh-cache`
@@ -213,6 +220,38 @@ async function loadForHook(cwd: string, opts: HookOptions): Promise<HookLoad> {
 export const HOOK_MATCH_BUDGET_MS = 100;
 
 /**
+ * How long, from process start, the hook may run before matching must stop:
+ * the 200 ms target less room for the work after the match and the exit.
+ * Node's start, the lexicon load, the correction pass and the index load
+ * come out of it, so a big paste against a big lexicon no longer adds the
+ * whole HOOK_MATCH_BUDGET_MS on top of them (about 300 ms end to end).
+ */
+export const HOOK_TOTAL_BUDGET_MS = 160;
+
+/** The least time matching gets, however long the hook took to get there, so a cold first run still matches the prompt's start. */
+export const HOOK_MATCH_FLOOR_MS = 20;
+
+/**
+ * A prompt this long or shorter (any dictated one) keeps the whole
+ * HOOK_MATCH_BUDGET_MS: it is matched in a few ms, and only a slow start
+ * (a loaded machine) can leave it less than the floor, which then cut a
+ * two-word prompt short with nothing matched.
+ */
+export const HOOK_SHORT_PROMPT_CHARS = 2_000;
+
+/**
+ * The match budget once `spentMs` of the process has gone: what is left of
+ * HOOK_TOTAL_BUDGET_MS, at most HOOK_MATCH_BUDGET_MS and at least
+ * HOOK_MATCH_FLOOR_MS, rounded to a whole millisecond. A prompt of at most
+ * HOOK_SHORT_PROMPT_CHARS (`promptChars`) gets HOOK_MATCH_BUDGET_MS.
+ */
+export function hookMatchBudget(spentMs: number, promptChars: number = Number.POSITIVE_INFINITY): number {
+  if (promptChars <= HOOK_SHORT_PROMPT_CHARS) return HOOK_MATCH_BUDGET_MS;
+  const left = Number.isFinite(spentMs) ? HOOK_TOTAL_BUDGET_MS - spentMs : HOOK_MATCH_FLOOR_MS;
+  return Math.round(Math.max(HOOK_MATCH_FLOOR_MS, Math.min(HOOK_MATCH_BUDGET_MS, left)));
+}
+
+/**
  * Characters of a prompt the UserPromptSubmit hook checks; the rest passes
  * through unchecked and the note says so. The match budget bounds the token
  * scan only: the work before it (code-span detection, tokenizing,
@@ -330,9 +369,12 @@ interface OnboardNoteState {
 
 /**
  * True when the onboarding note should be emitted now: no state file, an
- * unreadable one, or a `lastNotedAt` older than the interval. On true the
- * timestamp is written first (best effort, mkdir -p), so a burst of sessions
- * still produces one note. Never throws.
+ * unreadable one, or a `lastNotedAt` older than the interval. The timestamp
+ * is written first (mkdir -p), so a burst of sessions still produces one
+ * note. When it cannot be written (a read-only config directory) the answer
+ * is false: true put the note into every session, since nothing recorded
+ * that it had been given, and a lexicon could not be created there anyway.
+ * Never throws.
  */
 export async function shouldEmitOnboardNote(globalPath: string, now: number = Date.now()): Promise<boolean> {
   const file = onboardNotePath(globalPath);
@@ -351,7 +393,8 @@ export async function shouldEmitOnboardNote(globalPath: string, now: number = Da
     await fs.writeFile(file, `${JSON.stringify(state)}\n`, 'utf8');
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`[lexicon hook] onboard-note: ${message}\n`);
+    process.stderr.write(`[lexicon hook] onboard-note: ${message} (note skipped: its once a day state cannot be recorded)\n`);
+    return false;
   }
   return true;
 }
@@ -498,6 +541,14 @@ export function formatCorrectionNote(correction: Correction): string {
   );
 }
 
+/**
+ * How long the UserPromptSubmit hook spends reading a prompt's sentences for
+ * spelling corrections ("it's X not Y") before it stops; the match budget
+ * (HOOK_MATCH_BUDGET_MS) comes on top. A dictated prompt takes well under a
+ * millisecond.
+ */
+export const HOOK_CORRECTION_BUDGET_MS = 25;
+
 /** Most spelling corrections one prompt gets a learn_correction line for; the rest get one closing line. */
 export const CORRECTION_NOTES_MAX = 5;
 
@@ -511,9 +562,12 @@ const SENTENCE_BREAK_RE = /(?<=[.!?])\s+/;
  * line, and its words were normalized like dictation. The whole text is
  * parsed first, as before; then each sentence on its own, so a later
  * sentence's correction is found too. Duplicates (same heard and meant,
- * ignoring case) are dropped. Exported for tests.
+ * ignoring case) are dropped. `lexicon` (the loaded one) is passed to
+ * `parseCorrection`, so a name it holds is caught when STT wrote it by sound.
+ * Exported for tests.
  */
-export function parseCorrections(text: string): Correction[] {
+export function parseCorrections(text: string, lexicon?: CorrectionLexicon, limits: { shouldStop?: () => boolean } = {}): Correction[] {
+  const opts = lexicon ? { lexicon } : {};
   const found: Correction[] = [];
   const seen = new Set<string>();
   const keyOf = (c: Correction): string => `${collapse(c.heard)}\u0000${collapse(c.meant)}`;
@@ -532,13 +586,24 @@ export function parseCorrections(text: string): Correction[] {
   // read as blanks (offsets kept), so it neither matches nor joins the prose.
   // Nor is quoted text: a Markdown blockquote or what a screen "says:".
   const prose = blankQuoted(blankCode(text));
-  const whole = parseCorrection(prose);
+  const whole = parseCorrection(prose, opts);
   // Only a prompt with a second sentence can hold a second correction.
   if (!SENTENCE_BREAK_RE.test(prose)) {
     add(whole, prose);
     return found;
   }
-  const perSentence = prose.split(SENTENCE_BREAK_RE).map((sentence) => ({ sentence, c: parseCorrection(sentence) }));
+  // Each distinct sentence is parsed once, and none after `shouldStop` says
+  // the budget is spent: a 50000-character paste of one sentence repeated
+  // parsed every copy, about 300 ms of a hook meant to take under 200.
+  const parsed = new Map<string, Correction | undefined>();
+  const perSentence: Array<{ sentence: string; c: Correction | undefined }> = [];
+  for (const sentence of prose.split(SENTENCE_BREAK_RE)) {
+    if (!parsed.has(sentence)) {
+      if (limits.shouldStop?.()) break;
+      parsed.set(sentence, parseCorrection(sentence, opts));
+    }
+    perSentence.push({ sentence, c: parsed.get(sentence) });
+  }
   const wholeKey = whole ? keyOf(whole) : undefined;
   add(whole, perSentence.find((p) => p.c !== undefined && keyOf(p.c) === wholeKey)?.sentence ?? prose);
   for (const { sentence, c } of perSentence) add(c, sentence);
@@ -849,6 +914,11 @@ export function dropDataBlockSpans(result: NormalizeResult): NormalizeResult {
   return dropReplacements(result, (r) => overlapsAny(r, spans));
 }
 
+/** The line after the rows a capped SessionStart table kept. */
+function sessionMoreLine(n: number): string {
+  return `... ${n} more term${n === 1 ? '' : 's'}; read the lexicon://me resource for more, or call the list_terms tool to look any term up.`;
+}
+
 /**
  * Keeps a claude-md export under `max` characters by keeping the table rows
  * that fit, in order (a row too long to fit is dropped, later rows still
@@ -859,7 +929,7 @@ export function truncateSessionContext(text: string, max = SESSION_CONTEXT_MAX_C
   if (text.length <= max) return text;
   const lines = text.split('\n');
   const sep = lines.findIndex((l) => /^\|\s*-+\s*\|/.test(l));
-  if (sep === -1) return text.slice(0, Math.max(0, max - 3)) + '...';
+  if (sep === -1) return hardCut(text, max);
 
   const header = lines.slice(0, sep + 1);
   let end = sep + 1;
@@ -867,7 +937,7 @@ export function truncateSessionContext(text: string, max = SESSION_CONTEXT_MAX_C
   const rows = lines.slice(sep + 1, end);
   const footer = lines.slice(end);
 
-  const moreLine = (n: number): string => `... ${n} more term${n === 1 ? '' : 's'}; read the lexicon://me resource for more, or call the list_terms tool to look any term up.`;
+  const moreLine = sessionMoreLine;
   const fixed = header.join('\n').length + footer.join('\n').length + moreLine(rows.length).length + 3; // 3 joining newlines
   let used = fixed;
   const kept: string[] = [];
@@ -881,7 +951,20 @@ export function truncateSessionContext(text: string, max = SESSION_CONTEXT_MAX_C
   const dropped = rows.length - kept.length;
   const out = [...header, ...kept, moreLine(dropped), ...footer].join('\n');
   // Header + footer alone can exceed a tiny cap; the cap is the contract, so hard-cut then.
-  return out.length <= max ? out : out.slice(0, Math.max(0, max - 3)) + '...';
+  return out.length <= max ? out : hardCut(out, max);
+}
+
+/**
+ * `text` cut to `max` characters with `...`, never inside a surrogate pair:
+ * a cut after a high surrogate left half an emoji, not valid UTF-8, which
+ * reached the model context as U+FFFD (or was refused by a strict encoder).
+ */
+function hardCut(text: string, max: number): string {
+  if (max < 3) return '...'.slice(0, Math.max(0, max));
+  let end = max - 3;
+  const before = text.charCodeAt(end - 1);
+  if (before >= 0xd800 && before <= 0xdbff) end -= 1;
+  return `${text.slice(0, end)}...`;
 }
 
 
@@ -1015,10 +1098,11 @@ async function loadOrExplain(cwd: string, staleGlobal = false): Promise<{ loaded
     // reports a skipped file by path.
     return { loaded: await loadLexicon(staleGlobal ? { cwd, parseSkipped: false, staleGlobal: true } : { cwd, parseSkipped: false }) };
   } catch (err) {
-    const message = neutralizeForModel(err instanceof Error ? err.message : String(err));
+    const raw = neutralizeForModel(err instanceof Error ? err.message : String(err));
+    const message = loadErrorForModel(raw);
     // Only a store parse/validation error is a file to fix with `lexicon edit`;
     // anything else (a file that cannot be read) used to be reported as one too.
-    if (!UNPARSEABLE_LEXICON_RE.test(message)) {
+    if (!UNPARSEABLE_LEXICON_RE.test(raw)) {
       return {
         note:
           `Lexicon is installed but is correcting nothing, because its lexicon could not be read: ${message}\n` +
@@ -1028,10 +1112,29 @@ async function loadOrExplain(cwd: string, staleGlobal = false): Promise<{ loaded
     return {
       note:
         `Lexicon is installed but is correcting nothing, because its file does not parse: ${message}\n` +
-        'Tell the user to run ' + cliCommand(unparseableEditCommand(message)) + ' and fix the parse error. Setup will not repair this, ' +
+        'Tell the user to run ' + cliCommand(unparseableEditCommand(raw)) + ' and fix the parse error. Setup will not repair this, ' +
         'and lexicon_doctor will show the same thing.',
     };
   }
+}
+
+/**
+ * Most characters of a load error in the hook's note. The note is the whole
+ * SessionStart context, capped at SESSION_CONTEXT_MAX_CHARS like the table.
+ */
+export const LOAD_ERROR_NOTE_MAX_CHARS = 1500;
+
+/**
+ * A load error as the note quotes it: the file a parse error names through
+ * pathForModel (its last components, as the skipped-project note names a
+ * file), then cut to LOAD_ERROR_NOTE_MAX_CHARS. The full path went in as is,
+ * so a lexicon under a deep directory put a SessionStart context past its
+ * 4000-character cap, and a directory name chosen by whoever published a repo
+ * reached the model whole.
+ */
+function loadErrorForModel(message: string): string {
+  const shortened = message.replace(/^((?:Failed to parse lexicon YAML|Invalid lexicon) at )(.+?)(: )/, (_m, lead: string, file: string, sep: string) => `${lead}${pathForModel(file)}${sep}`);
+  return sanitizeForDisplayMax(shortened, LOAD_ERROR_NOTE_MAX_CHARS);
 }
 
 /** The store's messages for a lexicon file that does not parse or validate (src/cli/io.ts unreadableLexiconEdit reads the same two). */
@@ -1102,16 +1205,21 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const tail = prompt.slice(head.length);
   const lengthNote = tail ? formatLengthNote(head.length, prompt.length) : '';
 
-  const corrections = parseCorrections(head);
+  // Bounded like the match below: past HOOK_CORRECTION_BUDGET_MS the rest of
+  // the sentences are not read for corrections (their words are matched as
+  // dictation, as before the per-sentence pass existed).
+  const correctionsStarted = process.hrtime.bigint();
+  const correctionLimit = BigInt(HOOK_CORRECTION_BUDGET_MS * 1e6);
+  const corrections = parseCorrections(head, loaded.merged, { shouldStop: () => process.hrtime.bigint() - correctionsStarted >= correctionLimit });
   const correctionNote = corrections.length > 0 ? formatCorrectionNotes(corrections) : '';
   if (corrections.length > 0) await queueForReview(corrections, loaded);
 
   // The compiled index comes from index-cache.json when the lexicon has not
   // changed since a previous prompt built it (see loadMatcherIndex). The
-  // match budget starts after it: it bounds the scan, which grows with the
-  // prompt, not the one-off cost of the index.
+  // match budget starts after it and, in the real hook (`elapsedMs`), is
+  // what the process has left of HOOK_TOTAL_BUDGET_MS (see hookMatchBudget).
   const index = loaded.merged.terms.length > 0 ? await loadMatcherIndex(loaded) : undefined;
-  const budget = opts.matchBudgetMs ?? HOOK_MATCH_BUDGET_MS;
+  const budget = opts.matchBudgetMs ?? (opts.elapsedMs ? hookMatchBudget(opts.elapsedMs(), head.length) : HOOK_MATCH_BUDGET_MS);
   // process.hrtime rather than performance.now: the `performance` global
   // loads node:perf_hooks on first touch, a few ms of a cold hook.
   const started = process.hrtime.bigint();
@@ -1177,8 +1285,14 @@ async function sessionStart(payload: HookInput, opts: HookOptions): Promise<stri
   // lookalikes, so the table cannot close or open a tag around it.
   // The cap covers the whole context: the table gives up room for the
   // skipped-project note (bounded by pathForModel) and the joining newline.
+  // Past the cap the most used rows are kept (exportClaudeMdWithin, as
+  // lexicon://me keeps them). The rows were taken in export order, so a
+  // large lexicon's context held its first terms A to Z (in category order)
+  // and never the names the user dictates most. neutralizeMarkup keeps the
+  // length, so the cap still holds.
   const room = SESSION_CONTEXT_MAX_CHARS - (trailer ? trailer.length + 1 : 0);
-  const parts: string[] = [truncateSessionContext(neutralizeMarkup(exportLexicon(loaded.merged, 'claude-md')).trimEnd(), room)];
+  const table = exportClaudeMdWithin(loaded.merged, room, sessionMoreLine).text;
+  const parts: string[] = [neutralizeMarkup(table).trimEnd()];
   if (trailer) parts.push(trailer);
   return emit('SessionStart', parts);
 }
@@ -1369,7 +1483,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       process.stderr.write(formatStdinOverflow(read.overflow));
       return;
     }
-    const out = await runHook(decodeStdin(read.bytes), { startRefresh: spawnCacheRefresh });
+    const out = await runHook(decodeStdin(read.bytes), { startRefresh: spawnCacheRefresh, elapsedMs: () => process.uptime() * 1000 });
     if (out) writeStdout(out);
   } catch (err) {
     // Silent by design: a broken hook must not break the user's prompt.

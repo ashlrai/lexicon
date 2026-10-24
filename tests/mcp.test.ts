@@ -95,6 +95,8 @@ const cli = vi.hoisted(() => ({
 vi.mock('../src/core/index.js', async (importOriginal) => ({
   ...(await importOriginal<Record<string, unknown>>()),
   ...mocks,
+  // harvest_repo reads the report; the candidates still come from the harvestRepo mock.
+  harvestReport: async (...args: unknown[]) => ({ candidates: await (mocks.harvestRepo as (...a: unknown[]) => Promise<unknown>)(...args), truncated: false, filesScanned: 0, belowMinCount: 0, symbolsOnly: 0 }),
 }));
 vi.mock('../src/cli/commands.js', () => ({ runDoctorReport: cli.runDoctorReport }));
 vi.mock('../src/cli/cmd-import.js', () => ({ MAX_IMPORT_BYTES: 8 * 1024 * 1024, runImport: cli.runImport }));
@@ -455,6 +457,52 @@ describe('lexicon MCP server', () => {
       expect(payload.term.aliases).toEqual([]);
       expect(mocks.suggestAliases).not.toHaveBeenCalled();
       expect(mocks.addTerm).toHaveBeenLastCalledWith({ canonical: 'Zoë', aliases: [], source: 'user' }, { cwd: '/fake/repo' });
+    } finally {
+      await close();
+    }
+  });
+
+  // Catches: list_terms returned every term with no way to take a page of a
+  // large lexicon; omitted, offset and limit still return the whole list.
+  it('list_terms pages the matches with offset and limit, and returns them all by default', async () => {
+    const { client, close } = await connect();
+    try {
+      const parse = async (args: Record<string, unknown>) =>
+        JSON.parse(textOf(await client.callTool({ name: 'list_terms', arguments: args }))) as {
+          terms: Term[];
+          counts: { matched: number };
+          page?: Record<string, unknown>;
+          note?: string;
+        };
+      const whole = await parse({});
+      expect(whole.terms.map((t) => t.canonical)).toEqual(['Ashlr.AI', 'Kubernetes']);
+      expect(whole).not.toHaveProperty('page');
+      const first = await parse({ limit: 1 });
+      expect(first.terms.map((t) => t.canonical)).toEqual(['Ashlr.AI']);
+      expect(first.counts.matched).toBe(2);
+      expect(first.page).toEqual({ offset: 0, limit: 1, returned: 1, nextOffset: 1 });
+      const next = await parse({ offset: 1, limit: 1 });
+      expect(next.terms.map((t) => t.canonical)).toEqual(['Kubernetes']);
+      expect(next.page).toEqual({ offset: 1, limit: 1, returned: 1 });
+      const past = await parse({ offset: 2 });
+      expect(past.terms).toEqual([]);
+      expect(past.note).toBe('No term at offset 2: only 2 terms matched, at offsets 0 to 1.');
+      const bad = await client.callTool({ name: 'list_terms', arguments: { offset: -1 } });
+      expect(bad.isError).toBe(true);
+    } finally {
+      await close();
+    }
+  });
+
+  // Catches: category other left out a term with no category, which
+  // export_lexicon and the rest of the code count as other.
+  it('list_terms with category other returns the terms without a category', async () => {
+    const mixed: Lexicon = { version: 1, terms: [...fixtureLexicon.terms, { canonical: 'Plain', aliases: ['plane'], scope: 'global' }] };
+    mocks.loadLexicon.mockResolvedValueOnce({ ...loaded, merged: mixed });
+    const { client, close } = await connect();
+    try {
+      const payload = JSON.parse(textOf(await client.callTool({ name: 'list_terms', arguments: { category: 'other' } }))) as { terms: Term[] };
+      expect(payload.terms.map((t) => t.canonical)).toEqual(['Plain']);
     } finally {
       await close();
     }
@@ -840,6 +888,10 @@ describe('lexicon MCP server', () => {
         const failed = JSON.parse(textOf(await client.callTool({ name: 'uninstall_client', arguments: { client: 'claude', apply: true } }))) as Record<string, unknown>;
         expect(failed).toMatchObject({ ok: false, applied: true });
         expect(failed.nextStep).toMatch(/do not call again with apply: true/);
+        // Catches: the description sent the agent to an `error` field an ok: false result does not carry.
+        expect(failed).not.toHaveProperty('error');
+        expect(tool?.description).not.toContain('`error`');
+        expect(tool?.description).toContain('`output` says which step failed');
         // A refusal before anything was read is a tool error naming the tool, not the CLI flag.
         cli.runUninstall.mockImplementationOnce(async (_c: string, _o: unknown, io: IO) => {
           io.stdout(JSON.stringify({ ok: false, error: 'windsurf has no project-level MCP config; drop --project', nextStep: 'x' }));
@@ -1768,6 +1820,23 @@ describe('lexicon MCP server', () => {
       }
     });
 
+    // Catches: duplicate entries in clients or packs reached runSetup as
+    // given (`claude,cursor,claude`), so the options named a client twice.
+    it('setup_lexicon drops duplicate clients and packs, keeping the first order', async () => {
+      const { client, close } = await connect();
+      try {
+        for (const apply of [false, true]) {
+          const result = await client.callTool({ name: 'setup_lexicon', arguments: { apply, clients: ['claude', 'cursor', 'claude', 'cursor'], packs: ['ai', 'developer', 'ai'] } });
+          expect(result.isError).toBe(false);
+          const [opts] = cli.runSetup.mock.calls.at(-1) as [SetupOptions];
+          expect(opts.clients).toBe('claude,cursor');
+          expect(opts.packs).toBe('ai,developer');
+        }
+      } finally {
+        await close();
+      }
+    });
+
     // Catches: the apply result had no step after setup, so an agent never told the
     // user to add a name; the progress it relayed named CLI flags such as --packs.
     it('setup_lexicon relays summary.nextStep after the trust step, and passes forAgent', async () => {
@@ -1787,7 +1856,9 @@ describe('lexicon MCP server', () => {
       }
     });
 
-    it('setup_lexicon relays a failing apply as ok: false with its stderr', async () => {
+    // Catches: a failed step came back ok: false but not isError, so an agent
+    // that reads only isError told the user the setup was done.
+    it('setup_lexicon relays a failing apply as an ok: false error result with its stderr', async () => {
       cli.runSetup.mockImplementationOnce(async (_o: unknown, io: IO) => {
         io.stderr('setup: claude mcp add failed\n');
         return { code: 1, summary: { ...setupSummary, clients: [{ name: 'claude', status: 'failed', detail: 'claude mcp add failed' }] } };
@@ -1795,7 +1866,7 @@ describe('lexicon MCP server', () => {
       const { client, close } = await connect();
       try {
         const result = await client.callTool({ name: 'setup_lexicon', arguments: { apply: true, clients: ['claude'] } });
-        expect(result.isError).toBe(false);
+        expect(result.isError).toBe(true);
         expect(JSON.parse(textOf(result))).toMatchObject({ ok: false, applied: true, stderr: 'setup: claude mcp add failed' });
       } finally {
         await close();
@@ -1830,7 +1901,18 @@ describe('lexicon MCP server', () => {
 
         fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, version: '0.3.0', terms: 36, port: 41733 }), { status: 200 }));
         const up = await client.callTool({ name: 'serve_status', arguments: {} });
-        expect(JSON.parse(textOf(up))).toEqual({ up: true, url: 'http://127.0.0.1:41733/health', ok: true, version: '0.3.0', terms: 36, port: 41733 });
+        // No serve.json: up, and said so, as `serve --status --json` says it.
+        expect(JSON.parse(textOf(up))).toEqual({
+          up: true,
+          url: 'http://127.0.0.1:41733/health',
+          ok: true,
+          version: '0.3.0',
+          terms: 36,
+          port: 41733,
+          configured: false,
+          configPath: path.join(dir, 'serve.json'),
+          note: `serve is not configured: ${path.join(dir, 'serve.json')} does not exist; lexicon serve creates it`,
+        });
 
         // Catches: any 200 on the port read as up, though it was not lexicon serve.
         fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ status: 'fine' }), { status: 200 }));

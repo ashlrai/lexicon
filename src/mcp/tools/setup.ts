@@ -26,7 +26,17 @@ import { setupNameProblem } from '../../cli/setup/detect.js';
 import { serveInstallBlocker } from '../../cli/cmd-serve.js';
 import { cliCommand } from '../../util/cli-hint.js';
 import { join } from 'node:path';
-import { DEFAULT_PORT, FOREIGN_HEALTH_ERROR, SERVE_STATUS_HINTS, isLexiconHealth, probeHealth, readServeConfig, serveUrl } from '../../serve/config.js';
+import {
+  DEFAULT_PORT,
+  FOREIGN_HEALTH_ERROR,
+  SERVE_STATUS_HINTS,
+  getServePath,
+  isLexiconHealth,
+  probeHealth,
+  readServeConfig,
+  serveUrl,
+  unusableServeConfigReason,
+} from '../../serve/config.js';
 
 /**
  * The API this user's `lexicon serve` listens on: the port in serve.json
@@ -34,15 +44,20 @@ import { DEFAULT_PORT, FOREIGN_HEALTH_ERROR, SERVE_STATUS_HINTS, isLexiconHealth
  * read), else the default, plus the token so a failing server explains
  * itself. Read-only: never creates serve.json.
  */
-async function serveTarget(): Promise<{ base: string; token?: string }> {
+async function serveTarget(): Promise<{ base: string; token?: string; notConfigured: { configured?: false; configPath?: string; note?: string } }> {
   const config = await readServeConfig();
   const port = config !== undefined && config.port > 0 ? config.port : DEFAULT_PORT;
-  return { base: serveUrl(port), ...(config?.token ? { token: config.token } : {}) };
+  // As `lexicon serve --status --json` says it: without this a serve.json
+  // that is not valid JSON (which lexicon serve refuses to start on) or has
+  // no usable token read the same as a server that is simply not started.
+  const configPath = getServePath();
+  const notConfigured =
+    config === undefined ? { configured: false as const, configPath, note: `serve is not configured: ${configPath} ${unusableServeConfigReason(configPath)}` } : {};
+  return { base: serveUrl(port), ...(config?.token ? { token: config.token } : {}), notConfigured };
 }
 
 export const registerSetupTools: ToolRegistrar = (server, ctx) => {
   // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
-  const { load } = ctx;
   server.registerTool(
     'lexicon_doctor',
     {
@@ -145,7 +160,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         'SAFETY DEFAULT: apply omitted (or false) is a dry run that writes nothing and returns what would be removed; this tool never removes anything unless apply is true. ' +
         'Show the dry run to the user and call again with apply: true only after they confirm. ' +
         "Returns { client, scope, applied, ok, changes, output, stderr?, next?, nextStep? }: `changes` lists each entry as { file, entry, outcome } with outcome removed (would be removed, in a dry run), absent or kept, the list the CLI uninstall command prints with --json. " +
-        'Check `ok`: false means it did not complete (`error` and `nextStep` say why), so do not report it as removed. ' +
+        'Check `ok`: false means it did not complete (`output` says which step failed, `changes` what was done, and `nextStep` what to do), so do not report it as removed. ' +
         "windsurf and claude-desktop have no project-level config: scope 'project' with them is an error that says to call again without scope. " +
         'The Claude Code plugin is not removed by this tool; when it is installed, `output` names the command that removes it.',
       inputSchema: {
@@ -231,7 +246,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         'It writes the global lexicon and each named client\'s config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), ' +
         'does not install starter packs unless packs: [...] names them (packsOnOffer, the same list as wouldInstallPacks, is the default set to offer, not what will be installed; packsToInstall is what this call would install, empty until packs names some; list_packs describes each), ' +
         'does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. ' +
-        'Runs non-interactively and returns { ok, applied: true, summary, nextStep? }; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file that was not trusted already is left untrusted for the user to review).',
+        'Runs non-interactively and returns { ok, applied: true, summary, nextStep? }, as an error result (same fields) when ok is false because a step failed; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file that was not trusted already is left untrusted for the user to review).',
       inputSchema: {
         company: z
           .string()
@@ -282,10 +297,12 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
           ...(person !== undefined ? { person } : {}),
           // runSetup takes the CLI's comma-separated form. Omitted means "none" here, never
           // "every detected client": the plan names the detected ones and the model asks.
-          clients: clients !== undefined && clients.length > 0 ? clients.join(',') : 'none',
+          // Duplicates are dropped here, in the order first named, so the
+          // options (and the command the plan echoes) list each client once.
+          clients: clients !== undefined && clients.length > 0 ? [...new Set(clients)].join(',') : 'none',
           // Same for the starter packs: only an explicit list installs any (runSetup with yes
           // and no --packs installs none); omitted leaves the plan's default set for the model to offer.
-          ...(packs !== undefined ? { packs: packs.length > 0 ? packs.join(',') : 'none' } : {}),
+          ...(packs !== undefined ? { packs: packs.length > 0 ? [...new Set(packs)].join(',') : 'none' } : {}),
           // The login service is opt-in; runSetup with yes also refuses it unless serve is true.
           serve: serve === true,
           // So is the harvest (a write inside the user's repo). The plan lists the
@@ -315,13 +332,16 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
           ...(untrusted !== undefined ? [untrustedWriteFields(untrusted, 'The repo names', true).nextStep] : []),
           ...(summary.nextStep !== undefined ? [summary.nextStep] : []),
         ];
-        return textResult({
+        const result = textResult({
           ok: code === 0,
           applied: true,
           summary,
           ...(stderr ? { stderr } : {}),
           ...(steps.length > 0 ? { nextStep: steps.join(' Then: ') } : {}),
         });
+        // A step failed (a client, the login service, an export): an agent that
+        // reads only isError reported the setup as done. Same payload, flagged.
+        return code === 0 ? result : { ...result, isError: true };
       }),
   );
 
@@ -331,17 +351,17 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
       title: 'Local API status',
       description:
         'Check whether the local lexicon API (the CLI serve command, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). ' +
-        'Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); { up: false, error } when nothing answers, or when something other than lexicon serve answers on the port. Every result carries `url`, the /health address probed, and every up: false result carries `hint`, the next step. Call when a non-MCP surface is not correcting text.',
+        'Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); { up: false, error } when nothing answers, or when something other than lexicon serve answers on the port. Every result carries `url`, the /health address probed, and every up: false result carries `hint`, the next step. When serve.json is missing or unusable (not valid JSON, no usable token, unreadable) the result adds `configured: false`, `configPath` and `note` saying why and what fixes it, as the CLI serve --status --json does. Call when a non-MCP surface is not correcting text.',
       inputSchema: {},
     },
     async () =>
       guarded(async () => {
-        const { base, token } = await serveTarget();
+        const { base, token, notConfigured } = await serveTarget();
         const url = `${base}/health`;
         const probe = await probeHealth(base, token !== undefined ? { token } : {});
-        if (probe.state === 'up' && isLexiconHealth(probe.body)) return textResult({ up: true, url, ...(isRecord(probe.body) ? probe.body : {}) });
+        if (probe.state === 'up' && isLexiconHealth(probe.body)) return textResult({ up: true, url, ...(isRecord(probe.body) ? probe.body : {}), ...notConfigured });
         // A 200 that is not lexicon serve's /health: another program holds the port.
-        if (probe.state === 'up') return textResult({ up: false, url, error: FOREIGN_HEALTH_ERROR, hint: SERVE_STATUS_HINTS.foreign });
+        if (probe.state === 'up') return textResult({ up: false, url, error: FOREIGN_HEALTH_ERROR, hint: SERVE_STATUS_HINTS.foreign, ...notConfigured });
         if (probe.state === 'failing') {
           return textResult({
             up: false,
@@ -350,6 +370,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
             status: probe.status,
             error: probe.error,
             hint: SERVE_STATUS_HINTS.failing,
+            ...notConfigured,
           });
         }
         // The CLI's hint names `lexicon serve`, which a plugin-only user does not
@@ -363,6 +384,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
           hint: blocked
             ? `Start it with ${cliCommand('serve')}. A login service that keeps it running cannot be installed from this copy: ${blocked}.`
             : `${SERVE_STATUS_HINTS.down} setup_lexicon with serve: true does the same.`,
+          ...notConfigured,
         });
       }),
   );

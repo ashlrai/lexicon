@@ -431,6 +431,30 @@ describe('installPack / uninstallPack', () => {
     expect(await uninstallPack('business', { cwd, globalPath })).toMatchObject({ removed: [], kept: [], files: [] });
   });
 
+  // Catches: removing one pack took a term another installed pack also has, so that pack, still installed, lost it.
+  it('uninstall keeps a term another installed pack also has, and removes it with the last one', async () => {
+    const dir = path.join(home, 'packs');
+    await fs.mkdir(dir);
+    await fs.writeFile(path.join(dir, 'alpha.yaml'), 'name: alpha\ntitle: Alpha\nterms:\n  - canonical: Shared Term\n    aliases: [shared turm]\n  - canonical: Alphaword\n    aliases: [alfa word]\n');
+    await fs.writeFile(path.join(dir, 'beta.yaml'), 'name: beta\ntitle: Beta\nterms:\n  - canonical: shared term\n    aliases: [shared turm]\n  - canonical: Betaword\n    aliases: [beta werd]\n');
+    await installPack('alpha', { cwd, globalPath, dir });
+    await installPack('beta', { cwd, globalPath, dir });
+
+    const io = makeIO();
+    expect(await runPackRemove('alpha', { cwd, globalPath }, io, { dir })).toBe(0);
+    expect(io.out).toContain('kept 1 another installed pack also has: Shared Term');
+    await installPack('alpha', { cwd, globalPath, dir });
+    const first = await uninstallPack('alpha', { cwd, globalPath, dir });
+    expect(first).toMatchObject({ removed: ['Alphaword'], kept: [], shared: ['Shared Term'] });
+    const after = await readLexiconFile(globalPath, 'global');
+    expect(after.lexicon.terms.map((t) => t.canonical).sort()).toEqual(['Betaword', 'Shared Term']);
+    expect(after.lexicon.settings?.packs).toEqual(['beta']);
+
+    const last = await uninstallPack('beta', { cwd, globalPath, dir });
+    expect(last).toMatchObject({ kept: [], shared: [] });
+    expect(last.removed.sort()).toEqual(['Betaword', 'Shared Term']);
+  });
+
   it('keeps other settings and other packs when one pack is removed', async () => {
     await installPack('ai', { cwd, globalPath });
     await installPack('voice-tools', { cwd, globalPath });
@@ -582,6 +606,19 @@ describe('installPack / uninstallPack', () => {
     const notInstalled = makeIO();
     expect(await runPackRemove('business', { cwd }, notInstalled)).toBe(0);
     expect(notInstalled.out).toContain('business is not installed');
+    // Catches: under --json a pack that was not installed answered ok:true with three empty lists and no word of it.
+    const notInstalledJson = makeIO();
+    expect(await runPackRemove('business', { cwd, json: true }, notInstalledJson)).toBe(0);
+    expect(JSON.parse(notInstalledJson.out)).toMatchObject({
+      ok: true,
+      notInstalled: true,
+      summary: 'business is not installed; nothing was removed',
+      removed: [],
+      files: [],
+    });
+    const notInstalledProject = makeIO();
+    expect(await runPackRemove('business', { cwd, json: true, project: true }, notInstalledProject)).toBe(0);
+    expect(JSON.parse(notInstalledProject.out)).toMatchObject({ notInstalled: true, summary: 'business is not installed in the project lexicon; nothing was removed' });
     const rmJson = makeIO();
     expect(await runPackRemove('ai', { cwd, json: true }, rmJson)).toBe(0);
     expect(JSON.parse(rmJson.out)).toMatchObject({ kept: [], files: [globalPath] });

@@ -66,11 +66,7 @@ You also need `lexicon serve` running on the same machine. That is the process h
 lexicon serve --install
 ```
 
-which tells you to create a logon task:
-
-```
-schtasks /Create /SC ONLOGON /TN "lexicon serve" /TR "\"C:\Program Files\nodejs\node.exe\" \"C:\...\dist\cli\index.js\" serve"
-```
+which creates a Scheduled Task named `Lexicon` (trigger: at logon) with `schtasks /Create /XML`, ends an instance an earlier install left running, and starts the new one with `schtasks /Run`, so it is serving right away. If a step fails it says which and how to finish by hand.
 
 Use **Run doctor** in the tray menu to check the app can see it.
 

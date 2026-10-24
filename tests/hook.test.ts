@@ -369,6 +369,28 @@ describe('runUserPromptSubmitHook', () => {
       expect(parseCorrections("it's Vercel not versel. It's vercel not Versel.")).toHaveLength(1);
     });
 
+    // Catches: every sentence was parsed for a correction with no bound, so a
+    // 50000-character paste of one sentence repeated took about 300 ms.
+    it('parses each distinct sentence once and stops when the budget says so', async () => {
+      const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+      const names = ['Vercel', 'Supabase', 'Kubernetes', 'Postgres'];
+      const prompt = names.map((n) => `it's ${n} not ${n.toLowerCase()}x.`).join(' ');
+      // Spent from the start: only the whole-text pass, which finds the first.
+      expect(parseCorrections(prompt, undefined, { shouldStop: () => true }).map((c) => c.meant)).toEqual(['Vercel']);
+      let checks = 0;
+      const repeated = `${"it's Vercel not versel. ".repeat(2000)}it's Supabase not super base.`;
+      const found = parseCorrections(repeated, undefined, { shouldStop: () => ((checks += 1), false) });
+      expect(found.map((c) => c.meant)).toEqual(['Vercel', 'Supabase']);
+      expect(checks).toBe(2);
+    });
+
+    it('passes the loaded lexicon to parseCorrection, so a name it holds is caught by sound', async () => {
+      const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+      expect(parseCorrections("it's Niamh not Neve")).toEqual([]);
+      expect(parseCorrections("it's Niamh not Neve", { terms: [{ canonical: 'Niamh', aliases: [] }] })).toEqual([{ heard: 'Neve', meant: 'Niamh' }]);
+      expect(parseCorrections("it's Siobhan not Shivon")).toEqual([{ heard: 'Shivon', meant: 'Siobhan' }]);
+    });
+
     it('does not flag "it\'s X not Y" that contrasts two ordinary words', async () => {
       const { runUserPromptSubmitHook, parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
       // An agent that followed a learn_correction line here made "broken" an alias of "flaky".
@@ -901,14 +923,17 @@ describe('runHook', () => {
         expect(await shouldEmitOnboardNote(globalPath, t0)).toBe(true);
         expect(await shouldEmitOnboardNote(globalPath, t0 + ONBOARD_NOTE_INTERVAL_MS - 1)).toBe(false);
         expect(await shouldEmitOnboardNote(globalPath, t0 + ONBOARD_NOTE_INTERVAL_MS)).toBe(true);
-        // A directory that cannot be created is not fatal: the note is still
-        // emitted. The unwritable path is "a directory under an existing
+        // Catches: a state file that cannot be written still answered true,
+        // so on a read-only config directory the note came every session.
+        // It is not fatal either: the answer is false and nothing throws.
+        // The unwritable path is "a directory under an existing
         // *file*", which fails on every platform -- `/dev/null/nope` does not
         // exist on Windows, where mkdir would happily create C:\dev\null\nope
         // on the runner's system drive and the test would assert nothing.
         const blocker = path.join(dir, 'not-a-directory');
         await fs.writeFile(blocker, '');
-        expect(await shouldEmitOnboardNote(path.join(blocker, 'nope', 'lexicon.yaml'), t0)).toBe(true);
+        expect(await shouldEmitOnboardNote(path.join(blocker, 'nope', 'lexicon.yaml'), t0)).toBe(false);
+        expect(await shouldEmitOnboardNote(path.join(blocker, 'nope', 'lexicon.yaml'), t0 + ONBOARD_NOTE_INTERVAL_MS * 2)).toBe(false);
       });
     });
 
@@ -950,6 +975,24 @@ describe('runHook', () => {
       expect(shown + Number(more![1])).toBe(300);
     });
 
+    // Catches: a capped table kept its first rows in export order (category, then A to Z), so a large lexicon's context never held the names the user dictates most.
+    it('keeps the most used terms when the table is capped, as lexicon://me does', async () => {
+      const terms: Term[] = Array.from({ length: 300 }, (_, i) => ({ canonical: `Term${String(i).padStart(3, '0')}`, aliases: [`turm${i}`], category: 'product' }));
+      terms[299] = { ...terms[299], hits: 40 };
+      terms[250] = { ...terms[250], hits: 7 };
+      mocks.loadLexicon.mockResolvedValue({ ...loaded, merged: { version: 1, terms } });
+      const { runHook, SESSION_CONTEXT_MAX_CHARS } = await import('../src/hooks/user-prompt-submit.js');
+      const ctx = context(await runHook(sessionStartPayload()));
+      expect(ctx.length).toBeLessThanOrEqual(SESSION_CONTEXT_MAX_CHARS);
+      expect(ctx).toContain('| Term299 | turm299 | product |');
+      expect(ctx).toContain('| Term250 | turm250 | product |');
+      expect(ctx).toContain('| Term000 | turm0 | product |');
+      // Written in the export's order, not by hits.
+      expect(ctx.indexOf('| Term250 |')).toBeLessThan(ctx.indexOf('| Term299 |'));
+      const more = /^\.\.\. (\d+) more terms; read the lexicon:\/\/me resource for more, or call the list_terms tool to look any term up\.$/m.exec(ctx);
+      expect((ctx.match(/^\| Term\d+ \|/gm) ?? []).length + Number(more![1])).toBe(300);
+    });
+
     // Catches: the table was cut to the cap and the skipped-project note was
     // appended after it, so the context ran past SESSION_CONTEXT_MAX_CHARS.
     it('keeps the table plus the skipped-project note within the cap', async () => {
@@ -984,6 +1027,24 @@ describe('runHook', () => {
       expect(cut.endsWith('\n\nfooter')).toBe(true);
       // A cap smaller than header + footer still holds: hard cut.
       expect(truncateSessionContext(table, 20).length).toBeLessThanOrEqual(20);
+    });
+
+    // Catches: the hard cut sliced at max - 3 whatever was there, so a cut
+    // after a high surrogate left half an emoji (not valid UTF-8).
+    it('truncateSessionContext never cuts inside a surrogate pair', async () => {
+      const { truncateSessionContext } = await import('../src/hooks/user-prompt-submit.js');
+      const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+      const emoji = '\u{1F600}'.repeat(40);
+      for (let max = 0; max <= 30; max += 1) {
+        // No table: the hard cut directly.
+        const plain = truncateSessionContext(`a${emoji}`, max);
+        expect(plain.length, `plain ${max}`).toBeLessThanOrEqual(max);
+        expect(lone.test(plain), `plain ${max}`).toBe(false);
+        // A table whose header alone is over the cap: the hard cut of the output.
+        const table = truncateSessionContext([`## ${emoji}`, '', '| a | b |', '| --- | --- |', '| r | x |'].join('\n'), max);
+        expect(table.length, `table ${max}`).toBeLessThanOrEqual(max);
+        expect(lone.test(table), `table ${max}`).toBe(false);
+      }
     });
 
     // Catches: the loop stopped at the first row that did not fit, so one long
@@ -1046,6 +1107,42 @@ describe('a long prompt stays inside the hook budget', () => {
     await runUserPromptSubmitHook(payload('deploy Ashler tonight'), { matchBudgetMs: 40 });
     const opts = mocks.normalize.mock.calls[0][2] as { shouldStop: () => boolean };
     expect(opts.shouldStop()).toBe(false);
+  });
+
+  // Catches: the match budget was counted from the scan start only, so the
+  // time Node's start, the load and the index load had already taken came on
+  // top: a 50k-character paste against 5000 terms took about 300 ms.
+  it('the real hook budget is what the process has left of HOOK_TOTAL_BUDGET_MS, never under the floor', async () => {
+    const { runUserPromptSubmitHook, hookMatchBudget, HOOK_MATCH_BUDGET_MS, HOOK_MATCH_FLOOR_MS, HOOK_SHORT_PROMPT_CHARS, HOOK_TOTAL_BUDGET_MS } = await import('../src/hooks/user-prompt-submit.js');
+    expect(hookMatchBudget(0)).toBe(HOOK_MATCH_BUDGET_MS);
+    expect(hookMatchBudget(HOOK_TOTAL_BUDGET_MS - 50)).toBe(50);
+    expect(hookMatchBudget(HOOK_TOTAL_BUDGET_MS)).toBe(HOOK_MATCH_FLOOR_MS);
+    expect(hookMatchBudget(10_000)).toBe(HOOK_MATCH_FLOOR_MS);
+    expect(hookMatchBudget(Number.NaN)).toBe(HOOK_MATCH_FLOOR_MS);
+    expect(HOOK_MATCH_FLOOR_MS).toBeGreaterThan(0);
+    mocks.normalize.mockImplementationOnce((text: string, _l: unknown, opts?: { shouldStop?: () => boolean }) => {
+      // Time the floor runs out, then report what was found.
+      const until = Date.now() + HOOK_MATCH_FLOOR_MS + 30;
+      while (Date.now() < until && !opts?.shouldStop?.());
+      return fakeNormalize(text);
+    });
+    const long = `a long prompt with no names ${'x'.repeat(HOOK_SHORT_PROMPT_CHARS)}`;
+    const out = await runUserPromptSubmitHook(payload(long), { elapsedMs: () => 10_000 });
+    expect(context(out)).toMatch(new RegExp(`after its ${HOOK_MATCH_FLOOR_MS} ms budget`));
+  });
+
+  // Catches: under load a slow start left a two-word prompt only the 20 ms
+  // floor, and the e2e hook returned the budget note with nothing matched.
+  it('a short prompt keeps the whole match budget however long the start took', async () => {
+    const { runUserPromptSubmitHook, hookMatchBudget, HOOK_MATCH_BUDGET_MS, HOOK_SHORT_PROMPT_CHARS } = await import('../src/hooks/user-prompt-submit.js');
+    expect(hookMatchBudget(10_000, HOOK_SHORT_PROMPT_CHARS)).toBe(HOOK_MATCH_BUDGET_MS);
+    expect(hookMatchBudget(10_000, HOOK_SHORT_PROMPT_CHARS + 1)).toBeLessThan(HOOK_MATCH_BUDGET_MS);
+    mocks.normalize.mockImplementationOnce((text: string, _l: unknown, opts?: { shouldStop?: () => boolean }) => {
+      const until = Date.now() + 40;
+      while (Date.now() < until && !opts?.shouldStop?.());
+      return fakeNormalize(text);
+    });
+    expect(await runUserPromptSubmitHook(payload('a short prompt'), { elapsedMs: () => 10_000 })).toBe('');
   });
 
   // Catches: the correction and data-block passes ran over the whole prompt,
@@ -1164,6 +1261,35 @@ describe('bug M: a lexicon that does not parse is reported, not swallowed', () =
       const said = context(await runHook(JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'ping Ashler', cwd: '/fake/repo' })));
       expect(said).toContain(step);
     }
+  });
+});
+
+// Catches: the load error's note quoted the file's full path, so a lexicon
+// under a deep directory put the SessionStart context past its 4000-character
+// cap; and the error itself had no bound.
+describe('a load error note stays within the SessionStart cap', () => {
+  it('names a deep file by its last components and caps a long error', async () => {
+    const { runHook, SESSION_CONTEXT_MAX_CHARS, LOAD_ERROR_NOTE_MAX_CHARS } = await import('../src/hooks/user-prompt-submit.js');
+    const deep = path.join('/fake', ...Array.from({ length: 100 }, (_, i) => `${'d'.repeat(40)}${i}`), 'repo', '.lexicon.yaml');
+    const errors = [
+      new Error(`Failed to parse lexicon YAML at ${deep}: Missing closing "quote at line 3`),
+      new Error(`Invalid lexicon at ${path.join('/fake', 'home', 'lexicon.yaml')}: ${'terms.0.canonical: Required '.repeat(400)}`),
+      new Error(`EACCES: permission denied, open '${deep}'`),
+    ];
+    for (const error of errors) {
+      for (const event of ['SessionStart', 'UserPromptSubmit']) {
+        mocks.loadLexicon.mockRejectedValueOnce(error);
+        const said = context(await runHook(JSON.stringify({ hook_event_name: event, prompt: 'ping Ashler', cwd: '/fake/repo' })));
+        expect(said.length, `${event}: ${error.message.slice(0, 40)}`).toBeLessThanOrEqual(SESSION_CONTEXT_MAX_CHARS);
+        expect(said.length).toBeLessThan(LOAD_ERROR_NOTE_MAX_CHARS + 400);
+        expect(said).toMatch(/lexicon (edit|doctor)/);
+      }
+    }
+    mocks.loadLexicon.mockRejectedValueOnce(errors[0]);
+    const said = context(await runHook(sessionStartPayload()));
+    expect(said).toContain(`at \u2026${path.sep}${'d'.repeat(40)}99${path.sep}repo${path.sep}.lexicon.yaml: Missing closing`);
+    // Still the repo file: the step opens it.
+    expect(said).toContain('`lexicon edit --project`');
   });
 });
 

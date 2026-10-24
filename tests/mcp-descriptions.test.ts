@@ -242,6 +242,32 @@ describe('lexicon_doctor, serve_status and trust_project name every field they a
     }
   });
 
+  // Catches: a serve.json that is not valid JSON (lexicon serve will not start on it) read as a server that is
+  // simply not started, with "start it" as the hint; `serve --status --json` said serve was not configured and why.
+  it('serve_status: says when serve.json is missing or unusable, as serve --status --json does', async () => {
+    expect((await tool('serve_status')).description).toContain('the result adds `configured: false`, `configPath` and `note`');
+    const fetchSpy = vi.spyOn(globalThis, 'fetch');
+    const configPath = path.join(home, 'serve.json');
+    try {
+      await fs.writeFile(configPath, '{ "port": 41799, ');
+      fetchSpy.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+      expect((await call('serve_status', {})).json()).toMatchObject({
+        up: false,
+        configured: false,
+        configPath,
+        note: `serve is not configured: ${configPath} is not valid JSON; fix it, or delete it and lexicon serve makes a new token`,
+      });
+      await fs.writeFile(configPath, JSON.stringify({ port: 41799, token: 'a'.repeat(32), createdAt: 'x' }));
+      fetchSpy.mockRejectedValueOnce(new Error('ECONNREFUSED'));
+      const fine = (await call('serve_status', {})).json();
+      expect(fine).toMatchObject({ up: false, url: 'http://127.0.0.1:41799/health' });
+      expect(fine).not.toHaveProperty('configured');
+      expect(fine).not.toHaveProperty('note');
+    } finally {
+      fetchSpy.mockRestore();
+    }
+  });
+
   // Catches: the status and result words were in no description, so 'changed'
   // or 'declined' had to be guessed from a sample call.
   it("trust_project: the status words are described, and 'none', 'missing' and 'untrusted' are what status answers", async () => {
@@ -322,5 +348,21 @@ describe('setup_lexicon plan', () => {
     const listed = /The plan is \{ ([^}]*) \}/.exec(d)?.[1] ?? '';
     for (const field of [...fields, 'next']) expect(listed, field).toMatch(new RegExp(`\\b${field}\\b`));
     expect(d).toContain('demo { heard, corrected, terms, usedExample }');
+  });
+});
+
+describe('add_pack refs', () => {
+  // Catches: a name with a slash that is no pack ref ("../../etc") was
+  // answered "a community pack ref needs the registry parameter", sending
+  // the agent to look for a registry for a name that can never be a pack.
+  it('refuses a malformed community ref as malformed, with or without a registry', async () => {
+    for (const args of [{ name: '../../etc' }, { name: 'Acme/Pack' }, { name: '../../etc', registry: 'https://example.invalid/index.json' }]) {
+      const res = await call('add_pack', args);
+      expect(res.isError, JSON.stringify(args)).toBe(true);
+      expect(res.blocks[0], JSON.stringify(args)).toContain(`invalid pack ref "${args.name}"`);
+      expect(res.blocks[0]).not.toContain('needs the registry parameter');
+    }
+    const ok = await call('add_pack', { name: 'acme/pack' });
+    expect(ok.blocks[0]).toContain('needs the registry parameter');
   });
 });

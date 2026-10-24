@@ -16,6 +16,7 @@ import { redactSecrets } from '../core/redact.js';
 import type { StoreOptions } from '../core/index.js';
 import { withFileLock, writeFileAtomic } from '../util/atomic.js';
 import { formatJson } from '../util/json.js';
+import { errorMessage } from '../util/errors.js';
 
 /** serve.json holds the API token, so it is owner-only. */
 const SERVE_FILE_MODE = 0o600;
@@ -34,7 +35,7 @@ export const EXTENSION_ORIGIN_PREFIXES: readonly string[] = [
 export interface ServeConfig {
   /** Port the server last listened on (informational; `lexicon serve` without `--port` binds DEFAULT_PORT). */
   port: number;
-  /** 32 hex characters, sent as `Authorization: Bearer <token>`. */
+  /** 32 to 128 hex characters (either case; `generateToken` writes lower case), sent as `Authorization: Bearer <token>`, compared exactly. */
   token: string;
   /** ISO timestamp of token creation. */
   createdAt: string;
@@ -42,7 +43,14 @@ export interface ServeConfig {
   allowedOrigins?: string[];
 }
 
-const TOKEN_RE = /^[0-9a-f]{32,128}$/;
+/**
+ * Either case of hex: a hand-edited token in upper case was "no usable token"
+ * and replaced, breaking every client given it. The bearer check stays exact
+ * and constant-time (`tokenMatches` in server.ts compares the bytes), so
+ * `ABCD...` and `abcd...` are different tokens; the case only stops counting
+ * as malformed.
+ */
+const TOKEN_RE = /^[0-9a-fA-F]{32,128}$/;
 
 /** `<dirname(global lexicon)>/serve.json`; follows LEXICON_PATH and XDG_CONFIG_HOME. */
 export function getServePath(opts: StoreOptions = {}): string {
@@ -74,38 +82,86 @@ function parseServeJson(text: string): unknown {
 }
 
 /**
+ * What reading serve.json found: a usable `config`, a `missing` file (one
+ * lexicon serve creates), or an `unusable` one (unreadable, a directory,
+ * empty, not valid JSON, or without a usable token). `reason` is the
+ * "serve is not configured: <path> <reason>" ending, with the fix.
+ */
+export type ServeConfigRead =
+  | { status: 'ok'; path: string; config: ServeConfig }
+  | { status: 'missing'; path: string; reason: string }
+  | { status: 'unusable'; path: string; reason: string };
+
+const MISSING_REASON = 'does not exist; lexicon serve creates it';
+
+function readErrorResult(file: string, err: unknown): ServeConfigRead {
+  // Only a missing file is one lexicon serve creates: a serve.json that is
+  // a directory or unreadable (EISDIR, EACCES) was reported as missing too,
+  // and lexicon serve then failed on it instead of creating anything.
+  const code = (err as { code?: unknown }).code;
+  if (code === 'ENOENT') return { status: 'missing', path: file, reason: MISSING_REASON };
+  return {
+    status: 'unusable',
+    path: file,
+    reason: `could not be read (${typeof code === 'string' ? code : errorMessage(err)}); make it a readable file, or remove it so lexicon serve makes a new token`,
+  };
+}
+
+function textResult(file: string, text: string): ServeConfigRead {
+  if (text.replace(/^\uFEFF/, '').trim() === '') return { status: 'unusable', path: file, reason: 'is empty; lexicon serve replaces it' };
+  let raw: unknown;
+  try {
+    raw = parseServeJson(text);
+  } catch {
+    return { status: 'unusable', path: file, reason: 'is not valid JSON; fix it, or delete it and lexicon serve makes a new token' };
+  }
+  const config = parseServeConfig(raw);
+  if (config) return { status: 'ok', path: file, config };
+  // Why, as onTokenReplaced says it: "has no usable token" alone left the
+  // user to guess between a missing key, a number and a bad hex string.
+  return { status: 'unusable', path: file, reason: `has no usable token (${tokenProblem(raw)}); lexicon serve replaces it` };
+}
+
+/**
  * Why `readServeConfig` found no usable config at `file`, for the
  * "serve is not configured: <file> <why>" lines of `--status` and `--pair`.
+ * Reads the file again; `readServeConfigResult` gives the config and the
+ * reason from one read.
  */
 export function unusableServeConfigReason(file: string): string {
   let text: string;
   try {
     text = readFileSync(file, 'utf8');
-  } catch {
-    return 'does not exist; lexicon serve creates it';
+  } catch (err) {
+    return (readErrorResult(file, err) as { reason: string }).reason;
   }
-  if (text.replace(/^\uFEFF/, '').trim() === '') return 'is empty; lexicon serve replaces it';
-  try {
-    parseServeJson(text);
-  } catch {
-    return 'is not valid JSON; fix it, or delete it and lexicon serve makes a new token';
-  }
-  return 'has no usable token; lexicon serve replaces it';
+  const read = textResult(file, text);
+  // A file that became usable since the caller read it: say why it was not.
+  return read.status === 'ok' ? 'has no usable token; lexicon serve replaces it' : read.reason;
 }
 
-/** The stored config, or undefined when the file is missing or unusable (a bad token is never reused). */
-export async function readServeConfig(opts: StoreOptions = {}): Promise<ServeConfig | undefined> {
+/**
+ * serve.json read once, telling a missing file from a broken one: `ok` with
+ * the config, `missing`, or `unusable` with the reason and its fix.
+ */
+export async function readServeConfigResult(opts: StoreOptions = {}): Promise<ServeConfigRead> {
+  const file = getServePath(opts);
   let text: string;
   try {
-    text = await fs.readFile(getServePath(opts), 'utf8');
-  } catch {
-    return undefined;
+    text = await fs.readFile(file, 'utf8');
+  } catch (err) {
+    return readErrorResult(file, err);
   }
-  try {
-    return parseServeConfig(parseServeJson(text));
-  } catch {
-    return undefined;
-  }
+  return textResult(file, text);
+}
+
+/**
+ * The stored config, or undefined when the file is missing or unusable (a bad
+ * token is never reused). `readServeConfigResult` says which of the two.
+ */
+export async function readServeConfig(opts: StoreOptions = {}): Promise<ServeConfig | undefined> {
+  const read = await readServeConfigResult(opts);
+  return read.status === 'ok' ? read.config : undefined;
 }
 
 /**
@@ -123,6 +179,45 @@ export async function writeServeConfig(config: ServeConfig, opts: StoreOptions =
   const target = getServePath(opts);
   await withServeConfigLock(() => writeFileAtomic(target, formatJson(config), { mode: SERVE_FILE_MODE }), opts);
   return target;
+}
+
+/**
+ * Record `port` in serve.json, changing nothing else, and return the config
+ * the file now holds. The file is re-read under its lock, so an edit made
+ * since `fallback` was read (a hand-added `allowedOrigins`, a token minted by
+ * `lexicon serve --show` after the file was deleted, any other key) is kept;
+ * writing `fallback` back with the new port undid it. A file that is missing
+ * or has no usable token gets `fallback` with the port; one that is not
+ * valid JSON is left alone (`ensureServeConfig` refuses to write over it too)
+ * and `fallback` is returned with the port.
+ */
+export async function recordServePort(port: number, fallback: ServeConfig, opts: StoreOptions = {}): Promise<ServeConfig> {
+  return withServeConfigLock(async () => {
+    const file = getServePath(opts);
+    let text: string | undefined;
+    try {
+      text = await fs.readFile(file, 'utf8');
+    } catch (err) {
+      if ((err as { code?: unknown }).code !== 'ENOENT') throw err;
+    }
+    let raw: unknown;
+    if (text !== undefined && text.replace(/^\uFEFF/, '').trim() !== '') {
+      try {
+        raw = parseServeJson(text);
+      } catch {
+        return { ...fallback, port };
+      }
+    }
+    const current = parseServeConfig(raw);
+    if (current && typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+      const updated = { ...(raw as Record<string, unknown>), port };
+      await writeFileAtomic(file, formatJson(updated), { mode: SERVE_FILE_MODE });
+      return { ...current, port };
+    }
+    const config = { ...fallback, port };
+    await writeServeConfig(config, opts);
+    return config;
+  }, opts);
 }
 
 /**
@@ -165,7 +260,27 @@ export function generateToken(): string {
  * the server would answer 401 to; the same race also renamed two writers'
  * temp files over each other, which is how `trust.json` crashed with ENOENT.
  */
-export async function ensureServeConfig(opts: StoreOptions = {}): Promise<ServeConfig> {
+export interface EnsureServeConfigHooks {
+  /**
+   * Called (inside the lock, after the new file is written) when an existing,
+   * non-empty serve.json had no usable token and a new one replaced it, with
+   * one sentence naming the file, why its token was unusable and how paired
+   * clients get the new one. Without it the replacement was silent and every
+   * paired client was answered 401 with no word of why.
+   */
+  onTokenReplaced?: (message: string) => void;
+}
+
+/** Why `raw` (serve.json parsed) has no token `parseServeConfig` accepts. */
+function tokenProblem(raw: unknown): string {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return 'it is not a JSON object';
+  const token = (raw as Record<string, unknown>).token;
+  if (token === undefined) return 'it has no "token" key';
+  if (typeof token !== 'string') return '"token" is not a string';
+  return `"token" is not 32 to 128 hex characters (0-9, a-f, A-F)`;
+}
+
+export async function ensureServeConfig(opts: StoreOptions = {}, hooks: EnsureServeConfigHooks = {}): Promise<ServeConfig> {
   return withServeConfigLock(async () => {
     const file = getServePath(opts);
     let raw: unknown;
@@ -201,6 +316,12 @@ export async function ensureServeConfig(opts: StoreOptions = {}): Promise<ServeC
       ...(origins ? { allowedOrigins: origins } : {}),
     };
     await writeServeConfig(config, opts);
+    if (raw !== undefined) {
+      hooks.onTokenReplaced?.(
+        `${file} had no usable token (${tokenProblem(raw)}), so a new token was written there; ` +
+          'clients paired with the old one are refused until they get it: lexicon serve --pair (browser extension) or lexicon serve --show (copy it)',
+      );
+    }
     return config;
   }, opts);
 }

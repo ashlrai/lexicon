@@ -32,6 +32,7 @@ import {
   parsePackText,
   parseRegistryRef,
   previewRegistryUpdates,
+  REGISTRY_REF_RE,
   readRegistryState,
   searchRegistryIndex,
   uninstallPack,
@@ -41,7 +42,7 @@ import {
 } from '../core/index.js';
 import { findRegistryRecordMismatch, loadLexicon, registryRecordMismatch } from '../core/index.js';
 import type { InstallPackResult, RegistryDeps, RegistryRecordMismatch, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
-import { CliRefusal, PACK_NOT_FOUND_NEXT_STEP, bold, dim, exampleAfterMissingArgument, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, shownCommand, safeMessage, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
+import { CliRefusal, PACK_NOT_FOUND_NEXT_STEP, bold, dim, exampleAfterMissingArgument, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, shownCommand, shownWord, safeMessage, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { createPrompter, isInteractive } from './prompt.js';
@@ -87,10 +88,10 @@ function warnRegistryMismatch(io: IO, mismatch: RegistryRecordMismatch, scope?: 
   const where = scope ? `the ${scope} lexicon's settings.packs` : 'the lexicon files\' settings.packs';
   const flag = scope === 'project' ? ' --project' : '';
   for (const ref of mismatch.fileOnly) {
-    io.stderr(`lexicon: warn: ${safe(ref)} is in ${where} but has no registry record, so pack update will not check it (reinstall: lexicon pack add ${safe(ref)} --registry <index>${flag})\n`);
+    io.stderr(`lexicon: warn: ${safe(ref)} is in ${where} but has no registry record, so pack update will not check it (reinstall: lexicon pack add ${shownWord(ref)} --registry <index>${flag})\n`);
   }
   for (const ref of mismatch.recordOnly) {
-    io.stderr(`lexicon: warn: ${safe(ref)} has a registry record but is not in ${where}, so it is listed as not installed (lexicon pack remove ${safe(ref)}${flag} clears the record)\n`);
+    io.stderr(`lexicon: warn: ${safe(ref)} has a registry record but is not in ${where}, so it is listed as not installed (${shownCommand(['lexicon', 'pack', 'remove', ref, ...(flag ? ['--project'] : [])])} clears the record)\n`);
   }
 }
 
@@ -199,17 +200,28 @@ export async function runPackRemove(name: string, opts: PackRegistryCliOptions, 
     } else {
       result = await uninstallPack(name, { cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...(opts.project ? { scope: 'project' as const } : {}), ...deps });
     }
-    if (opts.json) {
-      line(io, JSON.stringify(jsonOk(result), null, 2));
+    if (result.files.length === 0) {
+      // No file listed the pack, so nothing was written. Under --json that
+      // was `ok: true` with three empty lists and no word that the pack was
+      // not there; it now says so, as the text and `DELETE /packs/:name` do.
+      if (opts.json) {
+        const summary = `${result.pack.name} is not installed${opts.project ? ' in the project lexicon' : ''}; nothing was removed`;
+        line(io, JSON.stringify(jsonOk({ ...result, notInstalled: true, summary }), null, 2));
+        return 0;
+      }
+      line(io, `${safe(name)} is not installed`);
       return 0;
     }
-    if (result.files.length === 0) {
-      line(io, `${safe(name)} is not installed`);
+    if (opts.json) {
+      line(io, JSON.stringify(jsonOk(result), null, 2));
       return 0;
     }
     line(io, `removed ${result.removed.length} term${result.removed.length === 1 ? '' : 's'} of ${safe(name)} from ${safe(result.files.join(', '))}`);
     if (result.kept.length > 0) {
       line(io, `kept ${result.kept.length} you edited (hits, extra aliases or never-words): ${safe(result.kept.join(', '))}`);
+    }
+    if (result.shared.length > 0) {
+      line(io, `kept ${result.shared.length} another installed pack also has: ${safe(result.shared.join(', '))}`);
     }
     return 0;
   } catch (err) {
@@ -236,7 +248,7 @@ export async function runPackShow(name: string, opts: PackRegistryCliOptions, io
           line(io, JSON.stringify(jsonOk({ ref: entry.ref, author: entry.author, homepage: entry.homepage, version: entry.version, checksum: entry.checksum, pack }), null, 2));
           return 0;
         }
-        line(io, `${safe(entry.ref)} ${dim(`(community pack${entry.author ? ` by ${entry.author}` : ''}, version ${entry.version || 'unversioned'}, checksum ${entry.checksum.slice(0, 12)}...)`)}`);
+        line(io, `${safe(entry.ref)} ${dim(`(community pack${entry.author ? ` by ${safe(entry.author)}` : ''}, version ${safe(entry.version || 'unversioned')}, checksum ${entry.checksum.slice(0, 12)}...)`)}`);
         printPackTerms(io, pack);
         return 0;
       } finally {
@@ -256,8 +268,9 @@ export async function runPackShow(name: string, opts: PackRegistryCliOptions, io
 }
 
 function printPackTerms(io: IO, pack: { name: string; title: string; description: string; lexicon: { terms: Term[] } }): void {
-  line(io, `${pack.name}: ${pack.title} (${plural(pack.lexicon.terms.length, 'term')})`);
-  if (pack.description) line(io, pack.description);
+  // A community pack file is a stranger's text: its title and description reach the terminal sanitized.
+  line(io, `${safe(pack.name)}: ${safe(pack.title)} (${plural(pack.lexicon.terms.length, 'term')})`);
+  if (pack.description) line(io, safeMessage(pack.description));
   line(io);
   line(io, JSON.stringify(pack.lexicon.terms, null, 2));
 }
@@ -307,7 +320,7 @@ export async function runPackSearch(query: string, opts: PackRegistryCliOptions,
         ['ref', 'title', 'terms', 'version', 'installed', 'author', 'description'],
       ),
     );
-    line(io, dim(`install with: lexicon pack add <ref> --registry ${opts.registry}   (shows the term list before writing)`));
+    line(io, dim(`install with: lexicon pack add <ref> --registry ${shownWord(opts.registry)}   (shows the term list before writing)`));
     return 0;
   } catch (err) {
     return fail(io, err, opts.json);
@@ -335,6 +348,22 @@ function yesCommand(sub: 'add' | 'update', ref: string, opts: PackRegistryCliOpt
   if (opts.project) words.push('--project');
   words.push('--yes');
   return shownCommand(words);
+}
+
+/**
+ * The step that moves a pinned community pack to the index's version: the
+ * whole `pack add <ref>@<version>` command with the index it was checked
+ * against, quoted for the shell. It was assembled by hand with `--registry
+ * <index>` left as a placeholder, and the index's version (free text, up to
+ * 32 characters) went in unquoted, so a version with a space or `;` printed
+ * a line that ran something else. A version no pin can name (empty, a space,
+ * a `/`) gets the unpinned add, which takes the index's file and drops the pin.
+ */
+function movePinStep(ref: string, to: string | undefined, source: string, opts: PackRegistryCliOptions): string {
+  const flags = ['--registry', source, ...(opts.project ? ['--project'] : [])];
+  const pin = to !== undefined ? `${ref}@${to}` : undefined;
+  if (pin !== undefined && REGISTRY_REF_RE.test(pin)) return `\`${shownCommand(['lexicon', 'pack', 'add', pin, ...flags])}\` to move it`;
+  return `that version cannot be pinned by name; \`${shownCommand(['lexicon', 'pack', 'add', ref, ...flags])}\` takes the index's file and drops the pin`;
 }
 
 /** The answer to a community write: yes, no at the question, or no terminal to ask on. */
@@ -434,7 +463,7 @@ async function runPackAddRegistry(
   if (!opts.json && result.alreadyInstalled) {
     line(io, alreadyInstalledLine(result.ref, result));
   } else if (!opts.json) {
-    line(io, `installed ${safe(result.ref)} (${entry.title}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`);
+    line(io, `installed ${safe(result.ref)} (${safe(entry.title)}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`);
     if (parsed.version !== undefined) line(io, dim(`  pinned at version ${parsed.version}; pack update will not move it`));
     line(io, dim(`  ${TERMS_LIVE}`));
   }
@@ -497,10 +526,17 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
   for (const [at, name] of names.entries()) {
     try {
       if (isRegistryRef(name)) {
+        // The ref is checked first, as MCP add_pack does: `../x` was told
+        // community packs need --registry, for a name that can never be one.
+        try {
+          parseRegistryRef(name);
+        } catch (err) {
+          throw new CliRefusal(errorMessage(err), PACK_NOT_FOUND_NEXT_STEP);
+        }
         if (!opts.registry) {
           throw new CliRefusal(
             NEED_REGISTRY,
-            `run: lexicon pack add ${name} --registry <index> (lexicon pack search <query> --registry <index> lists the index's packs)`,
+            `run: lexicon pack add ${shownWord(name.trim())} --registry <index> (lexicon pack search <query> --registry <index> lists the index's packs)`,
           );
         }
         const outcome = await runPackAddRegistry(name, opts, io, deps);
@@ -525,7 +561,7 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
             io,
             result.alreadyInstalled
               ? alreadyInstalledLine(result.pack.name, result)
-              : `installed ${safe(result.pack.name)} (${result.pack.title}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`,
+              : `installed ${safe(result.pack.name)} (${safe(result.pack.title)}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`,
           );
         }
       }
@@ -614,24 +650,24 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
       const previews = await previewRegistryUpdates(group, source, storeOpts, deps.registry);
       for (const preview of previews) {
         if (preview.status === 'current') {
-          if (!opts.json) line(io, dim(`${preview.ref}: already current${preview.to ? ` (version ${preview.to})` : ''}`));
+          if (!opts.json) line(io, dim(`${safe(preview.ref)}: already current${preview.to ? ` (version ${safe(preview.to)})` : ''}`));
           reports.push({ ref: preview.ref, status: preview.status, from: preview.from, to: preview.to });
           continue;
         }
         if (preview.status === 'pinned') {
-          if (!opts.json) line(io, `${safe(preview.ref)}: pinned at version ${safe(preview.from ?? '?')} (index has ${safe(preview.to ?? '?')}); \`lexicon pack add ${safe(preview.ref)}@${safe(preview.to ?? '')} --registry <index>\` to move it`);
+          if (!opts.json) line(io, `${safe(preview.ref)}: pinned at version ${safe(preview.from ?? '?')} (index has ${safe(preview.to ?? '?')}); ${movePinStep(preview.ref, preview.to, source, opts)}`);
           reports.push({ ref: preview.ref, status: preview.status, from: preview.from, to: preview.to });
           continue;
         }
         if (preview.status === 'not-installed' || preview.status === 'failed') {
-          const msg = preview.status === 'failed' ? `: ${preview.error}` : ' (not installed from a registry)';
+          const msg = preview.status === 'failed' ? `: ${safeMessage(preview.error ?? '')}` : ' (not installed from a registry)';
           if (!opts.json) line(io, `${safe(preview.ref)}: ${preview.status}${msg}`);
           reports.push({ ref: preview.ref, status: preview.status, ...(preview.error ? { error: preview.error } : {}) });
           continue;
         }
         // 'available': show the diff, then ask. This is the re-approval the trust story demands.
         if (!opts.json) {
-          line(io, bold(`${preview.ref}: update available${preview.from || preview.to ? ` (${preview.from ?? '?'} -> ${preview.to ?? '?'})` : ''}`));
+          line(io, bold(`${safe(preview.ref)}: update available${preview.from || preview.to ? ` (${safe(preview.from ?? '?')} -> ${safe(preview.to ?? '?')})` : ''}`));
           if (preview.added.length > 0) line(io, `  new terms: ${safe(preview.added.join(', '))}`);
           if (preview.removed.length > 0) line(io, `  dropped by the new file (kept in your lexicon): ${safe(preview.removed.join(', '))}`);
           if (preview.added.length === 0 && preview.removed.length === 0) line(io, dim('  (only aliases or metadata changed)'));
@@ -657,7 +693,7 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
         if (applied.status === 'updated' && !opts.json) {
           line(io, `  updated ${safe(applied.ref)}: ${applied.added} added, ${applied.merged} merged`);
         } else if (!opts.json) {
-          line(io, `  ${safe(applied.ref)}: ${applied.status}${applied.error ? `: ${applied.error}` : ''}`);
+          line(io, `  ${safe(applied.ref)}: ${applied.status}${applied.error ? `: ${safeMessage(applied.error)}` : ''}`);
         }
         reports.push(applied);
       }

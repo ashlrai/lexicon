@@ -18,7 +18,22 @@ import { readDoctorConfigJson, readDoctorConfigText } from './doctor-config-read
 import { errorMessage } from '../util/errors.js';
 import { checkPhantomPresence } from './phantom-presence.js';
 import { packageVersion } from '../util/package.js';
-import { getTrustPath, isTrusted, readLexiconFile, resolvePaths, spellingKey } from '../core/index.js';
+import {
+  INDEX_CACHE_FILE_NAME,
+  PendingFileError,
+  getHitsPath,
+  getTrustPath,
+  hitsRegistryProblem,
+  indexCacheProblem,
+  isTrusted,
+  pendingPathFor,
+  readLexiconFile,
+  readPending,
+  resolvePaths,
+  spellingKey,
+  trustRegistryProblem,
+} from '../core/index.js';
+import { readServeConfigResult } from '../serve/config.js';
 import { configPathFor } from './cmd-install.js';
 import { findGitRoot } from './setup/detect.js';
 import { cliCommand } from '../util/cli-hint.js';
@@ -66,6 +81,54 @@ function declaresTransport(entry: unknown): boolean {
   }
   return typeof entry.url === 'string' && entry.url.trim() !== '' && entry.args === undefined
     && (entry.type === undefined || entry.type === 'http' || entry.type === 'sse');
+}
+
+/**
+ * Whether `claude mcp list` output names a server called exactly `lexicon`
+ * (`lexicon: <command> - <status>`), or a plugin's (`plugin:<plugin>:lexicon:
+ * ...`). Any mention of the word passed before, so a `lexicon-foo` server, or
+ * a path holding "lexicon" in another server's command, read as registered.
+ */
+function claudeListsLexiconServer(out: string): boolean {
+  return out.split(/\r?\n/).some((row) => /^(?:plugin:[^:\s]+:)?lexicon:(?:\s|$)/.test(row.trim()));
+}
+
+/**
+ * One warning per state file beside the global lexicon that exists but
+ * cannot be used, naming the file, what it costs and the fix: `serve.json`
+ * (readServeConfigResult), `hits.json` (hitsRegistryProblem),
+ * `pending-aliases.yaml` (readPending) and the index cache
+ * (indexCacheProblem). A missing file is fine for all four.
+ */
+async function stateFileWarnings(globalPath: string, opts: { cwd: string; env: NodeJS.ProcessEnv; home: string }): Promise<string[]> {
+  const out: string[] = [];
+  const serve = await readServeConfigResult(opts);
+  if (serve.status === 'unusable') {
+    out.push(`serve.json ${serve.reason} (the local API and its paired clients need a usable one): ${serve.path}`);
+  }
+  const hits = await hitsRegistryProblem(opts);
+  if (hits !== undefined) {
+    out.push(
+      `hits.json ${hits}, so every term reads as never used and new hits are not counted ` +
+        `(fix it, or move it aside to start the counts over): ${getHitsPath(opts)}`,
+    );
+  }
+  const pendingFile = pendingPathFor(globalPath);
+  try {
+    await readPending(pendingFile);
+  } catch (err) {
+    // PendingFileError names the file itself; a read error does not.
+    const why = err instanceof PendingFileError ? errorMessage(err).replace(`${pendingFile} `, '') : `cannot be read (${(err as { code?: unknown }).code ?? errorMessage(err)})`;
+    out.push(`pending corrections queue ${why}, so lexicon pending cannot list it and new corrections are not queued (fix it, or move it aside): ${pendingFile}`);
+  }
+  const cache = await indexCacheProblem(globalPath);
+  if (cache !== undefined) {
+    out.push(
+      `index cache ${cache}, so ${cache === 'is not a file' || cache.startsWith('cannot be read') ? 'each match builds the index again' : 'the next match builds the index again'} ` +
+        `(delete it; lexicon writes a new one): ${path.join(path.dirname(globalPath), INDEX_CACHE_FILE_NAME)}`,
+    );
+  }
+  return out;
 }
 
 function withoutTomlComment(line: string): string {
@@ -319,12 +382,24 @@ export async function checkLoginService(probe: LoginServiceProbe): Promise<Docto
     return { level: 'info', message: `login service is not automated on ${platform}; run \`lexicon serve\` from your session startup instead` };
   }
   let fileExists = false;
+  /** Why a service file that is there could not be read (EACCES, EISDIR); undefined when it was read or is absent. */
+  let unreadable: string | undefined;
   try {
     const text = await fs.readFile(file, 'utf8');
     fileExists = true;
     program = platform === 'darwin' ? programPathFromPlist(text) : programPathFromUnit(text);
-  } catch {
+  } catch (err) {
     fileExists = false;
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT' && code !== 'ENOTDIR') unreadable = code ?? errorMessage(err);
+  }
+  if (unreadable !== undefined) {
+    // Read as missing, a file that is there was reported as no service at
+    // all, or as a loaded one with "no service file at" its own path.
+    return {
+      level: 'warn',
+      message: `${name} file cannot be read (${unreadable}), so the program it runs was not checked (${SERVE_REINSTALL_HINT}): ${file}`,
+    };
   }
   if (!loaded && !fileExists) {
     return { level: 'info', message: 'no login service installed (optional; keeps the local API up: lexicon serve --install)' };
@@ -353,6 +428,25 @@ interface UnreadableLexicon {
   scope: TermScope;
   /** The error from `readLexiconFile`, already naming the file. */
   error: string;
+  /**
+   * `parse` for a file that was read but does not parse or validate (the fix
+   * is `lexicon edit`), `read` for one that could not be read at all (store.ts
+   * `Cannot read lexicon at <path>: ...`, a LEXICON_PATH under a file or a
+   * permission error), where an editor cannot help and the path is the fix.
+   */
+  kind: 'parse' | 'read';
+}
+
+/** Which kind of unreadable a `readLexiconFile` error is. */
+function unreadableKind(error: string): UnreadableLexicon['kind'] {
+  return /^Cannot read lexicon at /.test(error) ? 'read' : 'parse';
+}
+
+/** The fix for a lexicon that cannot be read, scoped: only the global file is chosen by LEXICON_PATH. */
+function readFix(scope: TermScope): string {
+  return scope === 'global'
+    ? 'make that path readable or point LEXICON_PATH at a file in an existing directory (or unset it)'
+    : 'make that path readable';
 }
 
 /**
@@ -444,7 +538,15 @@ const TRUST_NEXT_STEP_MCP =
 
 function summarize(
   checks: readonly DoctorCheck[],
-  state: { terms: number; wired: boolean; untrustedProject: boolean; skippedProjectTerms: number; unreadable: readonly UnreadableLexicon[] },
+  state: {
+    terms: number;
+    wired: boolean;
+    untrustedProject: boolean;
+    skippedProjectTerms: number;
+    unreadable: readonly UnreadableLexicon[];
+    /** `trust.json` when it cannot be used (trustRegistryProblem), with why. */
+    brokenTrust?: { path: string; problem: string };
+  },
   audience: DoctorAudience = 'cli',
 ): { ready: boolean; summary: string; nextStep: string } {
   const mcp = audience === 'mcp';
@@ -459,7 +561,28 @@ function summarize(
   // difference between a dead end and a two-minute fix.
   if (state.unreadable.length > 0) {
     const first = state.unreadable[0];
-    const alsoProject = state.unreadable.length > 1 ? ' The project lexicon does not parse either.' : '';
+    const second = state.unreadable[1];
+    const alsoProject = second
+      ? second.kind === 'read'
+        ? ' The project lexicon cannot be read either.'
+        : ' The project lexicon does not parse either.'
+      : '';
+    // A file that could not be read at all (a LEXICON_PATH under a file, a
+    // permission error) has no parse error to fix: an editor opens an empty
+    // buffer or fails the same way, so the next step is the path itself.
+    if (first.kind === 'read') {
+      return {
+        ready: false,
+        summary:
+          `The ${first.scope} lexicon cannot be read, so no corrections are happening: ` +
+          `${parseReason(first.error, first.path)}${alsoProject}`,
+        nextStep: mcp
+          ? `Ask the user to ${readFix(first.scope)}, then call lexicon_doctor again ` +
+            `(setup_lexicon will not repair this). The path is ${first.path}`
+          : `${readFix(first.scope).replace(/^m/, 'M')}, then run: lexicon doctor  ` +
+            `(lexicon setup will not repair this). The path is ${first.path}`,
+      };
+    }
     return {
       ready: false,
       summary:
@@ -473,6 +596,19 @@ function summarize(
           `(setup_lexicon will not repair this). The file is ${first.path}`
         : `Open it and fix the parse error: ${editCommand(first.scope)}  ` +
           `(lexicon setup will not repair this). The file is ${first.path}`,
+    };
+  }
+  // A project file reads as untrusted because the registry itself is
+  // broken: `lexicon trust` refuses to write over it, so trusting is not
+  // the way on. Fixing the registry is.
+  if (state.brokenTrust && state.untrustedProject) {
+    const { path: file, problem } = state.brokenTrust;
+    return {
+      ready: false,
+      summary: `The trust registry ${problem}, so this repo's project lexicon reads as untrusted and is not merged.`,
+      nextStep: mcp
+        ? `Ask the user to fix the JSON in ${file}, or move it aside, then call trust_project with action "trust" (trusting fails until then)`
+        : `Fix the JSON in ${file}, or move it aside, then run: lexicon trust  (it refuses to write over the broken file)`,
     };
   }
   // Empty except for a project file this user has not trusted: the terms
@@ -638,17 +774,43 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
     }
   } catch (err) {
     const error = errorMessage(err);
-    unreadable.push({ path: paths.global, scope: 'global', error });
+    const kind = unreadableKind(error);
+    unreadable.push({ path: paths.global, scope: 'global', error, kind });
     // The fix comes before the detail: a rendered check is capped at 200
     // characters, and the parse error plus an absolute path will reach that.
-    push('fail', `global lexicon does not parse (run: ${editCommand('global')}): ${error}`);
+    push(
+      'fail',
+      kind === 'read'
+        ? `global lexicon cannot be read (${readFix('global')}): ${error}`
+        : `global lexicon does not parse (run: ${editCommand('global')}): ${error}`,
+    );
   }
+
+  // The trust registry beside the global lexicon, read with the same env and
+  // home as the lexicon paths. One that cannot be used was read as empty and
+  // never mentioned: a trusted project file was reported as untrusted, with
+  // `lexicon trust` as the fix, which then refused the broken registry.
+  const trustOpts = { cwd, env, home };
+  const trustPath = getTrustPath(trustOpts);
+  const trustProblem = await trustRegistryProblem(trustOpts);
+  if (trustProblem !== undefined) {
+    push(
+      'fail',
+      `trust registry ${trustProblem}, so every project lexicon reads as untrusted and trusting one fails ` +
+        `(fix the JSON in it, or move it aside and trust each project again): ${trustPath}`,
+    );
+  }
+
+  // The state files beside the global lexicon. Each is read as empty or
+  // missing when it is broken, so without these a broken one was never
+  // mentioned; warnings, since lexicon still corrects without any of them.
+  for (const message of await stateFileWarnings(paths.global, trustOpts)) push('warn', message);
 
   if (paths.project) {
     try {
       const p = await readLexiconFile(paths.project, 'project');
       push('ok', `project lexicon parses: ${paths.project} (${plural(p.lexicon.terms.length, 'term')})`);
-      const trust = await isTrusted(p, { cwd });
+      const trust = await isTrusted(p, trustOpts);
       if (trust === 'trusted') {
         push('ok', 'project lexicon is trusted and merged');
         files.push(p);
@@ -663,8 +825,14 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
       }
     } catch (err) {
       const error = errorMessage(err);
-      unreadable.push({ path: paths.project, scope: 'project', error });
-      push('fail', `project lexicon does not parse (run: ${editCommand('project')}): ${error}`);
+      const kind = unreadableKind(error);
+      unreadable.push({ path: paths.project, scope: 'project', error, kind });
+      push(
+        'fail',
+        kind === 'read'
+          ? `project lexicon cannot be read (${readFix('project')}): ${error}`
+          : `project lexicon does not parse (run: ${editCommand('project')}): ${error}`,
+      );
     }
   } else {
     push('info', 'no project lexicon (.lexicon.yaml) found from ' + cwd);
@@ -695,7 +863,11 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
     }
   }
 
-  const aliasOwners = new Map<string, Term[]>();
+  const aliasOwners = new Map<string, { alias: string; terms: Term[] }>();
+  // Counted where each conflict is found: the ok line below was suppressed by
+  // any failing check whose text held "conflict", such as a term of that name
+  // defined twice or a parse error quoting the word.
+  let aliasCanonicalConflicts = 0;
   const fold = (w: string): string => w.trim().replace(/\s+/g, ' ').toLowerCase();
   for (const { term } of allTerms) {
     // The matcher compares never-words case-insensitively, so an alias that is
@@ -709,23 +881,27 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
       }
       const other = canonicalOwners.get(key);
       if (other && !other.some((o) => o.term === term) && key !== spellingKey(term.canonical)) {
+        aliasCanonicalConflicts++;
         push('fail', `alias "${alias}" of "${term.canonical}" equals the canonical of "${other[0].term.canonical}" (conflict)`);
       }
       if (COMMON_WORDS.has(key)) {
         push('warn', `alias "${alias}" of "${term.canonical}" is a common English word and will fire on ordinary text`);
       }
-      const list = aliasOwners.get(key) ?? [];
-      list.push(term);
-      aliasOwners.set(key, list);
+      const owned = aliasOwners.get(key) ?? { alias, terms: [] };
+      owned.terms.push(term);
+      aliasOwners.set(key, owned);
     }
   }
-  for (const [alias, owners] of aliasOwners) {
-    const distinct = new Set(owners.map((t) => spellingKey(t.canonical)));
+  for (const { alias, terms } of aliasOwners.values()) {
+    // Each term once (a global and a project copy are one), named as the
+    // user spelled it: the folded keys printed `ashlr.ai` for Ashlr.AI.
+    const distinct = new Map<string, string>();
+    for (const t of terms) if (!distinct.has(spellingKey(t.canonical))) distinct.set(spellingKey(t.canonical), t.canonical);
     if (distinct.size > 1) {
-      push('warn', `alias "${alias}" belongs to several terms: ${[...distinct].join(', ')} (ambiguous)`);
+      push('warn', `alias "${alias}" belongs to several terms: ${[...distinct.values()].join(', ')} (ambiguous)`);
     }
   }
-  if (allTerms.length > 0 && !checks.some((c) => c.level === 'fail' && c.message.includes('conflict'))) {
+  if (allTerms.length > 0 && aliasCanonicalConflicts === 0) {
     push('ok', 'no alias/canonical conflicts');
   }
 
@@ -819,7 +995,7 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
     push('ok', `claude CLI found: ${claudeBin}`);
     try {
       const out = exec('claude', ['mcp', 'list']);
-      if (/lexicon/i.test(out)) {
+      if (claudeListsLexiconServer(out)) {
         wired = true;
         push('ok', 'lexicon MCP server is registered with claude');
       } else if (pluginId) push('warn', `lexicon MCP server not listed by "claude mcp list"; the ${pluginId} plugin provides it when enabled`);
@@ -878,7 +1054,18 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
   // For an agent every check's hint names the tool or the npx form, as
   // `nextStep` does; `lexicon doctor` prints the checks unchanged.
   if (opts.audience === 'mcp') for (const check of checks) check.message = mcpRunHints(check.message);
-  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, skippedProjectTerms, unreadable }, opts.audience);
+  const verdict = summarize(
+    checks,
+    {
+      terms: canonicalOwners.size,
+      wired,
+      untrustedProject,
+      skippedProjectTerms,
+      unreadable,
+      ...(trustProblem !== undefined ? { brokenTrust: { path: trustPath, problem: trustProblem } } : {}),
+    },
+    opts.audience,
+  );
   const firstFail = checks.find((c) => c.level === 'fail');
   return {
     ok: firstFail === undefined,
@@ -890,7 +1077,7 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
     paths: {
       global: paths.global,
       ...(paths.project ? { project: paths.project } : {}),
-      trust: getTrustPath({ cwd }),
+      trust: trustPath,
       settings: settingsPath,
       projectSettings: projectSettingsPath,
       projectSettingsFiles,

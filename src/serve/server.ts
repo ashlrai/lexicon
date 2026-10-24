@@ -21,7 +21,7 @@
  * `createServer()` is exported so tests and the menu bar app can embed it;
  * signal handling lives in the CLI command (src/cli/cmd-serve.ts).
  */
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { promises as fs, realpathSync } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
@@ -59,6 +59,7 @@ import {
   resolvePaths,
   isProjectTrustError,
   sanitizeForDisplay,
+  sanitizeForDisplayMax,
   skippedProjectNote,
   spellingConflicts,
   stripInvisible,
@@ -93,7 +94,8 @@ import {
   getServePath,
   isOriginAllowed,
   serveUrl,
-  writeServeConfig,
+  readServeConfig,
+  recordServePort,
 } from './config.js';
 import type { ServeConfig } from './config.js';
 import { isHeldLockError } from '../util/atomic.js';
@@ -125,6 +127,10 @@ export interface ServeServerOptions {
   maxConcurrent?: number;
   /** Matching budget per /normalize in ms. Default NORMALIZE_BUDGET_MS. */
   normalizeBudgetMs?: number;
+  /** Time for a whole request (headers and body) to arrive, in ms. Default REQUEST_TIMEOUT_MS (30000). */
+  requestTimeoutMs?: number;
+  /** Time for the request headers to arrive, in ms; at most `requestTimeoutMs`. Default HEADERS_TIMEOUT_MS (10000). */
+  headersTimeoutMs?: number;
 }
 
 export interface ServeStartInfo {
@@ -176,6 +182,8 @@ export interface LearnResponse {
   conflict?: LearnConflict;
   /** `heard` was already an alias (or a casing of the canonical) of the term, so nothing was written. Only then. */
   unchanged?: true;
+  /** `meant` is an alias of the term and `heard` its canonical: the lexicon already corrects the other way (LearnResult.reversed). With `unchanged`. */
+  reversed?: true;
   /**
    * With `unchanged`: `learnUnchangedNote`, followed by the conflict note when there is a
    * `conflict`. With `conflict` alone: `conflictNote([conflict])`, naming the scoped
@@ -256,6 +264,8 @@ export interface AliasesResponse {
 }
 
 export const MAX_BODY_BYTES = 1024 * 1024;
+/** A serve.json larger than this is not re-read by a running server (it is a few hundred bytes). */
+const MAX_SERVE_CONFIG_BYTES = 64 * 1024;
 export const MAX_CONCURRENT_REQUESTS = 64;
 export const LEXICON_RELOAD_MS = 2_000;
 /**
@@ -267,6 +277,15 @@ export const LEXICON_RELOAD_MS = 2_000;
  * timeout on purpose.
  */
 export const NORMALIZE_BUDGET_MS = 1_000;
+/**
+ * How long a whole request (headers and body) may take to arrive. Node's
+ * default is 300 s, so a client trickling a body held one of the
+ * MAX_CONCURRENT_REQUESTS slots for five minutes; a 1 MB body on loopback
+ * arrives in milliseconds. A late request gets 408 with `{ error }`.
+ */
+export const REQUEST_TIMEOUT_MS = 30_000;
+/** How long the request headers may take to arrive (Node's default is 60 s). */
+export const HEADERS_TIMEOUT_MS = 10_000;
 /** Path of the extension pairing page (`lexicon serve --pair` opens it). */
 export const PAIR_PATH = '/pair';
 /** `<meta name>` attributes the pairing page carries; extension/src/pair.ts reads the same names. */
@@ -279,7 +298,7 @@ export const PAIR_HEADERS: Readonly<Record<string, string>> = {
   'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
   'Referrer-Policy': 'no-referrer',
 };
-/** Bounded so a client cycling `cwd` values cannot grow the cache without limit. */
+/** Bounded so a client cycling `cwd` values cannot grow the cache without limit; the least recently used cwd goes first. */
 const MAX_CACHED_CWDS = 32;
 
 /** Content type per exporter file extension (`EXPORT_FORMAT_INFO[format].ext`). */
@@ -462,6 +481,21 @@ function projectTrustRefusal(err: Error & { path?: unknown; status?: unknown }, 
   return `project lexicon at ${file} ${why}, so nothing was written. Review it and run \`lexicon trust\`, then retry; or retry with ${global} to use the global lexicon instead`;
 }
 
+/**
+ * The 500 detail a caller without the token gets when a lexicon file does not
+ * parse: what is wrong and where to read the file and line, without the path.
+ * It said only `internal error (the lexicon serve log has the detail)`, so
+ * the browser extension's status line, which asks plain /health, gave no hint
+ * that the fix was an edit to the lexicon.
+ */
+export const BROKEN_LEXICON_ANONYMOUS = 'a lexicon file does not parse; run `lexicon serve --status` (or `lexicon doctor`) for the file and the line, then fix it';
+
+/** True for store.ts's error for a lexicon file that does not parse or validate. */
+function brokenLexicon(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : '';
+  return message.startsWith('Failed to parse lexicon YAML at ') || message.startsWith('Invalid lexicon at ');
+}
+
 class HttpError extends Error {
   constructor(
     readonly status: number,
@@ -635,10 +669,23 @@ function tokenMatches(header: string | undefined, token: string): boolean {
   if (!header) return false;
   const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
   if (!match) return false;
-  const given = Buffer.from(match[1], 'utf8');
-  const expected = Buffer.from(token, 'utf8');
-  if (given.length !== expected.length) return false;
+  // Fixed-length digests of both: a length check ahead of timingSafeEqual
+  // returned early for a token of the wrong length, so timing told a caller
+  // how long the real token is (32 to 128 hex characters are all valid).
+  const given = createHash('sha256').update(match[1], 'utf8').digest();
+  const expected = createHash('sha256').update(token, 'utf8').digest();
   return timingSafeEqual(given, expected);
+}
+
+/** True when the request carries `Expect: 100-continue`. */
+function expectsContinue(req: http.IncomingMessage): boolean {
+  return String(req.headers.expect ?? '').trim().toLowerCase() === '100-continue';
+}
+
+/** True when the request announces a body (`Content-Length`) over `cap`. */
+function declaresOver(req: http.IncomingMessage, cap: number): boolean {
+  const declared = Number(req.headers['content-length']);
+  return Number.isFinite(declared) && declared > cap;
 }
 
 /**
@@ -661,8 +708,15 @@ function readBody(req: http.IncomingMessage, cap: number): Promise<string> {
       else resolve(Buffer.concat(chunks).toString('utf8'));
     };
     const tooLarge = (): HttpError => new HttpError(413, `request body exceeds ${cap} bytes`);
-    const declared = Number(req.headers['content-length']);
-    if (Number.isFinite(declared) && declared > cap) overflow = true;
+    if (declaresOver(req, cap)) {
+      // A client waiting on `Expect: 100-continue` has not sent the body (the
+      // server's checkContinue handler did not invite it): refuse it now.
+      if (expectsContinue(req)) {
+        settle(tooLarge());
+        return;
+      }
+      overflow = true;
+    }
     req.on('data', (chunk: Buffer) => {
       size += chunk.length;
       if (!overflow && size > cap) {
@@ -941,8 +995,14 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   const reloadMs = opts.reloadMs ?? LEXICON_RELOAD_MS;
   const maxConcurrent = opts.maxConcurrent ?? MAX_CONCURRENT_REQUESTS;
   const normalizeBudgetMs = opts.normalizeBudgetMs ?? NORMALIZE_BUDGET_MS;
+  const requestTimeout = opts.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+  // Node refuses a headers timeout over the request timeout.
+  const headersTimeout = Math.min(opts.headersTimeoutMs ?? HEADERS_TIMEOUT_MS, requestTimeout);
 
   let config: ServeConfig | undefined;
+  /** serve.json's identity (inode, size, mtime, ctime) when `config` was last refreshed from it. */
+  let configStamp: string | undefined;
+  let refreshing: Promise<void> | undefined;
   let boundPort = 0;
   let inFlight = 0;
   const cache = new Map<string, CachedLexicon>();
@@ -977,16 +1037,23 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   async function loadEntry(cwd: string): Promise<CachedLexicon> {
     const now = Date.now();
     const hit = cache.get(cwd);
-    if (hit && now - hit.at < reloadMs) return hit;
+    if (hit && now - hit.at < reloadMs) {
+      // A Map iterates in insertion order: moving a hit to the end makes the
+      // first key the least recently used one, which is what eviction drops.
+      cache.delete(cwd);
+      cache.set(cwd, hit);
+      return hit;
+    }
     // No route reads a skipped project file's terms (each names it by path
     // only), so an untrusted or changed one is never parsed, as in the hook.
     const startedAt = generation;
     const loaded = await loadLexicon({ cwd, ...storeOpts, parseSkipped: false });
     const entry: CachedLexicon = { loaded, at: now };
     if (generation !== startedAt) return entry;
-    if (cache.size >= MAX_CACHED_CWDS && !cache.has(cwd)) {
-      const oldest = cache.keys().next().value;
-      if (oldest !== undefined) cache.delete(oldest);
+    cache.delete(cwd);
+    if (cache.size >= MAX_CACHED_CWDS) {
+      const leastRecent = cache.keys().next().value;
+      if (leastRecent !== undefined) cache.delete(leastRecent);
     }
     cache.set(cwd, entry);
     return entry;
@@ -1099,7 +1166,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     invalidateWritten([result.file]);
     const unchanged = !result.created && !result.aliasAdded;
     const notes = [
-      ...(unchanged ? [learnUnchangedNote(body.heard, result.term.canonical)] : []),
+      ...(unchanged ? [learnUnchangedNote(body.heard, result.term.canonical, { meant: body.meant, scope: result.file.scope })] : []),
       ...(result.conflict ? [conflictNote([result.conflict])] : []),
     ];
     return {
@@ -1111,6 +1178,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       // another case): say so, as POST /add and MCP learn_correction do,
       // instead of two false flags that read like a failure or a merge.
       ...(unchanged ? { unchanged: true as const } : {}),
+      ...(result.reversed ? { reversed: true as const } : {}),
       ...(unchanged || result.conflict ? { note: notes.join(' ') } : {}),
       ...(result.conflict ? { conflict: result.conflict } : {}),
       ...(result.untrustedProject ? { untrustedProject: result.untrustedProject } : {}),
@@ -1237,9 +1305,10 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       return { ...result, notInstalled: true, summary: `${result.pack.name} is not installed${scope !== undefined ? ` in the ${scope} lexicon` : ''}; nothing was removed` };
     }
     const kept = result.kept.length > 0 ? `; kept ${result.kept.length} you edited (hits, extra aliases or never-words): ${result.kept.join(', ')}` : '';
+    const shared = result.shared.length > 0 ? `; kept ${result.shared.length} another installed pack also has: ${result.shared.join(', ')}` : '';
     return {
       ...result,
-      summary: `removed ${result.removed.length} term${result.removed.length === 1 ? '' : 's'} of ${result.pack.name} from ${result.files.join(', ')}${kept}`,
+      summary: `removed ${result.removed.length} term${result.removed.length === 1 ? '' : 's'} of ${result.pack.name} from ${result.files.join(', ')}${kept}${shared}`,
     };
   }
 
@@ -1267,6 +1336,48 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
 
   function json(status: number, payload: unknown): Response {
     return { status, json: payload };
+  }
+
+  /**
+   * Pick up a serve.json replaced while the server runs. The token was read
+   * once at start, so after the file was deleted and `lexicon serve --show`
+   * (or `--install`) minted a new one, the running server answered that token
+   * 401 until it was restarted. Bounded: one refresh at a time, a stat first,
+   * and the file is read again only when its inode, size or times changed (a
+   * writer always replaces it by rename, so a read never sees half a file).
+   * The same format checks as start's apply (`readServeConfig`); a missing,
+   * oversized or unusable file keeps the config the server has. A token is
+   * only ever accepted when it equals the one `config` holds.
+   */
+  function refreshConfig(): Promise<void> {
+    if (!config) return Promise.resolve();
+    refreshing ??= (async () => {
+      try {
+        const st = await fs.stat(getServePath(storeOpts));
+        const stamp = `${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`;
+        if (stamp === configStamp || !st.isFile() || st.size > MAX_SERVE_CONFIG_BYTES) return;
+        const fresh = await readServeConfig(storeOpts);
+        configStamp = stamp;
+        if (fresh && config) config = { ...fresh, port: config.port };
+      } catch {
+        // Missing or unreadable: keep the config the server has.
+      } finally {
+        refreshing = undefined;
+      }
+    })();
+    return refreshing;
+  }
+
+  /**
+   * True when `header` carries the current token. A token that does not
+   * match the cached one makes the server look at serve.json again first.
+   */
+  async function authorized(header: string | undefined): Promise<boolean> {
+    if (!config) return false;
+    if (tokenMatches(header, config.token)) return true;
+    if (!header) return false;
+    await refreshConfig();
+    return tokenMatches(header, config.token);
   }
 
   /**
@@ -1310,13 +1421,15 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       // and whether they are trusted.
       const cwdParam = url.searchParams.get('cwd');
       if (cwdParam !== null && !config) throw serverStarting();
-      if (cwdParam !== null && config && !tokenMatches(req.headers.authorization, config.token)) {
+      if (cwdParam !== null && config && !(await authorized(req.headers.authorization))) {
         throw tokenRequired('/health?cwd= needs the bearer token, which plain /health does not');
       }
       return json(200, await health(await resolveCwd(cwdParam)));
     }
     if (pathname === PAIR_PATH) {
       if (method !== 'GET') throw notGet();
+      // The page hands out the token, so it is the one serve.json holds now.
+      await refreshConfig();
       return pairPage(req);
     }
 
@@ -1324,7 +1437,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     // token was answered 401 "invalid" too. That is the starting 503; a wrong
     // token once the config is loaded stays the 401.
     if (!config) throw serverStarting();
-    if (!tokenMatches(req.headers.authorization, config.token)) {
+    if (!(await authorized(req.headers.authorization))) {
       throw tokenRequired();
     }
 
@@ -1433,7 +1546,14 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     else res.end(body);
   }
 
-  const server = http.createServer((req, res) => {
+  const serverOptions: http.ServerOptions = {
+    requestTimeout,
+    headersTimeout,
+    // Node checks the timeouts on this cadence (default 30 s, a tenth of its
+    // default request timeout); keep the same proportion for ours.
+    connectionsCheckingInterval: Math.max(25, Math.min(1_000, Math.floor(headersTimeout / 4))),
+  };
+  const server = http.createServer(serverOptions, (req, res) => {
     const started = Date.now();
     const method = req.method ?? 'GET';
     const head = method === 'HEAD';
@@ -1478,6 +1598,12 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     }
 
     if (method === 'OPTIONS') {
+      // Private Network Access: Chrome asks before a public page reaches a
+      // loopback server. Granted only with the CORS headers above, so only to
+      // an allowed origin and never on /pair.
+      if (cors['Access-Control-Allow-Origin'] !== undefined && /^true$/i.test(String(req.headers['access-control-request-private-network'] ?? '').trim())) {
+        cors['Access-Control-Allow-Private-Network'] = 'true';
+      }
       res.writeHead(204, cors);
       res.end();
       return;
@@ -1511,7 +1637,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
         if (status === 500) {
           message = authed
             ? `internal error: ${message}`
-            : 'internal error (the lexicon serve log has the detail)';
+            : brokenLexicon(err)
+              ? `internal error: ${BROKEN_LEXICON_ANONYMOUS}`
+              : 'internal error (the lexicon serve log has the detail)';
         }
         const heldLock = isHeldLockError(err);
         if (heldLock) message = heldLockMessage(err, authed);
@@ -1524,6 +1652,40 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       });
   });
 
+  // Node answers `Expect: 100-continue` with 100 Continue on its own, so a
+  // client announcing a 20 MB body uploaded it, and past readBody's drain
+  // limit the connection was cut: a reset instead of the 413. A body over
+  // the limit is not invited; readBody answers 413 before it is sent.
+  server.on('checkContinue', (req, res) => {
+    if (!declaresOver(req, MAX_BODY_BYTES)) res.writeContinue();
+    server.emit('request', req, res);
+  });
+
+  // A request the HTTP parser cannot read never reaches the handler, and
+  // Node's own answer is a bare status line with no body, where every other
+  // error of this API is `{ error }`. Same statuses as Node's: 431 for
+  // headers over the limit, 408 for a request that took too long, else 400.
+  server.on('clientError', (err: NodeJS.ErrnoException, socket: net.Socket) => {
+    // A response already under way (a request timeout can fire while a
+    // handler answers early) must not get a second status line written into it.
+    const pending = (socket as net.Socket & { _httpMessage?: http.ServerResponse | null })._httpMessage;
+    if (err.code === 'ECONNRESET' || !socket.writable || pending?.headersSent === true) {
+      socket.destroy();
+      return;
+    }
+    const [status, reason, what] =
+      err.code === 'HPE_HEADER_OVERFLOW'
+        ? [431, 'Request Header Fields Too Large', 'request headers are too large']
+        : err.code === 'ERR_HTTP_REQUEST_TIMEOUT'
+          ? [408, 'Request Timeout', 'the request did not arrive in time']
+          : [400, 'Bad Request', 'malformed HTTP request'];
+    const body = JSON.stringify({ error: `${what} (${err.code ?? 'parse error'}); nothing was run` });
+    if (!opts.quiet) log(`[serve] ${status} ${what} (${err.code ?? 'parse error'})`);
+    socket.end(
+      `HTTP/1.1 ${status} ${reason}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: ${Buffer.byteLength(body, 'utf8')}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n${body}`,
+    );
+  });
+
   // Close idle keep-alive sockets quickly on stop(); the default 5 s is fine while running.
   server.keepAliveTimeout = 5_000;
 
@@ -1531,7 +1693,8 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
 
   async function start(): Promise<ServeStartInfo> {
     if (running) throw new Error('server already started');
-    config = await ensureServeConfig(storeOpts);
+    // A replaced token is logged even when quiet: paired clients now get 401.
+    config = await ensureServeConfig(storeOpts, { onTokenReplaced: (message) => log(`[serve] warning: ${sanitizeForDisplayMax(message, Number.POSITIVE_INFINITY)}`) });
     await new Promise<void>((resolve, reject) => {
       const onError = (err: NodeJS.ErrnoException): void => {
         if (err.code === 'EADDRINUSE') {
@@ -1554,9 +1717,10 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     const address = server.address();
     boundPort = typeof address === 'object' && address !== null ? address.port : requestedPort;
     // Keep serve.json pointing at the live port so `--show`/`--status` and clients find it.
+    // Only the port changes: serve.json is re-read under its lock, so an edit
+    // made while the server was binding (allowedOrigins, a new token) is kept.
     if (config.port !== boundPort) {
-      config = { ...config, port: boundPort };
-      await writeServeConfig(config, storeOpts);
+      config = await recordServePort(boundPort, config, storeOpts);
     }
     const shownHost = host.includes(':') ? `[${host}]` : host;
     return {

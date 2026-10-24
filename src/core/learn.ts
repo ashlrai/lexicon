@@ -18,8 +18,8 @@ import type { LearnConflict } from './conflict-note.js';
 
 // The conflict wording lives in a module with no IO so the browser extension
 // bundles the same sentences (extension/src/core.ts re-exports it).
-export { conflictNote, conflictRemoveCommand, learnUnchangedNote, unchangedTermNote } from './conflict-note.js';
-export type { ConflictNoteAudience, LearnConflict } from './conflict-note.js';
+export { conflictNote, conflictRemoveCommand, conflictRemoveTermCommand, learnUnchangedNote, reversedCorrectionNote, unchangedTermNote } from './conflict-note.js';
+export type { ConflictNoteAudience, LearnConflict, LearnUnchangedContext } from './conflict-note.js';
 
 export interface Correction {
   /**
@@ -40,6 +40,13 @@ export interface LearnResult {
   file: LexiconFile;
   /** False when `heard` was already an alias (or the canonical) of the term. */
   aliasAdded: boolean;
+  /**
+   * True when `meant` is an alias of `term` and `heard` is its canonical
+   * ("it's Ashlr not ashlr.ai" with the term Ashlr.AI holding Ashlr): the
+   * lexicon already corrects the other way, `meant` to `heard`, and nothing
+   * was written (`created` and `aliasAdded` false). Absent otherwise.
+   */
+  reversed?: true;
   /**
    * Another term that also claims `heard` (as an alias, or as its own
    * canonical), so a transcript can still be corrected to that term instead.
@@ -226,11 +233,145 @@ function allStoplisted(phrase: string): boolean {
   return words.length > 0 && words.every((w) => STOPLIST.has(w));
 }
 
+/** Lowest edit similarity at which two bare correction sides count as spellings of one name. */
+const MIN_CORRECTION_SIMILARITY = 0.5;
+/** The same, for two sides that open with the same letter. */
+const MIN_SAME_OPENING_SIMILARITY = 0.3;
+
+/** Lowercased letters and digits per word, diacritics folded (`Zoë` -> `zoe`). */
+function spellingWords(s: string): string[] {
+  return s
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length > 0);
+}
+
+/**
+ * Could `heard` be what speech-to-text wrote for `meant`? True when, after
+ * the words both sides share are set aside ("the API" / "the UI" compares
+ * "api" with "ui"), the rest is the same once squashed ("a w s" / "AWS"),
+ * holds a digit (a numeronym such as k8s or a version, which neither measure
+ * judges), is at least half the same by edit distance (`similarity`:
+ * "Versel" / "Vercel", "engine x" / "nginx", "cloud" / "Claude"), or has the
+ * same double-metaphone key (`phoneticKey`: "Ashler" / "Ashlr.AI", "tory" /
+ * "Tauri"), or opens with the same letter and is at least
+ * MIN_SAME_OPENING_SIMILARITY alike ("actually i" / "Ashlr.AI"). "it's the API not the UI" or "it's Monday not Tuesday" corrects
+ * what was meant, not how a name was spelled, and learned it rewrote every
+ * "the UI" the user dictated. Exported for tests and the CLI.
+ */
+export function spellingsAlike(heard: string, meant: string): boolean {
+  let h = spellingWords(heard);
+  let m = spellingWords(meant);
+  const shared = new Set(h.filter((w) => m.includes(w)));
+  const hRest = h.filter((w) => !shared.has(w));
+  const mRest = m.filter((w) => !shared.has(w));
+  if (hRest.length > 0 && mRest.length > 0) {
+    h = hRest;
+    m = mRest;
+  }
+  const a = h.join('');
+  const b = m.join('');
+  if (a === '' || b === '' || a === b) return true;
+  if (/\p{N}/u.test(a) || /\p{N}/u.test(b)) return true;
+  const sim = similarity(a, b);
+  if (sim >= MIN_CORRECTION_SIMILARITY) return true;
+  const ka = phoneticKey(a);
+  const kb = phoneticKey(b);
+  if (ka !== '' && ka === kb) return true;
+  // A garble keeps the opening letter: "actually i" for "Ashlr.AI". Not the
+  // opening phonetic key: every vowel opens with A there, so "ui" and "api" met.
+  return a[0] === b[0] && sim >= MIN_SAME_OPENING_SIMILARITY;
+}
+
+/**
+ * A phonetic key with sounds STT trades for each other folded together: the
+ * labials B, F and V to P, the sibilants X (sh) and J to S, TH to T, and
+ * H, W and Y dropped. "Siobhan" (SPN) and "Shivon" (XFN) meet as SPN.
+ */
+function looseKey(word: string): string {
+  return phoneticKey(word)
+    .replace(/[BFV]/g, 'P')
+    .replace(/[XJ]/g, 'S')
+    .replace(/0/g, 'T')
+    .replace(/[HWY]/g, '');
+}
+
+/** One spoken word as a name is written: letters only (an apostrophe inside), not all capitals, at least 3 letters. */
+function nameWord(token: string): boolean {
+  return /^\p{L}[\p{L}'\u2019]*\p{L}$/u.test(token) && token.length >= 3 && /\p{Ll}/u.test(token);
+}
+
+/** Lowest similarity of the loose keys at which a dissimilar pair counts when `meant` is a known spelling. */
+const MIN_KNOWN_LOOSE_SIMILARITY = 0.5;
+
+/**
+ * The second chance for a pair `spellingsAlike` rejects: a real name STT
+ * wrote by sound ("it's Siobhan not Shivon", "it's Niamh not Neve"). Only
+ * when, once the words both sides share are set aside, each side is one word
+ * written as a name (letters, not all capitals, so "the API" / "the UI" stays
+ * out) and `heard` is not an everyday word (the stoplist, so "Monday" /
+ * "Tuesday" stays out). Then the pair counts when the loose keys are equal,
+ * or when `lexicon` holds `meant` as a canonical or alias, holds `heard` as
+ * no other term's spelling, and the loose keys open alike and are at least
+ * half alike ("it's Postgres not MySQL" stays out: PSTKRS and MSKL).
+ */
+function namesSoundAlike(heard: string, meant: string, lexicon: CorrectionLexicon | undefined): boolean {
+  const hTokens = heard.split(/\s+/).filter((t) => t.length > 0);
+  const mTokens = meant.split(/\s+/).filter((t) => t.length > 0);
+  const fold = (t: string): string => spellingWords(t).join('');
+  const mFolded = new Set(mTokens.map(fold));
+  const hFolded = new Set(hTokens.map(fold));
+  const hRest = hTokens.filter((t) => !mFolded.has(fold(t)));
+  const mRest = mTokens.filter((t) => !hFolded.has(fold(t)));
+  if (hRest.length !== 1 || mRest.length !== 1) return false;
+  const [h] = hRest;
+  const [m] = mRest;
+  if (!nameWord(h) || !nameWord(m)) return false;
+  if (STOPLIST.has(fold(h))) return false;
+  const kh = looseKey(fold(h));
+  const km = looseKey(fold(m));
+  if (kh === '' || km === '') return false;
+  if (kh === km && !STOPLIST.has(fold(m))) return true;
+  if (!lexicon) return false;
+  const owner = lexicon.terms.find((t) => sameText(t.canonical, meant) || t.aliases.some((a) => sameText(a, meant)));
+  if (!owner) return false;
+  const heardElsewhere = lexicon.terms.some((t) => t !== owner && (sameText(t.canonical, heard) || t.aliases.some((a) => sameText(a, heard))));
+  if (heardElsewhere) return false;
+  return kh[0] === km[0] && similarity(kh, km) >= MIN_KNOWN_LOOSE_SIMILARITY;
+}
+
+/** The part of a lexicon `parseCorrection` reads: which spellings each term holds. */
+export interface CorrectionLexicon {
+  terms: readonly Pick<Term, 'canonical' | 'aliases'>[];
+}
+
+/** Options for `parseCorrection`. */
+export interface ParseCorrectionOptions {
+  /**
+   * Also return a correction whose two bare sides do not look or sound alike
+   * (`spellingsAlike` false), which is otherwise not a correction. The CLI
+   * uses it to say why "it's the API not the UI" learned nothing.
+   */
+  allowUnrelated?: boolean;
+  /**
+   * The loaded lexicon. A pair `spellingsAlike` rejects still counts when
+   * `meant` is a spelling this lexicon holds and `heard` is a one-word name
+   * that is not an everyday word and sounds loosely alike ("it's Niamh not
+   * Neve" with Niamh a term). The prompt hook and `lexicon learn` pass it.
+   */
+  lexicon?: CorrectionLexicon;
+}
+
 /**
  * Detect a natural-language spelling correction. Returns undefined unless one
- * of the supported phrasings matches cleanly; see CORRECTION_EXAMPLES.
+ * of the supported phrasings matches cleanly; see CORRECTION_EXAMPLES. When
+ * both sides are bare (unquoted) they must also be spellings of one name
+ * (`spellingsAlike`), unless `opts.allowUnrelated`; quoting either side is
+ * explicit and skips that check.
  */
-export function parseCorrection(text: string): Correction | undefined {
+export function parseCorrection(text: string, opts: ParseCorrectionOptions = {}): Correction | undefined {
   const input = text.replace(/\s+/g, ' ').trim();
   if (!input) return undefined;
 
@@ -269,6 +410,9 @@ export function parseCorrection(text: string): Correction | undefined {
     // "it's 2024 not 2023" or "it's 3:30, not 3:15" corrects a fact, not a
     // spelling: a name holds a letter. Learned, it rewrote every 2023 to 2024.
     if (!/\p{L}/u.test(meant)) return undefined;
+    // "it's the API not the UI" has the shape of a correction but corrects
+    // the meaning: two unquoted sides that neither look nor sound alike.
+    if (heard && allBare && !opts.allowUnrelated && !spellingsAlike(heard, meant) && !namesSoundAlike(heard, meant, opts.lexicon)) return undefined;
     return { heard, meant };
   }
   return undefined;
@@ -354,6 +498,14 @@ export async function learnCorrection(
   const withConflict = { ...(conflict ? { conflict } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
 
   if (existing) {
+    // "it's Ashlr not ashlr.ai" where Ashlr is an alias of the term Ashlr.AI:
+    // the correction asks for the reverse of what the lexicon does. Adding
+    // the canonical as its own alias changes nothing, and the answer said
+    // "already the canonical spelling" as if the correction were in place.
+    if (sameText(existing.canonical, heard) && !sameText(existing.canonical, meant)) {
+      const holder = (existing.scope === 'project' ? loaded.project : loaded.global) ?? loaded.global;
+      return { term: existing, created: false, file: holder, aliasAdded: false, reversed: true, ...withConflict };
+    }
     const targetScope: TermScope = scope ?? existing.scope ?? 'global';
     // Known where it would be written: the term's own file, or the file an
     // explicit scope names. Learning the same correction again rewrote the

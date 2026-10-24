@@ -11,16 +11,24 @@
 import {
   adapterFor,
   composerFromTarget,
+  deepActiveElement,
+  eventOrigin,
   findComposer,
   findSendButton,
   isTextField,
   sendButtonFromTarget,
 } from './adapters.js';
 import type { SiteAdapter } from './adapters.js';
-import { applyCorrections, caretOffset, codeRanges, invertCorrections, maskCode, performEnterDefault, readText, setCaret } from './editable.js';
+import { applyCorrections, caretOffset, codeRanges, composerTooLarge, invertCorrections, maskCode, performEnterDefault, readText, setCaret, snapshot } from './editable.js';
 import { incompleteNotice, LIVE_DEBOUNCE_MS, PRECHECK_DEBOUNCE_MS } from './shared.js';
 import type { Correction, NormalizeReply, Request } from './shared.js';
 import { removeToast, showToast } from './toast.js';
+
+/** The toast line when a known site took neither the replayed Enter nor a send-button click. */
+export const NOT_SENT_NOTICE = 'Not sent: this site ignored the replayed Enter and its send button was not found. Press Enter again to send.';
+
+/** The toast line when Enter or the send button is pressed on a composer over MAX_COMPOSER_CHARS. */
+export const TOO_LARGE_NOTICE = 'Not checked: this message is over the 1 MB a lexicon check takes, so it was left as typed.';
 
 export interface ContentSettings {
   enabled: boolean;
@@ -51,6 +59,12 @@ export interface ContentHandle {
 interface Precheck {
   text: string;
   changed: boolean;
+  /**
+   * The dry run's corrections for `text`, kept when the check was complete,
+   * so a send that cannot be held (see `enterReplay`) can still be corrected
+   * in place before the press goes on.
+   */
+  ready?: NormalizeReply & { ok: true };
 }
 
 export function installContent(deps: ContentDeps): ContentHandle {
@@ -69,6 +83,18 @@ export function installContent(deps: ContentDeps): ContentHandle {
   let liveInFlight = false;
   /** True while Undo writes the original wording back: its own input events are not the user typing. */
   let restoring = false;
+  /** True between compositionstart and compositionend: an IME owns the text being typed. */
+  let composing = false;
+  /**
+   * Whether this page acts on a script-dispatched Enter in the composer:
+   * `works` once one was cancelled (taken by the page) or the page cancelled
+   * a real Enter the guard let through, `fails` once one was not taken while
+   * no send button matched. A known site whose button selector no longer
+   * matches is sent to only through that Enter, so until it is known to
+   * work there the guard lets the user's own Enter through rather than
+   * swallow a send it may not be able to replay.
+   */
+  let enterReplay: 'unknown' | 'works' | 'fails' = 'unknown';
 
   const setTimer = (fn: () => void, ms: number): number | undefined => win?.setTimeout(fn, ms);
   const clearTimer = (id: number | undefined): void => {
@@ -93,8 +119,8 @@ export function installContent(deps: ContentDeps): ContentHandle {
    * `output` is rebuilt from `text` itself. `text` must be what `composer`
    * held when this is called, or a prefix of it.
    */
-  async function normalizeComposer(composer: HTMLElement, text: string, dryRun: boolean): Promise<NormalizeReply> {
-    const ranges = codeRanges(composer).filter(([start]) => start < text.length);
+  async function normalizeComposer(composer: HTMLElement, text: string, dryRun: boolean, codeAt?: Array<[number, number]>): Promise<NormalizeReply> {
+    const ranges = (codeAt ?? codeRanges(composer)).filter(([start]) => start < text.length);
     if (ranges.length === 0) return normalizeText(text, dryRun);
     const reply = await normalizeText(maskCode(text, ranges), dryRun);
     if (!reply.ok) return reply;
@@ -157,9 +183,24 @@ export function installContent(deps: ContentDeps): ContentHandle {
     return offset + shift;
   }
 
-  /** Normalize the composer, rewrite it when needed, then run `resend`. */
-  async function correctThen(composer: HTMLElement, text: string, resend: () => void): Promise<void> {
-    const reply = await normalizeComposer(composer, text, false);
+  /**
+   * Normalize the composer, rewrite it when needed, then run `resend`. The
+   * press was already cancelled, so `resend` runs even when the correction
+   * throws (a malformed reply, an editor that refuses the edit): the message
+   * then goes as the composer holds it. Before, the error was swallowed and
+   * the message was never sent.
+   */
+  async function correctThen(composer: HTMLElement, text: string, resend: () => void, codeAt?: Array<[number, number]>): Promise<void> {
+    try {
+      await correctComposer(composer, text, codeAt);
+    } catch {
+      // Sent uncorrected, below.
+    }
+    resend();
+  }
+
+  async function correctComposer(composer: HTMLElement, text: string, codeAt?: Array<[number, number]>): Promise<void> {
+    const reply = await normalizeComposer(composer, text, false, codeAt);
     if (reply.ok && reply.changed && reply.replacements.length > 0) {
       // The composer may have moved on while we waited (fast typist, voice
       // input still streaming). Only rewrite when it still holds `text`.
@@ -168,7 +209,8 @@ export function installContent(deps: ContentDeps): ContentHandle {
         // text) replacement left it, so the line break a generic site's Enter
         // then inserts landed mid-text. Put the caret back where it was,
         // shifted by the corrections before it. A text field keeps its own.
-        const focused = !isTextField(composer) && (composer === doc.activeElement || composer.contains(doc.activeElement));
+        const active = deepActiveElement(doc);
+        const focused = !isTextField(composer) && (composer === active || composer.contains(active));
         const caret = focused ? caretOffset(doc, composer) : undefined;
         await applyCorrections(doc, composer, reply.replacements, reply.output);
         if (caret !== undefined) setCaret(doc, composer, shiftOffset(caret, reply.replacements));
@@ -181,7 +223,34 @@ export function installContent(deps: ContentDeps): ContentHandle {
       // looked at: say so rather than let it pass as clean.
       if (reply.incomplete) showToast(doc, [], { mode: reply.mode, durationMs: deps.toastMs, notice: incompleteNotice(reply.incomplete), ...(reply.fallback ? { fallback: reply.fallback } : {}) });
     }
-    resend();
+  }
+
+  /**
+   * Write the precheck's corrections for `text` into `composer` now, without
+   * waiting, when that can be done before this event's other listeners run:
+   * only in a text field, whose edits (`applyCorrections` there has no await)
+   * land at once. A rich text editor may take its edits in a later task, so
+   * the press there goes on as typed, as before. The hits are recorded by a
+   * normalize run in the background; its answer is not waited for.
+   */
+  function correctInPlace(composer: HTMLElement, text: string, codeAt: Array<[number, number]>): void {
+    const ready = precheck !== null && precheck.text === text ? precheck.ready : undefined;
+    if (!ready || !isTextField(composer) || readText(composer) !== text) return;
+    // A dry run leaves `output` as the input: build the corrected text here.
+    let output = text;
+    for (const r of [...ready.replacements].sort((a, b) => b.start - a.start)) output = output.slice(0, r.start) + r.replacement + output.slice(r.end);
+    withPassthrough(() => {
+      void applyCorrections(doc, composer, ready.replacements, output);
+    });
+    if (readText(composer) !== output) return;
+    precheck = { text: output, changed: false };
+    toastFor(composer, text, ready.replacements, { ...ready, output, changed: true });
+    void normalizeComposer(composer, text, false, codeAt);
+  }
+
+  /** Says, without holding the send, that a composer over MAX_COMPOSER_CHARS was not checked. */
+  function tooLargeNotice(): void {
+    showToast(doc, [], { durationMs: deps.toastMs, notice: TOO_LARGE_NOTICE });
   }
 
   function withPassthrough(fn: () => void): void {
@@ -213,10 +282,36 @@ export function installContent(deps: ContentDeps): ContentHandle {
     if (passthrough || !settings.enabled) return;
     if (ev.key !== 'Enter' || ev.shiftKey || ev.isComposing || ev.keyCode === 229) return;
     if (ev.defaultPrevented) return;
-    const composer = composerFromTarget(ev.target, adapter);
+    const composer = composerFromTarget(eventOrigin(ev), adapter);
     if (!composer) return;
-    const text = readText(composer);
-    if (shouldSkip(text)) return;
+    if (composerTooLarge(composer)) {
+      tooLargeNotice();
+      return;
+    }
+    const { text, ranges } = snapshot(doc, composer);
+    // A press that goes on as typed: if the page takes it (cancels it, as a
+    // composer that sends on Enter does), a replayed Enter is likely to be
+    // taken too. Checked a task later, once every listener has run.
+    const learnFromPress = (): void => {
+      if (!adapter.send || enterReplay !== 'unknown') return;
+      setTimer(() => {
+        if (ev.defaultPrevented && enterReplay === 'unknown') enterReplay = 'works';
+      }, 0);
+    };
+    if (shouldSkip(text)) {
+      learnFromPress();
+      return;
+    }
+    if (adapter.send && enterReplay !== 'works' && !findSendButton(doc, adapter, composer)) {
+      // Nothing to click, and a synthetic Enter is not known to send here:
+      // the original press goes on rather than being swallowed. When the
+      // precheck already holds this text's corrections, they are written
+      // first, synchronously, so the page's own Enter handler (which runs
+      // after this capture listener) sends the corrected text.
+      correctInPlace(composer, text, ranges);
+      learnFromPress();
+      return;
+    }
 
     ev.preventDefault();
     ev.stopImmediatePropagation();
@@ -237,11 +332,22 @@ export function installContent(deps: ContentDeps): ContentHandle {
     guard(() =>
       correctThen(composer, text, () => {
         withPassthrough(() => {
-          if (!composer.dispatchEvent(new KeyboardEvent('keydown', init))) return;
+          if (!composer.dispatchEvent(new KeyboardEvent('keydown', init))) {
+            enterReplay = 'works';
+            return;
+          }
           // Nobody consumed the synthetic Enter; fall back to the button.
           const button = findSendButton(doc, adapter, composer);
           if (button) {
             button.click();
+            return;
+          }
+          if (adapter.send) {
+            // The page ignored the replay and its button is gone too: the
+            // message is corrected but not sent. Say so, and let the next
+            // Enter through as typed (the precheck now holds the text).
+            enterReplay = 'fails';
+            showToast(doc, [], { durationMs: deps.toastMs, notice: NOT_SENT_NOTICE });
             return;
           }
           // A known site sends through its button only; anywhere else the
@@ -253,25 +359,34 @@ export function installContent(deps: ContentDeps): ContentHandle {
           if (!composer.dispatchEvent(new KeyboardEvent('keypress', { ...init, charCode: 13 } as KeyboardEventInit))) return;
           performEnterDefault(doc, composer);
         });
-      }),
+      }, ranges),
     );
   }
 
   function onClick(ev: MouseEvent): void {
     if (passthrough || !settings.enabled) return;
-    const button = sendButtonFromTarget(ev.target, adapter);
+    const button = sendButtonFromTarget(eventOrigin(ev), adapter);
     if (!button) return;
     const composer = findComposer(doc, adapter);
     if (!composer) return;
-    const text = readText(composer);
+    if (composerTooLarge(composer)) {
+      tooLargeNotice();
+      return;
+    }
+    const { text, ranges } = snapshot(doc, composer);
     if (shouldSkip(text)) return;
 
     ev.preventDefault();
     ev.stopImmediatePropagation();
     guard(() =>
-      correctThen(composer, text, () => {
-        withPassthrough(() => button.click());
-      }),
+      correctThen(
+        composer,
+        text,
+        () => {
+          withPassthrough(() => button.click());
+        },
+        ranges,
+      ),
     );
   }
 
@@ -280,14 +395,20 @@ export function installContent(deps: ContentDeps): ContentHandle {
   function schedulePrecheck(composer: HTMLElement): void {
     clearTimer(precheckTimer);
     precheckTimer = setTimer(() => {
-      const text = readText(composer);
+      if (composerTooLarge(composer)) return;
+      const { text, ranges } = snapshot(doc, composer);
       if (!text.trim()) return;
-      void normalizeComposer(composer, text, true).then((reply) => {
+      void normalizeComposer(composer, text, true, ranges).then((reply) => {
         // A dry run reports `changed: false` by design (nothing was applied),
         // so the replacements list is what says whether Enter must be intercepted.
         // A check that stopped early is intercepted too, so the send can say so.
         if (reply.ok && readText(composer) === text) {
-          precheck = { text, changed: reply.changed || reply.replacements.length > 0 || reply.incomplete !== undefined };
+          const fixes = reply.replacements.length > 0;
+          precheck = {
+            text,
+            changed: reply.changed || fixes || reply.incomplete !== undefined,
+            ...(fixes && reply.incomplete === undefined ? { ready: reply } : {}),
+          };
         }
       });
     }, precheckMs);
@@ -296,21 +417,23 @@ export function installContent(deps: ContentDeps): ContentHandle {
   function scheduleLive(composer: HTMLElement): void {
     clearTimer(liveTimer);
     liveTimer = setTimer(() => {
-      if (liveInFlight) return;
-      const full = readText(composer);
-      const caret = caretOffset(doc, composer);
+      // Mid-composition the IME owns the text: a rewrite there cancels or
+      // garbles the word being composed. compositionend schedules it again.
+      if (liveInFlight || composing || composerTooLarge(composer)) return;
+      const { text: full, caret, ranges } = snapshot(doc, composer);
       const prefix = full.slice(0, caret);
       if (!prefix.trim()) return;
       liveInFlight = true;
-      void normalizeComposer(composer, prefix, false)
+      void normalizeComposer(composer, prefix, false, ranges)
         .then(async (reply) => {
           if (!reply.ok || !reply.changed || reply.replacements.length === 0) return;
-          if (readText(composer) !== full) return;
+          if (readText(composer) !== full || composing) return;
           const output = reply.output + full.slice(caret);
           await applyCorrections(doc, composer, reply.replacements, output);
           // Put the caret back where the user was typing, shifted by what
           // the corrections changed before it.
-          if (composer === doc.activeElement || composer.contains(doc.activeElement)) setCaret(doc, composer, reply.output.length);
+          const active = deepActiveElement(doc);
+          if (composer === active || composer.contains(active)) setCaret(doc, composer, reply.output.length);
           precheck = null;
           toastFor(composer, full, reply.replacements, reply, output);
         })
@@ -322,16 +445,33 @@ export function installContent(deps: ContentDeps): ContentHandle {
 
   function onInput(ev: Event): void {
     if (passthrough || restoring || !settings.enabled) return;
-    const composer = composerFromTarget(ev.target, adapter);
+    const composer = composerFromTarget(eventOrigin(ev), adapter);
     if (!composer) return;
     precheck = null;
+    if (composerTooLarge(composer)) return;
     schedulePrecheck(composer);
-    if (settings.live) scheduleLive(composer);
+    // An input event inside a composition (IME, some dictation) is not a
+    // finished word: live mode waits for compositionend.
+    if (settings.live && !composing && (ev as InputEvent).isComposing !== true) scheduleLive(composer);
+  }
+
+  function onCompositionStart(): void {
+    composing = true;
+    clearTimer(liveTimer);
+  }
+
+  function onCompositionEnd(ev: Event): void {
+    composing = false;
+    if (passthrough || restoring || !settings.enabled || !settings.live) return;
+    const composer = composerFromTarget(eventOrigin(ev), adapter);
+    if (composer) scheduleLive(composer);
   }
 
   doc.addEventListener('keydown', onKeydown, true);
   doc.addEventListener('click', onClick, true);
   doc.addEventListener('input', onInput, true);
+  doc.addEventListener('compositionstart', onCompositionStart, true);
+  doc.addEventListener('compositionend', onCompositionEnd, true);
 
   return {
     adapter,
@@ -347,6 +487,8 @@ export function installContent(deps: ContentDeps): ContentHandle {
       doc.removeEventListener('keydown', onKeydown, true);
       doc.removeEventListener('click', onClick, true);
       doc.removeEventListener('input', onInput, true);
+      doc.removeEventListener('compositionstart', onCompositionStart, true);
+      doc.removeEventListener('compositionend', onCompositionEnd, true);
       clearTimer(precheckTimer);
       clearTimer(liveTimer);
       removeToast(doc);

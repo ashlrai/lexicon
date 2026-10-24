@@ -3,11 +3,14 @@
  * embedded engine. Pure apart from the injected fetch/storage so tests can
  * run it under jsdom with a fake server.
  */
+import { builtinPage } from './adapters.js';
 import { createEmbedded, learnIntoYaml, lexiconToYaml } from './embedded.js';
-import { conflictNote, parseLexicon, redactSecrets } from './core.js';
+import { conflictNote, conflictRemoveCommand, parseLexicon, redactSecrets } from './core.js';
 import type { NormalizeIncomplete } from './core.js';
 import {
+  ANY_SITE_HOSTS_LIMIT,
   API_MAX_BODY_BYTES,
+  coerceHostList,
   coerceSettings,
   errorMessage,
   FETCH_TIMEOUT_MS,
@@ -15,6 +18,9 @@ import {
   LEXICON_TIMEOUT_MS,
   pairableBaseUrl,
   pairPortOrigins,
+  PAIR_PATH,
+  hostKey,
+  isCorrection,
   RECENT_LIMIT,
   STORAGE_KEYS,
   TOKEN_BACKOFF_MAX_MS,
@@ -38,6 +44,11 @@ import type {
   SyncReply,
 } from './shared.js';
 
+/** What `handle` reads of `chrome.runtime.MessageSender`. */
+export interface MessageSender {
+  url?: string;
+}
+
 export interface KeyValueStore {
   get(keys: string[]): Promise<Record<string, unknown>>;
   set(items: Record<string, unknown>): Promise<void>;
@@ -59,7 +70,8 @@ export interface BackgroundDeps {
 }
 
 export interface Background {
-  handle(req: Request): Promise<Reply>;
+  /** `sender.url`: the page of the tab the request came from, as the browser reports it (never the request's own word). */
+  handle(req: Request, sender?: MessageSender): Promise<Reply>;
   getSettings(): Promise<Settings>;
   saveSettings(patch: Partial<Settings>): Promise<Settings>;
 }
@@ -213,13 +225,13 @@ export function createBackground(deps: BackgroundDeps): Background {
   async function getRecent(): Promise<Correction[]> {
     const raw = await deps.store.get([STORAGE_KEYS.recent]);
     const list = raw[STORAGE_KEYS.recent];
-    return Array.isArray(list) ? (list as Correction[]) : [];
+    return Array.isArray(list) ? (list as unknown[]).filter(isCorrection) : [];
   }
 
   async function recordRecent(corrections: Correction[]): Promise<void> {
     if (corrections.length === 0) return;
     const recent = await getRecent();
-    const next = [...corrections.map((c) => ({ ...c })), ...recent].slice(0, RECENT_LIMIT);
+    const next = [...corrections.filter(isCorrection).map((c) => ({ ...c })), ...recent].slice(0, RECENT_LIMIT);
     await deps.store.set({ [STORAGE_KEYS.recent]: next });
   }
 
@@ -327,7 +339,9 @@ export function createBackground(deps: BackgroundDeps): Background {
 
   async function apiNormalize(settings: Settings, body: string, text: string): Promise<NormalizeReply> {
     const raw = (await fetchJson(settings, '/normalize', { method: 'POST', body })) as Partial<ApiNormalize>;
-    if (typeof raw.output !== 'string' || !Array.isArray(raw.replacements)) {
+    // Each entry too: one of another shape was kept in "recent" and broke
+    // the popup's list, and the content script rewrites from these.
+    if (typeof raw.output !== 'string' || !Array.isArray(raw.replacements) || !(raw.replacements as unknown[]).every(isCorrection)) {
       throw new Error(NORMALIZE_SHAPE_MESSAGE);
     }
     return {
@@ -497,11 +511,17 @@ export function createBackground(deps: BackgroundDeps): Background {
    * Pairing: the /pair content script hands over the token it read from the
    * page. The token is proven against a bearer route (GET /stats; /health
    * needs no auth so it proves nothing) before anything is stored, then the
-   * settings switch to `api` with the new base URL and token.
+   * settings switch to `api` with the new base URL and token. The base URL
+   * must be the sender tab's own origin, on its /pair page: the URL came from
+   * the page's meta tags, and a page should not pair the extension with a
+   * server other than the one that served it.
    */
-  async function pairReq(rawBaseUrl: string, rawToken: string): Promise<PairReply | Failure> {
+  async function pairReq(rawBaseUrl: string, rawToken: string, senderUrl: string | undefined): Promise<PairReply | Failure> {
     const baseUrl = pairableBaseUrl(String(rawBaseUrl ?? ''));
     if (!baseUrl) return { ok: false, error: 'Pairing works only with a lexicon serve on 127.0.0.1 or localhost.' };
+    if (!isPairPageOf(senderUrl, baseUrl)) {
+      return { ok: false, error: `Pairing must come from ${baseUrl}${PAIR_PATH} itself; run \`lexicon serve --pair\` again.` };
+    }
     const token = String(rawToken ?? '').trim();
     if (!TOKEN_RE.test(token)) return { ok: false, error: 'The page carried no valid token; run `lexicon serve --pair` again.' };
     const candidate: Settings = { ...(await getSettings()), baseUrl, token, mode: 'api' };
@@ -528,12 +548,42 @@ export function createBackground(deps: BackgroundDeps): Background {
     return origins ? { ok: true, origins } : { ok: true };
   }
 
-  async function handle(req: Request): Promise<Reply> {
+  /** Hosts already in STORAGE_KEYS.anySiteHosts this worker has seen, so a check writes the list only for a new one. */
+  const rememberedHosts = new Set<string>();
+
+  /**
+   * Adds the host of `url` to STORAGE_KEYS.anySiteHosts (newest first, at most
+   * ANY_SITE_HOSTS_LIMIT) when the guard runs there through "Any site", so
+   * Options lists it with a switch. Built-in chat pages are listed anyway.
+   */
+  async function rememberAnySiteHost(url: string | undefined): Promise<void> {
+    if (!url) return;
+    let host: string;
+    try {
+      const u = new URL(url);
+      if (u.protocol !== 'https:' && u.protocol !== 'http:') return;
+      host = hostKey(u.hostname);
+    } catch {
+      return;
+    }
+    if (!host || builtinPage(url) || rememberedHosts.has(host)) return;
+    const stored = coerceHostList((await deps.store.get([STORAGE_KEYS.anySiteHosts]))[STORAGE_KEYS.anySiteHosts]);
+    rememberedHosts.add(host);
+    if (stored[0] === host) return;
+    await deps.store.set({ [STORAGE_KEYS.anySiteHosts]: [host, ...stored.filter((h) => h !== host)].slice(0, ANY_SITE_HOSTS_LIMIT) });
+  }
+
+  async function handle(req: Request, sender?: MessageSender): Promise<Reply> {
     if (!req || typeof req !== 'object' || typeof (req as { type?: unknown }).type !== 'string') {
       return { ok: false, error: 'bad request' };
     }
     switch (req.type) {
       case 'normalize':
+        try {
+          await rememberAnySiteHost(sender?.url);
+        } catch {
+          // A storage failure must not cost the check.
+        }
         return normalizeReq(req.text, req.dryRun === true);
       case 'status':
         return statusReq(req.probe === true);
@@ -542,7 +592,7 @@ export function createBackground(deps: BackgroundDeps): Background {
       case 'sync':
         return syncReq();
       case 'pair':
-        return pairReq(req.baseUrl, req.token);
+        return pairReq(req.baseUrl, req.token, sender?.url);
       case 'pairPort':
         return pairPortReq(req.baseUrl);
       case 'anySite': {
@@ -587,7 +637,7 @@ export function learnWarnings(heard: string, conflict: unknown, untrustedProject
     const spelling = typeof c.spelling === 'string' ? c.spelling : heard;
     out +=
       c.as === 'alias'
-        ? ` But "${spelling}" is also an alias of ${c.canonical} (${c.scope} lexicon), so it may still be corrected to that (to drop it, run: lexicon remove ${JSON.stringify(c.canonical)} --alias ${JSON.stringify(spelling)} --${c.scope}).`
+        ? ` But "${spelling}" is also an alias of ${c.canonical} (${c.scope} lexicon), so it may still be corrected to that (to drop it, run: ${conflictRemoveCommand({ canonical: c.canonical, scope: c.scope, as: 'alias', spelling })}).`
         : // The core's sentence (CLI audience), so the popup names the same
           // remove step as learn --json, add --json and serve POST /learn.
           ` But ${conflictNote([{ canonical: c.canonical, scope: c.scope, as: 'canonical', spelling }])}.`;
@@ -597,4 +647,21 @@ export function learnWarnings(heard: string, conflict: unknown, untrustedProject
     out += ` The project lexicon ${u.path} is ${u.trust === 'changed' ? 'changed since it was trusted' : 'not trusted'} and also claims "${heard}"; once it is trusted its term wins (review it with: lexicon trust).`;
   }
   return out;
+}
+
+/**
+ * True when `senderUrl` is the /pair page of `baseUrl` (same origin, path
+ * /pair with or without a trailing slash). Exported for tests.
+ */
+export function isPairPageOf(senderUrl: string | undefined, baseUrl: string): boolean {
+  if (!senderUrl) return false;
+  let page: URL;
+  let base: URL;
+  try {
+    page = new URL(senderUrl);
+    base = new URL(baseUrl);
+  } catch {
+    return false;
+  }
+  return page.origin === base.origin && page.pathname.replace(/\/+$/, '') === PAIR_PATH;
 }

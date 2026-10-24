@@ -7,8 +7,8 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { ADAPTERS, GENERIC, adapterFor, composerFromTarget, findComposer, findSendButton } from '../extension/src/adapters.js';
-import { LEXICON_SHAPE_MESSAGE, createBackground, tooLargeForApiMessage } from '../extension/src/background-core.js';
+import { ADAPTERS, GENERIC, adapterFor, builtinPage, composerFromTarget, findComposer, findSendButton, guardActive, siteNote } from '../extension/src/adapters.js';
+import { LEXICON_SHAPE_MESSAGE, createBackground, isPairPageOf, learnWarnings, tooLargeForApiMessage } from '../extension/src/background-core.js';
 import { MAX_BODY_BYTES as SERVER_MAX_BODY_BYTES } from '../src/serve/server.js';
 import { conflictNote } from '../src/core/index.js';
 import type { KeyValueStore } from '../extension/src/background-core.js';
@@ -18,9 +18,11 @@ import type { ContentHandle } from '../extension/src/content-core.js';
 import { applyCorrections, flatten, invertCorrections, readText, setWholeText } from '../extension/src/editable.js';
 import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
+import { ANY_SITE_SCRIPT_ID, setAnySite } from '../extension/src/any-site.js';
+import type { AnySiteApi, AnySiteScript } from '../extension/src/any-site.js';
 import { prunePairPorts, registerPairPort } from '../extension/src/pair-port.js';
 import type { PairPortApi } from '../extension/src/pair-port.js';
-import { ANY_SITE_DENIED_MESSAGE, API_MAX_BODY_BYTES, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META, withConnection, withSiteSwitch, yamlBoxAfterChange } from '../extension/src/shared.js';
+import { ANY_SITE_DENIED_MESSAGE, STORAGE_KEYS, API_MAX_BODY_BYTES, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches, coerceSettings, connectionTestLine, recentRows, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, sitesAfterChange, syncedLine, PAIR_META, withConnection, withSiteSwitch, yamlBoxAfterChange } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 import { setMessage } from '../extension/src/rich-text.js';
@@ -111,7 +113,7 @@ describe('editable', () => {
     expect(flatten(document.getElementById('e')!).text).toBe('one two\n\nthree\nfour');
   });
 
-  it('rewrites a textarea through the native setter and fires input', async () => {
+  it('rewrites a textarea and fires input', async () => {
     document.body.innerHTML = '<textarea id="t"></textarea>';
     const t = document.getElementById('t') as HTMLTextAreaElement;
     t.value = 'ping ashler now';
@@ -180,6 +182,29 @@ describe('content: send interception', () => {
     expect(siteEnter).toHaveBeenCalledTimes(1);
     expect(toastText()).toContain('ashler');
     expect(toastText()).toContain('Ashlr.AI');
+  });
+
+  // Catches: an error after the press was cancelled (here a malformed reply
+  // the rewrite trips over) was swallowed by the send guard, so the message
+  // was never sent. It now goes as typed.
+  it('still sends, uncorrected, when the correction throws', async () => {
+    const { composer, button } = chatgptDom('ping ashler');
+    const bad = { ok: true, changed: true, mode: 'auto', input: 'ping ashler', output: 'ping Ashlr.AI', replacements: [null] } as unknown as NormalizeReply;
+    handle = installContent({ doc: document, hostname: 'chatgpt.com', send: vi.fn(() => Promise.resolve(bad)), settings: { enabled: true, live: false } });
+    const siteEnter = vi.fn((ev: KeyboardEvent) => ev.preventDefault());
+    composer.addEventListener('keydown', siteEnter);
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true });
+    composer.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    await handle.idle();
+    expect(siteEnter).toHaveBeenCalledTimes(1);
+    expect(readText(composer)).toBe('ping ashler');
+
+    const siteClick = vi.fn();
+    button.addEventListener('click', siteClick);
+    button.click();
+    await handle.idle();
+    expect(siteClick).toHaveBeenCalledTimes(1);
   });
 
   it('lets Shift+Enter (newline) through', () => {
@@ -305,7 +330,7 @@ describe('content: send interception', () => {
   // Catches: the undo's own input event cleared the precheck and scheduled a
   // new dry run, so the next Enter corrected the restored wording again.
   it('after undo, Enter sends the restored wording as it is', async () => {
-    document.body.innerHTML = '<form><textarea placeholder="Ask Grok anything"></textarea></form>';
+    document.body.innerHTML = '<form><textarea placeholder="Ask Grok anything"></textarea><button aria-label="Submit"></button></form>';
     const t = document.querySelector('textarea')!;
     const send = vi.fn(fakeSend);
     handle = installContent({ doc: document, hostname: 'grok.com', send, settings: { enabled: true, live: false }, precheckDebounceMs: 5, toastMs: 60_000 });
@@ -430,7 +455,7 @@ describe('toast', () => {
   });
 
   it('carries the fallback reason from a corrected send into the toast', async () => {
-    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true"><p>ping ashler</p></div>';
+    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true"><p>ping ashler</p></div><button data-testid="send-button"></button>';
     const composer = document.getElementById('prompt-textarea')!;
     const send = vi.fn(async (req: Request): Promise<NormalizeReply> => {
       const reply = await fakeSend(req);
@@ -550,7 +575,7 @@ describe('message routing (mock chrome.runtime) and background', () => {
       return true;
     });
 
-    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true"><p>ping ashler</p></div>';
+    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true"><p>ping ashler</p></div><button data-testid="send-button"></button>';
     const composer = document.getElementById('prompt-textarea')!;
     composer.addEventListener('keydown', (ev) => ev.preventDefault());
     handle = installContent({
@@ -851,7 +876,7 @@ describe('message routing (mock chrome.runtime) and background', () => {
     const learn = (await bg.handle({ type: 'learn', heard: 'Ashler', meant: 'Ashley' })) as { ok: true; message: string };
     expect(learn.message).toBe(
       'Added new term Ashley with alias "Ashler". But "Ashler" is also an alias of Ashlr.AI (global lexicon), so it may still be corrected to that ' +
-        '(to drop it, run: lexicon remove "Ashlr.AI" --alias "Ashler" --global). The project lexicon /repo/.lexicon.yaml is not trusted and also claims "Ashler"; ' +
+        '(to drop it, run: lexicon remove Ashlr.AI --alias Ashler --global). The project lexicon /repo/.lexicon.yaml is not trusted and also claims "Ashler"; ' +
         'once it is trusted its term wins (review it with: lexicon trust).',
     );
     body = { term: { canonical: 'Ashley' }, created: false, aliasAdded: true, conflict: { canonical: 'Ashler', scope: 'project', as: 'canonical', spelling: 'Ashler' } };
@@ -860,7 +885,7 @@ describe('message routing (mock chrome.runtime) and background', () => {
     // and named no way out, while the core conflictNote names the remove command.
     expect(own.message).toBe(
       'Added "Ashler" as an alias of Ashley. But "Ashler" is its own term (project), so it may still be kept as written; ' +
-        'if the user never means it as its own term, drop it with: lexicon remove "Ashler" --project.',
+        'if the user never means it as its own term, drop it with: lexicon remove Ashler --project.',
     );
     expect(own.message).toBe(
       `Added "Ashler" as an alias of Ashley. But ${conflictNote([{ canonical: 'Ashler', scope: 'project', as: 'canonical', spelling: 'Ashler' }])}.`,
@@ -868,6 +893,14 @@ describe('message routing (mock chrome.runtime) and background', () => {
     // No conflict, or one of an unexpected shape: the plain message.
     body = { term: { canonical: 'Ashley' }, created: false, aliasAdded: true, conflict: 'odd' };
     expect(((await bg.handle({ type: 'learn', heard: 'Ashler', meant: 'Ashley' })) as { message: string }).message).toBe('Added "Ashler" as an alias of Ashley.');
+  });
+
+  // Catches: the popup's alias-conflict remove step was JSON-quoted, so a `$`
+  // in a name expanded when pasted into a shell; it now uses the core's
+  // shell-quoted conflictRemoveCommand (POSIX in the browser, no process).
+  it('quotes the alias-conflict remove step for the shell', () => {
+    const msg = learnWarnings('O$x', { canonical: 'Acme $HOME Co', scope: 'global', as: 'alias', spelling: 'O$x' }, undefined);
+    expect(msg).toContain(`(to drop it, run: lexicon remove 'Acme $HOME Co' --alias 'O$x' --global).`);
   });
 
   it("a refused learn shows the server's reason, and a 403 is not reported as a bad token", async () => {
@@ -942,6 +975,34 @@ describe('extension errors name the next step', () => {
     );
   });
 
+  // Catches: a /normalize reply whose list held an entry of another shape
+  // was used and kept in "recent", where it broke the popup's list; a bad
+  // entry already stored reached the popup too.
+  it('a /normalize entry of another shape falls back, and recent keeps only well-formed entries', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/health') ? json({ ok: true, version: '9.9.9', terms: 1 }) : json({ output: 'ping Ashlr.AI', changed: true, replacements: [null, { original: 1 }] }),
+    );
+    const store = storeWith({ token });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
+    const reply = (await bg.handle({ type: 'normalize', text: 'ping ashler' })) as NormalizeReply & { fallback?: string };
+    expect(reply).toMatchObject({ ok: true, mode: 'embedded', output: 'ping Ashlr.AI' });
+    expect(reply.fallback).toContain('API /normalize returned an unexpected shape');
+    const stored = (await store.get(['recent'])).recent as unknown[];
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ original: 'ashler', replacement: 'Ashlr.AI' });
+
+    await store.set({ recent: [null, 'x', { original: 'a' }, ...stored] });
+    const status = (await bg.handle({ type: 'status' })) as StatusReply;
+    expect(status.recent).toHaveLength(1);
+    expect(status.recent[0]).toMatchObject({ original: 'ashler', replacement: 'Ashlr.AI' });
+  });
+
+  it('recentRows skips entries the popup cannot draw', () => {
+    expect(recentRows(undefined)).toEqual([]);
+    expect(recentRows({ length: 2 })).toEqual([]);
+    expect(recentRows([null, 3, { original: 'a' }, { original: 'b', replacement: 'B', start: 'x' }])).toEqual([{ original: 'b', replacement: 'B' }]);
+  });
+
   it('an embedded lexicon that does not parse says where to fix it', async () => {
     const bg = createBackground({ fetch: vi.fn() as unknown as typeof fetch, store: storeWith({ mode: 'embedded', yaml: 'terms: [' }), defaultYaml: EXAMPLE_YAML });
     const reply = (await bg.handle({ type: 'normalize', text: 'ping ashler' })) as Failure;
@@ -988,11 +1049,122 @@ describe('extension errors name the next step', () => {
     expect(options.match(/extensionRequestFailedLine\(errorMessage\(err\)\)/g)).toHaveLength(catches);
   });
 
+  // Catches: the "Any site" registration had no matchOriginAsFallback, so an
+  // editor that builds its editable in an about:blank (or blob:) frame was
+  // never reached on a site other than the built-in ones.
+  it('the any-site registration reaches about:blank frames where the browser accepts it, and falls back where not', async () => {
+    const fakeApi = (acceptsFallback: boolean, initial: AnySiteScript[] = []): { api: AnySiteApi; scripts: Map<string, AnySiteScript>; registers: number } => {
+      const state = { api: undefined as unknown as AnySiteApi, scripts: new Map(initial.map((s) => [s.id, s])), registers: 0 };
+      state.api = {
+        scripting: {
+          getRegisteredContentScripts: async (filter) => [...state.scripts.values()].filter((s) => !filter?.ids || filter.ids.includes(s.id)),
+          registerContentScripts: async (list) => {
+            for (const s of list) {
+              if (!acceptsFallback && 'matchOriginAsFallback' in s) throw new Error('Type error for parameter scripts: Unexpected property "matchOriginAsFallback"');
+              if (state.scripts.has(s.id)) throw new Error(`Duplicate script ID '${s.id}'`);
+              state.scripts.set(s.id, s);
+              state.registers += 1;
+            }
+          },
+          unregisterContentScripts: async (filter) => {
+            for (const id of filter?.ids ?? [...state.scripts.keys()]) state.scripts.delete(id);
+          },
+        },
+        permissions: { contains: async () => true },
+      };
+      return state;
+    };
+    const chromeLike = fakeApi(true);
+    await setAnySite(chromeLike.api, true);
+    const reg = chromeLike.scripts.get(ANY_SITE_SCRIPT_ID)!;
+    expect(reg.matchOriginAsFallback).toBe(true);
+    expect(reg.allFrames).toBe(true);
+    expect(reg.matches).toEqual(['<all_urls>']);
+    // Already registered the same way: nothing is re-registered.
+    await setAnySite(chromeLike.api, true);
+    expect(chromeLike.registers).toBe(1);
+    // A registration from before the key is replaced.
+    const old = fakeApi(true, [{ ...reg, matchOriginAsFallback: undefined }]);
+    await setAnySite(old.api, true);
+    expect(old.scripts.get(ANY_SITE_SCRIPT_ID)?.matchOriginAsFallback).toBe(true);
+    // A browser that refuses the key still gets the frames registration.
+    const firefoxLike = fakeApi(false);
+    await setAnySite(firefoxLike.api, true);
+    const ff = firefoxLike.scripts.get(ANY_SITE_SCRIPT_ID)!;
+    expect(ff.allFrames).toBe(true);
+    expect('matchOriginAsFallback' in ff).toBe(false);
+    await setAnySite(firefoxLike.api, false);
+    expect(firefoxLike.scripts.size).toBe(0);
+    // Not granted: nothing registered.
+    const denied = fakeApi(true);
+    denied.api.permissions.contains = async () => false;
+    await expect(setAnySite(denied.api, true)).rejects.toThrow(ANY_SITE_DENIED_MESSAGE);
+    expect(denied.scripts.size).toBe(0);
+  });
+
+  // Catches: on a browser that refuses matchOriginAsFallback, every reconcile
+  // (install, startup, a permission change) unregistered and registered the
+  // script again, since the registration never matched the one with the key.
+  it('the any-site reconcile leaves a registration alone where the browser refused the key', async () => {
+    const fake = (acceptsFallback: () => boolean, browser: string, data?: Record<string, unknown>) => {
+      const state = { scripts: new Map<string, AnySiteScript>(), registers: 0, unregisters: 0, api: undefined as unknown as AnySiteApi };
+      state.api = {
+        scripting: {
+          getRegisteredContentScripts: async (filter) => [...state.scripts.values()].filter((s) => !filter?.ids || filter.ids.includes(s.id)),
+          registerContentScripts: async (list) => {
+            for (const s of list) {
+              if (!acceptsFallback() && 'matchOriginAsFallback' in s) throw new Error('Type error for parameter scripts: Unexpected property "matchOriginAsFallback"');
+              state.scripts.set(s.id, s);
+              state.registers += 1;
+            }
+          },
+          unregisterContentScripts: async (filter) => {
+            for (const id of filter?.ids ?? [...state.scripts.keys()]) state.scripts.delete(id);
+            state.unregisters += 1;
+          },
+        },
+        permissions: { contains: async () => true },
+        browser,
+        ...(data
+          ? {
+              store: {
+                get: async (keys: string[]) => Object.fromEntries(keys.filter((k) => k in data).map((k) => [k, data[k]])),
+                set: async (items: Record<string, unknown>) => void Object.assign(data, items),
+              },
+            }
+          : {}),
+      };
+      return state;
+    };
+    let accepts = false;
+    const data: Record<string, unknown> = {};
+    const firefox = fake(() => accepts, 'Firefox/128', data);
+    for (let i = 0; i < 3; i++) await setAnySite(firefox.api, true);
+    expect(firefox.registers).toBe(1);
+    expect(firefox.unregisters).toBe(0);
+    expect('matchOriginAsFallback' in firefox.scripts.get(ANY_SITE_SCRIPT_ID)!).toBe(false);
+    expect(data[STORAGE_KEYS.anySiteNoFallback]).toBe('Firefox/128');
+
+    // A browser update that accepts the key gets it on the next reconcile, once.
+    accepts = true;
+    firefox.api.browser = 'Firefox/140';
+    await setAnySite(firefox.api, true);
+    await setAnySite(firefox.api, true);
+    expect(firefox.registers).toBe(2);
+    expect(firefox.scripts.get(ANY_SITE_SCRIPT_ID)?.matchOriginAsFallback).toBe(true);
+    expect(data[STORAGE_KEYS.anySiteNoFallback]).toBeNull();
+
+    // With no store the refusal is remembered for the life of the module.
+    const bare = fake(() => false, 'NoStore/1');
+    for (let i = 0; i < 3; i++) await setAnySite(bare.api, true);
+    expect(bare.registers).toBe(1);
+  });
+
   // Catches: "Permission not granted." with no word of how to grant it or
   // whether the extension still works without it.
   it('the any-site refusal says how to grant it and what still works', () => {
     expect(ANY_SITE_DENIED_MESSAGE).toBe('The "any site" permission was not granted: tick the box again and choose Allow. The listed chat sites still work without it.');
-    for (const file of ['extension/src/options.ts', 'extension/src/background.ts']) {
+    for (const file of ['extension/src/options.ts', 'extension/src/any-site.ts']) {
       const src = readFileSync(resolve(process.cwd(), file), 'utf8');
       expect(src, file).toContain('ANY_SITE_DENIED_MESSAGE');
       expect(src, file).not.toMatch(/not granted\./);
@@ -1004,6 +1176,7 @@ describe('extension errors name the next step', () => {
 
 describe('pairing (/pair page content script + background)', () => {
   const TOKEN = 'a'.repeat(32);
+  const PAIR_PAGE = { url: 'http://127.0.0.1:41733/pair' };
 
   function pairPage(token = TOKEN, port = '41733'): void {
     document.head.innerHTML =
@@ -1078,7 +1251,7 @@ describe('pairing (/pair page content script + background)', () => {
     })();
     const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
 
-    const reply = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733/', token: TOKEN });
+    const reply = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733/', token: TOKEN }, { url: 'http://127.0.0.1:41733/pair' });
     expect(reply).toEqual({ ok: true, baseUrl: 'http://127.0.0.1:41733', terms: 26, version: '9.9.9' });
     expect(calls[0].url).toBe('http://127.0.0.1:41733/stats');
     expect((calls[0].init.headers as Record<string, string>).Authorization).toBe(`Bearer ${TOKEN}`);
@@ -1103,18 +1276,47 @@ describe('pairing (/pair page content script + background)', () => {
     };
     const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
 
-    const rejected = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733', token: 'b'.repeat(32) });
+    const rejected = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733', token: 'b'.repeat(32) }, PAIR_PAGE);
     expect(rejected).toMatchObject({ ok: false, error: expect.stringContaining('401') });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect((data.settings as { token: string }).token).toBe('keep-me');
 
-    const hostile = await bg.handle({ type: 'pair', baseUrl: 'http://evil.example:41733', token: 'b'.repeat(32) });
+    const hostile = await bg.handle({ type: 'pair', baseUrl: 'http://evil.example:41733', token: 'b'.repeat(32) }, { url: 'http://evil.example:41733/pair' });
     expect(hostile).toMatchObject({ ok: false, error: expect.stringContaining('127.0.0.1 or localhost') });
-    const malformed = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733', token: 'not-hex' });
+    // Catches: an upper-case hex token (a hand-edited serve.json, which lexicon
+    // serve keeps) was refused before it was ever sent.
+    const upper = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733', token: 'B'.repeat(32) }, PAIR_PAGE);
+    expect(upper).toMatchObject({ ok: false, error: expect.stringContaining('401') });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    const malformed = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733', token: 'not-hex' }, PAIR_PAGE);
     expect(malformed).toMatchObject({ ok: false, error: expect.stringContaining('no valid token') });
     // Neither of those touched the network.
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect((data.settings as { token: string }).token).toBe('keep-me');
+  });
+
+  // Catches: pairReq paired with whatever baseUrl the /pair page's meta named,
+  // never checked against the tab that sent it, so a page could point the
+  // extension (and its token) at another loopback server.
+  it('the background pairs only with the origin of the /pair page that asked', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ termCount: 1 }) }) as unknown as Response);
+    const data: Record<string, unknown> = { settings: { token: 'keep-me', baseUrl: 'http://127.0.0.1:41733', mode: 'api' } };
+    const store: KeyValueStore = {
+      get: async (keys) => Object.fromEntries(keys.filter((k) => k in data).map((k) => [k, data[k]])),
+      set: async (items) => {
+        Object.assign(data, items);
+      },
+    };
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
+    const req = { type: 'pair' as const, baseUrl: 'http://127.0.0.1:5000', token: 'b'.repeat(32) };
+    for (const sender of [undefined, {}, { url: 'http://127.0.0.1:41733/pair' }, { url: 'http://localhost:5000/pair' }, { url: 'http://127.0.0.1:5000/other' }, { url: 'https://chat.example/pair' }, { url: 'not a url' }]) {
+      const reply = await bg.handle(req, sender);
+      expect(reply, JSON.stringify(sender)).toMatchObject({ ok: false, error: expect.stringContaining('Pairing must come from http://127.0.0.1:5000/pair itself') });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect((data.settings as { token: string }).token).toBe('keep-me');
+    expect(await bg.handle(req, { url: 'http://127.0.0.1:5000/pair/' })).toMatchObject({ ok: true, baseUrl: 'http://127.0.0.1:5000' });
+    expect(isPairPageOf('http://127.0.0.1:5000/pair?x=1', 'http://127.0.0.1:5000')).toBe(true);
   });
 });
 
@@ -1428,15 +1630,18 @@ describe('content: generic sites keep the Enter key working', () => {
     document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>ping ashler</p></div>';
     const composer = document.getElementById('prompt-textarea')!;
     handle = installContent({ doc: document, hostname: 'chatgpt.com', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
-    composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    composer.dispatchEvent(ev);
     await handle.idle();
-    expect(readText(composer)).toBe('ping Ashlr.AI');
+    // Nothing to click and no replay known to work: the press goes on as typed.
+    expect(ev.defaultPrevented).toBe(false);
+    expect(readText(composer)).toBe('ping ashler');
   });
 });
 
 describe('content: undo never overwrites what the user typed since', () => {
   it('leaves a new draft alone when the corrected message was sent and the user started another', async () => {
-    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>ping ashler</p></div>';
+    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>ping ashler</p></div><button data-testid="send-button"></button>';
     const composer = document.getElementById('prompt-textarea')!;
     handle = installContent({ doc: document, hostname: 'chatgpt.com', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
     composer.addEventListener('keydown', (ev) => ev.preventDefault());
@@ -1450,7 +1655,7 @@ describe('content: undo never overwrites what the user typed since', () => {
   });
 
   it('still restores the dictated wording into an emptied composer', async () => {
-    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>ping ashler</p></div>';
+    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>ping ashler</p></div><button data-testid="send-button"></button>';
     const composer = document.getElementById('prompt-textarea')!;
     handle = installContent({ doc: document, hostname: 'chatgpt.com', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
     composer.addEventListener('keydown', (ev) => ev.preventDefault());
@@ -1635,6 +1840,25 @@ describe('popup and Options write only what they change', () => {
       expect(handler(id)).toContain('await saveConnection();');
       expect(handler(id)).not.toMatch(/await save\(\)/);
     }
+  });
+
+  // Catches: Options followed only the YAML and the connection fields, so a
+  // site the popup paused while Options was open was resumed by its Save.
+  it('the Options site switches follow a switch changed elsewhere and keep their unsaved edits', () => {
+    const current = { 'claude.ai': false, 'grok.com': true };
+    // The popup paused chatgpt.com and resumed claude.ai; grok.com is this page's own unsaved edit.
+    expect(sitesAfterChange(current, { 'claude.ai': false }, { 'chatgpt.com': false, 'claude.ai': true })).toEqual({
+      'claude.ai': true,
+      'grok.com': true,
+      'chatgpt.com': false,
+    });
+    // A switch removed from storage is removed here too; one that did not change is left as the page has it.
+    expect(sitesAfterChange({ 'x.com': false, 'grok.com': true }, { 'x.com': false, 'grok.com': false }, { 'grok.com': false })).toEqual({ 'grok.com': true });
+    expect(sitesAfterChange(current, {}, {})).toEqual(current);
+    const options = readFileSync(resolve(process.cwd(), 'extension/src/options.ts'), 'utf8');
+    const listener = options.slice(options.indexOf('chrome.storage.onChanged.addListener'));
+    expect(listener).toMatch(/sitesAfterChange\(settings\.sites, coerceSettings\(changes\[STORAGE_KEYS\.settings\]\.oldValue/);
+    expect(listener).toContain('renderSites();');
   });
 
   it('the Options YAML box follows a YAML changed elsewhere unless it holds an unsaved edit', () => {
@@ -1843,8 +2067,8 @@ describe('content: code in a known site\'s composer is never corrected', () => {
   // `const Ashlr.AI = 1`): the rich editor holds code as <pre>/<code>, which
   // flattening dropped, so the matcher's own code skipping never saw it.
   const sites: Record<string, { host: string; html: (inner: string) => string; id: string }> = {
-    ChatGPT: { host: 'chatgpt.com', id: 'prompt-textarea', html: (inner) => `<div id="prompt-textarea" contenteditable="true" class="ProseMirror">${inner}</div>` },
-    Claude: { host: 'claude.ai', id: 'c', html: (inner) => `<div id="c" contenteditable="true" class="ProseMirror">${inner}</div>` },
+    ChatGPT: { host: 'chatgpt.com', id: 'prompt-textarea', html: (inner) => `<div id="prompt-textarea" contenteditable="true" class="ProseMirror">${inner}</div><button data-testid="send-button"></button>` },
+    Claude: { host: 'claude.ai', id: 'c', html: (inner) => `<div id="c" contenteditable="true" class="ProseMirror">${inner}</div><button aria-label="Send message"></button>` },
   };
 
   for (const [name, site] of Object.entries(sites)) {
@@ -1975,5 +2199,101 @@ describe('pairing with lexicon serve on another --port', () => {
     setPairPort.mockRejectedValueOnce(new Error(PAIR_PORT_DENIED_MESSAGE));
     expect(await bg.handle({ type: 'pairPort', baseUrl: 'http://127.0.0.1:5000' })).toEqual({ ok: false, error: PAIR_PORT_DENIED_MESSAGE });
     expect(PAIR_PORT_DENIED_MESSAGE).toContain('Allow');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Audit: content scripts in shadow DOM, IME composition, site switches
+// ---------------------------------------------------------------------------
+
+describe('content: a composer inside an open shadow root', () => {
+  // Catches: the capture listeners on the document saw the shadow host as
+  // the event target, which is not editable, so a composer inside a web
+  // component (any-site mode) was never corrected on Enter, never prechecked
+  // on input, and findComposer missed it as the focused element.
+  it('corrects a textarea inside a shadow root on Enter, and finds it as the focused composer', async () => {
+    const host = document.createElement('chat-box');
+    document.body.appendChild(host);
+    const root = host.attachShadow({ mode: 'open' });
+    root.innerHTML = '<textarea></textarea>';
+    const t = root.querySelector('textarea')!;
+    t.focus();
+    expect(findComposer(document, GENERIC)).toBe(t);
+    const send = vi.fn(fakeSend);
+    handle = installContent({ doc: document, hostname: 'example.org', send, settings: { enabled: true, live: false }, precheckDebounceMs: 5 });
+    t.value = 'ping ashler';
+    t.dispatchEvent(new Event('input', { bubbles: true, composed: true }));
+    await wait(30);
+    expect(send).toHaveBeenCalledWith({ type: 'normalize', text: 'ping ashler', dryRun: true });
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true, composed: true });
+    t.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    await handle.idle();
+    expect(t.value.startsWith('ping Ashlr.AI')).toBe(true);
+  });
+});
+
+describe('content: IME composition in live mode', () => {
+  // Catches: live mode rewrote the composer while an IME composition was
+  // still open (input events fire during it), which cancels or garbles the
+  // word being composed. It now waits for compositionend.
+  it('does not rewrite during a composition, and corrects once it ends', async () => {
+    document.body.innerHTML = '<textarea id="t"></textarea>';
+    const t = document.getElementById('t') as HTMLTextAreaElement;
+    t.focus();
+    handle = installContent({ doc: document, hostname: 'example.org', send: vi.fn(fakeSend), settings: { enabled: true, live: true }, liveDebounceMs: 5, precheckDebounceMs: 1000, toastMs: 60_000 });
+    t.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true, composed: true }));
+    t.value = 'ping ashler';
+    t.setSelectionRange(11, 11);
+    t.dispatchEvent(new InputEvent('input', { bubbles: true, composed: true, isComposing: true }));
+    await wait(40);
+    expect(t.value).toBe('ping ashler');
+    t.dispatchEvent(new CompositionEvent('compositionend', { bubbles: true, composed: true, data: 'ashler' }));
+    await wait(40);
+    expect(t.value).toBe('ping Ashlr.AI');
+  });
+
+  it('a live check already scheduled does not fire once a composition starts', async () => {
+    document.body.innerHTML = '<textarea id="t"></textarea>';
+    const t = document.getElementById('t') as HTMLTextAreaElement;
+    t.focus();
+    const send = vi.fn(fakeSend);
+    handle = installContent({ doc: document, hostname: 'example.org', send, settings: { enabled: true, live: true }, liveDebounceMs: 20, precheckDebounceMs: 1000, toastMs: 60_000 });
+    t.value = 'ping ashler';
+    t.setSelectionRange(11, 11);
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+    t.dispatchEvent(new CompositionEvent('compositionstart', { bubbles: true }));
+    await wait(60);
+    expect(t.value).toBe('ping ashler');
+    expect(send).not.toHaveBeenCalled();
+  });
+});
+
+describe('extension: which pages the guard runs on', () => {
+  const settings = (anySite: boolean, sites: Record<string, boolean> = {}) => ({ anySite, sites });
+
+  // Catches: the content script read only the per-site switch, so turning
+  // "any site" off left every open tab of another site rewriting text until
+  // a reload, and the popup said "Corrections run before each send." on a
+  // site where no content script runs at all.
+  it('runs on a built-in chat site, and elsewhere only with "any site" on', () => {
+    expect(builtinPage('https://chatgpt.com/c/1')).toBe(true);
+    expect(builtinPage('https://www.perplexity.ai/search')).toBe(true);
+    expect(builtinPage('https://x.com/i/grok?focus=1')).toBe(true);
+    expect(builtinPage('https://x.com/home')).toBe(false);
+    expect(builtinPage('http://chatgpt.com/')).toBe(false);
+    expect(builtinPage('not a url')).toBe(false);
+    expect(guardActive(settings(false), 'https://claude.ai/new')).toBe(true);
+    expect(guardActive(settings(false), 'https://example.org/chat')).toBe(false);
+    expect(guardActive(settings(true), 'https://example.org/chat')).toBe(true);
+    expect(guardActive(settings(true, { 'example.org': false }), 'https://www.example.org/')).toBe(false);
+    expect(guardActive(settings(false, { 'claude.ai': false }), 'https://claude.ai/new')).toBe(false);
+  });
+
+  it('the popup line says when the site is not covered', () => {
+    expect(siteNote(settings(false), 'https://claude.ai/new')).toBe('Corrections run before each send.');
+    expect(siteNote(settings(false), 'https://example.org/')).toContain('turn on "Any site" in Options');
+    expect(siteNote(settings(true), 'https://example.org/')).toBe('Corrections run before each send.');
+    expect(siteNote(settings(true, { 'example.org': false }), 'https://example.org/')).toBe('Paused on this site.');
   });
 });
