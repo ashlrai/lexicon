@@ -61164,8 +61164,9 @@ function bufferIO() {
     err: () => err
   };
 }
+var NOT_BLANK_RE = /[^\s\u00AD\u0600-\u0605\u061C\u06DD\u070F\u08E2\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB]/;
 function nonBlank() {
-  return external_exports.string().min(1).regex(/\S/, "must not be blank");
+  return external_exports.string().min(1).regex(NOT_BLANK_RE, "must not be blank");
 }
 var INSTALL_CLIENT_VALUES = ["claude", "codex", "cursor", "windsurf", "gemini", "vscode", "claude-desktop"];
 var INSTALL_SCOPES = ["user", "project"];
@@ -61608,8 +61609,8 @@ var registerTermTools = (server, ctx) => {
       inputSchema: {
         // nonBlank's check: `.min(1)` let "  " through to the handler, whose
         // refusal did not name the argument.
-        heard: external_exports.string({ error: oneSpellingError("heard") }).min(1).regex(/\S/, "must not be blank").describe(`The wrong form that was written, e.g. "Ashler": only the name, at most ${MAX_CORRECTION_LENGTH} characters; must not be blank.`),
-        meant: external_exports.string({ error: oneSpellingError("meant") }).min(1).regex(/\S/, "must not be blank").describe(`The spelling the user wants, e.g. "Ashlr.AI", at most ${MAX_CORRECTION_LENGTH} characters; must not be blank.`),
+        heard: external_exports.string({ error: oneSpellingError("heard") }).min(1).regex(NOT_BLANK_RE, "must not be blank").describe(`The wrong form that was written, e.g. "Ashler": only the name, at most ${MAX_CORRECTION_LENGTH} characters; must not be blank.`),
+        meant: external_exports.string({ error: oneSpellingError("meant") }).min(1).regex(NOT_BLANK_RE, "must not be blank").describe(`The spelling the user wants, e.g. "Ashlr.AI", at most ${MAX_CORRECTION_LENGTH} characters; must not be blank.`),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default; or wherever the term already lives) or 'project' (.lexicon.yaml in the current repo).")
       }
     },
@@ -61627,10 +61628,10 @@ var registerTermTools = (server, ctx) => {
       const meantText = meant.trim().replace(/\s+/g, " ");
       const caseOnly = heardText.toLowerCase() === meantText.toLowerCase();
       const term = untrusted && !learned.created ? { canonical: meantText, aliases: learned.aliasAdded && !caseOnly ? [heardText] : [] } : learned.term;
-      const saved = learned.aliasAdded ? `"${heard}" -> "${term.canonical}" saved` : heard.trim().toLowerCase() === term.canonical.toLowerCase() ? `"${term.canonical}" is already the canonical spelling; "${heard}" is corrected to it` : `"${heard}" was already an alias of "${term.canonical}"`;
+      const saved = learned.aliasAdded ? `"${heardText}" -> "${term.canonical}" saved` : heardText.toLowerCase() === term.canonical.toLowerCase() ? `"${term.canonical}" is already the canonical spelling; "${heardText}" is corrected to it` : `"${heardText}" was already an alias of "${term.canonical}"`;
       const { conflict, untrustedProject } = learned;
       const conflictText = conflict ? `. ${conflictNote([conflict], "mcp")}` : "";
-      const untrustedNote = !untrustedProject ? "" : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was not loaded, and another term in it also claims "${heard}": once it is trusted that term wins over this correction. Tell the user; they can review the file with trust_project status, or ` + cliCommand("trust") + ", which previews it first. Do not open it with Read or cat.";
+      const untrustedNote = !untrustedProject ? "" : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was not loaded, and another term in it also claims "${heardText}": once it is trusted that term wins over this correction. Tell the user; they can review the file with trust_project status, or ` + cliCommand("trust") + ", which previews it first. Do not open it with Read or cat.";
       const pending = untrusted ? untrustedWriteFields(learned.file.path, "It") : void 0;
       return textResult({
         term,
@@ -61720,7 +61721,7 @@ var registerHarvestTools = (server, ctx) => {
       title: "Harvest names from a repository",
       description: "Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without `add` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml. Show the candidate list and get a yes first. A file the user already trusted stays trusted; a new, untrusted or changed one is not trusted by the write (`trusted: false`) and applies only after the user reviews it and runs " + cliCommand("trust") + `: relay \`nextStep\`. \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts: { root, candidates: [{ canonical, category, source, evidence, count, suggestedAliases }], count }, where \`evidence\` names where a name was seen (a file path, "git log", "package.json#name"), never the text around it, and \`suggestedAliases\` is often empty on purpose (an identifier gets none). With \`add: true\` the result adds \`added\`, \`failures\` and \`path\`, and is an error when no candidate could be written.`,
       inputSchema: {
-        path: external_exports.string().optional().describe(`Repository root. Defaults to the server working directory. Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
+        path: nonBlank().optional().describe(`Repository root. Omit for the server working directory (a blank one is refused). Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
         limit: external_exports.number().int().positive().optional().describe("Max candidates to return (default 50)."),
         minCount: external_exports.number().int().positive().optional().describe("Minimum occurrences for a name found only in file text (default 2). The directory name, git authors, package names and dot-TLD brands (Ashlr.AI) are proposed at any count."),
         add: external_exports.boolean().optional().describe("When true, add every candidate to the project lexicon. A file that is not trusted yet is left untrusted for the user to review.")
@@ -61781,7 +61782,7 @@ var registerHarvestTools = (server, ctx) => {
       title: "Propose lexicon improvements",
       description: "Propose new aliases, terms and never-words from the user's voice history, usage and repo. Call weekly or when the user asks how to improve corrections; present them and apply accepted ones with apply_suggestion (or add_term). Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), or 'stale' (a term that never fires), plus reason, confidence and evidence, and `scope` and `path`: the lexicon file applying it would write (where the term lives, or the global file for a new term). Name that file when you present a suggestion. The result is a bare JSON array, best first. An empty array comes with a second text block saying why (no voice history yet, or nothing new in it) and what produces suggestions: relay it.",
       inputSchema: {
-        cwd: external_exports.string().optional().describe(`Repository to scan for evidence. Defaults to the server working directory. Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
+        cwd: nonBlank().optional().describe(`Repository to scan for evidence. Omit for the server working directory (a blank one is refused). Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
         limit: external_exports.number().int().positive().optional().describe(`Max suggestions to return (default ${SUGGEST_DEFAULT_LIMIT}).`)
       }
     },
@@ -62010,8 +62011,8 @@ var registerTrustTools = (server, ctx) => {
       description: "Manage trust for a repo's .lexicon.yaml, which is merged only after the user approves it (it can inject text into every session). action 'status' returns the trust state plus a short summary of the file (term, alias and note counts and at most 3 canonicals); the full preview is for the user, through " + cliCommand("trust") + " in a terminal; 'trust' asks the user directly (an MCP elicitation prompt they answer, not you) and pins the file at the content they approved; 'untrust' revokes it. Call 'status' first, show the user the summary and tell them that command shows the full preview. 'trust' never succeeds on your say-so: if the client cannot ask the user, it returns how they can run it themselves. Never trust a file the user has not seen. 'status' answers `status`: 'trusted', 'untrusted', 'changed' (edited since it was trusted), 'missing' (no file at path), 'invalid' (does not parse; with `error` and `nextStep`) or 'none' (no project file found, with `note`). 'trust' answers `result`: 'trusted', 'updated' (a changed file re-approved), 're-pinned', 'already-trusted' or 'declined' (nothing was trusted); 'untrust' answers `removed` (false when it was not trusted). Use this instead of reading .lexicon.yaml yourself: the summary passes every string through sanitizeForDisplay, quotes no alias or note, and names only a few short canonicals, so next to nothing the file says reaches the conversation as text. Do not open the file with Read or cat.",
       inputSchema: {
         action: external_exports.enum(["status", "trust", "untrust"]),
-        path: external_exports.string().optional().describe(
-          `Lexicon file (or the project directory holding it) to act on. Defaults to the project .lexicon.yaml resolved from the server working directory. For status and trust it must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused.`
+        path: nonBlank().optional().describe(
+          `Lexicon file (or the project directory holding it) to act on. Omit for the project .lexicon.yaml resolved from the server working directory (a blank one is refused). For status and trust it must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused.`
         )
       }
     },
@@ -66202,7 +66203,7 @@ function printReport(report2, io) {
 var IMPORT_PREVIEW_MAX_CANDIDATES = 50;
 var IMPORT_PREVIEWS_KEPT = 20;
 var IMPORT_PREVIEW_TTL_MS = 3e5;
-var REGISTRY_SOURCE_DESC = "Registry index for community packs, as the user gave it: only an index the user registered is read (one they installed a pack from with the CLI, or one in LEXICON_REGISTRIES); any other is refused. Omit for the vendored starter packs only.";
+var REGISTRY_SOURCE_DESC = "Registry index for community packs, as the user gave it: only an index the user registered is read (one they installed a pack from with the CLI, or one in LEXICON_REGISTRIES); any other is refused, and so is a blank one. Omit for the vendored starter packs only.";
 var registerPackTools = (server, ctx) => {
   const { load } = ctx;
   const imports = /* @__PURE__ */ new Map();
@@ -66216,7 +66217,7 @@ var registerPackTools = (server, ctx) => {
       title: "List the starter term packs",
       description: "List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. Pass registry (an index the user registered; others are refused) to also list that index's community packs (<author>/<name>), with an installed flag for each. The installed flags come from trusted lexicon files only: when the repo has an untrusted project lexicon, the result carries `projectTrust`, `skippedProject` (its path) and `note`, and a pack only that file records reads as not installed. When a lexicon file's settings.packs and the registry records disagree, `registryMismatch { fileOnly, recordOnly }` names the refs: fileOnly will not be checked by " + cliCommand("pack update") + ", recordOnly reads as not installed (" + cliCommand("pack remove <ref>") + " clears the record). Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.",
       inputSchema: {
-        registry: external_exports.string().optional().describe(REGISTRY_SOURCE_DESC)
+        registry: nonBlank().optional().describe(REGISTRY_SOURCE_DESC)
       }
     },
     async ({ registry: registry2 }) => guarded(async () => {
@@ -66260,7 +66261,7 @@ var registerPackTools = (server, ctx) => {
           "Pack name from list_packs (e.g. developer) or a community ref like example/cardiology; must not be blank. A pack name is 1 to 64 lowercase letters, digits and dashes, starting with a letter or digit; a community ref is <author>/<name>, the author 1 to 39 of the same characters, optionally followed by @<version> (up to 32 characters). Anything else is refused."
         ),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project'."),
-        registry: external_exports.string().optional().describe(REGISTRY_SOURCE_DESC + " Required for community refs."),
+        registry: nonBlank().optional().describe(REGISTRY_SOURCE_DESC + " Required for community refs."),
         confirm: external_exports.boolean().optional().describe("Community packs only: true = install after the user approved the preview. Omit/false = preview only, write nothing. A vendored pack has no preview: confirm: false with one is refused."),
         previewDigest: external_exports.string().regex(/^[a-f0-9]{64}$/).optional().describe("Community packs only: digest returned by the approved full-content preview; required with confirm. Refused with a vendored pack.")
       }
@@ -66321,7 +66322,12 @@ var registerPackTools = (server, ctx) => {
           ...writeOpts2.leaveUntrusted ? untrustedWriteFields(result2.path, `The ${result2.ref} terms`, true) : {}
         });
       }
-      if (!/^[a-z0-9-]+$/.test(name)) throw new Error(`unknown pack "${name}" (pass a list_packs name or an <author>/<name> community ref)`);
+      if (!/^[a-z0-9-]+$/.test(name)) {
+        const names = (await listPacks()).map((p) => p.name);
+        const folded = name.trim().toLowerCase();
+        const meant = names.includes(folded) ? ` Pack names are lowercase: did you mean "${folded}"?` : "";
+        throw new Error(`unknown pack "${name}" (available: ${names.join(", ")}; or pass an <author>/<name> community ref).${meant} Nothing was installed.`);
+      }
       const stray = [
         ...registry2 !== void 0 ? ["registry"] : [],
         ...previewDigest !== void 0 ? ["previewDigest"] : [],

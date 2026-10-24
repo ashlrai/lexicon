@@ -43,7 +43,7 @@ import {
   INVENTED_BOUNDARY_CONFIDENCE,
 } from '../../core/index.js';
 import type { NormalizeIncomplete, NormalizeResult, Term, TermScope } from '../../core/index.js';
-import { filePathsInUse, guarded, log, mcpWriteOpts, nonBlank, skippedProjectFields, textResult, untrustedWriteFields } from '../shared.js';
+import { NOT_BLANK_RE, filePathsInUse, guarded, log, mcpWriteOpts, nonBlank, skippedProjectFields, textResult, untrustedWriteFields } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { errorMessage, isInputError } from '../../util/errors.js';
 import { cliCommand } from '../../util/cli-hint.js';
@@ -607,12 +607,12 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         heard: z
           .string({ error: oneSpellingError('heard') })
           .min(1)
-          .regex(/\S/, 'must not be blank')
+          .regex(NOT_BLANK_RE, 'must not be blank')
           .describe(`The wrong form that was written, e.g. "Ashler": only the name, at most ${MAX_CORRECTION_LENGTH} characters; must not be blank.`),
         meant: z
           .string({ error: oneSpellingError('meant') })
           .min(1)
-          .regex(/\S/, 'must not be blank')
+          .regex(NOT_BLANK_RE, 'must not be blank')
           .describe(`The spelling the user wants, e.g. "Ashlr.AI", at most ${MAX_CORRECTION_LENGTH} characters; must not be blank.`),
         scope: z
           .enum(TERM_SCOPES)
@@ -642,11 +642,13 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         const caseOnly = heardText.toLowerCase() === meantText.toLowerCase();
         const term =
           untrusted && !learned.created ? { canonical: meantText, aliases: learned.aliasAdded && !caseOnly ? [heardText] : [] } : learned.term;
+        // The spelling as saved (trimmed, whitespace collapsed): the raw
+        // argument put a stray newline or padding into the summary.
         const saved = learned.aliasAdded
-          ? `"${heard}" -> "${term.canonical}" saved`
-          : heard.trim().toLowerCase() === term.canonical.toLowerCase()
-            ? `"${term.canonical}" is already the canonical spelling; "${heard}" is corrected to it`
-            : `"${heard}" was already an alias of "${term.canonical}"`;
+          ? `"${heardText}" -> "${term.canonical}" saved`
+          : heardText.toLowerCase() === term.canonical.toLowerCase()
+            ? `"${term.canonical}" is already the canonical spelling; "${heardText}" is corrected to it`
+            : `"${heardText}" was already an alias of "${term.canonical}"`;
         const { conflict, untrustedProject } = learned;
         // The other term is never edited here; the agent gets what it needs to
         // ask the user and fix it with remove_term, in the same sentence
@@ -656,7 +658,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         const untrustedNote = !untrustedProject
           ? ''
           : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === 'changed' ? 'changed since it was trusted' : 'not trusted'}, so it was not loaded, ` +
-            `and another term in it also claims "${heard}": once it is trusted that term wins over this correction. ` +
+            `and another term in it also claims "${heardText}": once it is trusted that term wins over this correction. ` +
             'Tell the user; they can review the file with trust_project status, or ' + cliCommand('trust') + ', which previews it first. Do not open it with Read or cat.';
         const pending = untrusted ? untrustedWriteFields(learned.file.path, 'It') : undefined;
         return textResult({

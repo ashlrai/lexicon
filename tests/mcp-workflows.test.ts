@@ -1955,3 +1955,59 @@ describe('adding an alias the term already has says nothing was added, in the CL
     expect(grownText.out).toContain('merged');
   });
 });
+
+// Round 79 MCP input audit.
+describe('MCP input edge cases', () => {
+  // Catches: nonBlank's /\S/ let a lone zero-width space through; the store
+  // then refused it as `aliases[0] ... is blank`, an argument the agent never
+  // passed, and remove_term / suggest_canonical answered success for nothing.
+  it('refuses a zero-width-only string at the schema, naming the argument', async () => {
+    for (const [name, args, field] of [
+      ['learn_correction', { heard: '​', meant: 'Ashlr.AI' }, 'heard'],
+      ['learn_correction', { heard: 'Ashler', meant: '﻿‍' }, 'meant'],
+      ['suggest_canonical', { heard: '​' }, 'heard'],
+      ['remove_term', { canonical: '​' }, 'canonical'],
+      ['add_term', { canonical: '⁠ ' }, 'canonical'],
+    ] as const) {
+      const r = await call(name, args);
+      expect(r.isError, `${name} ${field}`).toBe(true);
+      expect(r.text).toContain(`must not be blank at ${field}`);
+      expect(r.text).not.toContain('aliases[0]');
+    }
+  });
+
+  // Catches: a blank path or registry was read as "omitted" and the call
+  // silently used the server directory or the vendored packs.
+  it('refuses a blank optional path or registry instead of falling back in silence', async () => {
+    for (const [name, args, field] of [
+      ['harvest_repo', { path: '' }, 'path'],
+      ['suggest_terms', { cwd: '  ' }, 'cwd'],
+      ['trust_project', { action: 'status', path: '' }, 'path'],
+      ['list_packs', { registry: '' }, 'registry'],
+      ['add_pack', { name: 'developer', registry: ' ' }, 'registry'],
+    ] as const) {
+      const r = await call(name, args);
+      expect(r.isError, `${name} ${field}`).toBe(true);
+      expect(r.text).toMatch(new RegExp(`at ${field}`));
+    }
+  });
+
+  // Catches: the summary quoted `heard` as passed, padding and newline included.
+  it('learn_correction summarises the spelling as saved, not the raw argument', async () => {
+    const r = await call('learn_correction', { heard: '  Ashlar\n', meant: 'Ashlr.AI' });
+    expect(r.isError).toBe(false);
+    const doc = JSON.parse(r.text) as { summary: string; term: { aliases: string[] } };
+    expect(doc.summary).toBe('"Ashlar" -> "Ashlr.AI" saved');
+    expect(doc.term.aliases).toContain('Ashlar');
+  });
+
+  // Catches: add_pack refused "Developer" without the list `lexicon pack add`
+  // prints (and that an unknown lowercase name got), or the name it meant.
+  it('add_pack names the available packs and the lowercase name for a miscased one', async () => {
+    const r = await call('add_pack', { name: 'Developer' });
+    expect(r.isError).toBe(true);
+    expect(r.text).toContain('available: ai, business, developer, voice-tools');
+    expect(r.text).toContain('did you mean "developer"?');
+    expect(r.text).toContain('Nothing was installed.');
+  });
+});

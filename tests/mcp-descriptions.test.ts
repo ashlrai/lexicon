@@ -96,7 +96,9 @@ describe('add_term canonical', () => {
   it('declares that a blank canonical is refused, and refuses it by name', async () => {
     const prop = (await tool('add_term')).inputSchema.properties?.canonical;
     expect(prop?.description).toContain('must not be blank');
-    expect(prop?.pattern).toBe('\\S');
+    // Not \S: a zero-width space alone is blank too. Compiled without the u flag, as a lax client would.
+    expect(new RegExp(prop?.pattern ?? '').test('\u200b ')).toBe(false);
+    expect(new RegExp(prop?.pattern ?? '').test('Cf')).toBe(true);
     const res = await call('add_term', { canonical: '   ' });
     expect(res.isError).toBe(true);
     expect(res.blocks.join('\n')).toContain('must not be blank at canonical');

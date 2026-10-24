@@ -74,13 +74,27 @@ export function bufferIO(): IO & { out: () => string; err: () => string } {
 }
 
 /**
- * A required string argument that must hold more than whitespace. `.min(1)`
- * alone let `"  "` through, so remove_term answered "no term" for a blank
- * canonical and suggest_canonical searched for nothing, both as successes.
- * The pattern is in the JSON schema too, so a validating client sees it.
+ * A string holds more than whitespace and format characters (Cf: zero-width
+ * space and joiners, the BOM, bidi controls), which the lexicon schema trims
+ * away. `/\S/` let a lone U+200B through: learn_correction then failed with
+ * an error about `aliases[0]`, an argument the agent never passed, and
+ * remove_term and suggest_canonical searched for nothing as a success.
+ */
+// The BMP format characters, spelled out rather than as \p{Cf}: the pattern is
+// published in the JSON schema, and a client that compiles it without the `u`
+// flag would read \p{Cf} as the letters p, C and f.
+export const NOT_BLANK_RE = /[^\s\u00AD\u0600-\u0605\u061C\u06DD\u070F\u08E2\u180E\u200B-\u200F\u202A-\u202E\u2060-\u2064\u2066-\u206F\uFEFF\uFFF9-\uFFFB]/;
+
+/**
+ * A required string argument that must hold more than whitespace (or
+ * invisible format characters). `.min(1)` alone let `"  "` through, so
+ * remove_term answered "no term" for a blank canonical and suggest_canonical
+ * searched for nothing, both as successes. The pattern is in the JSON schema
+ * too, so a validating client sees it. An optional path or registry argument
+ * uses it as well: a blank one used to mean "omitted" in silence.
  */
 export function nonBlank(): z.ZodString {
-  return z.string().min(1).regex(/\S/, 'must not be blank');
+  return z.string().min(1).regex(NOT_BLANK_RE, 'must not be blank');
 }
 
 /** Clients `install_client` accepts: every `lexicon install` target except the `generic` printout. */
