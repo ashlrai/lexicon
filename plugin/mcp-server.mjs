@@ -64077,8 +64077,10 @@ async function runServeInstall(opts, io, deps = {}) {
     try {
       const created = await runAndReport(exec, io, "schtasks", ["/Create", "/TN", taskName, "/XML", xmlPath, "/F"]);
       if (created.code !== 0) {
-        io.stderr(`lexicon: could not create the Scheduled Task "${safe(taskName)}"; nothing is installed
-`);
+        io.stderr(
+          `lexicon: could not create the Scheduled Task "${safe(taskName)}"; nothing is installed. Fix the schtasks /Create error above and rerun \`lexicon serve --install\`, or run \`lexicon serve\` to start the local API in the foreground
+`
+        );
         return 1;
       }
     } finally {

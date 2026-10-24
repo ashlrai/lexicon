@@ -2176,6 +2176,25 @@ describe('lexicon serve (CLI)', () => {
       const text = io.out.join('');
       expect(text).toContain('created Scheduled Task Lexicon');
       expect(text).toContain(`"${cli}" serve`);
+
+      // Catches: a failed /Create said "nothing is installed" with no next step.
+      const failIO = memIO();
+      const failing: ServeExec = async () => ({ code: 1, stdout: '', stderr: 'ERROR: Access is denied.' });
+      expect(
+        await runServe({ install: true, globalPath: env.globalPath }, failIO, {
+          platform: 'win32',
+          home,
+          env: { USERNAME: 'me', USERDOMAIN: 'BOX' },
+          exec: failing,
+          cliPath: cli,
+          nodePath: 'C:\\node\\node.exe',
+        }),
+      ).toBe(1);
+      const err = failIO.err.join('');
+      expect(err).toContain('ERROR: Access is denied.');
+      expect(err).toContain(
+        'lexicon: could not create the Scheduled Task "Lexicon"; nothing is installed. Fix the schtasks /Create error above and rerun `lexicon serve --install`, or run `lexicon serve` to start the local API in the foreground\n',
+      );
     } finally {
       await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
