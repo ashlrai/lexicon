@@ -594,6 +594,20 @@ describe('review', () => {
     expect(io.out).toContain(`kept 3, removed 1, edited 1. Wrote ${globalPath}`);
   });
 
+  // Catches: a file changed during the review that could not be re-read (a
+  // half-done hand edit) was overwritten with the reviewed version, losing
+  // what the other writer had put there.
+  it('leaves a file changed during the review that cannot be re-read as it is, and exits 1', async () => {
+    await seedGlobal(terms);
+    const broken = 'version: 1\nterms:\n  - canonical: [unclosed\n';
+    const p = withHook(scripted(['d', 'k', 'k', 'k']), 1, () => fs.writeFile(globalPath, broken, 'utf8'));
+    const io = makeIO();
+    expect(await runReview({ cwd: tmp, globalPath }, io, p)).toBe(1);
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(broken);
+    expect(io.err).toMatch(/changed during review and cannot be read \(.+\), so nothing was written and this review's 1 removal and 0 edits were not saved; fix the file/);
+    expect(io.out).not.toContain('Wrote');
+  });
+
   it('does not report a merge when nothing changed on disk', async () => {
     await seedGlobal(terms);
     const io = makeIO();

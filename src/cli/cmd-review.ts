@@ -620,6 +620,8 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   let mergedElsewhere = 0;
   /** Set when the project file was rewritten during the review into something not trusted; nothing is written. */
   let untrustedOnDisk: string | undefined;
+  /** Set when the file changed during the review and cannot be re-read to merge; nothing is written. */
+  let unreadableOnDisk: string | undefined;
   if (changed) {
     // The lock goes here and not around the session. A review is interactive
     // and can sit open for minutes, so holding the file for its duration would
@@ -636,11 +638,9 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
           try {
             disk = await readLexiconFile(file.path, file.scope);
           } catch (err) {
-            io.stderr(
-              `lexicon: ${safeMessage(file.path)} changed during review but could not be re-read (${safeMessage(errorMessage(err))}); writing the reviewed version\n`,
-            );
-            file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
-            await writeLexiconFile(file);
+            // Writing the reviewed version here replaced what the other
+            // writer put there, which is lost for good: leave it alone.
+            unreadableOnDisk = errorMessage(err);
             return;
           }
           // A project file rewritten by something that does not re-pin trust
@@ -668,6 +668,14 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
       io.stderr(
         `lexicon: could not write ${safeMessage(file.path)} (${safeMessage(errorMessage(err))}); nothing was written, ` +
           `so this review's ${plural(deleted.size, 'removal')} and ${plural(edited, 'edit')} were not saved\n`,
+      );
+      return 1;
+    }
+    if (unreadableOnDisk !== undefined) {
+      io.stderr(
+        `lexicon: ${safeMessage(file.path)} changed during review and cannot be read (${safeMessage(unreadableOnDisk)}), so nothing was written and ` +
+          `this review's ${plural(deleted.size, 'removal')} and ${plural(edited, 'edit')} were not saved; ` +
+          `fix the file (lexicon doctor names the problem), then run lexicon review${file.scope === 'project' ? ' --project' : ''} again\n`,
       );
       return 1;
     }
