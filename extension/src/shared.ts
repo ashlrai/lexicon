@@ -259,6 +259,13 @@ export function statusView(s: StatusReply): StatusView {
   return { mode: api ? 'Embedded (fallback)' : 'Embedded', warn: api, line: parts.join(' · ') };
 }
 
+/**
+ * What Options says, and the background throws, when the browser did not
+ * grant the optional "any site" permission.
+ */
+export const ANY_SITE_DENIED_MESSAGE =
+  'The "any site" permission was not granted: tick the box again and choose Allow. The listed chat sites still work without it.';
+
 export function describeCorrection(c: Pick<Correction, 'original' | 'replacement'>): string {
   return `${c.original} → ${c.replacement}`;
 }

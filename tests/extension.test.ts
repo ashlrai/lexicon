@@ -17,7 +17,7 @@ import type { ContentHandle } from '../extension/src/content-core.js';
 import { applyCorrections, flatten, invertCorrections, readText } from '../extension/src/editable.js';
 import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
-import { coerceSettings, connectionTestLine, countOf, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
+import { ANY_SITE_DENIED_MESSAGE, coerceSettings, connectionTestLine, countOf, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 import { setMessage } from '../extension/src/rich-text.js';
@@ -834,6 +834,17 @@ describe('extension errors name the next step', () => {
     expect(() => learnIntoYaml(full, 'Kwokka', 'Quokka')).toThrow(
       'The embedded lexicon already has 5000 terms; remove one under Options > Embedded lexicon, or pair with the local API (`lexicon serve --pair`), which keeps the lexicon on disk.',
     );
+  });
+
+  // Catches: "Permission not granted." with no word of how to grant it or
+  // whether the extension still works without it.
+  it('the any-site refusal says how to grant it and what still works', () => {
+    expect(ANY_SITE_DENIED_MESSAGE).toBe('The "any site" permission was not granted: tick the box again and choose Allow. The listed chat sites still work without it.');
+    for (const file of ['extension/src/options.ts', 'extension/src/background.ts']) {
+      const src = readFileSync(resolve(process.cwd(), file), 'utf8');
+      expect(src, file).toContain('ANY_SITE_DENIED_MESSAGE');
+      expect(src, file).not.toMatch(/not granted\./);
+    }
   });
 });
 

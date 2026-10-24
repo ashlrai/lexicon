@@ -4,7 +4,7 @@ import { ADAPTERS } from './adapters.js';
 import { sendToBackground } from './chrome-store.js';
 import { setMessage } from './rich-text.js';
 import { parseLexicon, parseYaml } from './core.js';
-import { coerceSettings, connectionTestLine, countOf, errorMessage, pairUrl, syncedLine, STORAGE_KEYS } from './shared.js';
+import { ANY_SITE_DENIED_MESSAGE, coerceSettings, connectionTestLine, countOf, errorMessage, pairUrl, syncedLine, STORAGE_KEYS } from './shared.js';
 import type { Failure, Settings, StatusReply, SyncReply } from './shared.js';
 import defaultYaml from '../../examples/lexicon.example.yaml';
 
@@ -205,7 +205,7 @@ ui.anySite.addEventListener('change', () => {
       const granted = await chrome.permissions.request({ origins: ['<all_urls>'] });
       if (!granted) {
         ui.anySite.checked = false;
-        ui.anySiteMsg.textContent = 'Permission not granted.';
+        ui.anySiteMsg.textContent = ANY_SITE_DENIED_MESSAGE;
         return;
       }
     } else {
