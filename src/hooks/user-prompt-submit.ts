@@ -232,11 +232,21 @@ export const HOOK_TOTAL_BUDGET_MS = 160;
 export const HOOK_MATCH_FLOOR_MS = 20;
 
 /**
+ * A prompt this long or shorter (any dictated one) keeps the whole
+ * HOOK_MATCH_BUDGET_MS: it is matched in a few ms, and only a slow start
+ * (a loaded machine) can leave it less than the floor, which then cut a
+ * two-word prompt short with nothing matched.
+ */
+export const HOOK_SHORT_PROMPT_CHARS = 2_000;
+
+/**
  * The match budget once `spentMs` of the process has gone: what is left of
  * HOOK_TOTAL_BUDGET_MS, at most HOOK_MATCH_BUDGET_MS and at least
- * HOOK_MATCH_FLOOR_MS, rounded to a whole millisecond.
+ * HOOK_MATCH_FLOOR_MS, rounded to a whole millisecond. A prompt of at most
+ * HOOK_SHORT_PROMPT_CHARS (`promptChars`) gets HOOK_MATCH_BUDGET_MS.
  */
-export function hookMatchBudget(spentMs: number): number {
+export function hookMatchBudget(spentMs: number, promptChars: number = Number.POSITIVE_INFINITY): number {
+  if (promptChars <= HOOK_SHORT_PROMPT_CHARS) return HOOK_MATCH_BUDGET_MS;
   const left = Number.isFinite(spentMs) ? HOOK_TOTAL_BUDGET_MS - spentMs : HOOK_MATCH_FLOOR_MS;
   return Math.round(Math.max(HOOK_MATCH_FLOOR_MS, Math.min(HOOK_MATCH_BUDGET_MS, left)));
 }
@@ -1205,7 +1215,7 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   // match budget starts after it and, in the real hook (`elapsedMs`), is
   // what the process has left of HOOK_TOTAL_BUDGET_MS (see hookMatchBudget).
   const index = loaded.merged.terms.length > 0 ? await loadMatcherIndex(loaded) : undefined;
-  const budget = opts.matchBudgetMs ?? (opts.elapsedMs ? hookMatchBudget(opts.elapsedMs()) : HOOK_MATCH_BUDGET_MS);
+  const budget = opts.matchBudgetMs ?? (opts.elapsedMs ? hookMatchBudget(opts.elapsedMs(), head.length) : HOOK_MATCH_BUDGET_MS);
   // process.hrtime rather than performance.now: the `performance` global
   // loads node:perf_hooks on first touch, a few ms of a cold hook.
   const started = process.hrtime.bigint();

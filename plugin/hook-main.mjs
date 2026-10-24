@@ -21660,7 +21660,9 @@ async function loadForHook(cwd, opts) {
 var HOOK_MATCH_BUDGET_MS = 100;
 var HOOK_TOTAL_BUDGET_MS = 160;
 var HOOK_MATCH_FLOOR_MS = 20;
-function hookMatchBudget(spentMs) {
+var HOOK_SHORT_PROMPT_CHARS = 2e3;
+function hookMatchBudget(spentMs, promptChars = Number.POSITIVE_INFINITY) {
+  if (promptChars <= HOOK_SHORT_PROMPT_CHARS) return HOOK_MATCH_BUDGET_MS;
   const left = Number.isFinite(spentMs) ? HOOK_TOTAL_BUDGET_MS - spentMs : HOOK_MATCH_FLOOR_MS;
   return Math.round(Math.max(HOOK_MATCH_FLOOR_MS, Math.min(HOOK_MATCH_BUDGET_MS, left)));
 }
@@ -22163,7 +22165,7 @@ async function userPromptSubmit(payload, opts) {
   const correctionNote = corrections.length > 0 ? formatCorrectionNotes(corrections) : "";
   if (corrections.length > 0) await queueForReview(corrections, loaded);
   const index = loaded.merged.terms.length > 0 ? await loadMatcherIndex(loaded) : void 0;
-  const budget = opts.matchBudgetMs ?? (opts.elapsedMs ? hookMatchBudget(opts.elapsedMs()) : HOOK_MATCH_BUDGET_MS);
+  const budget = opts.matchBudgetMs ?? (opts.elapsedMs ? hookMatchBudget(opts.elapsedMs(), head.length) : HOOK_MATCH_BUDGET_MS);
   const started = process.hrtime.bigint();
   const limit = BigInt(Math.max(0, Math.round(budget * 1e6)));
   let timedOut = false;
@@ -22343,6 +22345,7 @@ export {
   HOOK_MATCH_BUDGET_MS,
   HOOK_MATCH_FLOOR_MS,
   HOOK_PROMPT_MAX_CHARS,
+  HOOK_SHORT_PROMPT_CHARS,
   HOOK_STDIN_MAX_BYTES,
   HOOK_TOTAL_BUDGET_MS,
   LOAD_ERROR_NOTE_MAX_CHARS,
