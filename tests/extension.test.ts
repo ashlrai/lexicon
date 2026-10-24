@@ -669,6 +669,7 @@ describe('message routing (mock chrome.runtime) and background', () => {
       }
       if (url.endsWith('/learn')) return json({ term: { canonical: 'Ashlr.AI', aliases: ['Ashlur'] }, created: false, aliasAdded: true, path: '/tmp/lexicon.yaml' });
       if (url.endsWith('/lexicon')) return json({ lexicon: { version: 1, terms: [{ canonical: 'Entire.io', aliases: ['entire dot io'] }] } });
+      if (url.endsWith('/stats')) return json({ termCount: 3 });
       return json({ error: 'nope' }, 404);
     });
     const store = memoryStore({ settings: { token: 'secret-token' } });
