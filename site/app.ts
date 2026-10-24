@@ -2,9 +2,9 @@
  * Browser demo for @ashlr/lexicon (https://ashlrai.github.io/lexicon/).
  *
  * Runs the same matcher, schema and exporters the CLI and MCP server use,
- * bundled by scripts/build-site.mjs. Everything happens on this page: the
- * only network activity is the optional font stylesheet in index.html. The
- * "Dictate" button hands audio to the browser's own speech recognizer, which
+ * bundled by scripts/build-site.mjs. Everything happens on this page, which
+ * loads nothing from a third party (index.html links no remote stylesheet or
+ * font). The "Dictate" button hands audio to the browser's own speech recognizer, which
  * on Chrome is a remote service; the page itself never sends anything.
  *
  * Only browser-safe core modules may be imported here (no store/harvest/trust,

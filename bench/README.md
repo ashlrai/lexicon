@@ -113,12 +113,14 @@ npm run bench:audio -- --voices Samantha,Daniel
 npm run bench:audio -- --no-prompt         # skip the whisper initial_prompt variants
 npm run bench:audio -- --limit 10 --verbose   # smoke test, print failing clips (does not overwrite results.md)
 npm run bench:audio -- --force             # re-transcribe; audio is always reused
+npm run bench:compare                      # the same cached transcripts scored raw / prompt / exact substitution / lexicon
 ```
 
 | file | what |
 |---|---|
 | `audio/sentences.jsonl` | 80 sentences with lexicon terms + 30 clean-prose negatives. `expected` is the ground truth; `spoken` (optional) is what is fed to TTS when the spelling would be mispronounced (`Ashlr.AI` -> "Ashler A I", `tRPC` -> "T R P C", `Nginx` -> "Engine X"), i.e. how a person actually says it. |
 | `audio/run.ts` | Synthesis, transcription (one whisper-cli process per model/prompt variant), metrics via `bench/lib.ts`, word alignment to recover what Whisper wrote in each term slot, alias suggestions. |
+| `audio/compare.ts` | `npm run bench:compare`: re-scores the transcripts `bench:audio` cached against the alternatives (raw, whisper's own `--prompt`, exact substitution, the lexicon); needs that cache, never runs `say` or whisper, and prints to stdout unless `--out` is given. |
 | `audio/results.md` | Committed report from the last run: headline per variant, per voice/category/reason, per-term "what Whisper wrote", suggested aliases, every failing clip. |
 | `audio/out/` | Gitignored cache: `wav/` clips, `transcripts.json` (keyed by model, prompt, voice, sentence hash), `results.json`. |
 | `audio/models/` | Gitignored ggml models. |

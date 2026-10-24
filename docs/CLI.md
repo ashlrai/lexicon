@@ -243,7 +243,7 @@ export the merged lexicon for another tool (run without a format to list them)
 
 Options:
   --out <file>                write to a file instead of stdout
-  --category <categories...>  only these categories
+  --category <categories...>  only these categories, space- or comma-separated
   --limit <n>                 cap the number of terms, applied after --category,
                               keeping the most hits first (at equal hits brand,
                               person and product terms first, then canonical A
@@ -568,10 +568,13 @@ Options:
                          Accessibility permission)
   --json                 print { ok: true, raw, output, replacements, summary,
                          model, seconds, ms } as JSON (with --toggle, a press
-                         that starts prints {"status":"recording"}); every
-                         failure prints { ok: false, error, nextStep?, code }
-                         with code the exit code (over the result when there is
-                         text, e.g. nothing heard or a failed --paste)
+                         that starts prints {"status":"recording"}; with
+                         --status, { ok: true, recording: true, since, pid }
+                         while recording or { ok: false, recording: false } when
+                         idle); every failure prints { ok: false, error,
+                         nextStep?, code } with code the exit code (over the
+                         result when there is text, e.g. nothing heard or a
+                         failed --paste)
   --quiet                no status lines on stderr
   -h, --help             display help for command
 ```

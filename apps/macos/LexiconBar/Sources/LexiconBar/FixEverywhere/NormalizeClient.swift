@@ -43,12 +43,15 @@ final class NormalizeClient: @unchecked Sendable {
     }
 
     /// `$LEXICON_PATH`'s directory, else `$XDG_CONFIG_HOME/lexicon`, else `~/.config/lexicon`.
+    /// `XDG_CONFIG_HOME` counts only when it is absolute once trimmed, as the
+    /// CLI reads it (src/util/xdg.ts): a blank or relative value names
+    /// `~/.config`, where `lexicon serve` wrote serve.json.
     static var serveJSONPath: String {
         let env = ProcessInfo.processInfo.environment
         if let lexiconPath = env["LEXICON_PATH"], !lexiconPath.isEmpty {
             return (lexiconPath as NSString).deletingLastPathComponent + "/serve.json"
         }
-        if let xdg = env["XDG_CONFIG_HOME"], !xdg.isEmpty {
+        if let xdg = env["XDG_CONFIG_HOME"]?.trimmingCharacters(in: .whitespacesAndNewlines), xdg.hasPrefix("/") {
             return xdg + "/lexicon/serve.json"
         }
         return FileManager.default.homeDirectoryForCurrentUser.path + "/.config/lexicon/serve.json"

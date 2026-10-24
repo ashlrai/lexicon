@@ -67769,7 +67769,7 @@ async function stepServe(ctx) {
   }
   if (code === 0) {
     ctx.summary.serve = "installed";
-    ctx.say(`   installed ${dim(safeMessage(lastLine(captured.out)))}`);
+    ctx.say(`   installed ${dim(safeMessage(lastLine(captured.out).replace(/^installed /, "")))}`);
   } else {
     ctx.summary.serve = "failed";
     ctx.warn(`   failed ${safeMessage(lastLine(captured.err) || lastLine(captured.out))}`);

@@ -117,47 +117,48 @@ and diffing the report.
 
 | config | positive sentence acc | term recall | term precision | term F1 | prose FP | prose FP excl. hard |
 |---|---|---|---|---|---|---|
-| default (phonetic + fuzzy) | 94.2% | 96.5% | 95.0% | 95.7% | 12.5% | 0.0% |
-| `--no-fuzzy` | 93.5% | 94.9% | 95.2% | 95.0% | 11.7% | 0.0% |
-| `--no-phonetic` | 80.6% | 85.0% | 94.3% | 89.4% | 12.5% | 0.0% |
-| `--no-phonetic --no-fuzzy` (alias only) | 74.8% | 77.6% | 94.6% | 85.3% | 10.8% | 0.0% |
+| default (phonetic + fuzzy) | 95.3% | 96.8% | 93.8% | 95.3% | 15.3% | 0.0% |
+| `--no-fuzzy` | 94.2% | 95.5% | 94.0% | 94.8% | 14.5% | 0.0% |
+| `--no-phonetic` | 81.7% | 85.3% | 93.0% | 89.0% | 15.3% | 0.0% |
+| `--no-phonetic --no-fuzzy` (alias only) | 75.5% | 78.3% | 93.2% | 85.1% | 13.7% | 0.0% |
 
 Reading: the phonetic pass is worth 11.5 points of recall and, since the step G guards landed,
-costs nothing in prose false positives. It used to cost 2.5 points, all of it on `expected-hard`
-sentences (`pedantic`, `graphical`, `tropic`, `email`), and those are the cases the guards
-close. Fuzzy adds 1.6 points of recall for 0.8 points of prose FP, a single wrong hit
-(`llama` -> Ollama, expected-hard). Alias-only still
-changes 13 negatives, every one an `expected-hard` case where the canonical is a common word
-(`drizzle`, `neon`, `whisper`, `playwright`, `prometheus`, `docker`) or a user-listed alias
-collides with prose (`jot`, `jason`, `tail wind`, `super base`, `okay are`).
+costs nothing in prose false positives (15.3% with it and without it). It used to cost 2.5
+points, all of it on `expected-hard` sentences (`pedantic`, `graphical`, `tropic`, `email`),
+and those are the cases the guards close. Fuzzy adds 1.3 points of recall for 0.8 points of
+prose FP, a single wrong hit (`llama` -> Ollama, expected-hard). Alias-only still changes 17
+negatives, every one an `expected-hard` case: the canonical is a common word (`drizzle`,
+`neon`, `whisper`, `playwright`, `prometheus`, `docker`), a user-listed alias collides with
+prose (`jot`, `jason`, `tail wind`, `super base`, `okay are`), or an identifier's own words are
+ordinary English (`lexicon store` twice, `normalize transcript`, `harvest repo`).
 
 ## Sweep: minConfidence vs accuracy and false positives
 
 | minConfidence | positive acc | positive acc excl. hard | term recall | term precision | term F1 | prose FP | prose FP excl. hard |
 |---|---|---|---|---|---|---|---|
-| 0.70 | 94.2% | 99.6% | 96.5% | 94.7% | 95.6% | 13.3% | 1.1% |
-| 0.75 | 94.2% | 99.6% | 96.5% | 94.7% | 95.6% | 13.3% | 1.1% |
-| 0.80 | 94.2% | 99.6% | 96.5% | 95.0% | 95.7% | 12.5% | 0.0% |
-| **0.82** (default) | **94.2%** | **99.6%** | **96.5%** | 95.0% | **95.7%** | 12.5% | **0.0%** |
-| 0.85 | 91.7% | 96.9% | 93.9% | 95.1% | 94.5% | 11.7% | 0.0% |
-| 0.90 | 82.0% | 86.7% | 85.0% | 94.7% | 89.6% | 11.7% | 0.0% |
-| 0.95 | 75.5% | 80.5% | 78.3% | 94.6% | 85.7% | 10.8% | 0.0% |
+| 0.70 | 95.3% | 99.6% | 96.8% | 93.5% | 95.1% | 16.1% | 1.1% |
+| 0.75 | 95.3% | 99.6% | 96.8% | 93.5% | 95.1% | 16.1% | 1.1% |
+| 0.80 | 95.3% | 99.6% | 96.8% | 93.8% | 95.3% | 15.3% | 0.0% |
+| **0.82** (default) | **95.3%** | **99.6%** | **96.8%** | 93.8% | **95.3%** | 15.3% | **0.0%** |
+| 0.85 | 92.4% | 96.9% | 94.2% | 93.9% | 94.1% | 14.5% | 0.0% |
+| 0.90 | 82.7% | 86.7% | 85.6% | 93.4% | 89.3% | 14.5% | 0.0% |
+| 0.95 | 76.3% | 80.5% | 78.9% | 93.2% | 85.5% | 13.7% | 0.0% |
 
 The curve is flat from 0.70 to 0.82 and falls off above it: the structural guards (key length,
 function-word edges, aliased plain-word bar) do the separating that confidence never could, so
-the threshold now only trades recall away. 0.82 stays the default; it is the F1 peak and the last
-step before recall drops.
+the threshold now only trades recall away. 0.82 stays the default; it shares the F1 peak with
+0.80 and is the last step before recall drops.
 
 ## By category
 
 | category | cases | sentence accuracy | term recall raw | term recall after |
 |---|---|---|---|---|
 | brand | 48 | 97.9% | 5.7% | 98.1% |
-| product | 122 | 93.4% | 5.1% | 96.4% |
-| acronym | 58 | 93.1% | 1.7% | 94.9% |
+| product | 122 | 95.1% | 5.1% | 97.1% |
+| acronym | 58 | 94.8% | 1.7% | 94.9% |
 | person | 34 | 94.1% | 9.3% | 97.7% |
 | identifier | 16 | 93.8% | 5.0% | 95.0% |
-| prose (negatives) | 120 | 85.0% | - | - |
+| prose (negatives) | 124 | 84.7% | - | - |
 
 Identifiers went from 56% to 94% sentence accuracy: the phonetic window no longer swallows the
 word after the identifier (`normalizeTranscript to take` stays intact). The one identifier miss
