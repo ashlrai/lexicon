@@ -8,7 +8,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ADAPTERS, GENERIC, adapterFor, composerFromTarget, findComposer, findSendButton } from '../extension/src/adapters.js';
-import { createBackground } from '../extension/src/background-core.js';
+import { createBackground, tooLargeForApiMessage } from '../extension/src/background-core.js';
+import { MAX_BODY_BYTES as SERVER_MAX_BODY_BYTES } from '../src/serve/server.js';
 import { conflictNote } from '../src/core/index.js';
 import type { KeyValueStore } from '../extension/src/background-core.js';
 import { sendToBackground } from '../extension/src/chrome-store.js';
@@ -17,7 +18,7 @@ import type { ContentHandle } from '../extension/src/content-core.js';
 import { applyCorrections, flatten, invertCorrections, readText } from '../extension/src/editable.js';
 import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
-import { ANY_SITE_DENIED_MESSAGE, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
+import { ANY_SITE_DENIED_MESSAGE, API_MAX_BODY_BYTES, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 import { setMessage } from '../extension/src/rich-text.js';
@@ -1471,5 +1472,65 @@ describe('popup and options messages render commands as <code>', () => {
         expect(line, `${file}: ${line.trim()}`).not.toMatch(/`lexicon[^`$]*`|\.error\b|\.message\b|errorMessage\(|tokenError|parts\.join/);
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('background: text too large for the server request limit', () => {
+  function storeWith(settings: Record<string, unknown>): KeyValueStore {
+    const data: Record<string, unknown> = { settings };
+    return {
+      get: async (keys) => Object.fromEntries(keys.filter((k) => k in data).map((k) => [k, data[k]])),
+      set: async (items) => {
+        Object.assign(data, items);
+      },
+    };
+  }
+  const json = (body: unknown, status = 200): Response => ({ ok: status < 400, status, json: async () => body }) as unknown as Response;
+
+  // Catches: every debounced keystroke in a composer holding more than the
+  // server's 1 MB body limit POSTed the whole text to /normalize, got a 413,
+  // dropped the health cache and fell back, so each check cost two requests
+  // that could never succeed.
+  it('checks text over API_MAX_BODY_BYTES with the embedded lexicon without posting it, and says why', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/health')) return json({ ok: true, version: '1', terms: 1 });
+      if (url.endsWith('/normalize')) return json({ error: 'request body exceeds 1048576 bytes' }, 413);
+      return json({ error: 'nope' }, 404);
+    });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: storeWith({ token: 'a'.repeat(64) }), defaultYaml: EXAMPLE_YAML });
+    const big = 'ping ashler ' + 'x'.repeat(API_MAX_BODY_BYTES);
+    for (const dryRun of [true, false, true]) {
+      const reply = (await bg.handle({ type: 'normalize', text: big, dryRun })) as NormalizeReply;
+      expect(reply).toMatchObject({ ok: true, mode: 'embedded' });
+      expect(reply.ok && reply.replacements[0]).toMatchObject({ original: 'ashler', replacement: 'Ashlr.AI' });
+      expect(reply.ok && reply.fallback).toBe(tooLargeForApiMessage(big.length + '{"text":""}'.length + (dryRun ? ',"dryRun":true'.length : 0)));
+    }
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/normalize'))).toHaveLength(0);
+    // One /health for all three: the size skip never discarded the cache.
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/health'))).toHaveLength(1);
+    // Multi-byte text is measured in UTF-8 bytes, as the server counts it.
+    const wide = 'é'.repeat(API_MAX_BODY_BYTES / 2);
+    expect((await bg.handle({ type: 'normalize', text: wide })) as NormalizeReply).toMatchObject({ ok: true, mode: 'embedded', fallback: expect.stringContaining('1 MB') });
+  });
+
+  it('a server that is down is still reported as down for large text, and text under the limit still goes to the API', async () => {
+    const down = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    const bg = createBackground({ fetch: down as unknown as typeof fetch, store: storeWith({ token: 'a'.repeat(64) }), defaultYaml: EXAMPLE_YAML });
+    const reply = (await bg.handle({ type: 'normalize', text: 'x'.repeat(API_MAX_BODY_BYTES + 1) })) as NormalizeReply;
+    expect(reply.ok && reply.fallback).toContain('cannot reach lexicon serve');
+
+    const up = vi.fn(async (url: string) =>
+      url.endsWith('/health') ? json({ ok: true, version: '1', terms: 1 }) : json({ input: 'hi', output: 'hi', changed: false, replacements: [] }),
+    );
+    const bg2 = createBackground({ fetch: up as unknown as typeof fetch, store: storeWith({ token: 'a'.repeat(64) }), defaultYaml: EXAMPLE_YAML });
+    expect(await bg2.handle({ type: 'normalize', text: 'x'.repeat(API_MAX_BODY_BYTES - 100) })).toMatchObject({ ok: true, mode: 'api' });
+  });
+
+  it('the limit mirrors the server', () => {
+    expect(API_MAX_BODY_BYTES).toBe(SERVER_MAX_BODY_BYTES);
   });
 });

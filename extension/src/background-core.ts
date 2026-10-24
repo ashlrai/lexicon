@@ -7,6 +7,7 @@ import { createEmbedded, learnIntoYaml, lexiconToYaml } from './embedded.js';
 import { conflictNote, parseLexicon, redactSecrets } from './core.js';
 import type { NormalizeIncomplete } from './core.js';
 import {
+  API_MAX_BODY_BYTES,
   coerceSettings,
   errorMessage,
   FETCH_TIMEOUT_MS,
@@ -100,6 +101,15 @@ export const SERVE_STATUS_STEP = 'run `lexicon serve --status` to check the serv
 /** A `/normalize` reply without `output` and `replacements`: most likely a server from another release. */
 export const NORMALIZE_SHAPE_MESSAGE =
   'API /normalize returned an unexpected shape: the server and this extension are likely different releases; update lexicon or the extension so they match.';
+
+/**
+ * The `fallback` of a normalize whose /normalize body (`bytes`, UTF-8) is over
+ * the server's request limit: the server would answer 413 to every such
+ * check, so the embedded lexicon checks it and nothing is posted.
+ */
+export function tooLargeForApiMessage(bytes: number): string {
+  return `the text is ${bytes} bytes as a request, over the 1 MB lexicon serve accepts, so the embedded lexicon checked it`;
+}
 
 /** What a request that never reached the server says: where it went and how to start the server. */
 export function unreachableMessage(baseUrl: string): string {
@@ -220,11 +230,8 @@ export function createBackground(deps: BackgroundDeps): Background {
     };
   }
 
-  async function apiNormalize(settings: Settings, text: string, dryRun: boolean): Promise<NormalizeReply> {
-    const raw = (await fetchJson(settings, '/normalize', {
-      method: 'POST',
-      body: JSON.stringify(dryRun ? { text, dryRun: true } : { text }),
-    })) as Partial<ApiNormalize>;
+  async function apiNormalize(settings: Settings, body: string, text: string): Promise<NormalizeReply> {
+    const raw = (await fetchJson(settings, '/normalize', { method: 'POST', body })) as Partial<ApiNormalize>;
     if (typeof raw.output !== 'string' || !Array.isArray(raw.replacements)) {
       throw new Error(NORMALIZE_SHAPE_MESSAGE);
     }
@@ -247,11 +254,16 @@ export function createBackground(deps: BackgroundDeps): Background {
       reply = embeddedNormalize(settings, text, dryRun);
     } else {
       const h = await health(settings);
+      const body = JSON.stringify(dryRun ? { text, dryRun: true } : { text });
+      const bytes = new TextEncoder().encode(body).length;
       if (!h.health) {
         reply = embeddedNormalize(settings, text, dryRun, h.error ?? 'local API unreachable');
+      } else if (bytes > API_MAX_BODY_BYTES) {
+        // A known 413: the server is fine, so the health cache stays.
+        reply = embeddedNormalize(settings, text, dryRun, tooLargeForApiMessage(bytes));
       } else {
         try {
-          reply = await apiNormalize(settings, text, dryRun);
+          reply = await apiNormalize(settings, body, text);
         } catch (err) {
           healthCache = null;
           reply = embeddedNormalize(settings, text, dryRun, errorMessage(err));

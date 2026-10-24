@@ -48,6 +48,12 @@ export const PRECHECK_DEBOUNCE_MS = 250;
 export const TOAST_MS = 3000;
 export const HEALTH_TTL_MS = 10_000;
 export const FETCH_TIMEOUT_MS = 1500;
+/**
+ * The largest request body `lexicon serve` reads (MAX_BODY_BYTES in
+ * src/serve/server.ts); a longer one is a 413. The background checks text whose
+ * /normalize body would be larger with the embedded lexicon instead of posting it.
+ */
+export const API_MAX_BODY_BYTES = 1024 * 1024;
 
 export interface Correction {
   start: number;
