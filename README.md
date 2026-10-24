@@ -238,7 +238,14 @@ Non-goals: this is not a dictation app, and there are no hosted accounts and no 
 
 ## Part of the Ashlr ecosystem
 
-Lexicon is one of the open-source tools from [Ashlr](https://ashlr.ai), a forward-deployed engineering company: [Phantom Secrets](https://github.com/ashlrai/phantom-secrets), [Locus](https://github.com/ashlrai/locus), [Ashlr Stack](https://github.com/ashlrai/ashlr-stack), [Ashlr Markdown](https://github.com/ashlrai/ashlr-md) and the [Ashlr plugin](https://github.com/ashlrai/ashlr-plugin).
+Lexicon is one of the open-source tools from [Ashlr](https://ashlr.ai), a forward-deployed engineering company. Each one installs and runs on its own:
+
+- **[Phantom](https://phm.dev)** (`phm`): the agent workbench. Source: [ashlrai/phantom](https://github.com/ashlrai/phantom).
+- **[Phantom Secrets](https://phm.dev/secrets)** (`phantom`): keeps real API keys out of agent context with `phm_` placeholders. Source: [ashlrai/phantom-secrets](https://github.com/ashlrai/phantom-secrets).
+- **[Locus](https://github.com/ashlrai/locus)** (`locus`): pins each agent session to one account.
+- **[Ashlr MD](https://md.ashlr.ai)**: a Markdown app with an MCP server.
+- **[Ashlr Stack](https://stack.ashlr.ai)** (`stack`): provisions services and stores their keys in Phantom Secrets.
+- **[ashlr-plugin](https://plugin.ashlr.ai/)** (`ashlr-plugin`): token-efficiency tools for Claude Code and Codex.
 
 **Phantom:** [INTEGRATION.md](./INTEGRATION.md) is a sketch, written from Lexicon's side, of the contract Phantom would integrate against (the lexicon file, the trust gate, the normalize entry points). It changes nothing in Phantom core.
 
