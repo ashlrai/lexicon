@@ -66217,7 +66217,14 @@ async function keepOwnerOnly(file2) {
 function generateToken() {
   return (0, import_node_crypto4.randomBytes)(16).toString("hex");
 }
-async function ensureServeConfig(opts = {}) {
+function tokenProblem(raw) {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return "it is not a JSON object";
+  const token = raw.token;
+  if (token === void 0) return 'it has no "token" key';
+  if (typeof token !== "string") return '"token" is not a string';
+  return `"token" is not 32 to 128 hex characters (0-9, a-f)`;
+}
+async function ensureServeConfig(opts = {}, hooks = {}) {
   return withServeConfigLock(async () => {
     const file2 = getServePath(opts);
     let raw;
@@ -66249,6 +66256,11 @@ async function ensureServeConfig(opts = {}) {
       ...origins ? { allowedOrigins: origins } : {}
     };
     await writeServeConfig(config2, opts);
+    if (raw !== void 0) {
+      hooks.onTokenReplaced?.(
+        `${file2} had no usable token (${tokenProblem(raw)}), so a new token was written there; clients paired with the old one are refused until they get it: lexicon serve --pair (browser extension) or lexicon serve --show (copy it)`
+      );
+    }
     return config2;
   }, opts);
 }
@@ -66511,7 +66523,8 @@ async function runServeInstall(opts, io, deps = {}) {
 `);
     return 1;
   }
-  await ensureServeConfig(storeOpts(opts));
+  await ensureServeConfig(storeOpts(opts), { onTokenReplaced: (message) => io.stderr(`lexicon: warning: ${safeMessage(message)}
+`) });
   const serviceEnv = lexiconServerEnv(env, import_node_path26.default.resolve(opts.cwd ?? process.cwd()), SERVE_PASSTHROUGH_ENV);
   if (platform === "darwin") {
     const label = serveLabel(env);

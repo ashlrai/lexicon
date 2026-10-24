@@ -59,6 +59,7 @@ import {
   resolvePaths,
   isProjectTrustError,
   sanitizeForDisplay,
+  sanitizeForDisplayMax,
   skippedProjectNote,
   spellingConflicts,
   stripInvisible,
@@ -1640,7 +1641,8 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
 
   async function start(): Promise<ServeStartInfo> {
     if (running) throw new Error('server already started');
-    config = await ensureServeConfig(storeOpts);
+    // A replaced token is logged even when quiet: paired clients now get 401.
+    config = await ensureServeConfig(storeOpts, { onTokenReplaced: (message) => log(`[serve] warning: ${sanitizeForDisplayMax(message, Number.POSITIVE_INFINITY)}`) });
     await new Promise<void>((resolve, reject) => {
       const onError = (err: NodeJS.ErrnoException): void => {
         if (err.code === 'EADDRINUSE') {

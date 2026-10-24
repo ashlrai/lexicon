@@ -171,7 +171,27 @@ export function generateToken(): string {
  * the server would answer 401 to; the same race also renamed two writers'
  * temp files over each other, which is how `trust.json` crashed with ENOENT.
  */
-export async function ensureServeConfig(opts: StoreOptions = {}): Promise<ServeConfig> {
+export interface EnsureServeConfigHooks {
+  /**
+   * Called (inside the lock, after the new file is written) when an existing,
+   * non-empty serve.json had no usable token and a new one replaced it, with
+   * one sentence naming the file, why its token was unusable and how paired
+   * clients get the new one. Without it the replacement was silent and every
+   * paired client was answered 401 with no word of why.
+   */
+  onTokenReplaced?: (message: string) => void;
+}
+
+/** Why `raw` (serve.json parsed) has no token `parseServeConfig` accepts. */
+function tokenProblem(raw: unknown): string {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return 'it is not a JSON object';
+  const token = (raw as Record<string, unknown>).token;
+  if (token === undefined) return 'it has no "token" key';
+  if (typeof token !== 'string') return '"token" is not a string';
+  return `"token" is not 32 to 128 hex characters (0-9, a-f)`;
+}
+
+export async function ensureServeConfig(opts: StoreOptions = {}, hooks: EnsureServeConfigHooks = {}): Promise<ServeConfig> {
   return withServeConfigLock(async () => {
     const file = getServePath(opts);
     let raw: unknown;
@@ -207,6 +227,12 @@ export async function ensureServeConfig(opts: StoreOptions = {}): Promise<ServeC
       ...(origins ? { allowedOrigins: origins } : {}),
     };
     await writeServeConfig(config, opts);
+    if (raw !== undefined) {
+      hooks.onTokenReplaced?.(
+        `${file} had no usable token (${tokenProblem(raw)}), so a new token was written there; ` +
+          'clients paired with the old one are refused until they get it: lexicon serve --pair (browser extension) or lexicon serve --show (copy it)',
+      );
+    }
     return config;
   }, opts);
 }

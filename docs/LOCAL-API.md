@@ -44,7 +44,10 @@ with a byte order mark (Windows Notepad) reads as usual. One that is not valid
 JSON after a hand edit stops `lexicon serve` with an error naming it, rather
 than being replaced with a new token (which would have dropped your
 `allowedOrigins` and left every paired client with a stale token); fix it, or
-delete it to get a new token:
+delete it to get a new token. One that parses but has no usable token (none,
+or not 32 to 128 hex characters) gets a new token, keeping `allowedOrigins`,
+and `lexicon serve`, `--show` and `--install` say so on stderr with the reason
+and how paired clients get the new token (`lexicon serve --pair` or `--show`):
 
 ```json
 {

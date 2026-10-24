@@ -127,7 +127,7 @@ export const defaultServeExec: ServeExec = (cmd, args) =>
 
 export async function runServeShow(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
   const home = deps.home ?? homeDir();
-  const config = await ensureServeConfig(storeOpts(opts));
+  const config = await ensureServeConfig(storeOpts(opts), { onTokenReplaced: (message) => io.stderr(`lexicon: warning: ${safeMessage(message)}\n`) });
   const port = opts.port ?? config.port;
   const url = serveUrl(port, opts.host ?? DEFAULT_HOST);
   const configPath = getServePath(storeOpts(opts));
@@ -600,7 +600,7 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     return 1;
   }
   // Make sure the token exists before the service starts, so `--show` right after works.
-  await ensureServeConfig(storeOpts(opts));
+  await ensureServeConfig(storeOpts(opts), { onTokenReplaced: (message) => io.stderr(`lexicon: warning: ${safeMessage(message)}\n`) });
   // The service must read the lexicon and serve.json this shell does (see SERVE_PASSTHROUGH_ENV).
   const serviceEnv = lexiconServerEnv(env, path.resolve(opts.cwd ?? process.cwd()), SERVE_PASSTHROUGH_ENV);
 
