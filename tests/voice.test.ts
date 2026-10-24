@@ -875,6 +875,45 @@ describe('lexicon voice (foreground)', () => {
     expect(h.kills).toEqual([]);
   });
 
+  // Catches: Ctrl-C during a --seconds recording ended the whole process (no
+  // handler for that mode), so nothing was transcribed and the WAV stayed in tmp.
+  it('--seconds: Ctrl-C stops the recording early and the capture is still transcribed', async () => {
+    const h = await harness();
+    let listening: AbortSignal | undefined;
+    h.deps.waitForInterrupt = async (signal) => {
+      listening = signal;
+      // the terminal delivered SIGINT to the whole group; ffmpeg exits on its own
+      h.children[0].resolve(255);
+      return 'sigint';
+    };
+    const run = runVoice({ ...h.opts, seconds: 30 }, h.io, h.deps);
+    const code = await Promise.race([run, new Promise<'hung'>((r) => setTimeout(() => r('hung'), 3000))]);
+    if (code === 'hung') h.children[0]?.resolve(0);
+    expect(code).toBe(EXIT_OK);
+    expect(h.out).toEqual(['ping Ashlr.AI about the Kubernetes rollout\n']);
+    // ffmpeg already had the SIGINT: not signalled again.
+    expect(h.kills).toEqual([]);
+    expect(listening?.aborted).toBe(true);
+    expect(await fs.readdir(path.join(h.dir, 'tmp'))).toEqual([]);
+  });
+
+  it('--seconds: the interrupt listener is released when the recording ends on its own', async () => {
+    const h = await harness();
+    let listening: AbortSignal | undefined;
+    h.deps.waitForInterrupt = (signal) => {
+      listening = signal;
+      return new Promise<'sigint'>(() => undefined);
+    };
+    const spawn = h.deps.spawn;
+    h.deps.spawn = (cmd, args, opts) => {
+      const child = spawn!(cmd, args, opts);
+      setTimeout(() => h.children[0].resolve(0), 5);
+      return child;
+    };
+    expect(await runVoice({ ...h.opts, seconds: 3 }, h.io, h.deps)).toBe(EXIT_OK);
+    expect(listening?.aborted).toBe(true);
+  });
+
   it("a recorder that fails to open the device prints ffmpeg's last lines one per line", async () => {
     const h = await harness({ platform: 'linux' });
     h.opts.quiet = false;
