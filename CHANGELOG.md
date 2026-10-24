@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon edit Nope` says that edit takes no term because it opens the whole lexicon file in `$VISUAL`/`$EDITOR`, and that `lexicon add <canonical> <alias...>` or `lexicon remove <term>` changes one term, as text and under `--json`. It said only "Expected 0 arguments but got 1".
 - A positive integer flag given `0` or a non-number (`harvest --limit/--min-count`, `export --limit`, `suggest --limit`, `daemon --interval`) now shows a value that works for that flag: `option '--limit <n>' argument '0' is invalid. expected a positive integer, e.g. --limit 50`. It ended at "expected a positive integer".
 - `lexicon export` to a one-row-per-alias format (csv, wispr, superwhisper, macos, espanso) reports the rows it wrote: `wrote csv export (2 rows from 1 term; 1 term without an alias wrote no row)`, and `--json` adds `rows`. It said `(2 terms)`, counting a term without an alias that wrote nothing. `terms` keeps its meaning.
 - `lexicon setup --yes` (and the dry run) skips a git `user.name` the write would refuse (over 80 characters, or holding a control character) with a note that says to pass `--person "Your Name"`, instead of creating the lexicon and then failing at the person write. A terminal setup no longer offers that name either.

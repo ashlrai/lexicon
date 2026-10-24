@@ -2335,6 +2335,8 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
         [['add', '--json'], "missing required argument 'canonical'", 'lexicon add --help'],
         [['pack', 'add', '--json'], "missing required argument 'name'", 'lexicon pack add --help'],
         [['nope', '--json'], "unknown command 'nope'", 'lexicon --help'],
+        // Catches: `lexicon edit Nope` said only "Expected 0 arguments but got 1".
+        [['edit', 'Nope', '--json'], 'lexicon edit takes no term: it opens the whole lexicon file in $VISUAL/$EDITOR. To change one term: lexicon add <canonical> <alias...>, or lexicon remove <term>', 'lexicon edit --help'],
       ];
       for (const [args, error, help] of cases) {
         const r = lexicon([...args, '--cwd', tmp], globalPath);
