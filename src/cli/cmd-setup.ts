@@ -33,7 +33,8 @@
  * previews with it; the plan lists the harvest candidates either way so the
  * caller can offer them). Every step is
  * idempotent: addTerm merges, the installers skip what is already there and
- * exports overwrite the same file; a person or company already in the global
+ * an export rewrites its file only when that holds no edits of its own (else
+ * it asks on a terminal, or writes lexicon-<app>-<n>); a person or company already in the global
  * lexicon, or a harvest candidate already covered by a global term, is
  * reported and not added again. All process spawning and filesystem probing
  * goes through `SetupDeps` so tests never touch the machine.

@@ -7215,12 +7215,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs21, exportName) {
+    function addFormats(ajv, list, fs22, exportName) {
       var _a3;
       var _b;
       (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 ? _a3 : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs21[f]);
+        ajv.addFormat(f, fs22[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -14123,14 +14123,14 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs21 = this.flowScalar(this.type);
+              const fs22 = this.flowScalar(this.type);
               if (atNextItem || it.value) {
-                map2.items.push({ start, key: fs21, sep: [] });
+                map2.items.push({ start, key: fs22, sep: [] });
                 this.onKeyLine = true;
               } else if (it.sep) {
-                this.stack.push(fs21);
+                this.stack.push(fs22);
               } else {
-                Object.assign(it, { key: fs21, sep: [] });
+                Object.assign(it, { key: fs22, sep: [] });
                 this.onKeyLine = true;
               }
               return;
@@ -14258,13 +14258,13 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs21 = this.flowScalar(this.type);
+              const fs22 = this.flowScalar(this.type);
               if (!it || it.value)
-                fc.items.push({ start: [], key: fs21, sep: [] });
+                fc.items.push({ start: [], key: fs22, sep: [] });
               else if (it.sep)
-                this.stack.push(fs21);
+                this.stack.push(fs22);
               else
-                Object.assign(it, { key: fs21, sep: [] });
+                Object.assign(it, { key: fs22, sep: [] });
               return;
             }
             case "flow-map-end":
@@ -15912,7 +15912,7 @@ var require_command = __commonJS({
     var EventEmitter = require_node_events().EventEmitter;
     var childProcess = require_node_child_process();
     var path28 = require_node_path();
-    var fs21 = require_node_fs();
+    var fs22 = require_node_fs();
     var process3 = require_node_process();
     var { Argument: Argument2, humanReadableArgName } = require_argument();
     var { CommanderError: CommanderError2 } = require_error();
@@ -16906,7 +16906,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @param {string} subcommandName
        */
       _checkForMissingExecutable(executableFile, executableDir, subcommandName) {
-        if (fs21.existsSync(executableFile)) return;
+        if (fs22.existsSync(executableFile)) return;
         const executableDirMessage = executableDir ? `searched for local subcommand relative to directory '${executableDir}'` : "no directory for search for local subcommand, use .executableDir() to supply a custom directory";
         const executableMissing = `'${executableFile}' does not exist
  - if '${subcommandName}' is not meant to be an executable command, remove description parameter from '.command()' and use '.description()' instead
@@ -16925,10 +16925,10 @@ Expecting one of '${allowedValues.join("', '")}'`);
         const sourceExt = [".js", ".ts", ".tsx", ".mjs", ".cjs"];
         function findFile(baseDir, baseName) {
           const localBin = path28.resolve(baseDir, baseName);
-          if (fs21.existsSync(localBin)) return localBin;
+          if (fs22.existsSync(localBin)) return localBin;
           if (sourceExt.includes(path28.extname(baseName))) return void 0;
           const foundExt = sourceExt.find(
-            (ext) => fs21.existsSync(`${localBin}${ext}`)
+            (ext) => fs22.existsSync(`${localBin}${ext}`)
           );
           if (foundExt) return `${localBin}${foundExt}`;
           return void 0;
@@ -16940,7 +16940,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
         if (this._scriptPath) {
           let resolvedScriptPath;
           try {
-            resolvedScriptPath = fs21.realpathSync(this._scriptPath);
+            resolvedScriptPath = fs22.realpathSync(this._scriptPath);
           } catch {
             resolvedScriptPath = this._scriptPath;
           }
@@ -18203,7 +18203,7 @@ var require_node_net = __commonJS({
 });
 
 // src/mcp/server.ts
-var import_node_fs30 = __toESM(require_node_fs(), 1);
+var import_node_fs31 = __toESM(require_node_fs(), 1);
 var import_node_path32 = __toESM(require_node_path(), 1);
 var import_node_url4 = __toESM(require_node_url(), 1);
 
@@ -64959,9 +64959,10 @@ async function createLexiconFile(target, scope) {
 
 // src/cli/cmd-setup.ts
 var import_node_path28 = __toESM(require_node_path());
-var import_node_fs27 = __toESM(require_node_fs());
+var import_node_fs28 = __toESM(require_node_fs());
 
 // src/cli/setup/steps.ts
+var import_node_fs27 = __toESM(require_node_fs());
 var import_node_path27 = __toESM(require_node_path());
 
 // src/cli/cmd-serve.ts
@@ -65925,6 +65926,21 @@ async function stepServe(ctx) {
     ctx.warn(ctx.opts.forAgent ? "   (retry with: setup_lexicon with apply: true and serve: true)" : "   (retry with: lexicon serve --install)");
   }
 }
+async function readIfThere(file2) {
+  try {
+    return await import_node_fs27.promises.readFile(file2, "utf8");
+  } catch {
+    return void 0;
+  }
+}
+async function freeExportPath(dir, format, ext, text) {
+  for (let n = 2; n < 100; n += 1) {
+    const candidate = import_node_path27.default.join(dir, `lexicon-${format}-${n}.${ext}`);
+    const current = await readIfThere(candidate);
+    if (current === void 0 || text !== void 0 && current === text) return candidate;
+  }
+  return void 0;
+}
 async function stepExport(ctx) {
   stepHeading(ctx, 6, "Dictation app");
   let app;
@@ -65949,20 +65965,39 @@ async function stepExport(ctx) {
   const format = app;
   const desktop = import_node_path27.default.join(ctx.home, "Desktop");
   const dir = ctx.opts.exportDir ?? (ctx.exists(desktop) ? desktop : import_node_path27.default.dirname(ctx.summary.lexiconPath));
-  const file2 = import_node_path27.default.join(dir, `lexicon-${format}.${EXPORT_FORMAT_INFO[format].ext}`);
+  const ext = EXPORT_FORMAT_INFO[format].ext;
+  const file2 = import_node_path27.default.join(dir, `lexicon-${format}.${ext}`);
+  const existing = await readIfThere(file2);
   if (ctx.plan) {
-    ctx.plan.wouldExport.push({ format, path: file2 });
+    const alt = existing !== void 0 ? await freeExportPath(dir, format, ext, void 0) : void 0;
+    ctx.plan.wouldExport.push({ format, path: alt ?? file2 });
+    const shown = safe(tildify(file2, ctx.home));
+    const keep = alt === void 0 ? "" : ctx.plan.interactive ? `; ${shown} exists, so it would ask before replacing it (default no: writes ${safe(tildify(alt, ctx.home))})` : `; ${shown} exists, so it would be kept and ${safe(tildify(alt, ctx.home))} written, unless it holds this same export`;
     ctx.say(
-      ctx.plan.wouldAsk.includes("export") ? `   would ask which app; ${APP_LABELS[app].label} (the default) writes ${safe(tildify(file2, ctx.home))}` : `   would write ${safe(tildify(file2, ctx.home))} for ${APP_LABELS[app].label}`
+      ctx.plan.wouldAsk.includes("export") ? `   would ask which app; ${APP_LABELS[app].label} (the default) writes ${shown}${keep}` : `   would write ${shown} for ${APP_LABELS[app].label}${keep}`
     );
     return;
   }
   const loaded = await loadLexicon({ cwd: ctx.cwd, parseSkipped: false });
   const exported = exportLexiconWithNotes(loaded.merged, format);
-  await writeFileAtomic(file2, exported.text);
-  ctx.summary.exports.push({ format, path: file2 });
+  let target = file2;
+  if (existing !== void 0 && existing !== exported.text) {
+    const shown = safe(tildify(file2, ctx.home));
+    const replace = ctx.prompter ? await ctx.prompter.confirm(`   ${shown} exists and differs from this export (edited by hand?); replace it?`, false) : false;
+    if (!replace) {
+      ctx.say(`   kept ${shown} as it was: it differs from this export${ctx.prompter ? "" : " (no terminal to ask on)"}`);
+      const free = await freeExportPath(dir, format, ext, exported.text);
+      if (free === void 0) {
+        ctx.say(dim(`   nothing written: lexicon-${format}-2 to -99 are taken; later: lexicon export ${format} --out <file>`));
+        return;
+      }
+      target = free;
+    }
+  }
+  await writeFileAtomic(target, exported.text);
+  ctx.summary.exports.push({ format, path: target });
   const count = exported.rows !== void 0 ? plural2(exported.rows, "row") : plural2(loaded.merged.terms.length, "term");
-  ctx.say(`   wrote ${safe(tildify(file2, ctx.home))} (${count})`);
+  ctx.say(`   wrote ${safe(tildify(target, ctx.home))} (${count})`);
   for (const note of exported.notes) ctx.warn(`   ${safeLines(note)}`);
   ctx.say(`   import it in ${APP_LABELS[app].where}`);
 }
@@ -66139,7 +66174,7 @@ async function runSetup(opts, io, deps = {}) {
     home,
     platform: deps.platform ?? process.platform,
     env: deps.env ?? process.env,
-    exists: deps.exists ?? import_node_fs27.existsSync,
+    exists: deps.exists ?? import_node_fs28.existsSync,
     exec: deps.exec ?? defaultSetupExec,
     seeded: [],
     packCanonicals: [],
@@ -66201,7 +66236,7 @@ async function runSetup(opts, io, deps = {}) {
 }
 
 // src/cli/cmd-uninstall.ts
-var import_node_fs28 = __toESM(require_node_fs());
+var import_node_fs29 = __toESM(require_node_fs());
 var import_node_path29 = __toESM(require_node_path());
 function isInstalledServerEntry(entry) {
   if (!isRecord(entry) || typeof entry.command !== "string" || !Array.isArray(entry.args)) return false;
@@ -66331,14 +66366,14 @@ async function uninstallToml(ctx, target) {
   const entry = `[${CODEX_TABLE}]`;
   let text;
   try {
-    text = await import_node_fs28.promises.readFile(target.file, "utf8");
+    text = await import_node_fs29.promises.readFile(target.file, "utf8");
   } catch (err) {
     if (isEnoent(err)) return report(ctx, { file: target.file, entry, outcome: "absent" }, "does not exist");
     throw new Error(`could not read ${target.file}: ${errorMessage(err)}`);
   }
   const { next, outcome } = removeServerFromToml(text);
   if (outcome === "removed" && !ctx.dryRun) {
-    await explainWrite(target.file, () => import_node_fs28.promises.writeFile(target.file, next, "utf8"));
+    await explainWrite(target.file, () => import_node_fs29.promises.writeFile(target.file, next, "utf8"));
   }
   report(ctx, { file: target.file, entry, outcome });
 }
@@ -66724,7 +66759,7 @@ var registerSetupTools = (server, ctx) => {
 var import_node_crypto5 = __toESM(require_node_crypto());
 
 // src/cli/cmd-import.ts
-var import_node_fs29 = __toESM(require_node_fs());
+var import_node_fs30 = __toESM(require_node_fs());
 var import_node_path31 = __toESM(require_node_path());
 var SOURCES2 = TERM_SOURCES;
 var CATEGORIES = ["brand", "person", "product", "acronym", "identifier", "place", "other"];
@@ -66772,10 +66807,10 @@ async function readInputBytes(file2, cwd) {
   if (file2 === "-") return { bytes: await readStdinBytes(MAX_IMPORT_BYTES) };
   const resolved2 = import_node_path31.default.resolve(cwd, file2);
   try {
-    const stat = await import_node_fs29.promises.stat(resolved2);
+    const stat = await import_node_fs30.promises.stat(resolved2);
     if (stat.isDirectory()) throw new Error(`expected a file, got a directory: ${resolved2}`);
     if (stat.size > MAX_IMPORT_BYTES) throw tooLarge(resolved2, stat.size);
-    return { bytes: await import_node_fs29.promises.readFile(resolved2), path: resolved2 };
+    return { bytes: await import_node_fs30.promises.readFile(resolved2), path: resolved2 };
   } catch (err) {
     const code = err.code;
     if (code === "ENOENT") throw new Error(`file not found: ${resolved2}`);
@@ -66822,7 +66857,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   if (dryRun) {
     const paths = resolvePaths({ cwd });
     const target = scope === "project" ? paths.project : paths.global;
-    const blind = opts.leaveUntrusted === true && scope === "project" && target !== void 0 && (0, import_node_fs29.existsSync)(target);
+    const blind = opts.leaveUntrusted === true && scope === "project" && target !== void 0 && (0, import_node_fs30.existsSync)(target);
     const existing = target && !blind ? (await readLexiconFile(target, scope)).lexicon : void 0;
     if (target) report2.path = target;
     if (blind) report2.untrustedTarget = true;
@@ -67203,7 +67238,7 @@ function dirsFromRoots(roots) {
     if (typeof root?.uri !== "string" || !root.uri.startsWith("file:")) continue;
     try {
       const dir = (0, import_node_url4.fileURLToPath)(root.uri);
-      if ((0, import_node_fs30.statSync)(dir).isDirectory()) dirs.push(dir);
+      if ((0, import_node_fs31.statSync)(dir).isDirectory()) dirs.push(dir);
     } catch {
     }
   }
@@ -67419,7 +67454,7 @@ function isMainModule() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return (0, import_node_fs30.realpathSync)((0, import_node_path32.resolve)(entry)) === (0, import_node_fs30.realpathSync)((0, import_node_url4.fileURLToPath)(import.meta.url));
+    return (0, import_node_fs31.realpathSync)((0, import_node_path32.resolve)(entry)) === (0, import_node_fs31.realpathSync)((0, import_node_url4.fileURLToPath)(import.meta.url));
   } catch {
     return false;
   }
