@@ -1026,6 +1026,24 @@ describe('runHook', () => {
       expect(truncateSessionContext(table, 20).length).toBeLessThanOrEqual(20);
     });
 
+    // Catches: the hard cut sliced at max - 3 whatever was there, so a cut
+    // after a high surrogate left half an emoji (not valid UTF-8).
+    it('truncateSessionContext never cuts inside a surrogate pair', async () => {
+      const { truncateSessionContext } = await import('../src/hooks/user-prompt-submit.js');
+      const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+      const emoji = '\u{1F600}'.repeat(40);
+      for (let max = 0; max <= 30; max += 1) {
+        // No table: the hard cut directly.
+        const plain = truncateSessionContext(`a${emoji}`, max);
+        expect(plain.length, `plain ${max}`).toBeLessThanOrEqual(max);
+        expect(lone.test(plain), `plain ${max}`).toBe(false);
+        // A table whose header alone is over the cap: the hard cut of the output.
+        const table = truncateSessionContext([`## ${emoji}`, '', '| a | b |', '| --- | --- |', '| r | x |'].join('\n'), max);
+        expect(table.length, `table ${max}`).toBeLessThanOrEqual(max);
+        expect(lone.test(table), `table ${max}`).toBe(false);
+      }
+    });
+
     // Catches: the loop stopped at the first row that did not fit, so one long
     // row near the top hid every later short row that would have fit.
     it('truncateSessionContext skips a row that does not fit and keeps the later ones that do', async () => {

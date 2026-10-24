@@ -915,7 +915,7 @@ export function truncateSessionContext(text: string, max = SESSION_CONTEXT_MAX_C
   if (text.length <= max) return text;
   const lines = text.split('\n');
   const sep = lines.findIndex((l) => /^\|\s*-+\s*\|/.test(l));
-  if (sep === -1) return text.slice(0, Math.max(0, max - 3)) + '...';
+  if (sep === -1) return hardCut(text, max);
 
   const header = lines.slice(0, sep + 1);
   let end = sep + 1;
@@ -937,7 +937,20 @@ export function truncateSessionContext(text: string, max = SESSION_CONTEXT_MAX_C
   const dropped = rows.length - kept.length;
   const out = [...header, ...kept, moreLine(dropped), ...footer].join('\n');
   // Header + footer alone can exceed a tiny cap; the cap is the contract, so hard-cut then.
-  return out.length <= max ? out : out.slice(0, Math.max(0, max - 3)) + '...';
+  return out.length <= max ? out : hardCut(out, max);
+}
+
+/**
+ * `text` cut to `max` characters with `...`, never inside a surrogate pair:
+ * a cut after a high surrogate left half an emoji, not valid UTF-8, which
+ * reached the model context as U+FFFD (or was refused by a strict encoder).
+ */
+function hardCut(text: string, max: number): string {
+  if (max < 3) return '...'.slice(0, Math.max(0, max));
+  let end = max - 3;
+  const before = text.charCodeAt(end - 1);
+  if (before >= 0xd800 && before <= 0xdbff) end -= 1;
+  return `${text.slice(0, end)}...`;
 }
 
 
