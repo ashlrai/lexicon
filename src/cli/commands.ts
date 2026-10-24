@@ -1023,6 +1023,15 @@ export async function runHarvest(
   if (opts.interactive && json) throw new Error('harvest: --interactive and --json cannot be combined');
   const interactive = opts.interactive === true || (opts.add === true && !opts.yes && !json && tty);
 
+  // The flags first: a bad --limit or --min-count is the error to report,
+  // not the project-trust refusal below, which fixing the flag cannot clear.
+  const harvestOpts: HarvestOptions = {};
+  const limit = parseIntOption(opts.limit, '--limit', HARVEST_MAX_LIMIT);
+  const minCount = parseIntOption(opts.minCount, '--min-count');
+  if (limit !== undefined) harvestOpts.limit = limit;
+  if (minCount !== undefined) harvestOpts.minCount = minCount;
+  if (opts.symbols) harvestOpts.symbols = true;
+
   // `--add` writes to the project file, which refuses an untrusted one. Check
   // up front, as the interactive walk does: the table (or the --json array)
   // used to print first, so the output read as a success right before exit 1.
@@ -1039,13 +1048,6 @@ export async function runHarvest(
       }
     }
   }
-
-  const harvestOpts: HarvestOptions = {};
-  const limit = parseIntOption(opts.limit, '--limit', HARVEST_MAX_LIMIT);
-  const minCount = parseIntOption(opts.minCount, '--min-count');
-  if (limit !== undefined) harvestOpts.limit = limit;
-  if (minCount !== undefined) harvestOpts.minCount = minCount;
-  if (opts.symbols) harvestOpts.symbols = true;
 
   const report = await harvestReport(target, harvestOpts);
   const candidates: HarvestCandidate[] = report.candidates;
