@@ -537,9 +537,11 @@ Options:
   --clients <list>    comma-separated clients to install into, or none (default:
                       detect; one of claude, codex, cursor, windsurf, gemini,
                       claude-desktop, vscode)
-  --company <name>    company or product name to seed (as you want it spelled)
-  --person <name>     your name to seed (default: git user.name, global then
-                      this repo, or $GIT_AUTHOR_NAME)
+  --company <name>    company or product name to seed (as you want it spelled;
+                      one line, at most 80 characters)
+  --person <name>     your name to seed, one line of at most 80 characters
+                      (default: git user.name, global then this repo, or
+                      $GIT_AUTHOR_NAME)
   --phonetic <hint>   pronunciation hint for the company term, e.g. ASH-ler
   --app <app>         dictation app to export for: wispr|superwhisper|macos|none
   --export-dir <dir>  where to write the dictation export (default: ~/Desktop)

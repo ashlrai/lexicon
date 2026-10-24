@@ -464,6 +464,26 @@ describe('runSetup --yes', () => {
     expect(existsSync(globalPath)).toBe(false);
   });
 
+  // Catches: a 100-character --company created the lexicon, then failed at the
+  // write on canonical, aliases[0] and aliases[1]; a dry run planned it as seeded.
+  it('refuses a blank, multi-line or over-cap --company / --person up front, in a dry run too', async () => {
+    const f = fakes();
+    for (const dryRun of [false, true]) {
+      await expect(run({ yes: true, dryRun, clients: 'none', company: 'x'.repeat(100) }, f)).rejects.toThrow(
+        /^--company must be at most 80 characters \(it has 100\); nothing was written/,
+      );
+      await expect(run({ yes: true, dryRun, clients: 'none', company: '   ' }, f)).rejects.toThrow(/^--company must not be blank/);
+      await expect(run({ yes: true, dryRun, clients: 'none', person: 'Mason\nWyatt' }, f)).rejects.toThrow(
+        /^--person must be one line, with no control characters/,
+      );
+    }
+    expect(existsSync(globalPath)).toBe(false);
+    expect(f.installed).toEqual([]);
+    // At the cap is fine.
+    const ok = await run({ yes: true, dryRun: true, clients: 'none', company: ` ${'x'.repeat(80)} ` }, f);
+    expect(ok.code).toBe(0);
+  });
+
   it('--json prints only the summary on stdout and progress on stderr', async () => {
     const f = fakes();
     const { summary, io } = await run({ yes: true, json: true, clients: 'claude', company: 'Ashlr.AI' }, f);

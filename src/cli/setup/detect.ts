@@ -9,6 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { LIMITS, hasControlChars, stripInvisible } from '../../core/index.js';
 import { findOnPath } from '../../util/which.js';
 import type { IO } from '../io.js';
 import { claudeConfigDir } from '../claude-settings.js';
@@ -36,6 +37,23 @@ export function lastLine(text: string): string {
     .map((l) => l.replace(/\x1b\[[0-9;]*m/g, '').trim())
     .filter(Boolean);
   return lines[lines.length - 1] ?? '';
+}
+
+/**
+ * What is wrong with a company or person name given to setup (`--company`,
+ * `--person`, MCP `setup_lexicon`), or undefined when it can be seeded: it
+ * must not be blank, must be one line with no control characters, and must
+ * fit the term cap (LIMITS.word) once invisible characters are stripped and
+ * it is trimmed. Checked before any step runs, so a name the write would
+ * refuse (with errors about generated aliases the caller never passed) is
+ * refused up front, in a dry run as well.
+ */
+export function setupNameProblem(value: string): string | undefined {
+  const name = stripInvisible(value).trim();
+  if (name === '') return 'must not be blank';
+  if (hasControlChars(name)) return 'must be one line, with no control characters';
+  if (name.length > LIMITS.word) return `must be at most ${LIMITS.word} characters (it has ${name.length})`;
+  return undefined;
 }
 
 export function isSetupClient(value: string): value is SetupClient {

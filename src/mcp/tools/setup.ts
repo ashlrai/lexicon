@@ -14,13 +14,14 @@ import {
 } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import type { SetupOptions } from '../../cli/cmd-setup.js';
-import { LIMITS, hasControlChars, stripInvisible } from '../../core/index.js';
+import { LIMITS } from '../../core/index.js';
 import { isRecord } from '../../util/json.js';
 import { errorMessage } from '../../util/errors.js';
 import { runDoctorReport } from '../../cli/commands.js';
 import { reloadStepFor, runInstall } from '../../cli/cmd-install.js';
 import type { InstallOutcome } from '../../cli/cmd-install.js';
 import { runSetup } from '../../cli/cmd-setup.js';
+import { setupNameProblem } from '../../cli/setup/detect.js';
 import { serveInstallBlocker } from '../../cli/cmd-serve.js';
 import { cliCommand } from '../../util/cli-hint.js';
 import { join } from 'node:path';
@@ -179,16 +180,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         // apply refused it with errors about generated aliases the agent never
         // passed. Check both names against the term caps up front, for both.
         for (const [field, value] of [['company', company], ['person', person]] as const) {
-          if (value === undefined) continue;
-          const name = stripInvisible(value).trim();
-          const problem =
-            name === ''
-              ? 'must not be blank'
-              : hasControlChars(name)
-                ? 'must be one line, with no control characters'
-                : name.length > LIMITS.word
-                  ? `must be at most ${LIMITS.word} characters (it has ${name.length})`
-                  : undefined;
+          const problem = value === undefined ? undefined : setupNameProblem(value);
           if (problem !== undefined) {
             throw new Error(`${field} ${problem}; nothing was written. Pass only the name, spelled as the user writes it, or omit ${field}.`);
           }

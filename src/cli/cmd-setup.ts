@@ -42,7 +42,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Command } from 'commander';
-import { listPacks } from '../core/index.js';
+import { LIMITS, listPacks } from '../core/index.js';
 import { bold, dim, fail, jsonError, safe, tildify } from './io.js';
 import { errorMessage } from '../util/errors.js';
 import type { IO } from './io.js';
@@ -50,7 +50,7 @@ import { createPrompter, isInteractive } from './prompt.js';
 import { shellWord } from './cmd-install.js';
 import { SETUP_APPS, SETUP_CLIENTS } from './setup/types.js';
 import type { Ctx, SetupDeps, SetupOptions, SetupPlan, SetupSummary } from './setup/types.js';
-import { defaultSetupExec, isSetupApp, parseClientList, parsePackList } from './setup/detect.js';
+import { defaultSetupExec, isSetupApp, parseClientList, parsePackList, setupNameProblem } from './setup/detect.js';
 import {
   stepClients,
   stepDemo,
@@ -85,7 +85,7 @@ export type {
   SetupPlan,
   SetupSummary,
 } from './setup/types.js';
-export { detectClients, parseClientList, parsePackList, suggestCompany } from './setup/detect.js';
+export { detectClients, parseClientList, parsePackList, setupNameProblem, suggestCompany } from './setup/detect.js';
 
 /**
  * Step h (dry run): the plan card.
@@ -259,6 +259,14 @@ export async function runSetup(
   const home = opts.home ? path.resolve(opts.home) : (deps.home ?? os.homedir());
   // Validate the flags before any step writes anything.
   if (opts.clients !== undefined) parseClientList(opts.clients);
+  // A blank, multi-line or over-cap name otherwise failed only at the write,
+  // after the lexicon was created, with errors about generated aliases.
+  for (const [flag, value] of [['--company', opts.company], ['--person', opts.person]] as const) {
+    const problem = value === undefined ? undefined : setupNameProblem(value);
+    if (problem !== undefined) {
+      throw new Error(`${flag} ${problem}; nothing was written. Pass only the name, spelled as you want it written, or leave ${flag} out.`);
+    }
+  }
   if (opts.app !== undefined && !isSetupApp(opts.app.trim().toLowerCase())) {
     throw new Error(`unknown app "${opts.app}" (expected one of: ${SETUP_APPS.join(', ')})`);
   }
@@ -352,8 +360,8 @@ export function registerSetupCommands(program: Command, io: IO): void {
     .description('guided first-run: seed the lexicon, harvest the repo, install into your agents and dictation app')
     .option('-y, --yes', 'take every default without prompting')
     .option('--clients <list>', `comma-separated clients to install into, or none (default: detect; one of ${SETUP_CLIENTS.join(', ')})`)
-    .option('--company <name>', 'company or product name to seed (as you want it spelled)')
-    .option('--person <name>', 'your name to seed (default: git user.name, global then this repo, or $GIT_AUTHOR_NAME)')
+    .option('--company <name>', `company or product name to seed (as you want it spelled; one line, at most ${LIMITS.word} characters)`)
+    .option('--person <name>', `your name to seed, one line of at most ${LIMITS.word} characters (default: git user.name, global then this repo, or $GIT_AUTHOR_NAME)`)
     .option('--phonetic <hint>', 'pronunciation hint for the company term, e.g. ASH-ler')
     .option('--app <app>', `dictation app to export for: ${SETUP_APPS.join('|')}`)
     .option('--export-dir <dir>', 'where to write the dictation export (default: ~/Desktop)')

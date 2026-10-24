@@ -63427,6 +63427,13 @@ function lastLine(text) {
   const lines = text.split("\n").map((l) => l.replace(/\x1b\[[0-9;]*m/g, "").trim()).filter(Boolean);
   return lines[lines.length - 1] ?? "";
 }
+function setupNameProblem(value) {
+  const name = stripInvisible(value).trim();
+  if (name === "") return "must not be blank";
+  if (hasControlChars(name)) return "must be one line, with no control characters";
+  if (name.length > LIMITS.word) return `must be at most ${LIMITS.word} characters (it has ${name.length})`;
+  return void 0;
+}
 function isSetupClient(value) {
   return SETUP_CLIENTS.includes(value);
 }
@@ -64615,6 +64622,12 @@ async function runSetup(opts, io, deps = {}) {
   const cwd = import_node_path28.default.resolve(opts.cwd ?? process.cwd());
   const home = opts.home ? import_node_path28.default.resolve(opts.home) : deps.home ?? import_node_os11.default.homedir();
   if (opts.clients !== void 0) parseClientList(opts.clients);
+  for (const [flag, value] of [["--company", opts.company], ["--person", opts.person]]) {
+    const problem = value === void 0 ? void 0 : setupNameProblem(value);
+    if (problem !== void 0) {
+      throw new Error(`${flag} ${problem}; nothing was written. Pass only the name, spelled as you want it written, or leave ${flag} out.`);
+    }
+  }
   if (opts.app !== void 0 && !isSetupApp(opts.app.trim().toLowerCase())) {
     throw new Error(`unknown app "${opts.app}" (expected one of: ${SETUP_APPS.join(", ")})`);
   }
@@ -64780,9 +64793,7 @@ var registerSetupTools = (server, ctx) => {
     },
     async ({ company, person, clients, packs, harvest, serve, apply }) => guarded(async () => {
       for (const [field, value] of [["company", company], ["person", person]]) {
-        if (value === void 0) continue;
-        const name = stripInvisible(value).trim();
-        const problem = name === "" ? "must not be blank" : hasControlChars(name) ? "must be one line, with no control characters" : name.length > LIMITS.word ? `must be at most ${LIMITS.word} characters (it has ${name.length})` : void 0;
+        const problem = value === void 0 ? void 0 : setupNameProblem(value);
         if (problem !== void 0) {
           throw new Error(`${field} ${problem}; nothing was written. Pass only the name, spelled as the user writes it, or omit ${field}.`);
         }
