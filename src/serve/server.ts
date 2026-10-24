@@ -546,6 +546,22 @@ function exportQueryOptions(url: URL): { categories?: TermCategory[]; limit?: nu
 }
 
 /**
+ * `?json=` of `GET /export/:format`: `1` or `true` answers JSON, `{ format,
+ * content, rows?, dropped?, note? }`, so a client can read the names a format
+ * left out (`dropped`, the sentences `lexicon export --json` gives), which
+ * the ASCII `X-Lexicon-Note` header cannot carry. `0`, `false` or no
+ * parameter keeps the plain export; anything else is a 400.
+ */
+function exportJsonFlag(url: URL): boolean {
+  const raw = url.searchParams.get('json');
+  if (raw === null) return false;
+  const value = raw.trim().toLowerCase();
+  if (value === '1' || value === 'true') return true;
+  if (value === '0' || value === 'false') return false;
+  throw new HttpError(400, `json must be 1, true, 0 or false, got "${sanitizeForDisplay(raw)}"`);
+}
+
+/**
  * The response header that carries `GET /export/:format`'s note, so the body
  * stays exactly the export. Listed in `Access-Control-Expose-Headers` so an
  * allowed browser origin can read it.
@@ -587,18 +603,20 @@ export function exportNote(
   format: ExportFormat,
   opts: { categories?: TermCategory[]; limit?: number },
   dropped: readonly string[] = [],
+  { ascii = true }: { ascii?: boolean } = {},
 ): string | undefined {
   const notes: string[] = [];
-  // Names stay out of a header (it is ASCII only); the CLI's --json lists them.
+  // Names stay out of a header (it is ASCII only); ?json=1 and the CLI's --json list them.
   if (dropped.length > 0) {
-    notes.push(`The ${format} export left entries out to stay within its target's limits; lexicon export ${format} --json lists them under dropped.`);
+    notes.push(`The ${format} export left entries out to stay within its target's limits; GET /export/${format}?json=1 or lexicon export ${format} --json lists them under dropped.`);
   }
   const reason = emptyExportReason(loaded, format, opts);
   if (reason) notes.push(emptyExportNote(reason, { format, filter: `?category=${(opts.categories ?? []).join(',')}` }));
   const skipped = skippedProjectNote(loaded, 'Its terms are not in the export.');
   if (skipped && loaded.merged.terms.length > 0) notes.push(skipped);
   if (notes.length === 0) return undefined;
-  return notes.join(' ').replace(/[^\x20-\x7e]/g, '?');
+  const note = notes.join(' ');
+  return ascii ? note.replace(/[^\x20-\x7e]/g, '?') : note;
 }
 
 
@@ -1370,12 +1388,25 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       const format = resolveExportFormat(exportMatch[1]);
       // The formats to choose from, as MCP export_lexicon and `lexicon export` give them.
       if (format === undefined) throw new HttpError(404, `unknown export format "${sanitizeForDisplay(exportMatch[1])}" (one of: ${EXPORT_FORMATS.join(', ')})`);
-      strictQuery(url, 'GET /export/:format', ['cwd', 'category', 'limit'], ['category']);
+      strictQuery(url, 'GET /export/:format', ['cwd', 'category', 'limit', 'json'], ['category']);
       const exportOpts = exportQueryOptions(url);
+      const asJson = exportJsonFlag(url);
       const loaded = await load(await resolveCwd(url.searchParams.get('cwd')));
       // An empty export answered 200 with no word of why; the reason rides in
       // a header so the body stays exactly the export.
       const exported = exportLexiconWithNotes(loaded.merged, format, exportOpts);
+      if (asJson) {
+        // The header is ASCII and cannot name what a format left out; this
+        // body can, as `lexicon export --json` does.
+        const note = exportNote(loaded, format, exportOpts, [], { ascii: false });
+        return json(200, {
+          format,
+          content: exported.text,
+          ...(exported.rows !== undefined ? { rows: exported.rows } : {}),
+          ...(exported.notes.length > 0 ? { dropped: exported.notes } : {}),
+          ...(note !== undefined ? { note } : {}),
+        });
+      }
       const note = exportNote(loaded, format, exportOpts, exported.notes);
       return {
         status: 200,

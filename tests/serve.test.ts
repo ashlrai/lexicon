@@ -350,7 +350,7 @@ describe('exportNote', () => {
   it('says a format left entries out, in ASCII, and where the list is', () => {
     const loaded = { merged: { version: 1 as const, terms: [{ canonical: 'Café', aliases: [] }] } };
     const note = exportNote(loaded, 'google', {}, ['left out 1 phrase over 100 characters: "Caf\u00e9..."']);
-    expect(note).toBe("The google export left entries out to stay within its target's limits; lexicon export google --json lists them under dropped.");
+    expect(note).toBe("The google export left entries out to stay within its target's limits; GET /export/google?json=1 or lexicon export google --json lists them under dropped.");
     expect(exportNote(loaded, 'google', {})).toBeUndefined();
   });
 });
@@ -913,9 +913,47 @@ describe('GET /lexicon, /export/:format, /stats', () => {
     expect((await api('GET', '/export/text?limit=10000')).status).toBe(200);
   });
 
+  // Catches: the X-Lexicon-Note header (ASCII only) said a format left
+  // entries out but could not name them, and no variant of the route could.
+  it('/export/<format>?json=1 names what the format left out', async () => {
+    const repo = path.join(env.home, 'export-json-repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const file = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(file, 'version: 1\nterms:\n  - canonical: Zeta Café\n    aliases: [zeta]\n  - canonical: Zeta\n    aliases: [zeta]\n    category: brand\n', 'utf8');
+    await trustProject(file, { globalPath: env.globalPath });
+    try {
+      const cwd = encodeURIComponent(repo);
+      const plain = await api('GET', `/export/wispr?cwd=${cwd}`);
+      expect(plain.headers.get('x-lexicon-note')).toContain('GET /export/wispr?json=1');
+      const plainText = await plain.text();
+
+      const res = await api('GET', `/export/wispr?cwd=${cwd}&json=1`);
+      expect(res.status).toBe(200);
+      expect(res.headers.get('content-type')).toBe('application/json; charset=utf-8');
+      const body = (await res.json()) as Record<string, unknown>;
+      expect(body).toEqual({
+        format: 'wispr',
+        content: plainText,
+        rows: plainText.trimEnd().split('\n').length - 1,
+        dropped: ['left out 1 word another term already uses (the more used term keeps it): "zeta -> Zeta Café"'],
+      });
+      // No drops: no `dropped`; json=0 is the plain export.
+      const text = (await (await api('GET', '/export/text?json=true')).json()) as Record<string, unknown>;
+      expect(text).toMatchObject({ format: 'text' });
+      expect(text).not.toHaveProperty('dropped');
+      expect(await (await api('GET', '/export/text?json=0')).text()).toBe(await (await api('GET', '/export/text')).text());
+      const bad = await api('GET', '/export/text?json=yes');
+      expect(bad.status).toBe(400);
+      expect(((await bad.json()) as { error: string }).error).toBe('json must be 1, true, 0 or false, got "yes"');
+    } finally {
+      await untrustProject(file, { globalPath: env.globalPath });
+      await fs.rm(repo, { recursive: true, force: true });
+    }
+  });
+
   it('GET routes refuse an unknown or repeated query parameter', async () => {
     const cases: [string, string][] = [
-      ['/export/csv?categories=brand', 'unknown query parameter "categories" (GET /export/:format takes cwd, category, limit)'],
+      ['/export/csv?categories=brand', 'unknown query parameter "categories" (GET /export/:format takes cwd, category, limit, json)'],
       ['/lexicon?cdw=/tmp', 'unknown query parameter "cdw" (GET /lexicon takes cwd)'],
       ['/stats?verbose=1', 'unknown query parameter "verbose" (GET /stats takes cwd)'],
       ['/packs?registry=x', 'unknown query parameter "registry" (GET /packs takes cwd)'],
