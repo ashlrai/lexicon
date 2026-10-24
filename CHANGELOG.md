@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `runExport` and `runHarvest` called directly with a `limit` or `minCount` of 0 refuse it (`--limit must be a positive integer`), as the `--limit` flag does. A direct `limit: 0` csv export wrote nothing and then said the lexicon had no rows.
 - `lexicon setup` on a terminal, when the guessed company name cannot be written (too long, say), says it is not suggesting that name and to type the one you want at the prompt that follows. It said "pass --company" just before that prompt appeared. Skipping the prompt still names `lexicon add` for later; `--yes` and `--dry-run` keep the `--company` note.
 - `runExport` and `runHarvest` called with a string `limit` or `minCount` (not through the `lexicon` CLI flags) take only a string of digits, as `--limit` does: `5abc` was read as 5 and `1.5` as 1. A non-integer number is refused too.
 - `lexicon export csv --limit 5` (or wispr, superwhisper, macos, espanso) on a lexicon whose terms all lack an alias says the export has no rows and names `lexicon add`, on stderr and as the `--json` `note`, as MCP `export_lexicon` and `GET /export/:format` do. `--limit` counts only terms with an alias for these formats, so 0 terms were exported and nothing was said.

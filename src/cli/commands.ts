@@ -177,12 +177,14 @@ function findGitRoot(start: string): string | undefined {
 /**
  * An integer option handed to a handler directly (commander already parsed
  * `--limit` with positiveIntOption). A string takes the same digits-only rule
- * (wholeNumber): parseInt read `5abc` as 5.
+ * (wholeNumber): parseInt read `5abc` as 5. Zero is refused as
+ * positiveIntOption refuses it: a direct `limit: 0` csv export wrote nothing
+ * and then said the lexicon had no rows.
  */
 function parseIntOption(value: string | number | undefined, flag: string): number | undefined {
   if (value === undefined) return undefined;
   const n = typeof value === 'number' ? value : wholeNumber(value);
-  if (n === undefined || !Number.isSafeInteger(n) || n < 0) throw new Error(`${flag} must be a non-negative integer`);
+  if (n === undefined || !Number.isSafeInteger(n) || n <= 0) throw new Error(`${flag} must be a positive integer`);
   return n;
 }
 
