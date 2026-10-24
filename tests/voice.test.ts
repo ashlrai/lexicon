@@ -917,6 +917,54 @@ describe('lexicon voice (foreground)', () => {
     expect(h.out).toEqual(['ping Ashlr.AI about the Kubernetes rollout\n']);
   });
 
+  // Catches: whisper-cli wrote the transcript to a predictable
+  // `<tmpDir>/lexicon-voice-<pid>-<t>.json` straight in the temp directory
+  // (/tmp, shared on Linux) under the umask, so another account could read
+  // the dictation or plant that file first and have it read back as the
+  // transcript. It goes into a fresh 0700 directory, removed afterwards.
+  it('has whisper-cli write its transcript inside a private directory of its own, removed afterwards', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    const seen: Array<{ dir: string; mode: number; entries: string[] }> = [];
+    const exec = h.deps.exec!;
+    h.deps.exec = async (cmd, args, o) => {
+      if (path.basename(cmd) === 'whisper-cli') {
+        const dir = path.dirname(args[args.indexOf('-of') + 1] as string);
+        seen.push({ dir, mode: (await fs.stat(dir)).mode & 0o777, entries: await fs.readdir(dir) });
+      }
+      return exec(cmd, args, o);
+    };
+    expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.out).toEqual(['ping Ashlr.AI about the Kubernetes rollout\n']);
+    expect(seen).toHaveLength(1);
+    const { dir, mode, entries } = seen[0]!;
+    expect(path.dirname(dir)).toBe(h.deps.tmpDir);
+    expect(entries).toEqual([]);
+    if (process.platform !== 'win32') expect(mode).toBe(0o700);
+    await expect(fs.stat(dir)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  // Catches: the foreground WAV was <tmpDir>/lexicon-voice-<pid>-<t>.wav,
+  // opened whether or not something was already there, so in a shared temp
+  // directory a symlink another account planted at that name first was
+  // followed: chmod 0600 and the recording landed on the file it named.
+  it.skipIf(process.platform === 'win32')('records to a WAV it created new, never a file or symlink already at the name', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    h.deps.clock = () => 1_000_000;
+    await fs.mkdir(h.deps.tmpDir!, { recursive: true });
+    const victim = path.join(h.dir, 'victim.txt');
+    await fs.writeFile(victim, 'keep me', { mode: 0o644 });
+    await fs.chmod(victim, 0o644);
+    await fs.symlink(victim, path.join(h.deps.tmpDir!, `lexicon-voice-${process.pid}-${(1_000_000).toString(36)}.wav`));
+    expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(await fs.readFile(victim, 'utf8')).toBe('keep me');
+    expect((await fs.stat(victim)).mode & 0o777).toBe(0o644);
+    const wav = h.spawnCalls[0]!.args.at(-1) as string;
+    expect(path.dirname(wav)).toBe(h.deps.tmpDir);
+    expect(path.basename(wav)).toMatch(/^lexicon-voice-\d+-[0-9a-z]+-[0-9a-f]{12}\.wav$/);
+  });
+
   it('does not re-signal ffmpeg after Ctrl-C (it already got the SIGINT)', async () => {
     const h = await harness();
     h.deps.waitForStop = async () => {

@@ -236,29 +236,41 @@ export async function transcribeFile(wav: string, opts: TranscribeOptions): Prom
   const prompt = opts.prompt === false ? undefined : buildWhisperPrompt(opts.lexicon) || undefined;
   const tmpDir = opts.tmpDir ?? os.tmpdir();
   await fs.mkdir(tmpDir, { recursive: true });
-  const outBase = path.join(tmpDir, `lexicon-voice-${process.pid}-${Date.now().toString(36)}`);
-  const args = whisperArgs({ modelPath: model.path, wav, outBase, lang: opts.lang ?? 'en', translate: opts.translate ?? false, prompt });
-
-  const audioSeconds = await wavSeconds(wav);
-  const timeoutMs = opts.timeoutMs ?? whisperTimeoutMs(audioSeconds);
-  const t0 = Date.now();
+  // whisper-cli writes the transcript to `<outBase>.json`. That was a
+  // predictable name directly in the temp directory (/tmp, shared by every
+  // account on Linux), written under the umask: another user could read what
+  // was dictated, or plant the file (or a symlink) first, and a planted file
+  // was read back as the transcript. A fresh 0700 directory of our own holds
+  // it now, removed with what is in it once the transcript is read.
+  const outDir = await fs.mkdtemp(path.join(tmpDir, 'lexicon-whisper-'));
   let r;
-  try {
-    r = await exec(opts.whisperCli, args, { timeoutMs, ...(signal ? { signal } : {}) });
-  } catch (e) {
-    // The hint was `brew install whisper-cpp` on every platform.
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new MissingToolError('whisper-cli', installHint(opts.platform ?? process.platform, { ffmpeg: false, whisper: true }));
-    throw e;
-  }
-  const transcribeMs = Date.now() - t0;
-  const jsonPath = `${outBase}.json`;
   let json: string | undefined;
+  let transcribeMs: number;
+  let audioSeconds: number;
+  let timeoutMs: number;
   try {
-    json = await fs.readFile(jsonPath, 'utf8');
-  } catch {
-    json = undefined;
+    const outBase = path.join(outDir, 'transcript');
+    const args = whisperArgs({ modelPath: model.path, wav, outBase, lang: opts.lang ?? 'en', translate: opts.translate ?? false, prompt });
+
+    audioSeconds = await wavSeconds(wav);
+    timeoutMs = opts.timeoutMs ?? whisperTimeoutMs(audioSeconds);
+    const t0 = Date.now();
+    try {
+      r = await exec(opts.whisperCli, args, { timeoutMs, ...(signal ? { signal } : {}) });
+    } catch (e) {
+      // The hint was `brew install whisper-cpp` on every platform.
+      if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new MissingToolError('whisper-cli', installHint(opts.platform ?? process.platform, { ffmpeg: false, whisper: true }));
+      throw e;
+    }
+    transcribeMs = Date.now() - t0;
+    try {
+      json = await fs.readFile(`${outBase}.json`, 'utf8');
+    } catch {
+      json = undefined;
+    }
+  } finally {
+    await fs.rm(outDir, { recursive: true, force: true, maxRetries: 5, retryDelay: 50 }).catch(() => undefined);
   }
-  await fs.rm(jsonPath, { force: true }).catch(() => undefined);
   if (r.code === null) await settleAbort(signal, 200);
   if (signal?.aborted) throw new TranscribeInterruptedError();
   if (r.timedOut) throw new WhisperTimeoutError(timeoutMs, audioSeconds, opts.whisperCli, model.path);

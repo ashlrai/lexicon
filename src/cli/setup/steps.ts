@@ -34,7 +34,7 @@ import type {
 } from '../../core/index.js';
 import { errorMessage } from '../../util/errors.js';
 import { writeFileAtomic } from '../../util/atomic.js';
-import { bold, dim, plural, renderTable, safe, safeLines, shownCommand, tildify } from '../io.js';
+import { bold, dim, plural, renderTable, safe, safeLines, safeMessage, safePath, shownCommand, tildify } from '../io.js';
 import type { IO } from '../io.js';
 import { runInstall } from '../cmd-install.js';
 import type { InstallOptions } from '../cmd-install.js';
@@ -179,13 +179,13 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   if (ctx.plan) ctx.plan.lexiconPath = global;
   const existed = ctx.exists(global);
   if (existed) {
-    ctx.say(`   exists: ${safe(tildify(global, ctx.home))}`);
+    ctx.say(`   exists: ${safePath(tildify(global, ctx.home))}`);
   } else if (ctx.plan) {
-    ctx.say(`   would create ${safe(tildify(global, ctx.home))}`);
+    ctx.say(`   would create ${safePath(tildify(global, ctx.home))}`);
   } else {
     const captured = captureIO();
     await runInit({ cwd: ctx.cwd }, captured);
-    ctx.say(`   created ${safe(tildify(global, ctx.home))}`);
+    ctx.say(`   created ${safePath(tildify(global, ctx.home))}`);
   }
   if (ctx.plan) ctx.plan.lexiconExists = existed;
 
@@ -453,13 +453,13 @@ export async function stepHarvest(ctx: Ctx): Promise<void> {
   candidates = candidates.filter((c) => !skipped.includes(c));
   if (skipped.length > 0) ctx.say(dim(`   already in the global lexicon: ${safe(skipped.map((c) => c.canonical).join(', '))}`));
   if (candidates.length === 0) {
-    ctx.say(dim(`   nothing worth adding in ${safe(tildify(root, ctx.home))}`));
+    ctx.say(dim(`   nothing worth adding in ${safePath(tildify(root, ctx.home))}`));
     return;
   }
   if (ctx.plan) {
     ctx.plan.wouldHarvest = candidates.map((c) => c.canonical);
-    const file = safe(path.join(tildify(root, ctx.home), '.lexicon.yaml'));
-    const found = `${candidates.length} name${candidates.length === 1 ? '' : 's'} in ${safe(tildify(root, ctx.home))}: ${safe(ctx.plan.wouldHarvest.join(', '))}`;
+    const file = safePath(path.join(tildify(root, ctx.home), '.lexicon.yaml'));
+    const found = `${candidates.length} name${candidates.length === 1 ? '' : 's'} in ${safePath(tildify(root, ctx.home))}: ${safe(ctx.plan.wouldHarvest.join(', '))}`;
     if (ctx.opts.harvest === true) {
       ctx.say(`   would add to ${file}: ${found}`);
     } else if (ctx.plan.interactive) {
@@ -471,7 +471,7 @@ export async function stepHarvest(ctx: Ctx): Promise<void> {
     return;
   }
   if (ctx.prompter) {
-    ctx.say(`   found ${plural(candidates.length, 'name')} in ${safe(tildify(root, ctx.home))}:`);
+    ctx.say(`   found ${plural(candidates.length, 'name')} in ${safePath(tildify(root, ctx.home))}:`);
     const rows = candidates.map((c) => [c.canonical, c.category, String(c.count), c.suggestedAliases.slice(0, 3).join(', ')]);
     ctx.say(renderTable(rows, ['canonical', 'category', 'count', 'suggested aliases']).replace(/\n$/, ''));
     // Default no. This is a write inside the user's repository plus a trust
@@ -479,7 +479,7 @@ export async function stepHarvest(ctx: Ctx): Promise<void> {
     // cannot yet judge the list. Saying no costs one command later; saying yes
     // by reflex puts terms they have not read in front of everything they
     // dictate in this repo.
-    if (!(await ctx.prompter.confirm(`   add them to the project lexicon (${safe(path.join(tildify(root, ctx.home), '.lexicon.yaml'))})?`, false))) {
+    if (!(await ctx.prompter.confirm(`   add them to the project lexicon (${safePath(path.join(tildify(root, ctx.home), '.lexicon.yaml'))})?`, false))) {
       ctx.say(dim('   skipped; add them later with: lexicon harvest --add, or one by one with: lexicon harvest --interactive'));
       return;
     }
@@ -512,10 +512,10 @@ export async function stepHarvest(ctx: Ctx): Promise<void> {
   }
   if (leaveUntrusted && file !== undefined) {
     ctx.summary.untrustedProject = file;
-    ctx.say(`   added ${created} new term${created === 1 ? '' : 's'}, merged ${merged} in ${safe(tildify(file, ctx.home))} (not trusted: review it and run lexicon trust)`);
+    ctx.say(`   added ${created} new term${created === 1 ? '' : 's'}, merged ${merged} in ${safePath(tildify(file, ctx.home))} (not trusted: review it and run lexicon trust)`);
     return;
   }
-  ctx.say(`   added ${created} new term${created === 1 ? '' : 's'}, merged ${merged} in ${safe(tildify(file ?? root, ctx.home))} (trusted)`);
+  ctx.say(`   added ${created} new term${created === 1 ? '' : 's'}, merged ${merged} in ${safePath(tildify(file ?? root, ctx.home))} (trusted)`);
 }
 
 /** Step d: detect and install the agent clients. */
@@ -527,7 +527,7 @@ export async function stepClients(ctx: Ctx): Promise<void> {
     ctx.plan.detectedClients = detected.map((c) => c.name);
     ctx.say(
       detected.length > 0
-        ? `   detected: ${detected.map((c) => `${c.name} ${dim(safe(tildify(c.evidence ?? '', ctx.home)))}`).join(', ')}`
+        ? `   detected: ${detected.map((c) => `${c.name} ${dim(safePath(tildify(c.evidence ?? '', ctx.home)))}`).join(', ')}`
         : dim('   none detected'),
     );
     const chosen = ctx.opts.clients !== undefined ? parseClientList(ctx.opts.clients) : detected.map((c) => c.name);
@@ -554,7 +554,7 @@ export async function stepClients(ctx: Ctx): Promise<void> {
     if (ctx.prompter) {
       chosen = await ctx.prompter.choose(
         '   install the lexicon MCP server (and hooks) into:',
-        detected.map((c) => ({ label: `${c.name}  ${dim(safe(tildify(c.evidence ?? '', ctx.home)))}`, value: c.name })),
+        detected.map((c) => ({ label: `${c.name}  ${dim(safePath(tildify(c.evidence ?? '', ctx.home)))}`, value: c.name })),
         { multi: true },
       );
       if (chosen.length === 0) {
@@ -593,11 +593,11 @@ export async function stepClients(ctx: Ctx): Promise<void> {
     }
     if (code === 0) {
       ctx.summary.clients.push({ name: client, status: 'installed', detail });
-      ctx.say(`   ${client}: installed ${dim(safe(detail))}`);
+      ctx.say(`   ${client}: installed ${dim(safeMessage(detail))}`);
     } else {
       const failure = lastLine(captured.err) || detail || `exit ${code}`;
       ctx.summary.clients.push({ name: client, status: 'failed', detail: failure });
-      ctx.warn(`   ${client}: failed ${safe(failure)}`);
+      ctx.warn(`   ${client}: failed ${safeMessage(failure)}`);
       ctx.warn(ctx.opts.forAgent ? `   (retry with: install_client with client: "${client}" and apply: true)` : `   (retry with: lexicon install ${client} --apply)`);
     }
   }
@@ -633,7 +633,7 @@ export async function stepServe(ctx: Ctx): Promise<void> {
       const blocked = await (ctx.deps.serveBlocker ?? serveInstallBlocker)(serveDepsFor(ctx));
       if (blocked) {
         ctx.plan.serveBlocked = blocked;
-        ctx.say(`   would not install the login service: ${safe(blocked)}`);
+        ctx.say(`   would not install the login service: ${safeMessage(blocked)}`);
         return;
       }
     }
@@ -677,10 +677,10 @@ export async function stepServe(ctx: Ctx): Promise<void> {
   }
   if (code === 0) {
     ctx.summary.serve = 'installed';
-    ctx.say(`   installed ${dim(safe(lastLine(captured.out)))}`);
+    ctx.say(`   installed ${dim(safeMessage(lastLine(captured.out)))}`);
   } else {
     ctx.summary.serve = 'failed';
-    ctx.warn(`   failed ${safe(lastLine(captured.err) || lastLine(captured.out))}`);
+    ctx.warn(`   failed ${safeMessage(lastLine(captured.err) || lastLine(captured.out))}`);
     ctx.warn(ctx.opts.forAgent ? '   (retry with: setup_lexicon with apply: true and serve: true)' : '   (retry with: lexicon serve --install)');
   }
 }
@@ -745,13 +745,13 @@ export async function stepExport(ctx: Ctx): Promise<void> {
     // cannot compare it with an export of terms it has not written yet.
     const alt = existing !== undefined ? await freeExportPath(dir, format, ext, undefined) : undefined;
     ctx.plan.wouldExport.push({ format, path: alt ?? file });
-    const shown = safe(tildify(file, ctx.home));
+    const shown = safePath(tildify(file, ctx.home));
     const keep =
       alt === undefined
         ? ''
         : ctx.plan.interactive
-          ? `; ${shown} exists, so it would ask before replacing it (default no: writes ${safe(tildify(alt, ctx.home))})`
-          : `; ${shown} exists, so it would be kept and ${safe(tildify(alt, ctx.home))} written, unless it holds this same export`;
+          ? `; ${shown} exists, so it would ask before replacing it (default no: writes ${safePath(tildify(alt, ctx.home))})`
+          : `; ${shown} exists, so it would be kept and ${safePath(tildify(alt, ctx.home))} written, unless it holds this same export`;
     ctx.say(
       ctx.plan.wouldAsk.includes('export')
         ? `   would ask which app; ${APP_LABELS[app].label} (the default) writes ${shown}${keep}`
@@ -768,7 +768,7 @@ export async function stepExport(ctx: Ctx): Promise<void> {
   // the export goes to the next free `lexicon-<app>-<n>.<ext>`.
   let target = file;
   if (existing !== undefined && existing !== exported.text) {
-    const shown = safe(tildify(file, ctx.home));
+    const shown = safePath(tildify(file, ctx.home));
     const replace = ctx.prompter ? await ctx.prompter.confirm(`   ${shown} exists and differs from this export (edited by hand?); replace it?`, false) : false;
     if (!replace) {
       ctx.say(`   kept ${shown} as it was: it differs from this export${ctx.prompter ? '' : ' (no terminal to ask on)'}`);
@@ -785,7 +785,7 @@ export async function stepExport(ctx: Ctx): Promise<void> {
   ctx.summary.exports.push({ format, path: target });
   // Every app format writes one row per alias, so the rows are what the app imports.
   const count = exported.rows !== undefined ? plural(exported.rows, 'row') : plural(loaded.merged.terms.length, 'term');
-  ctx.say(`   wrote ${safe(tildify(target, ctx.home))} (${count})`);
+  ctx.say(`   wrote ${safePath(tildify(target, ctx.home))} (${count})`);
   // What the format left out (a pair a spreadsheet would run as a formula, a
   // shared shortcut) was dropped without a word, as `lexicon export` says it.
   for (const note of exported.notes) ctx.warn(`   ${safeLines(note)}`);

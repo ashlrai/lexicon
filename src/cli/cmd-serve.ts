@@ -770,7 +770,7 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     // the task, so a fresh install served nothing until then. End the old
     // instance, then start the new one, as bootout + bootstrap and restart do.
     const ended = await runAndReport(exec, io, 'schtasks', ['/End', '/TN', taskName]);
-    if (ended.code !== 0 && !schtasksNotRunning(ended)) {
+    if (ended.code !== 0 && !(await schtasksNothingToEnd(exec, taskName, ended))) {
       io.stderr(
         `lexicon: created the Scheduled Task "${safe(taskName)}" but could not end its running instance (schtasks /End failed, see above), ` +
           `so the old one may still be serving; run \`schtasks /End /TN "${safe(taskName)}"\` then \`schtasks /Run /TN "${safe(taskName)}"\`\n`,
@@ -795,10 +795,42 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
 
 /**
  * True when a failed `schtasks /End` only means there was nothing to end:
- * the task is not running (or, on a first install, did not exist).
+ * the task is not running (or, on a first install, did not exist). The
+ * English message is a fallback: schtasks words its errors in the system
+ * language, so on a localized Windows a task that was not running failed
+ * install and uninstall. `schtasksTaskState` asks first.
  */
-function schtasksNotRunning(result: ExecResult): boolean {
+async function schtasksNothingToEnd(exec: ServeExec, taskName: string, result: ExecResult): Promise<boolean> {
+  const state = await schtasksTaskState(exec, taskName);
+  if (!state.exists || state.running === false) return true;
   return schtasksNotFound(result) || /not (currently )?running|no running instance/i.test(`${result.stderr}\n${result.stdout}`);
+}
+
+/** Task Scheduler's "the task is currently running" result (SCHED_S_TASK_RUNNING, 0x41301). */
+const SCHED_S_TASK_RUNNING = '267009';
+
+/**
+ * Whether the Scheduled Task exists and is running, from `schtasks /Query
+ * /TN <name> /FO CSV /NH /V`: its exit status says whether the task exists,
+ * and a running task's Last Result is SCHED_S_TASK_RUNNING (267009), a number
+ * in every language where the Status column is translated. `running` is
+ * undefined when the output has no row to read.
+ */
+export async function schtasksTaskState(exec: ServeExec, taskName: string): Promise<{ exists: boolean; running?: boolean }> {
+  let result: ExecResult;
+  try {
+    result = await exec('schtasks', ['/Query', '/TN', taskName, '/FO', 'CSV', '/NH', '/V']);
+  } catch {
+    return { exists: false };
+  }
+  if (result.code !== 0) return { exists: false };
+  const rows = result.stdout
+    .split(/\r?\n/)
+    .map((l) => l.trim())
+    .filter((l) => l.startsWith('"'))
+    .map((l) => [...l.matchAll(/"((?:[^"]|"")*)"/g)].map((m) => (m[1] ?? '').replace(/""/g, '"')));
+  if (rows.length === 0) return { exists: true };
+  return { exists: true, running: rows.some((fields) => fields.some((f) => f.trim() === SCHED_S_TASK_RUNNING)) };
 }
 
 /** The serve.env the Windows Scheduled Task loads with --env-file, beside serve.json. */
@@ -806,7 +838,7 @@ function serveEnvPath(opts: ServeOptions): string {
   return path.join(path.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
 }
 
-/** True when a failed schtasks command means the task does not exist. */
+/** True when a failed schtasks command means the task does not exist (the English message; see schtasksTaskState). */
 function schtasksNotFound(result: ExecResult): boolean {
   return /cannot find|does not exist/i.test(`${result.stderr}\n${result.stdout}`);
 }
@@ -878,7 +910,7 @@ export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeD
     // Deleting a task leaves its running instance serving (until logout), as
     // bootout and disable --now do not on the other two platforms: end it first.
     const ended = await runAndReport(exec, io, 'schtasks', ['/End', '/TN', taskName]);
-    const endFailed = ended.code !== 0 && !schtasksNotRunning(ended);
+    const endFailed = ended.code !== 0 && !(await schtasksNothingToEnd(exec, taskName, ended));
     if (endFailed) {
       io.stderr(`lexicon: could not end the running instance of the Scheduled Task "${safe(taskName)}" (schtasks /End failed, see above); it keeps serving until you log out or end it in Task Manager\n`);
     }
@@ -891,7 +923,10 @@ export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeD
     // "was not installed" case the other two platforms report rather than
     // fail. Any other failure (access denied, the scheduler service down)
     // left the task in place and was reported as not installed, exit 0.
-    if (schtasksNotFound(deleted)) {
+    // Whether the task is still there is asked of schtasks /Query, whose
+    // exit status is the same in every language; the English message is
+    // the fallback.
+    if (!(await schtasksTaskState(exec, taskName)).exists || schtasksNotFound(deleted)) {
       line(io, `Scheduled Task ${safe(taskName)} was not installed`);
       return (await removeServeEnv(opts, io)) ? 0 : 1;
     }

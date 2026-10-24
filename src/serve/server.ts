@@ -21,7 +21,7 @@
  * `createServer()` is exported so tests and the menu bar app can embed it;
  * signal handling lives in the CLI command (src/cli/cmd-serve.ts).
  */
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { promises as fs, realpathSync } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
@@ -94,7 +94,8 @@ import {
   getServePath,
   isOriginAllowed,
   serveUrl,
-  writeServeConfig,
+  readServeConfig,
+  recordServePort,
 } from './config.js';
 import type { ServeConfig } from './config.js';
 import { isHeldLockError } from '../util/atomic.js';
@@ -263,6 +264,8 @@ export interface AliasesResponse {
 }
 
 export const MAX_BODY_BYTES = 1024 * 1024;
+/** A serve.json larger than this is not re-read by a running server (it is a few hundred bytes). */
+const MAX_SERVE_CONFIG_BYTES = 64 * 1024;
 export const MAX_CONCURRENT_REQUESTS = 64;
 export const LEXICON_RELOAD_MS = 2_000;
 /**
@@ -666,9 +669,11 @@ function tokenMatches(header: string | undefined, token: string): boolean {
   if (!header) return false;
   const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
   if (!match) return false;
-  const given = Buffer.from(match[1], 'utf8');
-  const expected = Buffer.from(token, 'utf8');
-  if (given.length !== expected.length) return false;
+  // Fixed-length digests of both: a length check ahead of timingSafeEqual
+  // returned early for a token of the wrong length, so timing told a caller
+  // how long the real token is (32 to 128 hex characters are all valid).
+  const given = createHash('sha256').update(match[1], 'utf8').digest();
+  const expected = createHash('sha256').update(token, 'utf8').digest();
   return timingSafeEqual(given, expected);
 }
 
@@ -995,6 +1000,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   const headersTimeout = Math.min(opts.headersTimeoutMs ?? HEADERS_TIMEOUT_MS, requestTimeout);
 
   let config: ServeConfig | undefined;
+  /** serve.json's identity (inode, size, mtime, ctime) when `config` was last refreshed from it. */
+  let configStamp: string | undefined;
+  let refreshing: Promise<void> | undefined;
   let boundPort = 0;
   let inFlight = 0;
   const cache = new Map<string, CachedLexicon>();
@@ -1331,6 +1339,48 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   }
 
   /**
+   * Pick up a serve.json replaced while the server runs. The token was read
+   * once at start, so after the file was deleted and `lexicon serve --show`
+   * (or `--install`) minted a new one, the running server answered that token
+   * 401 until it was restarted. Bounded: one refresh at a time, a stat first,
+   * and the file is read again only when its inode, size or times changed (a
+   * writer always replaces it by rename, so a read never sees half a file).
+   * The same format checks as start's apply (`readServeConfig`); a missing,
+   * oversized or unusable file keeps the config the server has. A token is
+   * only ever accepted when it equals the one `config` holds.
+   */
+  function refreshConfig(): Promise<void> {
+    if (!config) return Promise.resolve();
+    refreshing ??= (async () => {
+      try {
+        const st = await fs.stat(getServePath(storeOpts));
+        const stamp = `${st.ino}:${st.size}:${st.mtimeMs}:${st.ctimeMs}`;
+        if (stamp === configStamp || !st.isFile() || st.size > MAX_SERVE_CONFIG_BYTES) return;
+        const fresh = await readServeConfig(storeOpts);
+        configStamp = stamp;
+        if (fresh && config) config = { ...fresh, port: config.port };
+      } catch {
+        // Missing or unreadable: keep the config the server has.
+      } finally {
+        refreshing = undefined;
+      }
+    })();
+    return refreshing;
+  }
+
+  /**
+   * True when `header` carries the current token. A token that does not
+   * match the cached one makes the server look at serve.json again first.
+   */
+  async function authorized(header: string | undefined): Promise<boolean> {
+    if (!config) return false;
+    if (tokenMatches(header, config.token)) return true;
+    if (!header) return false;
+    await refreshConfig();
+    return tokenMatches(header, config.token);
+  }
+
+  /**
    * GET /pair: the token-bearing page, without bearer auth. Two gates instead:
    * the socket must be a loopback one (a non-loopback `--host` never leaks the
    * token to the network) and `Host` must name this server as 127.0.0.1 or
@@ -1371,13 +1421,15 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       // and whether they are trusted.
       const cwdParam = url.searchParams.get('cwd');
       if (cwdParam !== null && !config) throw serverStarting();
-      if (cwdParam !== null && config && !tokenMatches(req.headers.authorization, config.token)) {
+      if (cwdParam !== null && config && !(await authorized(req.headers.authorization))) {
         throw tokenRequired('/health?cwd= needs the bearer token, which plain /health does not');
       }
       return json(200, await health(await resolveCwd(cwdParam)));
     }
     if (pathname === PAIR_PATH) {
       if (method !== 'GET') throw notGet();
+      // The page hands out the token, so it is the one serve.json holds now.
+      await refreshConfig();
       return pairPage(req);
     }
 
@@ -1385,7 +1437,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     // token was answered 401 "invalid" too. That is the starting 503; a wrong
     // token once the config is loaded stays the 401.
     if (!config) throw serverStarting();
-    if (!tokenMatches(req.headers.authorization, config.token)) {
+    if (!(await authorized(req.headers.authorization))) {
       throw tokenRequired();
     }
 
@@ -1665,9 +1717,10 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     const address = server.address();
     boundPort = typeof address === 'object' && address !== null ? address.port : requestedPort;
     // Keep serve.json pointing at the live port so `--show`/`--status` and clients find it.
+    // Only the port changes: serve.json is re-read under its lock, so an edit
+    // made while the server was binding (allowedOrigins, a new token) is kept.
     if (config.port !== boundPort) {
-      config = { ...config, port: boundPort };
-      await writeServeConfig(config, storeOpts);
+      config = await recordServePort(boundPort, config, storeOpts);
     }
     const shownHost = host.includes(':') ? `[${host}]` : host;
     return {
