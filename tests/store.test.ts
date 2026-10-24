@@ -1176,6 +1176,19 @@ describe('global parse cache', () => {
     await expect(fs.stat(cachePath())).rejects.toThrow();
   });
 
+  // Catches: version 4 entries were parsed before the schema refused U+FFFE,
+  // U+FFFF and unpaired surrogates, so one could serve a parse the schema now refuses.
+  it('reparses a version 4 entry (from before U+FFFE, U+FFFF and unpaired surrogates were refused)', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, `${PAD}version: 1\nterms:\n  - canonical: G\n    aliases: [gee]\n`);
+    await loadLexicon({ cwd: tmp, globalPath });
+    const entry = await readEntry();
+    const lexicon = JSON.stringify({ version: 1, terms: [{ canonical: 'G', aliases: ['old\uFFFE'] }] });
+    await fs.writeFile(cachePath(), JSON.stringify({ ...entry, version: 4, lexicon, sum: cacheChecksum(lexicon) }));
+    expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'G')?.aliases).toEqual(['gee']);
+    expect((await readEntry()).version).toBe(PARSE_CACHE_VERSION);
+  });
+
   it('is refreshed by writeLexiconFile, so the next load reads the cache instead of the YAML', async () => {
     // The real validator, so the cached value is what the reader would produce.
     const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
@@ -1287,6 +1300,18 @@ describe('project parse cache', () => {
     // A damaged entry (checksum mismatch) falls back to the YAML.
     await fs.writeFile(cachePath(), JSON.stringify({ ...entry, lexicon }));
     expect(findTerm((await loadLexicon({ cwd: root, globalPath })).merged, 'P')?.aliases).toEqual(['pee']);
+  });
+
+  // Catches: version 2 entries were parsed before the schema refused U+FFFE,
+  // U+FFFF and unpaired surrogates.
+  it('reparses a version 2 entry (from before U+FFFE, U+FFFF and unpaired surrogates were refused)', async () => {
+    const { root } = await trustedRepo(`${PAD}version: 1\nterms:\n  - canonical: P\n    aliases: [pee]\n`);
+    await loadLexicon({ cwd: root, globalPath });
+    const entry = await readEntry();
+    const lexicon = JSON.stringify({ version: 1, terms: [{ canonical: 'P', aliases: ['old\uFFFE'] }] });
+    await fs.writeFile(cachePath(), JSON.stringify({ ...entry, version: 2, lexicon, sum: cacheChecksum(`${entry.sha256}${lexicon}`) }));
+    expect(findTerm((await loadLexicon({ cwd: root, globalPath })).merged, 'P')?.aliases).toEqual(['pee']);
+    expect((await readEntry()).version).toBe(PROJECT_PARSE_CACHE_VERSION);
   });
 
   it('still reads the registry: an untrusted or changed file is not merged however warm the cache is', async () => {

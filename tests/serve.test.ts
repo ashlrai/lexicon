@@ -575,6 +575,28 @@ describe('POST /learn and POST /add', () => {
     expect(await fs.readFile(env.globalPath, 'utf8')).toBe(before);
   });
 
+  // Catches: U+FFFE, U+FFFF and an unpaired surrogate were written (the schema let them through).
+  it('add and aliases refuse U+FFFE, U+FFFF and an unpaired surrogate with a 400, and write nothing', async () => {
+    const before = await fs.readFile(env.globalPath, 'utf8');
+    for (const body of [
+      { canonical: 'Ashlr.AI', aliases: ['Ash\uFFFE'] },
+      { canonical: 'Ash\uFFFFlr' },
+      { canonical: 'Ashlr.AI', never: ['\uD800'] },
+      { canonical: 'Ashlr.AI', notes: 'n\uDC00' },
+    ]) {
+      const res = await api('POST', '/add', body);
+      expect(res.status).toBe(400);
+      const { error } = (await res.json()) as { error: string };
+      expect(error).toMatch(/^term not added: .*must not contain U\+[0-9A-F]{4} .* in term "Ash.*Nothing was written/);
+    }
+    expect(await fs.readFile(env.globalPath, 'utf8')).toBe(before);
+    const aliases = await api('GET', `/aliases?canonical=${encodeURIComponent('Ash\uFFFE')}`);
+    expect(aliases.status).toBe(400);
+    expect(((await aliases.json()) as { error: string }).error).toBe(
+      'canonical must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format)',
+    );
+  });
+
   it('add over the schema cap is a 400 naming the field, not an index into the lexicon file', async () => {
     const res = await api('POST', '/add', { canonical: 'Zed', aliases: ['x'.repeat(81)] });
     expect(res.status).toBe(400);

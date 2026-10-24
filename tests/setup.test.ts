@@ -476,6 +476,12 @@ describe('runSetup --yes', () => {
       await expect(run({ yes: true, dryRun, clients: 'none', person: 'Mason\nWyatt' }, f)).rejects.toThrow(
         /^--person must be one line, with no control characters/,
       );
+      await expect(run({ yes: true, dryRun, clients: 'none', company: 'Ashlr\uFFFE' }, f)).rejects.toThrow(
+        /^--company must not contain U\+FFFE \(U\+FFFE, U\+FFFF and unpaired surrogates fit no file format\); nothing was written/,
+      );
+      await expect(run({ yes: true, dryRun, clients: 'none', company: 'Ashlr.AI', phonetic: 'ASH\uD800' }, f)).rejects.toThrow(
+        /^--phonetic must not contain U\+D800/,
+      );
     }
     expect(existsSync(globalPath)).toBe(false);
     expect(f.installed).toEqual([]);

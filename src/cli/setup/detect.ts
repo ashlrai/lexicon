@@ -9,7 +9,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, promises as fs } from 'node:fs';
 import { homeDir } from '../../util/xdg.js';
 import path from 'node:path';
-import { LIMITS, hasControlChars, stripInvisible } from '../../core/index.js';
+import { LIMITS, UNENCODABLE_NOTE, findUnencodableChar, hasControlChars, stripInvisible } from '../../core/index.js';
 import { findOnPath } from '../../util/which.js';
 import type { IO } from '../io.js';
 import { claudeConfigDir } from '../claude-settings.js';
@@ -52,6 +52,8 @@ export function setupNameProblem(value: string): string | undefined {
   const name = stripInvisible(value).trim();
   if (name === '') return 'must not be blank';
   if (hasControlChars(name)) return 'must be one line, with no control characters';
+  const unencodable = findUnencodableChar(name);
+  if (unencodable) return `must not contain ${unencodable} (${UNENCODABLE_NOTE})`;
   if (name.length > LIMITS.word) return `must be at most ${LIMITS.word} characters (it has ${name.length})`;
   return undefined;
 }
@@ -68,6 +70,8 @@ export function setupHintProblem(value: string): string | undefined {
   const hint = stripInvisible(value).trim();
   if (hint === '') return undefined;
   if (hasControlChars(hint)) return 'must be one line, with no control characters';
+  const unencodable = findUnencodableChar(hint);
+  if (unencodable) return `must not contain ${unencodable} (${UNENCODABLE_NOTE})`;
   if (hint.length > LIMITS.text) return `must be at most ${LIMITS.text} characters (it has ${hint.length})`;
   return undefined;
 }

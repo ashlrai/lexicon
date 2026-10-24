@@ -76,6 +76,39 @@ const OTHER_RE = /\p{C}/gu;
 /** Longest string `sanitizeForDisplay` returns (ellipsis included). */
 export const DISPLAY_MAX_CHARS = 200;
 
+/**
+ * Code units no lexicon file can carry: U+FFFE and U+FFFF (XML 1.0 forbids
+ * them even as character references, so the macos plist cannot hold one) and
+ * a surrogate that is not half of a pair (no UTF-8 file can hold it; the YAML
+ * written back would be unreadable). Not control or invisible characters, so
+ * neither CONTROL_RE nor INVISIBLE_RE caught them. A pair (an emoji) is fine.
+ */
+const UNENCODABLE_RE = /[\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+const UNENCODABLE_RE_G = new RegExp(UNENCODABLE_RE.source, 'g');
+
+/** Why `findUnencodableChar` refuses what it finds, for error messages. */
+export const UNENCODABLE_NOTE = 'U+FFFE, U+FFFF and unpaired surrogates fit no file format';
+
+/**
+ * The first U+FFFE, U+FFFF or unpaired surrogate in `s`, as `U+XXXX`, or
+ * undefined when there is none. The schema refuses every free-text field
+ * that holds one.
+ */
+export function findUnencodableChar(s: string): string | undefined {
+  const m = UNENCODABLE_RE.exec(s);
+  return m ? `U+${m[0].charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}` : undefined;
+}
+
+function unencodableMessage(found: string): string {
+  return `must not contain ${found} (${UNENCODABLE_NOTE})`;
+}
+
+/** `s` with each unencodable code unit written as `\uXXXX`, cut to 40 characters, for naming a term in an error. */
+function showTermName(s: string): string {
+  const shown = s.replace(UNENCODABLE_RE_G, (c) => `\\u${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`);
+  return shown.length > 40 ? `${shown.slice(0, 39)}\u2026` : shown;
+}
+
 export function stripInvisible(s: string): string {
   return s.replace(INVISIBLE_RE, '');
 }
@@ -210,23 +243,59 @@ function WordList(maxItems: number, what: string) {
  * had no `never` key, and list/learn/add --json and the MCP results showed
  * the two shapes side by side.
  */
-function OptionalWordList(maxItems: number, what: string) {
-  return CleanWordList(z.array(z.string()), maxItems, what).optional();
+function OptionalWordList(maxItems: number, what: string, checkUnencodable = false) {
+  return CleanWordList(z.array(z.string()), maxItems, what, checkUnencodable).optional();
 }
 
-function CleanWordList<T extends z.ZodType<string[] | undefined, unknown>>(list: T, maxItems: number, what: string) {
+/**
+ * `checkUnencodable` refuses U+FFFE, U+FFFF and unpaired surrogates per
+ * entry; a term's lists leave it off because `buildTerm` checks them with
+ * the term's name in the message.
+ */
+function CleanWordList<T extends z.ZodType<string[] | undefined, unknown>>(list: T, maxItems: number, what: string, checkUnencodable = false) {
+  const word = z
+    .string()
+    .max(LIMITS.word, `must be at most ${LIMITS.word} characters`)
+    .refine((s) => !hasControlChars(s), 'must not contain control characters or newlines');
   return list
     .transform((list) => (list ?? []).map((s) => stripInvisible(s).trim()).filter((s) => s.length > 0))
     .pipe(
       z
         .array(
-          z
-            .string()
-            .max(LIMITS.word, `must be at most ${LIMITS.word} characters`)
-            .refine((s) => !hasControlChars(s), 'must not contain control characters or newlines'),
+          checkUnencodable
+            ? word.superRefine((s, ctx) => {
+                const found = findUnencodableChar(s);
+                if (found) ctx.addIssue({ code: 'custom', message: unencodableMessage(found) });
+              })
+            : word,
         )
         .max(maxItems, `at most ${maxItems} ${what}`),
     );
+}
+
+/** The free-text fields of a term `buildTerm` checks for unencodable characters. */
+const TERM_TEXT_FIELDS = ['canonical', 'aliases', 'never', 'phonetic', 'notes', 'createdAt'] as const;
+
+/**
+ * Refuse U+FFFE, U+FFFF and unpaired surrogates in any of a term's free-text
+ * fields, at that field's path, naming the term. A term-level check rather
+ * than a field-level one so the message can say which term: a path such as
+ * `terms[812].aliases[3]` alone left a hand editor counting entries.
+ */
+function refuseUnencodable(term: Record<string, unknown>, ctx: z.RefinementCtx): void {
+  const name = typeof term.canonical === 'string' ? showTermName(term.canonical) : '';
+  for (const field of TERM_TEXT_FIELDS) {
+    const value = term[field];
+    const entries: Array<[string, (string | number)[]]> = Array.isArray(value)
+      ? value.map((v, i) => [String(v), [field, i]])
+      : typeof value === 'string'
+        ? [[value, [field]]]
+        : [];
+    for (const [text, at] of entries) {
+      const found = findUnencodableChar(text);
+      if (found) ctx.addIssue({ code: 'custom', path: at, message: `${unencodableMessage(found)} in term "${name}"` });
+    }
+  }
 }
 
 /**
@@ -293,7 +362,7 @@ function buildTerm(category: ReturnType<typeof buildCategory>, scope: ReturnType
     // `pinProjectHits` in store.ts.
     hits: z.number().int().nonnegative().optional(),
     never: OptionalWordList(LIMITS.aliases, 'never words per term'),
-  }));
+  }).superRefine(refuseUnencodable));
 }
 
 function buildSettings() {
@@ -301,9 +370,9 @@ function buildSettings() {
     minConfidence: z.number().min(0).max(1).optional(),
     phonetic: z.boolean().optional(),
     fuzzy: z.boolean().optional(),
-    protectedWords: OptionalWordList(LIMITS.protectedWords, 'protected words'),
+    protectedWords: OptionalWordList(LIMITS.protectedWords, 'protected words', true),
     skipCode: z.boolean().optional(),
-    packs: OptionalWordList(LIMITS.aliases, 'packs'),
+    packs: OptionalWordList(LIMITS.aliases, 'packs', true),
   }));
 }
 

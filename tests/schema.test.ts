@@ -8,6 +8,7 @@ import {
   LexiconSettingsSchema,
   TermSchema,
   emptyLexicon,
+  findUnencodableChar,
   parseLexicon,
   sanitizeForDisplay,
   stripControlChars,
@@ -227,6 +228,37 @@ describe('hardening (lexicon content reaches model context)', () => {
     // Ordinary unicode (accents, CJK, emoji) is fine.
     const nice = `Zo${cp(0xeb)} ${cp(0x6771)}${cp(0x4eac)} ${cp(0x1f680)}`;
     expect(parseLexicon({ terms: [{ canonical: nice, aliases: ['zoe'] }] }).terms[0].canonical).toBe(nice);
+  });
+
+  // Catches: U+FFFE, U+FFFF and an unpaired surrogate passed the schema
+  // (they are neither control nor invisible characters), though no UTF-8 file
+  // can hold a lone surrogate and XML forbids all three: one such alias made
+  // the macos plist unreadable and the YAML written back unreadable as UTF-8.
+  it('refuses U+FFFE, U+FFFF and an unpaired surrogate in every free-text field, naming the term', () => {
+    const bad = ['\uFFFE', '\uFFFF', '\uD800', '\uDFFF', 'a\uDC00b', 'a\uD83D'];
+    for (const ch of bad) {
+      expect(() => parseLexicon({ terms: [{ canonical: 'Ashlr.AI', aliases: ['ok', `x${ch}`] }] })).toThrow(
+        /terms\[0\]\.aliases\[1\]: must not contain U\+[0-9A-F]{4} \(U\+FFFE, U\+FFFF and unpaired surrogates fit no file format\) in term "Ashlr\.AI"/,
+      );
+    }
+    expect(() => parseLexicon({ terms: [{ canonical: 'Ash\uFFFElr' }] })).toThrow(
+      /terms\[0\]\.canonical: must not contain U\+FFFE .* in term "Ash\\uFFFElr"/,
+    );
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', notes: 'n\uFFFF' }] })).toThrow(/terms\[0\]\.notes: must not contain U\+FFFF .* in term "X"/);
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', phonetic: '\uD800' }] })).toThrow(/terms\[0\]\.phonetic: must not contain U\+D800/);
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', never: ['\uDBFF'] }] })).toThrow(/terms\[0\]\.never\[0\]: must not contain U\+DBFF/);
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', createdAt: '2026\uFFFE' }] })).toThrow(/terms\[0\]\.createdAt: must not contain U\+FFFE/);
+    expect(() => parseLexicon({ terms: [], settings: { protectedWords: ['a\uFFFE'] } })).toThrow(/settings\.protectedWords\[0\]: must not contain U\+FFFE/);
+    expect(() => parseLexicon({ terms: [], settings: { packs: ['\uD800'] } })).toThrow(/settings\.packs\[0\]: must not contain U\+D800/);
+    // Through YAML, as a hand-edited file spells them.
+    expect(() => parseLexicon(parseYaml('terms:\n  - canonical: Ashlr.AI\n    aliases: ["\\uFFFE"]\n'))).toThrow(/aliases\[0\]: must not contain U\+FFFE/);
+    // A surrogate pair (an emoji) and the noncharacters XML allows are fine.
+    const ok = parseLexicon({ terms: [{ canonical: 'Rocket \u{1F680}', aliases: ['\uFFFD', '\uFDD0'] }] });
+    expect(ok.terms[0].canonical).toBe('Rocket \u{1F680}');
+    expect(ok.terms[0].aliases).toEqual(['\uFFFD', '\uFDD0']);
+    expect(findUnencodableChar('a\u{1F680}b')).toBeUndefined();
+    expect(findUnencodableChar('a\uD83D')).toBe('U+D83D');
+    expect(findUnencodableChar('\uDE80x')).toBe('U+DE80');
   });
 
   it('rejects the Unicode line and paragraph separators like newlines', () => {

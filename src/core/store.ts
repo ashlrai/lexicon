@@ -258,10 +258,11 @@ export const PARSE_CACHE_MIN_BYTES = 8 * 1024;
 /**
  * Entry format. 1 was keyed by a sha256 of the text, 2 held the lexicon as an
  * object and re-validated it, 3 held a parse that gave every term `never: []`
- * (and settings `protectedWords: []`, `packs: []`); all are simply reparsed
- * and replaced.
+ * (and settings `protectedWords: []`, `packs: []`), 4 held a parse made
+ * before the schema refused U+FFFE, U+FFFF and unpaired surrogates; all are
+ * simply reparsed and replaced.
  */
-export const PARSE_CACHE_VERSION = 4;
+export const PARSE_CACHE_VERSION = 5;
 
 /**
  * 32-bit FNV-1a of `text`'s UTF-16 code units, as 8 hex digits. A corruption
@@ -439,9 +440,10 @@ export const PROJECT_PARSE_CACHE_FILE_NAME = 'project-parse-cache.json';
 
 /**
  * Entry format of PROJECT_PARSE_CACHE_FILE_NAME. 1 held a parse that gave
- * every term `never: []`; such an entry is reparsed and replaced.
+ * every term `never: []`, 2 one made before the schema refused U+FFFE,
+ * U+FFFF and unpaired surrogates; such an entry is reparsed and replaced.
  */
-export const PROJECT_PARSE_CACHE_VERSION = 2;
+export const PROJECT_PARSE_CACHE_VERSION = 3;
 
 /** A project file read for `loadLexicon`, and whether its parse came from the cache. */
 interface ProjectRead {
