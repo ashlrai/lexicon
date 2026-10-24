@@ -369,6 +369,21 @@ describe('runUserPromptSubmitHook', () => {
       expect(parseCorrections("it's Vercel not versel. It's vercel not Versel.")).toHaveLength(1);
     });
 
+    // Catches: every sentence was parsed for a correction with no bound, so a
+    // 50000-character paste of one sentence repeated took about 300 ms.
+    it('parses each distinct sentence once and stops when the budget says so', async () => {
+      const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+      const names = ['Vercel', 'Supabase', 'Kubernetes', 'Postgres'];
+      const prompt = names.map((n) => `it's ${n} not ${n.toLowerCase()}x.`).join(' ');
+      // Spent from the start: only the whole-text pass, which finds the first.
+      expect(parseCorrections(prompt, undefined, { shouldStop: () => true }).map((c) => c.meant)).toEqual(['Vercel']);
+      let checks = 0;
+      const repeated = `${"it's Vercel not versel. ".repeat(2000)}it's Supabase not super base.`;
+      const found = parseCorrections(repeated, undefined, { shouldStop: () => ((checks += 1), false) });
+      expect(found.map((c) => c.meant)).toEqual(['Vercel', 'Supabase']);
+      expect(checks).toBe(2);
+    });
+
     it('passes the loaded lexicon to parseCorrection, so a name it holds is caught by sound', async () => {
       const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
       expect(parseCorrections("it's Niamh not Neve")).toEqual([]);

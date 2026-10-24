@@ -498,6 +498,14 @@ export function formatCorrectionNote(correction: Correction): string {
   );
 }
 
+/**
+ * How long the UserPromptSubmit hook spends reading a prompt's sentences for
+ * spelling corrections ("it's X not Y") before it stops; the match budget
+ * (HOOK_MATCH_BUDGET_MS) comes on top. A dictated prompt takes well under a
+ * millisecond.
+ */
+export const HOOK_CORRECTION_BUDGET_MS = 25;
+
 /** Most spelling corrections one prompt gets a learn_correction line for; the rest get one closing line. */
 export const CORRECTION_NOTES_MAX = 5;
 
@@ -515,7 +523,7 @@ const SENTENCE_BREAK_RE = /(?<=[.!?])\s+/;
  * `parseCorrection`, so a name it holds is caught when STT wrote it by sound.
  * Exported for tests.
  */
-export function parseCorrections(text: string, lexicon?: CorrectionLexicon): Correction[] {
+export function parseCorrections(text: string, lexicon?: CorrectionLexicon, limits: { shouldStop?: () => boolean } = {}): Correction[] {
   const opts = lexicon ? { lexicon } : {};
   const found: Correction[] = [];
   const seen = new Set<string>();
@@ -541,7 +549,18 @@ export function parseCorrections(text: string, lexicon?: CorrectionLexicon): Cor
     add(whole, prose);
     return found;
   }
-  const perSentence = prose.split(SENTENCE_BREAK_RE).map((sentence) => ({ sentence, c: parseCorrection(sentence, opts) }));
+  // Each distinct sentence is parsed once, and none after `shouldStop` says
+  // the budget is spent: a 50000-character paste of one sentence repeated
+  // parsed every copy, about 300 ms of a hook meant to take under 200.
+  const parsed = new Map<string, Correction | undefined>();
+  const perSentence: Array<{ sentence: string; c: Correction | undefined }> = [];
+  for (const sentence of prose.split(SENTENCE_BREAK_RE)) {
+    if (!parsed.has(sentence)) {
+      if (limits.shouldStop?.()) break;
+      parsed.set(sentence, parseCorrection(sentence, opts));
+    }
+    perSentence.push({ sentence, c: parsed.get(sentence) });
+  }
   const wholeKey = whole ? keyOf(whole) : undefined;
   add(whole, perSentence.find((p) => p.c !== undefined && keyOf(p.c) === wholeKey)?.sentence ?? prose);
   for (const { sentence, c } of perSentence) add(c, sentence);
@@ -1125,7 +1144,12 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const tail = prompt.slice(head.length);
   const lengthNote = tail ? formatLengthNote(head.length, prompt.length) : '';
 
-  const corrections = parseCorrections(head, loaded.merged);
+  // Bounded like the match below: past HOOK_CORRECTION_BUDGET_MS the rest of
+  // the sentences are not read for corrections (their words are matched as
+  // dictation, as before the per-sentence pass existed).
+  const correctionsStarted = process.hrtime.bigint();
+  const correctionLimit = BigInt(HOOK_CORRECTION_BUDGET_MS * 1e6);
+  const corrections = parseCorrections(head, loaded.merged, { shouldStop: () => process.hrtime.bigint() - correctionsStarted >= correctionLimit });
   const correctionNote = corrections.length > 0 ? formatCorrectionNotes(corrections) : '';
   if (corrections.length > 0) await queueForReview(corrections, loaded);
 
