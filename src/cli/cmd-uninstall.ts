@@ -34,7 +34,7 @@ import {
   readClaudeRegistrationAt,
 } from './claude-settings.js';
 import type { ClaudeRegistrationFiles } from './claude-settings.js';
-import { CODEX_TABLE, INSTALL_CLIENTS, claudeSettingsPathFor, explainWrite, resolveServerPath, targetFor } from './cmd-install.js';
+import { CODEX_TABLE, INSTALL_CLIENTS, claudeSettingsPathFor, codexServerElsewhere, explainWrite, isTomlTableHeader, resolveServerPath, targetFor } from './cmd-install.js';
 import type { InstallClient, InstallTarget } from './cmd-install.js';
 
 export interface UninstallOptions extends CommonOptions {
@@ -112,9 +112,10 @@ export function removeServerFromJson(current: unknown, key: 'mcpServers' | 'serv
   return { next, outcome: 'removed' };
 }
 
-const LEXICON_TABLE_RE = /^\s*\[\s*mcp_servers\.lexicon\s*\]\s*(#.*)?$/;
-/** `[mcp_servers.lexicon]` or any of its sub-tables (`.env`, `.tools`, ...). */
-const LEXICON_ANY_TABLE_RE = /^\s*\[\s*mcp_servers\.lexicon(?:\s*\.[^\]]*)?\s*\]\s*(#.*)?$/;
+/** `[mcp_servers.lexicon]` however its key is spelled (`[mcp_servers."lexicon"]`, `[ mcp_servers . 'lexicon' ]`). */
+const isLexiconTable = (l: string): boolean => isTomlTableHeader(l, CODEX_TABLE);
+/** `[mcp_servers.lexicon]` or any of its sub-tables (`.env`, `.tools`, ...), however spelled. */
+const isLexiconAnyTable = (l: string): boolean => isTomlTableHeader(l, CODEX_TABLE, { orSubTable: true });
 const TABLE_RE = /^\s*\[/;
 
 function isBlankOrComment(l: string): boolean {
@@ -145,7 +146,7 @@ function tomlValue(lines: readonly string[], key: string): unknown {
  */
 export function removeServerFromToml(text: string): { next: string; outcome: UninstallOutcome } {
   const lines = text.split('\n');
-  const start = lines.findIndex((l) => LEXICON_TABLE_RE.test(l));
+  const start = lines.findIndex(isLexiconTable);
   if (start < 0) return { next: text, outcome: 'absent' };
   let end = start + 1;
   while (end < lines.length && !TABLE_RE.test(lines[end] ?? '')) end += 1;
@@ -158,7 +159,7 @@ export function removeServerFromToml(text: string): { next: string; outcome: Uni
   // Remove the table and every lexicon sub-table, wherever each sits.
   let out = lines;
   for (;;) {
-    const at = out.findIndex((l) => LEXICON_ANY_TABLE_RE.test(l));
+    const at = out.findIndex(isLexiconAnyTable);
     if (at < 0) break;
     let stop = at + 1;
     while (stop < out.length && !TABLE_RE.test(out[stop] ?? '')) stop += 1;
@@ -265,6 +266,16 @@ async function uninstallToml(ctx: Ctx, target: InstallTarget): Promise<void> {
   } catch (err) {
     if (isEnoent(err)) return report(ctx, { file: target.file, entry, outcome: 'absent' }, 'does not exist');
     throw new Error(`could not read ${target.file}: ${errorMessage(err)}`);
+  }
+  // The forms install refuses (an inline table or dotted keys defining the
+  // server, an array of tables) are refused here too: removing only the
+  // table, or reporting the server absent, would leave lexicon configured.
+  const elsewhere = codexServerElsewhere(text);
+  if (elsewhere) {
+    throw new CliRefusal(
+      `${target.file} ${elsewhere}; nothing was changed`,
+      `remove that lexicon definition from ${target.file} by hand`,
+    );
   }
   const { next, outcome } = removeServerFromToml(text);
   if (outcome === 'removed' && !ctx.dryRun) {

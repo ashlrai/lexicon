@@ -1120,3 +1120,29 @@ describe('LEXICON_PATH and LEXICON_CWD reach the installed server', () => {
     expect(args.indexOf('lexicon')).toBeGreaterThan(args.indexOf('--scope'));
   });
 });
+
+// Catches: a settings.json that parsed to something other than an object
+// ([], null, a string) was replaced with { hooks }, losing what it held, and
+// after the server had already been registered.
+describe('install claude refuses a settings.json that is not an object', () => {
+  for (const text of ['[]\n', 'null\n', '"x"\n']) {
+    it(`refuses ${text.trim()}, naming the file, writing nothing`, async () => {
+      const settings = path.join(home, '.claude', 'settings.json');
+      await fs.mkdir(path.dirname(settings), { recursive: true });
+      await fs.writeFile(settings, text);
+      const calls: string[][] = [];
+      const run = runInstall('claude', { apply: true, home, cwd }, makeIO(), {
+        cliDir: CLI_DIR,
+        env: { PATH: '' },
+        exec: (_file, args) => {
+          calls.push([...args]);
+          return 'Added stdio MCP server lexicon to user config';
+        },
+      });
+      await expect(run).rejects.toThrow(CliRefusal);
+      await expect(run).rejects.toThrow(`${settings} holds`);
+      expect(await fs.readFile(settings, 'utf8')).toBe(text);
+      expect(calls).toEqual([]);
+    });
+  }
+});

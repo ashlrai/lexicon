@@ -13,6 +13,7 @@ import {
   runUninstall,
 } from '../src/cli/cmd-uninstall.js';
 import type { UninstallDeps, UninstallOptions } from '../src/cli/cmd-uninstall.js';
+import { isInstalledLexiconHook, launchCommandLine, mergeHookIntoSettings } from '../src/cli/claude-settings.js';
 import { shellWord } from '../src/core/index.js';
 import { makeIO } from './helpers.js';
 
@@ -193,6 +194,34 @@ describe('lexicon uninstall codex', () => {
   });
 });
 
+// Catches: uninstall codex matched only the literal [mcp_servers.lexicon]
+// header, so a quoted or spaced spelling (which install recognises) was
+// reported absent and left in place, and the inline and dotted forms install
+// refuses were reported absent too.
+describe('uninstall codex sees every spelling install sees', () => {
+  const launch = `command = "node"\nargs = [${JSON.stringify(SERVER)}]\n`;
+
+  it('removes a quoted or spaced header and its quoted sub-table', () => {
+    for (const header of ['[mcp_servers."lexicon"]', "[ mcp_servers . 'lexicon' ]  # ours"]) {
+      const text = `a = 1\n\n${header}\n${launch}\n[mcp_servers."lexicon".env]\nX = "1"\n\n[other]\nb = 2\n`;
+      expect(removeServerFromToml(text)).toEqual({ next: 'a = 1\n\n[other]\nb = 2\n', outcome: 'removed' });
+    }
+  });
+
+  it('refuses an inline table or dotted keys, writing nothing', async () => {
+    const file = path.join(home, '.codex', 'config.toml');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    for (const text of [
+      `[mcp_servers]\nlexicon = { command = "node", args = [${JSON.stringify(SERVER)}] }\n`,
+      `mcp_servers.lexicon.command = "node"\n`,
+    ]) {
+      await fs.writeFile(file, text);
+      await expect(uninstall('codex')).rejects.toThrow(/defines the lexicon server as (an inline table|dotted keys).*nothing was changed/);
+      expect(await fs.readFile(file, 'utf8')).toBe(text);
+    }
+  });
+});
+
 describe('lexicon uninstall claude', () => {
   const get = (args: string, scope = 'User config (available in all your projects)') =>
     `lexicon:\n  Scope: ${scope}\n  Status: ok\n  Type: stdio\n  Command: node\n  Args: ${args}\n`;
@@ -354,5 +383,31 @@ describe('pure helpers', () => {
     registerUninstallCommands(program, makeIO());
     const cmd = program.commands.find((c) => c.name() === 'uninstall');
     expect(cmd?.options.map((o) => o.long)).toEqual(['--dry-run', '--scope', '--project', '--home', '--json']);
+  });
+});
+
+// Catches: the installed-hook pattern ran over the raw command string and
+// stopped at the escaped quote launchCommandLine writes for a path holding a
+// `"`, so a reinstall from another location added a second hook and uninstall
+// left the hook behind.
+describe('a hook path holding an escaped quote is recognised as ours', () => {
+  const odd = launchCommandLine({ command: 'node', args: ['/home/a"b $c/lexicon/plugin/hook.mjs'], viaNpx: false }, 'linux');
+  const moved = launchCommandLine({ command: 'node', args: ['/opt/lexicon/plugin/hook.mjs'], viaNpx: false }, 'linux');
+
+  it('matches the parsed command, and still not a foreign one', () => {
+    expect(odd).toBe('node "/home/a\\"b \\$c/lexicon/plugin/hook.mjs"');
+    expect(isInstalledLexiconHook(odd)).toBe(true);
+    expect(isInstalledLexiconHook('node "C:\\Users\\me\\lexicon\\plugin\\hook.mjs"')).toBe(true);
+    expect(isInstalledLexiconHook('npx -y @ashlr/lexicon@0.5.6 hook')).toBe(true);
+    expect(isInstalledLexiconHook('node "/x/plugin/hook.mjs" --extra')).toBe(false);
+    expect(isInstalledLexiconHook('node "/x/plugin/hook.mjs')).toBe(false);
+    expect(isInstalledLexiconHook('bash /x/my-lexicon-hook.sh')).toBe(false);
+  });
+
+  it('a reinstall repoints it instead of adding a second hook, and uninstall removes it', () => {
+    const first = mergeHookIntoSettings({}, odd, 5, ['UserPromptSubmit']).settings;
+    const again = mergeHookIntoSettings(first, moved, 5, ['UserPromptSubmit']).settings;
+    expect(again.hooks?.UserPromptSubmit?.flatMap((g) => g.hooks.map((h) => h.command))).toEqual([moved]);
+    expect(removeHooksFromSettings(first, ['UserPromptSubmit'])).toEqual({ settings: {}, removed: 1 });
   });
 });

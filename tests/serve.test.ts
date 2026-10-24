@@ -58,6 +58,8 @@ import {
 } from '../src/serve/index.js';
 import type { LexiconHttpServer, ServeStartInfo } from '../src/serve/index.js';
 import {
+  BOOTOUT_POLL_MS,
+  BOOTOUT_POLL_TRIES,
   browserOpenCommand,
   launchAgentPath,
   launchAgentLogPath,
@@ -106,6 +108,8 @@ function memIO(): IO & { out: string[]; err: string[] } {
 
 function fakeExec(calls: string[][], code = 0): ServeExec {
   return async (cmd, args): Promise<ExecResult> => {
+    // `launchctl print` after a bootout: the label is gone, as launchd answers once it is.
+    if (cmd === 'launchctl' && args[0] === 'print') return { code: 113, stdout: '', stderr: 'Could not find service' };
     calls.push([cmd, ...args]);
     return { code, stdout: '', stderr: code === 0 ? '' : 'nope' };
   };
@@ -2327,6 +2331,7 @@ describe('lexicon serve (CLI)', () => {
       const calls2: string[][] = [];
       const io2 = memIO();
       const exec2: ServeExec = async (cmd, args) => {
+        if (args[0] === 'print') return { code: 113, stdout: '', stderr: '' };
         calls2.push([cmd, ...args]);
         return args[0] === 'bootstrap' ? { code: 5, stdout: '', stderr: 'Input/output error' } : { code: 0, stdout: '', stderr: '' };
       };
@@ -2372,6 +2377,78 @@ describe('lexicon serve (CLI)', () => {
       expect((await fs.stat(systemdUnitPath(home, {}))).mode & 0o777).toBe(0o644);
     } finally {
       process.umask(umask);
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
+  // Catches: bootout returns before launchd has removed the job, and the
+  // bootstrap right after it raced that teardown ("Bootstrap failed: 5").
+  it('--install on macOS waits, bounded, for the booted-out label to go before bootstrap', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
+    try {
+      const cli = await fakeCli(home);
+      const run = async (stillThere: number) => {
+        const calls: string[] = [];
+        const sleeps: number[] = [];
+        let prints = 0;
+        const exec: ServeExec = async (_cmd, args) => {
+          calls.push(args[0] as string);
+          if (args[0] === 'print') return { code: ++prints <= stillThere ? 0 : 113, stdout: '', stderr: '' };
+          return { code: 0, stdout: '', stderr: '' };
+        };
+        const io = memIO();
+        const code = await runServe({ install: true, globalPath: env.globalPath }, io, {
+          platform: 'darwin', home, env: {}, exec, cliPath: cli, nodePath: '/usr/bin/node', uid: 501,
+          sleep: async (ms) => {
+            sleeps.push(ms);
+          },
+        });
+        return { code, calls, sleeps, err: io.err.join('') };
+      };
+      const soon = await run(2);
+      expect(soon.code).toBe(0);
+      expect(soon.calls).toEqual(['bootout', 'print', 'print', 'print', 'bootstrap']);
+      expect(soon.sleeps).toEqual([BOOTOUT_POLL_MS, BOOTOUT_POLL_MS]);
+      expect(soon.err).toBe('');
+
+      const never = await run(Infinity);
+      expect(never.code).toBe(0);
+      expect(never.calls.filter((c) => c === 'print')).toHaveLength(BOOTOUT_POLL_TRIES);
+      expect(never.calls.at(-1)).toBe('bootstrap');
+      expect(never.err).toContain('was still loaded 5s after launchctl bootout; bootstrapping anyway');
+    } finally {
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
+  // Catches: the plist and unit were written in place, which truncates them
+  // first, so a full disk or a killed install left a cut-short service file.
+  it('--install writes the plist and the unit through a temp file', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
+    try {
+      const cli = await fakeCli(home);
+      const files = { darwin: launchAgentPath(home, {}), linux: systemdUnitPath(home, {}) } as const;
+      for (const platform of ['darwin', 'linux'] as const) {
+        const file = files[platform];
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        await fs.writeFile(file, 'previous service file\n');
+        const realWrite = fs.writeFile.bind(fs);
+        const spy = vi.spyOn(fs, 'writeFile').mockImplementation(async (target, data, options) => {
+          if (!String(target).startsWith(path.dirname(file))) return realWrite(target, data, options);
+          await realWrite(target, String(data).slice(0, 5), options);
+          throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+        });
+        const io = memIO();
+        try {
+          expect(await runServe({ install: true, globalPath: env.globalPath }, io, { platform, home, env: {}, exec: fakeExec([]), uid: 501, cliPath: cli, nodePath: '/usr/bin/node' })).toBe(1);
+        } finally {
+          spy.mockRestore();
+        }
+        expect(io.err.join('')).toContain('ENOSPC');
+        expect(await fs.readFile(file, 'utf8')).toBe('previous service file\n');
+        expect(await fs.readdir(path.dirname(file))).toEqual([path.basename(file)]);
+      }
+    } finally {
       await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
   });
@@ -2562,7 +2639,13 @@ describe('lexicon serve (CLI)', () => {
         nodePath: 'C:\\node\\node.exe',
       });
       expect(code).toBe(0);
-      expect(calls).toHaveLength(1);
+      // Catches: the task was created but not started (only a logon starts
+      // it), and /Create /F left an earlier install's instance running.
+      expect(calls).toHaveLength(3);
+      expect(calls.slice(1)).toEqual([
+        ['schtasks', '/End', '/TN', SCHEDULED_TASK_NAME],
+        ['schtasks', '/Run', '/TN', SCHEDULED_TASK_NAME],
+      ]);
       const [cmd, ...args] = calls[0];
       expect(cmd).toBe('schtasks');
       // /XML rather than /TR: the command line holds two quoted absolute paths
@@ -2592,6 +2675,46 @@ describe('lexicon serve (CLI)', () => {
       expect(err).toContain(
         'lexicon: could not create the Scheduled Task "Lexicon"; nothing is installed. Fix the schtasks /Create error above and rerun `lexicon serve --install`, or run `lexicon serve` to start the local API in the foreground\n',
       );
+    } finally {
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
+  it('--install on Windows says which of /End and /Run failed, and a task that is not running is fine', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-schtasks-'));
+    try {
+      const cli = await fakeCli(home);
+      const run = async (fail: Record<string, string>) => {
+        const io = memIO();
+        const calls: string[] = [];
+        const exec: ServeExec = async (_cmd, args) => {
+          calls.push(args[0] as string);
+          const why = fail[args[0] as string];
+          return why === undefined ? { code: 0, stdout: '', stderr: '' } : { code: 1, stdout: '', stderr: why };
+        };
+        const code = await runServe({ install: true, globalPath: env.globalPath }, io, {
+          platform: 'win32',
+          home,
+          env: { USERNAME: 'me' },
+          exec,
+          cliPath: cli,
+          nodePath: 'C:\\node\\node.exe',
+        });
+        return { code, calls, err: io.err.join(''), out: io.out.join('') };
+      };
+      const idle = await run({ '/End': 'ERROR: The task is not currently running.' });
+      expect(idle.code).toBe(0);
+      expect(idle.calls).toEqual(['/Create', '/End', '/Run']);
+
+      const end = await run({ '/End': 'ERROR: Access is denied.' });
+      expect(end.code).toBe(1);
+      expect(end.calls).toEqual(['/Create', '/End']);
+      expect(end.err).toContain('could not end its running instance (schtasks /End failed, see above)');
+
+      const start = await run({ '/Run': 'ERROR: Access is denied.' });
+      expect(start.code).toBe(1);
+      expect(start.err).toContain('could not start it (schtasks /Run failed, see above); it starts at your next logon');
+      expect(start.out).not.toContain('installed Lexicon;');
     } finally {
       await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
@@ -2692,7 +2815,7 @@ describe('lexicon serve (CLI)', () => {
         const io = memIO();
         let xml = '';
         const exec: ServeExec = async (_cmd, args) => {
-          xml = Buffer.from(await fs.readFile(args[4])).toString('utf16le').replace(/^\ufeff/, '');
+          if (args[0] === '/Create') xml = Buffer.from(await fs.readFile(args[4])).toString('utf16le').replace(/^\ufeff/, '');
           return { code: 0, stdout: '', stderr: '' };
         };
         expect(
@@ -2742,6 +2865,56 @@ describe('lexicon serve (CLI)', () => {
         ).toBe(0);
         expect(xml).toContain(`<Arguments>&quot;${cli}&quot; serve</Arguments>`);
         await expect(fs.access(envFile)).rejects.toThrow();
+      } finally {
+        await fs.rm(envFile, { force: true });
+        await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      }
+    });
+
+    // Catches: serve.env was written in place under the umask (0644 here,
+    // beside a 0600 serve.json), so a write cut short truncated it, and
+    // --uninstall left it behind.
+    it('Windows: serve.env is written 0600 through a temp file and removed on uninstall', async () => {
+      const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-schtasks-'));
+      const envFile = path.join(path.dirname(env.globalPath), SERVE_ENV_FILE_NAME);
+      const deps = {
+        platform: 'win32' as const,
+        home,
+        env: { ...shellEnv, USERNAME: 'me' },
+        exec: fakeExec([]),
+        nodePath: 'C:\\node\\node.exe',
+        nodeVersion: 'v22.11.0',
+      };
+      try {
+        const cli = await fakeCli(home);
+        await fs.mkdir(path.dirname(envFile), { recursive: true });
+        await fs.writeFile(envFile, 'OLD=1\n', { mode: 0o644 });
+        await fs.chmod(envFile, 0o644);
+        const realWrite = fs.writeFile.bind(fs);
+        const spy = vi.spyOn(fs, 'writeFile').mockImplementation(async (target, data, options) => {
+          if (String(target).includes(SERVE_ENV_FILE_NAME)) {
+            await realWrite(target, String(data).slice(0, 3), options);
+            throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+          }
+          return realWrite(target, data, options);
+        });
+        try {
+          const failed = memIO();
+          expect(await runServe({ install: true, globalPath: env.globalPath, cwd }, failed, { ...deps, cliPath: cli })).toBe(1);
+          expect(failed.err.join('')).toContain('ENOSPC');
+        } finally {
+          spy.mockRestore();
+        }
+        expect(await fs.readFile(envFile, 'utf8')).toBe('OLD=1\n');
+
+        expect(await runServe({ install: true, globalPath: env.globalPath, cwd }, memIO(), { ...deps, cliPath: cli })).toBe(0);
+        if (process.platform !== 'win32') expect((await fs.stat(envFile)).mode & 0o777).toBe(0o600);
+        expect(await fs.readFile(envFile, 'utf8')).toBe(serveEnvFile({ LEXICON_PATH: lexPath, XDG_CONFIG_HOME: xdg }));
+
+        const io = memIO();
+        expect(await runServe({ uninstall: true, globalPath: env.globalPath }, io, deps)).toBe(0);
+        await expect(fs.access(envFile)).rejects.toThrow();
+        expect(io.out.join('')).toContain(`removed ${envFile}`);
       } finally {
         await fs.rm(envFile, { force: true });
         await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
@@ -2799,17 +2972,44 @@ describe('lexicon serve (CLI)', () => {
       home: 'C:\\Users\\me',
       exec: fakeExec(ok),
     })).toBe(0);
-    expect(ok).toEqual([['schtasks', '/Delete', '/TN', 'Lexicon', '/F']]);
+    // Catches: /Delete alone left the task's running instance serving.
+    expect(ok).toEqual([
+      ['schtasks', '/End', '/TN', 'Lexicon'],
+      ['schtasks', '/Delete', '/TN', 'Lexicon', '/F'],
+    ]);
     expect(io.out.join('')).toContain('removed Scheduled Task Lexicon');
 
-    const missing: string[][] = [];
+    const ioEnd = memIO();
+    const endDenied: ServeExec = async (_cmd, args) =>
+      args[0] === '/End' ? { code: 1, stdout: '', stderr: 'ERROR: Access is denied.' } : { code: 0, stdout: '', stderr: '' };
+    expect(await runServe({ uninstall: true, globalPath: env.globalPath }, ioEnd, {
+      platform: 'win32',
+      home: 'C:\\Users\\me',
+      exec: endDenied,
+    })).toBe(1);
+    expect(ioEnd.out.join('')).toContain('removed Scheduled Task Lexicon');
+    expect(ioEnd.err.join('')).toContain('could not end the running instance of the Scheduled Task "Lexicon"');
+
     const io2 = memIO();
+    const missing: ServeExec = async () => ({ code: 1, stdout: '', stderr: 'ERROR: The system cannot find the file specified.\r\n' });
     expect(await runServe({ uninstall: true, globalPath: env.globalPath }, io2, {
       platform: 'win32',
       home: 'C:\\Users\\me',
-      exec: fakeExec(missing, 1),
+      exec: missing,
     })).toBe(0);
     expect(io2.out.join('')).toContain('was not installed');
+
+    // Catches: every /Delete failure (access denied, the scheduler down) was
+    // reported as "was not installed" with exit 0, the task still in place.
+    const io3 = memIO();
+    const denied: ServeExec = async () => ({ code: 1, stdout: '', stderr: 'ERROR: Access is denied.' });
+    expect(await runServe({ uninstall: true, globalPath: env.globalPath }, io3, {
+      platform: 'win32',
+      home: 'C:\\Users\\me',
+      exec: denied,
+    })).toBe(1);
+    expect(io3.out.join('')).not.toContain('was not installed');
+    expect(io3.err.join('')).toContain('lexicon: could not remove the Scheduled Task "Lexicon": ERROR: Access is denied.');
   });
 
   it('the task XML round-trips its program path and binds the trigger to one user', () => {

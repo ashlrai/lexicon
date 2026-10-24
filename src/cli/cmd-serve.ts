@@ -17,6 +17,7 @@ import { resolveCliEntry } from './cli-entry.js';
 import { lexiconServerEnv } from './cmd-install.js';
 import { isVolatileEntry } from './claude-settings.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
+import { writeFileAtomic } from '../util/atomic.js';
 import { fail, jsonError, jsonOk, line, refuse, safe, safeError, safeLines, safeMessage, tildify } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
@@ -89,7 +90,13 @@ export interface ServeDeps {
   signal?: AbortSignal;
   /** Called once the server is listening (tests). */
   onListening?: (info: { port: number; url: string; token: string }) => void;
+  /** Waits between `launchctl print` polls after a bootout. Default a timer. */
+  sleep?: (ms: number) => Promise<void>;
 }
+
+/** How often, and how many times, `--install` asks launchd whether a booted-out label is gone. */
+export const BOOTOUT_POLL_MS = 100;
+export const BOOTOUT_POLL_TRIES = 50;
 
 function red(s: string, env: NodeJS.ProcessEnv): string {
   return process.stderr.isTTY && !env.NO_COLOR ? `\x1b[31m${s}\x1b[0m` : s;
@@ -558,8 +565,10 @@ export function systemdUnit(nodePath: string, cliPath: string, env?: Readonly<Re
  * shared machines) for a new one, so such an install failed to load.
  */
 async function writeServiceFile(file: string, text: string): Promise<void> {
-  await fs.writeFile(file, text, { encoding: 'utf8', mode: 0o644 });
-  await fs.chmod(file, 0o644);
+  // Through a temp file and a rename: an in-place write truncated the file
+  // first, so a full disk or a killed install left launchd or systemd a cut
+  // short plist or unit. The temp file is created and chmod'ed 0644.
+  await writeFileAtomic(file, text, { mode: 0o644 });
 }
 
 async function runAndReport(exec: ServeExec, io: IO, cmd: string, args: readonly string[]): Promise<ExecResult> {
@@ -656,7 +665,20 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     line(io, `  RunAtLoad + KeepAlive, logs in ${safe(logPath)}`);
     const uid = deps.uid ?? process.getuid?.() ?? 501;
     // A previous install must be booted out before bootstrap accepts the new plist.
-    await exec('launchctl', ['bootout', `gui/${uid}/${label}`]);
+    const target = `gui/${uid}/${label}`;
+    const bootout = await exec('launchctl', ['bootout', target]);
+    // bootout returns before launchd has finished tearing the job down, and a
+    // bootstrap in that window fails ("Bootstrap failed: 5: Input/output
+    // error"). Wait, bounded, until `launchctl print` no longer finds it.
+    if (bootout.code === 0) {
+      const sleep = deps.sleep ?? ((ms: number) => new Promise<void>((resolve) => setTimeout(resolve, ms)));
+      let gone = false;
+      for (let i = 0; i < BOOTOUT_POLL_TRIES && !gone; i += 1) {
+        gone = (await exec('launchctl', ['print', target])).code !== 0;
+        if (!gone) await sleep(BOOTOUT_POLL_MS);
+      }
+      if (!gone) io.stderr(`lexicon: warning: ${safe(label)} was still loaded ${(BOOTOUT_POLL_MS * BOOTOUT_POLL_TRIES) / 1000}s after launchctl bootout; bootstrapping anyway\n`);
+    }
     const bootstrap = await runAndReport(exec, io, 'launchctl', ['bootstrap', `gui/${uid}`, plistPath]);
     if (bootstrap.code !== 0) {
       const load = await runAndReport(exec, io, 'launchctl', ['load', plistPath]);
@@ -712,8 +734,11 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
         } catch (err) {
           return fail(io, `cannot carry the environment into the Scheduled Task: ${errorMessage(err)}; nothing is installed`);
         }
-        envFile = path.join(path.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
-        await fs.writeFile(envFile, text, 'utf8');
+        envFile = serveEnvPath(opts);
+        // 0600 like serve.json beside it (it names the user's lexicon paths),
+        // and through a temp file: a plain write took the umask and, cut
+        // short, left the running task a truncated env file.
+        await writeFileAtomic(envFile, text, { mode: 0o600 });
       }
     }
     const xml = scheduledTaskXml(nodePath, cliPath, taskUserId(env), envFile);
@@ -740,12 +765,50 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     line(io, `  Command:   ${safe(nodePath)}`);
     line(io, `  Arguments: ${envFile ? `--env-file="${safe(envFile)}" ` : ''}"${safe(cliPath)}" serve`);
     io.stdout(envFile ? envReport(serviceEnv) : '');
+    // /Create /F replaces the definition but leaves a running instance (an
+    // earlier install's node and CLI path) serving, and only a logon starts
+    // the task, so a fresh install served nothing until then. End the old
+    // instance, then start the new one, as bootout + bootstrap and restart do.
+    const ended = await runAndReport(exec, io, 'schtasks', ['/End', '/TN', taskName]);
+    if (ended.code !== 0 && !schtasksNotRunning(ended)) {
+      io.stderr(
+        `lexicon: created the Scheduled Task "${safe(taskName)}" but could not end its running instance (schtasks /End failed, see above), ` +
+          `so the old one may still be serving; run \`schtasks /End /TN "${safe(taskName)}"\` then \`schtasks /Run /TN "${safe(taskName)}"\`\n`,
+      );
+      return 1;
+    }
+    const run = await runAndReport(exec, io, 'schtasks', ['/Run', '/TN', taskName]);
+    if (run.code !== 0) {
+      io.stderr(
+        `lexicon: created the Scheduled Task "${safe(taskName)}" but could not start it (schtasks /Run failed, see above); ` +
+          `it starts at your next logon, or run \`schtasks /Run /TN "${safe(taskName)}"\`\n`,
+      );
+      return 1;
+    }
     line(io, `installed ${taskName}; check with: lexicon serve --status`);
     return 0;
   }
 
   io.stderr(`lexicon: serve --install is not supported on ${platform}; run \`lexicon serve\` from your session startup instead\n`);
   return 1;
+}
+
+/**
+ * True when a failed `schtasks /End` only means there was nothing to end:
+ * the task is not running (or, on a first install, did not exist).
+ */
+function schtasksNotRunning(result: ExecResult): boolean {
+  return schtasksNotFound(result) || /not (currently )?running|no running instance/i.test(`${result.stderr}\n${result.stdout}`);
+}
+
+/** The serve.env the Windows Scheduled Task loads with --env-file, beside serve.json. */
+function serveEnvPath(opts: ServeOptions): string {
+  return path.join(path.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
+}
+
+/** True when a failed schtasks command means the task does not exist. */
+function schtasksNotFound(result: ExecResult): boolean {
+  return /cannot find|does not exist/i.test(`${result.stderr}\n${result.stdout}`);
 }
 
 /**
@@ -769,12 +832,29 @@ async function removeServiceFile(file: string, io: IO): Promise<boolean> {
   }
 }
 
+/**
+ * Remove the serve.env an install wrote for the Scheduled Task; uninstall
+ * left it behind. Missing is fine and says nothing. False (reported) when it
+ * is there and cannot be removed.
+ */
+async function removeServeEnv(opts: ServeOptions, io: IO): Promise<boolean> {
+  const file = serveEnvPath(opts);
+  try {
+    await fs.unlink(file);
+    line(io, `removed ${safe(file)}`);
+    return true;
+  } catch (err) {
+    if (isEnoent(err)) return true;
+    io.stderr(`lexicon: could not remove ${safe(file)}: ${safeLines(errorMessage(err))}\n`);
+    return false;
+  }
+}
+
 export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
   const platform = deps.platform ?? process.platform;
   const home = deps.home ?? homeDir();
   const env = deps.env ?? process.env;
   const exec = deps.exec ?? defaultServeExec;
-  void opts;
 
   if (platform === 'darwin') {
     const plistPath = launchAgentPath(home, env);
@@ -795,12 +875,29 @@ export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeD
 
   if (platform === 'win32') {
     const taskName = scheduledTaskName(env);
+    // Deleting a task leaves its running instance serving (until logout), as
+    // bootout and disable --now do not on the other two platforms: end it first.
+    const ended = await runAndReport(exec, io, 'schtasks', ['/End', '/TN', taskName]);
+    const endFailed = ended.code !== 0 && !schtasksNotRunning(ended);
+    if (endFailed) {
+      io.stderr(`lexicon: could not end the running instance of the Scheduled Task "${safe(taskName)}" (schtasks /End failed, see above); it keeps serving until you log out or end it in Task Manager\n`);
+    }
     const deleted = await runAndReport(exec, io, 'schtasks', ['/Delete', '/TN', taskName, '/F']);
+    if (deleted.code === 0) {
+      line(io, `removed Scheduled Task ${safe(taskName)}`);
+      return (await removeServeEnv(opts, io)) && !endFailed ? 0 : 1;
+    }
     // schtasks exits non-zero when the task is not there, which is the same
-    // "was not installed" case the other two platforms report rather than fail.
-    if (deleted.code === 0) line(io, `removed Scheduled Task ${safe(taskName)}`);
-    else line(io, `Scheduled Task ${safe(taskName)} was not installed`);
-    return 0;
+    // "was not installed" case the other two platforms report rather than
+    // fail. Any other failure (access denied, the scheduler service down)
+    // left the task in place and was reported as not installed, exit 0.
+    if (schtasksNotFound(deleted)) {
+      line(io, `Scheduled Task ${safe(taskName)} was not installed`);
+      return (await removeServeEnv(opts, io)) ? 0 : 1;
+    }
+    const why = (deleted.stderr || deleted.stdout).trim() || `exit ${deleted.code ?? 'error'}`;
+    io.stderr(`lexicon: could not remove the Scheduled Task "${safe(taskName)}": ${safeLines(why)}\n`);
+    return 1;
   }
 
   io.stderr(`lexicon: serve --uninstall is not supported on ${platform}\n`);

@@ -63957,9 +63957,54 @@ function hookConfigFor(command, timeout = 5, events = ["UserPromptSubmit"]) {
   for (const event of events) hooks[event] = [{ hooks: [{ type: "command", command, timeout }] }];
   return { hooks };
 }
-var INSTALLED_HOOK_COMMAND = /^node\s+(?:"[^"]*|[^\s"]*)(?:[\\/]plugin[\\/]hook\.mjs|[\\/]hooks[\\/]user-prompt-submit\.js)"?$|^npx\s+-y\s+@ashlr\/lexicon(?:@\S+)?\s+hook$/;
+var INSTALLED_HOOK_SCRIPT = /[\\/](?:plugin[\\/]hook\.mjs|hooks[\\/]user-prompt-submit\.js)$/;
 function isInstalledLexiconHook(command) {
-  return INSTALLED_HOOK_COMMAND.test(command.trim());
+  const words = commandWords(command);
+  if (!words) return false;
+  if (words.length === 2 && words[0] === "node") return INSTALLED_HOOK_SCRIPT.test(words[1] ?? "");
+  return words.length === 4 && words[0] === "npx" && words[1] === "-y" && /^@ashlr\/lexicon(?:@\S+)?$/.test(words[2] ?? "") && words[3] === "hook";
+}
+function commandWords(command) {
+  const words = [];
+  let word = "";
+  let inWord = false;
+  let i = 0;
+  while (i < command.length) {
+    const c = command[i];
+    if (/\s/.test(c)) {
+      if (inWord) words.push(word);
+      word = "";
+      inWord = false;
+      i += 1;
+      continue;
+    }
+    inWord = true;
+    if (c === '"') {
+      i += 1;
+      while (i < command.length && command[i] !== '"') {
+        const next = command[i + 1];
+        if (command[i] === "\\" && next !== void 0 && '"\\$`'.includes(next)) {
+          word += next;
+          i += 2;
+        } else {
+          word += command[i];
+          i += 1;
+        }
+      }
+      if (i >= command.length) return void 0;
+      i += 1;
+    } else if (c === "'") {
+      const end = command.indexOf("'", i + 1);
+      if (end < 0) return void 0;
+      word += command.slice(i + 1, end);
+      i = end + 1;
+    } else {
+      word += c;
+      i += 1;
+    }
+  }
+  if (inWord) words.push(word);
+  return words;
 }
 function isInstalledLexiconServer(command, args) {
   const cmd = command.trim();
@@ -64851,13 +64896,13 @@ function sameKey(a, b) {
   return a.length === b.length && a.every((p, i) => p === b[i]);
 }
 function tomlHeaderRe(header) {
+  return { test: (line2) => isTomlTableHeader(line2, header) };
+}
+function isTomlTableHeader(line2, header, opts = {}) {
   const want = header.split(".");
-  return {
-    test(line2) {
-      const key = tomlHeaderKey(line2);
-      return key !== void 0 && !key.array && sameKey(key.parts, want);
-    }
-  };
+  const key = tomlHeaderKey(line2);
+  if (key === void 0 || key.array) return false;
+  return opts.orSubTable ? sameKey(key.parts.slice(0, want.length), want) : sameKey(key.parts, want);
 }
 function codexServerElsewhere(text) {
   const own2 = CODEX_TABLE.split(".");
@@ -65181,6 +65226,7 @@ async function runInstallClaude(opts, io, deps = {}) {
       return 0;
     }
   }
+  if (opts.apply) await readHookSettings(settingsPath);
   const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
   const claudeCwd = import_node_path19.default.resolve(opts.cwd ?? process.cwd());
   const exec = deps.exec ?? ((file2, args) => defaultExec(file2, args, { cwd: claudeCwd }));
@@ -65225,14 +65271,11 @@ async function runInstallClaude(opts, io, deps = {}) {
     line(io, dim("    npm i -g @ashlr/lexicon, then rerun this, to make it instant.)"));
   }
   if (opts.apply) {
-    const read = await readJsonFile(settingsPath);
-    if (read.error !== void 0) {
-      throw new Error(`could not read ${settingsPath}: ${read.error}`);
-    }
+    const read = await readHookSettings(settingsPath);
     const existed = read.exists;
-    const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, hookTimeout, HOOK_EVENTS);
+    const { settings, changed } = mergeHookIntoSettings(read.exists ? read.value : {}, hookCommand, hookTimeout, HOOK_EVENTS);
     if (changed) {
-      await explainWrite(settingsPath, () => writeJsonFile(settingsPath, settings, read.text));
+      await explainWrite(settingsPath, () => writeJsonFile(settingsPath, settings, read.exists ? read.text : void 0));
       line(io, green(`   ${existed ? "updated" : "created"} ${safePath(settingsPath)}: added ${HOOK_EVENTS.join(" + ")} hooks`));
       deps.onWritten?.(settingsPath, existed ? "updated" : "created");
     } else {
@@ -65257,6 +65300,21 @@ async function runInstallClaude(opts, io, deps = {}) {
     line(io, dim(`to perform steps 1 and 2, run: ${command}`));
   }
   return failed ? 1 : 0;
+}
+async function readHookSettings(settingsPath) {
+  const read = await readJsonFile(settingsPath);
+  if (read.error !== void 0) {
+    throw new Error(`could not read ${settingsPath}: ${read.error}`);
+  }
+  if (!read.exists) return { exists: false };
+  if (!isRecord(read.value)) {
+    const kind = read.value === null ? "null" : Array.isArray(read.value) ? "an array" : `a ${typeof read.value}`;
+    throw new CliRefusal(
+      `${settingsPath} holds ${kind}, not a JSON object, so the hooks cannot be added to it; nothing was changed`,
+      `make ${settingsPath} a JSON object (or remove it), then run this again`
+    );
+  }
+  return { exists: true, value: read.value, text: read.text ?? "" };
 }
 async function refreshClaudeRegistration(io, exec, scope, mcpArgs, launch, files) {
   let got;
@@ -66514,6 +66572,9 @@ async function probeHealth(baseUrl, opts = {}) {
 
 // src/cli/cmd-serve.ts
 init_errors3();
+init_atomic();
+var BOOTOUT_POLL_MS = 100;
+var BOOTOUT_POLL_TRIES = 50;
 function storeOpts(opts) {
   return opts.globalPath !== void 0 ? { globalPath: opts.globalPath } : {};
 }
@@ -66691,8 +66752,7 @@ function systemdUnit(nodePath, cliPath, env) {
   ].join("\n");
 }
 async function writeServiceFile(file2, text) {
-  await import_node_fs26.promises.writeFile(file2, text, { encoding: "utf8", mode: 420 });
-  await import_node_fs26.promises.chmod(file2, 420);
+  await writeFileAtomic(file2, text, { mode: 420 });
 }
 async function runAndReport(exec, io, cmd, args) {
   line(io, `ran: ${[cmd, ...args].map((a) => safe(a)).join(" ")}`);
@@ -66762,7 +66822,18 @@ async function runServeInstall(opts, io, deps = {}) {
     io.stdout(envReport(serviceEnv));
     line(io, `  RunAtLoad + KeepAlive, logs in ${safe(logPath)}`);
     const uid = deps.uid ?? process.getuid?.() ?? 501;
-    await exec("launchctl", ["bootout", `gui/${uid}/${label}`]);
+    const target = `gui/${uid}/${label}`;
+    const bootout = await exec("launchctl", ["bootout", target]);
+    if (bootout.code === 0) {
+      const sleep2 = deps.sleep ?? ((ms) => new Promise((resolve5) => setTimeout(resolve5, ms)));
+      let gone = false;
+      for (let i = 0; i < BOOTOUT_POLL_TRIES && !gone; i += 1) {
+        gone = (await exec("launchctl", ["print", target])).code !== 0;
+        if (!gone) await sleep2(BOOTOUT_POLL_MS);
+      }
+      if (!gone) io.stderr(`lexicon: warning: ${safe(label)} was still loaded ${BOOTOUT_POLL_MS * BOOTOUT_POLL_TRIES / 1e3}s after launchctl bootout; bootstrapping anyway
+`);
+    }
     const bootstrap = await runAndReport(exec, io, "launchctl", ["bootstrap", `gui/${uid}`, plistPath]);
     if (bootstrap.code !== 0) {
       const load = await runAndReport(exec, io, "launchctl", ["load", plistPath]);
@@ -66814,8 +66885,8 @@ async function runServeInstall(opts, io, deps = {}) {
         } catch (err) {
           return fail(io, `cannot carry the environment into the Scheduled Task: ${errorMessage(err)}; nothing is installed`);
         }
-        envFile = import_node_path25.default.join(import_node_path25.default.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
-        await import_node_fs26.promises.writeFile(envFile, text, "utf8");
+        envFile = serveEnvPath(opts);
+        await writeFileAtomic(envFile, text, { mode: 384 });
       }
     }
     const xml = scheduledTaskXml(nodePath, cliPath, taskUserId(env), envFile);
@@ -66837,12 +66908,39 @@ async function runServeInstall(opts, io, deps = {}) {
     line(io, `  Command:   ${safe(nodePath)}`);
     line(io, `  Arguments: ${envFile ? `--env-file="${safe(envFile)}" ` : ""}"${safe(cliPath)}" serve`);
     io.stdout(envFile ? envReport(serviceEnv) : "");
+    const ended = await runAndReport(exec, io, "schtasks", ["/End", "/TN", taskName]);
+    if (ended.code !== 0 && !schtasksNotRunning(ended)) {
+      io.stderr(
+        `lexicon: created the Scheduled Task "${safe(taskName)}" but could not end its running instance (schtasks /End failed, see above), so the old one may still be serving; run \`schtasks /End /TN "${safe(taskName)}"\` then \`schtasks /Run /TN "${safe(taskName)}"\`
+`
+      );
+      return 1;
+    }
+    const run = await runAndReport(exec, io, "schtasks", ["/Run", "/TN", taskName]);
+    if (run.code !== 0) {
+      io.stderr(
+        `lexicon: created the Scheduled Task "${safe(taskName)}" but could not start it (schtasks /Run failed, see above); it starts at your next logon, or run \`schtasks /Run /TN "${safe(taskName)}"\`
+`
+      );
+      return 1;
+    }
     line(io, `installed ${taskName}; check with: lexicon serve --status`);
     return 0;
   }
   io.stderr(`lexicon: serve --install is not supported on ${platform}; run \`lexicon serve\` from your session startup instead
 `);
   return 1;
+}
+function schtasksNotRunning(result) {
+  return schtasksNotFound(result) || /not (currently )?running|no running instance/i.test(`${result.stderr}
+${result.stdout}`);
+}
+function serveEnvPath(opts) {
+  return import_node_path25.default.join(import_node_path25.default.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
+}
+function schtasksNotFound(result) {
+  return /cannot find|does not exist/i.test(`${result.stderr}
+${result.stdout}`);
 }
 
 // src/cli/setup/steps.ts
@@ -67697,8 +67795,8 @@ function removeServerFromJson(current, key) {
   delete next[key].lexicon;
   return { next, outcome: "removed" };
 }
-var LEXICON_TABLE_RE = /^\s*\[\s*mcp_servers\.lexicon\s*\]\s*(#.*)?$/;
-var LEXICON_ANY_TABLE_RE = /^\s*\[\s*mcp_servers\.lexicon(?:\s*\.[^\]]*)?\s*\]\s*(#.*)?$/;
+var isLexiconTable = (l) => isTomlTableHeader(l, CODEX_TABLE);
+var isLexiconAnyTable = (l) => isTomlTableHeader(l, CODEX_TABLE, { orSubTable: true });
 var TABLE_RE = /^\s*\[/;
 function isBlankOrComment2(l) {
   const t = l.trim();
@@ -67719,7 +67817,7 @@ function tomlValue(lines, key) {
 }
 function removeServerFromToml(text) {
   const lines = text.split("\n");
-  const start = lines.findIndex((l) => LEXICON_TABLE_RE.test(l));
+  const start = lines.findIndex(isLexiconTable);
   if (start < 0) return { next: text, outcome: "absent" };
   let end = start + 1;
   while (end < lines.length && !TABLE_RE.test(lines[end] ?? "")) end += 1;
@@ -67730,7 +67828,7 @@ function removeServerFromToml(text) {
   if (!owned) return { next: text, outcome: "kept" };
   let out = lines;
   for (; ; ) {
-    const at = out.findIndex((l) => LEXICON_ANY_TABLE_RE.test(l));
+    const at = out.findIndex(isLexiconAnyTable);
     if (at < 0) break;
     let stop = at + 1;
     while (stop < out.length && !TABLE_RE.test(out[stop] ?? "")) stop += 1;
@@ -67814,6 +67912,13 @@ async function uninstallToml(ctx, target) {
   } catch (err) {
     if (isEnoent(err)) return report(ctx, { file: target.file, entry, outcome: "absent" }, "does not exist");
     throw new Error(`could not read ${target.file}: ${errorMessage(err)}`);
+  }
+  const elsewhere = codexServerElsewhere(text);
+  if (elsewhere) {
+    throw new CliRefusal(
+      `${target.file} ${elsewhere}; nothing was changed`,
+      `remove that lexicon definition from ${target.file} by hand`
+    );
   }
   const { next, outcome } = removeServerFromToml(text);
   if (outcome === "removed" && !ctx.dryRun) {

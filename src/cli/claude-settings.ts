@@ -99,12 +99,69 @@ export function hookConfigFor(
  * (quoted or not, either separator) or `npx -y @ashlr/lexicon[@<version>] hook`.
  * Narrower than LEXICON_HOOK_COMMAND, which also matches a user's own script
  * with "lexicon" in its name: only these are replaced on a reinstall.
+ *
+ * Matched on the command's words, parsed as launchCommandLine quotes them
+ * (inside double quotes a backslash escapes `"`, `\`, `$` and a backtick), so
+ * a path holding an escaped `"` is recognised. The pattern over the raw
+ * string stopped at that `"`, and a reinstall added a second hook.
  */
-const INSTALLED_HOOK_COMMAND =
-  /^node\s+(?:"[^"]*|[^\s"]*)(?:[\\/]plugin[\\/]hook\.mjs|[\\/]hooks[\\/]user-prompt-submit\.js)"?$|^npx\s+-y\s+@ashlr\/lexicon(?:@\S+)?\s+hook$/;
+const INSTALLED_HOOK_SCRIPT = /[\\/](?:plugin[\\/]hook\.mjs|hooks[\\/]user-prompt-submit\.js)$/;
 
 export function isInstalledLexiconHook(command: string): boolean {
-  return INSTALLED_HOOK_COMMAND.test(command.trim());
+  const words = commandWords(command);
+  if (!words) return false;
+  if (words.length === 2 && words[0] === 'node') return INSTALLED_HOOK_SCRIPT.test(words[1] ?? '');
+  return words.length === 4 && words[0] === 'npx' && words[1] === '-y' && /^@ashlr\/lexicon(?:@\S+)?$/.test(words[2] ?? '') && words[3] === 'hook';
+}
+
+/**
+ * The words of a command line as launchCommandLine writes one: split on
+ * whitespace; a double-quoted run (a backslash escapes `"`, `\`, `$` and a
+ * backtick in it, and is kept before any other character, as in a Windows
+ * path) or a single-quoted run is part of its word. A backslash outside quotes
+ * is kept as it is. Undefined when a quote is not closed.
+ */
+function commandWords(command: string): string[] | undefined {
+  const words: string[] = [];
+  let word = '';
+  let inWord = false;
+  let i = 0;
+  while (i < command.length) {
+    const c = command[i] as string;
+    if (/\s/.test(c)) {
+      if (inWord) words.push(word);
+      word = '';
+      inWord = false;
+      i += 1;
+      continue;
+    }
+    inWord = true;
+    if (c === '"') {
+      i += 1;
+      while (i < command.length && command[i] !== '"') {
+        const next = command[i + 1];
+        if (command[i] === '\\' && next !== undefined && '"\\$`'.includes(next)) {
+          word += next;
+          i += 2;
+        } else {
+          word += command[i];
+          i += 1;
+        }
+      }
+      if (i >= command.length) return undefined;
+      i += 1;
+    } else if (c === "'") {
+      const end = command.indexOf("'", i + 1);
+      if (end < 0) return undefined;
+      word += command.slice(i + 1, end);
+      i = end + 1;
+    } else {
+      word += c;
+      i += 1;
+    }
+  }
+  if (inWord) words.push(word);
+  return words;
 }
 
 /**
