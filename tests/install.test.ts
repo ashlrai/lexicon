@@ -403,6 +403,14 @@ describe('platform-specific paths', () => {
     expect(configPathFor('vscode', ctx)).toBe(path.join('C:\\AppData', 'Code', 'User', 'mcp.json'));
   });
 
+  // Catches: a blank APPDATA passed `??`, so the path came out relative and
+  // the config was written under the current directory.
+  it('falls back to <home>/AppData/Roaming when APPDATA is blank', () => {
+    const ctx = { home: 'C:\\Users\\me', cwd: 'C:\\repo', platform: 'win32' as const, env: { APPDATA: ' ' }, project: false };
+    expect(configPathFor('claude-desktop', ctx)).toBe(path.join('C:\\Users\\me', 'AppData', 'Roaming', 'Claude', 'claude_desktop_config.json'));
+    expect(configPathFor('vscode', { ...ctx, env: { APPDATA: '' } })).toBe(path.join('C:\\Users\\me', 'AppData', 'Roaming', 'Code', 'User', 'mcp.json'));
+  });
+
   it('uses ~/.config on Linux for VS Code and Claude Desktop', () => {
     // path.join, not a '/'-joined literal: configPathFor builds with the
     // host's path flavour, so on a Windows runner these are backslash paths.

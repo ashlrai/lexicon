@@ -64553,7 +64553,8 @@ function resolveServerPath(cliDir) {
   return resolveIntegrationPaths(cliDir).server;
 }
 function appData(ctx) {
-  return ctx.env.APPDATA ?? import_node_path19.default.join(ctx.home, "AppData", "Roaming");
+  const value = ctx.env.APPDATA?.trim();
+  return value ? value : import_node_path19.default.join(ctx.home, "AppData", "Roaming");
 }
 function codexHome(ctx) {
   const override = ctx.env.CODEX_HOME?.trim();

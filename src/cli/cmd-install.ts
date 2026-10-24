@@ -178,9 +178,15 @@ interface PathContext {
   project: boolean;
 }
 
-/** %APPDATA% on Windows, with a sane fallback when the variable is unset. */
+/**
+ * %APPDATA% on Windows, with a sane fallback when the variable is unset or
+ * blank. A blank one (`set APPDATA=`) passed `??`, so the config path came
+ * out relative (`Claude\claude_desktop_config.json`) and was written under
+ * the current directory, where Claude Desktop never looks.
+ */
 function appData(ctx: PathContext): string {
-  return ctx.env.APPDATA ?? path.join(ctx.home, 'AppData', 'Roaming');
+  const value = ctx.env.APPDATA?.trim();
+  return value ? value : path.join(ctx.home, 'AppData', 'Roaming');
 }
 
 /** `$CODEX_HOME` when set, else `~/.codex`. */

@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon install claude-desktop` and `vscode` on Windows with a blank `%APPDATA%` write to `<home>\AppData\Roaming`. A blank value was used as is, so the config path came out relative and the file was written under the current directory, where the client never looks.
 - `lexicon trust` and `lexicon untrust` name a deep project file whole: in the preview, the `trust <path>?` question, the `trusted`, `already trusted` and `untrusted` lines, the registry line and the refusals. Every path went through the 200-character display cap, so the file being approved could end in an ellipsis where its name was.
 - `lexicon install claude` finds the `settings.json` its hooks go into through the environment it was given, as `lexicon uninstall claude` does. It read `CLAUDE_CONFIG_DIR` from the process environment instead, so a caller passing its own environment (setup, a test, `--home`) had the hooks written to a file uninstall never looked in.
 - `lexicon install --apply`, `lexicon uninstall` and `install claude` write a client's config (`claude_desktop_config.json`, `~/.cursor/mcp.json`, Codex's `config.toml`, Claude's `settings.json`, ...) through a temp file and a rename, following a symlink and keeping the file's mode. They wrote it in place, which truncates it first, so a full disk or a killed process left the user's whole config cut short. A temp write that fails partway no longer leaves its `.tmp` file behind either.
