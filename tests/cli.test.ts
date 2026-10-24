@@ -1403,6 +1403,8 @@ describe('install-claude', () => {
     const written = JSON.parse(await fs.readFile(settingsPath, 'utf8')) as { hooks: { UserPromptSubmit: unknown[] } };
     expect(written.hooks.UserPromptSubmit).toHaveLength(1);
     expect(io.out).toContain('created');
+    // Catches: the undo named the hook entries only, though this run created the file.
+    expect(io.out).toContain('(this run created the file, so deleting it undoes step 2)');
 
     const io2 = makeIO();
     await runInstallClaude({ apply: true }, io2, { cliDir: '/x/dist/cli', settingsPath, exec });

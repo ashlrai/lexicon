@@ -772,6 +772,28 @@ describe('LEXICON_PATH and LEXICON_CWD reach the installed server', () => {
     expect(again.io.out).toContain('nothing changed');
   });
 
+  // Catches: the undo named only [mcp_servers.lexicon], so following it left
+  // the [mcp_servers.lexicon.env] table the keys went into, which Codex reads
+  // as a server with no command; and no undo said a file this run created
+  // could simply be deleted, or that a server map it added was its own.
+  it('names everything its undo has to remove, leaving nothing behind', async () => {
+    const file = path.join(home, '.codex/config.toml');
+    const created = await run('codex', { apply: true }, lexEnv());
+    expect(created.io.out).toContain(`undo: delete the [${CODEX_TABLE}] table from ${file} (this run created the file, so deleting it undoes this)`);
+    await fs.writeFile(file, ['[mcp_servers.lexicon]', 'command = "node"', 'args = ["/old.js"]', '', '[mcp_servers.lexicon.env]', 'FOO = "bar"', ''].join('\n'));
+    const sub = await run('codex', { apply: true }, lexEnv());
+    expect(sub.io.out).toContain(`undo: delete the [${CODEX_TABLE}] table and its [${CODEX_TABLE}.env] table from ${file}\n`);
+
+    const cursor = path.join(home, '.cursor', 'mcp.json');
+    await fs.mkdir(path.dirname(cursor), { recursive: true });
+    await fs.writeFile(cursor, '{ "theme": "dark" }\n');
+    const added = await run('cursor', { apply: true });
+    expect(added.io.out).toContain(`undo: delete the "lexicon" entry under "mcpServers" in ${cursor}, and "mcpServers" itself, which this run added\n`);
+    await fs.writeFile(cursor, '{ "mcpServers": { "other": {} } }\n');
+    const kept = await run('cursor', { apply: true });
+    expect(kept.io.out).toContain(`undo: delete the "lexicon" entry under "mcpServers" in ${cursor}\n`);
+  });
+
   it('passes them to `claude mcp add -e` ahead of --scope', async () => {
     const calls: string[][] = [];
     const io = makeIO();
