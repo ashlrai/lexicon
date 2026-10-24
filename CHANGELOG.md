@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon remove <canonical> --alias <alias>` that misses names the aliases the term does have and the command that removes one (or that it has none), or `lexicon list --query <canonical>` when no file in reach holds the term, on stderr and as `nextStep` under `--json`. It gave the generic "fix what error names" step.
 - `lexicon remove yod` (text and `--json`) and MCP `remove_term` report the canonical as the file spelled it (`removed Yod`, `canonical: "Yod"`). They echoed the spelling typed.
 - `lexicon add Yod yod` says the alias was not added because it differs from the canonical only in case (a `note:` line, and `droppedAliases: [{ alias, reason }]` under `--json`). The alias was dropped silently and the output read `aliases: (none)`.
 - A lexicon that cannot be read for a reason other than a missing file (a `LEXICON_PATH` under a file, a permission error) stops `lexicon list`, `stats`, `export` and `learn` with `Cannot read lexicon at <path>: <why>` naming the file in the way, and a next step that says to fix that path or `LEXICON_PATH`, then run `lexicon doctor`. It was Node's bare `ENOTDIR: not a directory, stat '<path>'` with the generic next step.

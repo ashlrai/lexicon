@@ -382,6 +382,20 @@ describe('remove with the canonical in another case', () => {
   });
 });
 
+describe('remove --alias that misses', () => {
+  // Catches: a miss gave the generic "fix what error names" next step, in text and --json.
+  it("names the term's aliases, or how to find the term", async () => {
+    await runAdd('Yod', ['yodd', 'yodda'], { cwd: tmp, globalPath }, makeIO());
+    process.env.LEXICON_PATH = globalPath;
+    const text = makeIO();
+    expect(await runRemove('yod', { cwd: tmp, alias: 'nope' }, text)).toBe(1);
+    expect(text.err).toContain('lexicon: the aliases of "Yod" are: yodd, yodda; remove one with lexicon remove Yod --alias <alias>\n');
+    const json = makeIO();
+    expect(await runRemove('Yox', { cwd: tmp, alias: 'nope', json: true }, json)).toBe(1);
+    expect(JSON.parse(json.out)).toMatchObject({ ok: false, removed: false, nextStep: 'run lexicon list --query Yox to see the exact spellings of the terms' });
+  });
+});
+
 describe('add --interactive', () => {
   it('shows suggestions as a checklist, keeps the selection plus extras, asks phonetic and category', async () => {
     const p = scripted([

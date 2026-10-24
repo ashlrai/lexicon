@@ -2954,10 +2954,10 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       });
       expect(wrong.stderr).toContain('lexicon: it is an alias of "Kubectl" in the global lexicon');
 
-      // An alias no file has gets the generic next step only.
+      // An alias no file has: the next step names the aliases the term does have.
       const nowhere = lexicon(['remove', 'Kubectl', '--alias', 'nope', '--global', '--json', '--cwd', repo], globalPath);
       expect(nowhere.status).toBe(1);
-      expect(JSON.parse(nowhere.stdout).nextStep).toBe(DEFAULT_NEXT_STEP);
+      expect(JSON.parse(nowhere.stdout).nextStep).toBe('the aliases of "Kubectl" are: cube control; remove one with lexicon remove Kubectl --alias <alias> --global');
 
       const ok = lexicon(['remove', 'Kubectl', '--alias', 'cube control', '--global', '--json', '--cwd', repo], globalPath);
       expect(ok.status).toBe(0);

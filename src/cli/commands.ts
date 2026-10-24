@@ -605,6 +605,24 @@ function emptyLexiconRemoveStep(loaded: LoadedLexicon | undefined): string | und
     : `${noTermsYet({ lower: true, so: 'there is nothing to remove' })}; run lexicon setup, or add one with: lexicon add <canonical> <alias>`;
 }
 
+/**
+ * The next step after `remove <canonical> --alias <alias>` missed on a
+ * lexicon that has terms: the aliases the term does have (with the command
+ * that removes one), or, when no loaded file in reach holds the term, how to
+ * find its exact spelling. It used to be the generic "fix what error names".
+ */
+function aliasMissStep(loaded: LoadedLexicon | undefined, scope: TermScope | undefined, canonical: string): string | undefined {
+  if (loaded === undefined) return undefined;
+  const key = spellingKey(canonical);
+  const files = scope === 'project' ? [loaded.project] : scope === 'global' ? [loaded.global] : [loaded.project, loaded.global];
+  const term = files.flatMap((f) => f?.lexicon.terms ?? []).find((t) => spellingKey(t.canonical) === key);
+  if (!term) return `run ${commandLine(['lexicon', 'list', '--query', canonical.trim()])} to see the exact spellings of the terms`;
+  if (term.aliases.length === 0) {
+    return `"${term.canonical}" has no aliases; to remove the term itself, run ${commandLine(['lexicon', 'remove', term.canonical, ...(scope ? [`--${scope}`] : [])])}`;
+  }
+  return `the aliases of "${term.canonical}" are: ${term.aliases.join(', ')}; remove one with ${commandLine(['lexicon', 'remove', term.canonical])} --alias <alias>${scope ? ` --${scope}` : ''}`;
+}
+
 async function runRemoveAlias(
   canonical: string,
   alias: string,
@@ -634,7 +652,7 @@ async function runRemoveAlias(
       isInputError(err) && other && holdsAlias(other)
         ? `it is an alias of "${canonical}" in the ${other.scope} lexicon (${other.path}); run with --${other.scope} to remove it there, or with neither flag to remove it from every file whose copy has it`
         : isInputError(err) && !untrusted
-          ? emptyLexiconRemoveStep(loaded)
+          ? (emptyLexiconRemoveStep(loaded) ?? aliasMissStep(loaded, scope, canonical))
           : undefined;
     if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere), canonical, alias, removed: false, ...extra }, null, 2));
     io.stderr(`lexicon: ${safeMessage(message)}\n`);
