@@ -65553,6 +65553,12 @@ async function checkLoginService(probe) {
   }
   return { level: "ok", message: `${name} loaded${program2 !== void 0 ? ` (${program2} exists)` : ""}` };
 }
+function unreadableKind(error62) {
+  return /^Cannot read lexicon at /.test(error62) ? "read" : "parse";
+}
+function readFix(scope) {
+  return scope === "global" ? "make that path readable or point LEXICON_PATH at a file in an existing directory (or unset it)" : "make that path readable";
+}
 function parseReason(error62, filePath, max = 110) {
   const marker = `${filePath}: `;
   const at = error62.lastIndexOf(marker);
@@ -65587,7 +65593,15 @@ function summarize(checks, state, audience = "cli") {
   const ready = state.terms > 0 && state.wired && fails.length === 0;
   if (state.unreadable.length > 0) {
     const first = state.unreadable[0];
-    const alsoProject = state.unreadable.length > 1 ? " The project lexicon does not parse either." : "";
+    const second = state.unreadable[1];
+    const alsoProject = second ? second.kind === "read" ? " The project lexicon cannot be read either." : " The project lexicon does not parse either." : "";
+    if (first.kind === "read") {
+      return {
+        ready: false,
+        summary: `The ${first.scope} lexicon cannot be read, so no corrections are happening: ${parseReason(first.error, first.path)}${alsoProject}`,
+        nextStep: mcp ? `Ask the user to ${readFix(first.scope)}, then call lexicon_doctor again (setup_lexicon will not repair this). The path is ${first.path}` : `${readFix(first.scope).replace(/^m/, "M")}, then run: lexicon doctor  (lexicon setup will not repair this). The path is ${first.path}`
+      };
+    }
     return {
       ready: false,
       summary: `The ${first.scope} lexicon exists but does not parse, so no corrections are happening: ${parseReason(first.error, first.path)}${alsoProject}`,
@@ -65675,8 +65689,12 @@ async function runDoctorReport(opts, deps = {}) {
     }
   } catch (err) {
     const error62 = errorMessage(err);
-    unreadable.push({ path: paths.global, scope: "global", error: error62 });
-    push2("fail", `global lexicon does not parse (run: ${editCommand("global")}): ${error62}`);
+    const kind = unreadableKind(error62);
+    unreadable.push({ path: paths.global, scope: "global", error: error62, kind });
+    push2(
+      "fail",
+      kind === "read" ? `global lexicon cannot be read (${readFix("global")}): ${error62}` : `global lexicon does not parse (run: ${editCommand("global")}): ${error62}`
+    );
   }
   if (paths.project) {
     try {
@@ -65697,8 +65715,12 @@ async function runDoctorReport(opts, deps = {}) {
       }
     } catch (err) {
       const error62 = errorMessage(err);
-      unreadable.push({ path: paths.project, scope: "project", error: error62 });
-      push2("fail", `project lexicon does not parse (run: ${editCommand("project")}): ${error62}`);
+      const kind = unreadableKind(error62);
+      unreadable.push({ path: paths.project, scope: "project", error: error62, kind });
+      push2(
+        "fail",
+        kind === "read" ? `project lexicon cannot be read (${readFix("project")}): ${error62}` : `project lexicon does not parse (run: ${editCommand("project")}): ${error62}`
+      );
     }
   } else {
     push2("info", "no project lexicon (.lexicon.yaml) found from " + cwd);

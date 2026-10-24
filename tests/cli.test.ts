@@ -2043,6 +2043,45 @@ describe('runDoctorReport', () => {
       expect(failed?.message).toMatch(/^global lexicon does not parse \(run: lexicon edit\): /);
     });
 
+    /**
+     * Regression: a lexicon that cannot be read at all (store.ts `Cannot read
+     * lexicon at <path>: ...`, a LEXICON_PATH under a file or a permission
+     * error) was reported as "does not parse (run: lexicon edit)". There is no
+     * parse error, and an editor cannot fix the path.
+     */
+    it('says an unreadable lexicon cannot be read and points at the path or LEXICON_PATH, not lexicon edit', async () => {
+      vi.mocked(core.readLexiconFile).mockRejectedValue(
+        new Error(`Cannot read lexicon at ${state.globalPath}: permission denied (EACCES)`),
+      );
+      const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '/nonexistent' }, exec: () => '' });
+      expect(report.ready).toBe(false);
+      expect(report.summary).toMatch(/^The global lexicon cannot be read, so no corrections are happening: permission denied \(EACCES\)/);
+      expect(report.summary).not.toMatch(/parse/);
+      expect(report.nextStep).toMatch(/LEXICON_PATH/);
+      expect(report.nextStep).toContain(state.globalPath);
+      expect(report.nextStep).not.toMatch(/lexicon edit/);
+      const failed = report.checks.find((c) => c.level === 'fail');
+      expect(failed?.message).toMatch(/^global lexicon cannot be read \(make that path readable or point LEXICON_PATH/);
+      expect(failed?.message).not.toMatch(/parse|lexicon edit/);
+
+      const mcp = await runDoctorReport({ audience: 'mcp' }, { platform: 'linux', env: { PATH: '/nonexistent' }, exec: () => '' });
+      expect(mcp.nextStep).toMatch(/^Ask the user to make that path readable or point LEXICON_PATH/);
+      expect(mcp.nextStep).not.toMatch(/edit/);
+    });
+
+    it('names only the path (not LEXICON_PATH) when the unreadable one is the project file', async () => {
+      state.projectPath = '/tmp/proj/.lexicon.yaml';
+      vi.mocked(core.readLexiconFile).mockImplementation(async (p: string, scope: string) => {
+        if (scope === 'project') throw new Error(`Cannot read lexicon at ${p}: permission denied (EACCES)`);
+        return { path: p, scope, lexicon: FIXED_LEXICON, exists: true } as never;
+      });
+      const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '/nonexistent' }, exec: () => '' });
+      expect(report.summary).toMatch(/^The project lexicon cannot be read/);
+      expect(report.nextStep).toMatch(/^Make that path readable, then run: lexicon doctor/);
+      expect(report.nextStep).not.toMatch(/LEXICON_PATH|lexicon edit/);
+      expect(report.nextStep).toContain('/tmp/proj/.lexicon.yaml');
+    });
+
     it('names the project file and `lexicon edit --project` when that is the broken one', async () => {
       state.projectPath = '/tmp/proj/.lexicon.yaml';
       vi.mocked(core.readLexiconFile).mockImplementation(async (p: string, scope: string) => {
