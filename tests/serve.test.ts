@@ -2376,6 +2376,38 @@ describe('lexicon serve (CLI)', () => {
     }
   });
 
+  // Catches: the plist and unit were written in place, which truncates them
+  // first, so a full disk or a killed install left a cut-short service file.
+  it('--install writes the plist and the unit through a temp file', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-home-'));
+    try {
+      const cli = await fakeCli(home);
+      const files = { darwin: launchAgentPath(home, {}), linux: systemdUnitPath(home, {}) } as const;
+      for (const platform of ['darwin', 'linux'] as const) {
+        const file = files[platform];
+        await fs.mkdir(path.dirname(file), { recursive: true });
+        await fs.writeFile(file, 'previous service file\n');
+        const realWrite = fs.writeFile.bind(fs);
+        const spy = vi.spyOn(fs, 'writeFile').mockImplementation(async (target, data, options) => {
+          if (!String(target).startsWith(path.dirname(file))) return realWrite(target, data, options);
+          await realWrite(target, String(data).slice(0, 5), options);
+          throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+        });
+        const io = memIO();
+        try {
+          expect(await runServe({ install: true, globalPath: env.globalPath }, io, { platform, home, env: {}, exec: fakeExec([]), uid: 501, cliPath: cli, nodePath: '/usr/bin/node' })).toBe(1);
+        } finally {
+          spy.mockRestore();
+        }
+        expect(io.err.join('')).toContain('ENOSPC');
+        expect(await fs.readFile(file, 'utf8')).toBe('previous service file\n');
+        expect(await fs.readdir(path.dirname(file))).toEqual([path.basename(file)]);
+      }
+    } finally {
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
   // Catches: process.execPath of a Homebrew node is its versioned Cellar
   // directory, which brew upgrade and brew cleanup delete, so the service
   // was left pointing at a node that no longer exists.

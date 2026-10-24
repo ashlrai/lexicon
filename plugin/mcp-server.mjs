@@ -66750,8 +66750,7 @@ function systemdUnit(nodePath, cliPath, env) {
   ].join("\n");
 }
 async function writeServiceFile(file2, text) {
-  await import_node_fs26.promises.writeFile(file2, text, { encoding: "utf8", mode: 420 });
-  await import_node_fs26.promises.chmod(file2, 420);
+  await writeFileAtomic(file2, text, { mode: 420 });
 }
 async function runAndReport(exec, io, cmd, args) {
   line(io, `ran: ${[cmd, ...args].map((a) => safe(a)).join(" ")}`);

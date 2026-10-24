@@ -559,8 +559,10 @@ export function systemdUnit(nodePath: string, cliPath: string, env?: Readonly<Re
  * shared machines) for a new one, so such an install failed to load.
  */
 async function writeServiceFile(file: string, text: string): Promise<void> {
-  await fs.writeFile(file, text, { encoding: 'utf8', mode: 0o644 });
-  await fs.chmod(file, 0o644);
+  // Through a temp file and a rename: an in-place write truncated the file
+  // first, so a full disk or a killed install left launchd or systemd a cut
+  // short plist or unit. The temp file is created and chmod'ed 0644.
+  await writeFileAtomic(file, text, { mode: 0o644 });
 }
 
 async function runAndReport(exec: ServeExec, io: IO, cmd: string, args: readonly string[]): Promise<ExecResult> {
