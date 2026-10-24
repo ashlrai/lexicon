@@ -10614,6 +10614,9 @@ function handlePipeResult(left, next, ctx) {
   }
   return next._zod.run({ value: left.value, issues: left.issues }, ctx);
 }
+var $ZodPreprocess = /* @__PURE__ */ $constructor("$ZodPreprocess", (inst, def) => {
+  $ZodPipe.init(inst, def);
+});
 var $ZodReadonly = /* @__PURE__ */ $constructor("$ZodReadonly", (inst, def) => {
   $ZodType.init(inst, def);
   defineLazyInternal(inst, "propValues", (zod) => zod.def.innerType._zod.propValues);
@@ -13491,6 +13494,10 @@ function pipe(in_, out) {
     // ...util.normalizeParams(params),
   });
 }
+var ZodPreprocess = /* @__PURE__ */ $constructor("ZodPreprocess", (inst, def) => {
+  ZodPipe.init(inst, def);
+  $ZodPreprocess.init(inst, def);
+});
 var ZodReadonly = /* @__PURE__ */ $constructor("ZodReadonly", (inst, def) => {
   $ZodReadonly.init(inst, def);
   ZodType.init(inst, def);
@@ -13513,6 +13520,13 @@ function refine(fn, _params = {}) {
 }
 function superRefine(fn, params) {
   return _superRefine(fn, params);
+}
+function preprocess(fn, schema) {
+  return new ZodPreprocess({
+    type: "pipe",
+    in: transform(fn),
+    out: schema
+  });
 }
 
 // src/core/schema.ts
@@ -13593,8 +13607,20 @@ function CleanWordList(list, maxItems, what) {
 var buildCategory = () => _enum(TERM_CATEGORIES);
 var buildScope = () => _enum(TERM_SCOPES);
 var buildSource = () => _enum(TERM_SOURCES);
+function nullKeysAsAbsent(keep) {
+  return (raw) => {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return raw;
+    let out;
+    for (const [key, value] of Object.entries(raw)) {
+      if (value !== null || keep.includes(key)) continue;
+      out ??= { ...raw };
+      delete out[key];
+    }
+    return out ?? raw;
+  };
+}
 function buildTerm(category, scope, source) {
-  return object({
+  return preprocess(nullKeysAsAbsent(["canonical"]), object({
     canonical: NonEmptyWord(),
     aliases: WordList(LIMITS.aliases, "aliases per term"),
     phonetic: SafeString(LIMITS.text).optional(),
@@ -13612,24 +13638,27 @@ function buildTerm(category, scope, source) {
     // `pinProjectHits` in store.ts.
     hits: number2().int().nonnegative().optional(),
     never: OptionalWordList(LIMITS.aliases, "never words per term")
-  });
+  }));
 }
 function buildSettings() {
-  return object({
+  return preprocess(nullKeysAsAbsent([]), object({
     minConfidence: number2().min(0).max(1).optional(),
     phonetic: boolean2().optional(),
     fuzzy: boolean2().optional(),
     protectedWords: OptionalWordList(LIMITS.protectedWords, "protected words"),
     skipCode: boolean2().optional(),
     packs: OptionalWordList(LIMITS.aliases, "packs")
-  });
+  }));
 }
 function buildLexicon(term, settings) {
-  return object({
-    version: literal(1).default(1),
-    terms: array(term).max(LIMITS.terms, `at most ${LIMITS.terms} terms`).default([]),
-    settings: settings.optional()
-  });
+  return preprocess(
+    nullKeysAsAbsent([]),
+    object({
+      version: literal(1).default(1),
+      terms: array(term).max(LIMITS.terms, `at most ${LIMITS.terms} terms`).default([]),
+      settings: settings.optional()
+    })
+  );
 }
 var built;
 function schemas() {

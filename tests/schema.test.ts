@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest';
+import { parse as parseYaml } from 'yaml';
 import {
   DISPLAY_MAX_CHARS,
   LIMITS,
@@ -35,6 +36,41 @@ describe('parseLexicon', () => {
     // An explicit empty list is the file's own and is kept.
     expect(parseLexicon({ terms: [{ canonical: 'K', never: [] }] }).terms[0].never).toEqual([]);
     expect(parseLexicon({ terms: [{ canonical: 'K', never: [' ', 'k8s'] }] }).terms[0].never).toEqual(['k8s']);
+  });
+
+  it('reads a key left empty in hand-edited YAML (null) as a key left out', () => {
+    // `terms:` with nothing under it, and a term whose `aliases:` line was emptied.
+    expect(parseLexicon(parseYaml('version: 1\nterms:\n'))).toStrictEqual(emptyLexicon());
+    const lex = parseLexicon(
+      parseYaml(
+        [
+          'version: 1',
+          'settings:',
+          'terms:',
+          '  - canonical: Ashlr.AI',
+          '    aliases:',
+          '    never:',
+          '    notes:',
+          '  - canonical: Vercel',
+          '    aliases: [Versel]',
+          '',
+        ].join('\n'),
+      ),
+    );
+    // Same shapes as a missing key: aliases [] (always present), never and settings absent.
+    expect(lex).toStrictEqual({
+      version: 1,
+      terms: [
+        { canonical: 'Ashlr.AI', aliases: [] },
+        { canonical: 'Vercel', aliases: ['Versel'] },
+      ],
+    });
+    const settings = parseLexicon({ terms: [], settings: { protectedWords: null, packs: null, fuzzy: true } });
+    expect(settings.settings).toStrictEqual({ fuzzy: true });
+    // A null entry inside a list, and a null canonical, are still errors.
+    expect(() => parseLexicon({ terms: [{ canonical: null }] })).toThrow(/terms\[0\]\.canonical/);
+    expect(() => parseLexicon({ terms: [null] })).toThrow(/terms\[0\]/);
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', aliases: [null] }] })).toThrow(/terms\[0\]\.aliases\[0\]/);
   });
 
   it('treats null/undefined (empty YAML file) as an empty lexicon', () => {
