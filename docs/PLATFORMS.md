@@ -64,7 +64,7 @@ The daemon picks its backend from the platform and the environment, and `lexicon
 
 ## What is the same everywhere
 
-Worth saying plainly, because the differences above can make the project look more platform-dependent than it is. The lexicon file, the matcher, the trust gate, the hit counters, the twenty MCP tools, the twenty-six CLI commands, the hooks, the starter packs and every export format behave identically on all three operating systems, and the same test suite proves it on all three. The platform-specific surface is narrow: how text gets into a field, how the clipboard is read, how a service starts at login, and whether an accessibility API exists to write through.
+Worth saying plainly, because the differences above can make the project look more platform-dependent than it is. The lexicon file, the matcher, the trust gate, the hit counters, the twenty MCP tools, the twenty-seven CLI commands, the hooks, the starter packs and every export format behave identically on all three operating systems, and the same test suite proves it on all three. The platform-specific surface is narrow: how text gets into a field, how the clipboard is read, how a service starts at login, and whether an accessibility API exists to write through.
 
 ## Reporting a platform bug
 

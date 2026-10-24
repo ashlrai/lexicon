@@ -15,7 +15,7 @@ import type { KeyValueStore } from '../extension/src/background-core.js';
 import { sendToBackground } from '../extension/src/chrome-store.js';
 import { installContent } from '../extension/src/content-core.js';
 import type { ContentHandle } from '../extension/src/content-core.js';
-import { applyCorrections, flatten, invertCorrections, readText } from '../extension/src/editable.js';
+import { applyCorrections, flatten, invertCorrections, readText, setWholeText } from '../extension/src/editable.js';
 import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
 import { prunePairPorts, registerPairPort } from '../extension/src/pair-port.js';
@@ -1139,6 +1139,33 @@ describe('live-site regressions (2026-09-19)', () => {
     expect(flushesSeen[0]).toBe(0); // first edit is synchronous
     expect(flushesSeen[1]).toBeGreaterThanOrEqual(1); // second edit waited for the flush
     expect(e.querySelector('span[data-lexical-text]')).not.toBeNull();
+  });
+
+  // Catches: the last-resort rewrite wiped the composer and wrote one <p> per
+  // line, so a <pre> block (or inline <code>) became plain paragraphs and the
+  // code lost its formatting in the message that was sent.
+  it('setWholeText keeps pre and inline code elements, rewriting only the prose', () => {
+    document.body.innerHTML =
+      '<div id="e" contenteditable="true"><p>ping ashler with <code>ashler.run()</code> now</p><pre><code>const ashler = 1\nreturn ashler</code></pre><p>thanks ashler</p></div>';
+    const e = document.getElementById('e')!;
+    const pre = e.querySelector('pre')!;
+    const inline = e.querySelector('p code')!;
+    const before = readText(e);
+    const next = before.replace(/^ping ashler/, 'ping Ashlr.AI').replace(/thanks ashler$/, 'thanks Ashlr.AI');
+    setWholeText(document, e, next);
+    expect(readText(e)).toBe(next);
+    expect(e.querySelector('pre')).toBe(pre);
+    expect(pre.textContent).toBe('const ashler = 1\nreturn ashler');
+    expect(e.querySelector('p code')).toBe(inline);
+    expect(inline.textContent).toBe('ashler.run()');
+    expect(e.querySelectorAll('p')).toHaveLength(2);
+  });
+
+  it('setWholeText still rewrites the whole box when the code itself would change', () => {
+    document.body.innerHTML = '<div id="e" contenteditable="true"><p>a</p><pre><code>ashler</code></pre></div>';
+    const e = document.getElementById('e')!;
+    setWholeText(document, e, 'a\nAshlr.AI');
+    expect(readText(e)).toBe('a\nAshlr.AI');
   });
 });
 

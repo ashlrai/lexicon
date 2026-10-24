@@ -8,6 +8,7 @@ import { packageVersion } from '../util/package.js';
 import { parseBackendName, runDaemonCommand } from '../daemon/clipboard.js';
 import { registerImportCommands } from './cmd-import.js';
 import { registerInstallCommands } from './cmd-install.js';
+import { registerUninstallCommands } from './cmd-uninstall.js';
 import { registerTrustCommands } from './cmd-trust.js';
 import { registerLearnCommands } from './cmd-learn.js';
 import { registerPendingCommands } from './cmd-pending.js';
@@ -265,6 +266,7 @@ program
 // Extension slots: each module registers its own commands (keeps index.ts small).
 registerImportCommands(program, io);
 registerInstallCommands(program, io);
+registerUninstallCommands(program, io);
 registerTrustCommands(program, io);
 registerLearnCommands(program, io);
 registerPendingCommands(program, io);

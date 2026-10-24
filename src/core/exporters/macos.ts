@@ -4,19 +4,15 @@
  * (shortcut = alias, phrase = canonical).
  */
 import type { ExportOptions, Lexicon } from '../types.js';
+import { findUnencodableChar } from '../schema.js';
 import { aliasPairs, xmlEscape } from './shared.js';
 
 /**
- * Code units XML 1.0 cannot hold, not even as a character reference: U+FFFE,
- * U+FFFF and a surrogate that is not half of a pair (which no UTF-8 file can
- * hold either). The schema rejects the C0 controls; these pass it.
- */
-const NOT_XML_RE = /[\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
-
-/**
- * One dict per alias. A pair with a character XML cannot hold (NOT_XML_RE) is
- * left out: written, it made the whole plist unreadable, and every other
- * replacement with it.
+ * One dict per alias. A pair with a character XML 1.0 cannot hold, not even
+ * as a character reference (U+FFFE, U+FFFF or an unpaired surrogate, what
+ * the schema's findUnencodableChar finds), is left out: written, it made the
+ * whole plist unreadable, and every other replacement with it. The schema
+ * refuses these in a lexicon file; a lexicon built in memory can still hold one.
  */
 export function exportMacos(lexicon: Lexicon, _opts: ExportOptions = {}): string {
   const lines = [
@@ -26,7 +22,7 @@ export function exportMacos(lexicon: Lexicon, _opts: ExportOptions = {}): string
     '<array>',
   ];
   for (const { alias, canonical } of aliasPairs(lexicon)) {
-    if (NOT_XML_RE.test(alias) || NOT_XML_RE.test(canonical)) continue;
+    if (findUnencodableChar(alias) !== undefined || findUnencodableChar(canonical) !== undefined) continue;
     lines.push('\t<dict>');
     lines.push('\t\t<key>phrase</key>');
     lines.push(`\t\t<string>${xmlEscape(canonical)}</string>`);

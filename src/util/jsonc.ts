@@ -227,6 +227,99 @@ function appendTo(text: string, node: Node, entries: string[], lastEnd: number |
   return at === after ? [{ start: at, end: at, text: `,${lines}` }] : [{ start: at, end: at, text: lines }, { start: after, end: after, text: ',' }];
 }
 
+/** A child of an object or array: its text span and whether it stays. */
+interface Child {
+  start: number;
+  end: number;
+  keep: boolean;
+}
+
+/** The index of the `,` after `at` (past whitespace and comments), or -1. */
+function commaAfter(text: string, at: number): number {
+  const scan = new Scanner(text);
+  scan.i = at;
+  scan.skip();
+  return text[scan.i] === ',' ? scan.i : -1;
+}
+
+/** True when only spaces or tabs sit between the start of `at`'s line and `at`. */
+function startsLine(text: string, at: number): boolean {
+  return /^[ \t]*$/.test(text.slice(text.lastIndexOf('\n', at - 1) + 1, at));
+}
+
+/** Past the end of the line `at` is on and its line break, or undefined when more than comments follow on it. */
+function pastLineBreak(text: string, at: number): number | undefined {
+  const end = endOfLineComments(text, at);
+  if (end >= text.length) return end;
+  if (text[end] === '\r' && text[end + 1] === '\n') return end + 2;
+  if (text[end] === '\n') return end + 1;
+  return undefined;
+}
+
+/**
+ * Edits that delete the children of `node` marked `keep: false`, leaving every
+ * kept child, its comments and the separators around it as they are: a child
+ * on its own line goes with its line (and a comment ending that line), one on
+ * a shared line with its comma. Null when the result would not read back as
+ * the kept children (the caller then writes the container whole).
+ */
+function removalEdits(text: string, node: Node, children: Child[], expected: unknown): Edit[] | null {
+  const edits: Edit[] = [];
+  if (children.every((c) => !c.keep)) {
+    edits.push({ start: node.start, end: node.end, text: node.kind === 'array' ? '[]' : '{}' });
+  } else {
+    for (let a = 0; a < children.length; a++) {
+      if (children[a]?.keep) continue;
+      let b = a;
+      while (b + 1 < children.length && !children[b + 1]?.keep) b++;
+      const first = children[a] as Child;
+      const last = children[b] as Child;
+      if (b + 1 < children.length) {
+        // A kept child follows: delete the run and the comma after it.
+        const comma = commaAfter(text, last.end);
+        if (comma < 0) return null;
+        const lineEnd = startsLine(text, first.start) ? pastLineBreak(text, comma + 1) : undefined;
+        if (lineEnd !== undefined) {
+          edits.push({ start: first.start - lineIndent(text, first.start).length, end: lineEnd, text: '' });
+        } else {
+          let end = comma + 1;
+          while (text[end] === ' ' || text[end] === '\t') end++;
+          edits.push({ start: first.start, end, text: '' });
+        }
+      } else {
+        // The run ends the container: delete it and the comma before it,
+        // unless the file ends its lists with a trailing comma.
+        const prev = children[a - 1] as Child;
+        const before = commaAfter(text, prev.end);
+        if (before < 0) return null;
+        const trailing = commaAfter(text, last.end);
+        const tail = trailing >= 0 ? trailing + 1 : last.end;
+        const lineEnd = startsLine(text, first.start) ? pastLineBreak(text, tail) : undefined;
+        if (lineEnd !== undefined) {
+          edits.push({ start: first.start - lineIndent(text, first.start).length, end: lineEnd, text: '' });
+          if (trailing < 0) edits.push({ start: before, end: before + 1, text: '' });
+        } else if (trailing < 0) {
+          edits.push({ start: before, end: last.end, text: '' });
+        } else {
+          let end = tail;
+          while (text[end] === ' ' || text[end] === '\t') end++;
+          edits.push({ start: first.start, end, text: '' });
+        }
+      }
+      a = b;
+    }
+  }
+  let slice = text.slice(node.start, node.end);
+  for (const e of [...edits].sort((x, y) => y.start - x.start)) {
+    slice = slice.slice(0, e.start - node.start) + e.text + slice.slice(e.end - node.start);
+  }
+  try {
+    return same(parseJsonc(slice), expected) ? edits : null;
+  } catch {
+    return null;
+  }
+}
+
 /** Collect the edits that turn `node` (holding `old`) into `next`. */
 function diff(text: string, node: Node, next: unknown, unit: string, edits: Edit[]): void {
   const old = toValue(node);
@@ -235,6 +328,17 @@ function diff(text: string, node: Node, next: unknown, unit: string, edits: Edit
   if (node.kind === 'object' && isPlain(next)) {
     const keys = Object.keys(next);
     const kept = node.members.filter((m) => Object.prototype.hasOwnProperty.call(next, m.key));
+    // Keys only removed, the rest in order: delete those members in place.
+    if (kept.length < node.members.length && keys.length === kept.length && kept.every((m, i) => keys[i] === m.key)) {
+      const expected = Object.fromEntries(kept.map((m) => [m.key, toValue(m.value)]));
+      const children = node.members.map((m) => ({ start: m.keyStart, end: m.value.end, keep: kept.includes(m) }));
+      const removal = removalEdits(text, node, children, expected);
+      if (removal !== null) {
+        edits.push(...removal);
+        for (const m of kept) diff(text, m.value, next[m.key], unit, edits);
+        return;
+      }
+    }
     // A removed key or a reordering is not a pure merge: write this value whole.
     if (kept.length !== node.members.length || kept.some((m, i) => keys[i] !== m.key)) {
       edits.push({ start: node.start, end: node.end, text: render(next, unit, indent) });
@@ -251,6 +355,20 @@ function diff(text: string, node: Node, next: unknown, unit: string, edits: Edit
       edits.push(...appendTo(text, node, entries, last?.value.end, unit, first?.keyStart));
     }
     return;
+  }
+  if (node.kind === 'array' && Array.isArray(next) && next.length < node.items.length) {
+    // Elements only removed, the rest unchanged and in order: delete those in place.
+    let j = 0;
+    const children = node.items.map((item) => {
+      const keep = j < next.length && same(toValue(item), next[j]);
+      if (keep) j++;
+      return { start: item.start, end: item.end, keep };
+    });
+    const removal = j === next.length ? removalEdits(text, node, children, next) : null;
+    if (removal !== null) {
+      edits.push(...removal);
+      return;
+    }
   }
   if (node.kind === 'array' && Array.isArray(next) && next.length === node.items.length) {
     for (const [i, item] of node.items.entries()) diff(text, item, next[i], unit, edits);
@@ -273,7 +391,9 @@ function diff(text: string, node: Node, next: unknown, unit: string, edits: Edit
  * differs: a changed value is replaced in place, a new key or array element
  * is added after the last one in the file's own indentation (and trailing
  * comma style), and everything else, comments included, is kept byte for
- * byte. Keys removed or reordered make that object be written whole. Falls
+ * byte. A removed key or array element is deleted with its line (or its
+ * comma on a shared line), comments around it kept; keys reordered, or
+ * removed and added at once, make that object be written whole. Falls
  * back to plain 2-space JSON when `text` is empty or the edited text would
  * not read back as `next`.
  */

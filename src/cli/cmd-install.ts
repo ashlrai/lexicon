@@ -29,11 +29,14 @@ import {
   findInstalledLexiconPlugin,
   hookConfigFor,
   hookTimeoutFor,
+  isInstalledLexiconServer,
   launchCommandLine,
   launchFor,
   mergeHookIntoSettings,
+  parseClaudeMcpGet,
   resolveIntegrationPaths,
 } from './claude-settings.js';
+import type { ClaudeMcpRegistration } from './claude-settings.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -512,7 +515,7 @@ async function writeText(file: string, text: string): Promise<void> {
  * refusal that says nothing was changed and how to go on. It surfaced as
  * Node's bare `EACCES: permission denied, open '<file>'`.
  */
-async function explainWrite(file: string, write: () => Promise<void>): Promise<void> {
+export async function explainWrite(file: string, write: () => Promise<void>): Promise<void> {
   try {
     await write();
   } catch (err) {
@@ -554,8 +557,8 @@ function mergeChanged(first: MergeResult<string>, second: MergeResult<string>): 
   return { next: second.next, changed: first.changed || second.changed };
 }
 
-async function applyToml(target: InstallTarget): Promise<Applied> {
-  const { text, existed } = await readText(target.file);
+/** Codex's config.toml `text` with the lexicon table merged in, and whether the env keys went into a sub-table. */
+function planToml(text: string, target: InstallTarget): MergeResult<string> & { subTable: boolean } {
   const { env, ...launch } = target.entry;
   const envTable = `${CODEX_TABLE}.env`;
   // A user who keeps the server's variables in a `[mcp_servers.lexicon.env]`
@@ -563,10 +566,34 @@ async function applyToml(target: InstallTarget): Promise<Applied> {
   // define the key twice, which TOML rejects.
   const subTable = env !== undefined && text.split('\n').some((l) => tomlHeaderRe(envTable).test(l));
   const table = upsertTomlTable(text, CODEX_TABLE, codexBlock(subTable ? launch : target.entry));
-  const { next, changed } = subTable && env ? mergeChanged(table, upsertTomlKeys(table.next, envTable, env)) : table;
+  return { ...(subTable && env ? mergeChanged(table, upsertTomlKeys(table.next, envTable, env)) : table), subTable };
+}
+
+async function applyToml(target: InstallTarget): Promise<Applied> {
+  const { text, existed } = await readText(target.file);
+  const { next, changed, subTable } = planToml(text, target);
   if (!changed) return { outcome: 'unchanged', envTable: subTable };
   await writeText(target.file, next);
   return { outcome: existed ? 'updated' : 'created', envTable: subTable };
+}
+
+/**
+ * True when `--apply` would leave `target.file` as it is: the lexicon entry
+ * there already matches. False when it would write, or when the file cannot
+ * be read or merged (the apply reports why).
+ */
+async function alreadyInstalled(target: InstallTarget): Promise<boolean> {
+  try {
+    if (target.format === 'toml') {
+      const { text, existed } = await readText(target.file);
+      return existed && !planToml(text, target).changed;
+    }
+    const read = await readJsonFile(target.file);
+    if (!read.exists || read.error !== undefined) return false;
+    return !mergeServerIntoJson(read.value, target.key, target.entry).changed;
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -765,7 +792,9 @@ async function installText(
     const claudeOpts = { ...opts, scope: project ? 'project' : 'user' };
     const claudeDeps = {
       ...(deps.cliDir ? { cliDir: deps.cliDir } : {}),
-      ...(opts.home ? { settingsPath: path.join(claudeConfigDir(process.env, home), 'settings.json') } : {}),
+      // A project-scope install writes the repo's .claude/settings.json (see
+      // claudeSettingsPathFor), whatever the home directory.
+      ...(opts.home && !project ? { settingsPath: path.join(claudeConfigDir(process.env, home), 'settings.json') } : {}),
       ...(deps.onWritten ? { onWritten: deps.onWritten } : {}),
       ...(deps.exec ? { exec: deps.exec } : {}),
       env,
@@ -777,8 +806,14 @@ async function installText(
   const body = target.format === 'toml' ? codexBlock(target.entry) : jsonSnippet(target.key, target.entry);
 
   line(io, bold(`1. Add the lexicon MCP server to ${target.label}`));
-  line(io, `   ${opts.apply ? 'merge into' : 'would merge into'} ${safe(target.file)}:`);
-  line(io, indent(body, '   '));
+  // A preview of an entry the file already holds read as work still to do.
+  const installed = !opts.apply && (await alreadyInstalled(target));
+  if (installed) {
+    line(io, `   already installed in ${safe(target.file)}: the lexicon entry there matches, nothing to write`);
+  } else {
+    line(io, `   ${opts.apply ? 'merge into' : 'would merge into'} ${safe(target.file)}:`);
+    line(io, indent(body, '   '));
+  }
   if (opts.apply) {
     const applied = target.format === 'toml' ? await applyToml(target) : await applyJson(target);
     const { outcome } = applied;
@@ -799,7 +834,7 @@ async function installText(
   line(io);
 
   printExportHint(io, 2, name);
-  if (!opts.apply) {
+  if (!opts.apply && !installed) {
     line(io);
     line(io, dim(`to write step 1, run: ${installApplyCommand(name, opts)}`));
   }
@@ -867,6 +902,18 @@ async function installedLexiconPlugin(settingsPath: string, installedPluginsPath
   return findInstalledLexiconPlugin(settings.error === undefined ? settings.value : undefined, installed.error === undefined ? installed.value : undefined);
 }
 
+/**
+ * The settings.json `install claude` merges its hooks into: the user's
+ * (`$CLAUDE_CONFIG_DIR/settings.json`, else `~/.claude/settings.json`) at user
+ * scope, and the repo's shared `.claude/settings.json` under `cwd` at project
+ * scope, beside the `.mcp.json` that `claude mcp add --scope project` writes.
+ * Project-scope hooks went to the user's file, so the repo was left with the
+ * MCP server only and every other project on the machine got the hooks.
+ */
+export function claudeSettingsPathFor(scope: 'user' | 'project', cwd: string, env: NodeJS.ProcessEnv = process.env): string {
+  return scope === 'project' ? path.join(cwd, '.claude', 'settings.json') : path.join(claudeConfigDir(env), 'settings.json');
+}
+
 export const CLAUDE_MD_SNIPPET = 'Read the `lexicon://me` resource before interpreting dictated text.';
 
 export async function runInstallClaude(
@@ -878,7 +925,7 @@ export async function runInstallClaude(
   if (scope !== 'user' && scope !== 'project') {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
-  const settingsPath = deps.settingsPath ?? path.join(claudeConfigDir(), 'settings.json');
+  const settingsPath = deps.settingsPath ?? claudeSettingsPathFor(scope, path.resolve(opts.cwd ?? process.cwd()));
   // The plugin already runs the MCP server and both hooks for every session.
   // A user-scope registration on top of it doubled the hook notes on every
   // prompt and added a second `lexicon` server (setup_lexicon from a plugin
@@ -926,10 +973,10 @@ export async function runInstallClaude(
     } catch (err) {
       const message = errorMessage(err);
       if (/already exists/i.test(message)) {
-        // `claude mcp add` refuses to overwrite an existing entry. That is the
-        // idempotent case, not a failure: every other writer here reports "already
-        // present, nothing changed" and carries on, so this one does too.
-        line(io, dim('   already registered with claude, nothing changed'));
+        // `claude mcp add` refuses to overwrite an existing entry. With the same
+        // launch that is the idempotent case; one an earlier install wrote from
+        // another location (a reinstall, a move to `npm i -g`) is repointed.
+        if (!refreshClaudeRegistration(io, exec, scope, mcpArgs, serverLaunch)) failed = true;
         line(io, dim(`   undo: claude mcp remove --scope ${scope} lexicon`));
       } else {
         failed = true;
@@ -945,7 +992,7 @@ export async function runInstallClaude(
   const hookCommand = launchCommandLine(hookLaunch);
   const hookTimeout = hookTimeoutFor(hookLaunch);
   line(io, bold(`2. Add the ${HOOK_EVENTS.join(' and ')} hooks`));
-  line(io, `   merge into ${safe(settingsPath)}:`);
+  line(io, `   ${opts.apply ? 'merge into' : 'would merge into'} ${safe(settingsPath)}${scope === 'project' ? ' (project scope: the repo\'s shared settings, read for this project only)' : ''}:`);
   line(io, indent(JSON.stringify(hookConfigFor(hookCommand, hookTimeout, HOOK_EVENTS), null, 2), '   '));
   if (hookLaunch.viaNpx) {
     line(io, dim(`   (npx re-resolves the package each prompt: ~1s, hence the ${hookTimeout}s timeout.`));
@@ -986,6 +1033,67 @@ export async function runInstallClaude(
     line(io, dim(`to perform steps 1 and 2, run: ${command}`));
   }
   return failed ? 1 : 0;
+}
+
+/**
+ * `claude mcp add` said a `lexicon` server is already registered: read it
+ * back with `claude mcp get lexicon` and, when it is one an install of this
+ * tool wrote (isInstalledLexiconServer) at this scope but with another
+ * command or path, replace it (`claude mcp remove`, then the add again) and
+ * say what changed. It was always reported as unchanged, so a registration
+ * left pointing at an old install location (a deleted checkout, an npx cache)
+ * was never refreshed. A matching registration, one at another scope, one this
+ * tool did not write and one that cannot be read back are left alone. Returns
+ * false only when the refresh was attempted and failed.
+ */
+function refreshClaudeRegistration(
+  io: IO,
+  exec: (file: string, args: readonly string[]) => string,
+  scope: 'user' | 'project',
+  mcpArgs: readonly string[],
+  launch: { command: string; args: string[] },
+): boolean {
+  let got: ClaudeMcpRegistration;
+  try {
+    got = parseClaudeMcpGet(exec('claude', ['mcp', 'get', 'lexicon']));
+  } catch (err) {
+    line(io, dim(`   already registered with claude, nothing changed (could not read it back with claude mcp get to compare: ${safeLines(errorMessage(err))})`));
+    return true;
+  }
+  const wanted = launch.args.join(' ');
+  if (got.command === undefined || got.args === undefined) {
+    line(io, dim('   already registered with claude, nothing changed (claude mcp get did not show its command to compare)'));
+    return true;
+  }
+  if (got.command === launch.command && got.args === wanted) {
+    line(io, dim('   already registered with claude, nothing changed'));
+    return true;
+  }
+  const old = safe(`${got.command} ${got.args}`.trim());
+  if (got.scope !== undefined && got.scope !== scope) {
+    line(io, dim(`   already registered with claude at ${got.scope} scope (${old}), nothing changed at ${scope} scope`));
+    return true;
+  }
+  if (!isInstalledLexiconServer(got.command, got.args)) {
+    line(io, yellow(`   a "lexicon" server that lexicon install did not write is registered with claude (${old}); left as it is`));
+    line(io, dim(`   to replace it: claude mcp remove --scope ${scope} lexicon, then run this again`));
+    return true;
+  }
+  try {
+    exec('claude', ['mcp', 'remove', '--scope', scope, 'lexicon']);
+  } catch (err) {
+    line(io, red(`   failed: the registration points at ${old}; could not remove it to repoint it: ${safeLines(errorMessage(err))}`));
+    return false;
+  }
+  try {
+    exec('claude', mcpArgs);
+  } catch (err) {
+    line(io, red(`   failed: removed the old registration (${old}) but could not add the new one: ${safeLines(errorMessage(err))}`));
+    line(io, `   run: claude ${mcpArgs.map((a) => quoteArg(a)).join(' ')}`);
+    return false;
+  }
+  line(io, green(`   repointed lexicon: ${old} -> ${safe(`${launch.command} ${wanted}`)}`));
+  return true;
 }
 
 /**

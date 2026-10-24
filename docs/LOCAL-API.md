@@ -39,7 +39,12 @@ stale one.
 The first run creates `~/.config/lexicon/serve.json` (mode 0600, next to your
 global lexicon; follows `LEXICON_PATH` and `XDG_CONFIG_HOME`). An existing one
 that other users can read (restored from a backup, synced, copied) is put back
-to 0600 when `lexicon serve`, `--show` or `--install` reuses it:
+to 0600 when `lexicon serve`, `--show` or `--install` reuses it. A file saved
+with a byte order mark (Windows Notepad) reads as usual. One that is not valid
+JSON after a hand edit stops `lexicon serve` with an error naming it, rather
+than being replaced with a new token (which would have dropped your
+`allowedOrigins` and left every paired client with a stale token); fix it, or
+delete it to get a new token:
 
 ```json
 {
@@ -91,7 +96,7 @@ says nothing was written, and gives both ways on: `lexicon trust` and a retry,
 or a retry with `"scope": "global"` in the body, `?scope=global` on a DELETE), or `/pair` with a non-loopback client
 / a cross-origin `Origin`, 404 unknown route (the `error` lists every route as
 `METHOD /path`) or export format,
-405 wrong method (with an `Allow` header naming the route's methods: `GET, HEAD` on a GET route, `POST`, or `POST, DELETE` on `/packs/:name`), 413 body over 1 MB, 500 a problem on the server's side,
+405 wrong method (with an `Allow` header naming the route's methods: `GET, HEAD` on a GET route, `POST`, or `POST, DELETE` on `/packs/:name`), 413 body over 1 MB, 415 a compressed body (any `Content-Encoding` but `identity`; bodies are read as UTF-8 JSON, a leading byte order mark allowed), 500 a problem on the server's side,
 503 more than 64 requests in flight, a lexicon file another writer still holds the lock on, or any route but plain `/health` before the server has finished starting (in each case nothing was written; the `error` says to retry after the `Retry-After` seconds, 1).
 
 400 always means the request itself is wrong: fix the input and do not retry

@@ -204,13 +204,17 @@ export function xselBackend(exec: ClipboardExec = defaultClipboardExec): Clipboa
  */
 export function powershellBackend(exec: ClipboardExec = defaultClipboardExec, shell = 'powershell'): ClipboardBackend {
   let crlf = false;
-  const readScript = '[Console]::OutputEncoding = [Text.Encoding]::UTF8; [Console]::Out.Write([string](Get-Clipboard -Raw))';
-  const writeScript = '[Console]::InputEncoding = [Text.Encoding]::UTF8; $t = [Console]::In.ReadToEnd(); Set-Clipboard -Value $t';
+  // UTF8Encoding without a byte order mark: [Text.Encoding]::UTF8 carries
+  // one, which Windows PowerShell 5.1 writes ahead of redirected output, so
+  // the read began with U+FEFF and the correction written back put it on
+  // the clipboard. A BOM that still arrives is dropped below.
+  const readScript = '[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; [Console]::Out.Write([string](Get-Clipboard -Raw))';
+  const writeScript = '[Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false; $t = [Console]::In.ReadToEnd(); Set-Clipboard -Value $t';
   return {
     name: 'powershell',
     description: `${shell} Get-Clipboard -Raw / Set-Clipboard (Windows)`,
     read: async () => {
-      const raw = await readOrEmpty(exec, shell, ['-NoProfile', '-NonInteractive', '-Command', readScript]);
+      const raw = (await readOrEmpty(exec, shell, ['-NoProfile', '-NonInteractive', '-Command', readScript])).replace(/^\uFEFF/, '');
       crlf = raw.includes('\r\n');
       return crlf ? raw.replace(/\r\n/g, '\n') : raw;
     },
@@ -245,7 +249,7 @@ function backendInstallHint(name: ClipboardBackendName): string {
     case 'pbcopy':
       return 'it ships with macOS; check your PATH';
     case 'powershell':
-      return 'it ships with Windows; check your PATH';
+      return 'it ships with Windows; check your PATH, or install PowerShell 7 as pwsh';
     default:
       return '';
   }
@@ -259,17 +263,34 @@ export async function checkClipboardBackend(
   name: ClipboardBackendName,
   which: (bin: string) => Promise<boolean>,
 ): Promise<void> {
+  // PowerShell 7 (`pwsh`) runs the same scripts; detection already falls
+  // back to it, and a forced `--backend powershell` does too (see
+  // powershellShell), so only both missing is a refusal.
+  if (name === 'powershell' && !(await which('powershell')) && (await which('pwsh'))) return;
   const missing: string[] = [];
   for (const bin of CLIPBOARD_BACKEND_BINARIES[name]) {
     if (!(await which(bin))) missing.push(bin);
   }
   if (missing.length === 0) return;
+  if (name === 'powershell') missing.push('pwsh');
   const hint = backendInstallHint(name);
   throw new Error(`--backend ${name}: ${missing.join(' and ')} not found on PATH${hint ? ` (${hint})` : ''}`);
 }
 
-/** Build a backend by name, for `--backend`. */
-export function createClipboardBackend(name: ClipboardBackendName, exec: ClipboardExec = defaultClipboardExec): ClipboardBackend {
+/**
+ * The shell a forced `--backend powershell` runs: `powershell` when it is on
+ * PATH, else `pwsh` when that is, as detection picks it. It always ran
+ * `powershell`, so on a machine with only PowerShell 7 (most Linux and macOS
+ * installs, and some Windows ones) the forced backend was refused or failed
+ * every read, though `pwsh` would have done.
+ */
+export async function powershellShell(which: (bin: string) => Promise<boolean>): Promise<'powershell' | 'pwsh'> {
+  if (await which('powershell')) return 'powershell';
+  return (await which('pwsh')) ? 'pwsh' : 'powershell';
+}
+
+/** Build a backend by name, for `--backend`. `shell` is the PowerShell to run for `powershell` (default `powershell`). */
+export function createClipboardBackend(name: ClipboardBackendName, exec: ClipboardExec = defaultClipboardExec, shell: 'powershell' | 'pwsh' = 'powershell'): ClipboardBackend {
   switch (name) {
     case 'pbcopy':
       return pbcopyBackend(exec);
@@ -280,7 +301,7 @@ export function createClipboardBackend(name: ClipboardBackendName, exec: Clipboa
     case 'xsel':
       return xselBackend(exec);
     case 'powershell':
-      return powershellBackend(exec);
+      return powershellBackend(exec, shell);
     default: {
       const never: never = name;
       throw new Error(`unknown clipboard backend: ${String(never)}`);

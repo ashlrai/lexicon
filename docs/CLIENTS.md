@@ -41,8 +41,8 @@ lexicon install claude --apply  # do it
 
 Without `--apply` it prints the three steps. With `--apply` it performs the first two:
 
-1. Registers the MCP server: `claude mcp add --scope user lexicon -- node "<install path>/plugin/mcp-server.mjs"`. Use `--scope project` to register it in the current repo instead.
-2. Merges `SessionStart` and `UserPromptSubmit` hooks running `node "<install path>/plugin/hook.mjs"` (timeout 5s) into `~/.claude/settings.json`. Existing hooks are kept. The fragment is in [examples/claude-settings.hook.json](../examples/claude-settings.hook.json).
+1. Registers the MCP server: `claude mcp add --scope user lexicon -- node "<install path>/plugin/mcp-server.mjs"`. Use `--scope project` to register it in the current repo instead. When a `lexicon` server is already registered, a registration an earlier install wrote from another location (a deleted checkout, an npx cache, a moved global install) is repointed at this one and the output names the old and new launch; a server named `lexicon` that the install did not write is left alone.
+2. Merges `SessionStart` and `UserPromptSubmit` hooks running `node "<install path>/plugin/hook.mjs"` (timeout 5s) into `~/.claude/settings.json` (`$CLAUDE_CONFIG_DIR/settings.json` when that is set). With `--scope project` they go into the repo's shared `.claude/settings.json` under the current directory instead, beside the `.mcp.json` step 1 writes, so the whole install is the repo's and nothing lands in your user settings; the output names the file as project scope. Existing hooks are kept. The fragment is in [examples/claude-settings.hook.json](../examples/claude-settings.hook.json).
 3. Reminds you to add "Read the `lexicon://me` resource before interpreting dictated text" to your `CLAUDE.md`.
 
 Paths are absolute and quoted, so an install path with spaces works. The bundles under `plugin/` are preferred (the npm package ships them too); a checkout that only ran `npm run build` falls back to `dist/mcp/server.js` and `dist/hooks/user-prompt-submit.js`. `lexicon doctor` checks that the plugin or the hooks are in place. With the plugin installed (listed in `~/.claude/plugins/installed_plugins.json` or enabled in `settings.json`), a user-scope `lexicon install claude` (and `install_client` or `setup_lexicon` for `claude`) changes nothing and says so, because the plugin already runs the server and both hooks and a second copy would add every hook note twice; `--scope project` still writes the repo's config.
@@ -144,6 +144,18 @@ No client starts a server it was not running when its config changed on disk, so
 ### Running without installing anything
 
 `npx @ashlr/lexicon@latest setup` works, and installs nothing globally. When the CLI notices it is running from an npx cache (a directory npm deletes on its own schedule) it writes `npx -y @ashlr/lexicon@<version> mcp` into each client config instead of an absolute path, so the config keeps working after the cache is cleared. The Claude Code hook gets the same treatment with a wider timeout, because npx adds about a second per prompt. `npm i -g @ashlr/lexicon` and a rerun replaces both with direct paths and makes it instant. `lexicon serve --install` refuses to create a login service from an npx cache at all, since a launchd or systemd unit pointing into one would crash-loop. Claude Code's plugin cache (`~/.claude/plugins/cache/<marketplace>/lexicon/<version>/`, where the plugin's MCP server runs) counts as a cache too: each plugin update moves to a new version directory, so `install_client` or `setup_lexicon` called from a plugin session writes the same pinned `npx` command rather than a path into it.
+
+### Uninstalling
+
+`lexicon uninstall <client>` takes back out what `lexicon install <client> --apply` wrote, with the same `--scope`, `--project` and `--home` meaning, and `--dry-run` prints what would go without writing anything:
+
+```bash
+lexicon uninstall cursor --dry-run   # would remove mcpServers.lexicon from ~/.cursor/mcp.json
+lexicon uninstall cursor
+lexicon uninstall claude             # claude mcp remove, then the hooks in settings.json
+```
+
+Only entries the install wrote are removed: a `lexicon` server whose launch is `node <dir>/plugin/mcp-server.mjs`, `node <dir>/dist/mcp/server.js` or `npx -y @ashlr/lexicon[@<version>] mcp`, and the hook commands `lexicon install claude` writes. A server of your own that happens to be called `lexicon`, and every other server, hook, key and comment in the file, is left as it is (a JSON or JSONC file keeps its formatting byte for byte outside the removed entry). For Codex the `[mcp_servers.lexicon]` table and its sub-tables go. For Claude Code it checks the registration with `claude mcp get lexicon` before running `claude mcp remove --scope <scope> lexicon`, and, when the plugin is installed, says that the plugin still runs lexicon and names `claude plugin uninstall`. `--json` prints `{ ok, client, scope, dryRun, changes, output }`.
 
 ## Any MCP client
 

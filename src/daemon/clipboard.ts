@@ -20,6 +20,7 @@ import {
   detectClipboardBackend,
   isClipboardBackendName,
   isClipboardTooLarge,
+  powershellShell,
   CLIPBOARD_BACKEND_NAMES,
 } from './clipboard-backends.js';
 import type { ClipboardBackend, ClipboardBackendName, ClipboardExec } from './clipboard-backends.js';
@@ -111,12 +112,15 @@ export async function resolveClipboard(opts: ClipboardCommonOptions): Promise<Re
   const exec = opts.exec ?? defaultClipboardExec;
   const platform = opts.platform ?? process.platform;
   const env = opts.env ?? process.env;
+  const onPath = async (bin: string): Promise<boolean> => (await findOnPath(bin, { env, platform })) !== undefined;
+  let shell: 'powershell' | 'pwsh' = 'powershell';
   if (opts.backend && !opts.exec) {
     // Real processes only: an injected exec stands in for the tools.
-    await checkClipboardBackend(opts.backend, async (bin) => (await findOnPath(bin, { env, platform })) !== undefined);
+    await checkClipboardBackend(opts.backend, onPath);
+    if (opts.backend === 'powershell') shell = await powershellShell(onPath);
   }
   const backend: ClipboardBackend = opts.backend
-    ? createClipboardBackend(opts.backend, exec)
+    ? createClipboardBackend(opts.backend, exec, shell)
     : await detectClipboardBackend(platform, env, undefined, exec);
   return {
     name: backend.name,

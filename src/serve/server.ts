@@ -664,8 +664,16 @@ function readBody(req: http.IncomingMessage, cap: number): Promise<string> {
  * `optional`, an empty body reads as `{}` (routes whose fields are all optional).
  */
 async function readJson(req: http.IncomingMessage, cap: number, route: BodyRoute, optional = false): Promise<unknown> {
-  const text = await readBody(req, cap);
+  // A byte order mark (PowerShell 5.1 and .NET clients send one with a UTF-8
+  // body) is not JSON, so JSON.parse answered "not valid JSON" to a valid body.
+  const text = (await readBody(req, cap)).replace(/^\uFEFF/, '');
   const takes = BODY_SHAPES[route];
+  // The body is read as UTF-8 text: a gzip or deflate body read as "not valid
+  // JSON", which sent the client looking for a syntax error that was not there.
+  const encoding = String(req.headers['content-encoding'] ?? '').trim().toLowerCase();
+  if (encoding !== '' && encoding !== 'identity') {
+    throw new HttpError(415, `request bodies are not decompressed (Content-Encoding: ${sanitizeForDisplay(encoding)}); send the JSON uncompressed (${takes})`);
+  }
   if (text.trim() === '') {
     if (optional) return {};
     throw new HttpError(400, `request body must be a JSON object (${takes})`);

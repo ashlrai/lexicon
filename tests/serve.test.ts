@@ -40,12 +40,14 @@ import {
   errorStatus,
   getServePath,
   isLoopbackAddress,
+  isLoopbackHost,
   isAllowedHost,
   isOriginAllowed,
   isPairHost,
   pairPageHtml,
   pairPortNote,
   readServeConfig,
+  unusableServeConfigReason,
   DEFAULT_PORT,
   EXPORT_NOTE_HEADER,
   NORMALIZE_BUDGET_MS,
@@ -217,6 +219,41 @@ describe('serve.json', () => {
       await fs.chmod(servePath, 0o644);
       expect((await ensureServeConfig({ globalPath: gp })).token).toBe(token);
       expect((await fs.stat(servePath)).mode & 0o777).toBe(0o600);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Catches: a serve.json saved with a byte order mark (Windows Notepad,
+  // PowerShell Out-File) or with a typo after a hand edit read as missing, so
+  // the next start minted a new token over it: allowedOrigins was dropped and
+  // every paired client was answered 401.
+  it('a hand-edited serve.json keeps its token: a BOM is read, invalid JSON is refused, a bad token keeps the origins', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-edit-'));
+    try {
+      const gp = path.join(dir, 'lexicon.yaml');
+      const servePath = getServePath({ globalPath: gp });
+      const token = 'cd'.repeat(16);
+      const doc = { port: 41733, token, createdAt: '2026-01-01T00:00:00.000Z', allowedOrigins: ['https://ok.example'] };
+      await fs.writeFile(servePath, `\uFEFF${JSON.stringify(doc, null, 2)}`);
+      expect(await readServeConfig({ globalPath: gp })).toMatchObject({ token, allowedOrigins: ['https://ok.example'] });
+      expect((await ensureServeConfig({ globalPath: gp })).token).toBe(token);
+
+      const broken = JSON.stringify(doc).replace(/\}$/, ',}');
+      await fs.writeFile(servePath, broken);
+      await expect(ensureServeConfig({ globalPath: gp })).rejects.toThrow(`${servePath} is not valid JSON`);
+      expect(await fs.readFile(servePath, 'utf8')).toBe(broken);
+
+      expect(unusableServeConfigReason(servePath)).toBe('is not valid JSON; fix it, or delete it and lexicon serve makes a new token');
+
+      await fs.writeFile(servePath, JSON.stringify({ ...doc, token: 'short' }));
+      expect(unusableServeConfigReason(servePath)).toBe('has no usable token; lexicon serve replaces it');
+      const fresh = await ensureServeConfig({ globalPath: gp });
+      expect(fresh.token).toMatch(/^[0-9a-f]{32}$/);
+      expect(fresh.allowedOrigins).toEqual(['https://ok.example']);
+
+      await fs.writeFile(servePath, '  \n');
+      expect((await ensureServeConfig({ globalPath: gp })).token).toMatch(/^[0-9a-f]{32}$/);
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
@@ -1034,6 +1071,20 @@ describe('limits and errors', () => {
       'no route for POST /normalise (routes: GET /health, GET /pair, POST /normalize, POST /learn, POST /add, ' +
         'GET /lexicon, GET /stats, GET /packs, POST /packs/:name, DELETE /packs/:name, GET /aliases, GET /export/:format)',
     );
+  });
+
+  // Catches: a body with a byte order mark (PowerShell 5.1 and .NET send one)
+  // or a gzip body was answered "not valid JSON", which sent the client
+  // looking for a syntax error that was not there.
+  it('reads a body past a byte order mark and answers 415 to a compressed one', async () => {
+    const bom = await api('POST', '/normalize', `\uFEFF${JSON.stringify({ text: 'ping ashler', dryRun: true })}`);
+    expect(bom.status).toBe(200);
+    expect(((await bom.json()) as { replacements: Array<{ canonical: string }> }).replacements.map((r) => r.canonical)).toEqual(['Ashlr.AI']);
+    const gz = await api('POST', '/normalize', JSON.stringify({ text: 'x' }), { 'Content-Encoding': 'gzip' });
+    expect(gz.status).toBe(415);
+    expect(((await gz.json()) as { error: string }).error).toContain('request bodies are not decompressed (Content-Encoding: gzip)');
+    const identity = await api('POST', '/normalize', JSON.stringify({ text: 'x', dryRun: true }), { 'Content-Encoding': 'identity' });
+    expect(identity.status).toBe(200);
   });
 
   it('400 on bad JSON and on a non-object body', async () => {
@@ -2006,6 +2057,18 @@ describe('lexicon serve (CLI)', () => {
     const doc = JSON.parse(io.out.join('')) as Record<string, unknown>;
     expect(Object.keys(doc)[0]).toBe('ok');
     expect(doc).toMatchObject({ ok: true, url: seen!.url, port: seen!.port, token: seen!.token });
+  });
+
+  // Catches: any host starting with "127." counted as loopback, so
+  // `--host 127.example.com` (a name that can resolve anywhere) skipped the
+  // network-exposure warning, while `0:0:0:0:0:0:0:1` drew it.
+  it('isLoopbackHost takes loopback addresses in any spelling and no hostname but localhost', () => {
+    for (const h of ['localhost', 'LOCALHOST', '127.0.0.1', '127.1.2.3', '::1', '[::1]', '0:0:0:0:0:0:0:1', '::ffff:127.0.0.1', ' 127.0.0.1 ']) {
+      expect(isLoopbackHost(h), h).toBe(true);
+    }
+    for (const h of ['127.example.com', '127.0.0.1.nip.io', '0.0.0.0', '::', '192.168.1.2', '::ffff:10.0.0.1', 'example.com', '']) {
+      expect(isLoopbackHost(h), h).toBe(false);
+    }
   });
 
   it('warns in red-or-plain when --host is not loopback, and reports a busy port', async () => {

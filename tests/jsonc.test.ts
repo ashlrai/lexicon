@@ -30,8 +30,8 @@ describe('editJsonText', () => {
     expect(editJsonText('{ "a": [1] }', { a: [1, 2] })).toBe('{ "a": [1, 2] }');
   });
 
-  it('writes an object whole when a key was removed or moved, and falls back to plain JSON for empty text', () => {
-    expect(editJsonText('{ "a": 1, "b": 2 }', { b: 2 })).toBe('{\n  "b": 2\n}');
+  it('writes an object whole when a key was moved, and falls back to plain JSON for empty text', () => {
+    expect(editJsonText('{ "a": 1, "b": 2 }', { b: 2, a: 1 })).toBe('{\n  "b": 2,\n  "a": 1\n}');
     expect(editJsonText('', { a: 1 })).toBe('{\n  "a": 1\n}\n');
     expect(editJsonText('{ not json', { a: 1 })).toBe('{\n  "a": 1\n}\n');
   });
@@ -39,5 +39,48 @@ describe('editJsonText', () => {
   it('is the identity when nothing changed', () => {
     const text = '{\n\t// c\n\t"a": [ 1 ,2 ],\n}';
     expect(editJsonText(text, { a: [1, 2] })).toBe(text);
+  });
+
+  // Catches: removing a key wrote its whole object again through
+  // JSON.stringify, so `lexicon uninstall` dropped every comment and the
+  // formatting of the user's other servers along with the lexicon entry.
+  describe('removing keys and elements in place', () => {
+    const file = [
+      '{',
+      '    // my servers',
+      '    "mcpServers": {',
+      '        "other": { "command": "x", "args": ["a", "b"] }, // keep me',
+      '        "lexicon": {',
+      '            "command": "node",',
+      '            "args": ["/x/plugin/mcp-server.mjs"]',
+      '        }',
+      '    },',
+      '    "after": true',
+      '}',
+      '',
+    ].join('\n');
+
+    it('deletes the last member and the comma before it, keeping the comment after that comma', () => {
+      const out = editJsonText(file, { mcpServers: { other: { command: 'x', args: ['a', 'b'] } }, after: true });
+      expect(out).toBe(file.replace(/\n {8}"lexicon": \{[\s\S]*?\n {8}\}/, '').replace('"b"] }, // keep me', '"b"] } // keep me'));
+      expect(out).toContain('// my servers');
+    });
+
+    it('deletes a first or middle member with its line and comma', () => {
+      const text = '{\n  "a": 1, // a\n  "b": 2,\n  // c is next\n  "c": 3\n}';
+      expect(editJsonText(text, { b: 2, c: 3 })).toBe('{\n  "b": 2,\n  // c is next\n  "c": 3\n}');
+      expect(editJsonText(text, { a: 1, c: 3 })).toBe('{\n  "a": 1, // a\n  // c is next\n  "c": 3\n}');
+      expect(editJsonText(text, { a: 1 })).toBe('{\n  "a": 1 // a\n}');
+    });
+
+    it('handles one-line containers, trailing commas, arrays and removing everything', () => {
+      expect(editJsonText('{ "a": 1, "b": 2 }', { b: 2 })).toBe('{ "b": 2 }');
+      expect(editJsonText('{ "a": 1, "b": 2 }', { a: 1 })).toBe('{ "a": 1 }');
+      expect(editJsonText('{\n  "a": 1,\n  "b": 2,\n}', { a: 1 })).toBe('{\n  "a": 1,\n}');
+      expect(editJsonText('[1, 2, 3]', [1, 3])).toBe('[1, 3]');
+      expect(editJsonText('{ "x": [\n  { "k": 1 },\n  { "k": 2 }\n] }', { x: [{ k: 2 }] })).toBe('{ "x": [\n  { "k": 2 }\n] }');
+      expect(editJsonText('{ "s": { "lexicon": {} }, "t": 1 }', { s: {}, t: 1 })).toBe('{ "s": {}, "t": 1 }');
+      expect(editJsonText('{\r\n  "a": 1,\r\n  "b": 2\r\n}\r\n', { b: 2 })).toBe('{\r\n  "b": 2\r\n}\r\n');
+    });
   });
 });

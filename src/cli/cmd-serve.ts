@@ -6,12 +6,12 @@
  * Handlers are exported for tests; registerServeCommands() only wires commander.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, promises as fs } from 'node:fs';
+import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import { homeDir } from '../util/xdg.js';
 import path from 'node:path';
 import { Command, InvalidArgumentError } from 'commander';
-import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, pairPortNote, ensureServeConfig, getServePath, readServeConfig, isLexiconHealth, isLoopbackHost, probeHealth, serveUrl, FOREIGN_HEALTH_ERROR, SERVE_STATUS_HINTS } from '../serve/index.js';
+import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, pairPortNote, ensureServeConfig, getServePath, readServeConfig, isLexiconHealth, isLoopbackHost, probeHealth, serveUrl, FOREIGN_HEALTH_ERROR, SERVE_STATUS_HINTS, unusableServeConfigReason } from '../serve/index.js';
 import { isRecord } from '../util/json.js';
 import { resolveCliEntry } from './cli-entry.js';
 import { lexiconServerEnv } from './cmd-install.js';
@@ -154,7 +154,7 @@ export async function runServeStatus(opts: ServeOptions, io: IO, deps: ServeDeps
     timeoutMs: STATUS_TIMEOUT_MS,
     ...(deps.fetch ? { fetch: deps.fetch } : {}),
   });
-  const why = existsSync(configPath) ? 'has no usable token; lexicon serve replaces it' : 'does not exist; lexicon serve creates it';
+  const why = unusableServeConfigReason(configPath);
   const notConfigured = config ? {} : { configured: false, configPath, note: `serve is not configured: ${configPath} ${why}` };
   const health =
     probe.state === 'up' && isRecord(probe.body) ? (probe.body as { ok?: unknown; version?: unknown; terms?: unknown }) : undefined;
@@ -238,7 +238,7 @@ export async function runServePair(opts: ServeOptions, io: IO, deps: ServeDeps =
   const config = await readServeConfig(storeOpts(opts));
   if (!config) {
     const configPath = getServePath(storeOpts(opts));
-    const why = existsSync(configPath) ? 'has no usable token; lexicon serve replaces it' : 'does not exist; lexicon serve creates it';
+    const why = unusableServeConfigReason(configPath);
     const error = `serve is not configured: ${configPath} ${why}`;
     const nextStep = 'run `lexicon serve --install` (or `lexicon serve` in the foreground) first, then run `lexicon serve --pair` again';
     if (opts.json) line(io, JSON.stringify({ ...jsonError(error, nextStep), up: false, configured: false, configPath }, null, 2));

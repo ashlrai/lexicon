@@ -474,6 +474,28 @@ describe('runClipboardOnce', () => {
 });
 
 describe('runDaemonCommand', () => {
+  // Catches: a forced --backend powershell always ran (and checked for)
+  // `powershell`, so with only PowerShell 7 on PATH it was refused though
+  // `pwsh` runs the same scripts, which detection already falls back to.
+  it.skipIf(process.platform === 'win32')('--backend powershell uses pwsh when powershell is not on PATH, and names both when neither is', async () => {
+    const { mkdtemp, writeFile, rm } = await import('node:fs/promises');
+    const os = await import('node:os');
+    const path = await import('node:path');
+    const dir = await mkdtemp(path.join(os.tmpdir(), 'lexicon-pwsh-'));
+    try {
+      await writeFile(path.join(dir, 'pwsh'), '#!/bin/sh\n', { mode: 0o755 });
+      const out: string[] = [];
+      const err: string[] = [];
+      expect(await runDaemonCommand({ which: true, backend: 'powershell', platform: 'linux', env: { PATH: dir }, paste: false, out: (s) => out.push(s), err: (s) => err.push(s) })).toBe(0);
+      expect(out.join('')).toBe('clipboard backend: powershell (pwsh Get-Clipboard -Raw / Set-Clipboard (Windows))\n');
+      out.length = 0;
+      expect(await runDaemonCommand({ which: true, backend: 'powershell', platform: 'linux', env: { PATH: '' }, paste: false, out: (s) => out.push(s), err: (s) => err.push(s) })).toBe(1);
+      expect(err.join('')).toContain('--backend powershell: powershell and pwsh not found on PATH (it ships with Windows; check your PATH, or install PowerShell 7 as pwsh)');
+    } finally {
+      await rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('--which prints the backend and exits 0; exits 1 with the hint when none', async () => {
     const out: string[] = [];
     const err: string[] = [];
@@ -559,6 +581,26 @@ describe('clipboard backends', () => {
     expect(await backend.read()).toBe('plain\nlf');
     await backend.write('plain\nLF');
     expect(clipboard).toBe('plain\nLF');
+  });
+
+  // Catches: [Console]::OutputEncoding = [Text.Encoding]::UTF8 makes Windows
+  // PowerShell 5.1 write a byte order mark ahead of redirected output, so the
+  // read began with U+FEFF and the corrected text written back carried it.
+  it('powershell: a byte order mark ahead of the clipboard text is dropped, and none is asked for', async () => {
+    let written: string | undefined;
+    const { exec, calls } = fakeExec(({ stdin }) => {
+      if (stdin === undefined) return '\uFEFFmeet Ashler';
+      written = stdin;
+      return '';
+    });
+    const backend = powershellBackend(exec);
+    expect(await backend.read()).toBe('meet Ashler');
+    await backend.write('meet Ashlr.AI');
+    expect(written).toBe('meet Ashlr.AI');
+    for (const call of calls) {
+      expect(call.args[3]).toContain('New-Object System.Text.UTF8Encoding $false');
+      expect(call.args[3]).not.toContain('[Text.Encoding]::UTF8');
+    }
   });
 
   it('every backend returns "" when the tool exits non-zero (empty / non-text clipboard)', async () => {

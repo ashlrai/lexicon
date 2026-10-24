@@ -3137,7 +3137,7 @@ var require_utils = __commonJS({
   "node_modules/fast-uri/lib/utils.js"(exports, module) {
     "use strict";
     var isUUID = RegExp.prototype.test.bind(/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/iu);
-    var isIPv4 = RegExp.prototype.test.bind(/^(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)$/u);
+    var isIPv42 = RegExp.prototype.test.bind(/^(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)$/u);
     var isPort = RegExp.prototype.test.bind(/^\d*$/u);
     var isHexPair = RegExp.prototype.test.bind(/^[\da-f]{2}$/iu);
     var isUnreserved = RegExp.prototype.test.bind(/^[\da-z\-._~]$/iu);
@@ -3238,7 +3238,7 @@ var require_utils = __commonJS({
         const part = parts[i];
         if (part === "") return void 0;
         if (part.indexOf(".") !== -1) {
-          if (i !== parts.length - 1 || compression !== -1 && right.length === 0 || !isIPv4(part)) return void 0;
+          if (i !== parts.length - 1 || compression !== -1 && right.length === 0 || !isIPv42(part)) return void 0;
           hextetCount += 2;
           continue;
         }
@@ -3589,7 +3589,7 @@ var require_utils = __commonJS({
       }
       if (component.host !== void 0) {
         let host = component.host;
-        if (!isIPv4(host)) {
+        if (!isIPv42(host)) {
           let ipV6res = normalizeIPv6(host);
           if (ipV6res.isIPV6 !== true && ipV6res.isIPVFuture !== true) {
             host = normalizePercentEncoding(host, true);
@@ -3626,7 +3626,7 @@ var require_utils = __commonJS({
       encodeFragment,
       escapePreservingEscapes,
       removeDotSegments,
-      isIPv4,
+      isIPv4: isIPv42,
       isUUID,
       normalizeIPv6,
       stringArrayToHexStripped
@@ -3849,7 +3849,7 @@ var require_schemes = __commonJS({
 var require_fast_uri = __commonJS({
   "node_modules/fast-uri/index.js"(exports, module) {
     "use strict";
-    var { normalizeIPv6, removeDotSegments, recomposeAuthority, normalizePercentEncoding, normalizePathEncoding, serializePathEncoding, normalizeQueryFragmentEncoding, encodeQuery, encodeFragment, reescapeHostDelimiters, isIPv4, nonSimpleDomain } = require_utils();
+    var { normalizeIPv6, removeDotSegments, recomposeAuthority, normalizePercentEncoding, normalizePathEncoding, serializePathEncoding, normalizeQueryFragmentEncoding, encodeQuery, encodeFragment, reescapeHostDelimiters, isIPv4: isIPv42, nonSimpleDomain } = require_utils();
     var { SCHEMES, getSchemeHandler } = require_schemes();
     var VALID_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*$/u;
     var MALFORMED_SCHEME_ERROR = "URI scheme is malformed.";
@@ -3894,7 +3894,7 @@ var require_fast_uri = __commonJS({
       const resolved2 = resolveComponent(baseParsed, relativeParsed, schemelessOptions, true);
       const resolvedSchemeHandler = getSchemeHandler(options && options.scheme || resolved2.scheme);
       const resolvedHost = resolved2.host;
-      const resolvedHostIsIP = resolvedHost !== void 0 && resolvedHost !== "" && (isIPv4(resolvedHost) || normalizeIPv6(resolvedHost).isIPV6);
+      const resolvedHostIsIP = resolvedHost !== void 0 && resolvedHost !== "" && (isIPv42(resolvedHost) || normalizeIPv6(resolvedHost).isIPV6);
       canonicalizeHost(resolved2, options || {}, resolvedSchemeHandler, resolvedHostIsIP);
       const encodedASCIIHost = resolvedHost && resolvedHost.indexOf("%") !== -1 && !new RegExp("\\P{ASCII}", "u").test(resolvedHost);
       if (resolved2.error && !encodedASCIIHost) {
@@ -4145,7 +4145,7 @@ var require_fast_uri = __commonJS({
           malformedAuthorityOrPort = true;
         }
         if (parsed.host) {
-          const ipv4result = isIPv4(parsed.host);
+          const ipv4result = isIPv42(parsed.host);
           if (ipv4result === false) {
             const bracketedIPLiteral = isIPLiteral(parsed.host);
             const hasIPLiteralBracket = parsed.host.indexOf("[") !== -1 || parsed.host.indexOf("]") !== -1;
@@ -18192,6 +18192,13 @@ var require_promises = __commonJS({
 var require_node_readline = __commonJS({
   "builtin-cjs:node:readline"(exports, module) {
     module.exports = __require("node:readline");
+  }
+});
+
+// builtin-cjs:node:net
+var require_node_net = __commonJS({
+  "builtin-cjs:node:net"(exports, module) {
+    module.exports = __require("node:net");
   }
 });
 
@@ -54058,6 +54065,75 @@ ${inner}${e}`).join(",");
   if (trailing) return [{ start: at, end: at, text: `${lines},` }];
   return at === after ? [{ start: at, end: at, text: `,${lines}` }] : [{ start: at, end: at, text: lines }, { start: after, end: after, text: "," }];
 }
+function commaAfter(text, at) {
+  const scan = new Scanner(text);
+  scan.i = at;
+  scan.skip();
+  return text[scan.i] === "," ? scan.i : -1;
+}
+function startsLine(text, at) {
+  return /^[ \t]*$/.test(text.slice(text.lastIndexOf("\n", at - 1) + 1, at));
+}
+function pastLineBreak(text, at) {
+  const end = endOfLineComments(text, at);
+  if (end >= text.length) return end;
+  if (text[end] === "\r" && text[end + 1] === "\n") return end + 2;
+  if (text[end] === "\n") return end + 1;
+  return void 0;
+}
+function removalEdits(text, node2, children, expected) {
+  const edits = [];
+  if (children.every((c) => !c.keep)) {
+    edits.push({ start: node2.start, end: node2.end, text: node2.kind === "array" ? "[]" : "{}" });
+  } else {
+    for (let a = 0; a < children.length; a++) {
+      if (children[a]?.keep) continue;
+      let b = a;
+      while (b + 1 < children.length && !children[b + 1]?.keep) b++;
+      const first = children[a];
+      const last = children[b];
+      if (b + 1 < children.length) {
+        const comma = commaAfter(text, last.end);
+        if (comma < 0) return null;
+        const lineEnd2 = startsLine(text, first.start) ? pastLineBreak(text, comma + 1) : void 0;
+        if (lineEnd2 !== void 0) {
+          edits.push({ start: first.start - lineIndent(text, first.start).length, end: lineEnd2, text: "" });
+        } else {
+          let end = comma + 1;
+          while (text[end] === " " || text[end] === "	") end++;
+          edits.push({ start: first.start, end, text: "" });
+        }
+      } else {
+        const prev = children[a - 1];
+        const before = commaAfter(text, prev.end);
+        if (before < 0) return null;
+        const trailing = commaAfter(text, last.end);
+        const tail = trailing >= 0 ? trailing + 1 : last.end;
+        const lineEnd2 = startsLine(text, first.start) ? pastLineBreak(text, tail) : void 0;
+        if (lineEnd2 !== void 0) {
+          edits.push({ start: first.start - lineIndent(text, first.start).length, end: lineEnd2, text: "" });
+          if (trailing < 0) edits.push({ start: before, end: before + 1, text: "" });
+        } else if (trailing < 0) {
+          edits.push({ start: before, end: last.end, text: "" });
+        } else {
+          let end = tail;
+          while (text[end] === " " || text[end] === "	") end++;
+          edits.push({ start: first.start, end, text: "" });
+        }
+      }
+      a = b;
+    }
+  }
+  let slice = text.slice(node2.start, node2.end);
+  for (const e of [...edits].sort((x, y) => y.start - x.start)) {
+    slice = slice.slice(0, e.start - node2.start) + e.text + slice.slice(e.end - node2.start);
+  }
+  try {
+    return same(parseJsonc(slice), expected) ? edits : null;
+  } catch {
+    return null;
+  }
+}
 function diff(text, node2, next, unit, edits) {
   const old = toValue(node2);
   if (same(old, next)) return;
@@ -54065,6 +54141,16 @@ function diff(text, node2, next, unit, edits) {
   if (node2.kind === "object" && isPlain(next)) {
     const keys = Object.keys(next);
     const kept = node2.members.filter((m) => Object.prototype.hasOwnProperty.call(next, m.key));
+    if (kept.length < node2.members.length && keys.length === kept.length && kept.every((m, i) => keys[i] === m.key)) {
+      const expected = Object.fromEntries(kept.map((m) => [m.key, toValue(m.value)]));
+      const children = node2.members.map((m) => ({ start: m.keyStart, end: m.value.end, keep: kept.includes(m) }));
+      const removal = removalEdits(text, node2, children, expected);
+      if (removal !== null) {
+        edits.push(...removal);
+        for (const m of kept) diff(text, m.value, next[m.key], unit, edits);
+        return;
+      }
+    }
     if (kept.length !== node2.members.length || kept.some((m, i) => keys[i] !== m.key)) {
       edits.push({ start: node2.start, end: node2.end, text: render(next, unit, indent2) });
       return;
@@ -54080,6 +54166,19 @@ function diff(text, node2, next, unit, edits) {
       edits.push(...appendTo(text, node2, entries2, last?.value.end, unit, first?.keyStart));
     }
     return;
+  }
+  if (node2.kind === "array" && Array.isArray(next) && next.length < node2.items.length) {
+    let j = 0;
+    const children = node2.items.map((item) => {
+      const keep = j < next.length && same(toValue(item), next[j]);
+      if (keep) j++;
+      return { start: item.start, end: item.end, keep };
+    });
+    const removal = j === next.length ? removalEdits(text, node2, children, next) : null;
+    if (removal !== null) {
+      edits.push(...removal);
+      return;
+    }
   }
   if (node2.kind === "array" && Array.isArray(next) && next.length === node2.items.length) {
     for (const [i, item] of node2.items.entries()) diff(text, item, next[i], unit, edits);
@@ -58242,7 +58341,6 @@ function exportJson(lexicon, _opts = {}) {
 }
 
 // src/core/exporters/macos.ts
-var NOT_XML_RE = /[\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 function exportMacos(lexicon, _opts = {}) {
   const lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -58251,7 +58349,7 @@ function exportMacos(lexicon, _opts = {}) {
     "<array>"
   ];
   for (const { alias, canonical } of aliasPairs(lexicon)) {
-    if (NOT_XML_RE.test(alias) || NOT_XML_RE.test(canonical)) continue;
+    if (findUnencodableChar(alias) !== void 0 || findUnencodableChar(canonical) !== void 0) continue;
     lines.push("	<dict>");
     lines.push("		<key>phrase</key>");
     lines.push(`		<string>${xmlEscape(canonical)}</string>`);
@@ -60295,8 +60393,8 @@ async function installLoadedPack(pack, recordAs, opts = {}) {
     const merged = results.length - added;
     const packs = dedupe([...file2.lexicon.settings?.packs ?? [], recordAs]);
     await writePacksSetting(file2, packs, storeOpts2, leaveUntrusted);
-    const alreadyInstalled = before !== void 0 && before === await readTextIfAny(file2.path);
-    return { pack: info(pack), added, merged, path: file2.path, scope, alreadyInstalled };
+    const alreadyInstalled2 = before !== void 0 && before === await readTextIfAny(file2.path);
+    return { pack: info(pack), added, merged, path: file2.path, scope, alreadyInstalled: alreadyInstalled2 };
   });
 }
 async function installPack(name, opts = {}) {
@@ -62159,6 +62257,28 @@ var INSTALLED_HOOK_COMMAND = /^node\s+(?:"[^"]*|[^\s"]*)(?:[\\/]plugin[\\/]hook\
 function isInstalledLexiconHook(command) {
   return INSTALLED_HOOK_COMMAND.test(command.trim());
 }
+function isInstalledLexiconServer(command, args) {
+  const cmd = command.trim();
+  const a = args.trim();
+  if (/(?:^|[\\/])node(?:\.exe)?$/i.test(cmd)) {
+    return /^"?.*(?:[\\/]plugin[\\/]mcp-server\.mjs|[\\/]mcp[\\/]server\.js)"?$/.test(a);
+  }
+  if (/(?:^|[\\/])npx(?:\.cmd)?$/i.test(cmd)) return /^-y @ashlr\/lexicon(?:@\S+)? mcp$/.test(a);
+  return false;
+}
+function parseClaudeMcpGet(out) {
+  const field = (name) => new RegExp(`^\\s*${name}:[ \\t]*(.*?)\\s*$`, "m").exec(out)?.[1];
+  const result = {};
+  const scope = field("Scope")?.toLowerCase();
+  if (scope?.startsWith("user")) result.scope = "user";
+  else if (scope?.startsWith("project")) result.scope = "project";
+  else if (scope?.startsWith("local")) result.scope = "local";
+  const command = field("Command");
+  if (command) result.command = command;
+  const args = field("Args");
+  if (args !== void 0) result.args = args;
+  return result;
+}
 function mergeHookIntoSettings(settings, command, timeout = 5, events = ["UserPromptSubmit"]) {
   const base = isRecord(settings) ? structuredClone(settings) : {};
   if (base.hooks !== void 0 && !isRecord(base.hooks)) {
@@ -62378,13 +62498,13 @@ function xselBackend(exec = defaultClipboardExec) {
 }
 function powershellBackend(exec = defaultClipboardExec, shell = "powershell") {
   let crlf = false;
-  const readScript = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; [Console]::Out.Write([string](Get-Clipboard -Raw))";
-  const writeScript = "[Console]::InputEncoding = [Text.Encoding]::UTF8; $t = [Console]::In.ReadToEnd(); Set-Clipboard -Value $t";
+  const readScript = "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; [Console]::Out.Write([string](Get-Clipboard -Raw))";
+  const writeScript = "[Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false; $t = [Console]::In.ReadToEnd(); Set-Clipboard -Value $t";
   return {
     name: "powershell",
     description: `${shell} Get-Clipboard -Raw / Set-Clipboard (Windows)`,
     read: async () => {
-      const raw = await readOrEmpty(exec, shell, ["-NoProfile", "-NonInteractive", "-Command", readScript]);
+      const raw = (await readOrEmpty(exec, shell, ["-NoProfile", "-NonInteractive", "-Command", readScript])).replace(/^\uFEFF/, "");
       crlf = raw.includes("\r\n");
       return crlf ? raw.replace(/\r\n/g, "\n") : raw;
     },
@@ -62873,16 +62993,32 @@ async function applyJson(target) {
 function mergeChanged(first, second) {
   return { next: second.next, changed: first.changed || second.changed };
 }
-async function applyToml(target) {
-  const { text, existed } = await readText2(target.file);
+function planToml(text, target) {
   const { env, ...launch } = target.entry;
   const envTable = `${CODEX_TABLE}.env`;
   const subTable = env !== void 0 && text.split("\n").some((l) => tomlHeaderRe(envTable).test(l));
   const table = upsertTomlTable(text, CODEX_TABLE, codexBlock(subTable ? launch : target.entry));
-  const { next, changed } = subTable && env ? mergeChanged(table, upsertTomlKeys(table.next, envTable, env)) : table;
+  return { ...subTable && env ? mergeChanged(table, upsertTomlKeys(table.next, envTable, env)) : table, subTable };
+}
+async function applyToml(target) {
+  const { text, existed } = await readText2(target.file);
+  const { next, changed, subTable } = planToml(text, target);
   if (!changed) return { outcome: "unchanged", envTable: subTable };
   await writeText(target.file, next);
   return { outcome: existed ? "updated" : "created", envTable: subTable };
+}
+async function alreadyInstalled(target) {
+  try {
+    if (target.format === "toml") {
+      const { text, existed } = await readText2(target.file);
+      return existed && !planToml(text, target).changed;
+    }
+    const read = await readJsonFile(target.file);
+    if (!read.exists || read.error !== void 0) return false;
+    return !mergeServerIntoJson(read.value, target.key, target.entry).changed;
+  } catch {
+    return false;
+  }
 }
 function jsonSnippet(key, entry) {
   return JSON.stringify({ [key]: { lexicon: entry } }, null, 2);
@@ -63006,7 +63142,9 @@ async function installText(client, opts, io, deps) {
     const claudeOpts = { ...opts, scope: project ? "project" : "user" };
     const claudeDeps = {
       ...deps.cliDir ? { cliDir: deps.cliDir } : {},
-      ...opts.home ? { settingsPath: import_node_path20.default.join(claudeConfigDir(process.env, home), "settings.json") } : {},
+      // A project-scope install writes the repo's .claude/settings.json (see
+      // claudeSettingsPathFor), whatever the home directory.
+      ...opts.home && !project ? { settingsPath: import_node_path20.default.join(claudeConfigDir(process.env, home), "settings.json") } : {},
       ...deps.onWritten ? { onWritten: deps.onWritten } : {},
       ...deps.exec ? { exec: deps.exec } : {},
       env
@@ -63016,8 +63154,13 @@ async function installText(client, opts, io, deps) {
   const target = targetFor(name, serverPath, { home, cwd, platform, env, project });
   const body = target.format === "toml" ? codexBlock(target.entry) : jsonSnippet(target.key, target.entry);
   line(io, bold(`1. Add the lexicon MCP server to ${target.label}`));
-  line(io, `   ${opts.apply ? "merge into" : "would merge into"} ${safe(target.file)}:`);
-  line(io, indent(body, "   "));
+  const installed = !opts.apply && await alreadyInstalled(target);
+  if (installed) {
+    line(io, `   already installed in ${safe(target.file)}: the lexicon entry there matches, nothing to write`);
+  } else {
+    line(io, `   ${opts.apply ? "merge into" : "would merge into"} ${safe(target.file)}:`);
+    line(io, indent(body, "   "));
+  }
   if (opts.apply) {
     const applied = target.format === "toml" ? await applyToml(target) : await applyJson(target);
     const { outcome } = applied;
@@ -63035,7 +63178,7 @@ async function installText(client, opts, io, deps) {
   if (reload !== void 0) line(io, opts.apply ? `   then: ${reload}` : dim(`   after --apply: ${reload}`));
   line(io);
   printExportHint(io, 2, name);
-  if (!opts.apply) {
+  if (!opts.apply && !installed) {
     line(io);
     line(io, dim(`to write step 1, run: ${installApplyCommand(name, opts)}`));
   }
@@ -63046,13 +63189,16 @@ async function installedLexiconPlugin(settingsPath, installedPluginsPath) {
   const installed = await readJsonFile(installedPluginsPath);
   return findInstalledLexiconPlugin(settings.error === void 0 ? settings.value : void 0, installed.error === void 0 ? installed.value : void 0);
 }
+function claudeSettingsPathFor(scope, cwd, env = process.env) {
+  return scope === "project" ? import_node_path20.default.join(cwd, ".claude", "settings.json") : import_node_path20.default.join(claudeConfigDir(env), "settings.json");
+}
 var CLAUDE_MD_SNIPPET = "Read the `lexicon://me` resource before interpreting dictated text.";
 async function runInstallClaude(opts, io, deps = {}) {
   const scope = opts.scope ?? "user";
   if (scope !== "user" && scope !== "project") {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
-  const settingsPath = deps.settingsPath ?? import_node_path20.default.join(claudeConfigDir(), "settings.json");
+  const settingsPath = deps.settingsPath ?? claudeSettingsPathFor(scope, import_node_path20.default.resolve(opts.cwd ?? process.cwd()));
   if (scope === "user") {
     const pluginId = await installedLexiconPlugin(
       settingsPath,
@@ -63088,7 +63234,7 @@ async function runInstallClaude(opts, io, deps = {}) {
     } catch (err) {
       const message = errorMessage(err);
       if (/already exists/i.test(message)) {
-        line(io, dim("   already registered with claude, nothing changed"));
+        if (!refreshClaudeRegistration(io, exec, scope, mcpArgs, serverLaunch)) failed = true;
         line(io, dim(`   undo: claude mcp remove --scope ${scope} lexicon`));
       } else {
         failed = true;
@@ -63101,7 +63247,7 @@ async function runInstallClaude(opts, io, deps = {}) {
   const hookCommand = launchCommandLine(hookLaunch);
   const hookTimeout = hookTimeoutFor(hookLaunch);
   line(io, bold(`2. Add the ${HOOK_EVENTS.join(" and ")} hooks`));
-  line(io, `   merge into ${safe(settingsPath)}:`);
+  line(io, `   ${opts.apply ? "merge into" : "would merge into"} ${safe(settingsPath)}${scope === "project" ? " (project scope: the repo's shared settings, read for this project only)" : ""}:`);
   line(io, indent(JSON.stringify(hookConfigFor(hookCommand, hookTimeout, HOOK_EVENTS), null, 2), "   "));
   if (hookLaunch.viaNpx) {
     line(io, dim(`   (npx re-resolves the package each prompt: ~1s, hence the ${hookTimeout}s timeout.`));
@@ -63140,6 +63286,49 @@ async function runInstallClaude(opts, io, deps = {}) {
     line(io, dim(`to perform steps 1 and 2, run: ${command}`));
   }
   return failed ? 1 : 0;
+}
+function refreshClaudeRegistration(io, exec, scope, mcpArgs, launch) {
+  let got;
+  try {
+    got = parseClaudeMcpGet(exec("claude", ["mcp", "get", "lexicon"]));
+  } catch (err) {
+    line(io, dim(`   already registered with claude, nothing changed (could not read it back with claude mcp get to compare: ${safeLines(errorMessage(err))})`));
+    return true;
+  }
+  const wanted = launch.args.join(" ");
+  if (got.command === void 0 || got.args === void 0) {
+    line(io, dim("   already registered with claude, nothing changed (claude mcp get did not show its command to compare)"));
+    return true;
+  }
+  if (got.command === launch.command && got.args === wanted) {
+    line(io, dim("   already registered with claude, nothing changed"));
+    return true;
+  }
+  const old = safe(`${got.command} ${got.args}`.trim());
+  if (got.scope !== void 0 && got.scope !== scope) {
+    line(io, dim(`   already registered with claude at ${got.scope} scope (${old}), nothing changed at ${scope} scope`));
+    return true;
+  }
+  if (!isInstalledLexiconServer(got.command, got.args)) {
+    line(io, yellow(`   a "lexicon" server that lexicon install did not write is registered with claude (${old}); left as it is`));
+    line(io, dim(`   to replace it: claude mcp remove --scope ${scope} lexicon, then run this again`));
+    return true;
+  }
+  try {
+    exec("claude", ["mcp", "remove", "--scope", scope, "lexicon"]);
+  } catch (err) {
+    line(io, red(`   failed: the registration points at ${old}; could not remove it to repoint it: ${safeLines(errorMessage(err))}`));
+    return false;
+  }
+  try {
+    exec("claude", mcpArgs);
+  } catch (err) {
+    line(io, red(`   failed: removed the old registration (${old}) but could not add the new one: ${safeLines(errorMessage(err))}`));
+    line(io, `   run: claude ${mcpArgs.map((a) => quoteArg(a)).join(" ")}`);
+    return false;
+  }
+  line(io, green(`   repointed lexicon: ${old} -> ${safe(`${launch.command} ${wanted}`)}`));
+  return true;
 }
 function quoteArg(s, platform = process.platform) {
   if (platform === "win32") return /[\s"]/.test(s) || import_node_path20.default.win32.isAbsolute(s) ? `"${s.replace(/"/g, "")}"` : s;
@@ -64111,6 +64300,7 @@ var import_node_path26 = __toESM(require_node_path());
 
 // src/serve/config.ts
 var import_node_crypto3 = __toESM(require_node_crypto());
+var import_node_net = __toESM(require_node_net());
 var import_node_fs25 = __toESM(require_node_fs());
 var import_node_path25 = __toESM(require_node_path());
 var SERVE_FILE_MODE = 384;
@@ -64136,6 +64326,9 @@ function parseServeConfig(raw) {
   }
   return config2;
 }
+function parseServeJson(text) {
+  return JSON.parse(text.replace(/^\uFEFF/, ""));
+}
 async function readServeConfig(opts = {}) {
   let text;
   try {
@@ -64144,7 +64337,7 @@ async function readServeConfig(opts = {}) {
     return void 0;
   }
   try {
-    return parseServeConfig(JSON.parse(text));
+    return parseServeConfig(parseServeJson(text));
   } catch {
     return void 0;
   }
@@ -64179,12 +64372,35 @@ function generateToken() {
 }
 async function ensureServeConfig(opts = {}) {
   return withServeConfigLock(async () => {
-    const existing = await readServeConfig(opts);
-    if (existing) {
-      await keepOwnerOnly(getServePath(opts));
-      return existing;
+    const file2 = getServePath(opts);
+    let raw;
+    let text;
+    try {
+      text = await import_node_fs25.promises.readFile(file2, "utf8");
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
     }
-    const config2 = { port: DEFAULT_PORT, token: generateToken(), createdAt: (/* @__PURE__ */ new Date()).toISOString() };
+    if (text !== void 0 && text.replace(/^\uFEFF/, "").trim() !== "") {
+      try {
+        raw = parseServeJson(text);
+      } catch (err) {
+        throw new Error(
+          `${file2} is not valid JSON (${err instanceof Error ? err.message : String(err)}); fix it, or delete it to have lexicon serve make a new token (paired clients then need the new one: lexicon serve --pair or --show)`
+        );
+      }
+      const existing = parseServeConfig(raw);
+      if (existing) {
+        await keepOwnerOnly(file2);
+        return existing;
+      }
+    }
+    const origins = parseServeConfig({ ...typeof raw === "object" && raw !== null ? raw : {}, token: "0".repeat(32) })?.allowedOrigins;
+    const config2 = {
+      port: DEFAULT_PORT,
+      token: generateToken(),
+      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+      ...origins ? { allowedOrigins: origins } : {}
+    };
     await writeServeConfig(config2, opts);
     return config2;
   }, opts);
