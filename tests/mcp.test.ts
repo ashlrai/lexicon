@@ -379,6 +379,25 @@ describe('lexicon MCP server', () => {
     }
   });
 
+  // Catches: empty text answered { output: '', changed: false } and nothing
+  // else, while `lexicon normalize` with empty input says "no text to
+  // correct", so an agent that passed the wrong field could not tell.
+  it('normalize_transcript with empty or blank text says there was no text to correct', async () => {
+    const { client, close } = await connect();
+    try {
+      for (const text of ['', '  \n']) {
+        const result = await client.callTool({ name: 'normalize_transcript', arguments: { text } });
+        expect(result.isError).toBe(false);
+        const payload = JSON.parse(textOf(result)) as { output: string; changed: boolean; replacements: unknown[]; note?: string };
+        expect(payload).toMatchObject({ output: text, changed: false, replacements: [] });
+        expect(payload.note).toMatch(/^no text to correct/);
+      }
+      expect(mocks.recordHits).not.toHaveBeenCalled();
+    } finally {
+      await close();
+    }
+  });
+
   it('normalize_transcript with dryRun does not record hits', async () => {
     const { client, close } = await connect();
     try {
