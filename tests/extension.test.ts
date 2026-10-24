@@ -18,6 +18,8 @@ import type { ContentHandle } from '../extension/src/content-core.js';
 import { applyCorrections, flatten, invertCorrections, readText } from '../extension/src/editable.js';
 import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
+import { prunePairPorts, registerPairPort } from '../extension/src/pair-port.js';
+import type { PairPortApi } from '../extension/src/pair-port.js';
 import { ANY_SITE_DENIED_MESSAGE, API_MAX_BODY_BYTES, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
@@ -1670,6 +1672,51 @@ describe('pairing with lexicon serve on another --port', () => {
     expect(manifest.optional_host_permissions).toEqual(['<all_urls>']);
     const pair = manifest.content_scripts.find((c) => c.js.includes('pair.js'))!;
     expect(pair.matches).toEqual(pairScriptMatches(['http://127.0.0.1:41733/*', 'http://localhost:41733/*']));
+  });
+
+  // Catches: setPairPort kept one registration under one id, so pairing a
+  // third port unregistered the second port's /pair script.
+  it('the /pair script stays registered for every paired port and is pruned when its access is removed', async () => {
+    const scripts = new Map<string, { id: string; matches?: string[] }>([
+      // A registration from the single-id release, for port 5000.
+      ['lexicon-pair-port', { id: 'lexicon-pair-port', matches: pairScriptMatches(['http://127.0.0.1:5000/*', 'http://localhost:5000/*']) }],
+    ]);
+    const granted = new Set(['http://127.0.0.1:5000/*', 'http://localhost:5000/*', 'http://127.0.0.1:6000/*', 'http://localhost:6000/*', 'http://127.0.0.1:7000/*', 'http://localhost:7000/*']);
+    const api: PairPortApi = {
+      scripting: {
+        getRegisteredContentScripts: async (filter) => [...scripts.values()].filter((s) => !filter?.ids || filter.ids.includes(s.id)),
+        registerContentScripts: async (list) => {
+          for (const s of list) {
+            if (scripts.has(s.id)) throw new Error(`Duplicate script ID '${s.id}'`);
+            scripts.set(s.id, { id: s.id, matches: s.matches });
+          }
+        },
+        unregisterContentScripts: async (filter) => {
+          for (const id of filter?.ids ?? [...scripts.keys()]) scripts.delete(id);
+        },
+      },
+      permissions: { contains: async ({ origins }) => (origins ?? []).every((o) => granted.has(o)) },
+    };
+    const port = (n: number): string[] => [`http://127.0.0.1:${n}/*`, `http://localhost:${n}/*`];
+    await registerPairPort(api, port(6000));
+    await registerPairPort(api, port(7000));
+    await registerPairPort(api, port(5000));
+    // Pairing 6000 again is not a duplicate registration.
+    await registerPairPort(api, port(6000));
+    const matches = (): string[] => [...scripts.values()].flatMap((s) => s.matches ?? []).sort();
+    expect(matches()).toEqual([...pairScriptMatches(port(5000)), ...pairScriptMatches(port(6000)), ...pairScriptMatches(port(7000))].sort());
+    // The old single-id registration for 5000 was replaced, not doubled.
+    expect(scripts.has('lexicon-pair-port')).toBe(false);
+    // The default port needs no script and leaves the others alone.
+    await registerPairPort(api, undefined);
+    expect(scripts.size).toBe(3);
+    // An ungranted port is refused and registers nothing.
+    await expect(registerPairPort(api, port(8000))).rejects.toThrow(PAIR_PORT_DENIED_MESSAGE);
+    expect(scripts.size).toBe(3);
+    // Access to 6000 removed: only its script goes.
+    granted.delete('http://localhost:6000/*');
+    await prunePairPorts(api);
+    expect(matches()).toEqual([...pairScriptMatches(port(5000)), ...pairScriptMatches(port(7000))].sort());
   });
 
   it('the background registers the /pair script for the port, clears it for the default port, and names a refused permission', async () => {
