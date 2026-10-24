@@ -7,7 +7,7 @@
  * of them observes like a native IME or spellcheck replacement. Textareas
  * get the React-safe native value setter plus an `input` event.
  */
-import { isTextField } from './adapters.js';
+import { CODE_SELECTOR, isTextField } from './adapters.js';
 import type { Correction } from './shared.js';
 
 const BLOCK_TAGS = new Set(['P', 'DIV', 'LI', 'PRE', 'BLOCKQUOTE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'TR', 'SECTION']);
@@ -72,6 +72,50 @@ export function flatten(root: Element): Flattened {
 
   for (const child of Array.from(root.childNodes)) walk(child);
   return { text, segments };
+}
+
+/**
+ * The flattened `[start, end)` ranges of `el`'s text that sit inside code: a
+ * `<pre>` block, inline `<code>` or a code editor (CODE_SELECTOR) under `el`.
+ * Empty for a text field, whose code is markdown the matcher skips itself.
+ * A rich editor holds code as elements, which flattening drops, so without
+ * these ranges a code block typed into ChatGPT's or Claude's composer was
+ * corrected on send like the prose around it.
+ */
+export function codeRanges(el: HTMLElement): Array<[number, number]> {
+  if (isTextField(el)) return [];
+  const out: Array<[number, number]> = [];
+  for (const seg of flatten(el).segments) {
+    const code = seg.node.parentElement?.closest(CODE_SELECTOR) ?? null;
+    if (code === null || !el.contains(code) || seg.node.data.length === 0) continue;
+    const start = seg.start;
+    const end = seg.start + seg.node.data.length;
+    const last = out[out.length - 1];
+    if (last && last[1] >= start) last[1] = Math.max(last[1], end);
+    else out.push([start, end]);
+  }
+  return out;
+}
+
+/**
+ * `text` with every character in `ranges` except line breaks replaced by `_`:
+ * the same length, so offsets into it are offsets into `text`, and no word
+ * of the code is left for the engine to match (`_` is not a word character
+ * to the matcher and, not being whitespace, keeps a phrase from joining
+ * across the code). Ranges past the end of `text` are clipped.
+ */
+export function maskCode(text: string, ranges: ReadonlyArray<readonly [number, number]>): string {
+  if (ranges.length === 0) return text;
+  let out = '';
+  let at = 0;
+  for (const [start, end] of ranges) {
+    const s = Math.min(Math.max(start, at), text.length);
+    const e = Math.min(end, text.length);
+    if (e <= s) continue;
+    out += text.slice(at, s) + text.slice(s, e).replace(/[^\n]/g, '_');
+    at = e;
+  }
+  return out + text.slice(at);
 }
 
 export function readText(el: HTMLElement): string {

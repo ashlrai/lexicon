@@ -16,7 +16,7 @@ import {
   sendButtonFromTarget,
 } from './adapters.js';
 import type { SiteAdapter } from './adapters.js';
-import { applyCorrections, caretOffset, invertCorrections, performEnterDefault, readText, setCaret } from './editable.js';
+import { applyCorrections, caretOffset, codeRanges, invertCorrections, maskCode, performEnterDefault, readText, setCaret } from './editable.js';
 import { incompleteNotice, LIVE_DEBOUNCE_MS, PRECHECK_DEBOUNCE_MS } from './shared.js';
 import type { Correction, NormalizeReply, Request } from './shared.js';
 import { removeToast, showToast } from './toast.js';
@@ -85,6 +85,25 @@ export function installContent(deps: ContentDeps): ContentHandle {
   }
 
   /**
+   * `normalizeText` for the text of `composer`, leaving its code alone: the
+   * characters inside `<pre>`, `<code>` or a code editor (codeRanges) go to
+   * the engine masked (maskCode), so the prose around them is still
+   * corrected, no code word is matched or counted as a hit, and the reply's
+   * `output` is rebuilt from `text` itself. `text` must be what `composer`
+   * held when this is called, or a prefix of it.
+   */
+  async function normalizeComposer(composer: HTMLElement, text: string, dryRun: boolean): Promise<NormalizeReply> {
+    const ranges = codeRanges(composer).filter(([start]) => start < text.length);
+    if (ranges.length === 0) return normalizeText(text, dryRun);
+    const reply = await normalizeText(maskCode(text, ranges), dryRun);
+    if (!reply.ok) return reply;
+    const replacements = reply.replacements.filter((r) => !ranges.some(([start, end]) => r.start < end && r.end > start));
+    let output = text;
+    for (const r of [...replacements].sort((a, b) => b.start - a.start)) output = output.slice(0, r.start) + r.replacement + output.slice(r.end);
+    return { ...reply, input: text, output, replacements, changed: reply.changed && replacements.length > 0 };
+  }
+
+  /**
    * `rewritten` is what the composer held right after the rewrite: the reply's
    * output on send, but in live mode the corrected prefix plus the untouched
    * text after the caret. Comparing with `reply.output` alone made Undo do
@@ -129,7 +148,7 @@ export function installContent(deps: ContentDeps): ContentHandle {
 
   /** Normalize the composer, rewrite it when needed, then run `resend`. */
   async function correctThen(composer: HTMLElement, text: string, resend: () => void): Promise<void> {
-    const reply = await normalizeText(text, false);
+    const reply = await normalizeComposer(composer, text, false);
     if (reply.ok && reply.changed && reply.replacements.length > 0) {
       // The composer may have moved on while we waited (fast typist, voice
       // input still streaming). Only rewrite when it still holds `text`.
@@ -245,7 +264,7 @@ export function installContent(deps: ContentDeps): ContentHandle {
     precheckTimer = setTimer(() => {
       const text = readText(composer);
       if (!text.trim()) return;
-      void normalizeText(text, true).then((reply) => {
+      void normalizeComposer(composer, text, true).then((reply) => {
         // A dry run reports `changed: false` by design (nothing was applied),
         // so the replacements list is what says whether Enter must be intercepted.
         // A check that stopped early is intercepted too, so the send can say so.
@@ -265,7 +284,7 @@ export function installContent(deps: ContentDeps): ContentHandle {
       const prefix = full.slice(0, caret);
       if (!prefix.trim()) return;
       liveInFlight = true;
-      void normalizeText(prefix, false)
+      void normalizeComposer(composer, prefix, false)
         .then(async (reply) => {
           if (!reply.ok || !reply.changed || reply.replacements.length === 0) return;
           if (readText(composer) !== full) return;

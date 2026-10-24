@@ -1596,6 +1596,53 @@ describe('adapters: code editors are never composers', () => {
 
 // ---------------------------------------------------------------------------
 
+describe('content: code in a known site\'s composer is never corrected', () => {
+  // Catches: on ChatGPT, Claude and the other sites with their own composer
+  // selector, a code block or inline code typed into the composer was
+  // corrected on send with the prose (`const ashler = 1` became
+  // `const Ashlr.AI = 1`): the rich editor holds code as <pre>/<code>, which
+  // flattening dropped, so the matcher's own code skipping never saw it.
+  const sites: Record<string, { host: string; html: (inner: string) => string; id: string }> = {
+    ChatGPT: { host: 'chatgpt.com', id: 'prompt-textarea', html: (inner) => `<div id="prompt-textarea" contenteditable="true" class="ProseMirror">${inner}</div>` },
+    Claude: { host: 'claude.ai', id: 'c', html: (inner) => `<div id="c" contenteditable="true" class="ProseMirror">${inner}</div>` },
+  };
+
+  for (const [name, site] of Object.entries(sites)) {
+    it(`${name}: rewrites the prose around a code block and inline code, never the code`, async () => {
+      document.body.innerHTML = site.html('<p>ping ashler</p><pre><code>const ashler = 1</code></pre><p>use <code>ashler</code> with ashler</p>');
+      const composer = document.getElementById(site.id)!;
+      const send = vi.fn(fakeSend);
+      handle = installContent({ doc: document, hostname: site.host, send, settings: { enabled: true, live: false } });
+      const siteEnter = vi.fn((ev: KeyboardEvent) => ev.preventDefault());
+      composer.addEventListener('keydown', siteEnter);
+      composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      await handle.idle();
+      expect(readText(composer)).toBe('ping Ashlr.AI\nconst ashler = 1\nuse ashler with Ashlr.AI');
+      expect(composer.querySelector('pre code')!.textContent).toBe('const ashler = 1');
+      expect(composer.querySelector('p code')!.textContent).toBe('ashler');
+      expect(siteEnter).toHaveBeenCalledTimes(1);
+      // The code never reaches the engine, so the server counts no hit for it.
+      const sent = (send.mock.calls[0][0] as { text: string }).text;
+      expect(sent).not.toContain('const');
+      expect(sent.length).toBe('ping ashler\nconst ashler = 1\nuse ashler with ashler'.length);
+    });
+  }
+
+  it('a composer whose only match is in code passes Enter through after the precheck', async () => {
+    document.body.innerHTML = sites.ChatGPT.html('<p>see</p><pre><code>ashler()</code></pre>');
+    const composer = document.getElementById('prompt-textarea')!;
+    const send = vi.fn(fakeSend);
+    handle = installContent({ doc: document, hostname: 'chatgpt.com', send, settings: { enabled: true, live: false }, precheckDebounceMs: 1 });
+    composer.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(20);
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    composer.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(false);
+    await handle.idle();
+    expect(readText(composer)).toBe('see\nashler()');
+  });
+});
+
 describe('pairing with lexicon serve on another --port', () => {
   const manifest = JSON.parse(readFileSync(resolve(process.cwd(), 'extension/manifest.json'), 'utf8')) as {
     host_permissions: string[];
