@@ -1068,13 +1068,19 @@ export async function runHarvest(
         else merged += 1;
       }
     } catch (err) {
-      if (!json) throw err;
-      // The one --json document for a write that failed: the error and the
-      // counts (0: the batch writes all or none), never the candidate array.
+      // A trust refusal names its own next step (fail prints it); any other
+      // write failure says, as --json does, that nothing was added. It was
+      // thrown raw in text mode, so a user saw `disk full` with no word of
+      // whether part of the batch was written.
+      if (!json && isProjectTrustError(err)) throw err;
       const message = errorMessage(err);
       const hint = unreadableLexiconHint(message);
-      const where = filePath ? { path: filePath } : {};
-      line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where }, null, 2));
+      if (json) {
+        // The one --json document for a write that failed: the error and the
+        // counts (0: the batch writes all or none), never the candidate array.
+        const where = filePath ? { path: filePath } : {};
+        line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where }, null, 2));
+      }
       io.stderr(`lexicon: ${safeMessage(message)}\n`);
       if (hint) io.stderr(`lexicon: ${hint}\n`);
       io.stderr('lexicon: nothing was added: the candidates are written together, so none of them are in the project lexicon\n');

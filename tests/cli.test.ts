@@ -771,6 +771,24 @@ describe('add / remove / path', () => {
     expect(ok.err).toContain('added 1 new term, merged 0');
   });
 
+  // Catches: in text mode a write failure other than a trust refusal was
+  // thrown raw, so `harvest --add` said `disk full` with no word of whether
+  // part of the batch was written, unlike --json.
+  it('harvest --add says nothing was added when the write fails in text mode', async () => {
+    vi.mocked(core.harvestRepo).mockResolvedValueOnce([{ canonical: 'Quokka', category: 'product', count: 2, suggestedAliases: [], evidence: [], source: 'harvest:repo' }]);
+    vi.mocked(core.addTerms).mockRejectedValueOnce(new Error('disk full'));
+    const io = makeIO();
+    const code = await runHarvest(os.tmpdir(), { add: true, yes: true }, io, { isInteractive: () => false }).catch((err: unknown) => fail(io, err));
+    expect(code).toBe(1);
+    expect(io.err).toContain('lexicon: disk full\n');
+    expect(io.err).toContain('nothing was added: the candidates are written together');
+
+    // A trust refusal is still thrown, for fail to print with its own next step.
+    vi.mocked(core.harvestRepo).mockResolvedValueOnce([{ canonical: 'Quokka', category: 'product', count: 2, suggestedAliases: [], evidence: [], source: 'harvest:repo' }]);
+    vi.mocked(core.addTerms).mockRejectedValueOnce(new core.ProjectTrustError('/tmp/proj/.lexicon.yaml', 'untrusted'));
+    await expect(runHarvest(os.tmpdir(), { add: true, yes: true }, makeIO(), { isInteractive: () => false })).rejects.toThrow('untrusted');
+  });
+
   // Catches: the harvest table cut each cell at 200 characters from the end,
   // so evidence naming a deep file lost the file name.
   it('harvest prints a long evidence path whole', async () => {
