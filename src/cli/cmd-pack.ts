@@ -212,6 +212,9 @@ export async function runPackRemove(name: string, opts: PackRegistryCliOptions, 
     if (result.kept.length > 0) {
       line(io, `kept ${result.kept.length} you edited (hits, extra aliases or never-words): ${safe(result.kept.join(', '))}`);
     }
+    if (result.shared.length > 0) {
+      line(io, `kept ${result.shared.length} another installed pack also has: ${safe(result.shared.join(', '))}`);
+    }
     return 0;
   } catch (err) {
     return fail(io, err, opts.json);

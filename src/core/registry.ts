@@ -842,6 +842,20 @@ export async function previewRegistryUpdates(
   return previews;
 }
 
+/**
+ * The canonicals of an installed community pack, from its cached file in
+ * `opts.scope`'s registry directory (checked against the pinned checksum), or
+ * undefined when it has no record or no cache. Used by `pack remove` to keep
+ * the terms another installed pack still has.
+ */
+export async function cachedPackCanonicals(ref: string, opts: RegistryStoreOptions = {}): Promise<string[] | undefined> {
+  const parsed = parseRegistryRef(ref);
+  const pinned = (await readRegistryState(opts)).packs[parsed.ref];
+  if (!pinned) return undefined;
+  const pack = await readCachedPack(parsed.ref, opts, pinned.checksum);
+  return pack?.lexicon.terms.map((t) => t.canonical);
+}
+
 async function readCachedPack(ref: string, opts: RegistryStoreOptions, checksum: string): Promise<Pack | undefined> {
   try {
     const file = cachedPackPath(ref, opts);
