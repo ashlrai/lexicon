@@ -112,8 +112,10 @@ describe('exportLexicon', () => {
       version: 1,
       terms: Array.from({ length: 150 }, (_, i) => ({ canonical: `Term${String(i).padStart(3, '0')}`, aliases: [] })),
     };
+    // 150 short names: the 100-name cap, then the token window (exporters-limits.test.ts) cut further.
     const capped = exportLexicon(big, 'whisper-prompt');
-    expect(capped.split(', ')).toHaveLength(100);
+    expect(capped.split(', ').length).toBeLessThanOrEqual(100);
+    expect(capped.split(', ')[0]).toBe('Term000');
     expect(capped.includes('\n')).toBe(false);
   });
 

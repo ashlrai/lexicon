@@ -84,7 +84,22 @@ export function resolveExportFormat(value: string): ExportFormat | undefined {
   return Object.hasOwn(EXPORT_FORMAT_ALIASES, lower) ? EXPORT_FORMAT_ALIASES[lower] : undefined;
 }
 
-const EXPORTERS: Record<ExportFormat, (lexicon: Lexicon, opts: ExportOptions) => string> = {
+/**
+ * One exporter: the export text of `lexicon`. A format with a limit of its
+ * own (a vendor's list size, a per-phrase length, a prompt window) leaves out
+ * what does not fit and pushes one sentence per kind of drop onto `notes`,
+ * naming what was left out; the text itself stays exactly what the target
+ * reads.
+ */
+export type Exporter = (lexicon: Lexicon, opts: ExportOptions, notes?: string[]) => string;
+
+/** What `exportLexiconWithNotes` returns: the export, and a sentence for each kind of entry the format left out. */
+export interface ExportResult {
+  text: string;
+  notes: string[];
+}
+
+const EXPORTERS: Record<ExportFormat, Exporter> = {
   'wispr': exportWispr,
   'superwhisper': exportSuperwhisper,
   'whisper-prompt': exportWhisperPrompt,
@@ -121,11 +136,24 @@ function hasAliasRow(term: Term): boolean {
 }
 
 export function exportLexicon(lexicon: Lexicon, format: ExportFormat, opts: ExportOptions = {}): string {
+  return exportLexiconWithNotes(lexicon, format, opts).text;
+}
+
+/**
+ * `exportLexicon`, plus `notes`: one sentence for each kind of entry the
+ * format left out to stay within its target's limits (an STT engine's list
+ * size or phrase length, Whisper's prompt window, a duplicate trigger),
+ * naming what was dropped. `lexicon export` prints them on stderr and under
+ * `--json` as `dropped`; MCP `export_lexicon` adds them to its note block.
+ */
+export function exportLexiconWithNotes(lexicon: Lexicon, format: ExportFormat, opts: ExportOptions = {}): ExportResult {
   const exporter = EXPORTERS[format];
   if (!exporter) {
     throw new Error(`Unknown export format "${format}". Known: ${EXPORT_FORMATS.join(', ')}`);
   }
-  return exporter(applyOptions(lexicon, opts, format), opts);
+  const notes: string[] = [];
+  const text = exporter(applyOptions(lexicon, opts, format), opts, notes);
+  return { text, notes };
 }
 
 /**

@@ -43,6 +43,7 @@ import {
   isLoopbackHost,
   isAllowedHost,
   isOriginAllowed,
+  exportNote,
   isLexiconHealth,
   isPairHost,
   pairPageHtml,
@@ -343,6 +344,16 @@ describe('serve.json', () => {
 // ---------------------------------------------------------------------------
 // auth + health
 // ---------------------------------------------------------------------------
+
+describe('exportNote', () => {
+  // Catches: GET /export/:format said nothing when the format left entries out.
+  it('says a format left entries out, in ASCII, and where the list is', () => {
+    const loaded = { merged: { version: 1 as const, terms: [{ canonical: 'Café', aliases: [] }] } };
+    const note = exportNote(loaded, 'google', {}, ['left out 1 phrase over 100 characters: "Caf\u00e9..."']);
+    expect(note).toBe("The google export left entries out to stay within its target's limits; lexicon export google --json lists them under dropped.");
+    expect(exportNote(loaded, 'google', {})).toBeUndefined();
+  });
+});
 
 describe('isLexiconHealth', () => {
   // Catches: any { ok: true } counted as lexicon serve, so another program on

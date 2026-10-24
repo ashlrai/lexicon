@@ -41,7 +41,7 @@ import {
   emptyLexiconNote,
   emptyNormalizeHint,
   emptyStatsNote,
-  exportLexicon,
+  exportLexiconWithNotes,
   findRegistryRecordMismatch,
   hasControlChars,
   findUnencodableChar,
@@ -586,8 +586,13 @@ export function exportNote(
   loaded: Pick<LoadedLexicon, 'merged' | 'projectTrust' | 'skippedProject'>,
   format: ExportFormat,
   opts: { categories?: TermCategory[]; limit?: number },
+  dropped: readonly string[] = [],
 ): string | undefined {
   const notes: string[] = [];
+  // Names stay out of a header (it is ASCII only); the CLI's --json lists them.
+  if (dropped.length > 0) {
+    notes.push(`The ${format} export left entries out to stay within its target's limits; lexicon export ${format} --json lists them under dropped.`);
+  }
   const reason = emptyExportReason(loaded, format, opts);
   if (reason) notes.push(emptyExportNote(reason, { format, filter: `?category=${(opts.categories ?? []).join(',')}` }));
   const skipped = skippedProjectNote(loaded, 'Its terms are not in the export.');
@@ -1370,10 +1375,11 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       const loaded = await load(await resolveCwd(url.searchParams.get('cwd')));
       // An empty export answered 200 with no word of why; the reason rides in
       // a header so the body stays exactly the export.
-      const note = exportNote(loaded, format, exportOpts);
+      const exported = exportLexiconWithNotes(loaded.merged, format, exportOpts);
+      const note = exportNote(loaded, format, exportOpts, exported.notes);
       return {
         status: 200,
-        text: exportLexicon(loaded.merged, format, exportOpts),
+        text: exported.text,
         contentType: exportContentType(format),
         ...(note !== undefined ? { headers: { [EXPORT_NOTE_HEADER]: note } } : {}),
       };

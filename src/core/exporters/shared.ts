@@ -146,3 +146,16 @@ export function mdCell(value: string): string {
     .replace(/\|/g, (_pipe, at: number) => (at > 0 && value[at - 1] === '\\' ? '\u200B\\|' : '\\|'))
     .replace(/\r\n|[\n\r\u0085\u2028\u2029]/g, ' ');
 }
+
+/**
+ * `names` quoted for a note, at most `max` of them, then `and N more`:
+ * `"A", "B" and 3 more`. Used in the notes an exporter writes about what it
+ * left out (see `Exporter` in index.ts).
+ */
+export function quotedNames(names: readonly string[], max = 10): string {
+  const shown = names.slice(0, max).map((n) => JSON.stringify(n));
+  const rest = names.length - shown.length;
+  if (rest > 0) return `${shown.join(', ')} and ${rest} more`;
+  if (shown.length <= 1) return shown.join('');
+  return `${shown.slice(0, -1).join(', ')} and ${shown[shown.length - 1]}`;
+}

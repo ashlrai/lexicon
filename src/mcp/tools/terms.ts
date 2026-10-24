@@ -17,7 +17,7 @@ import {
   emptyExportReason,
   emptyLexiconNote,
   emptyStatsNote,
-  exportLexicon,
+  exportLexiconWithNotes,
   learnCorrection,
   loadMatcherIndex,
   noTermMatchesNote,
@@ -525,7 +525,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         "Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'. " +
         `Aliases: ${EXPORT_ALIAS_NOTE}. ` +
         'The first content block is the export itself, exactly what the CLI export command writes. A second block, only when there is something to say, is a note for you, not part of the export: ' +
-        'the export is empty (no terms yet, or none matched `categories`), or the repo has an untrusted project .lexicon.yaml whose terms were left out (relay it to the user).',
+        'the format left entries out to stay within its target\'s limits (named in the note), the export is empty (no terms yet, or none matched `categories`), or the repo has an untrusted project .lexicon.yaml whose terms were left out (relay it to the user).',
       inputSchema: {
         format: z.enum(EXPORT_FORMAT_NAMES),
         categories: z.array(z.enum(TERM_CATEGORIES)).optional().describe('Only include terms in these categories. Omitted: every category.'),
@@ -551,12 +551,13 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           ...(categories !== undefined ? { categories } : {}),
           ...(limit !== undefined ? { limit } : {}),
         };
-        const exported = exportLexicon(loaded.merged, resolved, opts);
+        const { text: exported, notes: dropped } = exportLexiconWithNotes(loaded.merged, resolved, opts);
         // The export goes to a file or another tool verbatim, so what the
         // caller needs to know rides in a separate block: an empty export
         // and one missing the untrusted project's terms otherwise read as a
         // complete one (`lexicon export` says the same on stderr).
-        const notes: string[] = [];
+        // What the format left out to stay within its target's limits, first.
+        const notes: string[] = dropped.map((d) => `The ${resolved} export ${d}.`);
         const reason = emptyExportReason(loaded, resolved, opts);
         if (reason) {
           // The skipped project file's own note follows, so an export whose

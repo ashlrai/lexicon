@@ -20768,6 +20768,13 @@ function joinAliasList(aliases) {
 function mdCell(value) {
   return value.replace(/\|/g, (_pipe, at) => at > 0 && value[at - 1] === "\\" ? "\u200B\\|" : "\\|").replace(/\r\n|[\n\r\u0085\u2028\u2029]/g, " ");
 }
+function quotedNames(names, max = 10) {
+  const shown = names.slice(0, max).map((n) => JSON.stringify(n));
+  const rest = names.length - shown.length;
+  if (rest > 0) return `${shown.join(", ")} and ${rest} more`;
+  if (shown.length <= 1) return shown.join("");
+  return `${shown.slice(0, -1).join(", ")} and ${shown[shown.length - 1]}`;
+}
 
 // src/core/exporters/assemblyai.ts
 var ASSEMBLYAI_WORD_BOOST_MAX = 1e3;
@@ -20909,15 +20916,43 @@ function exportMarkdown(lexicon, _opts = {}) {
 
 // src/core/exporters/whisperPrompt.ts
 var WHISPER_PROMPT_DEFAULT_LIMIT = 100;
-function exportWhisperPrompt(lexicon, opts = {}) {
+var WHISPER_PROMPT_TOKEN_BUDGET = 223;
+function estimateWhisperTokens(text) {
+  let tokens = 0;
+  for (const m of text.matchAll(/ ?[A-Za-z]+|[0-9]|[\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]| |[^\x00-\x7f]/gu)) {
+    const piece = m[0];
+    if (/[A-Za-z]/.test(piece)) tokens += Math.ceil(piece.trimStart().length / 2);
+    else if (/[^\x00-\x7f]/u.test(piece)) tokens += Buffer.byteLength(piece, "utf8");
+    else tokens += 1;
+  }
+  return tokens;
+}
+function exportWhisperPrompt(lexicon, opts = {}, notes) {
   const limit = opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT;
-  const terms = canonicalList(sortByImportance(lexicon.terms)).slice(0, Math.max(0, limit));
-  return terms.map((c) => c.canonical.replace(/\s+/g, " ").trim()).join(", ");
+  const names = canonicalList(sortByImportance(lexicon.terms)).slice(0, Math.max(0, limit)).map((c) => c.canonical.replace(/\s+/g, " ").trim());
+  const kept = [];
+  const dropped = [];
+  let used = 0;
+  for (const name of names) {
+    const cost = estimateWhisperTokens(kept.length > 0 ? `, ${name}` : name);
+    if (dropped.length === 0 && used + cost <= WHISPER_PROMPT_TOKEN_BUDGET) {
+      kept.push(name);
+      used += cost;
+    } else {
+      dropped.push(name);
+    }
+  }
+  if (dropped.length > 0) {
+    notes?.push(
+      `left out ${dropped.length} name${dropped.length === 1 ? "" : "s"} past the ${WHISPER_PROMPT_TOKEN_BUDGET} prompt tokens Whisper reads (an offline estimate): ${quotedNames(dropped)}`
+    );
+  }
+  return kept.join(", ");
 }
 
 // src/core/exporters/openai.ts
-function exportOpenai(lexicon, opts = {}) {
-  return exportWhisperPrompt(lexicon, opts);
+function exportOpenai(lexicon, opts = {}, notes) {
+  return exportWhisperPrompt(lexicon, opts, notes);
 }
 
 // src/core/exporters/superwhisper.ts
@@ -20988,11 +21023,16 @@ function hasAliasRow(term) {
   return term.aliases.some((a) => a.trim() !== "");
 }
 function exportLexicon(lexicon, format, opts = {}) {
+  return exportLexiconWithNotes(lexicon, format, opts).text;
+}
+function exportLexiconWithNotes(lexicon, format, opts = {}) {
   const exporter = EXPORTERS[format];
   if (!exporter) {
     throw new Error(`Unknown export format "${format}". Known: ${EXPORT_FORMATS.join(", ")}`);
   }
-  return exporter(applyOptions(lexicon, opts, format), opts);
+  const notes = [];
+  const text = exporter(applyOptions(lexicon, opts, format), opts, notes);
+  return { text, notes };
 }
 function applyOptions(lexicon, opts, format) {
   let terms = lexicon.terms;

@@ -68,7 +68,7 @@ import {
   emptyLexicon,
   emptyLexiconNote,
   isEmptyLexicon,
-  exportLexicon,
+  exportLexiconWithNotes,
   selectExportTerms,
   resolveExportFormat,
   harvestRepo,
@@ -124,6 +124,7 @@ import {
   resolveCwd,
   safe,
   safeLines,
+  safeMessage,
   skippedProjectJson,
   wholeNumber,
   stillInLine,
@@ -1060,7 +1061,10 @@ export interface ExportCliOptions extends CommonOptions {
    * bytes, content }` (the export as a string) without it, and `{ ok: true,
    * formats }` when no format is given. A format that writes one row per
    * alias (EXPORT_ALIAS_ROW_FORMATS) adds `rows`, the rows it wrote: a term
-   * without an alias is in `terms` but writes none.
+   * without an alias is in `terms` but writes none. `dropped` (only when
+   * there is something in it) holds one sentence per kind of entry the
+   * format left out to fit its target (`exportLexiconWithNotes`); without
+   * `--json` the same sentences go to stderr.
    */
   json?: boolean;
 }
@@ -1132,7 +1136,12 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
   // stderr only: stdout (or --out) is the export, and it leaves the skipped file out.
   warnSkippedProject(loaded, io);
   const { merged } = loaded;
-  const text = ensureNewline(exportLexicon(merged, format, exportOpts));
+  const exported = exportLexiconWithNotes(merged, format, exportOpts);
+  const text = ensureNewline(exported.text);
+  // What the format left out to stay within its target's limits: stderr
+  // only (stdout or --out is the export itself), and `dropped` under --json.
+  if (!json) for (const n of exported.notes) io.stderr(`lexicon: ${format} export ${safeMessage(n)}\n`);
+  const dropped = exported.notes.length > 0 ? { dropped: exported.notes } : {};
   // The terms actually exported: the same category filter and cap exportLexicon applies.
   const selected = selectExportTerms(merged, exportOpts, format);
   const terms = selected.length;
@@ -1162,7 +1171,7 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
     // killed process) left a truncated file where the last good export was.
     await writeFileAtomic(outPath, text);
     if (json) {
-      line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, path: outPath, ...notes }), null, 2));
+      line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, path: outPath, ...dropped, ...notes }), null, 2));
     } else {
       let counted = plural(terms, 'term');
       if (aliasRows !== undefined && rows !== undefined) {
@@ -1173,7 +1182,7 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
       line(io, `wrote ${format} export (${counted}) to ${safe(outPath)}`);
     }
   } else if (json) {
-    line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, content: text, ...notes }), null, 2));
+    line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, content: text, ...dropped, ...notes }), null, 2));
   } else {
     io.stdout(text);
   }

@@ -41,6 +41,7 @@ const mocks = vi.hoisted(() => ({
   removeTerm: vi.fn(),
   harvestRepo: vi.fn(),
   exportLexicon: vi.fn(),
+  exportLexiconWithNotes: vi.fn(),
   suggestAliases: vi.fn(),
   learnCorrection: vi.fn(),
   suggestCanonicalFor: vi.fn(),
@@ -220,6 +221,10 @@ beforeEach(() => {
   mocks.exportLexicon.mockImplementation((_l: Lexicon, format: string) =>
     format === 'json' ? JSON.stringify(fixtureLexicon) : '## Voice lexicon',
   );
+  mocks.exportLexiconWithNotes.mockImplementation((l: Lexicon, format: string, opts?: unknown) => ({
+    text: mocks.exportLexicon(l, format, opts) as string,
+    notes: format === 'whisper-prompt' ? ['left out 2 names past the 223 prompt tokens Whisper reads (an offline estimate): "A" and "B"'] : [],
+  }));
   mocks.getTrustPath.mockReturnValue('/fake/global/trust.json');
   mocks.hashFile.mockResolvedValue('abcdef0123456789');
   mocks.isTrusted.mockResolvedValue('untrusted');
@@ -536,6 +541,12 @@ describe('lexicon MCP server', () => {
       const result = await client.callTool({ name: 'export_lexicon', arguments: { format: 'claude-md' } });
       expect(result.isError).toBe(false);
       expect(textOf(result)).toBe('## Voice lexicon');
+
+      // Catches: what a format left out to fit its target was not said at all.
+      const capped = await client.callTool({ name: 'export_lexicon', arguments: { format: 'whisper-prompt' } });
+      const blocks = capped.content as { type: string; text: string }[];
+      expect(blocks).toHaveLength(2);
+      expect(blocks[1].text).toContain('Note (not part of the export): The whisper-prompt export left out 2 names');
     } finally {
       await close();
     }
