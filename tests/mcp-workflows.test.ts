@@ -12,6 +12,7 @@ import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { createServer } from '../src/mcp/server.js';
 import { runAdd, runList } from '../src/cli/commands.js';
 import { trustProject } from '../src/core/trust.js';
+import { addTerm } from '../src/core/store.js';
 import { conflictNote } from '../src/core/learn.js';
 import { pathForModel } from '../src/core/schema.js';
 import { shellWord } from '../src/mcp/shared.js';
@@ -910,6 +911,33 @@ describe('tool and resource descriptions agree with what the code does', () => {
       const plain = JSON.parse(((await client.readResource({ uri: 'lexicon://json' })).contents[0] as { text: string }).text) as Record<string, unknown>;
       expect(plain).not.toHaveProperty('skippedProject');
       expect(plain).not.toHaveProperty('projectTrust');
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  // Catches: lexicon://json on a lexicon with no terms was a bare `{ version, terms: [] }`,
+  // while lexicon://me says the lexicon is empty and how to set it up.
+  it('lexicon://json adds the empty-lexicon note when there are no terms, and stays valid JSON', async () => {
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const read = async (): Promise<Record<string, unknown>> =>
+        JSON.parse(((await client.readResource({ uri: 'lexicon://json' })).contents[0] as { text: string }).text) as Record<string, unknown>;
+      const empty = await read();
+      expect(empty.terms).toEqual([]);
+      expect(empty.version).toBe(1);
+      expect(empty.note).toMatch(/^the lexicon has no terms yet, so there are no spellings to apply/);
+      expect(empty.note).toContain('setup_lexicon');
+      expect(empty).not.toHaveProperty('skippedProject');
+      await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler'] }, { cwd: repo });
+      const full = await read();
+      expect(full).not.toHaveProperty('note');
+      expect((full.terms as { canonical: string }[]).map((t) => t.canonical)).toEqual(['Ashlr.AI']);
     } finally {
       await client.close();
       await server.close();

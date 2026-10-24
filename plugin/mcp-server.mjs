@@ -65542,13 +65542,13 @@ function createServer2(opts = {}) {
     "lexicon://json",
     {
       title: "Lexicon JSON",
-      description: "The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`.",
+      description: "The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`. With no terms at all, `note` says so and how to set the lexicon up.",
       mimeType: "application/json"
     },
     async (uri) => {
       const loaded = await loadForContext();
-      const skipped = skippedProjectFields(loaded);
-      const text = Object.keys(skipped).length > 0 ? `${JSON.stringify({ ...loaded.merged, ...skipped }, null, 2)}
+      const extra = loaded.skippedProject || loaded.merged.terms.length > 0 ? skippedProjectFields(loaded) : { note: EMPTY_LEXICON_NOTE.replace(/^Note: /, "") };
+      const text = Object.keys(extra).length > 0 ? `${JSON.stringify({ ...loaded.merged, ...extra }, null, 2)}
 ` : exportLexicon(loaded.merged, "json");
       return {
         contents: [{ uri: uri.href, mimeType: "application/json", text }]
