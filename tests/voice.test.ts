@@ -30,6 +30,7 @@ import {
   pickDevice,
 } from '../src/voice/devices.js';
 import { HISTORY_MAX_BYTES, HISTORY_MAX_LINES, HISTORY_READ_MAX_BYTES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
+import { VOICE_HISTORY_READ_MAX_BYTES, loadVoiceHistory } from '../src/core/suggestTerms.js';
 import { GGML_MAGIC, STALE_PART_MS, checkModelHashRecord, defaultDownloader, expandTilde, modelFileName, modelUrl, modelsDir, resolveModel } from '../src/voice/models.js';
 import type { Downloader } from '../src/voice/models.js';
 import { installHint, locateWhisperCli, makeProcessDescribe, makeProcessList } from '../src/voice/process.js';
@@ -1966,6 +1967,16 @@ describe('history', () => {
     expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t3', 't4', 't5']);
     await appendHistory(h.globalPath, entry(9, 'y'.repeat(HISTORY_MAX_BYTES)));
     expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t9']);
+  });
+
+  // Catches: lexicon suggest read the newest 8 MiB and the writer kept a newest entry of up to 16 MiB, so an entry between the two was cut and suggest saw no history.
+  it('keeps a newest entry over HISTORY_MAX_BYTES readable by lexicon suggest too', async () => {
+    const h = await harness();
+    expect(HISTORY_READ_MAX_BYTES).toBe(VOICE_HISTORY_READ_MAX_BYTES);
+    await appendHistory(h.globalPath, entry(0));
+    await appendHistory(h.globalPath, entry(1, 'y'.repeat(10 * 1024 * 1024)));
+    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t1']);
+    expect((await loadVoiceHistory(h.globalPath)).map((e) => e.at)).toEqual(['t1']);
   });
 });
 

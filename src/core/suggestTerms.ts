@@ -23,7 +23,6 @@
  * a window resembling some alias or that differ from their output, and
  * every per-window computation is cached by window text.
  */
-import { constants as fsConstants, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { doubleMetaphone } from 'double-metaphone';
 import { distance } from 'fastest-levenshtein';
@@ -34,6 +33,7 @@ import { sanitizeForDisplay } from './schema.js';
 import { compareText } from './collate.js';
 import { resolvePaths } from './store.js';
 import { suggestAliases } from './suggest.js';
+import { readRegularFileTail } from '../util/bounded-read.js';
 import type { LoadedLexicon, Replacement, Term, TermCategory, TermScope } from './types.js';
 
 // ---------------------------------------------------------------------------
@@ -103,13 +103,16 @@ const EVIDENCE_MAX_CHARS = 120;
 /** Lines kept from the history file (newest). Mirrors voice/history.ts HISTORY_MAX_LINES. */
 const MAX_HISTORY_LINES = 1000;
 /**
- * Most bytes of the history file loadVoiceHistory reads: the newest 8 MiB,
- * twice the 4 MiB voice/history.ts HISTORY_MAX_BYTES keeps the file to, so
- * a file Lexicon wrote is always read whole. The read had no bound: a file
- * another program grew (or a link to a device) was read entirely into memory
- * by every `lexicon suggest` and MCP `suggest_terms`.
+ * Most bytes of the voice history file read, from its end: 16 MiB. This is
+ * the one bound for it: voice/history.ts reads with it too
+ * (`HISTORY_READ_MAX_BYTES`), so a newest entry larger than the 4 MiB the
+ * file is kept to, which the writer keeps on its own, is seen here as well.
+ * It was 8 MiB here and 16 MiB there, so an entry between the two was cut at
+ * the window start and dropped, and suggest saw no history at all. The read
+ * is bounded so a file another program grew (or a link to a device) is never
+ * read whole.
  */
-export const VOICE_HISTORY_READ_MAX_BYTES = 8 * 1024 * 1024;
+export const VOICE_HISTORY_READ_MAX_BYTES = 16 * 1024 * 1024;
 /** Longest token window compared against aliases. */
 const MAX_WINDOW = 3;
 /** A window this similar to an alias (edit similarity, or phonetic key plus a looser similarity) is "near" it. */
@@ -180,38 +183,12 @@ export async function loadVoiceHistory(globalPath?: string): Promise<VoiceHistor
   return out.length > MAX_HISTORY_LINES ? out.slice(out.length - MAX_HISTORY_LINES) : out;
 }
 
-/**
- * The last `max` bytes of the regular file at `file` as text, from the first
- * line that starts inside them (a line cut by the bound is dropped), or
- * undefined when it is missing, not a regular file or unreadable.
- */
+/** `readRegularFileTail`, with every failure (not a regular file, EACCES, EIO) read as no history. */
 async function readHistoryTail(file: string, max: number): Promise<string | undefined> {
-  let handle: fs.FileHandle | undefined;
   try {
-    // Checked before the open (a FIFO would block it) and again on the descriptor.
-    if (!(await fs.stat(file)).isFile()) return undefined;
-    handle = await fs.open(file, fsConstants.O_RDONLY | (fsConstants.O_NONBLOCK ?? 0));
-    const st = await handle.stat();
-    if (!st.isFile()) return undefined;
-    const length = Math.min(st.size, max);
-    const start = st.size - length;
-    const buf = Buffer.alloc(length);
-    let got = 0;
-    while (got < length) {
-      const { bytesRead } = await handle.read(buf, got, length - got, start + got);
-      if (bytesRead === 0) break;
-      got += bytesRead;
-    }
-    let bytes = buf.subarray(0, got);
-    if (start > 0) {
-      const nl = bytes.indexOf(0x0a);
-      bytes = nl === -1 ? Buffer.alloc(0) : bytes.subarray(nl + 1);
-    }
-    return bytes.toString('utf8');
+    return await readRegularFileTail(file, max);
   } catch {
     return undefined;
-  } finally {
-    await handle?.close().catch(() => undefined);
   }
 }
 

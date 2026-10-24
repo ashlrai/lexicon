@@ -7,9 +7,10 @@
  * The file holds everything the user dictated, so it is written 0600 inside
  * the 0700 voice directory (see recorder.ts).
  */
-import { constants as fsConstants, promises as fs } from 'node:fs';
 import path from 'node:path';
+import { VOICE_HISTORY_READ_MAX_BYTES } from '../core/index.js';
 import { withFileLock } from '../util/atomic.js';
+import { readRegularFileTail } from '../util/bounded-read.js';
 import { ensureVoiceDir, voiceDir, writePrivateFile } from './recorder.js';
 
 export const HISTORY_MAX_LINES = 1000;
@@ -24,13 +25,14 @@ export const HISTORY_MAX_LINES = 1000;
 export const HISTORY_MAX_BYTES = 4 * 1024 * 1024;
 
 /**
- * Most bytes of the history file read, from its end: 16 MiB. The file is
- * kept within HISTORY_MAX_BYTES except for a newest entry larger than that,
- * which is kept on its own; the margin lets such an entry be read back. A
- * file larger than this (another program's, an older version's) is never
- * loaded whole: only its last HISTORY_READ_MAX_BYTES are read.
+ * Most bytes of the history file read, from its end: 16 MiB, the same bound
+ * (`VOICE_HISTORY_READ_MAX_BYTES`) `lexicon suggest` reads it with, so the
+ * two always see the same newest entries. The file is kept within
+ * HISTORY_MAX_BYTES except for a newest entry larger than that, which is kept
+ * on its own; the margin lets such an entry be read back. A file larger
+ * than this (another program's, an older version's) is never loaded whole.
  */
-export const HISTORY_READ_MAX_BYTES = 16 * 1024 * 1024;
+export const HISTORY_READ_MAX_BYTES = VOICE_HISTORY_READ_MAX_BYTES;
 
 /**
  * How long an append waits for another writer's lock on the history file
@@ -53,48 +55,6 @@ function entryOf(line: string): HistoryEntry | undefined {
   const v = parsed as Record<string, unknown>;
   if (typeof v.raw !== 'string' || typeof v.output !== 'string') return undefined;
   return parsed as HistoryEntry;
-}
-
-/**
- * The last `max` bytes of the history file, from the first line that starts
- * inside them (a line the bound cuts is dropped), or undefined when there is
- * no file. Bounded so a file grown past the cap (by another program, or an
- * older version) is never loaded whole: readFile read all of it before the
- * cap applied, and past V8's string limit every append failed. Anything
- * other than a regular file, or a read error other than a missing file,
- * throws.
- */
-async function readTail(file: string, max: number): Promise<string | undefined> {
-  let handle: fs.FileHandle;
-  try {
-    // A FIFO at the name would block a plain open; O_NONBLOCK and the checks keep it out.
-    if (!(await fs.stat(file)).isFile()) throw Object.assign(new Error(`${file} is not a regular file`), { code: 'EINVAL' });
-    handle = await fs.open(file, fsConstants.O_RDONLY | (fsConstants.O_NONBLOCK ?? 0));
-  } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
-    throw e;
-  }
-  try {
-    const st = await handle.stat();
-    if (!st.isFile()) throw Object.assign(new Error(`${file} is not a regular file`), { code: 'EINVAL' });
-    const length = Math.min(st.size, max);
-    const start = st.size - length;
-    const buf = Buffer.alloc(length);
-    let got = 0;
-    while (got < length) {
-      const { bytesRead } = await handle.read(buf, got, length - got, start + got);
-      if (bytesRead === 0) break;
-      got += bytesRead;
-    }
-    let bytes = buf.subarray(0, got);
-    if (start > 0) {
-      const nl = bytes.indexOf(0x0a);
-      bytes = nl === -1 ? Buffer.alloc(0) : bytes.subarray(nl + 1);
-    }
-    return bytes.toString('utf8');
-  } finally {
-    await handle.close().catch(() => undefined);
-  }
 }
 
 export interface HistoryEntry {
@@ -129,7 +89,7 @@ export async function appendHistory(globalPath: string, entry: HistoryEntry, max
         // write below then replaced every earlier entry with this one. The
         // entry is dropped instead (history is best-effort); the file is kept.
         // At most HISTORY_MAX_BYTES are kept, so only the file's end is read.
-        const existing = (await readTail(file, HISTORY_READ_MAX_BYTES)) ?? '';
+        const existing = (await readRegularFileTail(file, HISTORY_READ_MAX_BYTES)) ?? '';
         const lines = existing.split('\n').filter((l) => l.length > 0 && entryOf(l) !== undefined);
         lines.push(JSON.stringify(entry));
         let kept = lines.length > max ? lines.slice(lines.length - max) : lines;
@@ -156,7 +116,7 @@ export async function appendHistory(globalPath: string, entry: HistoryEntry, max
  */
 export async function readHistory(globalPath: string): Promise<HistoryEntry[]> {
   try {
-    const text = (await readTail(historyPath(globalPath), HISTORY_READ_MAX_BYTES)) ?? '';
+    const text = (await readRegularFileTail(historyPath(globalPath), HISTORY_READ_MAX_BYTES)) ?? '';
     const out: HistoryEntry[] = [];
     for (const line of text.split('\n')) {
       if (!line) continue;
