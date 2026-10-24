@@ -29,6 +29,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 ### Fixed
 
 - A LEXICON_PATH under a regular file (`notes.txt\lexicon.yaml`) is named as unreadable on Windows too. Windows answers such a path with ENOENT rather than ENOTDIR, so the lexicon read as missing there and only a later write failed.
+- `lexicon voice` has whisper-cli write its transcript into a fresh private (0700) directory under the temp directory, removed afterwards. It wrote `lexicon-voice-<pid>-<time>.json` straight into the temp directory (`/tmp`, shared by every account on Linux) under the umask, so another account could read the dictation, or plant that file first and have it read back as the transcript.
 - `lexicon serve --install` and `--uninstall` on a Windows that is not in English tell a task that is not running or not there from a real failure. They matched schtasks' English messages only, so on a localized system a stopped task failed `/End` and a missing one failed `/Delete` with exit 1. After a failure they now ask `schtasks /Query` (its exit status, and Last Result 267009 for a running task), with the English match kept as a fallback.
 - `lexicon uninstall codex` reads a quoted `"command"` or `'args'` key in `[mcp_servers.lexicon]`. Only bare keys were read, so a table written that way was reported as not lexicon's and kept.
 - A clipboard write that fails names what the tool printed on stderr (at most 4 KiB). The write's stderr was ignored, so a refused `pbcopy`, `wl-copy`, `xclip` or `xsel` write said only `exited with code N`.

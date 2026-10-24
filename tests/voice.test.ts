@@ -917,6 +917,33 @@ describe('lexicon voice (foreground)', () => {
     expect(h.out).toEqual(['ping Ashlr.AI about the Kubernetes rollout\n']);
   });
 
+  // Catches: whisper-cli wrote the transcript to a predictable
+  // `<tmpDir>/lexicon-voice-<pid>-<t>.json` straight in the temp directory
+  // (/tmp, shared on Linux) under the umask, so another account could read
+  // the dictation or plant that file first and have it read back as the
+  // transcript. It goes into a fresh 0700 directory, removed afterwards.
+  it('has whisper-cli write its transcript inside a private directory of its own, removed afterwards', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    const seen: Array<{ dir: string; mode: number; entries: string[] }> = [];
+    const exec = h.deps.exec!;
+    h.deps.exec = async (cmd, args, o) => {
+      if (path.basename(cmd) === 'whisper-cli') {
+        const dir = path.dirname(args[args.indexOf('-of') + 1] as string);
+        seen.push({ dir, mode: (await fs.stat(dir)).mode & 0o777, entries: await fs.readdir(dir) });
+      }
+      return exec(cmd, args, o);
+    };
+    expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.out).toEqual(['ping Ashlr.AI about the Kubernetes rollout\n']);
+    expect(seen).toHaveLength(1);
+    const { dir, mode, entries } = seen[0]!;
+    expect(path.dirname(dir)).toBe(h.deps.tmpDir);
+    expect(entries).toEqual([]);
+    if (process.platform !== 'win32') expect(mode).toBe(0o700);
+    await expect(fs.stat(dir)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('does not re-signal ffmpeg after Ctrl-C (it already got the SIGINT)', async () => {
     const h = await harness();
     h.deps.waitForStop = async () => {
