@@ -31,6 +31,7 @@ import {
   isTrustContentChangedError,
   isTrustRegistryUnreadableError,
   parsedContentHash,
+  trustRegistryProblem,
 } from '../core/index.js';
 import type { LexiconFile, Term } from '../core/index.js';
 import { jsonError, jsonOk, line, renderTable, resolveCwd, safeMessage, safePath, unreadableLexiconHint } from './io.js';
@@ -268,6 +269,18 @@ export async function runUntrust(target: string | undefined, opts: CommonOptions
 }
 
 async function runTrustList(cwd: string, opts: TrustOptions, io: IO): Promise<number> {
+  // A broken registry reads as empty, so the list said "no trusted project
+  // lexicons (run: lexicon trust)", and lexicon trust then refused the file.
+  const problem = await trustRegistryProblem({ cwd });
+  if (problem !== undefined) {
+    const registryPath = getTrustPath({ cwd });
+    const error = `the trust registry at ${registryPath} ${problem}, so the trusted project lexicons cannot be listed; every project reads as untrusted until it is fixed`;
+    const nextStep = `fix the JSON in ${registryPath}, or move it aside (then run \`lexicon trust\` in each project again)`;
+    if (opts.json) printJson(io, { ...jsonError(error, nextStep), registry: registryPath });
+    io.stderr(`lexicon: ${safeMessage(error)}\n`);
+    io.stderr(`lexicon: ${safeMessage(nextStep)}\n`);
+    return 1;
+  }
   const entries = await listTrusted({ cwd });
   if (opts.json) {
     // `ok: true`, then the registry fields of MCP trust_project's 'status' result.
