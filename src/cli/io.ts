@@ -422,6 +422,9 @@ export function refuse(io: IO, json: boolean | undefined, error: string, nextSte
  * `.lexicon.yaml`, so the basename picks the `edit` flag that opens it.
  */
 export function unreadableLexiconHint(message: string): string | undefined {
+  if (/^Cannot read lexicon at /.test(message)) {
+    return 'the command stopped and nothing was changed; make that path readable or point LEXICON_PATH at a file in an existing directory (or unset it), then check it with: lexicon doctor';
+  }
   const edit = unreadableLexiconEdit(message);
   return edit ? `the command stopped and nothing was changed; fix that file first (run: ${edit}), then check it with: lexicon doctor` : undefined;
 }

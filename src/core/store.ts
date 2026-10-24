@@ -31,7 +31,7 @@ import { isTrusted, refreshTrust, trustProject, untrustedByPath } from './trust.
 import { recalledParsedHash, rememberParsedBytes, rememberParsedHash, shareParsedHash } from './parsed-hash.js';
 import type { TrustStatus } from './trust.js';
 import { InputError, errorMessage, isEnoent } from '../util/errors.js';
-import { withFileLock, writeFileAtomic } from '../util/atomic.js';
+import { blockingFile, withFileLock, writeFileAtomic } from '../util/atomic.js';
 import type { FileLockOptions } from '../util/atomic.js';
 import { isBoundedReadError, readBoundedRegularFile } from '../util/bounded-read.js';
 import { formatJson } from '../util/json.js';
@@ -205,8 +205,27 @@ async function readLexiconText(filePath: string): Promise<{ text: string; mode: 
           : `Refusing to read lexicon at ${filePath}: ${err.size ?? 'more than'} bytes exceeds the ${MAX_LEXICON_BYTES} byte limit`,
       );
     }
-    throw err;
+    throw await unreadableLexiconError(filePath, err);
   }
+}
+
+/**
+ * A read that failed other than for a missing file, explained the way a lock
+ * that cannot be created is: which lexicon, and why. A LEXICON_PATH under a
+ * file (`~/notes.txt/lexicon.yaml`) reached list, stats, export and learn as
+ * Node's bare `ENOTDIR: not a directory, stat '<path>'`. The errno `code` is
+ * kept on the error.
+ */
+async function unreadableLexiconError(filePath: string, err: unknown): Promise<Error> {
+  const code = (err as NodeJS.ErrnoException | undefined)?.code;
+  if (typeof code !== 'string') return err instanceof Error ? err : new Error(errorMessage(err));
+  const detail =
+    code === 'ENOTDIR'
+      ? `${await blockingFile(path.dirname(filePath))} is not a directory, so no lexicon file can be there`
+      : code === 'EACCES' || code === 'EPERM'
+        ? `permission denied (${code})`
+        : errorMessage(err);
+  return Object.assign(new Error(`Cannot read lexicon at ${filePath}: ${detail}`, { cause: err }), { code });
 }
 
 function parseLexiconText(text: string, filePath: string, scope: TermScope): LexiconFile {

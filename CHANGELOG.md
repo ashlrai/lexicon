@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- A lexicon that cannot be read for a reason other than a missing file (a `LEXICON_PATH` under a file, a permission error) stops `lexicon list`, `stats`, `export` and `learn` with `Cannot read lexicon at <path>: <why>` naming the file in the way, and a next step that says to fix that path or `LEXICON_PATH`, then run `lexicon doctor`. It was Node's bare `ENOTDIR: not a directory, stat '<path>'` with the generic next step.
 - `lexicon review`, `lexicon harvest --interactive` and `lexicon harvest --add` print a project trust refusal naming a long path whole, and `lexicon normalize` and `lexicon harvest --add --json` print a lexicon load or write error whole. These went through the 200-character display cap, which cut a deep path off before the `lexicon trust` next step or the reason.
 - `lexicon add`, `lexicon remove` (and `--alias`), `lexicon learn` and `lexicon export --out` print the lexicon or output file whole on success, as do their `still in` and untrusted-project warn lines. These paths went through the 200-character display cap, so a deep path ended in an ellipsis.
 - `lexicon remove` and `lexicon edit` print an error that names a long path whole, and `edit` prints the lexicon path whole (the file to edit by hand when no editor is set, the parse error, `your edits are still in`). These lines went through the 200-character display cap, so a deep path ended in `...` mid-sentence and the path to open was not one.

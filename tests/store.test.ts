@@ -79,6 +79,7 @@ import {
 import { getTrustPath, hashFile, isTrusted, readTrustRegistry, trustProject, untrustProject } from '../src/core/trust.js';
 import { BACKUP_SUFFIX, LOCK_SUFFIX, isFileLockError, withFileLock } from '../src/util/atomic.js';
 import { usableHome, xdgConfigHome, xdgDataHome, xdgStateHome } from '../src/util/xdg.js';
+import { unreadableLexiconHint } from '../src/cli/io.js';
 
 let tmp: string;
 let globalPath: string;
@@ -111,6 +112,23 @@ async function makeRepo(): Promise<{ root: string; nested: string }> {
   await fs.mkdir(nested, { recursive: true });
   return { root, nested };
 }
+
+describe('an unreadable lexicon path', () => {
+  // Catches: a LEXICON_PATH under a file reached list, stats, export and learn as Node's bare
+  // `ENOTDIR: not a directory, stat '<path>'` with the generic "fix what error names" next step.
+  it('names the lexicon and the file in the way, and the CLI says what to fix', async () => {
+    const notes = path.join(tmp, 'notes.txt');
+    await fs.writeFile(notes, 'not a directory\n', 'utf8');
+    const under = path.join(notes, 'lexicon.yaml');
+    const err = await loadLexicon({ cwd: tmp, globalPath: under }).then(
+      () => undefined,
+      (e: unknown) => e as NodeJS.ErrnoException,
+    );
+    expect(err?.message).toBe(`Cannot read lexicon at ${under}: ${notes} is not a directory, so no lexicon file can be there`);
+    expect(err?.code).toBe('ENOTDIR');
+    expect(unreadableLexiconHint(err!.message)).toMatch(/LEXICON_PATH.*lexicon doctor/);
+  });
+});
 
 describe('resolvePaths', () => {
   it('uses LEXICON_PATH when set', () => {
