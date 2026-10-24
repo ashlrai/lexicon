@@ -26,7 +26,7 @@ public enum TextDiff {
     /// A prefix/suffix diff cannot always say *where* an insertion happened.
     /// Pasting "ping ashler …" in front of a field that already reads
     /// "ping Ashlr.AI …" shares the leading "ping ", so the stripped window
-    /// starts five units late and runs five units into the old text — a span
+    /// starts five units late and runs five units into the old text: a span
     /// that is textually consistent but is not what was inserted. Rewriting
     /// that window splices the correction into the middle of a word and leaves
     /// the rest of the burst untouched. `slideLeft` / `slideRight` measure how
@@ -181,7 +181,7 @@ public final class BurstDetector {
         /// Dictation is still streaming in: word-sized insertions have been
         /// arriving and the field has not been quiet long enough to call the
         /// phrase finished. Nothing has been decided and `lastStable` has not
-        /// moved — ask again shortly.
+        /// moved; ask again shortly.
         case coalescing
         /// Pending changes were examined and dismissed; `lastStable` advanced.
         case skipped(String)
@@ -254,14 +254,14 @@ public final class BurstDetector {
         // Streamed dictation (macOS dictation, Wispr Flow's streaming mode,
         // an app's own microphone button) does not arrive as one insertion.
         // It arrives a word at a time, and the gaps between spoken words are
-        // routinely longer than `settleMs` — so deciding at `settleMs` chops
+        // routinely longer than `settleMs`, so deciding at `settleMs` chops
         // the phrase into single words, each of which is "too short" and is
         // dropped. The whole sentence then goes uncorrected, which looks
         // exactly like the feature not working.
         //
         // So: once a run has produced at least one word-sized insertion, keep
-        // it pending until the field has been quiet for `runQuietMs` — longer
-        // than a pause between words, shorter than the end of a sentence —
+        // it pending until the field has been quiet for `runQuietMs`, longer
+        // than a pause between words, shorter than the end of a sentence,
         // rather than deciding at the first gap. `lastStable` does not move,
         // so the words accumulate into one burst and are corrected together.
         //
@@ -274,9 +274,9 @@ public final class BurstDetector {
         // waiting on. "Too short" can grow into a burst; a burst that arrived
         // as several insertions may still have words coming. A single
         // insertion that already reads as a burst is a paste, with nothing to
-        // wait for, so it still fires at `settleMs`. Everything else —
+        // wait for, so it still fires at `settleMs`. Everything else,
         // multi-paragraph, field too long, key-by-key typing, an insertion
-        // point we cannot locate — is refused now, because silence will not
+        // point we cannot locate, is refused now, because silence will not
         // make it true.
         let canGrow: Bool
         switch verdict {

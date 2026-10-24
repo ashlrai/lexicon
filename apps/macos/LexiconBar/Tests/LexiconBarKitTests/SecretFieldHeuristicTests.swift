@@ -3,7 +3,7 @@ import XCTest
 
 /// The id-independent guard: a field whose own labels say "secret" is refused
 /// in any app, including password managers that are on no exclusion list.
-/// Every test here is about one of two failures — letting a secret through,
+/// Every test here is about one of two failures: letting a secret through,
 /// or swallowing an ordinary field the user actually wants corrected.
 final class SecretFieldHeuristicTests: XCTestCase {
 

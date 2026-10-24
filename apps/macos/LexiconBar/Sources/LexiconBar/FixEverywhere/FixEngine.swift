@@ -233,7 +233,7 @@ final class FixEngine: @unchecked Sendable {
             return
         case .coalescing:
             // Dictation is still streaming in. Nothing was decided and the
-            // detector kept the run pending, so ask again shortly — no value
+            // detector kept the run pending, so ask again shortly; no value
             // change is coming to re-arm the timer if the user has stopped
             // speaking mid-run.
             settleGeneration += 1
@@ -335,7 +335,7 @@ final class FixEngine: @unchecked Sendable {
     /// and must hold exactly the text the plan replaces. A range that lands
     /// even one unit off would otherwise splice the correction into the middle
     /// of a word and drop the rest of the burst. When the app will not say, or
-    /// says something else, the whole-value write takes over — it is computed
+    /// says something else, the whole-value write takes over; it is computed
     /// from `before` alone and so cannot be misaligned.
     private func write(_ plan: RewritePlan.Plan, to element: AXUIElement, before: String, pid: pid_t) -> WriteOutcome {
         let selectAttr = kAXSelectedTextRangeAttribute as String

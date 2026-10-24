@@ -12,7 +12,7 @@ public enum BubbleAction: String, Equatable, Sendable, CaseIterable {
     /// "that word was right": records the original under the term's `never` list and undoes.
     case never
     /// "that guess was right": promotes the original to an explicit alias.
-    /// Only offered when the rewrite came from a phonetic or fuzzy guess —
+    /// Only offered when the rewrite came from a phonetic or fuzzy guess:
     /// an exact alias is already explicit, so there is nothing to add.
     case add
 }

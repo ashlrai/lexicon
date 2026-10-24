@@ -138,7 +138,7 @@ public struct TermDraft: Equatable, Sendable, Identifiable {
 
     public var trimmedCanonical: String { canonical.trimmingCharacters(in: .whitespacesAndNewlines) }
 
-    /// Enough to post: a canonical. Aliases may be empty — the API fills in
+    /// Enough to post: a canonical. Aliases may be empty; the API fills in
     /// its own suggestions when the list is omitted.
     public var isReady: Bool { !trimmedCanonical.isEmpty }
 
@@ -155,7 +155,7 @@ public struct TermDraft: Equatable, Sendable, Identifiable {
     /// Folds a `GET /aliases` answer in. Chips already on the row keep their
     /// on/off state (the user's toggle wins over a refetch) and custom chips
     /// are always kept; genuinely new suggestions arrive switched on. An
-    /// alias equal to the canonical is dropped — the matcher has it already.
+    /// alias equal to the canonical is dropped; the matcher has it already.
     public mutating func applySuggestions(_ aliases: [String], for canonical: String) {
         suggestionsFor = canonical
         isLoadingSuggestions = false

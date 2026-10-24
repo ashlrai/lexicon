@@ -127,7 +127,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) { [weak self] in self?.openOnboarding() }
         }
         // `ax=` is the app's own view of the Accessibility grant, from the
-        // process the user actually launched — the one answer a `--status` run
+        // process the user actually launched, the one answer a `--status` run
         // from a terminal cannot give, because TCC attributes that check to
         // the terminal instead.
         let shortVersion = Bundle.main.infoDictionary?["CFBundleShortVersionString"] as? String ?? "dev"
@@ -487,8 +487,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             .sink { [weak self] fix in self?.fixEngine.update(FixEngine.Config(fix)) }
             .store(in: &cancellables)
         focusWatcher.start()
-        // The watcher is up: publish what this process — the one the user
-        // actually launched — sees, and keep republishing it so a reader can
+        // The watcher is up: publish what this process, the one the user
+        // actually launched, sees, and keep republishing it so a reader can
         // tell a running app from a dead one.
         writeAccessibilityState(force: true)
         accessibilityStateTimer = Timer.scheduledTimer(withTimeInterval: AccessibilityStateStore.heartbeat,
@@ -826,7 +826,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
     }
 
     /// Flips the *wish*; `syncLocalAPI` decides how to honour it. Does nothing
-    /// when the row is a status line — a LaunchAgent or a stranger owns the
+    /// when the row is a status line: a LaunchAgent or a stranger owns the
     /// port and this app has no business touching it.
     @objc private func toggleLocalAPI() {
         guard serveStatus().isInteractive else { return }

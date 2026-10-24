@@ -9,7 +9,7 @@ import XCTest
 /// and a dictation burst, "ping ashler about the cuban eats rollout on versal",
 /// arrived in front of it. Both start "ping ", so the prefix/suffix diff
 /// attributed those five units to the old text and reported the insertion five
-/// units late — a window running from inside the new text into the old. The
+/// units late: a window running from inside the new text into the old. The
 /// window was textually consistent, so every downstream guard passed, and the
 /// correction was spliced into the middle of a word while the words that fell
 /// outside the slid window ("ashler", "versal") were never corrected at all.

@@ -3,8 +3,8 @@ import LexiconBarKit
 
 /// Gathers the four facts behind `ServeOwnership.resolve` and caches them.
 ///
-/// Two of the probes are slow enough to matter — `launchctl print` forks a
-/// process and `GET /health` is a network round trip — and the menu rebuilds on
+/// Two of the probes are slow enough to matter (`launchctl print` forks a
+/// process and `GET /health` is a network round trip), and the menu rebuilds on
 /// every open, so the answer is cached for `ttl` and refreshed off the main
 /// thread. Callers read the cached `status(appChildRunning:)` synchronously and
 /// get told through `onChange` when a refresh moved it.

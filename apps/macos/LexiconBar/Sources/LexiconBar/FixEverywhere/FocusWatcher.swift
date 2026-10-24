@@ -322,8 +322,8 @@ final class FocusWatcher: @unchecked Sendable {
     /// `ensureObserver`. The Codex/ChatGPT desktop app rejects that one
     /// (`kAXErrorAttributeUnsupported`) and stays dark: its whole window is
     /// six nested empty `AXGroup`s and `AXFocusedUIElement` answers
-    /// `kAXErrorNoValue`. Writing `AXEnhancedUserInterface` — AppKit's own
-    /// switch, the one VoiceOver sets — wakes it, and the composer turns out
+    /// `kAXErrorNoValue`. Writing `AXEnhancedUserInterface`, AppKit's own
+    /// switch, the one VoiceOver sets, wakes it, and the composer turns out
     /// to be an ordinary writable `AXTextArea`.
     ///
     /// What actually wakes it is the *request*, not the attribute: the write

@@ -16,7 +16,7 @@ public enum ServeOwnership: Equatable, Sendable {
     case launchAgent(label: String, programPath: String?)
     /// This app spawned and supervises the `lexicon serve` child.
     case appChild
-    /// Something is listening on the port that is neither of the above — a
+    /// Something is listening on the port that is neither of the above: a
     /// `lexicon serve` run by hand in a terminal, or an unrelated process.
     case foreign
     /// Nothing is serving.
@@ -84,7 +84,7 @@ public struct ServeStatus: Equatable, Sendable {
     public let title: String
     /// The second line: the caption under the onboarding toggle, the menu item's tooltip.
     public let detail: String
-    /// A subtle extra line — how to change a thing this app does not control.
+    /// A subtle extra line: how to change a thing this app does not control.
     public let hint: String?
     /// True when the row is a checkbox the user may click. False means a status
     /// line: something else owns the port and a click could only start a duplicate.
@@ -115,7 +115,7 @@ extension ServeOwnership {
     ///
     /// launchd wins outright: with `KeepAlive` it takes the port back whatever
     /// else happens, so a child of ours would only thrash. A plist on disk that
-    /// is *not* loaded is not ownership — it is a hint for the `none` case,
+    /// is *not* loaded is not ownership; it is a hint for the `none` case,
     /// where ticking the box re-installs it.
     public static func resolve(_ probe: ServeProbe) -> ServeStatus {
         if probe.launchdLoaded {
@@ -170,7 +170,7 @@ extension ServeOwnership {
             isOn: false)
     }
 
-    /// The second `ProgramArguments` entry of a launchd plist — the script the
+    /// The second `ProgramArguments` entry of a launchd plist: the script the
     /// agent runs, which is what tells the user *which* checkout is serving.
     /// The first entry is the node binary. Nil when the file is missing or has
     /// no such array.
