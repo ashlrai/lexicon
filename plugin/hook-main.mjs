@@ -21340,6 +21340,11 @@ function parseInput(raw) {
   try {
     parsed = JSON.parse(trimmed);
   } catch {
+    if (looksLikeUtf16(trimmed)) {
+      process.stderr.write(`[lexicon hook] stdin looks like UTF-16 read as UTF-8 (${Buffer.byteLength(trimmed, "utf8")} bytes, NUL bytes between the characters); send the hook payload as UTF-8, nothing to do
+`);
+      return {};
+    }
     process.stderr.write(`[lexicon hook] stdin is not valid JSON (${Buffer.byteLength(trimmed, "utf8")} bytes); expected the Claude Code hook payload object, nothing to do
 `);
     return {};
@@ -21351,6 +21356,28 @@ function parseInput(raw) {
     return {};
   }
   return parsed;
+}
+function looksLikeUtf16(text) {
+  return text.startsWith("\uFFFD\uFFFD") || text.includes("\0");
+}
+function decodeStdin(bytes) {
+  if (bytes.length >= 3 && bytes[0] === 239 && bytes[1] === 187 && bytes[2] === 191) return bytes.toString("utf8", 3);
+  if (bytes.length >= 2 && bytes[0] === 255 && bytes[1] === 254) return utf16le(bytes.subarray(2));
+  if (bytes.length >= 2 && bytes[0] === 254 && bytes[1] === 255) return utf16be(bytes.subarray(2));
+  if (bytes.length >= 2 && bytes.includes(0)) {
+    let odd = 0;
+    let even = 0;
+    for (let i = 0; i < Math.min(bytes.length, 4096); i += 1) if (bytes[i] === 0) i % 2 === 1 ? odd += 1 : even += 1;
+    return odd >= even ? utf16le(bytes) : utf16be(bytes);
+  }
+  return bytes.toString("utf8");
+}
+function utf16le(bytes) {
+  return bytes.toString("utf16le", 0, bytes.length - bytes.length % 2);
+}
+function utf16be(bytes) {
+  const even = Buffer.from(bytes.subarray(0, bytes.length - bytes.length % 2));
+  return even.swap16().toString("utf16le");
 }
 function shownValue(value) {
   const text = typeof value === "string" ? value : JSON.stringify(value) ?? String(value);
@@ -21555,7 +21582,7 @@ async function main(argv = process.argv.slice(2)) {
       process.stderr.write(formatStdinOverflow(read.overflow));
       return;
     }
-    const out = await runHook(read.bytes.toString("utf8"));
+    const out = await runHook(decodeStdin(read.bytes));
     if (out) writeStdout(out);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -21593,6 +21620,7 @@ export {
   SESSION_CONTEXT_MAX_CHARS,
   capCorrectionList,
   dataBlockSpans,
+  decodeStdin,
   dropCorrectionSpans,
   dropDataBlockSpans,
   formatAdditionalContext,

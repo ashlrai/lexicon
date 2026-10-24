@@ -726,6 +726,10 @@ function parseInput(raw: string): HookInput {
     // user's prompt when a caller pipes raw text, control characters and
     // all; it reached stderr verbatim as `[lexicon hook] Unexpected token
     // 'h', "hi Ashler ..." is not valid JSON`. Say what was wrong instead.
+    if (looksLikeUtf16(trimmed)) {
+      process.stderr.write(`[lexicon hook] stdin looks like UTF-16 read as UTF-8 (${Buffer.byteLength(trimmed, 'utf8')} bytes, NUL bytes between the characters); send the hook payload as UTF-8, nothing to do\n`);
+      return {};
+    }
     process.stderr.write(`[lexicon hook] stdin is not valid JSON (${Buffer.byteLength(trimmed, 'utf8')} bytes); expected the Claude Code hook payload object, nothing to do\n`);
     return {};
   }
@@ -737,6 +741,52 @@ function parseInput(raw: string): HookInput {
     return {};
   }
   return parsed as HookInput;
+}
+
+/**
+ * Text that is UTF-16 bytes decoded as UTF-8: a byte order mark read as two
+ * replacement characters, or NUL characters (JSON text never holds a raw
+ * NUL, and UTF-16 puts one beside every ASCII character).
+ */
+function looksLikeUtf16(text: string): boolean {
+  return text.startsWith('\ufffd\ufffd') || text.includes('\u0000');
+}
+
+/**
+ * Stdin's bytes as text. Claude Code sends UTF-8, but a payload piped through
+ * Windows PowerShell (`Get-Content x.json | node hook.mjs`, or `>` into a
+ * file) arrives as UTF-16: little-endian with a byte order mark FF FE, big
+ * endian with FE FF, or without a mark with a NUL byte beside every ASCII
+ * character. Read as UTF-8 that was reported only as "not valid JSON". A
+ * byte order mark picks the byte order; without one, bytes holding NUL (which
+ * UTF-8 JSON never does) are UTF-16, little-endian when more of the NULs sit
+ * at odd offsets (`{` is 7B 00) and big-endian otherwise. A UTF-8 byte order
+ * mark is dropped. Anything else is decoded as UTF-8, as before. Exported for
+ * tests.
+ */
+export function decodeStdin(bytes: Buffer): string {
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return bytes.toString('utf8', 3);
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) return utf16le(bytes.subarray(2));
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) return utf16be(bytes.subarray(2));
+  if (bytes.length >= 2 && bytes.includes(0)) {
+    let odd = 0;
+    let even = 0;
+    // The first 4 KB settle it: a payload starts with `{` and ASCII keys.
+    for (let i = 0; i < Math.min(bytes.length, 4096); i += 1) if (bytes[i] === 0) i % 2 === 1 ? (odd += 1) : (even += 1);
+    return odd >= even ? utf16le(bytes) : utf16be(bytes);
+  }
+  return bytes.toString('utf8');
+}
+
+/** UTF-16LE text of `bytes`; an odd trailing byte (a cut-off code unit) is dropped. */
+function utf16le(bytes: Buffer): string {
+  return bytes.toString('utf16le', 0, bytes.length - (bytes.length % 2));
+}
+
+/** UTF-16BE text of `bytes`, swapped into a copy (the input is left as it was). */
+function utf16be(bytes: Buffer): string {
+  const even = Buffer.from(bytes.subarray(0, bytes.length - (bytes.length % 2)));
+  return even.swap16().toString('utf16le');
 }
 
 /** A short, display-safe rendering of an untrusted value for a stderr line. */
@@ -1103,7 +1153,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       process.stderr.write(formatStdinOverflow(read.overflow));
       return;
     }
-    const out = await runHook(read.bytes.toString('utf8'));
+    const out = await runHook(decodeStdin(read.bytes));
     if (out) writeStdout(out);
   } catch (err) {
     // Silent by design: a broken hook must not break the user's prompt.

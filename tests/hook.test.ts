@@ -1373,3 +1373,48 @@ describe('stdin is read up to HOOK_STDIN_MAX_BYTES', () => {
     expect(line).toBe(`[lexicon hook] stdin is over ${16 * 1024 * 1024} bytes (stopped reading at 17000000); a Claude Code hook payload is far smaller, nothing to do\n`);
   });
 });
+
+describe('a UTF-16 payload (Windows piping) is decoded', () => {
+  const json = JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: '/fake/repo', prompt: 'hi Ashler, café \u{1F600}' });
+  const be = (text: string): Buffer => Buffer.from(text, 'utf16le').swap16();
+
+  // Catches: UTF-16 stdin was decoded as UTF-8 and reported only as "not valid JSON".
+  it('decodes UTF-16LE and UTF-16BE with or without a byte order mark, and UTF-8 with one', async () => {
+    const { decodeStdin } = await import('../src/hooks/user-prompt-submit.js');
+    const cases: Buffer[] = [
+      Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(json, 'utf16le')]),
+      Buffer.concat([Buffer.from([0xfe, 0xff]), be(json)]),
+      Buffer.from(json, 'utf16le'),
+      be(json),
+      Buffer.from(`${json}\r\n`, 'utf16le'),
+      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(json, 'utf8')]),
+      Buffer.from(json, 'utf8'),
+    ];
+    for (const bytes of cases) expect(decodeStdin(bytes).trim()).toBe(json);
+    // An odd trailing byte (a cut-off code unit) is dropped, not thrown on.
+    expect(decodeStdin(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('{}', 'utf16le'), Buffer.from([0x0a])]))).toBe('{}');
+  });
+
+  it('corrects the prompt of a decoded UTF-16 payload end to end through runHook', async () => {
+    const { decodeStdin, runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const ctx = context(await runHook(decodeStdin(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(json, 'utf16le')]))));
+    expect(ctx).toContain('"Ashler" -> "Ashlr.AI"');
+  });
+
+  it('names UTF-16 in the stderr line when such bytes reach runHook as UTF-8 text', async () => {
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      for (const raw of [Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(json, 'utf16le')]).toString('utf8'), Buffer.from(json, 'utf16le').toString('utf8')]) {
+        stderr.mockClear();
+        expect(await runHook(raw)).toBe('');
+        expect(stderr).toHaveBeenCalledTimes(1);
+        const line = String(stderr.mock.calls[0]?.[0]);
+        expect(line).toContain('[lexicon hook] stdin looks like UTF-16 read as UTF-8');
+        expect(line).not.toContain('Ashler');
+      }
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+});

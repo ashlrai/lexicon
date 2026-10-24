@@ -58,7 +58,7 @@ interface RunResult {
 }
 
 interface RunOptions {
-  stdin?: string;
+  stdin?: string | Buffer;
   env?: NodeJS.ProcessEnv;
   cwd?: string;
 }
@@ -1056,6 +1056,17 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: UserPromptSubmit 
     expect(r.code).toBe(0);
     expect(r.stdout).toBe('');
     expect(r.stderr).toContain(`[lexicon hook] stdin is over ${16 * 1024 * 1024} bytes`);
+  });
+
+  // Catches: a payload piped through Windows PowerShell (UTF-16LE with a byte order mark) was reported as "not valid JSON".
+  it('decodes a UTF-16LE payload with a byte order mark', async () => {
+    // Own clone: the hook bumps `hits` in the sidecar, which must not leak into the shared fixture.
+    const h = await cloneOf(shared, 'hook-utf16');
+    const stdin = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(`${payload('ask Ashler', h.repo)}\r\n`, 'utf16le')]);
+    const r = await runNode(HOOK, [], { env: h.env, stdin });
+    expect(r.code).toBe(0);
+    expect(r.stderr).toBe('');
+    expect((JSON.parse(r.stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext).toContain('"Ashler" -> "Ashlr.AI"');
   });
 
   it('names (never quotes) an untrusted project lexicon', async () => {
