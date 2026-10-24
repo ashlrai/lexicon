@@ -135,9 +135,44 @@ export function isIdentifierField(el: HTMLInputElement | HTMLTextAreaElement): b
   return form !== null && form.querySelector('input[type="password" i]') !== null;
 }
 
+/**
+ * Containers of the code editors that take input through a contenteditable or
+ * a hidden textarea: CodeMirror 6 and 5, Monaco, Ace.
+ */
+export const CODE_EDITOR_SELECTOR = '.cm-editor, .CodeMirror, .monaco-editor, .ace_editor';
+/** What marks code inside a rich-text editor: a code block (`<pre>`) or one of the editors above. */
+const CODE_BLOCK_SELECTOR = `pre, ${CODE_EDITOR_SELECTOR}`;
+
+/**
+ * An element that edits code: a `<pre>` or `<code>`, or anything inside a
+ * code editor. With "any site" on, the focused editable of CodeMirror,
+ * Monaco or Ace was taken as the composer, so Enter rewrote code.
+ */
+export function isCodeEditor(el: Element): boolean {
+  if (el.tagName === 'PRE' || el.tagName === 'CODE') return true;
+  return typeof el.closest === 'function' && el.closest(CODE_EDITOR_SELECTOR) !== null;
+}
+
+/**
+ * True when the generic adapter must leave `root` alone: it holds a code
+ * block or a code editor (a send rewrites the whole text, code included), or
+ * the caret sits in inline code. Known sites name their composer and are not
+ * asked.
+ */
+export function holdsCode(doc: Document, root: HTMLElement): boolean {
+  if (isTextField(root)) return false;
+  if (root.querySelector(CODE_BLOCK_SELECTOR)) return true;
+  const anchor = doc.getSelection?.()?.anchorNode ?? null;
+  if (!anchor || !root.contains(anchor)) return false;
+  const el = anchor.nodeType === 1 ? (anchor as Element) : anchor.parentElement;
+  const code = el?.closest('code') ?? null;
+  return code !== null && root.contains(code);
+}
+
 export function isEditable(el: unknown): el is HTMLElement {
   if (!el || typeof el !== 'object' || !(el as Node).nodeType) return false;
   if ((el as Node).nodeType !== 1) return false;
+  if (isCodeEditor(el as Element)) return false;
   if (isTextField(el)) return !(el as HTMLTextAreaElement).readOnly && !(el as HTMLTextAreaElement).disabled && !isIdentifierField(el);
   const h = el as HTMLElement;
   const ce = h.getAttribute('contenteditable');
@@ -157,6 +192,9 @@ function visible(el: Element): boolean {
 export function editableRoot(node: Node | null): HTMLElement | null {
   let cur: Node | null = node;
   while (cur) {
+    // Inside a code editor or code block: its contenteditable parent (a page
+    // that embeds the editor) is not the composer either.
+    if (cur.nodeType === 1 && isCodeEditor(cur as Element)) return null;
     if (isEditable(cur)) return cur as HTMLElement;
     cur = cur.parentNode;
   }
@@ -175,7 +213,7 @@ export function findComposer(doc: Document, adapter: SiteAdapter): HTMLElement |
     if (pick && isEditable(pick)) return pick;
   }
   const active = editableRoot(doc.activeElement);
-  if (active && (!adapter.editor || adapter.id === GENERIC.id)) return active;
+  if (active && (!adapter.editor || adapter.id === GENERIC.id) && !(adapter.editor === '' && holdsCode(doc, active))) return active;
   return null;
 }
 
@@ -186,7 +224,7 @@ export function findComposer(doc: Document, adapter: SiteAdapter): HTMLElement |
 export function composerFromTarget(target: EventTarget | null, adapter: SiteAdapter): HTMLElement | null {
   const root = editableRoot(target as Node | null);
   if (!root) return null;
-  if (!adapter.editor) return root;
+  if (!adapter.editor) return holdsCode(root.ownerDocument, root) ? null : root;
   return root.matches(adapter.editor) ? root : null;
 }
 

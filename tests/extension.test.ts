@@ -1534,3 +1534,62 @@ describe('background: text too large for the server request limit', () => {
     expect(API_MAX_BODY_BYTES).toBe(SERVER_MAX_BODY_BYTES);
   });
 });
+
+// ---------------------------------------------------------------------------
+
+describe('adapters: code editors are never composers', () => {
+  // Catches: with "any site" on, the focused contenteditable or textarea of a
+  // code editor (CodeMirror, Monaco, Ace, a contenteditable <pre>, a
+  // ProseMirror code block) was taken as the composer, so Enter rewrote code:
+  // `const ashler = 1` became `const Ashlr.AI = 1`.
+  const editors: Record<string, string> = {
+    'CodeMirror 6': '<div class="cm-editor"><div class="cm-scroller"><div id="e" class="cm-content" contenteditable="true"><div class="cm-line">ping ashler</div></div></div></div>',
+    'CodeMirror 5': '<div class="CodeMirror"><div><textarea id="e"></textarea></div></div>',
+    'Monaco textarea': '<div class="monaco-editor"><div class="overflow-guard"><textarea id="e" class="inputarea"></textarea></div></div>',
+    'Monaco EditContext': '<div class="monaco-editor"><div id="e" class="native-edit-context" contenteditable="true">ping ashler</div></div>',
+    Ace: '<div class="ace_editor"><textarea id="e" class="ace_text-input"></textarea></div>',
+    'contenteditable pre': '<pre id="e" contenteditable="true">ping ashler</pre>',
+    'ProseMirror with a code block': '<div id="e" class="ProseMirror" contenteditable="true"><p>ping ashler</p><pre><code>const ashler = 1</code></pre></div>',
+  };
+
+  for (const [name, html] of Object.entries(editors)) {
+    it(`${name}: not a composer on a generic site, and Enter passes through untouched`, async () => {
+      document.body.innerHTML = html;
+      const e = document.getElementById('e') as HTMLElement;
+      if (e.tagName === 'TEXTAREA') (e as HTMLTextAreaElement).value = 'ping ashler';
+      e.focus();
+      expect(findComposer(document, GENERIC)).toBeNull();
+      expect(composerFromTarget(e, GENERIC)).toBeNull();
+      const send = vi.fn(fakeSend);
+      handle = installContent({ doc: document, hostname: 'example.org', send, settings: { enabled: true, live: true }, liveDebounceMs: 1, precheckDebounceMs: 1 });
+      e.dispatchEvent(new Event('input', { bubbles: true }));
+      const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+      e.dispatchEvent(ev);
+      expect(ev.defaultPrevented).toBe(false);
+      await wait(10);
+      await handle.idle();
+      expect(send).not.toHaveBeenCalled();
+      expect(readText(e)).toContain('ashler');
+    });
+  }
+
+  it('a code editor inside a larger contenteditable page is not taken through its parent', () => {
+    document.body.innerHTML =
+      '<div id="page" contenteditable="true"><p>notes</p><div class="cm-editor"><div id="e" class="cm-content" contenteditable="true">x</div></div></div>';
+    expect(composerFromTarget(document.getElementById('e'), GENERIC)).toBeNull();
+    expect(composerFromTarget(document.querySelector('#page p'), GENERIC)).toBeNull();
+  });
+
+  it('inline code with the caret in it is skipped; plain rich text and textareas still are composers', () => {
+    document.body.innerHTML = '<div id="r" contenteditable="true"><p>ping <code id="c">ashler</code> now</p></div><textarea id="t"></textarea>';
+    const r = document.getElementById('r') as HTMLElement;
+    r.focus();
+    const sel = document.getSelection()!;
+    sel.collapse(document.getElementById('c')!.firstChild, 2);
+    expect(findComposer(document, GENERIC)).toBeNull();
+    sel.collapse(r.querySelector('p')!.lastChild, 1);
+    expect(findComposer(document, GENERIC)).toBe(r);
+    (document.getElementById('t') as HTMLElement).focus();
+    expect(findComposer(document, GENERIC)?.id).toBe('t');
+  });
+});
