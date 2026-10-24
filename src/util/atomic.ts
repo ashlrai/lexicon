@@ -185,13 +185,15 @@ export async function writeFileAtomic(target: string, data: string, opts: Atomic
   // temp, so the failure is a corrupt rename rather than only a lost update.
   const tmp = `${real}.${process.pid}.tmp`;
   const mode = await resolveMode(real, opts);
-  if (mode === undefined) {
-    await fs.writeFile(tmp, data, 'utf8');
-  } else {
-    await fs.writeFile(tmp, data, { encoding: 'utf8', mode });
-    await fs.chmod(tmp, mode);
-  }
   try {
+    // Inside the try: a temp write that fails partway (a full disk) left the
+    // half-written `<target>.<pid>.tmp` beside the target.
+    if (mode === undefined) {
+      await fs.writeFile(tmp, data, 'utf8');
+    } else {
+      await fs.writeFile(tmp, data, { encoding: 'utf8', mode });
+      await fs.chmod(tmp, mode);
+    }
     if (opts.backup) await backupExisting(real);
     await renameReplacing(tmp, real);
   } catch (err) {

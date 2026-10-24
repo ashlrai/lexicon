@@ -293,6 +293,35 @@ describe('lexicon install <json client> --apply', () => {
   });
 });
 
+// Catches: the JSON and TOML writers wrote the client config in place, which
+// truncates it first, so a write that failed partway (a full disk) left the
+// user's whole config cut short. They now write a temp file and rename it.
+describe('a config write that fails partway leaves the old file', () => {
+  for (const [client, rel, original] of [
+    ['claude-desktop', 'Library/Application Support/Claude/claude_desktop_config.json', '{\n  "mcpServers": { "other": { "command": "x", "args": [] } },\n  "theme": "dark"\n}\n'],
+    ['codex', '.codex/config.toml', 'model = "o3"\n\n[mcp_servers.other]\ncommand = "x"\n'],
+  ] as const) {
+    it(client, async () => {
+      const file = path.join(home, rel);
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, original);
+      const realWrite = fs.writeFile.bind(fs);
+      const spy = vi.spyOn(fs, 'writeFile').mockImplementation(async (target, data, options) => {
+        // Half the bytes reach the disk, then it is full.
+        await realWrite(target, String(data).slice(0, 10), options);
+        throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+      });
+      try {
+        await expect(run(client, { apply: true })).rejects.toThrow('ENOSPC');
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await fs.readFile(file, 'utf8')).toBe(original);
+      expect(await fs.readdir(path.dirname(file))).toEqual([path.basename(file)]);
+    });
+  }
+});
+
 describe('lexicon install codex --apply (TOML)', () => {
   const rel = '.codex/config.toml';
   const block = `[${CODEX_TABLE}]\ncommand = "node"\nargs = [${JSON.stringify(SERVER)}]`;

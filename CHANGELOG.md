@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon install --apply`, `lexicon uninstall` and `install claude` write a client's config (`claude_desktop_config.json`, `~/.cursor/mcp.json`, Codex's `config.toml`, Claude's `settings.json`, ...) through a temp file and a rename, following a symlink and keeping the file's mode. They wrote it in place, which truncates it first, so a full disk or a killed process left the user's whole config cut short. A temp write that fails partway no longer leaves its `.tmp` file behind either.
 - `lexicon serve --status` and `--pair` say why a `serve.json` that parses has no usable token (`it has no "token" key`, `"token" is not a string`, not 32 to 128 hex characters), as the token-replaced warning does. They said only `has no usable token`.
 - `lexicon export whisper-prompt` and `openai` write each name once. Whitespace was collapsed but nothing was deduped after, so canonicals that differ only in whitespace were written into the prompt more than once, spending its 223 tokens on the same name. The repeats are named in a note.
 - `lexicon export deepgram` writes each `keyterm` once. Whitespace was collapsed but nothing was deduped after, so canonicals that differ only in whitespace (`Ashlr  AI`, a no-break space) were sent as the same keyterm more than once, each taking a place under the 100 cap. The repeats are named in a note.

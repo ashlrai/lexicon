@@ -330,10 +330,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path11) {
-  if (!path11)
+function getElementAtPath(obj, path10) {
+  if (!path10)
     return obj;
-  return path11.reduce((acc, key) => acc?.[key], obj);
+  return path10.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -592,11 +592,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path11, issues) {
+function prefixIssues(path10, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path11);
+    iss.path.unshift(path10);
     return iss;
   });
 }
@@ -1125,16 +1125,16 @@ function flattenError(error2, mapper = (issue2) => issue2.message) {
 }
 function formatError(error2, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error3, path11 = []) => {
+  const processError = (error3, path10 = []) => {
     for (const issue2 of error3.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path11, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path10, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path11, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path10, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path11, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path10, ...issue2.path]);
       } else {
-        const fullpath = [...path11, ...issue2.path];
+        const fullpath = [...path10, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -6398,10 +6398,10 @@ function schemas() {
   built = { category, scope, source, term, settings, lexicon: buildLexicon(term, settings) };
   return built;
 }
-function formatPath(path11) {
-  if (path11.length === 0) return "(root)";
+function formatPath(path10) {
+  if (path10.length === 0) return "(root)";
   let out = "";
-  for (const seg of path11) {
+  for (const seg of path10) {
     if (typeof seg === "number") out += `[${seg}]`;
     else out += out.length === 0 ? String(seg) : `.${String(seg)}`;
   }
@@ -6547,17 +6547,17 @@ var require_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    function visit_(key, node2, visitor, path11) {
-      const ctrl = callVisitor(key, node2, visitor, path11);
+    function visit_(key, node2, visitor, path10) {
+      const ctrl = callVisitor(key, node2, visitor, path10);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path11, ctrl);
-        return visit_(key, ctrl, visitor, path11);
+        replaceNode(key, path10, ctrl);
+        return visit_(key, ctrl, visitor, path10);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path11 = Object.freeze(path11.concat(node2));
+          path10 = Object.freeze(path10.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = visit_(i, node2.items[i], visitor, path11);
+            const ci = visit_(i, node2.items[i], visitor, path10);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -6568,13 +6568,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path11 = Object.freeze(path11.concat(node2));
-          const ck = visit_("key", node2.key, visitor, path11);
+          path10 = Object.freeze(path10.concat(node2));
+          const ck = visit_("key", node2.key, visitor, path10);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = visit_("value", node2.value, visitor, path11);
+          const cv = visit_("value", node2.value, visitor, path10);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -6595,17 +6595,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node2, visitor, path11) {
-      const ctrl = await callVisitor(key, node2, visitor, path11);
+    async function visitAsync_(key, node2, visitor, path10) {
+      const ctrl = await callVisitor(key, node2, visitor, path10);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path11, ctrl);
-        return visitAsync_(key, ctrl, visitor, path11);
+        replaceNode(key, path10, ctrl);
+        return visitAsync_(key, ctrl, visitor, path10);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path11 = Object.freeze(path11.concat(node2));
+          path10 = Object.freeze(path10.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = await visitAsync_(i, node2.items[i], visitor, path11);
+            const ci = await visitAsync_(i, node2.items[i], visitor, path10);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -6616,13 +6616,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path11 = Object.freeze(path11.concat(node2));
-          const ck = await visitAsync_("key", node2.key, visitor, path11);
+          path10 = Object.freeze(path10.concat(node2));
+          const ck = await visitAsync_("key", node2.key, visitor, path10);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = await visitAsync_("value", node2.value, visitor, path11);
+          const cv = await visitAsync_("value", node2.value, visitor, path10);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -6649,23 +6649,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node2, visitor, path11) {
+    function callVisitor(key, node2, visitor, path10) {
       if (typeof visitor === "function")
-        return visitor(key, node2, path11);
+        return visitor(key, node2, path10);
       if (identity.isMap(node2))
-        return visitor.Map?.(key, node2, path11);
+        return visitor.Map?.(key, node2, path10);
       if (identity.isSeq(node2))
-        return visitor.Seq?.(key, node2, path11);
+        return visitor.Seq?.(key, node2, path10);
       if (identity.isPair(node2))
-        return visitor.Pair?.(key, node2, path11);
+        return visitor.Pair?.(key, node2, path10);
       if (identity.isScalar(node2))
-        return visitor.Scalar?.(key, node2, path11);
+        return visitor.Scalar?.(key, node2, path10);
       if (identity.isAlias(node2))
-        return visitor.Alias?.(key, node2, path11);
+        return visitor.Alias?.(key, node2, path10);
       return void 0;
     }
-    function replaceNode(key, path11, node2) {
-      const parent = path11[path11.length - 1];
+    function replaceNode(key, path10, node2) {
+      const parent = path10[path10.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node2;
       } else if (identity.isPair(parent)) {
@@ -7277,10 +7277,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path11, value) {
+    function collectionFromPath(schema, path10, value) {
       let v = value;
-      for (let i = path11.length - 1; i >= 0; --i) {
-        const k = path11[i];
+      for (let i = path10.length - 1; i >= 0; --i) {
+        const k = path10[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -7299,7 +7299,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path11) => path11 == null || typeof path11 === "object" && !!path11[Symbol.iterator]().next().done;
+    var isEmptyPath = (path10) => path10 == null || typeof path10 === "object" && !!path10[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -7329,11 +7329,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path11, value) {
-        if (isEmptyPath(path11))
+      addIn(path10, value) {
+        if (isEmptyPath(path10))
           this.add(value);
         else {
-          const [key, ...rest] = path11;
+          const [key, ...rest] = path10;
           const node2 = this.get(key, true);
           if (identity.isCollection(node2))
             node2.addIn(rest, value);
@@ -7347,8 +7347,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path11) {
-        const [key, ...rest] = path11;
+      deleteIn(path10) {
+        const [key, ...rest] = path10;
         if (rest.length === 0)
           return this.delete(key);
         const node2 = this.get(key, true);
@@ -7362,8 +7362,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path11, keepScalar) {
-        const [key, ...rest] = path11;
+      getIn(path10, keepScalar) {
+        const [key, ...rest] = path10;
         const node2 = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node2) ? node2.value : node2;
@@ -7381,8 +7381,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path11) {
-        const [key, ...rest] = path11;
+      hasIn(path10) {
+        const [key, ...rest] = path10;
         if (rest.length === 0)
           return this.has(key);
         const node2 = this.get(key, true);
@@ -7392,8 +7392,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path11, value) {
-        const [key, ...rest] = path11;
+      setIn(path10, value) {
+        const [key, ...rest] = path10;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -9908,9 +9908,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path11, value) {
+      addIn(path10, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path11, value);
+          this.contents.addIn(path10, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -9985,14 +9985,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path11) {
-        if (Collection.isEmptyPath(path11)) {
+      deleteIn(path10) {
+        if (Collection.isEmptyPath(path10)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path11) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path10) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -10007,10 +10007,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path11, keepScalar) {
-        if (Collection.isEmptyPath(path11))
+      getIn(path10, keepScalar) {
+        if (Collection.isEmptyPath(path10))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path11, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path10, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -10021,10 +10021,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path11) {
-        if (Collection.isEmptyPath(path11))
+      hasIn(path10) {
+        if (Collection.isEmptyPath(path10))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path11) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path10) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -10041,13 +10041,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path11, value) {
-        if (Collection.isEmptyPath(path11)) {
+      setIn(path10, value) {
+        if (Collection.isEmptyPath(path10)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path11), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path10), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path11, value);
+          this.contents.setIn(path10, value);
         }
       }
       /**
@@ -12008,9 +12008,9 @@ var require_cst_visit = __commonJS({
     visit.BREAK = BREAK;
     visit.SKIP = SKIP;
     visit.REMOVE = REMOVE;
-    visit.itemAtPath = (cst, path11) => {
+    visit.itemAtPath = (cst, path10) => {
       let item = cst;
-      for (const [field, index] of path11) {
+      for (const [field, index] of path10) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -12019,23 +12019,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit.parentCollection = (cst, path11) => {
-      const parent = visit.itemAtPath(cst, path11.slice(0, -1));
-      const field = path11[path11.length - 1][0];
+    visit.parentCollection = (cst, path10) => {
+      const parent = visit.itemAtPath(cst, path10.slice(0, -1));
+      const field = path10[path10.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path11, item, visitor) {
-      let ctrl = visitor(item, path11);
+    function _visit(path10, item, visitor) {
+      let ctrl = visitor(item, path10);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path11.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path10.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -12046,10 +12046,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path11);
+            ctrl = ctrl(item, path10);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path11) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path10) : ctrl;
     }
     exports.visit = visit;
   }
@@ -19875,13 +19875,13 @@ async function writeFileAtomic(target, data, opts = {}) {
   const real = await resolveWriteTarget(target);
   const tmp = `${real}.${process.pid}.tmp`;
   const mode = await resolveMode(real, opts);
-  if (mode === void 0) {
-    await import_node_fs.promises.writeFile(tmp, data, "utf8");
-  } else {
-    await import_node_fs.promises.writeFile(tmp, data, { encoding: "utf8", mode });
-    await import_node_fs.promises.chmod(tmp, mode);
-  }
   try {
+    if (mode === void 0) {
+      await import_node_fs.promises.writeFile(tmp, data, "utf8");
+    } else {
+      await import_node_fs.promises.writeFile(tmp, data, { encoding: "utf8", mode });
+      await import_node_fs.promises.chmod(tmp, mode);
+    }
     if (opts.backup) await backupExisting(real);
     await renameReplacing(tmp, real);
   } catch (err) {
@@ -20275,20 +20275,19 @@ function formatJson(value) {
   return `${JSON.stringify(value, null, 2)}
 `;
 }
-var import_node_fs3, import_node_path2;
+var import_node_fs3;
 var init_json = __esm({
   "src/util/json.ts"() {
     import_node_fs3 = __toESM(require_node_fs());
-    import_node_path2 = __toESM(require_node_path());
   }
 });
 
 // src/core/trust.ts
 function getTrustPath(opts = {}) {
-  return import_node_path3.default.join(import_node_path3.default.dirname(resolvePaths(opts).global), TRUST_FILE_NAME);
+  return import_node_path2.default.join(import_node_path2.default.dirname(resolvePaths(opts).global), TRUST_FILE_NAME);
 }
 async function canonicalPath(filePath) {
-  const resolved = import_node_path3.default.resolve(filePath);
+  const resolved = import_node_path2.default.resolve(filePath);
   try {
     return await import_node_fs4.promises.realpath(resolved);
   } catch {
@@ -20340,7 +20339,7 @@ async function isInsideGlobalConfig(filePath, opts) {
   const globalPath = await canonicalPath(resolvePaths(opts).global);
   const target = await canonicalPath(filePath);
   if (target === globalPath) return true;
-  return import_node_path3.default.dirname(target) === import_node_path3.default.dirname(globalPath);
+  return import_node_path2.default.dirname(target) === import_node_path2.default.dirname(globalPath);
 }
 async function isTrusted(projectFile, opts = {}) {
   if (trustAllEnabled()) return "trusted";
@@ -20360,11 +20359,11 @@ async function untrustedByPath(filePath, opts = {}) {
   const registry2 = await readTrustRegistry(opts);
   return !registry2.trusted[await canonicalPath(filePath)];
 }
-var import_node_fs4, import_node_path3, TRUST_FILE_NAME, TRUST_ALL_ENV;
+var import_node_fs4, import_node_path2, TRUST_FILE_NAME, TRUST_ALL_ENV;
 var init_trust = __esm({
   "src/core/trust.ts"() {
     import_node_fs4 = __toESM(require_node_fs());
-    import_node_path3 = __toESM(require_node_path());
+    import_node_path2 = __toESM(require_node_path());
     init_store();
     init_bounded_read();
     init_parsed_hash();
@@ -20377,30 +20376,30 @@ var init_trust = __esm({
 function absoluteOr(value, fallback) {
   const trimmed = value?.trim();
   if (!trimmed) return fallback();
-  return import_node_path4.default.isAbsolute(trimmed) ? trimmed : fallback();
+  return import_node_path3.default.isAbsolute(trimmed) ? trimmed : fallback();
 }
 function usableHome(home) {
   const trimmed = home.trim();
-  if (trimmed && import_node_path4.default.isAbsolute(trimmed)) return home;
+  if (trimmed && import_node_path3.default.isAbsolute(trimmed)) return home;
   let fromUserDb;
   try {
     fromUserDb = import_node_os2.default.userInfo().homedir;
   } catch {
   }
-  if (fromUserDb && import_node_path4.default.isAbsolute(fromUserDb)) return fromUserDb;
+  if (fromUserDb && import_node_path3.default.isAbsolute(fromUserDb)) return fromUserDb;
   const what = trimmed ? `the relative path ${JSON.stringify(trimmed)}` : "empty";
   throw new Error(`no usable home directory: HOME is ${what} and the user database has none; set HOME to an absolute path, or LEXICON_PATH to the lexicon file`);
 }
 function xdgConfigHome(env = process.env, home = import_node_os2.default.homedir()) {
-  return absoluteOr(env.XDG_CONFIG_HOME, () => import_node_path4.default.join(usableHome(home), ".config"));
+  return absoluteOr(env.XDG_CONFIG_HOME, () => import_node_path3.default.join(usableHome(home), ".config"));
 }
 function globalLexiconPath(env = process.env, home = import_node_os2.default.homedir()) {
-  return env.LEXICON_PATH || import_node_path4.default.join(xdgConfigHome(env, home), "lexicon", "lexicon.yaml");
+  return env.LEXICON_PATH || import_node_path3.default.join(xdgConfigHome(env, home), "lexicon", "lexicon.yaml");
 }
-var import_node_path4, import_node_os2;
+var import_node_path3, import_node_os2;
 var init_xdg = __esm({
   "src/util/xdg.ts"() {
-    import_node_path4 = __toESM(require_node_path());
+    import_node_path3 = __toESM(require_node_path());
     import_node_os2 = __toESM(require_node_os());
   }
 });
@@ -20417,12 +20416,12 @@ function ownedByUserOrRoot(candidate) {
   }
 }
 function findProjectFile(start) {
-  let dir = import_node_path5.default.resolve(start);
+  let dir = import_node_path4.default.resolve(start);
   for (; ; ) {
-    const candidate = import_node_path5.default.join(dir, PROJECT_FILE_NAME);
+    const candidate = import_node_path4.default.join(dir, PROJECT_FILE_NAME);
     if ((0, import_node_fs5.existsSync)(candidate) && ownedByUserOrRoot(candidate)) return candidate;
-    if ((0, import_node_fs5.existsSync)(import_node_path5.default.join(dir, ".git"))) return void 0;
-    const parent = import_node_path5.default.dirname(dir);
+    if ((0, import_node_fs5.existsSync)(import_node_path4.default.join(dir, ".git"))) return void 0;
+    const parent = import_node_path4.default.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
@@ -20458,7 +20457,7 @@ async function readLexiconText(filePath) {
 async function unreadableLexiconError(filePath, err) {
   const code = err?.code;
   if (typeof code !== "string") return err instanceof Error ? err : new Error(errorMessage(err));
-  const detail = code === "ENOTDIR" ? `${await blockingFile(import_node_path5.default.dirname(filePath))} is not a directory, so no lexicon file can be there` : code === "EACCES" || code === "EPERM" ? `permission denied (${code})` : errorMessage(err);
+  const detail = code === "ENOTDIR" ? `${await blockingFile(import_node_path4.default.dirname(filePath))} is not a directory, so no lexicon file can be there` : code === "EACCES" || code === "EPERM" ? `permission denied (${code})` : errorMessage(err);
   return Object.assign(new Error(`Cannot read lexicon at ${filePath}: ${detail}`, { cause: err }), { code });
 }
 function parseLexiconText(text, filePath, scope) {
@@ -20491,8 +20490,8 @@ async function readGlobalLexiconMaybeStale(filePath, opts = {}) {
   const read = await readLexiconText(filePath);
   if (read === void 0) return { file: { path: filePath, scope: "global", lexicon: emptyLexicon(), exists: false } };
   if (read.text.length < PARSE_CACHE_MIN_BYTES) return { file: parseLexiconText(read.text, filePath, "global") };
-  const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_CACHE_FILE_NAME);
-  const key = import_node_path5.default.resolve(filePath);
+  const cachePath = import_node_path4.default.join(import_node_path4.default.dirname(filePath), PARSE_CACHE_FILE_NAME);
+  const key = import_node_path4.default.resolve(filePath);
   let previous;
   let previousText = "";
   try {
@@ -20510,7 +20509,7 @@ async function readGlobalLexiconMaybeStale(filePath, opts = {}) {
     }
   } catch {
   }
-  const failure2 = await readParseFailure(import_node_path5.default.dirname(filePath), key, read.text);
+  const failure2 = await readParseFailure(import_node_path4.default.dirname(filePath), key, read.text);
   if (failure2 !== void 0) throw new Error(`${failure2.kind === "yaml" ? "Failed to parse lexicon YAML" : "Invalid lexicon"} at ${filePath}: ${failure2.reason}`);
   if (previous !== void 0) {
     const staleProblem = checkLexiconEdit(previousText, read.text);
@@ -20525,14 +20524,14 @@ async function readGlobalLexiconMaybeStale(filePath, opts = {}) {
   }
   if (opts.writeBack !== false) {
     await writeParseCache(filePath, read.text, file.lexicon, read.mode);
-    await import_node_fs5.promises.unlink(import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_FAILURE_FILE_NAME)).catch(() => void 0);
+    await import_node_fs5.promises.unlink(import_node_path4.default.join(import_node_path4.default.dirname(filePath), PARSE_FAILURE_FILE_NAME)).catch(() => void 0);
   }
   return { file };
 }
 async function readParseFailure(dir, key, text) {
   if (text.length < PARSE_CACHE_MIN_BYTES) return void 0;
   try {
-    const cached2 = JSON.parse(await import_node_fs5.promises.readFile(import_node_path5.default.join(dir, PARSE_FAILURE_FILE_NAME), "utf8"));
+    const cached2 = JSON.parse(await import_node_fs5.promises.readFile(import_node_path4.default.join(dir, PARSE_FAILURE_FILE_NAME), "utf8"));
     if (isPlainObject2(cached2) && cached2.version === PARSE_FAILURE_VERSION && cached2.path === key && cached2.text === text && (cached2.kind === "yaml" || cached2.kind === "schema") && typeof cached2.reason === "string") {
       return { kind: cached2.kind, reason: cached2.reason };
     }
@@ -20549,8 +20548,8 @@ async function writeParseFailure(filePath, text, err, mode) {
   if (failure2 === void 0) return;
   try {
     await writeFileAtomic(
-      import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_FAILURE_FILE_NAME),
-      JSON.stringify({ version: PARSE_FAILURE_VERSION, path: import_node_path5.default.resolve(filePath), text, ...failure2 }),
+      import_node_path4.default.join(import_node_path4.default.dirname(filePath), PARSE_FAILURE_FILE_NAME),
+      JSON.stringify({ version: PARSE_FAILURE_VERSION, path: import_node_path4.default.resolve(filePath), text, ...failure2 }),
       { mode }
     );
   } catch {
@@ -20561,8 +20560,8 @@ async function writeParseCache(filePath, text, lexicon, mode) {
   try {
     const lexiconJson = JSON.stringify(lexicon);
     await writeFileAtomic(
-      import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_CACHE_FILE_NAME),
-      JSON.stringify({ version: PARSE_CACHE_VERSION, path: import_node_path5.default.resolve(filePath), text, sum: cacheChecksum(lexiconJson), lexicon: lexiconJson }),
+      import_node_path4.default.join(import_node_path4.default.dirname(filePath), PARSE_CACHE_FILE_NAME),
+      JSON.stringify({ version: PARSE_CACHE_VERSION, path: import_node_path4.default.resolve(filePath), text, sum: cacheChecksum(lexiconJson), lexicon: lexiconJson }),
       { mode }
     );
   } catch {
@@ -20581,18 +20580,18 @@ async function spillCacheEntry(mainPath, mainId) {
     return;
   }
   try {
-    const dir = import_node_path5.default.dirname(mainPath);
-    const stem = import_node_path5.default.basename(mainPath).replace(/\.json$/, "");
+    const dir = import_node_path4.default.dirname(mainPath);
+    const stem = import_node_path4.default.basename(mainPath).replace(/\.json$/, "");
     const names = (await import_node_fs5.promises.readdir(dir)).filter((n) => n.length === stem.length + 14 && n.startsWith(`${stem}.`) && /\.[0-9a-f]{8}\.json$/.test(n));
     if (names.length <= CACHE_ENTRIES - 1) return;
     const aged = [];
     for (const name of names) {
-      const st = await import_node_fs5.promises.stat(import_node_path5.default.join(dir, name)).catch(() => void 0);
+      const st = await import_node_fs5.promises.stat(import_node_path4.default.join(dir, name)).catch(() => void 0);
       if (st) aged.push({ name, mtime: st.mtimeMs });
     }
     aged.sort((a, b) => a.mtime - b.mtime);
     for (const { name } of aged.slice(0, Math.max(0, aged.length - (CACHE_ENTRIES - 1)))) {
-      await import_node_fs5.promises.unlink(import_node_path5.default.join(dir, name)).catch(() => void 0);
+      await import_node_fs5.promises.unlink(import_node_path4.default.join(dir, name)).catch(() => void 0);
     }
   } catch {
   }
@@ -20605,8 +20604,8 @@ async function readProjectBytes(filePath, globalPath) {
   const read = await readLexiconText(filePath);
   if (read === void 0) return void 0;
   const out = { text: read.text, bytes: read.bytes };
-  const key = import_node_path5.default.resolve(filePath);
-  const mainPath = import_node_path5.default.join(import_node_path5.default.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
+  const key = import_node_path4.default.resolve(filePath);
+  const mainPath = import_node_path4.default.join(import_node_path4.default.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
   const main2 = await readProjectCacheEntry(mainPath, key, read.bytes, read.text);
   out.mainId = main2.id;
   if (main2.hit) out.cached = main2.hit;
@@ -20661,8 +20660,8 @@ async function writeProjectParseCache(file, text, globalPath, mainId) {
     const sha256 = await recalledParsedHash(file);
     if (sha256 === void 0) return;
     const lexiconJson = JSON.stringify(file.lexicon);
-    const mainPath = import_node_path5.default.join(import_node_path5.default.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
-    const key = import_node_path5.default.resolve(file.path);
+    const mainPath = import_node_path4.default.join(import_node_path4.default.dirname(globalPath), PROJECT_PARSE_CACHE_FILE_NAME);
+    const key = import_node_path4.default.resolve(file.path);
     if (mainId !== void 0 && mainId !== key) await spillCacheEntry(mainPath, mainId);
     await writeFileAtomic(
       mainPath,
@@ -20683,9 +20682,9 @@ async function writeProjectParseCache(file, text, globalPath, mainId) {
 async function loadMatcherIndex(loaded, opts = {}) {
   const lexicon = loaded.merged;
   if (lexicon.terms.length < INDEX_CACHE_MIN_TERMS) return buildIndex(lexicon);
-  const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(loaded.global.path), INDEX_CACHE_FILE_NAME);
+  const cachePath = import_node_path4.default.join(import_node_path4.default.dirname(loaded.global.path), INDEX_CACHE_FILE_NAME);
   const key = indexKey(lexicon);
-  const project = loaded.project ? import_node_path5.default.resolve(loaded.project.path) : void 0;
+  const project = loaded.project ? import_node_path4.default.resolve(loaded.project.path) : void 0;
   const id = project ?? "";
   const head = indexCacheHead(key, project);
   let mainId;
@@ -20739,7 +20738,7 @@ function indexHeadProject(head) {
     if (!m || Number(m[1]) !== INDEX_FORMAT_VERSION) return void 0;
     if (m[2] === void 0) return null;
     const project = JSON.parse(m[2]);
-    return typeof project === "string" && import_node_path5.default.isAbsolute(project) ? project : void 0;
+    return typeof project === "string" && import_node_path4.default.isAbsolute(project) ? project : void 0;
   } catch {
     return void 0;
   }
@@ -20748,13 +20747,13 @@ function withLexiconLock(filePath, fn, opts) {
   return withFileLock(filePath, fn, opts);
 }
 function getHitsPath(opts = {}) {
-  return import_node_path5.default.join(import_node_path5.default.dirname(resolvePaths(opts).global), HITS_FILE_NAME);
+  return import_node_path4.default.join(import_node_path4.default.dirname(resolvePaths(opts).global), HITS_FILE_NAME);
 }
 function hitKey(canonical) {
   return foldKey(canonical);
 }
 async function canonicalPath2(filePath) {
-  const resolved = import_node_path5.default.resolve(filePath);
+  const resolved = import_node_path4.default.resolve(filePath);
   try {
     return await import_node_fs5.promises.realpath(resolved);
   } catch {
@@ -20854,7 +20853,7 @@ async function loadLexiconWith(global, paths, opts) {
   projectTrust ??= await isTrusted(project, opts);
   if (projectTrust === "trusted" && fresh) await writeProjectParseCache(project, fresh.text, paths.global, read?.mainId);
   else if (projectTrust === "trusted" && read?.fromSpill) {
-    await promoteCacheEntry(import_node_path5.default.join(import_node_path5.default.dirname(paths.global), PROJECT_PARSE_CACHE_FILE_NAME), import_node_path5.default.resolve(paths.project), read.mainId);
+    await promoteCacheEntry(import_node_path4.default.join(import_node_path4.default.dirname(paths.global), PROJECT_PARSE_CACHE_FILE_NAME), import_node_path4.default.resolve(paths.project), read.mainId);
   }
   if (projectTrust === "trusted" || opts.includeUntrusted) {
     const merged = mergeLexicons(global.lexicon, project.lexicon);
@@ -20956,7 +20955,7 @@ async function recordHits(canonicals, opts = {}) {
         for (const [canonical, n] of counts) global[canonical] = (global[canonical] ?? 0) + n;
         registry2.global = global;
       }
-      await import_node_fs5.promises.mkdir(import_node_path5.default.dirname(hitsPath), { recursive: true });
+      await import_node_fs5.promises.mkdir(import_node_path4.default.dirname(hitsPath), { recursive: true });
       await writeFileAtomic(hitsPath, formatJson(registry2));
     }, opts.lockTimeoutMs !== void 0 ? { timeoutMs: opts.lockTimeoutMs } : void 0);
   } catch {
@@ -20985,12 +20984,12 @@ function dedupeCaseInsensitive(values) {
   }
   return out;
 }
-var import_node_fs5, import_node_os3, import_node_path5, import_yaml2, PROJECT_FILE_NAME, MAX_LEXICON_BYTES, HEADER_COMMENT, PARSE_CACHE_FILE_NAME, PARSE_CACHE_MIN_BYTES, PARSE_CACHE_VERSION, STALE_GLOBAL_MIN_BYTES, PARSE_FAILURE_FILE_NAME, PARSE_FAILURE_VERSION, CACHE_ENTRIES, PROJECT_PARSE_CACHE_FILE_NAME, PROJECT_PARSE_CACHE_VERSION, INDEX_CACHE_FILE_NAME, INDEX_CACHE_MIN_TERMS, HITS_FILE_NAME;
+var import_node_fs5, import_node_os3, import_node_path4, import_yaml2, PROJECT_FILE_NAME, MAX_LEXICON_BYTES, HEADER_COMMENT, PARSE_CACHE_FILE_NAME, PARSE_CACHE_MIN_BYTES, PARSE_CACHE_VERSION, STALE_GLOBAL_MIN_BYTES, PARSE_FAILURE_FILE_NAME, PARSE_FAILURE_VERSION, CACHE_ENTRIES, PROJECT_PARSE_CACHE_FILE_NAME, PROJECT_PARSE_CACHE_VERSION, INDEX_CACHE_FILE_NAME, INDEX_CACHE_MIN_TERMS, HITS_FILE_NAME;
 var init_store = __esm({
   "src/core/store.ts"() {
     import_node_fs5 = __toESM(require_node_fs());
     import_node_os3 = __toESM(require_node_os());
-    import_node_path5 = __toESM(require_node_path());
+    import_node_path4 = __toESM(require_node_path());
     import_yaml2 = __toESM(require_dist());
     init_schema();
     init_edit_check();
@@ -21043,22 +21042,22 @@ var init_suggest = __esm({
 });
 
 // src/core/harvest.ts
-var import_node_child_process, import_node_fs6, import_node_path6, MAX_FILE_BYTES;
+var import_node_child_process, import_node_fs6, import_node_path5, MAX_FILE_BYTES;
 var init_harvest = __esm({
   "src/core/harvest.ts"() {
     import_node_child_process = __toESM(require_node_child_process());
     import_node_fs6 = __toESM(require_node_fs());
-    import_node_path6 = __toESM(require_node_path());
+    import_node_path5 = __toESM(require_node_path());
     MAX_FILE_BYTES = 512 * 1024;
   }
 });
 
 // src/core/packs.ts
-var import_node_fs8, import_node_path8, import_node_url, import_yaml5, PACK_NAME_RE, PackFileSchema;
+var import_node_fs8, import_node_path7, import_node_url, import_yaml5, PACK_NAME_RE, PackFileSchema;
 var init_packs = __esm({
   "src/core/packs.ts"() {
     import_node_fs8 = __toESM(require_node_fs());
-    import_node_path8 = __toESM(require_node_path());
+    import_node_path7 = __toESM(require_node_path());
     import_node_url = __toESM(require_node_url());
     import_yaml5 = __toESM(require_dist());
     init_zod();
@@ -21077,12 +21076,12 @@ var init_packs = __esm({
 });
 
 // src/core/registry.ts
-var import_node_crypto2, import_node_fs9, import_node_path9, import_yaml6, RegistryIndexEntrySchema, RegistryIndexSchema, MAX_REGISTRY_FILE_BYTES, RegistryPackStateSchema;
+var import_node_crypto2, import_node_fs9, import_node_path8, import_yaml6, RegistryIndexEntrySchema, RegistryIndexSchema, MAX_REGISTRY_FILE_BYTES, RegistryPackStateSchema;
 var init_registry = __esm({
   "src/core/registry.ts"() {
     import_node_crypto2 = __toESM(require_node_crypto());
     import_node_fs9 = __toESM(require_node_fs());
-    import_node_path9 = __toESM(require_node_path());
+    import_node_path8 = __toESM(require_node_path());
     import_yaml6 = __toESM(require_dist());
     init_zod();
     init_packs();
@@ -21118,7 +21117,7 @@ var init_registry = __esm({
 
 // src/hooks/user-prompt-submit.ts
 var import_node_fs11 = __toESM(require_node_fs(), 1);
-var import_node_path11 = __toESM(require_node_path(), 1);
+var import_node_path10 = __toESM(require_node_path(), 1);
 var import_node_url3 = __toESM(require_node_url(), 1);
 
 // src/core/index.ts
@@ -21856,7 +21855,7 @@ function sameText(a, b) {
 // src/core/pending.ts
 var import_node_crypto = __toESM(require_node_crypto());
 var import_node_fs7 = __toESM(require_node_fs());
-var import_node_path7 = __toESM(require_node_path());
+var import_node_path6 = __toESM(require_node_path());
 var import_yaml4 = __toESM(require_dist());
 init_atomic();
 init_store();
@@ -21867,7 +21866,7 @@ var PendingFileError = class extends Error {
 };
 var HEADER = "# Lexicon: aliases noticed in your corrections, waiting for review.\n# Nothing here changes matching. Accept with: lexicon pending accept <id>\n# Reject with: lexicon pending reject <id>\n";
 function pendingPathFor(globalLexiconPath2) {
-  return import_node_path7.default.join(import_node_path7.default.dirname(globalLexiconPath2), PENDING_FILE_NAME);
+  return import_node_path6.default.join(import_node_path6.default.dirname(globalLexiconPath2), PENDING_FILE_NAME);
 }
 function pendingPath(opts = {}) {
   return pendingPathFor(resolvePaths(opts).global);
@@ -21969,23 +21968,23 @@ init_registry();
 
 // src/util/package.ts
 var import_node_fs10 = __toESM(require_node_fs());
-var import_node_path10 = __toESM(require_node_path());
+var import_node_path9 = __toESM(require_node_path());
 var import_node_url2 = __toESM(require_node_url());
 init_json();
 var PACKAGE_NAME = "@ashlr/lexicon";
 var UNKNOWN_VERSION = "0.0.0";
 function findPackageRoot(from) {
-  let dir = from.startsWith("file:") ? import_node_path10.default.dirname((0, import_node_url2.fileURLToPath)(from)) : import_node_path10.default.resolve(from);
+  let dir = from.startsWith("file:") ? import_node_path9.default.dirname((0, import_node_url2.fileURLToPath)(from)) : import_node_path9.default.resolve(from);
   for (; ; ) {
-    if (readPackageJson(import_node_path10.default.join(dir, "package.json"))) return dir;
-    const parent = import_node_path10.default.dirname(dir);
+    if (readPackageJson(import_node_path9.default.join(dir, "package.json"))) return dir;
+    const parent = import_node_path9.default.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
 }
 function packageVersion(moduleUrl) {
   const root = findPackageRoot(moduleUrl);
-  const pkg = root ? readPackageJson(import_node_path10.default.join(root, "package.json")) : void 0;
+  const pkg = root ? readPackageJson(import_node_path9.default.join(root, "package.json")) : void 0;
   return pkg?.version ?? UNKNOWN_VERSION;
 }
 function readPackageJson(file) {
@@ -22009,7 +22008,7 @@ var REFRESH_CACHE_FLAG = "--refresh-cache";
 var REFRESH_LOCK_FILE = "index-refresh.lock";
 var REFRESH_LOCK_STALE_MS = 3e4;
 async function claimCacheRefresh(globalPath, now = Date.now()) {
-  const lock = (0, import_node_path11.join)((0, import_node_path11.dirname)(globalPath), REFRESH_LOCK_FILE);
+  const lock = (0, import_node_path10.join)((0, import_node_path10.dirname)(globalPath), REFRESH_LOCK_FILE);
   try {
     await import_node_fs11.promises.writeFile(lock, `${JSON.stringify({ pid: process.pid, at: new Date(now).toISOString() })}
 `, { flag: "wx", mode: 384 });
@@ -22026,7 +22025,7 @@ async function claimCacheRefresh(globalPath, now = Date.now()) {
   return "unavailable";
 }
 async function releaseCacheRefresh(globalPath) {
-  await import_node_fs11.promises.unlink((0, import_node_path11.join)((0, import_node_path11.dirname)(globalPath), REFRESH_LOCK_FILE)).catch(() => void 0);
+  await import_node_fs11.promises.unlink((0, import_node_path10.join)((0, import_node_path10.dirname)(globalPath), REFRESH_LOCK_FILE)).catch(() => void 0);
 }
 async function refreshHookCaches(cwd) {
   let globalPath;
@@ -22099,7 +22098,7 @@ var ONBOARD_NOTE_FILE = "onboard-note.json";
 var ONBOARD_NOTE_INTERVAL_MS = 24 * 60 * 60 * 1e3;
 var ONBOARD_NOTE = "The user's voice lexicon is empty, so dictated names are not being corrected. Do not act on this now and do not mention it on its own. Wait until a message looks dictated (run-on prose, spoken filler, or a proper noun that looks like speech-to-text mangled it). When that happens: answer what the user asked first, then add one short sentence offering to fix it, naming the word that looked wrong. Offer once. If they decline or ignore it, do not raise it again this session. If they accept, ask for (1) their company/product names, spelled exactly, and how they pronounce them; (2) their own name as they write it; (3) which agent clients they use: Claude Code, Claude Desktop, Codex, Cursor, Windsurf, Gemini CLI, VS Code. Then call the lexicon setup_lexicon tool with company, person and clients (or use the onboard prompt). setup_lexicon previews by default: show the user its plan and call it again with apply: true only after they say yes. Install nothing they did not name.";
 function onboardNotePath(globalPath) {
-  return (0, import_node_path11.join)((0, import_node_path11.dirname)(globalPath), ONBOARD_NOTE_FILE);
+  return (0, import_node_path10.join)((0, import_node_path10.dirname)(globalPath), ONBOARD_NOTE_FILE);
 }
 async function shouldEmitOnboardNote(globalPath, now = Date.now()) {
   const file = onboardNotePath(globalPath);
@@ -22113,7 +22112,7 @@ async function shouldEmitOnboardNote(globalPath, now = Date.now()) {
   }
   const state = { lastNotedAt: new Date(now).toISOString() };
   try {
-    await import_node_fs11.promises.mkdir((0, import_node_path11.dirname)(file), { recursive: true });
+    await import_node_fs11.promises.mkdir((0, import_node_path10.dirname)(file), { recursive: true });
     await import_node_fs11.promises.writeFile(file, `${JSON.stringify(state)}
 `, "utf8");
   } catch (err) {
@@ -22727,7 +22726,7 @@ function isMainModule() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return (0, import_node_fs11.realpathSync)((0, import_node_path11.resolve)(entry)) === (0, import_node_fs11.realpathSync)((0, import_node_url3.fileURLToPath)(import.meta.url));
+    return (0, import_node_fs11.realpathSync)((0, import_node_path10.resolve)(entry)) === (0, import_node_fs11.realpathSync)((0, import_node_url3.fileURLToPath)(import.meta.url));
   } catch {
     return false;
   }

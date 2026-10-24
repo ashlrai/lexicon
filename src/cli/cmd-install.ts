@@ -17,6 +17,7 @@ import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Command } from 'commander';
+import { writeFileAtomic } from '../util/atomic.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord, readJsonFile, writeJsonFile } from '../util/json.js';
 import { homeDir, xdgConfigHome } from '../util/xdg.js';
@@ -504,10 +505,9 @@ async function readText(file: string): Promise<{ text: string; existed: boolean 
 }
 
 async function writeText(file: string, text: string): Promise<void> {
-  await explainWrite(file, async () => {
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, text, 'utf8');
-  });
+  // Through a temp file and a rename, as writeJsonFile does: an in-place
+  // write that failed partway left config.toml cut short.
+  await explainWrite(file, () => writeFileAtomic(file, text));
 }
 
 /**
