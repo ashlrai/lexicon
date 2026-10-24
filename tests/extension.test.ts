@@ -1551,7 +1551,6 @@ describe('adapters: code editors are never composers', () => {
     'Monaco EditContext': '<div class="monaco-editor"><div id="e" class="native-edit-context" contenteditable="true">ping ashler</div></div>',
     Ace: '<div class="ace_editor"><textarea id="e" class="ace_text-input"></textarea></div>',
     'contenteditable pre': '<pre id="e" contenteditable="true">ping ashler</pre>',
-    'ProseMirror with a code block': '<div id="e" class="ProseMirror" contenteditable="true"><p>ping ashler</p><pre><code>const ashler = 1</code></pre></div>',
   };
 
   for (const [name, html] of Object.entries(editors)) {
@@ -1582,6 +1581,31 @@ describe('adapters: code editors are never composers', () => {
     expect(composerFromTarget(document.querySelector('#page p'), GENERIC)).toBeNull();
   });
 
+  // Catches: on a generic site, a rich composer holding a code block was not
+  // a composer at all, so the prose around the code was never corrected; the
+  // code is masked on its way to the engine instead, as on a known site.
+  it('a generic rich composer holding code: the prose around it is corrected on Enter, the code never', async () => {
+    document.body.innerHTML =
+      '<div id="e" class="ProseMirror" contenteditable="true"><p>ping ashler</p><pre><code>const ashler = 1</code></pre><p id="last">use <code>ashler</code> with ashler</p></div>';
+    const e = document.getElementById('e') as HTMLElement;
+    e.focus();
+    document.getSelection()!.collapse(document.getElementById('last')!.lastChild, ' with ashler'.length);
+    expect(findComposer(document, GENERIC)).toBe(e);
+    expect(composerFromTarget(e, GENERIC)).toBe(e);
+    const send = vi.fn(fakeSend);
+    handle = installContent({ doc: document, hostname: 'example.org', send, settings: { enabled: true, live: false } });
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    e.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    await handle.idle();
+    expect(e.querySelector('p')!.textContent).toBe('ping Ashlr.AI');
+    expect(document.getElementById('last')!.textContent).toBe('use ashler with Ashlr.AI');
+    expect(e.querySelector('pre code')!.textContent).toBe('const ashler = 1');
+    expect(e.querySelector('#last code')!.textContent).toBe('ashler');
+    const sent = (send.mock.calls[0][0] as { text: string }).text;
+    expect(sent).not.toContain('const');
+  });
+
   it('inline code with the caret in it is skipped; plain rich text and textareas still are composers', () => {
     document.body.innerHTML = '<div id="r" contenteditable="true"><p>ping <code id="c">ashler</code> now</p></div><textarea id="t"></textarea>';
     const r = document.getElementById('r') as HTMLElement;
@@ -1589,6 +1613,16 @@ describe('adapters: code editors are never composers', () => {
     const sel = document.getSelection()!;
     sel.collapse(document.getElementById('c')!.firstChild, 2);
     expect(findComposer(document, GENERIC)).toBeNull();
+    // The caret in a code block is typing code too: Enter there is a new line of code, not a send.
+    document.body.insertAdjacentHTML('beforeend', '<div id="b" contenteditable="true"><p>ping</p><pre><code id="pc">ashler</code></pre></div>');
+    const b = document.getElementById('b') as HTMLElement;
+    b.focus();
+    sel.collapse(document.getElementById('pc')!.firstChild, 3);
+    expect(findComposer(document, GENERIC)).toBeNull();
+    expect(composerFromTarget(b, GENERIC)).toBeNull();
+    sel.collapse(b.querySelector('p')!.firstChild, 2);
+    expect(findComposer(document, GENERIC)).toBe(b);
+    r.focus();
     sel.collapse(r.querySelector('p')!.lastChild, 1);
     expect(findComposer(document, GENERIC)).toBe(r);
     (document.getElementById('t') as HTMLElement).focus();

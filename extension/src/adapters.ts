@@ -140,8 +140,6 @@ export function isIdentifierField(el: HTMLInputElement | HTMLTextAreaElement): b
  * a hidden textarea: CodeMirror 6 and 5, Monaco, Ace.
  */
 export const CODE_EDITOR_SELECTOR = '.cm-editor, .CodeMirror, .monaco-editor, .ace_editor';
-/** What marks code inside a rich-text editor: a code block (`<pre>`) or one of the editors above. */
-const CODE_BLOCK_SELECTOR = `pre, ${CODE_EDITOR_SELECTOR}`;
 /** Any code inside a rich-text composer: a code block, inline `<code>` (or `<kbd>`, `<samp>`, which the matcher skips in text too), or a code editor. */
 export const CODE_SELECTOR = `pre, code, kbd, samp, ${CODE_EDITOR_SELECTOR}`;
 
@@ -156,18 +154,25 @@ export function isCodeEditor(el: Element): boolean {
 }
 
 /**
- * True when the generic adapter must leave `root` alone: it holds a code
- * block or a code editor (a send rewrites the whole text, code included), or
- * the caret sits in inline code. Known sites name their composer and are not
- * asked.
+ * True when the generic adapter must leave `root` alone: the caret sits in
+ * code (a code block, inline code or a code editor under `root`), where Enter
+ * types a new line of code rather than sending, or `root` embeds a code
+ * editor. A code block or inline code elsewhere in `root` no
+ * longer makes it so: the content script masks every code range on its way
+ * to the engine (codeRanges, maskCode), so the prose around the code is
+ * corrected and the code never is, as on a known site. It used to skip the
+ * whole send whenever `root` held a code block. Known sites name their
+ * composer and are not asked.
  */
 export function holdsCode(doc: Document, root: HTMLElement): boolean {
   if (isTextField(root)) return false;
-  if (root.querySelector(CODE_BLOCK_SELECTOR)) return true;
+  // An embedded code editor (CodeMirror, Monaco, Ace) owns its DOM: a rewrite
+  // of the page around it could still replace the editor's nodes.
+  if (root.querySelector(CODE_EDITOR_SELECTOR)) return true;
   const anchor = doc.getSelection?.()?.anchorNode ?? null;
   if (!anchor || !root.contains(anchor)) return false;
   const el = anchor.nodeType === 1 ? (anchor as Element) : anchor.parentElement;
-  const code = el?.closest('code') ?? null;
+  const code = el?.closest(CODE_SELECTOR) ?? null;
   return code !== null && root.contains(code);
 }
 
