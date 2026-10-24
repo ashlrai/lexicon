@@ -122,7 +122,15 @@ export async function capServiceLog(logPath: string, fd: number, max: number = S
     const file = await fs.stat(logPath);
     if (file.dev !== target.dev || file.ino !== target.ino) return false;
     await fs.copyFile(logPath, `${logPath}.1`);
-    ftruncateSync(fd, 0);
+    try {
+      ftruncateSync(fd, 0);
+    } catch {
+      // On Windows a descriptor opened for appending carries FILE_APPEND_DATA
+      // but not FILE_WRITE_DATA, so ftruncate on it fails with EPERM/EACCES
+      // and the log was never capped. Truncate through the path instead: it
+      // is the same file (checked above), and Node opens files share-write.
+      await fs.truncate(logPath, 0);
+    }
     return true;
   } catch {
     return false;
