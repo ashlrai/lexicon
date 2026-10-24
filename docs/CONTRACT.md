@@ -49,7 +49,11 @@ The bottom layer: no imports from `src/core`, `src/cli` or anything else in the 
 ### src/util/json.ts
 - `isRecord(value: unknown): value is Record<string, unknown>` the type guard the codebase uses instead of `any` when walking parsed JSON.
 - `formatJson(value: unknown): string` the canonical 2-space encoding written to config files.
-- `JsonFileRead`, `readJsonFile(file): Promise<JsonFileRead>` and `writeJsonFile(file, value): Promise<void>`: read-modify-write of another tool's config (`~/.claude/settings.json`, `~/.cursor/mcp.json`, ...) without losing what was already there.
+- `JsonFileRead { exists; value?; error?; text? }`, `readJsonFile(file): Promise<JsonFileRead>` and `writeJsonFile(file, value, original?): Promise<void>`: read-modify-write of another tool's config (`~/.claude/settings.json`, `~/.cursor/mcp.json`, ...) without losing what was already there. `readJsonFile` parses with `parseJsonc` (comments and trailing commas accepted; a BOM is still an error) and returns the text read as `text`; `writeJsonFile` with that text as `original` writes `editJsonText(original, value)`, so only what changed is rewritten, and `formatJson(value)` without it.
+
+### src/util/jsonc.ts
+- `parseJsonc(text): unknown`: JSON plus `//` and `/* */` comments and trailing commas; a repeated key keeps the last value, as `JSON.parse` does. Throws an Error naming the line and column of the first problem.
+- `editJsonText(text, next): string`: `text` rewritten to hold `next`, changing only what differs: a changed value is replaced in place (indented as the line it starts on), a new key or array element goes after the last one in the file's own indent unit (tabs, or its smallest run of spaces) and trailing comma style, after a comment that closes that line, compact in a one-line object or array; every other byte, comments included, is kept. An object that lost or reordered a key is written whole. Empty or unparseable `text`, or an edit that would not read back as `next`, gives `formatJson`-style 2-space JSON instead.
 
 ### src/util/which.ts
 Executable lookup without spawning `which` / `where`.

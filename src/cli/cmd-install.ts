@@ -512,7 +512,7 @@ async function applyJson(target: InstallTarget): Promise<InstallOutcome> {
   }
   const { next, changed } = mergeServerIntoJson(read.exists ? read.value : {}, target.key, target.entry);
   if (!changed) return 'unchanged';
-  await writeJsonFile(target.file, next);
+  await writeJsonFile(target.file, next, read.text);
   return read.exists ? 'updated' : 'created';
 }
 
@@ -915,7 +915,7 @@ export async function runInstallClaude(
     const existed = read.exists;
     const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, hookTimeout, HOOK_EVENTS);
     if (changed) {
-      await writeJsonFile(settingsPath, settings);
+      await writeJsonFile(settingsPath, settings, read.text);
       line(io, green(`   ${existed ? 'updated' : 'created'} ${safe(settingsPath)}: added ${HOOK_EVENTS.join(' + ')} hooks`));
       deps.onWritten?.(settingsPath, existed ? 'updated' : 'created');
     } else {

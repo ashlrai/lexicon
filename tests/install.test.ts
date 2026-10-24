@@ -209,6 +209,36 @@ describe('lexicon install <json client> --apply', () => {
     });
   }
 
+  // Catches: JSON.parse refused a config with a comment or a trailing comma
+  // (VS Code's mcp.json is JSONC), and a write reformatted the whole file
+  // through JSON.stringify: 4-space indents became 2 and every inline array
+  // of the user's other servers was expanded.
+  it('merges into JSON with comments and trailing commas, keeping every other byte', async () => {
+    const file = path.join(home, '.cursor', 'mcp.json');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const before = '{\n    // my servers\n    "mcpServers": {\n        "other": { "command": "x", "args": ["a", "b"] }, /* keep */\n    },\n}\n';
+    await fs.writeFile(file, before);
+    const first = await run('cursor', { apply: true });
+    expect(first.code).toBe(0);
+    const after = await fs.readFile(file, 'utf8');
+    expect(after).toBe(
+      '{\n    // my servers\n    "mcpServers": {\n        "other": { "command": "x", "args": ["a", "b"] }, /* keep */\n' +
+        `        "lexicon": {\n            "command": "node",\n            "args": [\n                ${JSON.stringify(SERVER)}\n            ]\n        },\n    },\n}\n`,
+    );
+    // Idempotent: the second run writes nothing.
+    const second = await run('cursor', { apply: true });
+    expect(second.io.out).toContain('already');
+    expect(await fs.readFile(file, 'utf8')).toBe(after);
+  });
+
+  it('keeps a tab-indented strict JSON file byte for byte outside the lexicon entry', async () => {
+    const file = path.join(home, '.cursor', 'mcp.json');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, '{\n\t"theme": "dark",\n\t"mcpServers": {}\n}');
+    await run('cursor', { apply: true });
+    expect(await fs.readFile(file, 'utf8')).toBe(`{\n\t"theme": "dark",\n\t"mcpServers": {\n\t\t"lexicon": {\n\t\t\t"command": "node",\n\t\t\t"args": [\n\t\t\t\t${JSON.stringify(SERVER)}\n\t\t\t]\n\t\t}\n\t}\n}`);
+  });
+
   it('refuses to overwrite a file that is not valid JSON', async () => {
     const file = path.join(home, '.cursor', 'mcp.json');
     await fs.mkdir(path.dirname(file), { recursive: true });

@@ -13,6 +13,7 @@ import { DEFAULT_MODEL, resolveModel } from '../voice/models.js';
 import { WHISPER_BIN_NAMES, installHint } from '../voice/process.js';
 import { findOnPathSync, locateToolSync } from '../util/which.js';
 import { isRecord } from '../util/json.js';
+import { parseJsonc } from '../util/jsonc.js';
 import { readDoctorConfigJson, readDoctorConfigText } from './doctor-config-read.js';
 import { errorMessage } from '../util/errors.js';
 import { checkPhantomPresence } from './phantom-presence.js';
@@ -143,7 +144,7 @@ function codexDeclaration(text: string): Record<string, unknown> | undefined {
 export function registersLexicon(client: (typeof FILE_CLIENTS)[number], text: string): boolean {
   if (client === 'codex') return declaresTransport(codexDeclaration(text));
   try {
-    const cfg: unknown = JSON.parse(text);
+    const cfg: unknown = parseJsonc(text);
     if (!isRecord(cfg)) return false;
     const servers = client === 'vscode' ? cfg.servers : cfg.mcpServers;
     return isRecord(servers) && declaresTransport(servers.lexicon);
@@ -154,7 +155,7 @@ export function registersLexicon(client: (typeof FILE_CLIENTS)[number], text: st
 
 function parsesAsJson(text: string): boolean {
   try {
-    JSON.parse(text);
+    parseJsonc(text);
     return true;
   } catch {
     return false;

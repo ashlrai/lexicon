@@ -1411,6 +1411,26 @@ describe('install-claude', () => {
     expect(again.hooks.UserPromptSubmit).toHaveLength(1);
   });
 
+  // Catches: the merge rewrote settings.json through JSON.stringify, so a
+  // user's 4-space file, inline arrays and key spacing came back reformatted.
+  it('--apply changes nothing in settings.json outside the hooks it adds', async () => {
+    const dir = await tempDir('lexicon-settings-bytes-');
+    const settingsPath = path.join(dir, '.claude', 'settings.json');
+    await fs.mkdir(path.dirname(settingsPath), { recursive: true });
+    const before = '{\n    "model": "opus",\n    "permissions": { "allow": ["Bash(ls)", "Read"] },\n    "hooks": {\n        "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "echo pre" }] }]\n    }\n}\n';
+    await fs.writeFile(settingsPath, before);
+    const exec = vi.fn(() => 'Added stdio MCP server lexicon');
+    expect(await runInstallClaude({ apply: true }, makeIO(), { cliDir: '/x/dist/cli', settingsPath, exec })).toBe(0);
+    const after = await fs.readFile(settingsPath, 'utf8');
+    expect(after.startsWith('{\n    "model": "opus",\n    "permissions": { "allow": ["Bash(ls)", "Read"] },\n    "hooks": {\n        "PreToolUse": [{ "matcher": "Bash", "hooks": [{ "type": "command", "command": "echo pre" }] }],\n        "UserPromptSubmit": [\n')).toBe(true);
+    expect(after.endsWith('\n    }\n}\n')).toBe(true);
+    const parsed = JSON.parse(after) as { hooks: Record<string, unknown[]> };
+    expect(Object.keys(parsed.hooks)).toEqual(['PreToolUse', 'UserPromptSubmit', 'SessionStart']);
+    // A second run leaves the bytes alone.
+    await runInstallClaude({ apply: true }, makeIO(), { cliDir: '/x/dist/cli', settingsPath, exec });
+    expect(await fs.readFile(settingsPath, 'utf8')).toBe(after);
+  });
+
   // install_client / setup_lexicon called from a plugin session (and `lexicon
   // install claude` by a plugin user) registered a second server and a second
   // pair of hooks, so every prompt got two correction notes.
@@ -1565,9 +1585,19 @@ describe('doctor: other MCP clients', () => {
     const home = await tempDir('lexicon-badjson-');
     await fs.mkdir(path.join(home, '.cursor'));
     const file = path.join(home, '.cursor', 'mcp.json');
-    await fs.writeFile(file, '{ // comment\n "mcpServers": {} }');
+    await fs.writeFile(file, '{ "mcpServers": { ');
     const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '/nonexistent' }, exec: () => '', home });
     expect(report.checks).toContainEqual({ level: 'warn', message: 'could not parse cursor client configuration as JSON, so a lexicon entry there was not checked' });
+  });
+
+  // Catches: `lexicon install` now writes into a config with comments and
+  // trailing commas (JSONC), so doctor must read one back too.
+  it('reads a lexicon entry from a client config with comments and trailing commas', async () => {
+    const home = await tempDir('lexicon-jsonc-');
+    await fs.mkdir(path.join(home, '.cursor'));
+    await fs.writeFile(path.join(home, '.cursor', 'mcp.json'), '{ // mine\n "mcpServers": { "lexicon": { "command": "lexicon-mcp", }, }, }');
+    const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '/nonexistent' }, exec: () => '', home });
+    expect(report.checks).toContainEqual({ level: 'ok', message: `lexicon MCP server configuration found for cursor: ${path.join(home, '.cursor', 'mcp.json')}` });
   });
 
   it('still fails when no client has lexicon registered', async () => {
