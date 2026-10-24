@@ -178,7 +178,7 @@ describe('the sha256 of a downloaded model', () => {
 });
 
 describe('a download that fails says why', () => {
-  // Catches: every failed download said "check the network", for a misspelt model name (a 404) too.
+  // Catches: every failed download said "check the network", for a misspelt model name (a 404) and a full disk alike.
   it('names a model that does not exist instead of blaming the network', async () => {
     const d = tmp();
     vi.stubGlobal('fetch', async () => new Response('Entry not found', { status: 404, statusText: 'Not Found' }));
@@ -190,6 +190,21 @@ describe('a download that fails says why', () => {
     const thrown = await ensureModel('base-en', opts).catch((e: unknown) => (e as Error).message);
     expect(thrown).toContain('there is no whisper model named base-en');
     expect(thrown).toContain('base.en');
+    expect(thrown).not.toContain('check the network');
+  });
+
+  it('says the disk is full, with the model size, rather than blaming the network', async () => {
+    const d = tmp();
+    const globalPath = path.join(d, 'lexicon.yaml');
+    const download = async (_url: string, _dest: string, onProgress: (p: { received: number; total?: number }) => void): Promise<void> => {
+      onProgress({ received: 1_048_576, total: 147_951_465 });
+      throw Object.assign(new Error('ENOSPC: no space left on device, write'), { code: 'ENOSPC' });
+    };
+    const thrown = await ensureModel('base.en', { globalPath, env: {}, fallbackDirs: [], download, log: () => undefined, progress: () => undefined }).catch(
+      (e: unknown) => (e as Error).message,
+    );
+    expect(thrown).toContain(`there is no space left for it in ${path.join(d, 'models')} (it is 141 MB)`);
+    expect(thrown).toContain('LEXICON_WHISPER_MODELS');
     expect(thrown).not.toContain('check the network');
   });
 });

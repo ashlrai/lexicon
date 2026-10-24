@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- A whisper model download that runs out of disk space says there is no space left in the models directory, with the model's size, and that `LEXICON_WHISPER_MODELS` can name a directory on another disk. It said to check the network.
 - `lexicon voice --model <name>` with a name that is no whisper model (`base-en`) says there is no model of that name, and names some that exist (`tiny.en`, `base.en`, `small.en`, ...). The download answered 404 and the error said to check the network.
 - `lexicon voice --device <index>` with an index no listed device has stops before recording, naming the range and `--list-devices`, on Linux and Windows. On Linux with pulse it recorded from the default microphone without a word, and elsewhere it passed the number to ffmpeg as a device name. On Linux with pulse but no pulse source listed, a device picked from the arecord list now goes to the ALSA demuxer rather than to pulse, which does not know `hw:` ids.
 - `lexicon voice --list-devices` on ALSA numbers each capture device by its place in the list, as the pulse and dshow lists do. It used the card number, so two inputs on one card (an Intel HDA card's analog and alternate analog) shared an index and `--device <index>` could only pick the first.

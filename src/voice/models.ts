@@ -480,8 +480,10 @@ export async function ensureModel(spec: string, opts: EnsureModelOptions): Promi
       : `whisper model ${resolved.name} not found; fetching ${resolved.url} -> ${resolved.path}`,
   );
   let lastPct = -1;
+  let total: number | undefined;
   try {
     await download(resolved.url, resolved.path, (p) => {
+      total = p.total;
       const pct = p.total ? Math.floor((p.received / p.total) * 100) : Math.floor(p.received / 8_388_608);
       if (pct !== lastPct) {
         lastPct = pct;
@@ -491,12 +493,20 @@ export async function ensureModel(spec: string, opts: EnsureModelOptions): Promi
   } catch (e) {
     if (opts.signal?.aborted) throw new Error(`the download of whisper model ${resolved.name} was interrupted; nothing was kept`);
     // "Check the network" was the advice for every failure: a misspelt model
-    // name (a 404) was sent to look at its network.
+    // name (a 404) and a full disk were sent to look at their network.
     const status = (e as { status?: unknown } | null)?.status;
     if (status === 404) {
       throw new Error(
         `there is no whisper model named ${resolved.name} (${resolved.url} answered 404); ` +
           `pass one that exists with --model, such as ${KNOWN_MODELS.join(', ')}, or a ggml file you have`,
+      );
+    }
+    const code = (e as NodeJS.ErrnoException | null)?.code;
+    if (code === 'ENOSPC' || code === 'EDQUOT') {
+      throw new Error(
+        `could not download whisper model ${resolved.name}: there is no space left for it in ${path.dirname(resolved.path)}` +
+          `${total ? ` (it is ${mb(total)})` : ''}; nothing was kept. Free some space and try again, ` +
+          'or set LEXICON_WHISPER_MODELS to a directory on a disk with room',
       );
     }
     // The failure alone ("fetch failed") said nothing about what to do next.
