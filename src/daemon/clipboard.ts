@@ -475,6 +475,11 @@ export interface ClipboardOnceResult {
  * print the diff (or "no changes") and return. Exit code semantics for the
  * CLI: 0 unless `--paste` was requested and the keystroke failed.
  */
+/** The refusal of `--once --paste --dry-run`, thrown before the clipboard is read. */
+export const DRY_RUN_PASTE_ERROR =
+  '--paste cannot be combined with --dry-run: a dry run leaves the clipboard uncorrected, so the paste would send the original text; ' +
+  'run: lexicon daemon --once --dry-run to preview, or lexicon daemon --once --paste to correct and paste';
+
 export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise<ClipboardOnceResult> {
   const dryRun = opts.dryRun ?? false;
   const quiet = opts.quiet ?? false;
@@ -482,6 +487,10 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
   const platform = opts.platform ?? process.platform;
   const out = opts.out ?? ((s: string) => void process.stdout.write(s));
   const err = opts.err ?? ((s: string) => void process.stderr.write(s));
+
+  // A dry run leaves the clipboard as it was, so the paste that followed sent
+  // the uncorrected text to the frontmost app, with nothing saying so.
+  if (opts.paste && dryRun) throw new Error(DRY_RUN_PASTE_ERROR);
 
   const { read, write } = await resolveClipboard(opts);
   // A read past the backend's cap (MAX_CLIPBOARD_READ_BYTES) is the same

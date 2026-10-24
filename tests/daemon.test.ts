@@ -704,6 +704,23 @@ describe('runDaemonCommand', () => {
     expect(h.clipboard).toBe('meet Ashlr.AI');
   });
 
+  // Catches: --dry-run --paste pasted the uncorrected clipboard into the
+  // frontmost app without a word.
+  it('--once --paste --dry-run is refused before the clipboard is read or anything is pasted', async () => {
+    const read = vi.fn(async () => 'meet Ashler');
+    const sendPaste = vi.fn(async () => undefined);
+    const write = vi.fn(async () => undefined);
+    for (const run of [
+      () => runDaemonCommand({ once: true, paste: true, dryRun: true, read, write, sendPaste, platform: 'darwin' }),
+      () => runClipboardOnce({ paste: true, dryRun: true, read, write, sendPaste, platform: 'darwin' }),
+    ]) {
+      await expect(run()).rejects.toThrow('--paste cannot be combined with --dry-run');
+    }
+    expect(read).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+    expect(sendPaste).not.toHaveBeenCalled();
+  });
+
   it('--paste without --once is rejected', async () => {
     // Catches: the refusal named no command to run instead.
     await expect(runDaemonCommand({ paste: true, read: async () => '', write: async () => undefined })).rejects.toThrow(

@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon daemon --once --paste --dry-run` is refused before the clipboard is read, naming `--once --dry-run` to preview and `--once --paste` to correct and paste. The dry run left the clipboard uncorrected and the paste then sent the original text to the frontmost app without a word.
 - `lexicon daemon` exits 130 after ctrl-C and 143 after SIGTERM whether it stops gracefully or is forced by a second signal. A graceful stop exited 0 while the forced one exited 130 or 143, so the status depended on whether a clipboard read was in flight. `runClipboardDaemon` now resolves to what stopped it (`ClipboardDaemonStop`).
 - A `serve.json` token in upper-case hex is kept, by `lexicon serve` and by the browser extension's pairing. Only lower case counted as a token, so a hand-edited one was replaced and every client given it was refused. The bearer check is unchanged: exact and constant-time, so case is not folded.
 - `lexicon serve`, `--show` and `--install` say when a `serve.json` that parses has no usable token and a new one replaced it, naming the file, why (no `token` key, not a string, not 32 to 128 hex characters) and `lexicon serve --pair` or `--show` for paired clients, on stderr (`[serve] warning:` from a starting server). The token was replaced silently, so every paired client was refused with no word of why.
