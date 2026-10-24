@@ -16,6 +16,7 @@
  * both ways.
  */
 import type { ExportOptions, Lexicon } from '../types.js';
+import { compareCanonical } from './shared.js';
 
 /** What the text importer unescapes after a backslash. */
 const ESCAPABLE = '\\|,:=';
@@ -40,7 +41,7 @@ function escapeField(field: string, separators: string): string {
 }
 
 export function exportText(lexicon: Lexicon, _opts: ExportOptions = {}): string {
-  const terms = [...lexicon.terms].sort((a, b) => a.canonical.localeCompare(b.canonical));
+  const terms = [...lexicon.terms].sort((a, b) => compareCanonical(a.canonical, b.canonical));
   const lines = terms.map((t) => {
     const aliases = t.aliases.map((a) => a.trim()).filter(Boolean);
     const needsEquals = t.canonical.includes(':') || aliases.some((a) => a.includes(','));

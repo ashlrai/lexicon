@@ -58434,14 +58434,19 @@ function categoryRank2(category) {
 function isProperNounCategory(category) {
   return category === "brand" || category === "person" || category === "product";
 }
+var collator;
+function compareCanonical(a, b) {
+  collator ??= new Intl.Collator("en");
+  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+}
 function sortByImportance(terms) {
   return [...terms].sort(
-    (a, b) => (b.hits ?? 0) - (a.hits ?? 0) || Number(isProperNounCategory(b.category)) - Number(isProperNounCategory(a.category)) || a.canonical.localeCompare(b.canonical)
+    (a, b) => (b.hits ?? 0) - (a.hits ?? 0) || Number(isProperNounCategory(b.category)) - Number(isProperNounCategory(a.category)) || compareCanonical(a.canonical, b.canonical)
   );
 }
 function sortByCategory(terms) {
   return [...terms].sort(
-    (a, b) => categoryRank2(a.category) - categoryRank2(b.category) || a.canonical.localeCompare(b.canonical)
+    (a, b) => categoryRank2(a.category) - categoryRank2(b.category) || compareCanonical(a.canonical, b.canonical)
   );
 }
 function aliasPairs(lexicon) {
@@ -58661,7 +58666,7 @@ function escapeField(field, separators) {
   return out;
 }
 function exportText(lexicon, _opts = {}) {
-  const terms = [...lexicon.terms].sort((a, b) => a.canonical.localeCompare(b.canonical));
+  const terms = [...lexicon.terms].sort((a, b) => compareCanonical(a.canonical, b.canonical));
   const lines = terms.map((t) => {
     const aliases = t.aliases.map((a) => a.trim()).filter(Boolean);
     const needsEquals = t.canonical.includes(":") || aliases.some((a) => a.includes(","));

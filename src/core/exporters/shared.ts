@@ -23,21 +23,35 @@ export function isProperNounCategory(category: TermCategory | undefined): boolea
   return category === 'brand' || category === 'person' || category === 'product';
 }
 
-/** hits desc, then brand/person/product before the rest, then alphabetical. */
+let collator: Intl.Collator | undefined;
+
+/**
+ * Canonical A to Z, the same on every machine: a fixed `en` collation, then
+ * code units for the spellings it calls equal (`Café` precomposed and with a
+ * combining accent). `localeCompare` without a locale follows the user's, so
+ * under `LANG=sv_SE.UTF-8` `Äpple` sorted after `Zeta`: the same lexicon
+ * exported in another order, and `--limit` kept other terms.
+ */
+export function compareCanonical(a: string, b: string): number {
+  collator ??= new Intl.Collator('en');
+  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+}
+
+/** hits desc, then brand/person/product before the rest, then alphabetical (compareCanonical). */
 export function sortByImportance(terms: readonly Term[]): Term[] {
   return [...terms].sort(
     (a, b) =>
       (b.hits ?? 0) - (a.hits ?? 0) ||
       Number(isProperNounCategory(b.category)) - Number(isProperNounCategory(a.category)) ||
-      a.canonical.localeCompare(b.canonical),
+      compareCanonical(a.canonical, b.canonical),
   );
 }
 
-/** category rank, then alphabetical by canonical. */
+/** category rank, then alphabetical by canonical (compareCanonical). */
 export function sortByCategory(terms: readonly Term[]): Term[] {
   return [...terms].sort(
     (a, b) =>
-      categoryRank(a.category) - categoryRank(b.category) || a.canonical.localeCompare(b.canonical),
+      categoryRank(a.category) - categoryRank(b.category) || compareCanonical(a.canonical, b.canonical),
   );
 }
 

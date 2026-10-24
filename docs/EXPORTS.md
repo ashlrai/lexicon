@@ -28,7 +28,7 @@ lexicon export <format> --out <file>
 | `csv` | Generic `canonical,alias` | Anything else |
 | `json` | Raw lexicon JSON | Scripts, backups |
 
-`lexicon export` with no format lists them. `--category brand person` limits the export to those categories. `--limit N` caps term count.
+`lexicon export` with no format lists them. `--category brand person` limits the export to those categories. `--limit N` caps term count. The order is the same on every machine: names sort A to Z by a fixed English collation, not the system locale, so one lexicon always exports byte for byte the same and `--limit` keeps the same terms.
 
 `--json` prints one document instead, for scripts and agents: `{ ok: true, format, terms, bytes, path }` after writing `--out` (`terms` counts what `--category` and `--limit` kept; the one-row-per-alias formats csv, wispr, superwhisper, macos and espanso add `rows`, the rows written, since a term without an alias writes none), `{ ok: true, format, terms, bytes, content }` with the export as a string when there is no `--out`, and `{ ok: true, formats }` with no format. A failure is `{ ok: false, error, nextStep }`.
 
