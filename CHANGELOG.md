@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon normalize --json` with empty text pretty-prints its document like every other `normalize --json` result; it was the one printed on a single line.
 - `lexicon voice --status --json` leads with `ok`, as every other object-shaped `--json` document does: `{ ok: true, recording: true, since, pid }` while recording, `{ ok: false, recording: false }` when idle (exit 1, as before). It printed `{ recording }` alone.
 - `lexicon install <client> --json` names a refusal (an unknown client, a bad `--scope`) on stderr as well as in the `{ ok: false, error, nextStep }` document, as every other `--json` refusal does; stderr was empty.
 - `lexicon add <canonical> --json` on an existing term, with no aliases given, listed every generated spelling under `suggested` though none was added (only a term the call creates gets them, and the text output marked none). `suggested` is now `[]` there. `lexicon add --help` and `docs/CONTRACT.md` name the `--json` keys, `scope` and `suggested` included.

@@ -808,7 +808,8 @@ export async function runNormalize(
       `lexicon: no text to correct (${fromArgs ? 'the argument was empty' : 'stdin was empty'}); ` +
         'pass it as arguments: lexicon normalize "ping ashler", or pipe it in: echo "ping ashler" | lexicon normalize\n',
     );
-    if (opts.json) line(io, JSON.stringify(jsonOk({ input: '', output: '', replacements: [], changed: false })));
+    // Pretty-printed like every other normalize --json document.
+    if (opts.json) line(io, JSON.stringify(jsonOk({ input: '', output: '', replacements: [], changed: false }), null, 2));
     return 0;
   }
 

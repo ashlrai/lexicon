@@ -323,6 +323,9 @@ describe('normalize', () => {
     const empty = makeIO();
     expect(await runNormalize([], { json: true }, empty, async () => '')).toBe(0);
     expect(JSON.parse(empty.out)).toEqual({ ok: true, input: '', output: '', replacements: [], changed: false });
+    // Catches: the empty-text document was the one normalize --json printed on a single line.
+    expect(empty.out).toBe(`${JSON.stringify(JSON.parse(empty.out), null, 2)}\n`);
+    expect(good.out).toBe(`${JSON.stringify(JSON.parse(good.out), null, 2)}\n`);
     // Catches: empty stdin exited 0 without a word. stdout and the exit code stay as they were.
     expect(empty.err).toBe('lexicon: no text to correct (stdin was empty); pass it as arguments: lexicon normalize "ping ashler", or pipe it in: echo "ping ashler" | lexicon normalize\n');
     const plainEmpty = makeIO();
