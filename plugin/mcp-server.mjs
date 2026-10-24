@@ -60585,14 +60585,23 @@ function exportMacos(lexicon, _opts = {}, sink) {
     "<array>"
   ];
   let stripped = 0;
+  const unencodable = [];
   const pairs = [];
   for (const pair of aliasPairs(lexicon)) {
-    if (findUnencodableChar(pair.alias) !== void 0 || findUnencodableChar(pair.canonical) !== void 0) continue;
+    if (findUnencodableChar(pair.alias) !== void 0 || findUnencodableChar(pair.canonical) !== void 0) {
+      unencodable.push(pair);
+      continue;
+    }
     const alias = stripXmlControls(pair.alias).trim();
     const canonical = stripXmlControls(pair.canonical);
     if (alias !== pair.alias || canonical !== pair.canonical) stripped += 1;
     if (alias === "" || canonical.trim() === "") continue;
     pairs.push({ ...pair, alias, canonical });
+  }
+  if (unencodable.length > 0) {
+    sink?.notes.push(
+      `left out ${unencodable.length} pair${unencodable.length === 1 ? "" : "s"} holding a character XML cannot hold even as a reference (U+FFFE, U+FFFF or an unpaired surrogate): ${quotedNames(unencodable.map((p) => `${p.alias} -> ${p.canonical}`))}`
+    );
   }
   const { kept, dropped } = uniqueTriggers(pairs, (a) => a.toLowerCase());
   const shared = sharedTriggerNote(dropped, "shortcut");
