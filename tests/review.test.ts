@@ -676,6 +676,23 @@ describe('review', () => {
     expect(io.out).not.toContain('Wrote');
   });
 
+  // Catches: a term edited with p (or e, n) and then left with q or ctrl-D was
+  // counted among the terms "not reviewed (left as they were)", though its
+  // edit was written.
+  it('a term edited before q or ctrl-D is not counted as left as it was', async () => {
+    await seedGlobal(terms);
+    const quit = makeIO();
+    expect(await runReview({ globalPath }, quit, scripted(['k', 'p', 'STAYL', 'q']))).toBe(0);
+    expect(quit.out).toContain(`kept 1, removed 0, edited 1, 2 not reviewed (left as they were). Wrote ${globalPath}`);
+    expect((await readYaml(globalPath)).terms.find((t) => t.canonical === 'Stale')?.phonetic).toBe('STAYL');
+
+    await seedGlobal(terms);
+    const closed = makeIO();
+    expect(await runReview({ globalPath }, closed, closingAfter(['k', 'n', 'a note']))).toBe(0);
+    expect(closed.out).toContain('input closed at term 2 of 4; keeping the answers given before it');
+    expect(closed.out).toContain(`kept 1, removed 0, edited 1, 2 not reviewed (left as they were). Wrote ${globalPath}`);
+  });
+
   it('q and ctrl-D say how many terms were not reviewed, and ctrl-D keeps the answers given', async () => {
     await seedGlobal(terms);
     const quit = makeIO();

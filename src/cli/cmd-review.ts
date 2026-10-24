@@ -609,7 +609,10 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   } finally {
     if (own) p.close();
   }
-  const notReviewed = subject.length - stoppedAt;
+  // The term on screen when `q` or ctrl-D came is not "left as it was" when
+  // an `e`, `p` or `n` already changed it: that edit is kept and written.
+  const editedInProgress = stoppedAt < subject.length && editedTerms.has(subject[stoppedAt]) ? 1 : 0;
+  const notReviewed = subject.length - stoppedAt - editedInProgress;
 
   let mergedElsewhere = 0;
   if (changed) {
