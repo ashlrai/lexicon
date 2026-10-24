@@ -939,6 +939,21 @@ describe('runHook', () => {
       // A cap smaller than header + footer still holds: hard cut.
       expect(truncateSessionContext(table, 20).length).toBeLessThanOrEqual(20);
     });
+
+    // Catches: the loop stopped at the first row that did not fit, so one long
+    // row near the top hid every later short row that would have fit.
+    it('truncateSessionContext skips a row that does not fit and keeps the later ones that do', async () => {
+      const { truncateSessionContext } = await import('../src/hooks/user-prompt-submit.js');
+      const long = `| Long | ${'x'.repeat(400)} |`;
+      const rows = ['| row0 | a |', long, ...Array.from({ length: 10 }, (_, i) => `| row${i + 1} | a |`)];
+      const table = ['## H', '', '| a | b |', '| --- | --- |', ...rows, '', 'footer'].join('\n');
+      const cut = truncateSessionContext(table, 400);
+      expect(cut.length).toBeLessThanOrEqual(400);
+      expect(cut).not.toContain('| Long |');
+      expect((cut.match(/^\| row\d+ \|/gm) ?? []).length).toBe(11);
+      expect(cut).toMatch(/^\.\.\. 1 more term; read the lexicon:\/\/me resource/m);
+      expect(cut.indexOf('| row10 |')).toBeLessThan(cut.indexOf('... 1 more term'));
+    });
   });
 });
 

@@ -21199,7 +21199,7 @@ function truncateSessionContext(text, max = SESSION_CONTEXT_MAX_CHARS) {
   let used = fixed;
   const kept = [];
   for (const row of rows) {
-    if (used + row.length + 1 > max) break;
+    if (used + row.length + 1 > max) continue;
     used += row.length + 1;
     kept.push(row);
   }
