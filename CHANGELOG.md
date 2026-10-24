@@ -29,6 +29,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- The `serve.log` cap also empties the log when the server's descriptor can only append (as on Windows), by truncating the file by path, and compares file ids exactly. Before, the copy to `serve.log.1` was made but the log kept its size, which turned main CI red on Windows.
 - A LEXICON_PATH under a regular file (`notes.txt\lexicon.yaml`) is named as unreadable on Windows too. Windows answers such a path with ENOENT rather than ENOTDIR, so the lexicon read as missing there and only a later write failed.
 - `lexicon stats` no longer says hits are counted when `lexicon normalize` fixes something. `lexicon normalize` is a filter and records no hits, so a user who tried it saw the counts never move; the line now names the prompt hook, the MCP server, `lexicon voice`, the clipboard daemon and `lexicon serve`, and says `lexicon normalize` does not count.
 - `lexicon suggest --project --json` names the project lexicon as the `scope` and `path` of a new-term suggestion. It named the global file, though `--yes` and `--apply` with `--project` write new terms to the project lexicon.

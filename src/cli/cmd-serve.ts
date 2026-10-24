@@ -117,12 +117,19 @@ export const SERVE_LOG_MAX_BYTES = 4 * 1024 * 1024;
  */
 export async function capServiceLog(logPath: string, fd: number, max: number = SERVE_LOG_MAX_BYTES): Promise<boolean> {
   try {
-    const target = fstatSync(fd);
-    if (!target.isFile() || target.size <= max || target.ino === 0) return false;
-    const file = await fs.stat(logPath);
+    // bigint: Windows file ids can pass 2^53, where number stats round.
+    const target = fstatSync(fd, { bigint: true });
+    if (!target.isFile() || target.size <= BigInt(max) || target.ino === 0n) return false;
+    const file = await fs.stat(logPath, { bigint: true });
     if (file.dev !== target.dev || file.ino !== target.ino) return false;
     await fs.copyFile(logPath, `${logPath}.1`);
-    ftruncateSync(fd, 0);
+    try {
+      ftruncateSync(fd, 0);
+    } catch {
+      // A descriptor opened for appending only (Windows) cannot set the end
+      // of file; truncating by path does the same to the same file.
+      await fs.truncate(logPath, 0);
+    }
     return true;
   } catch {
     return false;

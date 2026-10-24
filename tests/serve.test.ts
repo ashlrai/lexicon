@@ -2342,6 +2342,17 @@ describe('lexicon serve (CLI)', () => {
         await handle.write('small\n');
         expect(await capServiceLog(logPath, handle.fd)).toBe(false);
         expect(await fs.readFile(logPath, 'utf8')).toBe('small\n');
+        // A descriptor that cannot set the end of file (append-only on
+        // Windows, read-only here) still gets the file emptied, by path.
+        await fs.writeFile(logPath, 'z'.repeat(SERVE_LOG_MAX_BYTES + 1));
+        const readOnly = await fs.open(logPath, 'r');
+        try {
+          expect(await capServiceLog(logPath, readOnly.fd)).toBe(true);
+        } finally {
+          await readOnly.close();
+        }
+        expect((await fs.stat(logPath)).size).toBe(0);
+        expect((await fs.stat(`${logPath}.1`)).size).toBe(SERVE_LOG_MAX_BYTES + 1);
       } finally {
         await handle.close();
         await otherHandle.close();
