@@ -715,6 +715,40 @@ describe('a preview of an entry already installed says so', () => {
   });
 });
 
+// Catches: `install claude --scope project` registered the server in the
+// repo's .mcp.json but merged the hooks into the user's ~/.claude/settings.json,
+// so the repo had no hooks and every other project got them, and the output
+// never said which file was which scope.
+describe('install claude --scope project writes the repo hooks', () => {
+  it('merges the hooks into <cwd>/.claude/settings.json and names it as project scope', async () => {
+    const calls: string[][] = [];
+    const io = makeIO();
+    const code = await runInstall('claude', { apply: true, scope: 'project', home, cwd }, io, {
+      cliDir: CLI_DIR,
+      env: { PATH: '' },
+      exec: (_file, args) => {
+        calls.push([...args]);
+        return 'Added stdio MCP server lexicon to project config';
+      },
+    });
+    expect(code).toBe(0);
+    expect(calls[0]).toContain('project');
+    const projectSettings = path.join(cwd, '.claude', 'settings.json');
+    const written = await readJson(projectSettings);
+    expect(Object.keys(written.hooks as Record<string, unknown>)).toEqual(['UserPromptSubmit', 'SessionStart']);
+    await expect(fs.access(path.join(home, '.claude', 'settings.json'))).rejects.toThrow();
+    expect(io.out).toContain(`merge into ${projectSettings} (project scope: the repo's shared settings, read for this project only):`);
+    expect(io.out).toContain(`in ${projectSettings} (this run created the file, so deleting it undoes step 2)`);
+  });
+
+  it('a user-scope install still uses the home settings.json', async () => {
+    const io = makeIO();
+    await runInstall('claude', { apply: true, home, cwd }, io, { cliDir: CLI_DIR, env: { PATH: '' }, exec: () => 'Added' });
+    expect(Object.keys((await readJson(path.join(home, '.claude', 'settings.json'))).hooks as object)).toContain('UserPromptSubmit');
+    await expect(fs.access(path.join(cwd, '.claude', 'settings.json'))).rejects.toThrow();
+  });
+});
+
 describe('claude registration is idempotent', () => {
   it('reports an existing `claude mcp add` entry as unchanged rather than failed', async () => {
     const io = makeIO();

@@ -63021,7 +63021,9 @@ async function installText(client, opts, io, deps) {
     const claudeOpts = { ...opts, scope: project ? "project" : "user" };
     const claudeDeps = {
       ...deps.cliDir ? { cliDir: deps.cliDir } : {},
-      ...opts.home ? { settingsPath: import_node_path20.default.join(claudeConfigDir(process.env, home), "settings.json") } : {},
+      // A project-scope install writes the repo's .claude/settings.json (see
+      // claudeSettingsPathFor), whatever the home directory.
+      ...opts.home && !project ? { settingsPath: import_node_path20.default.join(claudeConfigDir(process.env, home), "settings.json") } : {},
       ...deps.onWritten ? { onWritten: deps.onWritten } : {},
       ...deps.exec ? { exec: deps.exec } : {},
       env
@@ -63066,13 +63068,16 @@ async function installedLexiconPlugin(settingsPath, installedPluginsPath) {
   const installed = await readJsonFile(installedPluginsPath);
   return findInstalledLexiconPlugin(settings.error === void 0 ? settings.value : void 0, installed.error === void 0 ? installed.value : void 0);
 }
+function claudeSettingsPathFor(scope, cwd, env = process.env) {
+  return scope === "project" ? import_node_path20.default.join(cwd, ".claude", "settings.json") : import_node_path20.default.join(claudeConfigDir(env), "settings.json");
+}
 var CLAUDE_MD_SNIPPET = "Read the `lexicon://me` resource before interpreting dictated text.";
 async function runInstallClaude(opts, io, deps = {}) {
   const scope = opts.scope ?? "user";
   if (scope !== "user" && scope !== "project") {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
-  const settingsPath = deps.settingsPath ?? import_node_path20.default.join(claudeConfigDir(), "settings.json");
+  const settingsPath = deps.settingsPath ?? claudeSettingsPathFor(scope, import_node_path20.default.resolve(opts.cwd ?? process.cwd()));
   if (scope === "user") {
     const pluginId = await installedLexiconPlugin(
       settingsPath,
@@ -63121,7 +63126,7 @@ async function runInstallClaude(opts, io, deps = {}) {
   const hookCommand = launchCommandLine(hookLaunch);
   const hookTimeout = hookTimeoutFor(hookLaunch);
   line(io, bold(`2. Add the ${HOOK_EVENTS.join(" and ")} hooks`));
-  line(io, `   merge into ${safe(settingsPath)}:`);
+  line(io, `   ${opts.apply ? "merge into" : "would merge into"} ${safe(settingsPath)}${scope === "project" ? " (project scope: the repo's shared settings, read for this project only)" : ""}:`);
   line(io, indent(JSON.stringify(hookConfigFor(hookCommand, hookTimeout, HOOK_EVENTS), null, 2), "   "));
   if (hookLaunch.viaNpx) {
     line(io, dim(`   (npx re-resolves the package each prompt: ~1s, hence the ${hookTimeout}s timeout.`));

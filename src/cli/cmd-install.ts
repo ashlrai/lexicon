@@ -789,7 +789,9 @@ async function installText(
     const claudeOpts = { ...opts, scope: project ? 'project' : 'user' };
     const claudeDeps = {
       ...(deps.cliDir ? { cliDir: deps.cliDir } : {}),
-      ...(opts.home ? { settingsPath: path.join(claudeConfigDir(process.env, home), 'settings.json') } : {}),
+      // A project-scope install writes the repo's .claude/settings.json (see
+      // claudeSettingsPathFor), whatever the home directory.
+      ...(opts.home && !project ? { settingsPath: path.join(claudeConfigDir(process.env, home), 'settings.json') } : {}),
       ...(deps.onWritten ? { onWritten: deps.onWritten } : {}),
       ...(deps.exec ? { exec: deps.exec } : {}),
       env,
@@ -897,6 +899,18 @@ async function installedLexiconPlugin(settingsPath: string, installedPluginsPath
   return findInstalledLexiconPlugin(settings.error === undefined ? settings.value : undefined, installed.error === undefined ? installed.value : undefined);
 }
 
+/**
+ * The settings.json `install claude` merges its hooks into: the user's
+ * (`$CLAUDE_CONFIG_DIR/settings.json`, else `~/.claude/settings.json`) at user
+ * scope, and the repo's shared `.claude/settings.json` under `cwd` at project
+ * scope, beside the `.mcp.json` that `claude mcp add --scope project` writes.
+ * Project-scope hooks went to the user's file, so the repo was left with the
+ * MCP server only and every other project on the machine got the hooks.
+ */
+export function claudeSettingsPathFor(scope: 'user' | 'project', cwd: string, env: NodeJS.ProcessEnv = process.env): string {
+  return scope === 'project' ? path.join(cwd, '.claude', 'settings.json') : path.join(claudeConfigDir(env), 'settings.json');
+}
+
 export const CLAUDE_MD_SNIPPET = 'Read the `lexicon://me` resource before interpreting dictated text.';
 
 export async function runInstallClaude(
@@ -908,7 +922,7 @@ export async function runInstallClaude(
   if (scope !== 'user' && scope !== 'project') {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
-  const settingsPath = deps.settingsPath ?? path.join(claudeConfigDir(), 'settings.json');
+  const settingsPath = deps.settingsPath ?? claudeSettingsPathFor(scope, path.resolve(opts.cwd ?? process.cwd()));
   // The plugin already runs the MCP server and both hooks for every session.
   // A user-scope registration on top of it doubled the hook notes on every
   // prompt and added a second `lexicon` server (setup_lexicon from a plugin
@@ -975,7 +989,7 @@ export async function runInstallClaude(
   const hookCommand = launchCommandLine(hookLaunch);
   const hookTimeout = hookTimeoutFor(hookLaunch);
   line(io, bold(`2. Add the ${HOOK_EVENTS.join(' and ')} hooks`));
-  line(io, `   merge into ${safe(settingsPath)}:`);
+  line(io, `   ${opts.apply ? 'merge into' : 'would merge into'} ${safe(settingsPath)}${scope === 'project' ? ' (project scope: the repo\'s shared settings, read for this project only)' : ''}:`);
   line(io, indent(JSON.stringify(hookConfigFor(hookCommand, hookTimeout, HOOK_EVENTS), null, 2), '   '));
   if (hookLaunch.viaNpx) {
     line(io, dim(`   (npx re-resolves the package each prompt: ~1s, hence the ${hookTimeout}s timeout.`));
