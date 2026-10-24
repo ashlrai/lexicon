@@ -284,7 +284,15 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
     return 0;
   }
   if (suggestions.length === 0) {
-    line(io, dim('no suggestions: dictate with `lexicon voice` for a while, or run `lexicon suggest --harvest` inside a repo'));
+    // After --harvest it still said to run --harvest, the step just taken.
+    line(
+      io,
+      dim(
+        harvestDir === undefined
+          ? 'no suggestions: dictate with `lexicon voice` for a while, or run `lexicon suggest --harvest` inside a repo'
+          : `no suggestions: the voice history and ${safe(harvestDir)} hold nothing the lexicon does not already have; dictate with \`lexicon voice\` for a while`,
+      ),
+    );
     return 0;
   }
 
