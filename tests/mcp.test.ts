@@ -494,6 +494,20 @@ describe('lexicon MCP server', () => {
     }
   });
 
+  // Catches: category other left out a term with no category, which
+  // export_lexicon and the rest of the code count as other.
+  it('list_terms with category other returns the terms without a category', async () => {
+    const mixed: Lexicon = { version: 1, terms: [...fixtureLexicon.terms, { canonical: 'Plain', aliases: ['plane'], scope: 'global' }] };
+    mocks.loadLexicon.mockResolvedValueOnce({ ...loaded, merged: mixed });
+    const { client, close } = await connect();
+    try {
+      const payload = JSON.parse(textOf(await client.callTool({ name: 'list_terms', arguments: { category: 'other' } }))) as { terms: Term[] };
+      expect(payload.terms.map((t) => t.canonical)).toEqual(['Plain']);
+    } finally {
+      await close();
+    }
+  });
+
   it('list_terms filters case-insensitively over canonical and aliases', async () => {
     const { client, close } = await connect();
     try {
@@ -1842,7 +1856,9 @@ describe('lexicon MCP server', () => {
       }
     });
 
-    it('setup_lexicon relays a failing apply as ok: false with its stderr', async () => {
+    // Catches: a failed step came back ok: false but not isError, so an agent
+    // that reads only isError told the user the setup was done.
+    it('setup_lexicon relays a failing apply as an ok: false error result with its stderr', async () => {
       cli.runSetup.mockImplementationOnce(async (_o: unknown, io: IO) => {
         io.stderr('setup: claude mcp add failed\n');
         return { code: 1, summary: { ...setupSummary, clients: [{ name: 'claude', status: 'failed', detail: 'claude mcp add failed' }] } };
@@ -1850,7 +1866,7 @@ describe('lexicon MCP server', () => {
       const { client, close } = await connect();
       try {
         const result = await client.callTool({ name: 'setup_lexicon', arguments: { apply: true, clients: ['claude'] } });
-        expect(result.isError).toBe(false);
+        expect(result.isError).toBe(true);
         expect(JSON.parse(textOf(result))).toMatchObject({ ok: false, applied: true, stderr: 'setup: claude mcp add failed' });
       } finally {
         await close();

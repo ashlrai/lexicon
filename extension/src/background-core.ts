@@ -20,6 +20,7 @@ import {
   pairPortOrigins,
   PAIR_PATH,
   hostKey,
+  isCorrection,
   RECENT_LIMIT,
   STORAGE_KEYS,
   TOKEN_BACKOFF_MAX_MS,
@@ -224,13 +225,13 @@ export function createBackground(deps: BackgroundDeps): Background {
   async function getRecent(): Promise<Correction[]> {
     const raw = await deps.store.get([STORAGE_KEYS.recent]);
     const list = raw[STORAGE_KEYS.recent];
-    return Array.isArray(list) ? (list as Correction[]) : [];
+    return Array.isArray(list) ? (list as unknown[]).filter(isCorrection) : [];
   }
 
   async function recordRecent(corrections: Correction[]): Promise<void> {
     if (corrections.length === 0) return;
     const recent = await getRecent();
-    const next = [...corrections.map((c) => ({ ...c })), ...recent].slice(0, RECENT_LIMIT);
+    const next = [...corrections.filter(isCorrection).map((c) => ({ ...c })), ...recent].slice(0, RECENT_LIMIT);
     await deps.store.set({ [STORAGE_KEYS.recent]: next });
   }
 
@@ -338,7 +339,9 @@ export function createBackground(deps: BackgroundDeps): Background {
 
   async function apiNormalize(settings: Settings, body: string, text: string): Promise<NormalizeReply> {
     const raw = (await fetchJson(settings, '/normalize', { method: 'POST', body })) as Partial<ApiNormalize>;
-    if (typeof raw.output !== 'string' || !Array.isArray(raw.replacements)) {
+    // Each entry too: one of another shape was kept in "recent" and broke
+    // the popup's list, and the content script rewrites from these.
+    if (typeof raw.output !== 'string' || !Array.isArray(raw.replacements) || !(raw.replacements as unknown[]).every(isCorrection)) {
       throw new Error(NORMALIZE_SHAPE_MESSAGE);
     }
     return {

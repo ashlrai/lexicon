@@ -5,15 +5,16 @@
  */
 import type { ExportOptions, Lexicon } from '../types.js';
 import { findUnencodableChar } from '../schema.js';
-import { aliasPairs, sharedTriggerNote, uniqueTriggers, xmlEscape } from './shared.js';
+import { aliasPairs, quotedNames, sharedTriggerNote, uniqueTriggers, xmlEscape } from './shared.js';
 import type { AliasPair, ExportSink } from './shared.js';
 
 /**
  * One dict per alias. A pair with a character XML 1.0 cannot hold, not even
  * as a character reference (U+FFFE, U+FFFF or an unpaired surrogate, what
  * the schema's findUnencodableChar finds), is left out: written, it made the
- * whole plist unreadable, and every other replacement with it. The schema
- * refuses these in a lexicon file; a lexicon built in memory can still hold one.
+ * whole plist unreadable, and every other replacement with it. A note names
+ * it. The schema refuses these in a lexicon file; a lexicon built in memory
+ * can still hold one.
  *
  * Two terms sharing an alias wrote two entries with one shortcut, and macOS
  * then replaces it with either. The term `uniqueTriggers` ranks first keeps
@@ -41,14 +42,23 @@ export function exportMacos(lexicon: Lexicon, _opts: ExportOptions = {}, sink?: 
   ];
   // Controls removed first, so two shortcuts that differ only by one are one shortcut.
   let stripped = 0;
+  const unencodable: AliasPair[] = [];
   const pairs: AliasPair[] = [];
   for (const pair of aliasPairs(lexicon)) {
-    if (findUnencodableChar(pair.alias) !== undefined || findUnencodableChar(pair.canonical) !== undefined) continue;
+    if (findUnencodableChar(pair.alias) !== undefined || findUnencodableChar(pair.canonical) !== undefined) {
+      unencodable.push(pair);
+      continue;
+    }
     const alias = stripXmlControls(pair.alias).trim();
     const canonical = stripXmlControls(pair.canonical);
     if (alias !== pair.alias || canonical !== pair.canonical) stripped += 1;
     if (alias === '' || canonical.trim() === '') continue;
     pairs.push({ ...pair, alias, canonical });
+  }
+  if (unencodable.length > 0) {
+    sink?.notes.push(
+      `left out ${unencodable.length} pair${unencodable.length === 1 ? '' : 's'} holding a character XML cannot hold even as a reference (U+FFFE, U+FFFF or an unpaired surrogate): ${quotedNames(unencodable.map((p) => `${p.alias} -> ${p.canonical}`))}`,
+    );
   }
   const { kept, dropped } = uniqueTriggers(pairs, (a) => a.toLowerCase());
   const shared = sharedTriggerNote(dropped, 'shortcut');
