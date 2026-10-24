@@ -42405,7 +42405,11 @@ async function readLexiconText(filePath) {
     const { bytes, mode } = await readBoundedRegularFile(filePath, MAX_LEXICON_BYTES);
     return { text: bytes.toString("utf8"), mode, bytes };
   } catch (err) {
-    if (isEnoent(err)) return void 0;
+    if (isEnoent(err)) {
+      const inTheWay = await fileInTheWay(import_node_path4.default.dirname(filePath));
+      if (inTheWay === void 0) return void 0;
+      throw Object.assign(new Error(`Cannot read lexicon at ${filePath}: ${inTheWay} is not a directory, so no lexicon file can be there`, { cause: err }), { code: "ENOTDIR" });
+    }
     if (isBoundedReadError(err)) {
       throw new Error(
         err.reason === "not-regular" ? `Refusing to read lexicon at ${filePath}: not a regular file` : `Refusing to read lexicon at ${filePath}: ${err.size ?? "more than"} bytes exceeds the ${MAX_LEXICON_BYTES} byte limit`
@@ -42419,6 +42423,15 @@ async function unreadableLexiconError(filePath, err) {
   if (typeof code !== "string") return err instanceof Error ? err : new Error(errorMessage(err));
   const detail = code === "ENOTDIR" ? `${await blockingFile(import_node_path4.default.dirname(filePath))} is not a directory, so no lexicon file can be there` : code === "EACCES" || code === "EPERM" ? `permission denied (${code})` : errorMessage(err);
   return Object.assign(new Error(`Cannot read lexicon at ${filePath}: ${detail}`, { cause: err }), { code });
+}
+async function fileInTheWay(dir) {
+  for (let p = dir; ; p = import_node_path4.default.dirname(p)) {
+    try {
+      return (await import_node_fs5.promises.stat(p)).isDirectory() ? void 0 : p;
+    } catch {
+    }
+    if (import_node_path4.default.dirname(p) === p) return void 0;
+  }
 }
 function parseLexiconText(text, filePath, scope) {
   let raw;
