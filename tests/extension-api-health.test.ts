@@ -208,3 +208,22 @@ describe('extension /health identity', () => {
     expect(ok.server).toEqual({ ok: true, version: '9.9.9', terms: 3 });
   });
 });
+
+describe('extension status in the Embedded mode', () => {
+  // Catches: the popup's status probed /health in the Embedded mode, where no
+  // server is configured, so every popup open sent a request nobody used.
+  it('does not probe a server in the Embedded mode unless Test connection asks', async () => {
+    const fetchMock = vi.fn(async () => json(HEALTH));
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore({ settings: { mode: 'embedded' } }), defaultYaml: EXAMPLE_YAML });
+    const status = (await bg.handle({ type: 'status' })) as StatusReply;
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(status).toMatchObject({ configuredMode: 'embedded', activeMode: 'embedded', server: null });
+    expect(status.serverError).toBeUndefined();
+    expect(statusView(status).line).not.toMatch(/server/);
+    // Options > Test connection is a request to check the server.
+    const probed = (await bg.handle({ type: 'status', probe: true })) as StatusReply;
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(probed.server).toEqual({ ok: true, version: '9.9.9', terms: 3 });
+    expect(probed.activeMode).toBe('embedded');
+  });
+});

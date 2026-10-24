@@ -375,7 +375,10 @@ export function createBackground(deps: BackgroundDeps): Background {
 
   async function statusReq(probe: boolean): Promise<StatusReply> {
     const settings = await getSettings();
-    const h = settings.mode === 'api' ? await health(settings, true) : await health(settings);
+    // The Embedded mode uses no server, so the popup does not probe one;
+    // Test connection (`probe`) still asks, since that is what it is for.
+    const h: Pick<HealthCache, 'health' | 'error'> =
+      settings.mode === 'api' || probe ? await health(settings, true) : { health: null };
     // /health needs no token, so a reachable server says nothing about the
     // stored one. Prove it on a bearer route, or "Test connection" reports
     // Connected while every /normalize falls back with a 401.
