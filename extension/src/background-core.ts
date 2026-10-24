@@ -143,6 +143,23 @@ export function tooLargeForApiMessage(bytes: number): string {
   return `the text is ${bytes} bytes as a request, over the 1 MB lexicon serve accepts, so the embedded lexicon checked it`;
 }
 
+/**
+ * A /health body with lexicon serve's shape (src/serve/server.ts
+ * HealthResponse): a boolean `ok`, a non-empty `version` string and a
+ * whole-number `terms`. Any `{ ok: true }` used to count, so another program
+ * on the port read as the server and every correction was posted to it.
+ */
+export function isLexiconHealth(raw: unknown): raw is { ok: boolean; version: string; terms: number } {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return false;
+  const r = raw as { ok?: unknown; version?: unknown; terms?: unknown };
+  return typeof r.ok === 'boolean' && typeof r.version === 'string' && r.version.length > 0 && Number.isInteger(r.terms) && (r.terms as number) >= 0;
+}
+
+/** What status and a fallback say when something other than lexicon serve answers /health. */
+export function foreignHealthMessage(baseUrl: string): string {
+  return `something answered ${baseUrl}/health, but not as lexicon serve does; another program may hold the port. Run \`lexicon serve --status\` to check, or point Options at the port lexicon serve uses`;
+}
+
 /** What a request that never reached the server says: where it went and how to start the server. */
 export function unreachableMessage(baseUrl: string): string {
   return `cannot reach lexicon serve at ${baseUrl}; start it with \`lexicon serve\` (or \`lexicon serve --install\` to start it at login)`;
@@ -278,12 +295,12 @@ export function createBackground(deps: BackgroundDeps): Background {
   async function health(settings: Settings, force = false): Promise<HealthCache> {
     if (!force && healthCache && healthCache.baseUrl === settings.baseUrl && now() - healthCache.at < HEALTH_TTL_MS) return healthCache;
     try {
-      const raw = (await fetchJson(settings, '/health', { auth: false })) as Partial<ServerHealth>;
-      const h: ServerHealth = {
-        ok: raw.ok === true,
-        version: typeof raw.version === 'string' ? raw.version : '?',
-        terms: typeof raw.terms === 'number' ? raw.terms : 0,
-      };
+      const raw = (await fetchJson(settings, '/health', { auth: false })) as unknown;
+      if (!isLexiconHealth(raw)) {
+        healthCache = { at: now(), baseUrl: settings.baseUrl, health: null, error: foreignHealthMessage(settings.baseUrl) };
+        return healthCache;
+      }
+      const h: ServerHealth = { ok: raw.ok === true, version: raw.version, terms: raw.terms };
       healthCache = { at: now(), baseUrl: settings.baseUrl, health: h.ok ? h : null, error: h.ok ? undefined : `server reports not ok; ${SERVE_STATUS_STEP}` };
     } catch (err) {
       healthCache = { at: now(), baseUrl: settings.baseUrl, health: null, error: errorMessage(err) };

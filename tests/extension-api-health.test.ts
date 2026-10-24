@@ -183,3 +183,28 @@ describe('extension request timeouts', () => {
     expect(await norm).toMatchObject({ ok: true, mode: 'embedded', fallback: `API /normalize timed out after ${FETCH_TIMEOUT_MS} ms; run \`lexicon serve --status\` to check the server` });
   });
 });
+
+describe('extension /health identity', () => {
+  // Catches: any 2xx `{ ok: true }` counted as lexicon serve, so another
+  // program on the port read as Connected and every correction was posted to it.
+  it('counts only a /health with lexicon serve fields as the server', async () => {
+    for (const body of [{ ok: true }, { ok: true, version: '', terms: 1 }, { ok: true, version: '1', terms: '3' }, { ok: true, status: 'UP' }, null, [], 'ok']) {
+      const fetchMock = vi.fn(async (url: string) => (url.endsWith('/health') ? json(body) : json(normalized('ping ashler'))));
+      const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore({ settings: { token: TOKEN } }), defaultYaml: EXAMPLE_YAML });
+      const status = (await bg.handle({ type: 'status' })) as StatusReply;
+      expect(status.server, JSON.stringify(body)).toBeNull();
+      expect(status.activeMode).toBe('embedded');
+      expect(status.serverError).toBe(
+        'something answered http://127.0.0.1:41733/health, but not as lexicon serve does; another program may hold the port. Run `lexicon serve --status` to check, or point Options at the port lexicon serve uses',
+      );
+      const reply = (await bg.handle({ type: 'normalize', text: 'ping ashler' })) as NormalizeReply & { ok: true };
+      expect(reply.mode).toBe('embedded');
+      // Nothing was posted to the other program.
+      expect(fetchMock.mock.calls.some(([u]) => String(u).endsWith('/normalize'))).toBe(false);
+    }
+    // The real shape (src/serve/server.ts HealthResponse) still counts.
+    const real = vi.fn(async (url: string) => (url.endsWith('/health') ? json(HEALTH) : json({ termCount: 3 })));
+    const ok = (await createBackground({ fetch: real as unknown as typeof fetch, store: memoryStore({ settings: { token: TOKEN } }), defaultYaml: EXAMPLE_YAML }).handle({ type: 'status' })) as StatusReply;
+    expect(ok.server).toEqual({ ok: true, version: '9.9.9', terms: 3 });
+  });
+});
