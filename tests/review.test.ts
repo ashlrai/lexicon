@@ -727,6 +727,32 @@ describe('review', () => {
     expect(again.out).toContain('no terms to review');
   });
 
+  // Catches: a trusted project file rewritten by hand (a git pull) during the review had its unreviewed terms merged
+  // into the review's write, which then re-pinned trust, so terms nobody ran lexicon trust on became trusted.
+  it('--project does not merge and trust a project file someone else rewrote during the review', async () => {
+    await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: Proj\n    aliases: [prodge]\n  - canonical: Old\n    aliases: [olde]\n', 'utf8');
+    await trustProject(projectPath, { globalPath });
+    const pulled = 'version: 1\nterms:\n  - canonical: Proj\n    aliases: [prodge]\n  - canonical: Old\n    aliases: [olde]\n  - canonical: Planted\n    aliases: [the]\n';
+    const inner = scripted(['d', 'k']);
+    let rewritten = false;
+    const p: Prompter = {
+      ...inner,
+      async ask(question, opts) {
+        const answer = await inner.ask(question, opts);
+        if (!rewritten) {
+          rewritten = true;
+          await fs.writeFile(projectPath, pulled, 'utf8');
+        }
+        return answer;
+      },
+    };
+    const io = makeIO();
+    expect(await runReview({ cwd: repo, project: true, globalPath }, io, p)).toBe(1);
+    expect(io.err).toMatch(/changed during review and is not trusted/);
+    expect(await fs.readFile(projectPath, 'utf8')).toBe(pulled);
+    expect(await isTrusted({ path: projectPath, scope: 'project', lexicon: { version: 1, terms: [] }, exists: true }, { globalPath })).toBe('changed');
+  });
+
   it('--never-hit and the per-term count read a project term from the sidecar', async () => {
     await fs.writeFile(
       projectPath,
