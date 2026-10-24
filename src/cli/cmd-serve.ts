@@ -740,12 +740,40 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     line(io, `  Command:   ${safe(nodePath)}`);
     line(io, `  Arguments: ${envFile ? `--env-file="${safe(envFile)}" ` : ''}"${safe(cliPath)}" serve`);
     io.stdout(envFile ? envReport(serviceEnv) : '');
+    // /Create /F replaces the definition but leaves a running instance (an
+    // earlier install's node and CLI path) serving, and only a logon starts
+    // the task, so a fresh install served nothing until then. End the old
+    // instance, then start the new one, as bootout + bootstrap and restart do.
+    const ended = await runAndReport(exec, io, 'schtasks', ['/End', '/TN', taskName]);
+    if (ended.code !== 0 && !schtasksNotRunning(ended)) {
+      io.stderr(
+        `lexicon: created the Scheduled Task "${safe(taskName)}" but could not end its running instance (schtasks /End failed, see above), ` +
+          `so the old one may still be serving; run \`schtasks /End /TN "${safe(taskName)}"\` then \`schtasks /Run /TN "${safe(taskName)}"\`\n`,
+      );
+      return 1;
+    }
+    const run = await runAndReport(exec, io, 'schtasks', ['/Run', '/TN', taskName]);
+    if (run.code !== 0) {
+      io.stderr(
+        `lexicon: created the Scheduled Task "${safe(taskName)}" but could not start it (schtasks /Run failed, see above); ` +
+          `it starts at your next logon, or run \`schtasks /Run /TN "${safe(taskName)}"\`\n`,
+      );
+      return 1;
+    }
     line(io, `installed ${taskName}; check with: lexicon serve --status`);
     return 0;
   }
 
   io.stderr(`lexicon: serve --install is not supported on ${platform}; run \`lexicon serve\` from your session startup instead\n`);
   return 1;
+}
+
+/**
+ * True when a failed `schtasks /End` only means there was nothing to end:
+ * the task is not running (or, on a first install, did not exist).
+ */
+function schtasksNotRunning(result: ExecResult): boolean {
+  return /not (currently )?running|no running instance|cannot find|does not exist/i.test(`${result.stderr}\n${result.stdout}`);
 }
 
 /**

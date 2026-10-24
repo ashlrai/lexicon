@@ -66895,12 +66895,32 @@ async function runServeInstall(opts, io, deps = {}) {
     line(io, `  Command:   ${safe(nodePath)}`);
     line(io, `  Arguments: ${envFile ? `--env-file="${safe(envFile)}" ` : ""}"${safe(cliPath)}" serve`);
     io.stdout(envFile ? envReport(serviceEnv) : "");
+    const ended = await runAndReport(exec, io, "schtasks", ["/End", "/TN", taskName]);
+    if (ended.code !== 0 && !schtasksNotRunning(ended)) {
+      io.stderr(
+        `lexicon: created the Scheduled Task "${safe(taskName)}" but could not end its running instance (schtasks /End failed, see above), so the old one may still be serving; run \`schtasks /End /TN "${safe(taskName)}"\` then \`schtasks /Run /TN "${safe(taskName)}"\`
+`
+      );
+      return 1;
+    }
+    const run = await runAndReport(exec, io, "schtasks", ["/Run", "/TN", taskName]);
+    if (run.code !== 0) {
+      io.stderr(
+        `lexicon: created the Scheduled Task "${safe(taskName)}" but could not start it (schtasks /Run failed, see above); it starts at your next logon, or run \`schtasks /Run /TN "${safe(taskName)}"\`
+`
+      );
+      return 1;
+    }
     line(io, `installed ${taskName}; check with: lexicon serve --status`);
     return 0;
   }
   io.stderr(`lexicon: serve --install is not supported on ${platform}; run \`lexicon serve\` from your session startup instead
 `);
   return 1;
+}
+function schtasksNotRunning(result) {
+  return /not (currently )?running|no running instance|cannot find|does not exist/i.test(`${result.stderr}
+${result.stdout}`);
 }
 
 // src/cli/setup/steps.ts

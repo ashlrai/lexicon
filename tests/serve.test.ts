@@ -2562,7 +2562,13 @@ describe('lexicon serve (CLI)', () => {
         nodePath: 'C:\\node\\node.exe',
       });
       expect(code).toBe(0);
-      expect(calls).toHaveLength(1);
+      // Catches: the task was created but not started (only a logon starts
+      // it), and /Create /F left an earlier install's instance running.
+      expect(calls).toHaveLength(3);
+      expect(calls.slice(1)).toEqual([
+        ['schtasks', '/End', '/TN', SCHEDULED_TASK_NAME],
+        ['schtasks', '/Run', '/TN', SCHEDULED_TASK_NAME],
+      ]);
       const [cmd, ...args] = calls[0];
       expect(cmd).toBe('schtasks');
       // /XML rather than /TR: the command line holds two quoted absolute paths
@@ -2592,6 +2598,46 @@ describe('lexicon serve (CLI)', () => {
       expect(err).toContain(
         'lexicon: could not create the Scheduled Task "Lexicon"; nothing is installed. Fix the schtasks /Create error above and rerun `lexicon serve --install`, or run `lexicon serve` to start the local API in the foreground\n',
       );
+    } finally {
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
+  it('--install on Windows says which of /End and /Run failed, and a task that is not running is fine', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-schtasks-'));
+    try {
+      const cli = await fakeCli(home);
+      const run = async (fail: Record<string, string>) => {
+        const io = memIO();
+        const calls: string[] = [];
+        const exec: ServeExec = async (_cmd, args) => {
+          calls.push(args[0] as string);
+          const why = fail[args[0] as string];
+          return why === undefined ? { code: 0, stdout: '', stderr: '' } : { code: 1, stdout: '', stderr: why };
+        };
+        const code = await runServe({ install: true, globalPath: env.globalPath }, io, {
+          platform: 'win32',
+          home,
+          env: { USERNAME: 'me' },
+          exec,
+          cliPath: cli,
+          nodePath: 'C:\\node\\node.exe',
+        });
+        return { code, calls, err: io.err.join(''), out: io.out.join('') };
+      };
+      const idle = await run({ '/End': 'ERROR: The task is not currently running.' });
+      expect(idle.code).toBe(0);
+      expect(idle.calls).toEqual(['/Create', '/End', '/Run']);
+
+      const end = await run({ '/End': 'ERROR: Access is denied.' });
+      expect(end.code).toBe(1);
+      expect(end.calls).toEqual(['/Create', '/End']);
+      expect(end.err).toContain('could not end its running instance (schtasks /End failed, see above)');
+
+      const start = await run({ '/Run': 'ERROR: Access is denied.' });
+      expect(start.code).toBe(1);
+      expect(start.err).toContain('could not start it (schtasks /Run failed, see above); it starts at your next logon');
+      expect(start.out).not.toContain('installed Lexicon;');
     } finally {
       await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
@@ -2692,7 +2738,7 @@ describe('lexicon serve (CLI)', () => {
         const io = memIO();
         let xml = '';
         const exec: ServeExec = async (_cmd, args) => {
-          xml = Buffer.from(await fs.readFile(args[4])).toString('utf16le').replace(/^\ufeff/, '');
+          if (args[0] === '/Create') xml = Buffer.from(await fs.readFile(args[4])).toString('utf16le').replace(/^\ufeff/, '');
           return { code: 0, stdout: '', stderr: '' };
         };
         expect(
