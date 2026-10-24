@@ -58,7 +58,7 @@ Every tool carries MCP annotations, all four hints stated (`src/mcp/annotations.
 | Resource | Type | Content |
 |---|---|---|
 | `lexicon://me` | `text/markdown` | The `claude-md` export of the merged lexicon. What an agent should read at session start. Capped at 16000 characters: past that the most used terms (then brand, person and product names) are kept and a closing line says how many were left out and that `list_terms` (with a query) or `export_lexicon` (format `claude-md`) has the rest. Adds one line naming a skipped untrusted project file, and one saying the lexicon is empty when it has no terms |
-| `lexicon://json` | `application/json` | The merged lexicon as JSON (an untrusted project file is left out, and named by path in `skippedProject`; with no terms, `note` says so and names `setup_lexicon`) |
+| `lexicon://json` | `application/json` | The merged lexicon as JSON (an untrusted project file is left out, and named by path in `skippedProject`; with no terms, `note` says so and names `setup_lexicon`; capped at 64000 characters, past which the most used terms are kept, `omittedTerms` counts the rest and `note` names `export_lexicon` for them) |
 
 ## Prompts
 

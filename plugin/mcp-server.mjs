@@ -67419,6 +67419,30 @@ function lexiconForModel(loaded) {
   const text = full.length <= MODEL_CONTEXT_MAX_CHARS ? full : exportClaudeMdWithin(loaded.merged, MODEL_CONTEXT_MAX_CHARS, moreTermsLine).text;
   return neutralizeMarkup(text);
 }
+var LEXICON_JSON_MAX_CHARS = MODEL_CONTEXT_MAX_CHARS * 4;
+function jsonOmittedNote(omitted, total) {
+  return `${omitted} of ${total} term${total === 1 ? "" : "s"} left out to keep this resource under ${LEXICON_JSON_MAX_CHARS} characters (the most used, then brand, person and product names, are kept). Call export_lexicon with format json for the whole lexicon, or list_terms with a query to look one up.`;
+}
+function lexiconJsonWithin(merged, extra) {
+  const render2 = (terms, more) => `${JSON.stringify({ ...merged, terms, ...extra, ...more }, null, 2)}
+`;
+  const full = render2(merged.terms, {});
+  if (full.length <= LEXICON_JSON_MAX_CHARS) return full;
+  const total = merged.terms.length;
+  const capped = (keep) => {
+    const omitted = total - keep;
+    const note = [extra.note, jsonOmittedNote(omitted, total)].filter((n) => n !== void 0).join(" ");
+    return render2(selectExportTerms(merged, { limit: keep }), { omittedTerms: omitted, note });
+  };
+  let lo = 0;
+  let hi = total - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (capped(mid).length <= LEXICON_JSON_MAX_CHARS) lo = mid;
+    else hi = mid - 1;
+  }
+  return capped(lo);
+}
 var VOICE_CONTEXT_INSTRUCTION = "Apply these canonical spellings to everything I say for the rest of this session. If you see a word that looks like a garbled version of one of them, use the canonical form without asking.";
 var EMPTY_LEXICON_NOTE = `Note: ${noTermsYet({ lower: true, so: "there are no spellings to apply and dictated names are not being corrected" })}. If the user dictates, offer once to set it up (the onboard prompt, or setup_lexicon, which previews before it writes).`;
 var ONBOARD_PROMPT = [
@@ -67539,7 +67563,7 @@ function createServer2(opts = {}) {
     "lexicon://json",
     {
       title: "Lexicon JSON",
-      description: "The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`. With no terms at all, `note` says so (after the skipped-file sentence, when there is one) and how to set the lexicon up.",
+      description: `The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds \`projectTrust\`, \`skippedProject\` (its path, never its contents) and \`note\`. With no terms at all, \`note\` says so (after the skipped-file sentence, when there is one) and how to set the lexicon up. The text is capped at ${LEXICON_JSON_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept, \`omittedTerms\` counts the rest and \`note\` says so; export_lexicon (format json) and list_terms (with a query) reach them.`,
       mimeType: "application/json"
     },
     async (uri) => {
@@ -67548,12 +67572,7 @@ function createServer2(opts = {}) {
       const empty = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE.replace(/^Note: /, "") : void 0;
       const note = [skipped.note, empty].filter((n) => n !== void 0).join(" ");
       const extra = note ? { ...skipped, note } : skipped;
-      const text = Object.keys(extra).length > 0 ? `${JSON.stringify({ ...loaded.merged, ...extra }, null, 2)}
-` : (
-        // The merged view whole, `scope` and `hits` included (the json export leaves them out).
-        `${JSON.stringify(loaded.merged, null, 2)}
-`
-      );
+      const text = lexiconJsonWithin(loaded.merged, extra);
       return {
         contents: [{ uri: uri.href, mimeType: "application/json", text }]
       };
@@ -67645,6 +67664,7 @@ if (isMainModule()) {
   }
 }
 export {
+  LEXICON_JSON_MAX_CHARS,
   MODEL_CONTEXT_MAX_CHARS,
   ROOTS_TIMEOUT_MS,
   cliFlagOutput,
