@@ -515,18 +515,11 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
   const other = scope ? holders.find((h) => h.scope !== scope) : undefined;
   // What to do about a miss, also the `nextStep` under --json: the flag for
   // the file that does hold it, else how to find the exact spelling.
-  // An empty lexicon: `lexicon list` shows nothing, so pointing there was a
-  // dead end; say there are no terms and how to get some.
-  const noTerms = loaded !== undefined && loaded.merged.terms.length === 0;
   const missStep = other
     ? `it is in the ${other.scope} lexicon (${other.path}); run with --${other.scope} to remove it`
     : untrusted
       ? undefined
-      : noTerms
-        ? loaded.skippedProject
-          ? 'the only terms are in the untrusted project lexicon, which is not loaded; review it and run lexicon trust'
-          : 'the lexicon has no terms yet, so there is nothing to remove; run lexicon setup, or add one with: lexicon add <canonical> <alias>'
-        : 'run lexicon list to see the exact canonical spellings';
+      : (emptyLexiconRemoveStep(loaded) ?? 'run lexicon list to see the exact canonical spellings');
   const notFound = (): string =>
     `lexicon: term "${safe(canonical)}" not found${scope ? ` in ${scope} lexicon` : ''}\n` +
     (missStep ? `lexicon: ${safeLines(missStep)}\n` : '') +
@@ -562,6 +555,20 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
  * trust error, a `--global` hint when the global copy holds the alias, and
  * exits 1, as `remove` does for a term.
  */
+/**
+ * The next step for a `remove` (with or without `--alias`) that missed on a
+ * lexicon with no terms, or undefined when it has some (or did not load).
+ * `lexicon list` shows nothing there, so pointing to it was a dead end: say
+ * there is nothing to remove and how to get terms, or `lexicon trust` when
+ * the only terms are in an untrusted project file that was not loaded.
+ */
+function emptyLexiconRemoveStep(loaded: LoadedLexicon | undefined): string | undefined {
+  if (loaded === undefined || loaded.merged.terms.length > 0) return undefined;
+  return loaded.skippedProject
+    ? 'the only terms are in the untrusted project lexicon, which is not loaded; review it and run lexicon trust'
+    : 'the lexicon has no terms yet, so there is nothing to remove; run lexicon setup, or add one with: lexicon add <canonical> <alias>';
+}
+
 async function runRemoveAlias(
   canonical: string,
   alias: string,
@@ -590,7 +597,9 @@ async function runRemoveAlias(
     const elsewhere =
       isInputError(err) && other && holdsAlias(other)
         ? `it is an alias of "${canonical}" in the ${other.scope} lexicon (${other.path}); run with --${other.scope} to remove it there, or with neither flag to remove it from every file whose copy has it`
-        : undefined;
+        : isInputError(err) && !untrusted
+          ? emptyLexiconRemoveStep(loaded)
+          : undefined;
     if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere), canonical, alias, removed: false, ...extra }, null, 2));
     io.stderr(`lexicon: ${safeLines(message)}\n`);
     if (elsewhere) io.stderr(`lexicon: ${safeLines(elsewhere)}\n`);

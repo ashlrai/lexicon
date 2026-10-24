@@ -125,6 +125,7 @@ import {
   runHarvest,
 } from '../src/cli/commands.js';
 import { DEFAULT_NEXT_STEP, PROJECT_TRUST_NEXT_STEP, fail, positiveIntOption } from '../src/cli/io.js';
+import { InputError } from '../src/util/errors.js';
 import { registersLexicon } from '../src/cli/cmd-doctor.js';
 import type { DoctorDeps } from '../src/cli/cmd-doctor.js';
 import { codexBlock, targetFor } from '../src/cli/cmd-install.js';
@@ -578,6 +579,38 @@ describe('add / remove / path', () => {
     const skipped = makeIO();
     expect(await runRemove('Nope', {}, skipped)).toBe(1);
     expect(skipped.err).toContain('the only terms are in the untrusted project lexicon, which is not loaded; review it and run lexicon trust');
+  });
+
+  // Catches: on an empty lexicon `lexicon remove X --alias y` gave only the generic "fix what error names" step.
+  it('remove --alias on an empty lexicon points to lexicon setup / lexicon add, or lexicon trust for an untrusted-only project', async () => {
+    const empty = { version: 1 as const, terms: [] };
+    const loadedEmpty = { merged: empty, global: { path: state.globalPath, scope: 'global' as const, lexicon: empty, exists: true } };
+    const step = 'the lexicon has no terms yet, so there is nothing to remove; run lexicon setup, or add one with: lexicon add <canonical> <alias>';
+    const miss = (): Error => new InputError('no term "Nope" in the global or project lexicon');
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedEmpty);
+    vi.mocked(core.removeAlias).mockRejectedValueOnce(miss());
+    const plain = makeIO();
+    expect(await runRemove('Nope', { alias: 'nop' }, plain)).toBe(1);
+    expect(plain.err).toContain(`lexicon: ${step}`);
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedEmpty);
+    vi.mocked(core.removeAlias).mockRejectedValueOnce(miss());
+    const asJson = makeIO();
+    expect(await runRemove('Nope', { alias: 'nop', json: true }, asJson)).toBe(1);
+    expect(JSON.parse(asJson.out)).toMatchObject({ ok: false, error: 'no term "Nope" in the global or project lexicon', nextStep: step, removed: false });
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({
+      ...loadedEmpty,
+      projectTrust: 'untrusted',
+      skippedProject: { path: '/tmp/proj/.lexicon.yaml', scope: 'project', lexicon: empty, exists: true },
+    });
+    vi.mocked(core.removeAlias).mockRejectedValueOnce(miss());
+    const skipped = makeIO();
+    expect(await runRemove('Nope', { alias: 'nop', json: true }, skipped)).toBe(1);
+    expect(JSON.parse(skipped.out).nextStep).toBe('the only terms are in the untrusted project lexicon, which is not loaded; review it and run lexicon trust');
+    // A lexicon with terms keeps the plain miss.
+    vi.mocked(core.removeAlias).mockRejectedValueOnce(miss());
+    const full = makeIO();
+    expect(await runRemove('Nope', { alias: 'nop' }, full)).toBe(1);
+    expect(full.err).not.toContain('nothing to remove');
   });
 
   // Catches: every `remove --json` failure document (not found, unknown alias,
