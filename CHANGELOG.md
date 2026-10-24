@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- A `trust.json` with a UTF-8 BOM is read as the registry it is. A registry that cannot be read or parsed is never overwritten: `lexicon trust`, `untrust` and the re-pin after a project write refuse, naming the file and how to fix it, and leave it byte for byte, while every project keeps reading as untrusted. Before, such a file (a BOM included) was read as empty and the next `lexicon trust` wrote a one-entry registry over it, wiping every other trusted project.
 - The macOS app's first-run "Your words" step asks `GET /aliases` about a name with a `+` in it (`C++`) as written. `URLComponents` left the `+` unencoded and the server read it as a space, so the suggested spellings were for `C`. (Not built here: no Swift toolchain on this machine.)
 - The macOS menu bar app picks the newest nvm Node by version number, for running the CLI from a source checkout and in the PATH its children get. The installed versions were sorted as strings, so `v9.11.2` came before `v22.1.0` (and `v22.9.0` before `v22.10.0`), and the oldest Node ran a CLI that needs Node 20 or newer. (Not built here: no Swift toolchain on this machine.)
 - `lexicon install` and `lexicon uninstall` name a deep config file whole: the file merged into or removed from, the `undo:` line, Claude's `settings.json`, the server path and a refusal naming the file to fix (raw under `--json`). These went through the 200-character display cap, so a deep home directory's config path ended in an ellipsis.

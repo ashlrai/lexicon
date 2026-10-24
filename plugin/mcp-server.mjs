@@ -42115,27 +42115,43 @@ function emptyRegistry() {
 function isTrustEntry(value) {
   return typeof value === "object" && value !== null && typeof value.sha256 === "string" && typeof value.trustedAt === "string";
 }
-async function readTrustRegistry(opts = {}) {
+async function loadTrustRegistry(opts) {
   let text;
   try {
     text = await import_node_fs4.promises.readFile(getTrustPath(opts), "utf8");
-  } catch {
-    return emptyRegistry();
+  } catch (err) {
+    if (err.code === "ENOENT") return { registry: emptyRegistry() };
+    const code = err.code;
+    return { registry: emptyRegistry(), problem: `cannot be read${code ? ` (${code})` : ""}` };
   }
+  text = text.replace(/^\uFEFF/, "");
+  if (text.trim() === "") return { registry: emptyRegistry() };
   let raw;
   try {
     raw = JSON.parse(text);
-  } catch {
-    return emptyRegistry();
+  } catch (err) {
+    return { registry: emptyRegistry(), problem: `is not valid JSON (${err instanceof Error ? err.message : String(err)})` };
   }
-  if (typeof raw !== "object" || raw === null) return emptyRegistry();
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { registry: emptyRegistry(), problem: "is not a JSON object" };
+  }
   const trustedRaw = raw.trusted;
-  if (typeof trustedRaw !== "object" || trustedRaw === null) return emptyRegistry();
+  if (typeof trustedRaw !== "object" || trustedRaw === null || Array.isArray(trustedRaw)) {
+    return { registry: emptyRegistry(), problem: 'has no "trusted" object' };
+  }
   const trusted = {};
   for (const [key, value] of Object.entries(trustedRaw)) {
     if (isTrustEntry(value)) trusted[key] = { sha256: value.sha256, trustedAt: value.trustedAt };
   }
-  return { version: 1, trusted };
+  return { registry: { version: 1, trusted } };
+}
+async function readTrustRegistry(opts = {}) {
+  return (await loadTrustRegistry(opts)).registry;
+}
+async function readTrustRegistryForUpdate(opts) {
+  const { registry: registry2, problem } = await loadTrustRegistry(opts);
+  if (problem !== void 0) throw new TrustRegistryUnreadableError(getTrustPath(opts), problem);
+  return registry2;
 }
 function withTrustLock(fn, opts = {}) {
   return withFileLock(getTrustPath(opts), fn);
@@ -42179,7 +42195,7 @@ async function trustProject(projectPath, opts = {}) {
   if (sha256 === void 0) throw new Error(`cannot read the project lexicon at ${projectPath}`);
   if (opts.expectedSha256 !== void 0 && sha256 !== opts.expectedSha256) throw new TrustContentChangedError(projectPath);
   return withTrustLock(async () => {
-    const registry2 = await readTrustRegistry(opts);
+    const registry2 = await readTrustRegistryForUpdate(opts);
     const existing = registry2.trusted[key];
     if (existing?.sha256 === sha256) return { ...existing, alreadyPinned: true };
     const entry = { sha256, trustedAt: (/* @__PURE__ */ new Date()).toISOString() };
@@ -42191,7 +42207,7 @@ async function trustProject(projectPath, opts = {}) {
 async function refreshTrust(projectPath, opts = {}) {
   const key = await canonicalPath(projectPath);
   return withTrustLock(async () => {
-    const registry2 = await readTrustRegistry(opts);
+    const registry2 = await readTrustRegistryForUpdate(opts);
     const existing = registry2.trusted[key];
     if (!existing) return false;
     const sha256 = await hashFile(key);
@@ -42220,7 +42236,7 @@ async function restoreTrustEntry(projectPath, entry, opts = {}) {
 async function untrustProject(projectPath, opts = {}) {
   const key = await canonicalPath(projectPath);
   return withTrustLock(async () => {
-    const registry2 = await readTrustRegistry(opts);
+    const registry2 = await readTrustRegistryForUpdate(opts);
     if (!(key in registry2.trusted)) return false;
     delete registry2.trusted[key];
     await writeTrustRegistry(registry2, opts);
@@ -42259,7 +42275,7 @@ function trustSummaryForModel(file2) {
     fullPreview: TRUST_FULL_PREVIEW_NOTE
   };
 }
-var import_node_fs4, import_node_path2, TRUST_FILE_NAME, TRUST_ALL_ENV, TrustContentChangedError, TRUST_PREVIEW_ROWS, TRUST_MODEL_SAMPLE_ROWS, TRUST_MODEL_SAMPLE_MAX_CHARS, TRUST_FULL_PREVIEW_NOTE;
+var import_node_fs4, import_node_path2, TRUST_FILE_NAME, TRUST_ALL_ENV, TrustRegistryUnreadableError, TrustContentChangedError, TRUST_PREVIEW_ROWS, TRUST_MODEL_SAMPLE_ROWS, TRUST_MODEL_SAMPLE_MAX_CHARS, TRUST_FULL_PREVIEW_NOTE;
 var init_trust = __esm({
   "src/core/trust.ts"() {
     import_node_fs4 = __toESM(require_node_fs());
@@ -42273,6 +42289,19 @@ var init_trust = __esm({
     init_schema();
     TRUST_FILE_NAME = "trust.json";
     TRUST_ALL_ENV = "LEXICON_TRUST_ALL";
+    TrustRegistryUnreadableError = class extends Error {
+      path;
+      /** Why it could not be used: `is not valid JSON (...)`, `has no "trusted" object`, `cannot be read (EACCES)`. */
+      problem;
+      constructor(registryPath, problem) {
+        super(
+          `the trust registry at ${registryPath} ${problem}, so it was left as it is and nothing was changed. Until it is fixed every project lexicon reads as untrusted. Fix the JSON in that file, or move it aside (then run \`lexicon trust\` again in each project), and retry.`
+        );
+        this.name = "TrustRegistryUnreadableError";
+        this.path = registryPath;
+        this.problem = problem;
+      }
+    };
     TrustContentChangedError = class extends Error {
       path;
       constructor(projectPath) {

@@ -20313,27 +20313,38 @@ function emptyRegistry() {
 function isTrustEntry(value) {
   return typeof value === "object" && value !== null && typeof value.sha256 === "string" && typeof value.trustedAt === "string";
 }
-async function readTrustRegistry(opts = {}) {
+async function loadTrustRegistry(opts) {
   let text;
   try {
     text = await import_node_fs4.promises.readFile(getTrustPath(opts), "utf8");
-  } catch {
-    return emptyRegistry();
+  } catch (err) {
+    if (err.code === "ENOENT") return { registry: emptyRegistry() };
+    const code = err.code;
+    return { registry: emptyRegistry(), problem: `cannot be read${code ? ` (${code})` : ""}` };
   }
+  text = text.replace(/^\uFEFF/, "");
+  if (text.trim() === "") return { registry: emptyRegistry() };
   let raw;
   try {
     raw = JSON.parse(text);
-  } catch {
-    return emptyRegistry();
+  } catch (err) {
+    return { registry: emptyRegistry(), problem: `is not valid JSON (${err instanceof Error ? err.message : String(err)})` };
   }
-  if (typeof raw !== "object" || raw === null) return emptyRegistry();
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) {
+    return { registry: emptyRegistry(), problem: "is not a JSON object" };
+  }
   const trustedRaw = raw.trusted;
-  if (typeof trustedRaw !== "object" || trustedRaw === null) return emptyRegistry();
+  if (typeof trustedRaw !== "object" || trustedRaw === null || Array.isArray(trustedRaw)) {
+    return { registry: emptyRegistry(), problem: 'has no "trusted" object' };
+  }
   const trusted = {};
   for (const [key, value] of Object.entries(trustedRaw)) {
     if (isTrustEntry(value)) trusted[key] = { sha256: value.sha256, trustedAt: value.trustedAt };
   }
-  return { version: 1, trusted };
+  return { registry: { version: 1, trusted } };
+}
+async function readTrustRegistry(opts = {}) {
+  return (await loadTrustRegistry(opts)).registry;
 }
 async function isInsideGlobalConfig(filePath, opts) {
   const globalPath = await canonicalPath(resolvePaths(opts).global);
