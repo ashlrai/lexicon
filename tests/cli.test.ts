@@ -1754,6 +1754,7 @@ describe('runDoctorReport', () => {
       global: state.globalPath,
       trust: path.join(path.dirname(state.globalPath), 'trust.json'),
       settings: settingsPath,
+      projectSettings: path.join(doctorHome, '.claude', 'settings.json'),
       installedPlugins: installedPluginsPath,
     });
     expect(report.versions.node).toBe(process.version);
@@ -2084,9 +2085,36 @@ describe('doctor: Claude Code hooks and plugin', () => {
     const io = makeIO();
     const code = await runDoctor({}, io, { platform: 'linux', env: { PATH: s.bin }, exec: () => 'lexicon: connected', ...s });
     expect(code).toBe(0);
-    expect(io.out).toContain(`! UserPromptSubmit hook not found in ${s.settingsPath} (fine if you use the plugin`);
-    expect(io.out).toContain(`! SessionStart hook not found in ${s.settingsPath} (fine if you use the plugin`);
+    expect(io.out).toContain(`! UserPromptSubmit hook not found in ${s.settingsPath} (user scope) or `);
+    expect(io.out).toContain(`! SessionStart hook not found in ${s.settingsPath} (user scope) or `);
+    expect(io.out).toContain('(project scope) (fine if you use the plugin');
     expect(io.out).toContain('all checks passed');
+  });
+
+  it('finds hooks a --scope project install wrote to <cwd>/.claude/settings.json and names the scope', async () => {
+    const s = await scratch();
+    const repo = await tempDir('lexicon-doctor-repo-');
+    const projectSettingsPath = path.join(repo, '.claude', 'settings.json');
+    await fs.mkdir(path.dirname(projectSettingsPath), { recursive: true });
+    const { settings } = mergeHookIntoSettings({}, 'node "/opt/lexicon/plugin/hook.mjs"', 5, HOOK_EVENTS);
+    await fs.writeFile(projectSettingsPath, JSON.stringify(settings));
+    const io = makeIO();
+    const code = await runDoctor({ cwd: repo }, io, { platform: 'linux', env: { PATH: s.bin }, exec: () => 'lexicon: connected', ...s });
+    expect(code).toBe(0);
+    expect(io.out).toContain(`✓ UserPromptSubmit hook found in ${projectSettingsPath} (project scope)`);
+    expect(io.out).toContain(`✓ SessionStart hook found in ${projectSettingsPath} (project scope)`);
+    expect(io.out).not.toContain('hook not found');
+    const report = await runDoctorReport({ cwd: repo }, { platform: 'linux', env: { PATH: s.bin }, exec: () => 'lexicon: connected', ...s });
+    expect(report.paths.projectSettings).toBe(projectSettingsPath);
+  });
+
+  it('labels a user-scope hook as user scope', async () => {
+    const s = await scratch();
+    const { settings } = mergeHookIntoSettings({}, 'node "/opt/lexicon/plugin/hook.mjs"', 5, HOOK_EVENTS);
+    await fs.writeFile(s.settingsPath, JSON.stringify(settings));
+    const io = makeIO();
+    await runDoctor({}, io, { platform: 'linux', env: { PATH: s.bin }, exec: () => 'lexicon: connected', ...s });
+    expect(io.out).toContain(`✓ UserPromptSubmit hook found in ${s.settingsPath} (user scope)`);
   });
 
   it('passes when both hooks are registered in settings.json', async () => {

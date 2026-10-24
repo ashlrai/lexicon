@@ -63816,24 +63816,34 @@ async function runDoctorReport(opts, deps = {}) {
     push2("ok", "no alias/canonical conflicts");
   }
   const settingsPath = deps.settingsPath ?? import_node_path22.default.join(claudeConfigDir(env, home), "settings.json");
+  const projectSettingsPath = deps.projectSettingsPath ?? import_node_path22.default.join(cwd, ".claude", "settings.json");
+  const sameSettingsFile = import_node_path22.default.resolve(projectSettingsPath) === import_node_path22.default.resolve(settingsPath);
   const installedPluginsPath = deps.installedPluginsPath ?? import_node_path22.default.join(claudeConfigDir(env, home), "plugins", "installed_plugins.json");
   const settings = await readDoctorConfigJson(settingsPath);
+  const projectSettings = sameSettingsFile ? { exists: false } : await readDoctorConfigJson(projectSettingsPath);
   const installed = await readDoctorConfigJson(installedPluginsPath);
   if (settings.error) push2("warn", `Claude settings configuration is unconfirmed (${settings.error})`);
+  if (!sameSettingsFile && projectSettings.error) {
+    push2("warn", `Claude project settings configuration is unconfirmed (${projectSettings.error}): ${projectSettingsPath}`);
+  }
   if (installed.error) push2("warn", `Claude installed-plugin configuration is unconfirmed (${installed.error})`);
-  const pluginId = findInstalledLexiconPlugin(settings.value, installed.value);
+  const pluginId = findInstalledLexiconPlugin(settings.value, installed.value) ?? findInstalledLexiconPlugin(projectSettings.value, void 0);
   if (pluginId) {
     wired = true;
     push2("ok", `lexicon plugin installed as ${pluginId} (its hooks and MCP server are used)`);
   } else {
     for (const event of HOOK_EVENTS) {
-      if (settingsHasLexiconHook(settings.value, event)) {
+      const inUser = settingsHasLexiconHook(settings.value, event);
+      const inProject = !sameSettingsFile && settingsHasLexiconHook(projectSettings.value, event);
+      if (inUser) push2("ok", `${event} hook found in ${settingsPath} (user scope)`);
+      if (inProject) push2("ok", `${event} hook found in ${projectSettingsPath} (project scope)`);
+      if (inUser || inProject) {
         wired = true;
-        push2("ok", `${event} hook found in ${settingsPath}`);
       } else {
+        const where = sameSettingsFile ? settingsPath : `${settingsPath} (user scope) or ${projectSettingsPath} (project scope)`;
         push2(
           "warn",
-          `${event} hook not found in ${settingsPath} (fine if you use the plugin; otherwise run: lexicon install claude --apply)`
+          `${event} hook not found in ${where} (fine if you use the plugin; otherwise run: lexicon install claude --apply)`
         );
       }
     }
@@ -63916,6 +63926,7 @@ async function runDoctorReport(opts, deps = {}) {
       ...paths.project ? { project: paths.project } : {},
       trust: getTrustPath({ cwd }),
       settings: settingsPath,
+      projectSettings: projectSettingsPath,
       installedPlugins: installedPluginsPath
     },
     versions: { lexicon: packageVersion(import.meta.url), node: process.version, platform }

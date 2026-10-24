@@ -169,6 +169,8 @@ export interface DoctorDeps {
   exec?: (file: string, args: readonly string[]) => string;
   /** Claude settings file. Default ~/.claude/settings.json. */
   settingsPath?: string;
+  /** Repo-level Claude settings (`install claude --scope project`). Default <cwd>/.claude/settings.json. */
+  projectSettingsPath?: string;
   /** Claude's plugin registry. Default ~/.claude/plugins/installed_plugins.json. */
   installedPluginsPath?: string;
   /** Default home for lexicon/client/service paths; explicit env/path overrides still apply. */
@@ -219,6 +221,8 @@ export interface DoctorReport {
     trust: string;
     /** Claude Code settings.json that was inspected for hooks. */
     settings: string;
+    /** Repo-level Claude Code settings.json (<cwd>/.claude/settings.json) that was inspected for hooks. */
+    projectSettings?: string;
     /** Claude Code plugin registry that was inspected. */
     installedPlugins: string;
   };
@@ -707,26 +711,40 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
   }
 
   // --- Claude Code plugin / hooks -------------------------------------------------
+  // `lexicon install claude --scope project` writes its hooks into the repo's
+  // shared <cwd>/.claude/settings.json, not the user's file, so both are read
+  // and each hit names the scope it came from.
   const settingsPath = deps.settingsPath ?? path.join(claudeConfigDir(env, home), 'settings.json');
+  const projectSettingsPath = deps.projectSettingsPath ?? path.join(cwd, '.claude', 'settings.json');
+  const sameSettingsFile = path.resolve(projectSettingsPath) === path.resolve(settingsPath);
   const installedPluginsPath =
     deps.installedPluginsPath ?? path.join(claudeConfigDir(env, home), 'plugins', 'installed_plugins.json');
   const settings = await readDoctorConfigJson(settingsPath);
+  const projectSettings = sameSettingsFile ? { exists: false as const } : await readDoctorConfigJson(projectSettingsPath);
   const installed = await readDoctorConfigJson(installedPluginsPath);
   if (settings.error) push('warn', `Claude settings configuration is unconfirmed (${settings.error})`);
+  if (!sameSettingsFile && projectSettings.error) {
+    push('warn', `Claude project settings configuration is unconfirmed (${projectSettings.error}): ${projectSettingsPath}`);
+  }
   if (installed.error) push('warn', `Claude installed-plugin configuration is unconfirmed (${installed.error})`);
-  const pluginId = findInstalledLexiconPlugin(settings.value, installed.value);
+  const pluginId =
+    findInstalledLexiconPlugin(settings.value, installed.value) ?? findInstalledLexiconPlugin(projectSettings.value, undefined);
   if (pluginId) {
     wired = true;
     push('ok', `lexicon plugin installed as ${pluginId} (its hooks and MCP server are used)`);
   } else {
     for (const event of HOOK_EVENTS) {
-      if (settingsHasLexiconHook(settings.value, event)) {
+      const inUser = settingsHasLexiconHook(settings.value, event);
+      const inProject = !sameSettingsFile && settingsHasLexiconHook(projectSettings.value, event);
+      if (inUser) push('ok', `${event} hook found in ${settingsPath} (user scope)`);
+      if (inProject) push('ok', `${event} hook found in ${projectSettingsPath} (project scope)`);
+      if (inUser || inProject) {
         wired = true;
-        push('ok', `${event} hook found in ${settingsPath}`);
       } else {
+        const where = sameSettingsFile ? settingsPath : `${settingsPath} (user scope) or ${projectSettingsPath} (project scope)`;
         push(
           'warn',
-          `${event} hook not found in ${settingsPath} (fine if you use the plugin; otherwise run: lexicon install claude --apply)`,
+          `${event} hook not found in ${where} (fine if you use the plugin; otherwise run: lexicon install claude --apply)`,
         );
       }
     }
@@ -828,6 +846,7 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
       ...(paths.project ? { project: paths.project } : {}),
       trust: getTrustPath({ cwd }),
       settings: settingsPath,
+      projectSettings: projectSettingsPath,
       installedPlugins: installedPluginsPath,
     },
     versions: { lexicon: packageVersion(import.meta.url), node: process.version, platform },
