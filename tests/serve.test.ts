@@ -2784,6 +2784,25 @@ describe('notes on an empty or partial answer', () => {
     await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 
+  // Catches: POST /normalize on an empty lexicon answered `changed: false`
+  // with nothing saying that no term could ever match.
+  it('POST /normalize on an empty lexicon adds a hint naming lexicon setup (or lexicon trust)', async () => {
+    const res = await call('POST', '/normalize', { text: 'ping ashler', cwd: emptyRepo });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ output: 'ping ashler', changed: false, replacements: [] });
+    expect(body.hint).toBe('The lexicon has no terms yet, so nothing can be corrected; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.');
+    const skipped = (await (await call('POST', '/normalize', { text: 'ping hostyle', cwd: untrustedOnly })).json()) as Record<string, unknown>;
+    expect(skipped.hint).toContain('run `lexicon trust`');
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler'] }, { globalPath, cwd: emptyRepo });
+    try {
+      const full = (await (await call('POST', '/normalize', { text: 'ping ashler', dryRun: true, cwd: emptyRepo })).json()) as Record<string, unknown>;
+      expect(full).not.toHaveProperty('hint');
+    } finally {
+      await fs.rm(globalPath, { force: true });
+    }
+  });
+
   // Catches: GET /lexicon and /stats on an empty lexicon answered zeros with
   // no step, and with a skipped project file no `lexicon trust` step, where
   // `lexicon stats --json` and MCP list_terms / lexicon_stats give a `note`.

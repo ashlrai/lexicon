@@ -150,6 +150,8 @@ export interface NormalizeResponse extends NormalizeResult {
    * trusted read exactly like text that needed no correction.
    */
   skippedProject?: string;
+  /** `emptyNormalizeHint`: only when the merged lexicon has no terms, naming `lexicon setup` (or `lexicon trust`). */
+  hint?: string;
 }
 
 export interface LearnResponse {
@@ -561,6 +563,17 @@ export function statsNote(loaded: Pick<LoadedLexicon, 'merged' | 'projectTrust' 
       ? 'The lexicon has no terms yet, so nothing is corrected or counted; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.'
       : undefined)
   );
+}
+
+/**
+ * `POST /normalize`'s `hint` on a lexicon with no terms: nothing can be
+ * corrected, so say how to get terms (`lexicon setup`), or `lexicon trust`
+ * when only a skipped project file holds them.
+ */
+export function emptyNormalizeHint(loaded: Pick<LoadedLexicon, 'skippedProject'>): string {
+  return loaded.skippedProject
+    ? 'Nothing can be corrected: the only terms are in the untrusted project lexicon, which was not loaded; review it and run `lexicon trust`.'
+    : 'The lexicon has no terms yet, so nothing can be corrected; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.';
 }
 
 function withNote(note: string | undefined): { note?: string } {
@@ -986,6 +999,8 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       // The same additive keys as /stats and MCP normalize_transcript.
       ...(entry.loaded.projectTrust !== undefined ? { projectTrust: entry.loaded.projectTrust } : {}),
       ...(entry.loaded.skippedProject !== undefined ? { skippedProject: entry.loaded.skippedProject.path } : {}),
+      // An empty lexicon corrects nothing, which read like text that needed no correction.
+      ...(entry.loaded.merged.terms.length === 0 ? { hint: emptyNormalizeHint(entry.loaded) } : {}),
     };
   }
 
