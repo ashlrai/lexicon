@@ -35,6 +35,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 - The `serve.log` cap also empties the log when the server's descriptor can only append (as on Windows), by truncating the file by path, and compares file ids exactly. Before, the copy to `serve.log.1` was made but the log kept its size, which turned main CI red on Windows.
 - A LEXICON_PATH under a regular file (`notes.txt\lexicon.yaml`) is named as unreadable on Windows too. Windows answers such a path with ENOENT rather than ENOTDIR, so the lexicon read as missing there and only a later write failed.
+- MCP `uninstall_client`'s description no longer sends the agent to an `error` field for an `ok: false` result, which carries none; it names `output`, `changes` and `nextStep`, the fields that result has.
 - `lexicon learn` that finds the intended spelling but not what was heard prints its `run:` line with the `lexicon: ` prefix, as every other refusal does.
 - `lexicon install --scope project` with no client names the flag that was typed. It was refused as `--project needs a client`, naming a flag the user did not pass, and the suggested command used `--project` too.
 - `lexicon uninstall <client> --scope user --project` is refused, removing nothing, as install refuses it. `--project` was dropped without a word and the entry in your own config was removed.
