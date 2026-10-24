@@ -62670,6 +62670,7 @@ function resolveModel(spec, opts) {
   return { name: spec, path: primary, present: false, url: modelUrl(spec) };
 }
 var GGML_MAGIC = Buffer.from([108, 109, 103, 103]);
+var STALE_PART_MS = 10 * 60 * 1e3;
 
 // src/voice/process.ts
 var import_node_child_process5 = __toESM(require_node_child_process());

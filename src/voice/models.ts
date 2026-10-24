@@ -143,8 +143,43 @@ export function checkDownloadedModel(head: Buffer, received: number, total: numb
   return undefined;
 }
 
+/**
+ * A part file untouched this long belongs to a download that died (killed,
+ * or the machine slept through it): a live one writes to its file all the
+ * time. Ten minutes, well past any stall a download survives.
+ */
+export const STALE_PART_MS = 10 * 60 * 1000;
+
+/**
+ * Remove the part files of `dest` that dead downloads left behind
+ * (`<dest>.part` from older versions, `<dest>.<id>.part` now), each up to the
+ * size of a model. One a live download is still writing is newer than
+ * STALE_PART_MS and is left alone. Never throws.
+ */
+export async function sweepStaleParts(dest: string, nowMs: number = Date.now()): Promise<void> {
+  const dir = path.dirname(dest);
+  const base = path.basename(dest);
+  let names: string[];
+  try {
+    names = await fs.readdir(dir);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (!name.startsWith(`${base}.`) || !name.endsWith('.part')) continue;
+    const file = path.join(dir, name);
+    try {
+      const st = await fs.stat(file);
+      if (st.isFile() && nowMs - st.mtimeMs > STALE_PART_MS) await fs.rm(file, { force: true });
+    } catch {
+      // gone already, or not ours to remove
+    }
+  }
+}
+
 export async function defaultDownloader(url: string, dest: string, onProgress: (p: DownloadProgress) => void): Promise<void> {
   await fs.mkdir(path.dirname(dest), { recursive: true });
+  await sweepStaleParts(dest);
   const res = await fetch(url, { redirect: 'follow' });
   if (!res.ok || !res.body) throw new Error(`download failed: ${res.status} ${res.statusText} (${url})`);
   const total = Number(res.headers.get('content-length')) || undefined;

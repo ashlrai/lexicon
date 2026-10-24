@@ -29,7 +29,7 @@ import {
   pickDevice,
 } from '../src/voice/devices.js';
 import { HISTORY_MAX_BYTES, HISTORY_MAX_LINES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
-import { GGML_MAGIC, defaultDownloader, expandTilde, modelFileName, modelUrl, resolveModel } from '../src/voice/models.js';
+import { GGML_MAGIC, STALE_PART_MS, defaultDownloader, expandTilde, modelFileName, modelUrl, resolveModel } from '../src/voice/models.js';
 import type { Downloader } from '../src/voice/models.js';
 import { installHint, locateWhisperCli, makeProcessDescribe, makeProcessList } from '../src/voice/process.js';
 import type { ChildHandle, ExecResult, SpawnOptions, VoiceExec, VoiceSpawn } from '../src/voice/process.js';
@@ -1647,6 +1647,20 @@ describe('model download', () => {
     stubFetch(page);
     await expect(defaultDownloader('https://example.invalid/m', dest, () => undefined)).rejects.toThrow('not a ggml whisper model');
     expect(await fs.readdir(dir)).toEqual([]);
+  });
+
+  // Catches: part files of downloads that died stayed beside the model, each up to its size.
+  it('removes part files dead downloads left, and keeps one still being written', async () => {
+    const dest = path.join(dir, 'ggml-tiny.bin');
+    const old = new Date(Date.now() - STALE_PART_MS - 60_000);
+    for (const name of ['ggml-tiny.bin.part', 'ggml-tiny.bin.1-abc-def.part', 'ggml-tiny.bin.2-live-xyz.part', 'ggml-base.bin.9-x-y.part']) {
+      await fs.writeFile(path.join(dir, name), 'partial');
+      if (!name.includes('live')) await fs.utimes(path.join(dir, name), old, old);
+    }
+    const body = model(100);
+    stubFetch(body, body.length);
+    await defaultDownloader('https://example.invalid/m', dest, () => undefined);
+    expect((await fs.readdir(dir)).sort()).toEqual(['ggml-base.bin.9-x-y.part', 'ggml-tiny.bin', 'ggml-tiny.bin.2-live-xyz.part']);
   });
 
   // Catches: two downloads of one model shared `<dest>.part`, interleaving their bytes.
