@@ -56,7 +56,7 @@ Two honest notes about that table. Raw whisper.cpp cannot wrongly change prose b
 | --- | --- | --- | --- |
 | TTS audio, whisper.cpp base.en (330 clips) | 41.9% | 82.8% | 0 of 72 |
 | TTS audio, whisper.cpp small.en with prompt hints | 76.0% | 95.7% | 0 of 72 |
-| synthetic STT errors (402 sentences, 70 terms) | 5.1% | 96.5% | 0 of 95 |
+| synthetic STT errors (402 sentences, 70 terms) | 5.1% | 96.8% | 0 of 95 |
 
 Latency is about 0.3 ms per sentence. The TTS-audio rows use macOS text-to-speech read into whisper.cpp, so they are cleaner than a phone microphone.
 
