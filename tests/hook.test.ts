@@ -369,6 +369,34 @@ describe('runUserPromptSubmitHook', () => {
       expect(parseCorrections("it's Vercel not versel. It's vercel not Versel.")).toHaveLength(1);
     });
 
+    it('does not flag "it\'s X not Y" that contrasts two ordinary words', async () => {
+      const { runUserPromptSubmitHook, parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+      // An agent that followed a learn_correction line here made "broken" an alias of "flaky".
+      for (const prompt of [
+        "if the test fails, it's flaky not broken",
+        "it's prod not staging",
+        "it's null not undefined",
+        "it's a typo not a bug",
+        "it's a regression not flaky",
+        'I think it\'s a race condition not a deadlock',
+      ]) {
+        expect(parseCorrections(prompt), prompt).toEqual([]);
+        expect(await runUserPromptSubmitHook(payload(prompt)), prompt).toBe('');
+      }
+      expect(mocks.queueCorrections).not.toHaveBeenCalled();
+    });
+
+    it('still flags a lowercase correction whose sides resemble, a name-like side, or a quoted one', async () => {
+      const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+      expect(parseCorrections("it's vercel not versel")).toEqual([{ heard: 'versel', meant: 'vercel' }]);
+      expect(parseCorrections("it's supabase not super base")).toEqual([{ heard: 'super base', meant: 'supabase' }]);
+      expect(parseCorrections("it's claude not cloud")).toEqual([{ heard: 'cloud', meant: 'claude' }]);
+      expect(parseCorrections("it's Ashlr.AI not actually i")).toEqual([{ heard: 'actually i', meant: 'Ashlr.AI' }]);
+      expect(parseCorrections("it's k8s not kates")).toEqual([{ heard: 'kates', meant: 'k8s' }]);
+      expect(parseCorrections('it\'s "flaky" not "broken"')).toEqual([{ heard: 'broken', meant: 'flaky' }]);
+      expect(parseCorrections('it\'s `prod` not staging')).toEqual([{ heard: 'staging', meant: 'prod' }]);
+    });
+
     it('still corrects an unrelated garble in the same prompt', async () => {
       mocks.normalize.mockImplementation(phoneticNormalize);
       const { runUserPromptSubmitHook } = await import('../src/hooks/user-prompt-submit.js');

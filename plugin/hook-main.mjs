@@ -17777,6 +17777,11 @@ function collapse(s) {
 function squash(s) {
   return s.replace(/\s+/g, " ").trim();
 }
+function phoneticKey(s) {
+  const alpha = alphaOnly(s);
+  if (alpha.length === 0) return "";
+  return doubleMetaphone(alpha)[0];
+}
 var OSA_MAX_LENGTH = 40;
 var OSA_ROWS = [new Int32Array(OSA_MAX_LENGTH + 1), new Int32Array(OSA_MAX_LENGTH + 1), new Int32Array(OSA_MAX_LENGTH + 1)];
 function osaDistance(a, b) {
@@ -21014,6 +21019,7 @@ function parseCorrections(text) {
   const seen = /* @__PURE__ */ new Set();
   const add = (c) => {
     if (!c || c.heard.trim() === "" || c.meant.trim() === "") return;
+    if (isOrdinaryContrast(text, c)) return;
     const key = `${collapse2(c.heard)}\0${collapse2(c.meant)}`;
     if (seen.has(key)) return;
     seen.add(key);
@@ -21023,6 +21029,25 @@ function parseCorrections(text) {
   if (!SENTENCE_BREAK_RE.test(text)) return found;
   for (const sentence of text.split(SENTENCE_BREAK_RE)) add(parseCorrection(sentence));
   return found;
+}
+var CORRECTION_MIN_SIMILARITY = 0.45;
+function quotedIn(text, side) {
+  return text.includes(`"${side}"`) || text.includes(`\u201C${side}\u201D`) || text.includes(`\`${side}\``);
+}
+function lettersOf(side) {
+  return side.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+}
+function isOrdinaryContrast(text, c) {
+  const heard = c.heard.trim();
+  const meant = c.meant.trim();
+  if (quotedIn(text, heard) || quotedIn(text, meant)) return false;
+  const nameLike = /[\p{Lu}\p{N}.-]/u;
+  if (nameLike.test(heard) || nameLike.test(meant)) return false;
+  const a = lettersOf(heard);
+  const b = lettersOf(meant);
+  if (similarity(a, b) >= CORRECTION_MIN_SIMILARITY) return false;
+  const ka = phoneticKey(heard);
+  return ka === "" || ka !== phoneticKey(meant);
 }
 function formatCorrectionNotes(corrections) {
   const lines = corrections.slice(0, CORRECTION_NOTES_MAX).map(formatCorrectionNote);
@@ -21426,6 +21451,7 @@ if (isMainModule()) {
 export {
   CORRECTED_PROMPT_MAX_CHARS,
   CORRECTION_LIST_MAX_CHARS,
+  CORRECTION_MIN_SIMILARITY,
   CORRECTION_NOTES_MAX,
   DATA_BLOCK_MIN_ROWS,
   HOOK_MATCH_BUDGET_MS,
