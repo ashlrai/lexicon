@@ -537,6 +537,20 @@ describe('runClipboardOnce', () => {
     );
   });
 
+  it('--paste does not paste binary or letterless clipboard contents, and says why', async () => {
+    for (const [clip, why] of [
+      ['\uFFFDPNG\u0000', 'clipboard holds binary data, not text'],
+      ['1234 5678', 'clipboard has no letters to correct'],
+    ] as const) {
+      const sendPaste = vi.fn(async () => undefined);
+      const errs: string[] = [];
+      const res = await runClipboardOnce({ read: async () => clip, write: async () => undefined, out: () => undefined, err: (s) => errs.push(s), paste: true, platform: 'darwin', sendPaste });
+      expect(sendPaste).not.toHaveBeenCalled();
+      expect(res.pasted).toBe(false);
+      expect(errs.join('')).toBe(`--paste skipped: ${why}, so it was left as it was and nothing was pasted\n`);
+    }
+  });
+
   it('--paste uses osascript through exec by default', async () => {
     const { read, write, out, err } = onceHarness('meet Ashler');
     const exec = vi.fn<ClipboardExec>(async () => '');
@@ -869,12 +883,16 @@ describe('a clipboard too large to correct', () => {
     await done;
   }, 20_000);
 
-  it('--paste still pastes a clipboard that was too large to correct', async () => {
+  // Catches: --paste pasted a clipboard it had left as it was, so a shortcut
+  // meant to paste dictated text pasted a 17 MB buffer instead.
+  it('--paste does not paste a clipboard that was too large to correct, and says why', async () => {
     const { exec } = bigExec(() => 17 * 1024 * 1024);
     const sendPaste = vi.fn(async () => undefined);
-    const res = await runClipboardOnce({ backend: 'pbcopy', exec, platform: 'darwin', paste: true, sendPaste, out: () => undefined, err: () => undefined, cwd: '/fake' });
-    expect(sendPaste).toHaveBeenCalledTimes(1);
-    expect(res.pasted).toBe(true);
+    const errs: string[] = [];
+    const res = await runClipboardOnce({ backend: 'pbcopy', exec, platform: 'darwin', paste: true, sendPaste, out: () => undefined, err: (s) => errs.push(s), cwd: '/fake' });
+    expect(sendPaste).not.toHaveBeenCalled();
+    expect(res.pasted).toBe(false);
+    expect(errs.join('')).toBe('--paste skipped: clipboard too large, so it was left as it was and nothing was pasted\n');
   });
 });
 

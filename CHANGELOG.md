@@ -27,6 +27,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon daemon --once --paste` no longer pastes a clipboard it left as it was (too large, binary such as a copied image, or with no letters): the shortcut is meant to paste dictated text, so it pasted something else. It says why on stderr: `--paste skipped: clipboard too large, so it was left as it was and nothing was pasted`.
 - A second ctrl-C stops `lexicon daemon` at once. The first one waits for a clipboard read in flight (a clipboard tool that hangs runs until its timeout) and now says so; before, its listener was gone and the daemon did not answer a second one.
 - The clipboard watcher (`lexicon daemon`) saw a lexicon edit up to 5 seconds late, so a term just learned was not used on the next copy. Before it corrects a new clipboard text it now checks (with `stat`) whether the global or project lexicon or `trust.json` changed, and reloads if so; the 5 second reload stays as a backstop.
 - The spreadsheet formula guard of `lexicon export csv` and `lexicon export wispr` checked only a cell's first character, so a name such as ` =HYPERLINK(...)`, which a spreadsheet trims and then runs, was written as is. Spaces or tabs ahead of `=`, `+`, `-` or `@` now count: `csv` writes the cell with a leading `'`, `wispr` leaves the pair out and names it.

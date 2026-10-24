@@ -451,19 +451,22 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
   }
 
   const result: ClipboardOnceResult = { changed: false, written: false, corrections: 0, pasted: false };
+  // Why the clipboard was not looked at, for --paste: a paste then puts back
+  // whatever it holds (an image, a huge buffer, a run of digits), which is
+  // not the dictated text the shortcut means to paste.
+  let notText: string | undefined;
 
   if (tooLarge || !reportable(text)) {
-    if (!quiet) {
-      const why =
-        text.length === 0 && !tooLarge
-          ? 'clipboard is empty or not text'
-          : tooLarge || text.length > MAX_CLIPBOARD_CHARS
-            ? 'clipboard too large'
-            : looksBinary(text)
-              ? 'clipboard holds binary data, not text; left as it was'
-              : 'no letters';
-      out(`no changes (${why})\n`);
-    }
+    const why =
+      text.length === 0 && !tooLarge
+        ? 'clipboard is empty or not text'
+        : tooLarge || text.length > MAX_CLIPBOARD_CHARS
+          ? 'clipboard too large'
+          : looksBinary(text)
+            ? 'clipboard holds binary data, not text; left as it was'
+            : 'no letters';
+    notText = why;
+    if (!quiet) out(`no changes (${why})\n`);
   } else {
     // Only the merged terms are used: an untrusted project file is never parsed.
     const loaded = await loadLexicon({ cwd, parseSkipped: false });
@@ -491,6 +494,9 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
       err(`--paste is macOS-only (uses osascript); the text is on the clipboard, paste it with your usual shortcut (platform: ${platform})\n`);
     } else if (text.length === 0 && !tooLarge) {
       err('--paste skipped: clipboard is empty\n');
+    } else if (notText !== undefined) {
+      const what = notText.startsWith('clipboard holds binary') ? 'clipboard holds binary data, not text' : notText === 'no letters' ? 'clipboard has no letters to correct' : notText;
+      err(`--paste skipped: ${what}, so it was left as it was and nothing was pasted\n`);
     } else {
       const sendPaste =
         opts.sendPaste ??
