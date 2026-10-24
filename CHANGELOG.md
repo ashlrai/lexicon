@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- The Claude Code hook, when its bundle (`plugin/hook-main.mjs`) is missing or fails to load, names a next step on stderr: `claude plugin update lexicon@ashlrai`, or for an npm install `npm install -g @ashlr/lexicon` then `lexicon install claude --apply`. It printed the import error alone. The hook still exits 0.
 - `lexicon voice`, when whisper-cli runs but exits non-zero, names a next step on stderr and as the `--json` `nextStep`: the `whisper-cli -m <model> -f <audio>` command that shows whisper's full output, then deleting a damaged downloaded model so the next run fetches it again (or checking a `--model` file) or passing another with `--model`. It gave the error and the kept audio only.
 - `lexicon daemon` on a platform it has no clipboard default for says to pass `--backend <name>` when one of the supported tools works there, or to pipe the text through `lexicon normalize`. It said only that the platform is not supported.
 - `install.sh` names a next step when the installed `lexicon` is not on PATH (open a new terminal or `hash -r`, then add the bin directory under `npm prefix -g`), when it does not answer `--version` (run it to see the error), and when PATH selects another version (`command -v lexicon` shows which one runs).

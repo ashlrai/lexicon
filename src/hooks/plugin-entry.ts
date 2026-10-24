@@ -38,11 +38,29 @@ enableCompileCache();
 // A computed specifier, so esbuild leaves the import alone instead of inlining
 // the hook into this file (which would defeat the point).
 const target = new URL('./hook-main.mjs', import.meta.url).href;
+
+/**
+ * What to do when the bundle beside this stub is missing or will not load: the
+ * plugin's files are incomplete or from a mismatched version, so update the
+ * plugin, or for an npm install reinstall the package and rewrite the hooks.
+ */
+const BUNDLE_NEXT_STEP =
+  'update the plugin with `claude plugin update lexicon@ashlrai` (restart Claude Code after), ' +
+  'or for an npm install run `npm install -g @ashlr/lexicon` then `lexicon install claude --apply`';
+
+let hook: { main: () => Promise<void> } | undefined;
 try {
-  const hook = (await import(target)) as { main: () => Promise<void> };
-  await hook.main();
+  hook = (await import(target)) as { main: () => Promise<void> };
 } catch (err) {
   // The hook always exits 0: a missing or broken bundle must not block the prompt.
-  process.stderr.write(`lexicon hook: ${err instanceof Error ? err.message : String(err)}\n`);
+  process.stderr.write(`lexicon hook: ${err instanceof Error ? err.message : String(err)}\n  ${BUNDLE_NEXT_STEP}\n`);
   process.exitCode = 0;
+}
+if (hook) {
+  try {
+    await hook.main();
+  } catch (err) {
+    process.stderr.write(`lexicon hook: ${err instanceof Error ? err.message : String(err)}\n`);
+    process.exitCode = 0;
+  }
 }
