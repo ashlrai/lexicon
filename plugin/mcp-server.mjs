@@ -61824,6 +61824,13 @@ function containedPath(ctx, path28, cliArgs, env = process.env) {
     `${JSON.stringify(path28)} is outside the directories this server may read (${roots.join(", ")}), so nothing was read. The user can run ${cliCommand(cliArgs(real))} on it themselves, open it as a workspace root in their client, or list it in ${HARVEST_ROOTS_ENV} in the MCP server's environment.`
   );
 }
+function writableProjectFile(ctx, file2, env = process.env) {
+  const own2 = resolvePaths({ cwd: ctx.cwd }).project ?? defaultProjectPath(ctx.cwd);
+  if (realOrResolved(file2) === realOrResolved(own2)) return true;
+  const roots = readableRoots(ctx, env);
+  const real = (0, import_node_fs13.existsSync)(file2) ? realOrResolved(file2) : (0, import_node_path13.join)(realOrResolved((0, import_node_path13.dirname)(file2)), (0, import_node_path13.basename)(file2));
+  return roots.some((root) => isWithin(real, root));
+}
 async function mcpWriteOpts(ctx) {
   return await projectWriteTrusted({ cwd: ctx.cwd }) ? {} : { leaveUntrusted: true };
 }
@@ -62310,7 +62317,7 @@ var registerHarvestTools = (server, ctx) => {
     "harvest_repo",
     {
       title: "Harvest names from a repository",
-      description: "Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without `add` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml. Show the candidate list and get a yes first. A file the user already trusted stays trusted; a new, untrusted or changed one is not trusted by the write (`trusted: false`) and applies only after the user reviews it and runs " + cliCommand("trust") + `: relay \`nextStep\`. \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts: { root, candidates: [{ canonical, category, source, evidence, count, suggestedAliases }], count }, plus \`truncated: true\` and a \`note\` when the scan stopped at its file cap (tell the user, and offer to harvest a subdirectory), where \`evidence\` names where a name was seen (a file path, "git log", "package.json#name"), never the text around it, and \`suggestedAliases\` is often empty on purpose (an identifier gets none). With \`add: true\` the result adds \`added\`, \`failures\` and \`path\`, and is an error when no candidate could be written.`,
+      description: "Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without `add` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml. Show the candidate list and get a yes first. A file the user already trusted stays trusted; a new, untrusted or changed one is not trusted by the write (`trusted: false`) and applies only after the user reviews it and runs " + cliCommand("trust") + `: relay \`nextStep\`. \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused, and so is \`add: true\` when the .lexicon.yaml it would write (found by walking up from \`path\`, or new at its git root) is outside them and not this server's own project file. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts: { root, candidates: [{ canonical, category, source, evidence, count, suggestedAliases }], count }, plus \`truncated: true\` and a \`note\` when the scan stopped at its file cap (tell the user, and offer to harvest a subdirectory), where \`evidence\` names where a name was seen (a file path, "git log", "package.json#name"), never the text around it, and \`suggestedAliases\` is often empty on purpose (an identifier gets none). With \`add: true\` the result adds \`added\`, \`failures\` and \`path\`, and is an error when no candidate could be written.`,
       inputSchema: {
         path: nonBlank().optional().describe(`Repository root. Omit for the server working directory (a blank one is refused). Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
         limit: external_exports.number().int().positive().max(HARVEST_MAX_LIMIT).optional().describe(`Max candidates to return (default 50, at most ${HARVEST_MAX_LIMIT}).`),
@@ -62320,6 +62327,14 @@ var registerHarvestTools = (server, ctx) => {
     },
     async ({ path: path28, limit, minCount, add }) => guarded(async () => {
       const root = path28 ? containedPath(ctx, path28, (dir) => `harvest ${shellWord2(dir)}`) : ctx.cwd;
+      if (add) {
+        const target = resolvePaths({ cwd: root }).project ?? defaultProjectPath(root);
+        if (!writableProjectFile(ctx, target)) {
+          throw new Error(
+            `add: true would write ${target}, which is outside the directories this server may write (${readableRoots(ctx).join(", ")}), so nothing was read or written. Call harvest_repo without add for the read-only preview; the user can run ${cliCommand(`harvest ${shellWord2(root)} --add`)} themselves.`
+          );
+        }
+      }
       const report2 = await harvestReport(root, {
         ...limit !== void 0 ? { limit } : {},
         ...minCount !== void 0 ? { minCount } : {}

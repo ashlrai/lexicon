@@ -1695,6 +1695,37 @@ describe('harvest_repo and suggest_terms on a model-chosen path', () => {
     expect(after.status).toBe('changed');
   });
 
+  // Catches: add: true wrote the .lexicon.yaml found by walking up from
+  // `path` (or a new one at its git root), which can be above every allowed
+  // root: a LEXICON_HARVEST_ROOTS subdirectory wrote its parent repo's file.
+  it('add: true never writes a project file outside the allowed roots', async () => {
+    await fs.mkdir(path.join(outside, '.git'));
+    process.env.LEXICON_HARVEST_ROOTS = path.join(outside, 'other');
+    const above = path.join(outside, '.lexicon.yaml');
+
+    // No file yet: the new one would be at the git root, above the allowed root.
+    const created = await call('harvest_repo', { path: path.join(outside, 'other'), add: true, minCount: 1 });
+    expect(created.isError, created.text).toBe(true);
+    expect(created.text).toContain(`add: true would write ${above}`);
+    expect(created.text).toContain('nothing was read or written');
+    expect(created.text).toContain('harvest_repo without add');
+    await expect(fs.stat(above)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    // An existing file above the root, found by walking up, is left as it was.
+    await fs.writeFile(above, 'version: 1\nterms: []\n');
+    const walked = await call('harvest_repo', { path: path.join(outside, 'other'), add: true, minCount: 1 });
+    expect(walked.isError, walked.text).toBe(true);
+    expect(await fs.readFile(above, 'utf8')).toBe('version: 1\nterms: []\n');
+
+    // The preview still works, and a repo of its own inside the root takes the write.
+    expect((await call('harvest_repo', { path: path.join(outside, 'other'), minCount: 1 })).isError).toBe(false);
+    await fs.mkdir(path.join(outside, 'other', '.git'));
+    const own = await call('harvest_repo', { path: path.join(outside, 'other'), add: true, minCount: 1 });
+    expect(own.isError, own.text).toBe(false);
+    expect(JSON.parse(own.text)).toMatchObject({ path: path.join(outside, 'other', '.lexicon.yaml') });
+    expect(await fs.readFile(above, 'utf8')).toBe('version: 1\nterms: []\n');
+  });
+
   // Catches: apply_suggestion's suggestion schema was not strict, so a
   // misspelt key (`aliass` for `aliases`) was dropped and the suggestion was
   // applied without it, reported as saved.
