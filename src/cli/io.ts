@@ -139,6 +139,16 @@ export function safeMessage(s: string): string {
     .map((l) => sanitizeForDisplayMax(l, ERROR_LINE_MAX_CHARS))
     .join('\n');
 }
+/**
+ * One file path on one line: sanitized like `safe` (line breaks included, so
+ * a directory name cannot start a line of its own) but capped at
+ * ERROR_LINE_MAX_CHARS (PATH_MAX) rather than 200, so a deep path keeps its
+ * file name.
+ */
+export function safePath(p: string): string {
+  return sanitizeForDisplayMax(p, ERROR_LINE_MAX_CHARS);
+}
+
 /** Lines of an error `safeError` prints before "... and N more lines". */
 export const ERROR_MAX_LINES = 12;
 
@@ -199,7 +209,7 @@ export function renderTable(
 ): string {
   const pathColumns = new Set(opts.pathColumns ?? []);
   const cell = (r: readonly string[]): string[] =>
-    r.map((c, i) => (pathColumns.has(i) ? sanitizeForDisplayMax(c, ERROR_LINE_MAX_CHARS) : safe(c)));
+    r.map((c, i) => (pathColumns.has(i) ? safePath(c) : safe(c)));
   const all: (readonly string[])[] = header ? [header.map(safe), ...rows.map(cell)] : rows.map(cell);
   if (all.length === 0) return '';
   const cols = Math.max(...all.map((r) => r.length));

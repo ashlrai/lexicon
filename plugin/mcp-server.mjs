@@ -62625,6 +62625,9 @@ var ERROR_LINE_MAX_CHARS = 4096;
 function safeMessage(s) {
   return s.split("\n").map((l) => sanitizeForDisplayMax(l, ERROR_LINE_MAX_CHARS)).join("\n");
 }
+function safePath(p) {
+  return sanitizeForDisplayMax(p, ERROR_LINE_MAX_CHARS);
+}
 function plural2(n, word) {
   return `${n} ${word}${n === 1 ? "" : "s"}`;
 }
@@ -62637,7 +62640,7 @@ function tildify(p, home) {
 }
 function renderTable(rows, header, opts = {}) {
   const pathColumns = new Set(opts.pathColumns ?? []);
-  const cell = (r) => r.map((c, i) => pathColumns.has(i) ? sanitizeForDisplayMax(c, ERROR_LINE_MAX_CHARS) : safe(c));
+  const cell = (r) => r.map((c, i) => pathColumns.has(i) ? safePath(c) : safe(c));
   const all = header ? [header.map(safe), ...rows.map(cell)] : rows.map(cell);
   if (all.length === 0) return "";
   const cols = Math.max(...all.map((r) => r.length));
@@ -63634,12 +63637,12 @@ function untrustTarget(cwd, path27) {
   }
   return resolved2;
 }
-async function askUserToTrust(server, safePath, file2) {
+async function askUserToTrust(server, safePath2, file2) {
   if (!server.server.getClientCapabilities()?.elicitation) return "unsupported";
   const { termCount, preview, more } = trustPreview(file2);
   const sample = preview.map((row) => row.canonical).join(", ");
   const answer = await server.server.elicitInput({
-    message: `Trust the project lexicon at ${safePath}? Its ${termCount} term(s) (${sample}${more > 0 ? `, and ${more} more` : ""}) will be applied to every prompt in this repo until the file changes. Only approve a file you or your team wrote.`,
+    message: `Trust the project lexicon at ${safePath2}? Its ${termCount} term(s) (${sample}${more > 0 ? `, and ${more} more` : ""}) will be applied to every prompt in this repo until the file changes. Only approve a file you or your team wrote.`,
     requestedSchema: {
       type: "object",
       properties: { trust: { type: "boolean", title: "Trust this file", description: "Apply this project lexicon to prompts in this repo." } },
@@ -63648,9 +63651,9 @@ async function askUserToTrust(server, safePath, file2) {
   });
   return answer.action === "accept" && answer.content?.trust === true ? "accept" : "decline";
 }
-function invalidFileNextStep(safePath) {
-  const isProjectFile = safePath.endsWith(`/${PROJECT_FILE_NAME}`) || safePath.endsWith(`\\${PROJECT_FILE_NAME}`) || safePath === PROJECT_FILE_NAME;
-  const fix = isProjectFile ? `by running ${cliCommand("edit --project")} in that repo` : `by opening ${safePath} in an editor`;
+function invalidFileNextStep(safePath2) {
+  const isProjectFile = safePath2.endsWith(`/${PROJECT_FILE_NAME}`) || safePath2.endsWith(`\\${PROJECT_FILE_NAME}`) || safePath2 === PROJECT_FILE_NAME;
+  const fix = isProjectFile ? `by running ${cliCommand("edit --project")} in that repo` : `by opening ${safePath2} in an editor`;
   return `Ask the user to fix the file ${fix}, check it with lexicon_doctor, then call trust_project again. Do not open it yourself.`;
 }
 var registerTrustTools = (server, ctx) => {
@@ -63671,7 +63674,7 @@ var registerTrustTools = (server, ctx) => {
       const filePath = path27 ? action === "untrust" ? untrustTarget(ctx.cwd, path27) : explicitLexiconPath(ctx, path27) : resolvePaths({ cwd: ctx.cwd }).project;
       const registry2 = getTrustPath({ cwd: ctx.cwd });
       const shown = (text) => neutralizeMarkup(sanitizeForDisplay(text));
-      const safePath = filePath === void 0 ? void 0 : shown(filePath);
+      const safePath2 = filePath === void 0 ? void 0 : shown(filePath);
       if (action === "status") {
         const base = {
           action,
@@ -63684,48 +63687,48 @@ var registerTrustTools = (server, ctx) => {
         try {
           file3 = await readLexiconFile(filePath, "project");
         } catch (err) {
-          return textResult({ ...base, path: safePath, status: "invalid", error: shown(errorMessage(err)), nextStep: invalidFileNextStep(safePath ?? "") });
+          return textResult({ ...base, path: safePath2, status: "invalid", error: shown(errorMessage(err)), nextStep: invalidFileNextStep(safePath2 ?? "") });
         }
-        if (!file3.exists) return textResult({ ...base, path: safePath, status: "missing" });
+        if (!file3.exists) return textResult({ ...base, path: safePath2, status: "missing" });
         const status = await isTrusted(file3, { cwd: ctx.cwd });
-        return textResult({ ...base, path: safePath, status, ...trustSummaryForModel(file3) });
+        return textResult({ ...base, path: safePath2, status, ...trustSummaryForModel(file3) });
       }
       if (!filePath) throw new Error(`no project .lexicon.yaml found from ${shown(ctx.cwd)}; pass a path`);
       if (action === "untrust") {
         const removed = await untrustProject(filePath, { cwd: ctx.cwd });
         return textResult({
           action,
-          path: safePath,
+          path: safePath2,
           removed,
           registry: shown(registry2),
-          summary: removed ? `untrusted ${safePath}; it will no longer be merged` : `${safePath} was not trusted; nothing to do`
+          summary: removed ? `untrusted ${safePath2}; it will no longer be merged` : `${safePath2} was not trusted; nothing to do`
         });
       }
       let file2;
       try {
         file2 = await readLexiconFile(filePath, "project");
       } catch (err) {
-        throw new Error(`refusing to trust an invalid lexicon: ${shown(errorMessage(err))}. ${invalidFileNextStep(safePath ?? "")}`);
+        throw new Error(`refusing to trust an invalid lexicon: ${shown(errorMessage(err))}. ${invalidFileNextStep(safePath2 ?? "")}`);
       }
       if (!file2.exists) {
         throw new Error(
-          `file does not exist: ${safePath}. Call trust_project with action 'status' and no path to see which .lexicon.yaml this server resolves, then pass the path of an existing .lexicon.yaml or the repo directory holding it; if the repo has none yet, ask the user to create one with ${cliCommand("init --project")} in that repo.`
+          `file does not exist: ${safePath2}. Call trust_project with action 'status' and no path to see which .lexicon.yaml this server resolves, then pass the path of an existing .lexicon.yaml or the repo directory holding it; if the repo has none yet, ask the user to create one with ${cliCommand("init --project")} in that repo.`
         );
       }
       const shownSha = await parsedContentHash(file2) ?? await hashFile(filePath);
       const before = await isTrusted(file2, { cwd: ctx.cwd });
       if (before !== "trusted") {
-        const answer = await askUserToTrust(server, safePath ?? "", file2);
+        const answer = await askUserToTrust(server, safePath2 ?? "", file2);
         if (answer === "unsupported") {
           throw new Error(
-            `trusting ${safePath} needs the user's approval and this client cannot ask them; ask the user to review it and run ${cliCommand("trust")} in a terminal in that repo`
+            `trusting ${safePath2} needs the user's approval and this client cannot ask them; ask the user to review it and run ${cliCommand("trust")} in a terminal in that repo`
           );
         }
         if (answer === "decline") {
-          return textResult({ action, path: safePath, status: before, result: "declined", summary: "the user did not approve; nothing was trusted" });
+          return textResult({ action, path: safePath2, status: before, result: "declined", summary: "the user did not approve; nothing was trusted" });
         }
         if (shownSha === void 0 || await hashFile(filePath) !== shownSha) {
-          throw new Error(`${safePath} changed while waiting for approval; nothing was trusted`);
+          throw new Error(`${safePath2} changed while waiting for approval; nothing was trusted`);
         }
       }
       let entry;
@@ -63737,16 +63740,16 @@ var registerTrustTools = (server, ctx) => {
         });
       } catch (err) {
         if (!isTrustContentChangedError(err)) throw err;
-        throw new Error(`${safePath} changed while it was being trusted; nothing was trusted`);
+        throw new Error(`${safePath2} changed while it was being trusted; nothing was trusted`);
       }
       if (before !== "trusted" && entry.sha256 !== shownSha) {
         await untrustProject(filePath, { cwd: ctx.cwd });
-        throw new Error(`${safePath} changed while it was being trusted; trust was revoked`);
+        throw new Error(`${safePath2} changed while it was being trusted; trust was revoked`);
       }
       const verb = entry.alreadyPinned ? "already-trusted" : before === "trusted" ? "re-pinned" : before === "changed" ? "updated" : "trusted";
       return textResult({
         action,
-        path: safePath,
+        path: safePath2,
         previousStatus: before,
         status: "trusted",
         result: verb,
