@@ -1311,3 +1311,65 @@ describe('corrections are queued for review, never learned by the hook', () => {
     }
   });
 });
+
+describe('stdin is read up to HOOK_STDIN_MAX_BYTES', () => {
+  /** A source handing out `total` bytes of `fill`, `chunk` at a time; `syncFails` makes the sync read throw after `syncChunks` reads. */
+  function source(total: number, chunk: number, opts: { syncChunks?: number } = {}) {
+    let left = total;
+    let reads = 0;
+    let streamed = 0;
+    return {
+      get reads() {
+        return reads;
+      },
+      get streamed() {
+        return streamed;
+      },
+      readSync(buffer: Buffer): number {
+        if (opts.syncChunks !== undefined && reads >= opts.syncChunks) throw Object.assign(new Error('EAGAIN'), { code: 'EAGAIN' });
+        reads += 1;
+        const n = Math.min(left, chunk, buffer.length);
+        buffer.fill(0x61, 0, n);
+        left -= n;
+        return n;
+      },
+      async *stream() {
+        while (left > 0) {
+          const n = Math.min(left, chunk);
+          left -= n;
+          streamed += 1;
+          yield Buffer.alloc(n, 0x61);
+        }
+      },
+    };
+  }
+
+  // Catches: stdin had no bound, so a caller piping a huge file was read whole into memory before anything looked at it.
+  it('stops reading as soon as the input passes the cap, sync or streamed', async () => {
+    const { readStdin, HOOK_STDIN_MAX_BYTES } = await import('../src/hooks/user-prompt-submit.js');
+    expect(HOOK_STDIN_MAX_BYTES).toBe(16 * 1024 * 1024);
+    const sync = source(10_000_000, 64 * 1024);
+    const read = await readStdin(1_000_000, sync);
+    expect(read.bytes).toBeUndefined();
+    expect(read.overflow).toBeGreaterThan(1_000_000);
+    expect(read.overflow).toBeLessThanOrEqual(1_000_000 + 64 * 1024);
+    expect(sync.reads).toBeLessThanOrEqual(Math.ceil(1_000_000 / (64 * 1024)) + 1);
+    const streamed = source(10_000_000, 100_000, { syncChunks: 2 });
+    const r2 = await readStdin(1_000_000, streamed);
+    expect(r2.overflow).toBeGreaterThan(1_000_000);
+    expect(streamed.streamed).toBeLessThan(15);
+  });
+
+  it('returns every byte of an input at or under the cap', async () => {
+    const { readStdin } = await import('../src/hooks/user-prompt-submit.js');
+    expect((await readStdin(1000, source(1000, 64))).bytes?.length).toBe(1000);
+    expect((await readStdin(1000, source(999, 300, { syncChunks: 1 }))).bytes?.length).toBe(999);
+    expect((await readStdin(1000, source(0, 64))).bytes?.length).toBe(0);
+  });
+
+  it('names the cap in its stderr line and never quotes the input', async () => {
+    const { formatStdinOverflow } = await import('../src/hooks/user-prompt-submit.js');
+    const line = formatStdinOverflow(17_000_000);
+    expect(line).toBe(`[lexicon hook] stdin is over ${16 * 1024 * 1024} bytes (stopped reading at 17000000); a Claude Code hook payload is far smaller, nothing to do\n`);
+  });
+});

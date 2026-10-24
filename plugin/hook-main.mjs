@@ -21472,21 +21472,36 @@ async function runHook(input, opts = {}) {
   }
   return userPromptSubmit(payload, opts);
 }
-async function readStdin() {
+var HOOK_STDIN_MAX_BYTES = 16 * 1024 * 1024;
+var processStdin = {
+  readSync: (buffer) => (0, import_node_fs8.readSync)(0, buffer, 0, buffer.length, null),
+  stream: () => process.stdin
+};
+async function readStdin(max = HOOK_STDIN_MAX_BYTES, source = processStdin) {
   const chunks = [];
+  let total = 0;
+  const take = (chunk) => {
+    chunks.push(chunk);
+    total += chunk.length;
+    return total > max;
+  };
   try {
     const buf = Buffer.allocUnsafe(64 * 1024);
     for (; ; ) {
-      const n = (0, import_node_fs8.readSync)(0, buf, 0, buf.length, null);
-      if (n === 0) return Buffer.concat(chunks).toString("utf8");
-      chunks.push(Buffer.from(buf.subarray(0, n)));
+      const n = source.readSync(buf);
+      if (n === 0) return { bytes: Buffer.concat(chunks) };
+      if (take(Buffer.from(buf.subarray(0, n)))) return { overflow: total };
     }
   } catch {
   }
-  for await (const chunk of process.stdin) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  for await (const chunk of source.stream()) {
+    if (take(typeof chunk === "string" ? Buffer.from(chunk) : chunk)) return { overflow: total };
   }
-  return Buffer.concat(chunks).toString("utf8");
+  return { bytes: Buffer.concat(chunks) };
+}
+function formatStdinOverflow(read, max = HOOK_STDIN_MAX_BYTES) {
+  return `[lexicon hook] stdin is over ${max} bytes (stopped reading at ${read}); a Claude Code hook payload is far smaller, nothing to do
+`;
 }
 var processSink = {
   writeSync: (fd, buffer, offset, length) => (0, import_node_fs8.writeSync)(fd, buffer, offset, length),
@@ -21535,8 +21550,12 @@ async function main(argv = process.argv.slice(2)) {
     return;
   }
   try {
-    const raw = await readStdin();
-    const out = await runHook(raw);
+    const read = await readStdin();
+    if (read.overflow !== void 0) {
+      process.stderr.write(formatStdinOverflow(read.overflow));
+      return;
+    }
+    const out = await runHook(read.bytes.toString("utf8"));
     if (out) writeStdout(out);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -21567,6 +21586,7 @@ export {
   HOOK_LOCK_TIMEOUT_MS,
   HOOK_MATCH_BUDGET_MS,
   HOOK_PROMPT_MAX_CHARS,
+  HOOK_STDIN_MAX_BYTES,
   ONBOARD_NOTE,
   ONBOARD_NOTE_FILE,
   ONBOARD_NOTE_INTERVAL_MS,
@@ -21581,10 +21601,12 @@ export {
   formatCorrectionNotes,
   formatLengthNote,
   formatSkippedProjectNote,
+  formatStdinOverflow,
   hookFlagOutput,
   main,
   onboardNotePath,
   parseCorrections,
+  readStdin,
   runHook,
   runSessionStartHook,
   runUserPromptSubmitHook,

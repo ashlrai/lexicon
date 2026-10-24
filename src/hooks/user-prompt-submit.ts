@@ -961,28 +961,67 @@ export async function runHook(input: string, opts: HookOptions = {}): Promise<st
 }
 
 /**
- * The whole of stdin. Read synchronously first: `process.stdin` on a pipe is a
- * `net.Socket`, and loading `node:net` for it was about 10 ms of the hook's
- * startup. If the descriptor turns out to be non-blocking (EAGAIN) or cannot
- * be read that way at all, whatever was already read is kept and the rest
- * comes from the stream as before.
+ * Most bytes of stdin the hook reads: 16 MiB. A dictated prompt is a few
+ * kilobytes and the largest paste Claude Code passes through is a few
+ * megabytes (only the first HOOK_PROMPT_MAX_CHARS of it is checked anyway);
+ * stdin had no bound, so a runaway caller piping a log file kept the whole
+ * thing in memory twice (the chunks and the decoded string) and then parsed
+ * it. Past the cap the hook stops reading, says so in one stderr line, prints
+ * nothing and exits 0: a JSON payload cut short cannot be parsed.
  */
-async function readStdin(): Promise<string> {
+export const HOOK_STDIN_MAX_BYTES = 16 * 1024 * 1024;
+
+/** What `readStdin` reads from; tests replace it. */
+export interface StdinSource {
+  /** Synchronous read into `buffer`; 0 at end of input. May throw (EAGAIN, no fd 0). */
+  readSync(buffer: Buffer): number;
+  /** The same input as a stream, for whatever the synchronous read could not get. */
+  stream(): AsyncIterable<Buffer | string>;
+}
+
+const processStdin: StdinSource = {
+  readSync: (buffer) => readSync(0, buffer, 0, buffer.length, null),
+  stream: () => process.stdin,
+};
+
+/** What `readStdin` returns: the bytes read, or how many it had read when it passed the cap. */
+export type StdinRead = { bytes: Buffer; overflow?: undefined } | { overflow: number; bytes?: undefined };
+
+/**
+ * Stdin, at most `max` bytes. Read synchronously first: `process.stdin` on a
+ * pipe is a `net.Socket`, and loading `node:net` for it was about 10 ms of
+ * the hook's startup. If the descriptor turns out to be non-blocking (EAGAIN)
+ * or cannot be read that way at all, whatever was already read is kept and
+ * the rest comes from the stream. Reading stops as soon as the total passes
+ * `max` (see HOOK_STDIN_MAX_BYTES). Exported for tests.
+ */
+export async function readStdin(max: number = HOOK_STDIN_MAX_BYTES, source: StdinSource = processStdin): Promise<StdinRead> {
   const chunks: Buffer[] = [];
+  let total = 0;
+  const take = (chunk: Buffer): boolean => {
+    chunks.push(chunk);
+    total += chunk.length;
+    return total > max;
+  };
   try {
     const buf = Buffer.allocUnsafe(64 * 1024);
     for (;;) {
-      const n = readSync(0, buf, 0, buf.length, null);
-      if (n === 0) return Buffer.concat(chunks).toString('utf8');
-      chunks.push(Buffer.from(buf.subarray(0, n)));
+      const n = source.readSync(buf);
+      if (n === 0) return { bytes: Buffer.concat(chunks) };
+      if (take(Buffer.from(buf.subarray(0, n)))) return { overflow: total };
     }
   } catch {
     // EAGAIN / EOF quirks / no fd 0: finish from the stream below
   }
-  for await (const chunk of process.stdin) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  for await (const chunk of source.stream()) {
+    if (take(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)) return { overflow: total };
   }
-  return Buffer.concat(chunks).toString('utf8');
+  return { bytes: Buffer.concat(chunks) };
+}
+
+/** The stderr line for stdin past HOOK_STDIN_MAX_BYTES. */
+export function formatStdinOverflow(read: number, max: number = HOOK_STDIN_MAX_BYTES): string {
+  return `[lexicon hook] stdin is over ${max} bytes (stopped reading at ${read}); a Claude Code hook payload is far smaller, nothing to do\n`;
 }
 
 /** What `writeStdout` writes through; tests replace it. */
@@ -1059,8 +1098,12 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     return;
   }
   try {
-    const raw = await readStdin();
-    const out = await runHook(raw);
+    const read = await readStdin();
+    if (read.overflow !== undefined) {
+      process.stderr.write(formatStdinOverflow(read.overflow));
+      return;
+    }
+    const out = await runHook(read.bytes.toString('utf8'));
     if (out) writeStdout(out);
   } catch (err) {
     // Silent by design: a broken hook must not break the user's prompt.

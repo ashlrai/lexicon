@@ -91,6 +91,8 @@ function runNode(script: string, args: readonly string[], opts: RunOptions = {})
       clearTimeout(timer);
       resolve({ code, stdout, stderr });
     });
+    // A child that stops reading early (the hook past its stdin cap) closes the pipe: EPIPE here is expected, not a failure.
+    child.stdin.on('error', () => undefined);
     if (opts.stdin !== undefined) child.stdin.end(opts.stdin);
     else child.stdin.end();
   });
@@ -1045,6 +1047,15 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: UserPromptSubmit 
     expect(garbage.code).toBe(0);
     expect(garbage.stdout).toBe('');
     expect(garbage.stderr).toContain('[lexicon hook]');
+  });
+
+  // Catches: stdin had no cap, so a caller piping a huge file had all of it read and parsed.
+  it('stops reading stdin past 16 MiB, prints nothing and exits 0', async () => {
+    const huge = payload('ask Ashler ' + 'x'.repeat(17 * 1024 * 1024), shared.repo);
+    const r = await runNode(HOOK, [], { env: shared.env, stdin: huge });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toBe('');
+    expect(r.stderr).toContain(`[lexicon hook] stdin is over ${16 * 1024 * 1024} bytes`);
   });
 
   it('names (never quotes) an untrusted project lexicon', async () => {
