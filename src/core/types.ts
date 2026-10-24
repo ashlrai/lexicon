@@ -131,6 +131,12 @@ export interface LoadedLexicon {
    * its contents into model context.
    */
   skippedProject?: LexiconFile;
+  /**
+   * True when `loadLexicon` was asked for `staleGlobal` and `global` holds
+   * the cached parse of the global file's previous text, because the file
+   * changed since. Absent otherwise.
+   */
+  globalStale?: true;
 }
 
 export type MatchReason = 'alias' | 'phonetic' | 'fuzzy';

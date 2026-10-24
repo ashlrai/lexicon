@@ -27,7 +27,7 @@
 import { promises as fs, readSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { codeSpanRanges, collectRanges, diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, pathForModel, phoneticKey, queueCorrections, recordHits, sanitizeForDisplayMax, similarity } from '../core/index.js';
+import { codeSpanRanges, collectRanges, diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, pathForModel, phoneticKey, queueCorrections, recordHits, resolvePaths, sanitizeForDisplayMax, similarity } from '../core/index.js';
 import type { Correction, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
 import { packageVersion } from '../util/package.js';
 import { cliCommand } from '../util/cli-hint.js';
@@ -37,7 +37,108 @@ export interface HookOptions {
   cwd?: string;
   /** Overrides HOOK_MATCH_BUDGET_MS. */
   matchBudgetMs?: number;
+  /**
+   * Starts a background refresh of the parse and index caches for `cwd`
+   * (`main()` passes `spawnCacheRefresh`, a detached `--refresh-cache`
+   * process). With it, a UserPromptSubmit whose global lexicon changed since
+   * it was cached (and is at least STALE_GLOBAL_MIN_BYTES) is matched against
+   * the previous version, with the stale note, instead of parsing and
+   * indexing inside the prompt; without it (the default) the prompt parses as
+   * before. See claimCacheRefresh.
+   */
+  startRefresh?: (cwd: string) => Promise<void>;
 }
+
+/** The argv flag that makes `main()` refresh the caches for the directory after it and exit (see spawnCacheRefresh). */
+export const REFRESH_CACHE_FLAG = '--refresh-cache';
+
+/** Lock file (next to the global lexicon) held by the background cache refresh. */
+export const REFRESH_LOCK_FILE = 'index-refresh.lock';
+
+/**
+ * How long a refresh lock is taken as a refresh still running. Past it the
+ * refresh is taken as dead (or unable to write its caches), the lock is
+ * removed and the prompt parses for real, so a lexicon change is never
+ * served stale for longer than this. A 5000-term refresh takes under a second.
+ */
+export const REFRESH_LOCK_STALE_MS = 30_000;
+
+/**
+ * Whether this prompt may be served from the previous lexicon while a
+ * background refresh brings the caches up to date: `claimed` when it took
+ * the refresh lock (the caller starts the refresh), `running` when a refresh
+ * younger than REFRESH_LOCK_STALE_MS holds it, `unavailable` when the lock
+ * cannot be created (a read-only config directory, where the refresh could
+ * not write its caches either) or is older than that (it is removed, so a
+ * later prompt can claim it). Never throws. Exported for tests.
+ */
+export async function claimCacheRefresh(globalPath: string, now: number = Date.now()): Promise<'claimed' | 'running' | 'unavailable'> {
+  const lock = join(dirname(globalPath), REFRESH_LOCK_FILE);
+  try {
+    await fs.writeFile(lock, `${JSON.stringify({ pid: process.pid, at: new Date(now).toISOString() })}\n`, { flag: 'wx', mode: 0o600 });
+    return 'claimed';
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException | undefined)?.code !== 'EEXIST') return 'unavailable';
+  }
+  try {
+    const st = await fs.stat(lock);
+    if (now - st.mtimeMs < REFRESH_LOCK_STALE_MS) return 'running';
+    await fs.unlink(lock);
+  } catch {
+    // gone in between, or cannot be removed: parse for real this time
+  }
+  return 'unavailable';
+}
+
+/** Removes the refresh lock beside `globalPath`. Never throws. */
+async function releaseCacheRefresh(globalPath: string): Promise<void> {
+  await fs.unlink(join(dirname(globalPath), REFRESH_LOCK_FILE)).catch(() => undefined);
+}
+
+/**
+ * What the `--refresh-cache` process runs: loads the lexicon for `cwd` the
+ * way the prompt does (which rewrites the parse cache, or records the parse
+ * failure), builds and writes the index cache, then releases the refresh
+ * lock. Never throws. Exported for tests.
+ */
+export async function refreshHookCaches(cwd: string): Promise<void> {
+  let globalPath: string | undefined;
+  try {
+    const loaded = await loadLexicon({ cwd, parseSkipped: false });
+    globalPath = loaded.global.path;
+    if (loaded.merged.terms.length > 0) await loadMatcherIndex(loaded);
+  } catch {
+    // a file that does not parse is recorded by loadLexicon; anything else is retried by a later prompt
+  } finally {
+    await releaseCacheRefresh(globalPath ?? resolvePaths({ cwd }).global);
+  }
+}
+
+/**
+ * Starts `refreshHookCaches(cwd)` in a detached process (this module run
+ * with REFRESH_CACHE_FLAG) and returns at once, so the prompt is not held.
+ * `node:child_process` is loaded only here, off the ordinary prompt's path.
+ */
+export async function spawnCacheRefresh(cwd: string): Promise<void> {
+  const { spawn } = await import('node:child_process');
+  // The parent's loader flags (`--import tsx` from source) without a debugger port it holds.
+  const execArgv = process.execArgv.filter((a) => !/^--inspect/.test(a));
+  const child = spawn(process.execPath, [...execArgv, fileURLToPath(import.meta.url), REFRESH_CACHE_FLAG, cwd], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  child.on('error', () => undefined);
+  child.unref();
+}
+
+/**
+ * One line for a prompt matched against the previous version of a global
+ * lexicon that changed since (see HookOptions.startRefresh), so a term just
+ * added or changed that did not apply is explained.
+ */
+export const STALE_LEXICON_NOTE =
+  'Lexicon note: the lexicon file changed since it was last read, so these corrections used the previous version while the new one is prepared in the background; a term just added or changed applies from the next prompt.';
 
 /**
  * How long the UserPromptSubmit hook spends matching before it stops and
@@ -805,12 +906,12 @@ function shownValue(value: unknown): string {
  * hook still must not fail and must never touch the prompt, so the problem is
  * reported through the one channel the hook is already allowed to use.
  */
-async function loadOrExplain(cwd: string): Promise<{ loaded?: Awaited<ReturnType<typeof loadLexicon>>; note?: string }> {
+async function loadOrExplain(cwd: string, staleGlobal = false): Promise<{ loaded?: Awaited<ReturnType<typeof loadLexicon>>; note?: string }> {
   try {
     // parseSkipped: false checks trust before parsing the project file, so a
     // repo lexicon nobody trusted costs no YAML parse; the hook only ever
     // reports a skipped file by path.
-    return { loaded: await loadLexicon({ cwd, parseSkipped: false }) };
+    return { loaded: await loadLexicon(staleGlobal ? { cwd, parseSkipped: false, staleGlobal: true } : { cwd, parseSkipped: false }) };
   } catch (err) {
     const message = neutralizeForModel(err instanceof Error ? err.message : String(err));
     // Only a store parse/validation error is a file to fix with `lexicon edit`;
@@ -883,7 +984,26 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
   // Default loadLexicon merges the project file only when trusted; an
   // untrusted one shows up as skippedProject and is mentioned by path only.
-  const attempt = await loadOrExplain(cwd);
+  let attempt = await loadOrExplain(cwd, opts.startRefresh !== undefined);
+  let staleNote = '';
+  if (attempt.loaded?.globalStale && opts.startRefresh) {
+    // The global file changed since it was cached: match against the previous
+    // version and let a background process parse and index the new one,
+    // unless no refresh can run (see claimCacheRefresh).
+    const globalPath = attempt.loaded.global.path;
+    let claim = await claimCacheRefresh(globalPath);
+    if (claim === 'claimed') {
+      try {
+        await opts.startRefresh(cwd);
+      } catch (err) {
+        process.stderr.write(`[lexicon hook] could not start the cache refresh: ${sanitizeForDisplayMax(errorText(err), 200)}\n`);
+        await releaseCacheRefresh(globalPath);
+        claim = 'unavailable';
+      }
+    }
+    if (claim === 'unavailable') attempt = await loadOrExplain(cwd);
+    else staleNote = STALE_LEXICON_NOTE;
+  }
   if (!attempt.loaded) return emit('UserPromptSubmit', [attempt.note ?? '']);
   const loaded = attempt.loaded;
   const skippedNote = formatSkippedProjectNote(loaded);
@@ -932,6 +1052,7 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   if (budgetNote) parts.push(budgetNote);
   if (correctionNote) parts.push(correctionNote);
   if (skippedNote) parts.push(skippedNote);
+  if (staleNote) parts.push(staleNote);
   return emit('UserPromptSubmit', parts);
 }
 
@@ -1141,6 +1262,12 @@ export function hookFlagOutput(argv: readonly string[]): string | undefined {
 }
 
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+  if (argv[0] === REFRESH_CACHE_FLAG) {
+    // The detached background refresh (spawnCacheRefresh): no stdin, no output.
+    await refreshHookCaches(argv[1] ?? process.cwd());
+    process.exitCode = 0;
+    return;
+  }
   const flagOutput = hookFlagOutput(argv);
   if (flagOutput !== undefined) {
     writeStdout(`${flagOutput}\n`);
@@ -1153,7 +1280,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       process.stderr.write(formatStdinOverflow(read.overflow));
       return;
     }
-    const out = await runHook(decodeStdin(read.bytes));
+    const out = await runHook(decodeStdin(read.bytes), { startRefresh: spawnCacheRefresh });
     if (out) writeStdout(out);
   } catch (err) {
     // Silent by design: a broken hook must not break the user's prompt.

@@ -7561,6 +7561,13 @@ var require_node_crypto = __commonJS({
   }
 });
 
+// builtin-cjs:node:child_process
+var require_node_child_process = __commonJS({
+  "builtin-cjs:node:child_process"(exports, module) {
+    module.exports = __require("node:child_process");
+  }
+});
+
 // src/hooks/user-prompt-submit.ts
 var import_node_fs8 = __toESM(require_node_fs(), 1);
 var import_node_path8 = __toESM(require_node_path(), 1);
@@ -19981,24 +19988,28 @@ function cacheChecksum(text) {
   }
   return (h >>> 0).toString(16).padStart(8, "0");
 }
-async function readGlobalLexiconCached(filePath, opts = {}) {
+async function readGlobalLexiconMaybeStale(filePath, opts = {}) {
   const read = await readLexiconText(filePath);
-  if (read === void 0) return { path: filePath, scope: "global", lexicon: emptyLexicon(), exists: false };
-  if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, "global");
+  if (read === void 0) return { file: { path: filePath, scope: "global", lexicon: emptyLexicon(), exists: false } };
+  if (read.text.length < PARSE_CACHE_MIN_BYTES) return { file: parseLexiconText(read.text, filePath, "global") };
   const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_CACHE_FILE_NAME);
   const key = import_node_path5.default.resolve(filePath);
+  let previous;
   try {
     const cached2 = JSON.parse(await import_node_fs5.promises.readFile(cachePath, "utf8"));
-    if (isPlainObject2(cached2) && cached2.version === PARSE_CACHE_VERSION && cached2.path === key && cached2.text === read.text && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(cached2.lexicon)) {
+    if (isPlainObject2(cached2) && cached2.version === PARSE_CACHE_VERSION && cached2.path === key && typeof cached2.text === "string" && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(cached2.lexicon)) {
       const lexicon = JSON.parse(cached2.lexicon);
       if (isPlainObject2(lexicon) && Array.isArray(lexicon.terms)) {
-        return { path: filePath, scope: "global", lexicon, exists: true };
+        const file2 = { path: filePath, scope: "global", lexicon, exists: true };
+        if (cached2.text === read.text) return { file: file2 };
+        if (opts.stale && read.text.length >= STALE_GLOBAL_MIN_BYTES) previous = file2.lexicon;
       }
     }
   } catch {
   }
   const failure2 = await readParseFailure(import_node_path5.default.dirname(filePath), key, read.text);
   if (failure2 !== void 0) throw new Error(`${failure2.kind === "yaml" ? "Failed to parse lexicon YAML" : "Invalid lexicon"} at ${filePath}: ${failure2.reason}`);
+  if (previous !== void 0) return { file: { path: filePath, scope: "global", lexicon: previous, exists: true }, stale: true };
   let file;
   try {
     file = parseLexiconText(read.text, filePath, "global");
@@ -20010,8 +20021,9 @@ async function readGlobalLexiconCached(filePath, opts = {}) {
     await writeParseCache(filePath, read.text, file.lexicon, read.mode);
     await import_node_fs5.promises.unlink(import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_FAILURE_FILE_NAME)).catch(() => void 0);
   }
-  return file;
+  return { file };
 }
+var STALE_GLOBAL_MIN_BYTES = 64 * 1024;
 var PARSE_FAILURE_FILE_NAME = "parse-failure.json";
 var PARSE_FAILURE_VERSION = 1;
 async function readParseFailure(dir, key, text) {
@@ -20302,7 +20314,12 @@ async function hydrateHits(merged, project, opts) {
 }
 async function loadLexicon(opts = {}) {
   const paths = resolvePaths(opts);
-  const global = await readGlobalLexiconCached(paths.global);
+  const read = await readGlobalLexiconMaybeStale(paths.global, opts.staleGlobal ? { stale: true } : {});
+  const global = read.file;
+  if (read.stale) return { ...await loadLexiconWith(global, paths, opts), globalStale: true };
+  return loadLexiconWith(global, paths, opts);
+}
+async function loadLexiconWith(global, paths, opts) {
   if (!paths.project) return { merged: await hydrated(mergeLexicons(global.lexicon)), global };
   const gateFirst = opts.parseSkipped === false && !opts.includeUntrusted;
   let project;
@@ -21029,6 +21046,52 @@ function cliCommand(args) {
 }
 
 // src/hooks/user-prompt-submit.ts
+var REFRESH_CACHE_FLAG = "--refresh-cache";
+var REFRESH_LOCK_FILE = "index-refresh.lock";
+var REFRESH_LOCK_STALE_MS = 3e4;
+async function claimCacheRefresh(globalPath, now = Date.now()) {
+  const lock = (0, import_node_path8.join)((0, import_node_path8.dirname)(globalPath), REFRESH_LOCK_FILE);
+  try {
+    await import_node_fs8.promises.writeFile(lock, `${JSON.stringify({ pid: process.pid, at: new Date(now).toISOString() })}
+`, { flag: "wx", mode: 384 });
+    return "claimed";
+  } catch (err) {
+    if (err?.code !== "EEXIST") return "unavailable";
+  }
+  try {
+    const st = await import_node_fs8.promises.stat(lock);
+    if (now - st.mtimeMs < REFRESH_LOCK_STALE_MS) return "running";
+    await import_node_fs8.promises.unlink(lock);
+  } catch {
+  }
+  return "unavailable";
+}
+async function releaseCacheRefresh(globalPath) {
+  await import_node_fs8.promises.unlink((0, import_node_path8.join)((0, import_node_path8.dirname)(globalPath), REFRESH_LOCK_FILE)).catch(() => void 0);
+}
+async function refreshHookCaches(cwd) {
+  let globalPath;
+  try {
+    const loaded = await loadLexicon({ cwd, parseSkipped: false });
+    globalPath = loaded.global.path;
+    if (loaded.merged.terms.length > 0) await loadMatcherIndex(loaded);
+  } catch {
+  } finally {
+    await releaseCacheRefresh(globalPath ?? resolvePaths({ cwd }).global);
+  }
+}
+async function spawnCacheRefresh(cwd) {
+  const { spawn } = await Promise.resolve().then(() => __toESM(require_node_child_process(), 1));
+  const execArgv = process.execArgv.filter((a) => !/^--inspect/.test(a));
+  const child = spawn(process.execPath, [...execArgv, (0, import_node_url2.fileURLToPath)(import.meta.url), REFRESH_CACHE_FLAG, cwd], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true
+  });
+  child.on("error", () => void 0);
+  child.unref();
+}
+var STALE_LEXICON_NOTE = "Lexicon note: the lexicon file changed since it was last read, so these corrections used the previous version while the new one is prepared in the background; a term just added or changed applies from the next prompt.";
 var HOOK_MATCH_BUDGET_MS = 100;
 var HOOK_PROMPT_MAX_CHARS = 5e4;
 var HOOK_LOCK_TIMEOUT_MS = 50;
@@ -21423,9 +21486,9 @@ function shownValue(value) {
   const text = typeof value === "string" ? value : JSON.stringify(value) ?? String(value);
   return JSON.stringify(sanitizeForDisplayMax(text, 60));
 }
-async function loadOrExplain(cwd) {
+async function loadOrExplain(cwd, staleGlobal = false) {
   try {
-    return { loaded: await loadLexicon({ cwd, parseSkipped: false }) };
+    return { loaded: await loadLexicon(staleGlobal ? { cwd, parseSkipped: false, staleGlobal: true } : { cwd, parseSkipped: false }) };
   } catch (err) {
     const message = neutralizeForModel(err instanceof Error ? err.message : String(err));
     if (!UNPARSEABLE_LEXICON_RE.test(message)) {
@@ -21471,7 +21534,24 @@ async function userPromptSubmit(payload, opts) {
   }
   if (typeof prompt !== "string" || prompt.trim() === "") return "";
   const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
-  const attempt = await loadOrExplain(cwd);
+  let attempt = await loadOrExplain(cwd, opts.startRefresh !== void 0);
+  let staleNote = "";
+  if (attempt.loaded?.globalStale && opts.startRefresh) {
+    const globalPath = attempt.loaded.global.path;
+    let claim2 = await claimCacheRefresh(globalPath);
+    if (claim2 === "claimed") {
+      try {
+        await opts.startRefresh(cwd);
+      } catch (err) {
+        process.stderr.write(`[lexicon hook] could not start the cache refresh: ${sanitizeForDisplayMax(errorText(err), 200)}
+`);
+        await releaseCacheRefresh(globalPath);
+        claim2 = "unavailable";
+      }
+    }
+    if (claim2 === "unavailable") attempt = await loadOrExplain(cwd);
+    else staleNote = STALE_LEXICON_NOTE;
+  }
   if (!attempt.loaded) return emit("UserPromptSubmit", [attempt.note ?? ""]);
   const loaded = attempt.loaded;
   const skippedNote = formatSkippedProjectNote(loaded);
@@ -21502,6 +21582,7 @@ async function userPromptSubmit(payload, opts) {
   if (budgetNote) parts.push(budgetNote);
   if (correctionNote) parts.push(correctionNote);
   if (skippedNote) parts.push(skippedNote);
+  if (staleNote) parts.push(staleNote);
   return emit("UserPromptSubmit", parts);
 }
 function formatBudgetNote(budgetMs) {
@@ -21609,6 +21690,11 @@ function hookFlagOutput(argv) {
   return void 0;
 }
 async function main(argv = process.argv.slice(2)) {
+  if (argv[0] === REFRESH_CACHE_FLAG) {
+    await refreshHookCaches(argv[1] ?? process.cwd());
+    process.exitCode = 0;
+    return;
+  }
   const flagOutput = hookFlagOutput(argv);
   if (flagOutput !== void 0) {
     writeStdout(`${flagOutput}
@@ -21622,7 +21708,7 @@ async function main(argv = process.argv.slice(2)) {
       process.stderr.write(formatStdinOverflow(read.overflow));
       return;
     }
-    const out = await runHook(decodeStdin(read.bytes));
+    const out = await runHook(decodeStdin(read.bytes), { startRefresh: spawnCacheRefresh });
     if (out) writeStdout(out);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -21657,8 +21743,13 @@ export {
   ONBOARD_NOTE,
   ONBOARD_NOTE_FILE,
   ONBOARD_NOTE_INTERVAL_MS,
+  REFRESH_CACHE_FLAG,
+  REFRESH_LOCK_FILE,
+  REFRESH_LOCK_STALE_MS,
   SESSION_CONTEXT_MAX_CHARS,
+  STALE_LEXICON_NOTE,
   capCorrectionList,
+  claimCacheRefresh,
   dataBlockSpans,
   decodeStdin,
   dropCorrectionSpans,
@@ -21675,10 +21766,12 @@ export {
   onboardNotePath,
   parseCorrections,
   readStdin,
+  refreshHookCaches,
   runHook,
   runSessionStartHook,
   runUserPromptSubmitHook,
   shouldEmitOnboardNote,
+  spawnCacheRefresh,
   truncateSessionContext,
   writeStdout
 };

@@ -14,7 +14,7 @@
  * Set LEXICON_SKIP_E2E=1 to skip the whole file (see CONTRIBUTING.md).
  */
 import { spawn } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import nodeModule from 'node:module';
 import path from 'node:path';
@@ -1067,6 +1067,29 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: UserPromptSubmit 
     expect(r.code).toBe(0);
     expect(r.stderr).toBe('');
     expect((JSON.parse(r.stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext).toContain('"Ashler" -> "Ashlr.AI"');
+  });
+
+  // Catches: the first prompt after a hand edit of a large lexicon parsed and indexed it inside the prompt.
+  it('serves a hand-edited large lexicon stale once, refreshes it in the background, then applies the edit', async () => {
+    const h = await cloneOf(shared, 'hook-stale');
+    const env = { ...h.env, LEXICON_QUEUE_CORRECTIONS: '0' };
+    let yaml = 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n';
+    for (let i = 0; i < 1500; i += 1) yaml += `  - canonical: Filler${i}word\n    aliases: [fillerx${i}y]\n`;
+    await fs.writeFile(h.globalPath, yaml);
+    const ctxOf = (r: RunResult): string => (JSON.parse(r.stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
+    expect(ctxOf(await runNode(HOOK, [], { env, stdin: payload('ask Ashler', h.repo) }))).not.toContain('previous version');
+    await fs.appendFile(h.globalPath, '  - canonical: Qwertyon\n    aliases: [kwertyon]\n');
+    const stale = await runNode(HOOK, [], { env, stdin: payload('ask Ashler about kwertyon', h.repo) });
+    expect(stale.code).toBe(0);
+    expect(ctxOf(stale)).toContain('these corrections used the previous version');
+    expect(ctxOf(stale)).not.toContain('Qwertyon');
+    const lock = path.join(path.dirname(h.globalPath), 'index-refresh.lock');
+    const until = Date.now() + 15_000;
+    while (existsSync(lock) && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    expect(existsSync(lock)).toBe(false);
+    const fresh = await runNode(HOOK, [], { env, stdin: payload('ask kwertyon', h.repo) });
+    expect(ctxOf(fresh)).toContain('"kwertyon" -> "Qwertyon"');
+    expect(ctxOf(fresh)).not.toContain('previous version');
   });
 
   it('names (never quotes) an untrusted project lexicon', async () => {

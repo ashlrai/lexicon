@@ -54569,23 +54569,30 @@ function readLexiconFileForWrite(filePath, scope) {
   return scope === "global" ? readGlobalLexiconCached(filePath, { writeBack: false }) : readLexiconFile(filePath, scope);
 }
 async function readGlobalLexiconCached(filePath, opts = {}) {
+  return (await readGlobalLexiconMaybeStale(filePath, opts)).file;
+}
+async function readGlobalLexiconMaybeStale(filePath, opts = {}) {
   const read = await readLexiconText(filePath);
-  if (read === void 0) return { path: filePath, scope: "global", lexicon: emptyLexicon(), exists: false };
-  if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, "global");
+  if (read === void 0) return { file: { path: filePath, scope: "global", lexicon: emptyLexicon(), exists: false } };
+  if (read.text.length < PARSE_CACHE_MIN_BYTES) return { file: parseLexiconText(read.text, filePath, "global") };
   const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_CACHE_FILE_NAME);
   const key = import_node_path5.default.resolve(filePath);
+  let previous;
   try {
     const cached2 = JSON.parse(await import_node_fs5.promises.readFile(cachePath, "utf8"));
-    if (isPlainObject3(cached2) && cached2.version === PARSE_CACHE_VERSION && cached2.path === key && cached2.text === read.text && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(cached2.lexicon)) {
+    if (isPlainObject3(cached2) && cached2.version === PARSE_CACHE_VERSION && cached2.path === key && typeof cached2.text === "string" && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(cached2.lexicon)) {
       const lexicon = JSON.parse(cached2.lexicon);
       if (isPlainObject3(lexicon) && Array.isArray(lexicon.terms)) {
-        return { path: filePath, scope: "global", lexicon, exists: true };
+        const file3 = { path: filePath, scope: "global", lexicon, exists: true };
+        if (cached2.text === read.text) return { file: file3 };
+        if (opts.stale && read.text.length >= STALE_GLOBAL_MIN_BYTES) previous = file3.lexicon;
       }
     }
   } catch {
   }
   const failure2 = await readParseFailure(import_node_path5.default.dirname(filePath), key, read.text);
   if (failure2 !== void 0) throw new Error(`${failure2.kind === "yaml" ? "Failed to parse lexicon YAML" : "Invalid lexicon"} at ${filePath}: ${failure2.reason}`);
+  if (previous !== void 0) return { file: { path: filePath, scope: "global", lexicon: previous, exists: true }, stale: true };
   let file2;
   try {
     file2 = parseLexiconText(read.text, filePath, "global");
@@ -54597,8 +54604,9 @@ async function readGlobalLexiconCached(filePath, opts = {}) {
     await writeParseCache(filePath, read.text, file2.lexicon, read.mode);
     await import_node_fs5.promises.unlink(import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_FAILURE_FILE_NAME)).catch(() => void 0);
   }
-  return file2;
+  return { file: file2 };
 }
+var STALE_GLOBAL_MIN_BYTES = 64 * 1024;
 var PARSE_FAILURE_FILE_NAME = "parse-failure.json";
 var PARSE_FAILURE_VERSION = 1;
 async function readParseFailure(dir, key, text) {
@@ -55114,7 +55122,12 @@ async function hydrateHits(merged, project, opts) {
 }
 async function loadLexicon(opts = {}) {
   const paths = resolvePaths(opts);
-  const global = await readGlobalLexiconCached(paths.global);
+  const read = await readGlobalLexiconMaybeStale(paths.global, opts.staleGlobal ? { stale: true } : {});
+  const global = read.file;
+  if (read.stale) return { ...await loadLexiconWith(global, paths, opts), globalStale: true };
+  return loadLexiconWith(global, paths, opts);
+}
+async function loadLexiconWith(global, paths, opts) {
   if (!paths.project) return { merged: await hydrated(mergeLexicons(global.lexicon)), global };
   const gateFirst = opts.parseSkipped === false && !opts.includeUntrusted;
   let project;
