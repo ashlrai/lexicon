@@ -603,6 +603,19 @@ describe('blank required strings', () => {
     expect(res.text).toMatch(/must not be blank at path/);
   });
 
+  // Catches: content was capped at 8 MB of characters, not bytes, so 4.5M
+  // two-byte characters passed the schema and the refusal came later from
+  // the import as "stdin is ... bytes", naming the wrong input.
+  it('refuses import_dictionary content over 8 MB of UTF-8 at the schema, naming content', async () => {
+    const content = '\u00e9'.repeat(4.5 * 1024 * 1024);
+    expect(content.length).toBeLessThan(8 * 1024 * 1024);
+    const res = await call('import_dictionary', { content, dryRun: true });
+    expect(res.isError).toBe(true);
+    expect(res.text).toMatch(/at content/);
+    expect(res.text).toMatch(/8388608 bytes/);
+    expect(res.text).not.toContain('stdin');
+  });
+
   // Catches: the tool parses `lexicon import --json`, whose success now leads with the CLI's `ok: true`; the tool result keeps its shape.
   it('import_dictionary returns the import report without the CLI ok key', async () => {
     const res = await call('import_dictionary', { content: 'word,replacement\nhead sner,Hetzner\n', dryRun: true });

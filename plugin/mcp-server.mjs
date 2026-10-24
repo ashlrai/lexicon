@@ -66451,7 +66451,11 @@ var registerPackTools = (server, ctx) => {
       description: `Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB of UTF-8). With both, content is imported and path is not read: only its file name is used, so its extension steers format 'auto' (content passed with a .csv path is parsed as CSV). \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused with the command the user can run themselves. Use dryRun: true first to show the user what would be added, then run again without it. With scope project and a project file that is not trusted yet, the file is written but left untrusted (\`trusted: false\`): relay \`nextStep\`. A dry run against such a file does not read it, so its rows carry no \`created\` (the report has \`untrustedTarget: true\`).`,
       inputSchema: {
         path: nonBlank().optional().describe("File to import. Its extension helps auto-detection. Alongside content it is not read, and only its extension and name are used."),
-        content: nonBlank().max(MAX_IMPORT_BYTES).optional().describe("The dictionary text, when the file is not on this machine. Must not be blank."),
+        // Bytes, not characters: `.max()` counted UTF-16 code units, so 4.5M
+        // two-byte characters passed and the import refused them later as "stdin".
+        content: nonBlank().refine((s) => Buffer.byteLength(s, "utf8") <= MAX_IMPORT_BYTES, {
+          message: `must be at most ${MAX_IMPORT_BYTES} bytes (${MAX_IMPORT_BYTES / (1024 * 1024)} MB) of UTF-8`
+        }).optional().describe(`The dictionary text, when the file is not on this machine: at most ${MAX_IMPORT_BYTES} bytes (${MAX_IMPORT_BYTES / (1024 * 1024)} MB) of UTF-8. Must not be blank.`),
         format: external_exports.enum(IMPORT_FORMAT_VALUES).optional().describe("Input format; 'auto' (default) sniffs it."),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
         dryRun: external_exports.boolean().optional().describe("Report what would be added without writing.")

@@ -332,7 +332,14 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         'A dry run against such a file does not read it, so its rows carry no `created` (the report has `untrustedTarget: true`).',
       inputSchema: {
         path: nonBlank().optional().describe('File to import. Its extension helps auto-detection. Alongside content it is not read, and only its extension and name are used.'),
-        content: nonBlank().max(MAX_IMPORT_BYTES).optional().describe('The dictionary text, when the file is not on this machine. Must not be blank.'),
+        // Bytes, not characters: `.max()` counted UTF-16 code units, so 4.5M
+        // two-byte characters passed and the import refused them later as "stdin".
+        content: nonBlank()
+          .refine((s) => Buffer.byteLength(s, 'utf8') <= MAX_IMPORT_BYTES, {
+            message: `must be at most ${MAX_IMPORT_BYTES} bytes (${MAX_IMPORT_BYTES / (1024 * 1024)} MB) of UTF-8`,
+          })
+          .optional()
+          .describe(`The dictionary text, when the file is not on this machine: at most ${MAX_IMPORT_BYTES} bytes (${MAX_IMPORT_BYTES / (1024 * 1024)} MB) of UTF-8. Must not be blank.`),
         format: z.enum(IMPORT_FORMAT_VALUES).optional().describe("Input format; 'auto' (default) sniffs it."),
         scope: z.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
         dryRun: z.boolean().optional().describe('Report what would be added without writing.'),

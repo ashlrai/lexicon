@@ -178,7 +178,7 @@ waiting for exactly that.
 Same importers as `lexicon import` (Wispr Flow, Superwhisper, macOS Text
 Replacement, espanso, markdown (the CLAUDE.md table or bullets), plain text,
 CSV, lexicon JSON; `format: 'auto'` by
-default). Pass `path` for a file on this machine or `content` (up to 8 MB) for
+default). Pass `path` for a file on this machine or `content` (up to 8 MB of UTF-8, counted in bytes) for
 text the user pasted. Returns the import report: `{ format, scope, path?,
 dryRun, terms: [{ canonical, aliases, created }], skipped, counts }`.
 
