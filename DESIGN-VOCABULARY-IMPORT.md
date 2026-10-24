@@ -50,6 +50,6 @@ possible.
 3. **Dedup and merge.** Candidates merge case-insensitively across sources (higher count wins a spelling conflict, the loser survives as an alias); writes go through `addTerm`, so an existing term keeps its spelling and only gains aliases. New terms are stamped `source: import:<name>`; merged terms keep the source they had.
 4. **Scope.** Vocabulary-shaped only: sources are inputs to term candidates, never a CRM. Alias policy is the cautious harvest one, with GitHub handles keeping single-word aliases (they are dictated as words, unlike code symbols).
 
-**Open for later:** email/Slack sources (needs the OAuth conversation); folding the wizard into `lexicon setup` as an optional step; per-source cleanup (`pack remove`-style by `import:<name>`).
+**Open for later:** email and Slack sources (email needs new OAuth scopes, Slack a workspace token); folding the wizard into `lexicon setup` as an optional step; per-source cleanup (`pack remove`-style by `import:<name>`).
 
 Noninteractive CLI use previews with `--guided --sources github --json`, then applies only approved ids with `--yes --preview-id <digest> --accept <ids>`. Any source/destination change requires a new preview. MCP uses a short-lived one-use preview token and selected candidate ids; apply consumes that snapshot without re-reading sources. Omitted MCP sources lists descriptions only.
