@@ -4,7 +4,7 @@
  * Handlers are exported for tests; registerLearnCommands() only wires commander.
  */
 import type { Command } from 'commander';
-import { CORRECTION_EXAMPLES, computeStats, conflictNote, learnCorrection, learnUnchangedNote, loadLexicon, parseCorrection } from '../core/index.js';
+import { CORRECTION_EXAMPLES, computeStats, conflictNote, emptyStatsNote, learnCorrection, learnUnchangedNote, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, LoadedLexicon, TermScope } from '../core/index.js';
 import { conflictLine, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
@@ -189,17 +189,6 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
 
 export interface StatsOptions extends CommonOptions {
   json?: boolean;
-}
-
-/**
- * What `lexicon stats` says when the lexicon has no terms at all: a report of
- * zeros named no step. Undefined when there are terms, and when a skipped
- * project file holds them (warnSkippedProject names `lexicon trust` then).
- * MCP lexicon_stats says the same in tool terms.
- */
-export function emptyStatsNote(loaded: Pick<LoadedLexicon, 'merged' | 'skippedProject'>): string | undefined {
-  if (loaded.merged.terms.length > 0 || loaded.skippedProject) return undefined;
-  return 'The lexicon has no terms yet, so nothing is corrected or counted; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.';
 }
 
 export function renderStats(stats: LexiconStats, note?: string): string {

@@ -1037,6 +1037,17 @@ describe('export', () => {
     const asJson = makeIO();
     expect(await runExport('csv', { json: true }, asJson)).toBe(0);
     expect(JSON.parse(asJson.out)).toMatchObject({ ok: true, note });
+    // Catches: with --limit an alias-row format counts only terms that have
+    // an alias, so none were exported and the note was dropped (0 terms, no
+    // category), while MCP export_lexicon and the local API say "no rows".
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedBare);
+    const limited = makeIO();
+    expect(await runExport('csv', { limit: 5 }, limited)).toBe(0);
+    expect(limited.err).toBe(`lexicon: ${note.charAt(0).toLowerCase()}${note.slice(1)}\n`);
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedBare);
+    const limitedJson = makeIO();
+    expect(await runExport('csv', { json: true, limit: 5 }, limitedJson)).toBe(0);
+    expect(JSON.parse(limitedJson.out)).toMatchObject({ ok: true, terms: 0, rows: 0, note });
     // A format that writes every term (json, claude-md) is not empty.
     vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedBare);
     const whole = makeIO();
@@ -1181,6 +1192,23 @@ describe('positiveIntOption', () => {
       expect(() => limit(bad), bad).toThrow('expected a positive integer, e.g. --limit 50');
     }
     expect(() => positiveIntOption('--interval', 250)('0')).toThrow('e.g. --interval 250');
+  });
+});
+
+// Catches: runExport and runHarvest called with a string option (not through
+// commander's positiveIntOption) still used parseInt, so '5abc' became 5.
+describe('handler integer options', () => {
+  it('take only a string of digits, as positiveIntOption does', async () => {
+    for (const bad of ['5abc', '1.5', '1e3', '0x10', '-1', 'abc', '']) {
+      await expect(runExport('csv', { limit: bad }, makeIO()), bad).rejects.toThrow('--limit must be a non-negative integer');
+      await expect(runHarvest(os.tmpdir(), { minCount: bad }, makeIO(), { isInteractive: () => false }), bad).rejects.toThrow(
+        '--min-count must be a non-negative integer',
+      );
+    }
+    await expect(runExport('csv', { limit: 1.5 }, makeIO())).rejects.toThrow('--limit must be a non-negative integer');
+    vi.mocked(core.harvestRepo).mockResolvedValueOnce([]);
+    expect(await runHarvest(os.tmpdir(), { limit: ' 5 ', minCount: '2' }, makeIO(), { isInteractive: () => false })).toBe(0);
+    expect(vi.mocked(core.harvestRepo)).toHaveBeenLastCalledWith(os.tmpdir(), { limit: 5, minCount: 2 });
   });
 });
 

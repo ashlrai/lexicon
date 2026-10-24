@@ -13,6 +13,10 @@ import {
   addTerm,
   computeStats,
   diffSummary,
+  emptyExportNote,
+  emptyExportReason,
+  emptyLexiconNote,
+  emptyStatsNote,
   exportLexicon,
   learnCorrection,
   loadMatcherIndex,
@@ -21,7 +25,6 @@ import {
   removeAlias,
   removeTerm,
   resolveExportFormat,
-  selectExportTerms,
   EXPORT_ALIAS_ROW_FORMATS,
   conflictNote,
   unchangedTermNote,
@@ -487,7 +490,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           ...(terms.length > 0 || loaded.skippedProject
             ? {}
             : loaded.merged.terms.length === 0
-              ? { note: 'The lexicon has no terms yet; add_term or setup_lexicon adds some.' }
+              ? { note: emptyLexiconNote('add_term or setup_lexicon adds some.') }
               : { note: `No term matches the ${[...(category ? ['category'] : []), ...(needle ? ['query'] : [])].join(' and ')} given; the lexicon has ${loaded.merged.terms.length} term${loaded.merged.terms.length === 1 ? '' : 's'} in all, which list_terms without ${category && needle ? 'them' : 'it'} returns.` }),
         });
       }),
@@ -532,15 +535,21 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         // and one missing the untrusted project's terms otherwise read as a
         // complete one (`lexicon export` says the same on stderr).
         const notes: string[] = [];
-        if (loaded.merged.terms.length === 0) {
-          notes.push('The lexicon has no terms yet, so the export is empty; add_term or setup_lexicon adds some.');
-        } else if (selectExportTerms(loaded.merged, opts).length === 0) {
-          notes.push(`No term matched categories ${JSON.stringify(categories ?? [])}, so the export is empty; list_terms shows each term's category.`);
-        } else if (
-          EXPORT_ALIAS_ROW_FORMATS.includes(resolved) &&
-          !selectExportTerms(loaded.merged, opts, resolved).some((t) => t.aliases.some((a) => a.trim() !== ''))
-        ) {
-          notes.push(`No exported term has an alias, and ${resolved} writes one row per alias, so the export has no rows; add_term with aliases adds some.`);
+        const reason = emptyExportReason(loaded, resolved, opts);
+        if (reason) {
+          // The skipped project file's own note follows, so an export whose
+          // only terms are in it reads as one with no terms yet here.
+          notes.push(
+            emptyExportNote(reason === 'only-untrusted' ? 'no-terms' : reason, {
+              format: resolved,
+              filter: `categories ${JSON.stringify(categories ?? [])}`,
+              steps: {
+                'no-terms': 'add_term or setup_lexicon adds some.',
+                'no-match': "list_terms shows each term's category.",
+                'no-rows': 'add_term with aliases adds some.',
+              },
+            }),
+          );
         }
         const skipped = skippedProjectFields(loaded, 'Its terms are not in this export.').note;
         if (skipped) notes.push(skipped);
@@ -711,10 +720,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         // Otherwise the counts silently leave out the repo's own terms.
         // No terms at all: zeros alone named no step, so say what adds some
         // (`lexicon stats` names the CLI commands).
-        const empty =
-          loaded.merged.terms.length === 0 && !loaded.skippedProject
-            ? { note: 'The lexicon has no terms yet, so nothing is corrected or counted; setup_lexicon or add_term adds some.' }
-            : {};
+        const emptyNote = emptyStatsNote(loaded, 'setup_lexicon or add_term adds some.');
+        const empty = emptyNote !== undefined ? { note: emptyNote } : {};
         return textResult({ ...computeStats(loaded), ...skippedProjectFields(loaded), ...empty });
       }),
   );

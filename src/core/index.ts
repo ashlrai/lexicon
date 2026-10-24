@@ -17,6 +17,7 @@ export * from './suggest.js';
 export * from './learn.js';
 export * from './pending.js';
 export * from './stats.js';
+export * from './notes.js';
 export * from './suggestTerms.js';
 export * from './packs.js';
 export * from './registry.js';

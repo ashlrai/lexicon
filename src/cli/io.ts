@@ -12,7 +12,7 @@ import { statSync } from 'node:fs';
 import { InvalidArgumentError } from 'commander';
 import type { Command } from 'commander';
 import path from 'node:path';
-import { TERM_CATEGORIES, conflictRemoveCommand, isProjectTrustError, sanitizeForDisplay, sanitizeForDisplayMax } from '../core/index.js';
+import { TERM_CATEGORIES, conflictRemoveCommand, isProjectTrustError, sanitizeForDisplay, sanitizeForDisplayMax, skippedProjectNote } from '../core/index.js';
 import type { LearnConflict, LoadedLexicon, TermCategory, TermHolder } from '../core/index.js';
 import { errorMessage } from '../util/errors.js';
 
@@ -440,16 +440,9 @@ export function skippedProjectJson(
   loaded: Pick<LoadedLexicon, 'projectTrust' | 'skippedProject'>,
   consequence?: string,
 ): { projectTrust?: LoadedLexicon['projectTrust']; skippedProject?: string; note?: string } {
-  if (!loaded.skippedProject) return {};
-  const head =
-    loaded.projectTrust === 'changed'
-      ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; review it and run `lexicon trust` again.'
-      : 'An untrusted project .lexicon.yaml exists and was not loaded; review it and run `lexicon trust` to enable it.';
-  return {
-    projectTrust: loaded.projectTrust,
-    skippedProject: loaded.skippedProject.path,
-    note: consequence ? `${head} ${consequence}` : head,
-  };
+  const note = skippedProjectNote(loaded, consequence);
+  if (!loaded.skippedProject || note === undefined) return {};
+  return { projectTrust: loaded.projectTrust, skippedProject: loaded.skippedProject.path, note };
 }
 
 /**
@@ -507,12 +500,22 @@ export function conflictLine(c: LearnConflict): string {
  */
 export function positiveIntOption(flag: string, example: number): (value: string) => number {
   return (value: string): number => {
-    // Whole digits only: parseInt read `5abc` as 5 and `1.5` as 1.
-    const text = value.trim();
-    const n = /^[0-9]+$/.test(text) ? Number(text) : Number.NaN;
-    if (!Number.isSafeInteger(n) || n <= 0) throw new InvalidArgumentError(`expected a positive integer, e.g. ${flag} ${example}`);
+    const n = wholeNumber(value);
+    if (n === undefined || n <= 0) throw new InvalidArgumentError(`expected a positive integer, e.g. ${flag} ${example}`);
     return n;
   };
+}
+
+/**
+ * A string of digits (surrounding spaces aside) as a safe integer, else
+ * undefined. The rule positiveIntOption and the handlers' own integer options
+ * share: parseInt read `5abc` as 5 and `1.5` as 1.
+ */
+export function wholeNumber(value: string): number | undefined {
+  const text = value.trim();
+  if (!/^[0-9]+$/.test(text)) return undefined;
+  const n = Number(text);
+  return Number.isSafeInteger(n) ? n : undefined;
 }
 
 /**

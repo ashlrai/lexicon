@@ -59086,6 +59086,50 @@ function computeStats(loaded) {
   return { termCount: terms.length, aliasCount: aliasCount2, totalHits, topTerms, neverHit, neverHitCount, byCategory, bySource, files };
 }
 
+// src/core/notes.ts
+var CLI_TRUST_VOICE = { who: "", trust: "`lexicon trust`" };
+function skippedProjectNote(loaded, consequence, voice = CLI_TRUST_VOICE) {
+  if (!loaded.skippedProject) return void 0;
+  const head = loaded.projectTrust === "changed" ? `The project .lexicon.yaml changed since it was trusted and was not loaded; ${voice.who}review it and run ${voice.trust} again.` : `An untrusted project .lexicon.yaml exists and was not loaded; ${voice.who}review it and run ${voice.trust} to enable it.`;
+  return consequence ? `${head} ${consequence}` : head;
+}
+function emptyLexiconNote(step = 'add one with: lexicon add "Ashlr.AI" Ashler, or run `lexicon setup`.') {
+  return `The lexicon has no terms yet; ${step}`;
+}
+function emptyStatsNote(loaded, step = "run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.") {
+  if (loaded.merged.terms.length > 0 || loaded.skippedProject) return void 0;
+  return `The lexicon has no terms yet, so nothing is corrected or counted; ${step}`;
+}
+function emptyExportReason(loaded, format, opts = {}) {
+  if (loaded.merged.terms.length === 0) return loaded.skippedProject ? "only-untrusted" : "no-terms";
+  if (opts.categories !== void 0 && opts.categories.length > 0 && selectExportTerms(loaded.merged, { categories: opts.categories }).length === 0) {
+    return "no-match";
+  }
+  if (EXPORT_ALIAS_ROW_FORMATS.includes(format) && !selectExportTerms(loaded.merged, opts, format).some((t) => t.aliases.some((a) => a.trim() !== ""))) {
+    return "no-rows";
+  }
+  return void 0;
+}
+var CLI_EXPORT_STEPS = {
+  "no-terms": "run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.",
+  "only-untrusted": "review it and run `lexicon trust`.",
+  "no-match": "lexicon list shows each term's category.",
+  "no-rows": "add one with: lexicon add <canonical> <alias>."
+};
+function emptyExportNote(reason, context) {
+  const step = context.steps?.[reason] ?? CLI_EXPORT_STEPS[reason];
+  switch (reason) {
+    case "no-terms":
+      return `The lexicon has no terms yet, so the export is empty; ${step}`;
+    case "only-untrusted":
+      return `The export is empty: the only terms are in the untrusted project lexicon, which was left out; ${step}`;
+    case "no-match":
+      return `No term matched ${context.filter}, so the export is empty; ${step}`;
+    case "no-rows":
+      return `No exported term has an alias, and ${context.format} writes one row per alias, so the export has no rows; ${step}`;
+  }
+}
+
 // src/core/suggestTerms.ts
 var import_node_fs8 = __toESM(require_node_fs());
 var import_node_path8 = __toESM(require_node_path());
@@ -60737,13 +60781,9 @@ function filePathsInUse(loaded) {
   };
 }
 function skippedProjectFields(loaded, consequence) {
-  if (!loaded.skippedProject) return {};
-  const note = loaded.projectTrust === "changed" ? "The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run " + cliCommand("trust") + " again." : "An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run " + cliCommand("trust") + " to enable it.";
-  return {
-    projectTrust: loaded.projectTrust,
-    skippedProject: loaded.skippedProject.path,
-    note: consequence ? `${note} ${consequence}` : note
-  };
+  const note = skippedProjectNote(loaded, consequence, { who: "the user can ", trust: cliCommand("trust") });
+  if (!loaded.skippedProject || note === void 0) return {};
+  return { projectTrust: loaded.projectTrust, skippedProject: loaded.skippedProject.path, note };
 }
 
 // src/mcp/tools/terms.ts
@@ -61018,7 +61058,7 @@ var registerTermTools = (server, ctx) => {
         ...skippedProjectFields(loaded),
         // Why nothing came back, as `lexicon list` says it: no terms at
         // all, or a filter that matched none of them.
-        ...terms.length > 0 || loaded.skippedProject ? {} : loaded.merged.terms.length === 0 ? { note: "The lexicon has no terms yet; add_term or setup_lexicon adds some." } : { note: `No term matches the ${[...category ? ["category"] : [], ...needle ? ["query"] : []].join(" and ")} given; the lexicon has ${loaded.merged.terms.length} term${loaded.merged.terms.length === 1 ? "" : "s"} in all, which list_terms without ${category && needle ? "them" : "it"} returns.` }
+        ...terms.length > 0 || loaded.skippedProject ? {} : loaded.merged.terms.length === 0 ? { note: emptyLexiconNote("add_term or setup_lexicon adds some.") } : { note: `No term matches the ${[...category ? ["category"] : [], ...needle ? ["query"] : []].join(" and ")} given; the lexicon has ${loaded.merged.terms.length} term${loaded.merged.terms.length === 1 ? "" : "s"} in all, which list_terms without ${category && needle ? "them" : "it"} returns.` }
       });
     })
   );
@@ -61045,12 +61085,19 @@ var registerTermTools = (server, ctx) => {
       };
       const exported = exportLexicon(loaded.merged, resolved2, opts);
       const notes = [];
-      if (loaded.merged.terms.length === 0) {
-        notes.push("The lexicon has no terms yet, so the export is empty; add_term or setup_lexicon adds some.");
-      } else if (selectExportTerms(loaded.merged, opts).length === 0) {
-        notes.push(`No term matched categories ${JSON.stringify(categories ?? [])}, so the export is empty; list_terms shows each term's category.`);
-      } else if (EXPORT_ALIAS_ROW_FORMATS.includes(resolved2) && !selectExportTerms(loaded.merged, opts, resolved2).some((t) => t.aliases.some((a) => a.trim() !== ""))) {
-        notes.push(`No exported term has an alias, and ${resolved2} writes one row per alias, so the export has no rows; add_term with aliases adds some.`);
+      const reason = emptyExportReason(loaded, resolved2, opts);
+      if (reason) {
+        notes.push(
+          emptyExportNote(reason === "only-untrusted" ? "no-terms" : reason, {
+            format: resolved2,
+            filter: `categories ${JSON.stringify(categories ?? [])}`,
+            steps: {
+              "no-terms": "add_term or setup_lexicon adds some.",
+              "no-match": "list_terms shows each term's category.",
+              "no-rows": "add_term with aliases adds some."
+            }
+          })
+        );
       }
       const skipped = skippedProjectFields(loaded, "Its terms are not in this export.").note;
       if (skipped) notes.push(skipped);
@@ -61142,7 +61189,8 @@ var registerTermTools = (server, ctx) => {
     },
     async () => guarded(async () => {
       const loaded = await load({ parseSkipped: false });
-      const empty = loaded.merged.terms.length === 0 && !loaded.skippedProject ? { note: "The lexicon has no terms yet, so nothing is corrected or counted; setup_lexicon or add_term adds some." } : {};
+      const emptyNote = emptyStatsNote(loaded, "setup_lexicon or add_term adds some.");
+      const empty = emptyNote !== void 0 ? { note: emptyNote } : {};
       return textResult({ ...computeStats(loaded), ...skippedProjectFields(loaded), ...empty });
     })
   );
@@ -64117,8 +64165,13 @@ async function stepLexicon(ctx) {
     if (name === void 0) return void 0;
     const problem = setupNameProblem(name);
     if (problem === void 0) return name;
-    companySkipped = true;
-    ctx.say(dim(`   skipped the company term: the guessed name ${problem}; pass --company "Your Co", or later: lexicon add "Your Co" --category brand`));
+    const prompted = ctx.prompter !== void 0 && !ctx.plan;
+    companySkipped = !prompted;
+    ctx.say(
+      dim(
+        prompted ? `   not suggesting the guessed company name: it ${problem}; type the name you want at the prompt below (Enter to skip)` : `   skipped the company term: the guessed name ${problem}; pass --company "Your Co", or later: lexicon add "Your Co" --category brand`
+      )
+    );
     return void 0;
   };
   if (ctx.plan) {

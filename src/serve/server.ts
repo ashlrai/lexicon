@@ -26,7 +26,6 @@ import net from 'node:net';
 import path from 'node:path';
 import { z } from 'zod';
 import {
-  EXPORT_ALIAS_ROW_FORMATS,
   EXPORT_FORMATS,
   EXPORT_FORMAT_INFO,
   LIMITS,
@@ -35,6 +34,10 @@ import {
   conflictNote,
   learnUnchangedNote,
   diffSummary,
+  emptyExportNote,
+  emptyExportReason,
+  emptyLexiconNote,
+  emptyStatsNote,
   exportLexicon,
   findRegistryRecordMismatch,
   hasControlChars,
@@ -50,8 +53,8 @@ import {
   recordHits,
   resolvePaths,
   isProjectTrustError,
-  selectExportTerms,
   sanitizeForDisplay,
+  skippedProjectNote,
   spellingConflicts,
   stripInvisible,
   suggestAliases,
@@ -527,28 +530,13 @@ function exportQueryOptions(url: URL): { categories?: TermCategory[]; limit?: nu
 export const EXPORT_NOTE_HEADER = 'X-Lexicon-Note';
 
 /**
- * The skipped project file's note, in the words `lexicon ... --json` uses
- * (skippedProjectJson), or undefined when no project file was skipped.
- */
-function skippedProjectNote(loaded: Pick<LoadedLexicon, 'projectTrust' | 'skippedProject'>, consequence?: string): string | undefined {
-  if (!loaded.skippedProject) return undefined;
-  const head =
-    loaded.projectTrust === 'changed'
-      ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; review it and run `lexicon trust` again.'
-      : 'An untrusted project .lexicon.yaml exists and was not loaded; review it and run `lexicon trust` to enable it.';
-  return consequence ? `${head} ${consequence}` : head;
-}
-
-/**
- * `GET /lexicon`'s `note`: the skipped project file's `lexicon trust` step,
- * else, for a lexicon with no terms, how to add some, as `lexicon list
- * --full` and MCP list_terms say it. Undefined when there is nothing to say.
+ * `GET /lexicon`'s `note`: the skipped project file's `lexicon trust` step
+ * (skippedProjectNote), else, for a lexicon with no terms, how to add some
+ * (emptyLexiconNote), as `lexicon list --full` and MCP list_terms say it.
+ * Undefined when there is nothing to say.
  */
 export function lexiconNote(loaded: Pick<LoadedLexicon, 'merged' | 'projectTrust' | 'skippedProject'>): string | undefined {
-  return (
-    skippedProjectNote(loaded) ??
-    (loaded.merged.terms.length === 0 ? 'The lexicon has no terms yet; add one with: lexicon add "Ashlr.AI" Ashler, or run `lexicon setup`.' : undefined)
-  );
+  return skippedProjectNote(loaded) ?? (loaded.merged.terms.length === 0 ? emptyLexiconNote() : undefined);
 }
 
 /**
@@ -557,12 +545,7 @@ export function lexiconNote(loaded: Pick<LoadedLexicon, 'merged' | 'projectTrust
  * (emptyStatsNote) and MCP lexicon_stats says in tool terms.
  */
 export function statsNote(loaded: Pick<LoadedLexicon, 'merged' | 'projectTrust' | 'skippedProject'>): string | undefined {
-  return (
-    skippedProjectNote(loaded, 'Its terms are not in the counts.') ??
-    (loaded.merged.terms.length === 0
-      ? 'The lexicon has no terms yet, so nothing is corrected or counted; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.'
-      : undefined)
-  );
+  return skippedProjectNote(loaded, 'Its terms are not in the counts.') ?? emptyStatsNote(loaded);
 }
 
 /**
@@ -593,17 +576,8 @@ export function exportNote(
   opts: { categories?: TermCategory[]; limit?: number },
 ): string | undefined {
   const notes: string[] = [];
-  if (loaded.merged.terms.length === 0) {
-    notes.push(
-      loaded.skippedProject
-        ? 'The export is empty: the only terms are in the untrusted project lexicon, which was left out; review it and run `lexicon trust`.'
-        : 'The lexicon has no terms yet, so the export is empty; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.',
-    );
-  } else if (selectExportTerms(loaded.merged, opts).length === 0) {
-    notes.push(`No term matched ?category=${(opts.categories ?? []).join(',')}, so the export is empty; lexicon list shows each term's category.`);
-  } else if (EXPORT_ALIAS_ROW_FORMATS.includes(format) && !selectExportTerms(loaded.merged, opts, format).some((t) => t.aliases.some((a) => a.trim() !== ''))) {
-    notes.push(`No exported term has an alias, and ${format} writes one row per alias, so the export has no rows; add one with: lexicon add <canonical> <alias>.`);
-  }
+  const reason = emptyExportReason(loaded, format, opts);
+  if (reason) notes.push(emptyExportNote(reason, { format, filter: `?category=${(opts.categories ?? []).join(',')}` }));
   const skipped = skippedProjectNote(loaded, 'Its terms are not in the export.');
   if (skipped && loaded.merged.terms.length > 0) notes.push(skipped);
   if (notes.length === 0) return undefined;
