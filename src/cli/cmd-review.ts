@@ -499,8 +499,9 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   // this user's sidecar. `--never-hit` would otherwise offer every term for
   // deletion, including the ones that fire every day.
   const hits = await readHitsFor(file, store);
+  // A term without a category is an `other` one, as for list and export.
   const subject = file.lexicon.terms.filter(
-    (t) => (!opts.neverHit || effectiveHits(t, hits) === 0) && (category === undefined || t.category === category),
+    (t) => (!opts.neverHit || effectiveHits(t, hits) === 0) && (category === undefined || (t.category ?? 'other') === category),
   );
   if (subject.length === 0) {
     // Which of the two it is, as `lexicon list` says it: an empty file wants

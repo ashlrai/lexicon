@@ -22,7 +22,7 @@ import { ANY_SITE_SCRIPT_ID, setAnySite } from '../extension/src/any-site.js';
 import type { AnySiteApi, AnySiteScript } from '../extension/src/any-site.js';
 import { prunePairPorts, registerPairPort } from '../extension/src/pair-port.js';
 import type { PairPortApi } from '../extension/src/pair-port.js';
-import { ANY_SITE_DENIED_MESSAGE, STORAGE_KEYS, API_MAX_BODY_BYTES, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META, withConnection, withSiteSwitch, yamlBoxAfterChange } from '../extension/src/shared.js';
+import { ANY_SITE_DENIED_MESSAGE, STORAGE_KEYS, API_MAX_BODY_BYTES, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches, coerceSettings, connectionTestLine, recentRows, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, sitesAfterChange, syncedLine, PAIR_META, withConnection, withSiteSwitch, yamlBoxAfterChange } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 import { setMessage } from '../extension/src/rich-text.js';
@@ -182,6 +182,29 @@ describe('content: send interception', () => {
     expect(siteEnter).toHaveBeenCalledTimes(1);
     expect(toastText()).toContain('ashler');
     expect(toastText()).toContain('Ashlr.AI');
+  });
+
+  // Catches: an error after the press was cancelled (here a malformed reply
+  // the rewrite trips over) was swallowed by the send guard, so the message
+  // was never sent. It now goes as typed.
+  it('still sends, uncorrected, when the correction throws', async () => {
+    const { composer, button } = chatgptDom('ping ashler');
+    const bad = { ok: true, changed: true, mode: 'auto', input: 'ping ashler', output: 'ping Ashlr.AI', replacements: [null] } as unknown as NormalizeReply;
+    handle = installContent({ doc: document, hostname: 'chatgpt.com', send: vi.fn(() => Promise.resolve(bad)), settings: { enabled: true, live: false } });
+    const siteEnter = vi.fn((ev: KeyboardEvent) => ev.preventDefault());
+    composer.addEventListener('keydown', siteEnter);
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true });
+    composer.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    await handle.idle();
+    expect(siteEnter).toHaveBeenCalledTimes(1);
+    expect(readText(composer)).toBe('ping ashler');
+
+    const siteClick = vi.fn();
+    button.addEventListener('click', siteClick);
+    button.click();
+    await handle.idle();
+    expect(siteClick).toHaveBeenCalledTimes(1);
   });
 
   it('lets Shift+Enter (newline) through', () => {
@@ -950,6 +973,34 @@ describe('extension errors name the next step', () => {
     expect(reply.fallback).toBe(
       'API /normalize returned an unexpected shape: the server and this extension are likely different releases; update lexicon or the extension so they match.',
     );
+  });
+
+  // Catches: a /normalize reply whose list held an entry of another shape
+  // was used and kept in "recent", where it broke the popup's list; a bad
+  // entry already stored reached the popup too.
+  it('a /normalize entry of another shape falls back, and recent keeps only well-formed entries', async () => {
+    const fetchMock = vi.fn(async (url: string) =>
+      url.endsWith('/health') ? json({ ok: true, version: '9.9.9', terms: 1 }) : json({ output: 'ping Ashlr.AI', changed: true, replacements: [null, { original: 1 }] }),
+    );
+    const store = storeWith({ token });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
+    const reply = (await bg.handle({ type: 'normalize', text: 'ping ashler' })) as NormalizeReply & { fallback?: string };
+    expect(reply).toMatchObject({ ok: true, mode: 'embedded', output: 'ping Ashlr.AI' });
+    expect(reply.fallback).toContain('API /normalize returned an unexpected shape');
+    const stored = (await store.get(['recent'])).recent as unknown[];
+    expect(stored).toHaveLength(1);
+    expect(stored[0]).toMatchObject({ original: 'ashler', replacement: 'Ashlr.AI' });
+
+    await store.set({ recent: [null, 'x', { original: 'a' }, ...stored] });
+    const status = (await bg.handle({ type: 'status' })) as StatusReply;
+    expect(status.recent).toHaveLength(1);
+    expect(status.recent[0]).toMatchObject({ original: 'ashler', replacement: 'Ashlr.AI' });
+  });
+
+  it('recentRows skips entries the popup cannot draw', () => {
+    expect(recentRows(undefined)).toEqual([]);
+    expect(recentRows({ length: 2 })).toEqual([]);
+    expect(recentRows([null, 3, { original: 'a' }, { original: 'b', replacement: 'B', start: 'x' }])).toEqual([{ original: 'b', replacement: 'B' }]);
   });
 
   it('an embedded lexicon that does not parse says where to fix it', async () => {
@@ -1789,6 +1840,25 @@ describe('popup and Options write only what they change', () => {
       expect(handler(id)).toContain('await saveConnection();');
       expect(handler(id)).not.toMatch(/await save\(\)/);
     }
+  });
+
+  // Catches: Options followed only the YAML and the connection fields, so a
+  // site the popup paused while Options was open was resumed by its Save.
+  it('the Options site switches follow a switch changed elsewhere and keep their unsaved edits', () => {
+    const current = { 'claude.ai': false, 'grok.com': true };
+    // The popup paused chatgpt.com and resumed claude.ai; grok.com is this page's own unsaved edit.
+    expect(sitesAfterChange(current, { 'claude.ai': false }, { 'chatgpt.com': false, 'claude.ai': true })).toEqual({
+      'claude.ai': true,
+      'grok.com': true,
+      'chatgpt.com': false,
+    });
+    // A switch removed from storage is removed here too; one that did not change is left as the page has it.
+    expect(sitesAfterChange({ 'x.com': false, 'grok.com': true }, { 'x.com': false, 'grok.com': false }, { 'grok.com': false })).toEqual({ 'grok.com': true });
+    expect(sitesAfterChange(current, {}, {})).toEqual(current);
+    const options = readFileSync(resolve(process.cwd(), 'extension/src/options.ts'), 'utf8');
+    const listener = options.slice(options.indexOf('chrome.storage.onChanged.addListener'));
+    expect(listener).toMatch(/sitesAfterChange\(settings\.sites, coerceSettings\(changes\[STORAGE_KEYS\.settings\]\.oldValue/);
+    expect(listener).toContain('renderSites();');
   });
 
   it('the Options YAML box follows a YAML changed elsewhere unless it holds an unsaved edit', () => {

@@ -369,9 +369,12 @@ interface OnboardNoteState {
 
 /**
  * True when the onboarding note should be emitted now: no state file, an
- * unreadable one, or a `lastNotedAt` older than the interval. On true the
- * timestamp is written first (best effort, mkdir -p), so a burst of sessions
- * still produces one note. Never throws.
+ * unreadable one, or a `lastNotedAt` older than the interval. The timestamp
+ * is written first (mkdir -p), so a burst of sessions still produces one
+ * note. When it cannot be written (a read-only config directory) the answer
+ * is false: true put the note into every session, since nothing recorded
+ * that it had been given, and a lexicon could not be created there anyway.
+ * Never throws.
  */
 export async function shouldEmitOnboardNote(globalPath: string, now: number = Date.now()): Promise<boolean> {
   const file = onboardNotePath(globalPath);
@@ -390,7 +393,8 @@ export async function shouldEmitOnboardNote(globalPath: string, now: number = Da
     await fs.writeFile(file, `${JSON.stringify(state)}\n`, 'utf8');
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`[lexicon hook] onboard-note: ${message}\n`);
+    process.stderr.write(`[lexicon hook] onboard-note: ${message} (note skipped: its once a day state cannot be recorded)\n`);
+    return false;
   }
   return true;
 }

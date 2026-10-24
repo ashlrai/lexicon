@@ -189,7 +189,9 @@ function applyOptions(lexicon: Lexicon, opts: ExportOptions, format?: ExportForm
   let terms: Term[] = lexicon.terms;
   if (opts.categories && opts.categories.length > 0) {
     const allowed = new Set(opts.categories);
-    terms = terms.filter((t) => t.category !== undefined && allowed.has(t.category));
+    // A term without a category is an `other` one, as everywhere else
+    // (categoryRank): `--category other` dropped it.
+    terms = terms.filter((t) => allowed.has(t.category ?? 'other'));
   }
   if (opts.limit !== undefined) {
     const candidates = format !== undefined && EXPORT_ALIAS_ROW_FORMATS.includes(format) ? terms.filter(hasAliasRow) : terms;
