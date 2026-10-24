@@ -62158,6 +62158,28 @@ var INSTALLED_HOOK_COMMAND = /^node\s+(?:"[^"]*|[^\s"]*)(?:[\\/]plugin[\\/]hook\
 function isInstalledLexiconHook(command) {
   return INSTALLED_HOOK_COMMAND.test(command.trim());
 }
+function isInstalledLexiconServer(command, args) {
+  const cmd = command.trim();
+  const a = args.trim();
+  if (/(?:^|[\\/])node(?:\.exe)?$/i.test(cmd)) {
+    return /^"?.*(?:[\\/]plugin[\\/]mcp-server\.mjs|[\\/]mcp[\\/]server\.js)"?$/.test(a);
+  }
+  if (/(?:^|[\\/])npx(?:\.cmd)?$/i.test(cmd)) return /^-y @ashlr\/lexicon(?:@\S+)? mcp$/.test(a);
+  return false;
+}
+function parseClaudeMcpGet(out) {
+  const field = (name) => new RegExp(`^\\s*${name}:[ \\t]*(.*?)\\s*$`, "m").exec(out)?.[1];
+  const result = {};
+  const scope = field("Scope")?.toLowerCase();
+  if (scope?.startsWith("user")) result.scope = "user";
+  else if (scope?.startsWith("project")) result.scope = "project";
+  else if (scope?.startsWith("local")) result.scope = "local";
+  const command = field("Command");
+  if (command) result.command = command;
+  const args = field("Args");
+  if (args !== void 0) result.args = args;
+  return result;
+}
 function mergeHookIntoSettings(settings, command, timeout = 5, events = ["UserPromptSubmit"]) {
   const base = isRecord(settings) ? structuredClone(settings) : {};
   if (base.hooks !== void 0 && !isRecord(base.hooks)) {
@@ -63113,7 +63135,7 @@ async function runInstallClaude(opts, io, deps = {}) {
     } catch (err) {
       const message = errorMessage(err);
       if (/already exists/i.test(message)) {
-        line(io, dim("   already registered with claude, nothing changed"));
+        if (!refreshClaudeRegistration(io, exec, scope, mcpArgs, serverLaunch)) failed = true;
         line(io, dim(`   undo: claude mcp remove --scope ${scope} lexicon`));
       } else {
         failed = true;
@@ -63165,6 +63187,49 @@ async function runInstallClaude(opts, io, deps = {}) {
     line(io, dim(`to perform steps 1 and 2, run: ${command}`));
   }
   return failed ? 1 : 0;
+}
+function refreshClaudeRegistration(io, exec, scope, mcpArgs, launch) {
+  let got;
+  try {
+    got = parseClaudeMcpGet(exec("claude", ["mcp", "get", "lexicon"]));
+  } catch (err) {
+    line(io, dim(`   already registered with claude, nothing changed (could not read it back with claude mcp get to compare: ${safeLines(errorMessage(err))})`));
+    return true;
+  }
+  const wanted = launch.args.join(" ");
+  if (got.command === void 0 || got.args === void 0) {
+    line(io, dim("   already registered with claude, nothing changed (claude mcp get did not show its command to compare)"));
+    return true;
+  }
+  if (got.command === launch.command && got.args === wanted) {
+    line(io, dim("   already registered with claude, nothing changed"));
+    return true;
+  }
+  const old = safe(`${got.command} ${got.args}`.trim());
+  if (got.scope !== void 0 && got.scope !== scope) {
+    line(io, dim(`   already registered with claude at ${got.scope} scope (${old}), nothing changed at ${scope} scope`));
+    return true;
+  }
+  if (!isInstalledLexiconServer(got.command, got.args)) {
+    line(io, yellow(`   a "lexicon" server that lexicon install did not write is registered with claude (${old}); left as it is`));
+    line(io, dim(`   to replace it: claude mcp remove --scope ${scope} lexicon, then run this again`));
+    return true;
+  }
+  try {
+    exec("claude", ["mcp", "remove", "--scope", scope, "lexicon"]);
+  } catch (err) {
+    line(io, red(`   failed: the registration points at ${old}; could not remove it to repoint it: ${safeLines(errorMessage(err))}`));
+    return false;
+  }
+  try {
+    exec("claude", mcpArgs);
+  } catch (err) {
+    line(io, red(`   failed: removed the old registration (${old}) but could not add the new one: ${safeLines(errorMessage(err))}`));
+    line(io, `   run: claude ${mcpArgs.map((a) => quoteArg(a)).join(" ")}`);
+    return false;
+  }
+  line(io, green(`   repointed lexicon: ${old} -> ${safe(`${launch.command} ${wanted}`)}`));
+  return true;
 }
 function quoteArg(s, platform = process.platform) {
   if (platform === "win32") return /[\s"]/.test(s) || import_node_path20.default.win32.isAbsolute(s) ? `"${s.replace(/"/g, "")}"` : s;

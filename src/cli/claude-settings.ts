@@ -108,6 +108,52 @@ export function isInstalledLexiconHook(command: string): boolean {
 }
 
 /**
+ * A `lexicon` MCP server launch an install of this tool wrote, from any
+ * location: `node <dir>/plugin/mcp-server.mjs` or `node <dir>/dist/mcp/server.js`
+ * (the `node` command possibly an absolute path to it), or
+ * `npx -y @ashlr/lexicon[@<version>] mcp`. `args` is the arguments joined by
+ * single spaces, as `claude mcp get` prints them. A server of the user's own
+ * that happens to be called `lexicon` does not match, so it is never
+ * repointed or removed.
+ */
+export function isInstalledLexiconServer(command: string, args: string): boolean {
+  const cmd = command.trim();
+  const a = args.trim();
+  if (/(?:^|[\\/])node(?:\.exe)?$/i.test(cmd)) {
+    return /^"?.*(?:[\\/]plugin[\\/]mcp-server\.mjs|[\\/]mcp[\\/]server\.js)"?$/.test(a);
+  }
+  if (/(?:^|[\\/])npx(?:\.cmd)?$/i.test(cmd)) return /^-y @ashlr\/lexicon(?:@\S+)? mcp$/.test(a);
+  return false;
+}
+
+/** What `claude mcp get <name>` printed about a server: its scope, command and arguments line. */
+export interface ClaudeMcpRegistration {
+  scope?: 'user' | 'project' | 'local';
+  command?: string;
+  /** The arguments joined by spaces, as printed. */
+  args?: string;
+}
+
+/**
+ * Read the `Scope:`, `Command:` and `Args:` lines of `claude mcp get`'s output
+ * (`Scope: User config (available in all your projects)`, `Command: node`,
+ * `Args: /x/plugin/mcp-server.mjs`). A line it does not print is left out.
+ */
+export function parseClaudeMcpGet(out: string): ClaudeMcpRegistration {
+  const field = (name: string): string | undefined => new RegExp(`^\\s*${name}:[ \\t]*(.*?)\\s*$`, 'm').exec(out)?.[1];
+  const result: ClaudeMcpRegistration = {};
+  const scope = field('Scope')?.toLowerCase();
+  if (scope?.startsWith('user')) result.scope = 'user';
+  else if (scope?.startsWith('project')) result.scope = 'project';
+  else if (scope?.startsWith('local')) result.scope = 'local';
+  const command = field('Command');
+  if (command) result.command = command;
+  const args = field('Args');
+  if (args !== undefined) result.args = args;
+  return result;
+}
+
+/**
  * Merge a hook running `command` for each of `events` into a Claude settings
  * object. Never mutates the input. Existing hooks (any event) are preserved;
  * an event that already has a hook with an identical command is left alone.

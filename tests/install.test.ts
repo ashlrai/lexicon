@@ -754,8 +754,9 @@ describe('claude registration is idempotent', () => {
     const io = makeIO();
     const code = await runInstall('claude', { apply: true, home, cwd }, io, {
       cliDir: CLI_DIR,
-      // What the real `claude mcp add` says the second time you run it.
-      exec: () => {
+      // What the real `claude mcp add` says the second time you run it; `claude mcp get` shows the same launch.
+      exec: (_file, args) => {
+        if (args[1] === 'get') return `lexicon:\n  Scope: User config\n  Command: node\n  Args: ${SERVER}\n`;
         throw new Error('Command failed: claude mcp add: MCP server lexicon already exists in user config');
       },
     } as InstallDeps);
@@ -769,6 +770,63 @@ describe('claude registration is idempotent', () => {
     );
     // Catches: Claude Code was not told to restart, so a running session kept running without lexicon.
     expect(io.out).toContain('then: restart Claude Code: a running session keeps the MCP servers and hooks it started with');
+  });
+
+  // Catches: "already exists" was always reported as unchanged, so a
+  // registration left pointing at an old install location (a deleted
+  // checkout, an npx cache) was never refreshed.
+  const getOutput = (command: string, args: string, scope = 'User config (available in all your projects)') =>
+    `lexicon:\n  Scope: ${scope}\n  Status: \u2717 Failed to connect\n  Type: stdio\n  Command: ${command}\n  Args: ${args}\n  Environment:\n\nTo remove this server, run: claude mcp remove "lexicon" -s user\n`;
+  const claudeWith = (got: string) => {
+    const calls: string[][] = [];
+    let adds = 0;
+    const exec = (_file: string, args: readonly string[]): string => {
+      calls.push([...args]);
+      if (args[1] === 'add' && adds++ === 0) throw new Error('Command failed: claude mcp add: MCP server lexicon already exists in user config');
+      if (args[1] === 'get') return got;
+      return args[1] === 'add' ? 'Added stdio MCP server lexicon to user config' : 'Removed MCP server lexicon from user config';
+    };
+    return { calls, exec };
+  };
+
+  it('repoints a registration an earlier install wrote from another location', async () => {
+    const { calls, exec } = claudeWith(getOutput('node', '/old/checkout/plugin/mcp-server.mjs'));
+    const io = makeIO();
+    expect(await runInstall('claude', { apply: true, home, cwd }, io, { cliDir: CLI_DIR, env: { PATH: '' }, exec })).toBe(0);
+    expect(calls.map((c) => c.slice(0, 2).join(' '))).toEqual(['mcp add', 'mcp get', 'mcp remove', 'mcp add']);
+    expect(calls[2]).toEqual(['mcp', 'remove', '--scope', 'user', 'lexicon']);
+    expect(calls[3]).toEqual(calls[0]);
+    expect(io.out).toContain(`repointed lexicon: node /old/checkout/plugin/mcp-server.mjs -> node ${SERVER}`);
+    expect(io.out).not.toContain('nothing changed\n   undo: claude');
+  });
+
+  it('leaves a matching registration, a foreign one and one at another scope alone', async () => {
+    for (const [got, expected] of [
+      [getOutput('node', SERVER), 'already registered with claude, nothing changed'],
+      [getOutput('python3', '/home/me/my-lexicon.py'), 'a "lexicon" server that lexicon install did not write is registered with claude (python3 /home/me/my-lexicon.py); left as it is'],
+      [getOutput('node', '/old/plugin/mcp-server.mjs', 'Local config (private to you in this project)'), 'already registered with claude at local scope (node /old/plugin/mcp-server.mjs), nothing changed at user scope'],
+      ['something else entirely', 'claude mcp get did not show its command to compare'],
+    ] as const) {
+      const { calls, exec } = claudeWith(got);
+      const io = makeIO();
+      expect(await runInstall('claude', { apply: true, home, cwd }, io, { cliDir: CLI_DIR, env: { PATH: '' }, exec })).toBe(0);
+      expect(io.out).toContain(expected);
+      expect(calls.some((c) => c[1] === 'remove')).toBe(false);
+    }
+  });
+
+  it('fails, naming the add to run, when the old registration was removed but the new add failed', async () => {
+    const calls: string[][] = [];
+    const exec = (_file: string, args: readonly string[]): string => {
+      calls.push([...args]);
+      if (args[1] === 'add') throw new Error(calls.length === 1 ? 'MCP server lexicon already exists in user config' : 'Command failed: disk full');
+      if (args[1] === 'get') return getOutput('npx', '-y @ashlr/lexicon@0.5.0 mcp');
+      return '';
+    };
+    const io = makeIO();
+    expect(await runInstall('claude', { apply: true, home, cwd }, io, { cliDir: CLI_DIR, env: { PATH: '' }, exec })).toBe(1);
+    expect(io.out).toContain('failed: removed the old registration (npx -y @ashlr/lexicon@0.5.0 mcp) but could not add the new one: Command failed: disk full');
+    expect(io.out).toContain(`run: claude mcp add --scope user lexicon -- node ${SERVER}`);
   });
 
   it('still fails, with the reason, for a real error', async () => {

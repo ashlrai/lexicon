@@ -41,7 +41,7 @@ lexicon install claude --apply  # do it
 
 Without `--apply` it prints the three steps. With `--apply` it performs the first two:
 
-1. Registers the MCP server: `claude mcp add --scope user lexicon -- node "<install path>/plugin/mcp-server.mjs"`. Use `--scope project` to register it in the current repo instead.
+1. Registers the MCP server: `claude mcp add --scope user lexicon -- node "<install path>/plugin/mcp-server.mjs"`. Use `--scope project` to register it in the current repo instead. When a `lexicon` server is already registered, a registration an earlier install wrote from another location (a deleted checkout, an npx cache, a moved global install) is repointed at this one and the output names the old and new launch; a server named `lexicon` that the install did not write is left alone.
 2. Merges `SessionStart` and `UserPromptSubmit` hooks running `node "<install path>/plugin/hook.mjs"` (timeout 5s) into `~/.claude/settings.json` (`$CLAUDE_CONFIG_DIR/settings.json` when that is set). With `--scope project` they go into the repo's shared `.claude/settings.json` under the current directory instead, beside the `.mcp.json` step 1 writes, so the whole install is the repo's and nothing lands in your user settings; the output names the file as project scope. Existing hooks are kept. The fragment is in [examples/claude-settings.hook.json](../examples/claude-settings.hook.json).
 3. Reminds you to add "Read the `lexicon://me` resource before interpreting dictated text" to your `CLAUDE.md`.
 

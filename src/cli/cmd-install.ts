@@ -29,11 +29,14 @@ import {
   findInstalledLexiconPlugin,
   hookConfigFor,
   hookTimeoutFor,
+  isInstalledLexiconServer,
   launchCommandLine,
   launchFor,
   mergeHookIntoSettings,
+  parseClaudeMcpGet,
   resolveIntegrationPaths,
 } from './claude-settings.js';
+import type { ClaudeMcpRegistration } from './claude-settings.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -970,10 +973,10 @@ export async function runInstallClaude(
     } catch (err) {
       const message = errorMessage(err);
       if (/already exists/i.test(message)) {
-        // `claude mcp add` refuses to overwrite an existing entry. That is the
-        // idempotent case, not a failure: every other writer here reports "already
-        // present, nothing changed" and carries on, so this one does too.
-        line(io, dim('   already registered with claude, nothing changed'));
+        // `claude mcp add` refuses to overwrite an existing entry. With the same
+        // launch that is the idempotent case; one an earlier install wrote from
+        // another location (a reinstall, a move to `npm i -g`) is repointed.
+        if (!refreshClaudeRegistration(io, exec, scope, mcpArgs, serverLaunch)) failed = true;
         line(io, dim(`   undo: claude mcp remove --scope ${scope} lexicon`));
       } else {
         failed = true;
@@ -1030,6 +1033,67 @@ export async function runInstallClaude(
     line(io, dim(`to perform steps 1 and 2, run: ${command}`));
   }
   return failed ? 1 : 0;
+}
+
+/**
+ * `claude mcp add` said a `lexicon` server is already registered: read it
+ * back with `claude mcp get lexicon` and, when it is one an install of this
+ * tool wrote (isInstalledLexiconServer) at this scope but with another
+ * command or path, replace it (`claude mcp remove`, then the add again) and
+ * say what changed. It was always reported as unchanged, so a registration
+ * left pointing at an old install location (a deleted checkout, an npx cache)
+ * was never refreshed. A matching registration, one at another scope, one this
+ * tool did not write and one that cannot be read back are left alone. Returns
+ * false only when the refresh was attempted and failed.
+ */
+function refreshClaudeRegistration(
+  io: IO,
+  exec: (file: string, args: readonly string[]) => string,
+  scope: 'user' | 'project',
+  mcpArgs: readonly string[],
+  launch: { command: string; args: string[] },
+): boolean {
+  let got: ClaudeMcpRegistration;
+  try {
+    got = parseClaudeMcpGet(exec('claude', ['mcp', 'get', 'lexicon']));
+  } catch (err) {
+    line(io, dim(`   already registered with claude, nothing changed (could not read it back with claude mcp get to compare: ${safeLines(errorMessage(err))})`));
+    return true;
+  }
+  const wanted = launch.args.join(' ');
+  if (got.command === undefined || got.args === undefined) {
+    line(io, dim('   already registered with claude, nothing changed (claude mcp get did not show its command to compare)'));
+    return true;
+  }
+  if (got.command === launch.command && got.args === wanted) {
+    line(io, dim('   already registered with claude, nothing changed'));
+    return true;
+  }
+  const old = safe(`${got.command} ${got.args}`.trim());
+  if (got.scope !== undefined && got.scope !== scope) {
+    line(io, dim(`   already registered with claude at ${got.scope} scope (${old}), nothing changed at ${scope} scope`));
+    return true;
+  }
+  if (!isInstalledLexiconServer(got.command, got.args)) {
+    line(io, yellow(`   a "lexicon" server that lexicon install did not write is registered with claude (${old}); left as it is`));
+    line(io, dim(`   to replace it: claude mcp remove --scope ${scope} lexicon, then run this again`));
+    return true;
+  }
+  try {
+    exec('claude', ['mcp', 'remove', '--scope', scope, 'lexicon']);
+  } catch (err) {
+    line(io, red(`   failed: the registration points at ${old}; could not remove it to repoint it: ${safeLines(errorMessage(err))}`));
+    return false;
+  }
+  try {
+    exec('claude', mcpArgs);
+  } catch (err) {
+    line(io, red(`   failed: removed the old registration (${old}) but could not add the new one: ${safeLines(errorMessage(err))}`));
+    line(io, `   run: claude ${mcpArgs.map((a) => quoteArg(a)).join(' ')}`);
+    return false;
+  }
+  line(io, green(`   repointed lexicon: ${old} -> ${safe(`${launch.command} ${wanted}`)}`));
+  return true;
 }
 
 /**
