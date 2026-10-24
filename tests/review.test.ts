@@ -110,6 +110,36 @@ describe('prompt helpers', () => {
 // ---------------------------------------------------------------------------
 
 describe('harvest --interactive', () => {
+  // Catches: a walk with nothing to show said only "no candidates to review",
+  // not that names were left out by --min-count or as code symbols, that the
+  // directory held nothing to read, or that every candidate was already known.
+  it('says why there is nothing to review, and what to try', async () => {
+    const tty = { isInteractive: () => true, createPrompter: () => scripted([]) };
+    const few = path.join(tmp, 'ab');
+    await fs.mkdir(few);
+    await fs.writeFile(path.join(few, 'README.md'), 'We use the Quokkaflow tool here.\n');
+    const once = makeIO();
+    expect(await runHarvest(few, { interactive: true, globalPath }, once, tty)).toBe(0);
+    expect(once.out).toContain(`no candidates found in ${few}: left out 1 name seen fewer than 2 times (to include them: --min-count 1)`);
+    expect(once.out).not.toContain('no candidates to review');
+    // Plain harvest says the same.
+    const plain = makeIO();
+    expect(await runHarvest(few, { globalPath }, plain, { isInteractive: () => false })).toBe(0);
+    expect(plain.out).toContain('left out 1 name seen fewer than 2 times');
+
+    const empty = path.join(tmp, 'xy');
+    await fs.mkdir(empty);
+    const none = makeIO();
+    expect(await runHarvest(empty, { interactive: true, globalPath }, none, tty)).toBe(0);
+    expect(none.out).toContain(`no candidates found in ${empty}: it holds no package manifest, README or source file`);
+
+    await seedGlobal([{ canonical: 'Alpha', aliases: ['Alpha x', 'Alphay'] }]);
+    const known = makeIO();
+    expect(await runHarvestInteractive([candidate('Alpha')], { cwd: repo, globalPath }, known, scripted([]))).toBe(0);
+    expect(known.out).toContain('nothing to review: the 1 candidate is already in the lexicon with its suggested aliases');
+    expect(known.out).not.toContain('[1/1]');
+  });
+
   it('adds on y, skips on n, replaces aliases on e, stops on q', async () => {
     const candidates = [candidate('Alpha'), candidate('Beta'), candidate('Gamma'), candidate('Delta')];
     const p = scripted([

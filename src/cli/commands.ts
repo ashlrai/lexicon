@@ -161,7 +161,7 @@ export { checkLoginService, renderDoctorReport, runDoctor, runDoctorReport } fro
 export type { DoctorAudience, DoctorCheck, DoctorCliOptions, DoctorDeps, DoctorLevel, DoctorReport, DoctorReportOptions } from './cmd-doctor.js';
 export { CLAUDE_MD_SNIPPET, runInstallClaude } from './cmd-install.js';
 export type { InstallClaudeDeps, InstallClaudeOptions, InstallOutcome } from './cmd-install.js';
-import { runHarvestInteractive } from './cmd-review.js';
+import { noHarvestCandidatesLine, runHarvestInteractive } from './cmd-review.js';
 import { PromptClosedError, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
 import { errorMessage, isInputError } from '../util/errors.js';
@@ -971,6 +971,7 @@ export async function runHarvest(
   const candidates: HarvestCandidate[] = report.candidates;
   // The 5000-file cap was never reported, so a large tree looked fully scanned.
   const truncatedLine = report.truncated ? `warn: ${harvestTruncatedNote(target)}` : undefined;
+  const scan = { root: target, minCount: harvestOpts.minCount ?? 2, filesScanned: report.filesScanned, belowMinCount: report.belowMinCount, symbolsOnly: report.symbolsOnly };
 
   if (interactive) {
     // The walkthrough is the display; the table would only repeat it.
@@ -979,7 +980,7 @@ export async function runHarvest(
       if (truncatedLine) line(io, safeMessage(truncatedLine));
       return await runHarvestInteractive(
         candidates,
-        { cwd: target, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}) },
+        { cwd: target, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}), harvest: scan },
         io,
         prompter,
       );
@@ -994,7 +995,7 @@ export async function runHarvest(
   } else if (opts.json) {
     line(io, JSON.stringify(candidates, null, 2));
   } else if (candidates.length === 0) {
-    line(io, dim(`no candidates found in ${safe(target)}`));
+    line(io, dim(noHarvestCandidatesLine(scan)));
   } else {
     const rows = candidates.map((c) => [
       c.canonical,
