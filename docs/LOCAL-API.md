@@ -39,7 +39,12 @@ stale one.
 The first run creates `~/.config/lexicon/serve.json` (mode 0600, next to your
 global lexicon; follows `LEXICON_PATH` and `XDG_CONFIG_HOME`). An existing one
 that other users can read (restored from a backup, synced, copied) is put back
-to 0600 when `lexicon serve`, `--show` or `--install` reuses it:
+to 0600 when `lexicon serve`, `--show` or `--install` reuses it. A file saved
+with a byte order mark (Windows Notepad) reads as usual. One that is not valid
+JSON after a hand edit stops `lexicon serve` with an error naming it, rather
+than being replaced with a new token (which would have dropped your
+`allowedOrigins` and left every paired client with a stale token); fix it, or
+delete it to get a new token:
 
 ```json
 {

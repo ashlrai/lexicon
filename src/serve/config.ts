@@ -8,7 +8,7 @@
  * three browser-extension schemes are always allowed. `*` is never honoured.
  */
 import { randomBytes } from 'node:crypto';
-import { promises as fs } from 'node:fs';
+import { promises as fs, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { resolvePaths } from '../core/index.js';
 import { redactSecrets } from '../core/redact.js';
@@ -64,6 +64,34 @@ function parseServeConfig(raw: unknown): ServeConfig | undefined {
   return config;
 }
 
+/**
+ * serve.json's JSON, a leading byte order mark allowed: Windows Notepad (and
+ * PowerShell's `Out-File -Encoding utf8`) save one, and JSON.parse refuses it.
+ */
+function parseServeJson(text: string): unknown {
+  return JSON.parse(text.replace(/^\uFEFF/, '')) as unknown;
+}
+
+/**
+ * Why `readServeConfig` found no usable config at `file`, for the
+ * "serve is not configured: <file> <why>" lines of `--status` and `--pair`.
+ */
+export function unusableServeConfigReason(file: string): string {
+  let text: string;
+  try {
+    text = readFileSync(file, 'utf8');
+  } catch {
+    return 'does not exist; lexicon serve creates it';
+  }
+  if (text.replace(/^\uFEFF/, '').trim() === '') return 'is empty; lexicon serve replaces it';
+  try {
+    parseServeJson(text);
+  } catch {
+    return 'is not valid JSON; fix it, or delete it and lexicon serve makes a new token';
+  }
+  return 'has no usable token; lexicon serve replaces it';
+}
+
 /** The stored config, or undefined when the file is missing or unusable (a bad token is never reused). */
 export async function readServeConfig(opts: StoreOptions = {}): Promise<ServeConfig | undefined> {
   let text: string;
@@ -73,7 +101,7 @@ export async function readServeConfig(opts: StoreOptions = {}): Promise<ServeCon
     return undefined;
   }
   try {
-    return parseServeConfig(JSON.parse(text));
+    return parseServeConfig(parseServeJson(text));
   } catch {
     return undefined;
   }
@@ -138,12 +166,39 @@ export function generateToken(): string {
  */
 export async function ensureServeConfig(opts: StoreOptions = {}): Promise<ServeConfig> {
   return withServeConfigLock(async () => {
-    const existing = await readServeConfig(opts);
-    if (existing) {
-      await keepOwnerOnly(getServePath(opts));
-      return existing;
+    const file = getServePath(opts);
+    let raw: unknown;
+    let text: string | undefined;
+    try {
+      text = await fs.readFile(file, 'utf8');
+    } catch (err) {
+      if ((err as { code?: unknown }).code !== 'ENOENT') throw err;
     }
-    const config: ServeConfig = { port: DEFAULT_PORT, token: generateToken(), createdAt: new Date().toISOString() };
+    if (text !== undefined && text.replace(/^\uFEFF/, '').trim() !== '') {
+      // A file that does not parse was rewritten with a fresh token, which
+      // dropped a hand-added allowedOrigins and left every paired client
+      // holding a token the server answers 401 to. It is refused instead.
+      try {
+        raw = parseServeJson(text);
+      } catch (err) {
+        throw new Error(
+          `${file} is not valid JSON (${err instanceof Error ? err.message : String(err)}); fix it, or delete it to have lexicon serve make a new token (paired clients then need the new one: lexicon serve --pair or --show)`,
+        );
+      }
+      const existing = parseServeConfig(raw);
+      if (existing) {
+        await keepOwnerOnly(file);
+        return existing;
+      }
+    }
+    // Missing, or no usable token: a new token, keeping the origins the user listed.
+    const origins = parseServeConfig({ ...(typeof raw === 'object' && raw !== null ? raw : {}), token: '0'.repeat(32) })?.allowedOrigins;
+    const config: ServeConfig = {
+      port: DEFAULT_PORT,
+      token: generateToken(),
+      createdAt: new Date().toISOString(),
+      ...(origins ? { allowedOrigins: origins } : {}),
+    };
     await writeServeConfig(config, opts);
     return config;
   }, opts);

@@ -64318,6 +64318,9 @@ function parseServeConfig(raw) {
   }
   return config2;
 }
+function parseServeJson(text) {
+  return JSON.parse(text.replace(/^\uFEFF/, ""));
+}
 async function readServeConfig(opts = {}) {
   let text;
   try {
@@ -64326,7 +64329,7 @@ async function readServeConfig(opts = {}) {
     return void 0;
   }
   try {
-    return parseServeConfig(JSON.parse(text));
+    return parseServeConfig(parseServeJson(text));
   } catch {
     return void 0;
   }
@@ -64361,12 +64364,35 @@ function generateToken() {
 }
 async function ensureServeConfig(opts = {}) {
   return withServeConfigLock(async () => {
-    const existing = await readServeConfig(opts);
-    if (existing) {
-      await keepOwnerOnly(getServePath(opts));
-      return existing;
+    const file2 = getServePath(opts);
+    let raw;
+    let text;
+    try {
+      text = await import_node_fs25.promises.readFile(file2, "utf8");
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
     }
-    const config2 = { port: DEFAULT_PORT, token: generateToken(), createdAt: (/* @__PURE__ */ new Date()).toISOString() };
+    if (text !== void 0 && text.replace(/^\uFEFF/, "").trim() !== "") {
+      try {
+        raw = parseServeJson(text);
+      } catch (err) {
+        throw new Error(
+          `${file2} is not valid JSON (${err instanceof Error ? err.message : String(err)}); fix it, or delete it to have lexicon serve make a new token (paired clients then need the new one: lexicon serve --pair or --show)`
+        );
+      }
+      const existing = parseServeConfig(raw);
+      if (existing) {
+        await keepOwnerOnly(file2);
+        return existing;
+      }
+    }
+    const origins = parseServeConfig({ ...typeof raw === "object" && raw !== null ? raw : {}, token: "0".repeat(32) })?.allowedOrigins;
+    const config2 = {
+      port: DEFAULT_PORT,
+      token: generateToken(),
+      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+      ...origins ? { allowedOrigins: origins } : {}
+    };
     await writeServeConfig(config2, opts);
     return config2;
   }, opts);

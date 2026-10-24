@@ -46,6 +46,7 @@ import {
   pairPageHtml,
   pairPortNote,
   readServeConfig,
+  unusableServeConfigReason,
   DEFAULT_PORT,
   EXPORT_NOTE_HEADER,
   NORMALIZE_BUDGET_MS,
@@ -217,6 +218,41 @@ describe('serve.json', () => {
       await fs.chmod(servePath, 0o644);
       expect((await ensureServeConfig({ globalPath: gp })).token).toBe(token);
       expect((await fs.stat(servePath)).mode & 0o777).toBe(0o600);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Catches: a serve.json saved with a byte order mark (Windows Notepad,
+  // PowerShell Out-File) or with a typo after a hand edit read as missing, so
+  // the next start minted a new token over it: allowedOrigins was dropped and
+  // every paired client was answered 401.
+  it('a hand-edited serve.json keeps its token: a BOM is read, invalid JSON is refused, a bad token keeps the origins', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-edit-'));
+    try {
+      const gp = path.join(dir, 'lexicon.yaml');
+      const servePath = getServePath({ globalPath: gp });
+      const token = 'cd'.repeat(16);
+      const doc = { port: 41733, token, createdAt: '2026-01-01T00:00:00.000Z', allowedOrigins: ['https://ok.example'] };
+      await fs.writeFile(servePath, `\uFEFF${JSON.stringify(doc, null, 2)}`);
+      expect(await readServeConfig({ globalPath: gp })).toMatchObject({ token, allowedOrigins: ['https://ok.example'] });
+      expect((await ensureServeConfig({ globalPath: gp })).token).toBe(token);
+
+      const broken = JSON.stringify(doc).replace(/\}$/, ',}');
+      await fs.writeFile(servePath, broken);
+      await expect(ensureServeConfig({ globalPath: gp })).rejects.toThrow(`${servePath} is not valid JSON`);
+      expect(await fs.readFile(servePath, 'utf8')).toBe(broken);
+
+      expect(unusableServeConfigReason(servePath)).toBe('is not valid JSON; fix it, or delete it and lexicon serve makes a new token');
+
+      await fs.writeFile(servePath, JSON.stringify({ ...doc, token: 'short' }));
+      expect(unusableServeConfigReason(servePath)).toBe('has no usable token; lexicon serve replaces it');
+      const fresh = await ensureServeConfig({ globalPath: gp });
+      expect(fresh.token).toMatch(/^[0-9a-f]{32}$/);
+      expect(fresh.allowedOrigins).toEqual(['https://ok.example']);
+
+      await fs.writeFile(servePath, '  \n');
+      expect((await ensureServeConfig({ globalPath: gp })).token).toMatch(/^[0-9a-f]{32}$/);
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
