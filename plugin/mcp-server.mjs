@@ -54569,24 +54569,72 @@ function readLexiconFileForWrite(filePath, scope) {
   return scope === "global" ? readGlobalLexiconCached(filePath, { writeBack: false }) : readLexiconFile(filePath, scope);
 }
 async function readGlobalLexiconCached(filePath, opts = {}) {
+  return (await readGlobalLexiconMaybeStale(filePath, opts)).file;
+}
+async function readGlobalLexiconMaybeStale(filePath, opts = {}) {
   const read = await readLexiconText(filePath);
-  if (read === void 0) return { path: filePath, scope: "global", lexicon: emptyLexicon(), exists: false };
-  if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, "global");
+  if (read === void 0) return { file: { path: filePath, scope: "global", lexicon: emptyLexicon(), exists: false } };
+  if (read.text.length < PARSE_CACHE_MIN_BYTES) return { file: parseLexiconText(read.text, filePath, "global") };
   const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_CACHE_FILE_NAME);
   const key = import_node_path5.default.resolve(filePath);
+  let previous;
   try {
     const cached2 = JSON.parse(await import_node_fs5.promises.readFile(cachePath, "utf8"));
-    if (isPlainObject3(cached2) && cached2.version === PARSE_CACHE_VERSION && cached2.path === key && cached2.text === read.text && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(cached2.lexicon)) {
+    if (isPlainObject3(cached2) && cached2.version === PARSE_CACHE_VERSION && cached2.path === key && typeof cached2.text === "string" && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(cached2.lexicon)) {
       const lexicon = JSON.parse(cached2.lexicon);
       if (isPlainObject3(lexicon) && Array.isArray(lexicon.terms)) {
-        return { path: filePath, scope: "global", lexicon, exists: true };
+        const file3 = { path: filePath, scope: "global", lexicon, exists: true };
+        if (cached2.text === read.text) return { file: file3 };
+        if (opts.stale && read.text.length >= STALE_GLOBAL_MIN_BYTES) previous = file3.lexicon;
       }
     }
   } catch {
   }
-  const file2 = parseLexiconText(read.text, filePath, "global");
-  if (opts.writeBack !== false) await writeParseCache(filePath, read.text, file2.lexicon, read.mode);
-  return file2;
+  const failure2 = await readParseFailure(import_node_path5.default.dirname(filePath), key, read.text);
+  if (failure2 !== void 0) throw new Error(`${failure2.kind === "yaml" ? "Failed to parse lexicon YAML" : "Invalid lexicon"} at ${filePath}: ${failure2.reason}`);
+  if (previous !== void 0) return { file: { path: filePath, scope: "global", lexicon: previous, exists: true }, stale: true };
+  let file2;
+  try {
+    file2 = parseLexiconText(read.text, filePath, "global");
+  } catch (err) {
+    if (opts.writeBack !== false) await writeParseFailure(filePath, read.text, err, read.mode);
+    throw err;
+  }
+  if (opts.writeBack !== false) {
+    await writeParseCache(filePath, read.text, file2.lexicon, read.mode);
+    await import_node_fs5.promises.unlink(import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_FAILURE_FILE_NAME)).catch(() => void 0);
+  }
+  return { file: file2 };
+}
+var STALE_GLOBAL_MIN_BYTES = 64 * 1024;
+var PARSE_FAILURE_FILE_NAME = "parse-failure.json";
+var PARSE_FAILURE_VERSION = 1;
+async function readParseFailure(dir, key, text) {
+  if (text.length < PARSE_CACHE_MIN_BYTES) return void 0;
+  try {
+    const cached2 = JSON.parse(await import_node_fs5.promises.readFile(import_node_path5.default.join(dir, PARSE_FAILURE_FILE_NAME), "utf8"));
+    if (isPlainObject3(cached2) && cached2.version === PARSE_FAILURE_VERSION && cached2.path === key && cached2.text === text && (cached2.kind === "yaml" || cached2.kind === "schema") && typeof cached2.reason === "string") {
+      return { kind: cached2.kind, reason: cached2.reason };
+    }
+  } catch {
+  }
+  return void 0;
+}
+async function writeParseFailure(filePath, text, err, mode) {
+  if (text.length < PARSE_CACHE_MIN_BYTES) return;
+  const message = errorMessage(err);
+  const yaml = `Failed to parse lexicon YAML at ${filePath}: `;
+  const schema = `Invalid lexicon at ${filePath}: `;
+  const failure2 = message.startsWith(yaml) ? { kind: "yaml", reason: message.slice(yaml.length) } : message.startsWith(schema) ? { kind: "schema", reason: message.slice(schema.length) } : void 0;
+  if (failure2 === void 0) return;
+  try {
+    await writeFileAtomic(
+      import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_FAILURE_FILE_NAME),
+      JSON.stringify({ version: PARSE_FAILURE_VERSION, path: import_node_path5.default.resolve(filePath), text, ...failure2 }),
+      { mode }
+    );
+  } catch {
+  }
 }
 async function writeParseCache(filePath, text, lexicon, mode) {
   if (text.length < PARSE_CACHE_MIN_BYTES) return;
@@ -54988,7 +55036,10 @@ function getHitsPath(opts = {}) {
   return import_node_path5.default.join(import_node_path5.default.dirname(resolvePaths(opts).global), HITS_FILE_NAME);
 }
 function hitKey(canonical) {
-  return canonical.trim().toLowerCase();
+  return foldKey(canonical);
+}
+function spellingKey(spelling) {
+  return foldKey(spelling);
 }
 async function canonicalPath2(filePath) {
   const resolved2 = import_node_path5.default.resolve(filePath);
@@ -55025,7 +55076,9 @@ function isPlainObject3(value) {
 function validCounts(counts) {
   const entry = {};
   for (const [canonical, n] of Object.entries(counts)) {
-    if (typeof n === "number" && Number.isInteger(n) && n > 0) entry[canonical] = n;
+    if (typeof n !== "number" || !Number.isInteger(n) || n <= 0) continue;
+    const key = hitKey(canonical);
+    entry[key] = (entry[key] ?? 0) + n;
   }
   return entry;
 }
@@ -55074,7 +55127,12 @@ async function hydrateHits(merged, project, opts) {
 }
 async function loadLexicon(opts = {}) {
   const paths = resolvePaths(opts);
-  const global = await readGlobalLexiconCached(paths.global);
+  const read = await readGlobalLexiconMaybeStale(paths.global, opts.staleGlobal ? { stale: true } : {});
+  const global = read.file;
+  if (read.stale) return { ...await loadLexiconWith(global, paths, opts), globalStale: true };
+  return loadLexiconWith(global, paths, opts);
+}
+async function loadLexiconWith(global, paths, opts) {
   if (!paths.project) return { merged: await hydrated(mergeLexicons(global.lexicon)), global };
   const gateFirst = opts.parseSkipped === false && !opts.includeUntrusted;
   let project;
@@ -61297,13 +61355,13 @@ function normalizeCut(text, max) {
   return cut;
 }
 function holds(terms, canonical) {
-  const key = canonical.trim().toLowerCase();
-  return (terms ?? []).some((t) => t.canonical.trim().toLowerCase() === key);
+  const key = spellingKey(canonical);
+  return (terms ?? []).some((t) => spellingKey(t.canonical) === key);
 }
 function holdsAlias(terms, canonical, alias) {
-  const key = canonical.trim().toLowerCase();
-  const drop = alias.trim().toLowerCase();
-  return (terms ?? []).some((t) => t.canonical.trim().toLowerCase() === key && t.aliases.some((a) => a.trim().toLowerCase() === drop));
+  const key = spellingKey(canonical);
+  const drop = spellingKey(alias);
+  return (terms ?? []).some((t) => spellingKey(t.canonical) === key && t.aliases.some((a) => spellingKey(a) === drop));
 }
 var registerTermTools = (server, ctx) => {
   const { load } = ctx;
@@ -61845,9 +61903,9 @@ var registerHarvestTools = (server, ctx) => {
     const alias = suggestion.alias?.trim();
     let target = scope ?? suggestion.scope;
     if (kind === "alias" || kind === "never") {
-      const key = canonical.trim().toLowerCase();
+      const key = spellingKey(canonical);
       const loaded = await current();
-      const existing = loaded.merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
+      const existing = loaded.merged.terms.find((t) => spellingKey(t.canonical) === key);
       if (!existing) {
         throw new Error(
           `no term "${canonical}" in the lexicon, so there is nothing to add this ${kind === "alias" ? "alias" : "never word"} to (it may have been removed since suggest_terms ran); nothing was written. Call suggest_terms again, or add_term if the user wants the term created.`
@@ -61944,8 +62002,8 @@ var registerHarvestTools = (server, ctx) => {
     };
     for (const [index, s] of list.entries()) {
       try {
-        const key = s.canonical.trim().toLowerCase();
-        const sameTerm = (t) => t.canonical.trim().toLowerCase() === key;
+        const key = spellingKey(s.canonical);
+        const sameTerm = (t) => spellingKey(t.canonical) === key;
         if ((s.kind === "alias" || s.kind === "never") && run.some((b) => sameTerm(b.p.term)) && !(await current()).merged.terms.some(sameTerm)) {
           await flush();
         }
@@ -62611,6 +62669,8 @@ function resolveModel(spec, opts) {
   }
   return { name: spec, path: primary, present: false, url: modelUrl(spec) };
 }
+var GGML_MAGIC = Buffer.from([108, 109, 103, 103]);
+var STALE_PART_MS = 10 * 60 * 1e3;
 
 // src/voice/process.ts
 var import_node_child_process5 = __toESM(require_node_child_process());
@@ -63952,7 +64012,7 @@ async function runDoctorReport(opts, deps = {}) {
     for (const term of f.lexicon.terms) {
       const entry = { term, scope: f.scope };
       allTerms.push(entry);
-      const key = term.canonical.trim().toLowerCase();
+      const key = spellingKey(term.canonical);
       const list = canonicalOwners.get(key) ?? [];
       list.push(entry);
       canonicalOwners.set(key, list);
@@ -63972,13 +64032,13 @@ async function runDoctorReport(opts, deps = {}) {
   for (const { term } of allTerms) {
     const never2 = new Set((term.never ?? []).map(fold2));
     for (const alias of term.aliases) {
-      const key = alias.trim().toLowerCase();
+      const key = spellingKey(alias);
       if (!key) continue;
       if (never2.has(fold2(alias))) {
         push2("warn", `alias "${alias}" of "${term.canonical}" is also in its never list, so it never fires (remove one of them)`);
       }
       const other = canonicalOwners.get(key);
-      if (other && !other.some((o) => o.term === term) && key !== term.canonical.trim().toLowerCase()) {
+      if (other && !other.some((o) => o.term === term) && key !== spellingKey(term.canonical)) {
         push2("fail", `alias "${alias}" of "${term.canonical}" equals the canonical of "${other[0].term.canonical}" (conflict)`);
       }
       if (COMMON_WORDS.has(key)) {
@@ -63990,7 +64050,7 @@ async function runDoctorReport(opts, deps = {}) {
     }
   }
   for (const [alias, owners] of aliasOwners) {
-    const distinct = new Set(owners.map((t) => t.canonical.toLowerCase()));
+    const distinct = new Set(owners.map((t) => spellingKey(t.canonical)));
     if (distinct.size > 1) {
       push2("warn", `alias "${alias}" belongs to several terms: ${[...distinct].join(", ")} (ambiguous)`);
     }

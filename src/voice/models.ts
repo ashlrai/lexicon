@@ -120,20 +120,85 @@ export interface DownloadProgress {
 /** Fetch `url` into `dest` (atomically via a `.part` file). Injectable for tests. */
 export type Downloader = (url: string, dest: string, onProgress: (p: DownloadProgress) => void) => Promise<void>;
 
+/**
+ * The first bytes of every whisper.cpp ggml model: GGML_FILE_MAGIC
+ * (0x67676d6c) as a little-endian uint32, "lmgg".
+ */
+export const GGML_MAGIC = Buffer.from([0x6c, 0x6d, 0x67, 0x67]);
+
+/**
+ * Why a finished download is not a model to keep, or undefined when it is:
+ * fewer bytes than the server's Content-Length said (a connection that ended
+ * early), or a file that does not start with GGML_MAGIC (an error or login
+ * page served with status 200 by a proxy or a captive portal). Either was
+ * renamed into place as the model, and whisper-cli then failed on every
+ * dictation with "failed to load model" until the user found the file and
+ * deleted it.
+ */
+export function checkDownloadedModel(head: Buffer, received: number, total: number | undefined): string | undefined {
+  if (total !== undefined && received !== total) return `the download ended after ${received} of ${total} bytes`;
+  if (head.length < GGML_MAGIC.length || !head.subarray(0, GGML_MAGIC.length).equals(GGML_MAGIC)) {
+    return 'the file downloaded is not a ggml whisper model (it does not start with the ggml magic bytes)';
+  }
+  return undefined;
+}
+
+/**
+ * A part file untouched this long belongs to a download that died (killed,
+ * or the machine slept through it): a live one writes to its file all the
+ * time. Ten minutes, well past any stall a download survives.
+ */
+export const STALE_PART_MS = 10 * 60 * 1000;
+
+/**
+ * Remove the part files of `dest` that dead downloads left behind
+ * (`<dest>.part` from older versions, `<dest>.<id>.part` now), each up to the
+ * size of a model. One a live download is still writing is newer than
+ * STALE_PART_MS and is left alone. Never throws.
+ */
+export async function sweepStaleParts(dest: string, nowMs: number = Date.now()): Promise<void> {
+  const dir = path.dirname(dest);
+  const base = path.basename(dest);
+  let names: string[];
+  try {
+    names = await fs.readdir(dir);
+  } catch {
+    return;
+  }
+  for (const name of names) {
+    if (!name.startsWith(`${base}.`) || !name.endsWith('.part')) continue;
+    const file = path.join(dir, name);
+    try {
+      const st = await fs.stat(file);
+      if (st.isFile() && nowMs - st.mtimeMs > STALE_PART_MS) await fs.rm(file, { force: true });
+    } catch {
+      // gone already, or not ours to remove
+    }
+  }
+}
+
 export async function defaultDownloader(url: string, dest: string, onProgress: (p: DownloadProgress) => void): Promise<void> {
   await fs.mkdir(path.dirname(dest), { recursive: true });
+  await sweepStaleParts(dest);
   const res = await fetch(url, { redirect: 'follow' });
   if (!res.ok || !res.body) throw new Error(`download failed: ${res.status} ${res.statusText} (${url})`);
   const total = Number(res.headers.get('content-length')) || undefined;
   let received = 0;
-  const tmp = `${dest}.part`;
+  let head = Buffer.alloc(0);
+  // One `.part` file per download: two `lexicon voice` runs fetching the same
+  // model at once wrote into one shared `<dest>.part`, interleaving their
+  // bytes, and the second rename failed (or renamed the other's half file).
+  const tmp = `${dest}.${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.part`;
   const source = Readable.fromWeb(res.body as import('node:stream/web').ReadableStream<Uint8Array>);
   source.on('data', (chunk: Buffer) => {
+    if (head.length < GGML_MAGIC.length) head = Buffer.concat([head, chunk.subarray(0, GGML_MAGIC.length - head.length)]);
     received += chunk.length;
     onProgress({ received, total });
   });
   try {
     await pipeline(source, createWriteStream(tmp));
+    const bad = checkDownloadedModel(head, received, total);
+    if (bad !== undefined) throw new Error(`${bad} (${url})`);
     await fs.rename(tmp, dest);
   } catch (e) {
     await fs.rm(tmp, { force: true });

@@ -14,7 +14,7 @@
  * Set LEXICON_SKIP_E2E=1 to skip the whole file (see CONTRIBUTING.md).
  */
 import { spawn } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import nodeModule from 'node:module';
 import path from 'node:path';
@@ -58,7 +58,7 @@ interface RunResult {
 }
 
 interface RunOptions {
-  stdin?: string;
+  stdin?: string | Buffer;
   env?: NodeJS.ProcessEnv;
   cwd?: string;
 }
@@ -91,6 +91,8 @@ function runNode(script: string, args: readonly string[], opts: RunOptions = {})
       clearTimeout(timer);
       resolve({ code, stdout, stderr });
     });
+    // A child that stops reading early (the hook past its stdin cap) closes the pipe: EPIPE here is expected, not a failure.
+    child.stdin.on('error', () => undefined);
     if (opts.stdin !== undefined) child.stdin.end(opts.stdin);
     else child.stdin.end();
   });
@@ -1045,6 +1047,49 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: UserPromptSubmit 
     expect(garbage.code).toBe(0);
     expect(garbage.stdout).toBe('');
     expect(garbage.stderr).toContain('[lexicon hook]');
+  });
+
+  // Catches: stdin had no cap, so a caller piping a huge file had all of it read and parsed.
+  it('stops reading stdin past 16 MiB, prints nothing and exits 0', async () => {
+    const huge = payload('ask Ashler ' + 'x'.repeat(17 * 1024 * 1024), shared.repo);
+    const r = await runNode(HOOK, [], { env: shared.env, stdin: huge });
+    expect(r.code).toBe(0);
+    expect(r.stdout).toBe('');
+    expect(r.stderr).toContain(`[lexicon hook] stdin is over ${16 * 1024 * 1024} bytes`);
+  });
+
+  // Catches: a payload piped through Windows PowerShell (UTF-16LE with a byte order mark) was reported as "not valid JSON".
+  it('decodes a UTF-16LE payload with a byte order mark', async () => {
+    // Own clone: the hook bumps `hits` in the sidecar, which must not leak into the shared fixture.
+    const h = await cloneOf(shared, 'hook-utf16');
+    const stdin = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(`${payload('ask Ashler', h.repo)}\r\n`, 'utf16le')]);
+    const r = await runNode(HOOK, [], { env: h.env, stdin });
+    expect(r.code).toBe(0);
+    expect(r.stderr).toBe('');
+    expect((JSON.parse(r.stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext).toContain('"Ashler" -> "Ashlr.AI"');
+  });
+
+  // Catches: the first prompt after a hand edit of a large lexicon parsed and indexed it inside the prompt.
+  it('serves a hand-edited large lexicon stale once, refreshes it in the background, then applies the edit', async () => {
+    const h = await cloneOf(shared, 'hook-stale');
+    const env = { ...h.env, LEXICON_QUEUE_CORRECTIONS: '0' };
+    let yaml = 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n';
+    for (let i = 0; i < 1500; i += 1) yaml += `  - canonical: Filler${i}word\n    aliases: [fillerx${i}y]\n`;
+    await fs.writeFile(h.globalPath, yaml);
+    const ctxOf = (r: RunResult): string => (JSON.parse(r.stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
+    expect(ctxOf(await runNode(HOOK, [], { env, stdin: payload('ask Ashler', h.repo) }))).not.toContain('previous version');
+    await fs.appendFile(h.globalPath, '  - canonical: Qwertyon\n    aliases: [kwertyon]\n');
+    const stale = await runNode(HOOK, [], { env, stdin: payload('ask Ashler about kwertyon', h.repo) });
+    expect(stale.code).toBe(0);
+    expect(ctxOf(stale)).toContain('these corrections used the previous version');
+    expect(ctxOf(stale)).not.toContain('Qwertyon');
+    const lock = path.join(path.dirname(h.globalPath), 'index-refresh.lock');
+    const until = Date.now() + 15_000;
+    while (existsSync(lock) && Date.now() < until) await new Promise((r) => setTimeout(r, 50));
+    expect(existsSync(lock)).toBe(false);
+    const fresh = await runNode(HOOK, [], { env, stdin: payload('ask kwertyon', h.repo) });
+    expect(ctxOf(fresh)).toContain('"kwertyon" -> "Qwertyon"');
+    expect(ctxOf(fresh)).not.toContain('previous version');
   });
 
   it('names (never quotes) an untrusted project lexicon', async () => {

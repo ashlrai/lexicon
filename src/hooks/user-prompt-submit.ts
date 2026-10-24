@@ -27,7 +27,7 @@
 import { promises as fs, readSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { codeSpanRanges, collectRanges, diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, pathForModel, phoneticKey, queueCorrections, recordHits, sanitizeForDisplayMax, similarity } from '../core/index.js';
+import { codeSpanRanges, collectRanges, diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, pathForModel, phoneticKey, queueCorrections, recordHits, resolvePaths, sanitizeForDisplayMax, similarity } from '../core/index.js';
 import type { Correction, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
 import { packageVersion } from '../util/package.js';
 import { cliCommand } from '../util/cli-hint.js';
@@ -37,7 +37,108 @@ export interface HookOptions {
   cwd?: string;
   /** Overrides HOOK_MATCH_BUDGET_MS. */
   matchBudgetMs?: number;
+  /**
+   * Starts a background refresh of the parse and index caches for `cwd`
+   * (`main()` passes `spawnCacheRefresh`, a detached `--refresh-cache`
+   * process). With it, a UserPromptSubmit whose global lexicon changed since
+   * it was cached (and is at least STALE_GLOBAL_MIN_BYTES) is matched against
+   * the previous version, with the stale note, instead of parsing and
+   * indexing inside the prompt; without it (the default) the prompt parses as
+   * before. See claimCacheRefresh.
+   */
+  startRefresh?: (cwd: string) => Promise<void>;
 }
+
+/** The argv flag that makes `main()` refresh the caches for the directory after it and exit (see spawnCacheRefresh). */
+export const REFRESH_CACHE_FLAG = '--refresh-cache';
+
+/** Lock file (next to the global lexicon) held by the background cache refresh. */
+export const REFRESH_LOCK_FILE = 'index-refresh.lock';
+
+/**
+ * How long a refresh lock is taken as a refresh still running. Past it the
+ * refresh is taken as dead (or unable to write its caches), the lock is
+ * removed and the prompt parses for real, so a lexicon change is never
+ * served stale for longer than this. A 5000-term refresh takes under a second.
+ */
+export const REFRESH_LOCK_STALE_MS = 30_000;
+
+/**
+ * Whether this prompt may be served from the previous lexicon while a
+ * background refresh brings the caches up to date: `claimed` when it took
+ * the refresh lock (the caller starts the refresh), `running` when a refresh
+ * younger than REFRESH_LOCK_STALE_MS holds it, `unavailable` when the lock
+ * cannot be created (a read-only config directory, where the refresh could
+ * not write its caches either) or is older than that (it is removed, so a
+ * later prompt can claim it). Never throws. Exported for tests.
+ */
+export async function claimCacheRefresh(globalPath: string, now: number = Date.now()): Promise<'claimed' | 'running' | 'unavailable'> {
+  const lock = join(dirname(globalPath), REFRESH_LOCK_FILE);
+  try {
+    await fs.writeFile(lock, `${JSON.stringify({ pid: process.pid, at: new Date(now).toISOString() })}\n`, { flag: 'wx', mode: 0o600 });
+    return 'claimed';
+  } catch (err) {
+    if ((err as NodeJS.ErrnoException | undefined)?.code !== 'EEXIST') return 'unavailable';
+  }
+  try {
+    const st = await fs.stat(lock);
+    if (now - st.mtimeMs < REFRESH_LOCK_STALE_MS) return 'running';
+    await fs.unlink(lock);
+  } catch {
+    // gone in between, or cannot be removed: parse for real this time
+  }
+  return 'unavailable';
+}
+
+/** Removes the refresh lock beside `globalPath`. Never throws. */
+async function releaseCacheRefresh(globalPath: string): Promise<void> {
+  await fs.unlink(join(dirname(globalPath), REFRESH_LOCK_FILE)).catch(() => undefined);
+}
+
+/**
+ * What the `--refresh-cache` process runs: loads the lexicon for `cwd` the
+ * way the prompt does (which rewrites the parse cache, or records the parse
+ * failure), builds and writes the index cache, then releases the refresh
+ * lock. Never throws. Exported for tests.
+ */
+export async function refreshHookCaches(cwd: string): Promise<void> {
+  let globalPath: string | undefined;
+  try {
+    const loaded = await loadLexicon({ cwd, parseSkipped: false });
+    globalPath = loaded.global.path;
+    if (loaded.merged.terms.length > 0) await loadMatcherIndex(loaded);
+  } catch {
+    // a file that does not parse is recorded by loadLexicon; anything else is retried by a later prompt
+  } finally {
+    await releaseCacheRefresh(globalPath ?? resolvePaths({ cwd }).global);
+  }
+}
+
+/**
+ * Starts `refreshHookCaches(cwd)` in a detached process (this module run
+ * with REFRESH_CACHE_FLAG) and returns at once, so the prompt is not held.
+ * `node:child_process` is loaded only here, off the ordinary prompt's path.
+ */
+export async function spawnCacheRefresh(cwd: string): Promise<void> {
+  const { spawn } = await import('node:child_process');
+  // The parent's loader flags (`--import tsx` from source) without a debugger port it holds.
+  const execArgv = process.execArgv.filter((a) => !/^--inspect/.test(a));
+  const child = spawn(process.execPath, [...execArgv, fileURLToPath(import.meta.url), REFRESH_CACHE_FLAG, cwd], {
+    detached: true,
+    stdio: 'ignore',
+    windowsHide: true,
+  });
+  child.on('error', () => undefined);
+  child.unref();
+}
+
+/**
+ * One line for a prompt matched against the previous version of a global
+ * lexicon that changed since (see HookOptions.startRefresh), so a term just
+ * added or changed that did not apply is explained.
+ */
+export const STALE_LEXICON_NOTE =
+  'Lexicon note: the lexicon file changed since it was last read, so these corrections used the previous version while the new one is prepared in the background; a term just added or changed applies from the next prompt.';
 
 /**
  * How long the UserPromptSubmit hook spends matching before it stops and
@@ -103,7 +204,7 @@ export function formatLengthNote(checkedChars: number, totalChars: number): stri
  */
 export const CORRECTED_PROMPT_MAX_CHARS = 8000;
 
-/** Hook events this entry point handles. Anything else is treated as UserPromptSubmit. */
+/** Hook events this entry point handles. A payload with no event name is treated as UserPromptSubmit; any other name gets no output. */
 export type HookEventName = 'UserPromptSubmit' | 'SessionStart';
 
 /** Subset of the Claude Code hook payload this file reads. */
@@ -352,23 +453,62 @@ const SENTENCE_BREAK_RE = /(?<=[.!?])\s+/;
 export function parseCorrections(text: string): Correction[] {
   const found: Correction[] = [];
   const seen = new Set<string>();
-  const add = (c: Correction | undefined): void => {
+  const keyOf = (c: Correction): string => `${collapse(c.heard)}\u0000${collapse(c.meant)}`;
+  // `source` is the sentence the correction was read from: a side counts as
+  // quoted only when it is quoted there (see isOrdinaryContrast).
+  const add = (c: Correction | undefined, source: string): void => {
     if (!c || c.heard.trim() === '' || c.meant.trim() === '') return;
     if (CODE_SHAPE_RE.test(c.heard) || CODE_SHAPE_RE.test(c.meant)) return;
-    if (isOrdinaryContrast(text, c)) return;
-    const key = `${collapse(c.heard)}\u0000${collapse(c.meant)}`;
+    if (isOrdinaryContrast(source, c)) return;
+    const key = keyOf(c);
     if (seen.has(key)) return;
     seen.add(key);
     found.push(c);
   };
   // Code is not the user speaking: a correction phrase in a pasted block is
   // read as blanks (offsets kept), so it neither matches nor joins the prose.
-  const prose = blankCode(text);
-  add(parseCorrection(prose));
+  // Nor is quoted text: a Markdown blockquote or what a screen "says:".
+  const prose = blankQuoted(blankCode(text));
+  const whole = parseCorrection(prose);
   // Only a prompt with a second sentence can hold a second correction.
-  if (!SENTENCE_BREAK_RE.test(prose)) return found;
-  for (const sentence of prose.split(SENTENCE_BREAK_RE)) add(parseCorrection(sentence));
+  if (!SENTENCE_BREAK_RE.test(prose)) {
+    add(whole, prose);
+    return found;
+  }
+  const perSentence = prose.split(SENTENCE_BREAK_RE).map((sentence) => ({ sentence, c: parseCorrection(sentence) }));
+  const wholeKey = whole ? keyOf(whole) : undefined;
+  add(whole, perSentence.find((p) => p.c !== undefined && keyOf(p.c) === wholeKey)?.sentence ?? prose);
+  for (const { sentence, c } of perSentence) add(c, sentence);
   return found;
+}
+
+/**
+ * Text introduced by a verb of showing or saying and a colon ("The banner
+ * says: ...", "the error reads: ..."), up to the end of its sentence or line:
+ * the user is quoting a screen or a message, not correcting a spelling. "I
+ * said: ..." is the user speaking and is not matched.
+ */
+const REPORTED_RE = /(?<!\bI\s)\b(?:says|said|reads|read|shows|showed|displays|displayed|prints|printed|states|stated|writes|wrote|outputs|returns|returned)\s*:[^\S\n]*[^\n]*?(?:[.!?](?=\s|$)|(?=\n)|$)/giu;
+
+/** A Markdown blockquote line: up to three spaces, then `>`. */
+const BLOCKQUOTE_LINE_RE = /^[ \t]{0,3}>[^\n]*/gmu;
+
+/**
+ * `text` with quoted material replaced by spaces (offsets and line breaks
+ * kept): Markdown blockquote lines (`> it's Vercel not versel`, a pasted
+ * reply or document), and text a verb of showing or saying introduces with a
+ * colon (see REPORTED_RE: "The banner says: it's Vercel not versel."). Each
+ * was flagged as the user's own spelling correction, got a learn_correction
+ * line and a `lexicon pending` entry. A correction the user makes around
+ * such text is still read.
+ */
+function blankQuoted(text: string): string {
+  if (!/[>:]/.test(text)) return text;
+  const blank = (m: string): string => m.replace(/[^\n]/g, ' ');
+  return text.replace(BLOCKQUOTE_LINE_RE, blank).replace(REPORTED_RE, (m) => {
+    const colon = m.indexOf(':');
+    return m.slice(0, colon + 1) + blank(m.slice(colon + 1));
+  });
 }
 
 /**
@@ -405,7 +545,7 @@ function blankCode(text: string): string {
 /** Least similarity (letters and digits only, lowercased) at which two plain-word sides still read as one spelling. */
 export const CORRECTION_MIN_SIMILARITY = 0.45;
 
-/** `side` appears quoted in `text` ("x", \u201cx\u201d or `x`): the user marked it as a spelling. */
+/** `side` appears quoted in `text` ("x", \u201cx\u201d or `x`), the sentence the correction was read from: the user marked it as a spelling. */
 function quotedIn(text: string, side: string): boolean {
   return text.includes(`"${side}"`) || text.includes(`\u201c${side}\u201d`) || text.includes(`\`${side}\``);
 }
@@ -726,6 +866,10 @@ function parseInput(raw: string): HookInput {
     // user's prompt when a caller pipes raw text, control characters and
     // all; it reached stderr verbatim as `[lexicon hook] Unexpected token
     // 'h', "hi Ashler ..." is not valid JSON`. Say what was wrong instead.
+    if (looksLikeUtf16(trimmed)) {
+      process.stderr.write(`[lexicon hook] stdin looks like UTF-16 read as UTF-8 (${Buffer.byteLength(trimmed, 'utf8')} bytes, NUL bytes between the characters); send the hook payload as UTF-8, nothing to do\n`);
+      return {};
+    }
     process.stderr.write(`[lexicon hook] stdin is not valid JSON (${Buffer.byteLength(trimmed, 'utf8')} bytes); expected the Claude Code hook payload object, nothing to do\n`);
     return {};
   }
@@ -737,6 +881,52 @@ function parseInput(raw: string): HookInput {
     return {};
   }
   return parsed as HookInput;
+}
+
+/**
+ * Text that is UTF-16 bytes decoded as UTF-8: a byte order mark read as two
+ * replacement characters, or NUL characters (JSON text never holds a raw
+ * NUL, and UTF-16 puts one beside every ASCII character).
+ */
+function looksLikeUtf16(text: string): boolean {
+  return text.startsWith('\ufffd\ufffd') || text.includes('\u0000');
+}
+
+/**
+ * Stdin's bytes as text. Claude Code sends UTF-8, but a payload piped through
+ * Windows PowerShell (`Get-Content x.json | node hook.mjs`, or `>` into a
+ * file) arrives as UTF-16: little-endian with a byte order mark FF FE, big
+ * endian with FE FF, or without a mark with a NUL byte beside every ASCII
+ * character. Read as UTF-8 that was reported only as "not valid JSON". A
+ * byte order mark picks the byte order; without one, bytes holding NUL (which
+ * UTF-8 JSON never does) are UTF-16, little-endian when more of the NULs sit
+ * at odd offsets (`{` is 7B 00) and big-endian otherwise. A UTF-8 byte order
+ * mark is dropped. Anything else is decoded as UTF-8, as before. Exported for
+ * tests.
+ */
+export function decodeStdin(bytes: Buffer): string {
+  if (bytes.length >= 3 && bytes[0] === 0xef && bytes[1] === 0xbb && bytes[2] === 0xbf) return bytes.toString('utf8', 3);
+  if (bytes.length >= 2 && bytes[0] === 0xff && bytes[1] === 0xfe) return utf16le(bytes.subarray(2));
+  if (bytes.length >= 2 && bytes[0] === 0xfe && bytes[1] === 0xff) return utf16be(bytes.subarray(2));
+  if (bytes.length >= 2 && bytes.includes(0)) {
+    let odd = 0;
+    let even = 0;
+    // The first 4 KB settle it: a payload starts with `{` and ASCII keys.
+    for (let i = 0; i < Math.min(bytes.length, 4096); i += 1) if (bytes[i] === 0) i % 2 === 1 ? (odd += 1) : (even += 1);
+    return odd >= even ? utf16le(bytes) : utf16be(bytes);
+  }
+  return bytes.toString('utf8');
+}
+
+/** UTF-16LE text of `bytes`; an odd trailing byte (a cut-off code unit) is dropped. */
+function utf16le(bytes: Buffer): string {
+  return bytes.toString('utf16le', 0, bytes.length - (bytes.length % 2));
+}
+
+/** UTF-16BE text of `bytes`, swapped into a copy (the input is left as it was). */
+function utf16be(bytes: Buffer): string {
+  const even = Buffer.from(bytes.subarray(0, bytes.length - (bytes.length % 2)));
+  return even.swap16().toString('utf16le');
 }
 
 /** A short, display-safe rendering of an untrusted value for a stderr line. */
@@ -755,12 +945,12 @@ function shownValue(value: unknown): string {
  * hook still must not fail and must never touch the prompt, so the problem is
  * reported through the one channel the hook is already allowed to use.
  */
-async function loadOrExplain(cwd: string): Promise<{ loaded?: Awaited<ReturnType<typeof loadLexicon>>; note?: string }> {
+async function loadOrExplain(cwd: string, staleGlobal = false): Promise<{ loaded?: Awaited<ReturnType<typeof loadLexicon>>; note?: string }> {
   try {
     // parseSkipped: false checks trust before parsing the project file, so a
     // repo lexicon nobody trusted costs no YAML parse; the hook only ever
     // reports a skipped file by path.
-    return { loaded: await loadLexicon({ cwd, parseSkipped: false }) };
+    return { loaded: await loadLexicon(staleGlobal ? { cwd, parseSkipped: false, staleGlobal: true } : { cwd, parseSkipped: false }) };
   } catch (err) {
     const message = neutralizeForModel(err instanceof Error ? err.message : String(err));
     // Only a store parse/validation error is a file to fix with `lexicon edit`;
@@ -833,7 +1023,26 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
   // Default loadLexicon merges the project file only when trusted; an
   // untrusted one shows up as skippedProject and is mentioned by path only.
-  const attempt = await loadOrExplain(cwd);
+  let attempt = await loadOrExplain(cwd, opts.startRefresh !== undefined);
+  let staleNote = '';
+  if (attempt.loaded?.globalStale && opts.startRefresh) {
+    // The global file changed since it was cached: match against the previous
+    // version and let a background process parse and index the new one,
+    // unless no refresh can run (see claimCacheRefresh).
+    const globalPath = attempt.loaded.global.path;
+    let claim = await claimCacheRefresh(globalPath);
+    if (claim === 'claimed') {
+      try {
+        await opts.startRefresh(cwd);
+      } catch (err) {
+        process.stderr.write(`[lexicon hook] could not start the cache refresh: ${sanitizeForDisplayMax(errorText(err), 200)}\n`);
+        await releaseCacheRefresh(globalPath);
+        claim = 'unavailable';
+      }
+    }
+    if (claim === 'unavailable') attempt = await loadOrExplain(cwd);
+    else staleNote = STALE_LEXICON_NOTE;
+  }
   if (!attempt.loaded) return emit('UserPromptSubmit', [attempt.note ?? '']);
   const loaded = attempt.loaded;
   const skippedNote = formatSkippedProjectNote(loaded);
@@ -882,6 +1091,7 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   if (budgetNote) parts.push(budgetNote);
   if (correctionNote) parts.push(correctionNote);
   if (skippedNote) parts.push(skippedNote);
+  if (staleNote) parts.push(staleNote);
   return emit('UserPromptSubmit', parts);
 }
 
@@ -942,43 +1152,86 @@ export async function runSessionStartHook(input: string, opts: HookOptions = {})
 }
 
 /**
- * Dispatches on `hook_event_name`. Unknown or missing events are handled as
- * UserPromptSubmit; an unknown one (registered for an event this hook does
- * not handle, or a misspelling) also gets one stderr line.
+ * Dispatches on `hook_event_name`. A missing event is handled as
+ * UserPromptSubmit (callers that predate the field). An unknown one
+ * (registered for an event this hook does not handle, or a misspelling) gets
+ * one stderr line and no output: answering it with output tagged
+ * UserPromptSubmit put a corrections note on an event that never carried a
+ * user prompt, and a client that checks the tag rejects the whole reply.
  */
 export async function runHook(input: string, opts: HookOptions = {}): Promise<string> {
   const payload = parseInput(input);
   const event: unknown = payload.hook_event_name;
   if (event === 'SessionStart') return sessionStart(payload, opts);
   if (event !== undefined && event !== 'UserPromptSubmit') {
-    process.stderr.write(`[lexicon hook] unknown hook_event_name ${shownValue(event)}; handled as UserPromptSubmit (this hook handles UserPromptSubmit and SessionStart)\n`);
+    process.stderr.write(`[lexicon hook] unknown hook_event_name ${shownValue(event)}; nothing to do (this hook handles UserPromptSubmit and SessionStart)\n`);
+    return '';
   }
   return userPromptSubmit(payload, opts);
 }
 
 /**
- * The whole of stdin. Read synchronously first: `process.stdin` on a pipe is a
- * `net.Socket`, and loading `node:net` for it was about 10 ms of the hook's
- * startup. If the descriptor turns out to be non-blocking (EAGAIN) or cannot
- * be read that way at all, whatever was already read is kept and the rest
- * comes from the stream as before.
+ * Most bytes of stdin the hook reads: 16 MiB. A dictated prompt is a few
+ * kilobytes and the largest paste Claude Code passes through is a few
+ * megabytes (only the first HOOK_PROMPT_MAX_CHARS of it is checked anyway);
+ * stdin had no bound, so a runaway caller piping a log file kept the whole
+ * thing in memory twice (the chunks and the decoded string) and then parsed
+ * it. Past the cap the hook stops reading, says so in one stderr line, prints
+ * nothing and exits 0: a JSON payload cut short cannot be parsed.
  */
-async function readStdin(): Promise<string> {
+export const HOOK_STDIN_MAX_BYTES = 16 * 1024 * 1024;
+
+/** What `readStdin` reads from; tests replace it. */
+export interface StdinSource {
+  /** Synchronous read into `buffer`; 0 at end of input. May throw (EAGAIN, no fd 0). */
+  readSync(buffer: Buffer): number;
+  /** The same input as a stream, for whatever the synchronous read could not get. */
+  stream(): AsyncIterable<Buffer | string>;
+}
+
+const processStdin: StdinSource = {
+  readSync: (buffer) => readSync(0, buffer, 0, buffer.length, null),
+  stream: () => process.stdin,
+};
+
+/** What `readStdin` returns: the bytes read, or how many it had read when it passed the cap. */
+export type StdinRead = { bytes: Buffer; overflow?: undefined } | { overflow: number; bytes?: undefined };
+
+/**
+ * Stdin, at most `max` bytes. Read synchronously first: `process.stdin` on a
+ * pipe is a `net.Socket`, and loading `node:net` for it was about 10 ms of
+ * the hook's startup. If the descriptor turns out to be non-blocking (EAGAIN)
+ * or cannot be read that way at all, whatever was already read is kept and
+ * the rest comes from the stream. Reading stops as soon as the total passes
+ * `max` (see HOOK_STDIN_MAX_BYTES). Exported for tests.
+ */
+export async function readStdin(max: number = HOOK_STDIN_MAX_BYTES, source: StdinSource = processStdin): Promise<StdinRead> {
   const chunks: Buffer[] = [];
+  let total = 0;
+  const take = (chunk: Buffer): boolean => {
+    chunks.push(chunk);
+    total += chunk.length;
+    return total > max;
+  };
   try {
     const buf = Buffer.allocUnsafe(64 * 1024);
     for (;;) {
-      const n = readSync(0, buf, 0, buf.length, null);
-      if (n === 0) return Buffer.concat(chunks).toString('utf8');
-      chunks.push(Buffer.from(buf.subarray(0, n)));
+      const n = source.readSync(buf);
+      if (n === 0) return { bytes: Buffer.concat(chunks) };
+      if (take(Buffer.from(buf.subarray(0, n)))) return { overflow: total };
     }
   } catch {
     // EAGAIN / EOF quirks / no fd 0: finish from the stream below
   }
-  for await (const chunk of process.stdin) {
-    chunks.push(typeof chunk === 'string' ? Buffer.from(chunk) : chunk);
+  for await (const chunk of source.stream()) {
+    if (take(typeof chunk === 'string' ? Buffer.from(chunk) : chunk)) return { overflow: total };
   }
-  return Buffer.concat(chunks).toString('utf8');
+  return { bytes: Buffer.concat(chunks) };
+}
+
+/** The stderr line for stdin past HOOK_STDIN_MAX_BYTES. */
+export function formatStdinOverflow(read: number, max: number = HOOK_STDIN_MAX_BYTES): string {
+  return `[lexicon hook] stdin is over ${max} bytes (stopped reading at ${read}); a Claude Code hook payload is far smaller, nothing to do\n`;
 }
 
 /** What `writeStdout` writes through; tests replace it. */
@@ -1048,6 +1301,12 @@ export function hookFlagOutput(argv: readonly string[]): string | undefined {
 }
 
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
+  if (argv[0] === REFRESH_CACHE_FLAG) {
+    // The detached background refresh (spawnCacheRefresh): no stdin, no output.
+    await refreshHookCaches(argv[1] ?? process.cwd());
+    process.exitCode = 0;
+    return;
+  }
   const flagOutput = hookFlagOutput(argv);
   if (flagOutput !== undefined) {
     writeStdout(`${flagOutput}\n`);
@@ -1055,8 +1314,12 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     return;
   }
   try {
-    const raw = await readStdin();
-    const out = await runHook(raw);
+    const read = await readStdin();
+    if (read.overflow !== undefined) {
+      process.stderr.write(formatStdinOverflow(read.overflow));
+      return;
+    }
+    const out = await runHook(decodeStdin(read.bytes), { startRefresh: spawnCacheRefresh });
     if (out) writeStdout(out);
   } catch (err) {
     // Silent by design: a broken hook must not break the user's prompt.

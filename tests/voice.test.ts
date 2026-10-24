@@ -28,8 +28,8 @@ import {
   parsePulseSources,
   pickDevice,
 } from '../src/voice/devices.js';
-import { HISTORY_MAX_LINES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
-import { expandTilde, modelFileName, modelUrl, resolveModel } from '../src/voice/models.js';
+import { HISTORY_MAX_BYTES, HISTORY_MAX_LINES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
+import { GGML_MAGIC, STALE_PART_MS, defaultDownloader, expandTilde, modelFileName, modelUrl, resolveModel } from '../src/voice/models.js';
 import type { Downloader } from '../src/voice/models.js';
 import { installHint, locateWhisperCli, makeProcessDescribe, makeProcessList } from '../src/voice/process.js';
 import type { ChildHandle, ExecResult, SpawnOptions, VoiceExec, VoiceSpawn } from '../src/voice/process.js';
@@ -875,6 +875,45 @@ describe('lexicon voice (foreground)', () => {
     expect(h.kills).toEqual([]);
   });
 
+  // Catches: Ctrl-C during a --seconds recording ended the whole process (no
+  // handler for that mode), so nothing was transcribed and the WAV stayed in tmp.
+  it('--seconds: Ctrl-C stops the recording early and the capture is still transcribed', async () => {
+    const h = await harness();
+    let listening: AbortSignal | undefined;
+    h.deps.waitForInterrupt = async (signal) => {
+      listening = signal;
+      // the terminal delivered SIGINT to the whole group; ffmpeg exits on its own
+      h.children[0].resolve(255);
+      return 'sigint';
+    };
+    const run = runVoice({ ...h.opts, seconds: 30 }, h.io, h.deps);
+    const code = await Promise.race([run, new Promise<'hung'>((r) => setTimeout(() => r('hung'), 3000))]);
+    if (code === 'hung') h.children[0]?.resolve(0);
+    expect(code).toBe(EXIT_OK);
+    expect(h.out).toEqual(['ping Ashlr.AI about the Kubernetes rollout\n']);
+    // ffmpeg already had the SIGINT: not signalled again.
+    expect(h.kills).toEqual([]);
+    expect(listening?.aborted).toBe(true);
+    expect(await fs.readdir(path.join(h.dir, 'tmp'))).toEqual([]);
+  });
+
+  it('--seconds: the interrupt listener is released when the recording ends on its own', async () => {
+    const h = await harness();
+    let listening: AbortSignal | undefined;
+    h.deps.waitForInterrupt = (signal) => {
+      listening = signal;
+      return new Promise<'sigint'>(() => undefined);
+    };
+    const spawn = h.deps.spawn;
+    h.deps.spawn = (cmd, args, opts) => {
+      const child = spawn!(cmd, args, opts);
+      setTimeout(() => h.children[0].resolve(0), 5);
+      return child;
+    };
+    expect(await runVoice({ ...h.opts, seconds: 3 }, h.io, h.deps)).toBe(EXIT_OK);
+    expect(listening?.aborted).toBe(true);
+  });
+
   it("a recorder that fails to open the device prints ffmpeg's last lines one per line", async () => {
     const h = await harness({ platform: 'linux' });
     h.opts.quiet = false;
@@ -1491,6 +1530,165 @@ describe('history', () => {
     expect(text.endsWith('\n')).toBe(true);
     expect(text.split('\n').filter(Boolean)).toHaveLength(5);
     expect(HISTORY_MAX_LINES).toBe(1000);
+  });
+
+  const entry = (i: number, raw = `r${i}`) => ({ at: `t${i}`, raw, output: `o${i}`, model: 'base.en', ms: { record: 0, transcribe: 0, normalize: 0 } });
+
+  // Catches: appendHistory read, added a line and wrote back with no lock, so two dictations finishing together lost one entry.
+  it('keeps every entry when several dictations append at once', async () => {
+    const h = await harness();
+    await Promise.all(Array.from({ length: 12 }, (_, i) => appendHistory(h.globalPath, entry(i))));
+    const kept = (await readHistory(h.globalPath)).map((e) => e.at).sort();
+    expect(kept).toEqual(Array.from({ length: 12 }, (_, i) => `t${i}`).sort());
+    // No lock file is left behind.
+    expect((await fs.readdir(voiceDir(h.globalPath))).filter((n) => n.includes('lock'))).toEqual([]);
+  });
+
+  // Catches: a truncated last line (a crash or a full disk mid-write) and foreign lines were carried forward forever, and readHistory returned JSON that was not an entry.
+  it('drops truncated and foreign lines on the next append, and reads only entries', async () => {
+    const h = await harness();
+    await ensureVoiceDir(h.globalPath);
+    const good = JSON.stringify(entry(0));
+    await fs.writeFile(historyPath(h.globalPath), `${good}\nnull\n42\n[1]\n{"at":"x"}\nnot json\n${good.slice(0, 20)}`);
+    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t0']);
+    await appendHistory(h.globalPath, entry(1));
+    const text = await fs.readFile(historyPath(h.globalPath), 'utf8');
+    expect(text).toBe(`${good}\n${JSON.stringify(entry(1))}\n`);
+  });
+
+  // Catches: only the line count was capped, so long dictations grew the file (read and rewritten on every append) without bound.
+  it('caps the file at HISTORY_MAX_BYTES, oldest first, always keeping the newest entry', async () => {
+    const h = await harness();
+    expect(HISTORY_MAX_BYTES).toBe(4 * 1024 * 1024);
+    const big = 'x'.repeat(1024 * 1024);
+    for (let i = 0; i < 6; i += 1) await appendHistory(h.globalPath, entry(i, big));
+    const text = await fs.readFile(historyPath(h.globalPath), 'utf8');
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(HISTORY_MAX_BYTES);
+    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t3', 't4', 't5']);
+    await appendHistory(h.globalPath, entry(9, 'y'.repeat(HISTORY_MAX_BYTES)));
+    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t9']);
+  });
+});
+
+// Catches: a whisper-cli that could not be started at transcription time was
+// reported with "Install it: brew install whisper-cpp" on Linux and Windows too.
+describe('a whisper-cli that cannot be started', () => {
+  for (const [platform, hint] of [
+    ['linux', 'build whisper.cpp'],
+    ['darwin', 'brew install whisper-cpp'],
+  ] as const) {
+    it(`names the ${platform} install step`, async () => {
+      const h = await harness({ platform });
+      const exec = h.deps.exec!;
+      h.deps.exec = async (cmd, args, o) => {
+        if (path.basename(cmd) === 'whisper-cli') throw Object.assign(new Error('spawn whisper-cli ENOENT'), { code: 'ENOENT' });
+        return exec(cmd, args, o);
+      };
+      h.deps.waitForStop = async () => 'enter';
+      expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_MISSING_TOOL);
+      const err = h.err.join('');
+      expect(err).toContain(`whisper-cli not found. Install it: ${hint}`);
+      if (platform !== 'darwin') expect(err).not.toContain('brew');
+    });
+  }
+});
+
+/** The model downloader against a stubbed fetch: no network. */
+describe('model download', () => {
+  let dir = '';
+  beforeEach(async () => {
+    dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-voice-dl-'));
+  });
+  afterEach(async () => {
+    vi.unstubAllGlobals();
+    await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  });
+
+  /** A fetch answering every URL with `body` in chunks, and `length` as Content-Length when given. */
+  function stubFetch(body: Buffer, length?: number, chunk = 1024): void {
+    vi.stubGlobal('fetch', async () => {
+      let at = 0;
+      const stream = new ReadableStream<Uint8Array>({
+        pull(controller) {
+          if (at >= body.length) return controller.close();
+          controller.enqueue(new Uint8Array(body.subarray(at, at + chunk)));
+          at += chunk;
+        },
+      });
+      return new Response(stream, { status: 200, headers: length !== undefined ? { 'content-length': String(length) } : {} });
+    });
+  }
+  const model = (n: number, fill = 7): Buffer => Buffer.concat([GGML_MAGIC, Buffer.alloc(n, fill)]);
+
+  it('writes a whole ggml model and leaves no .part file', async () => {
+    const dest = path.join(dir, 'models', 'ggml-tiny.bin');
+    const body = model(10_000);
+    stubFetch(body, body.length);
+    await defaultDownloader('https://example.invalid/ggml-tiny.bin', dest, () => undefined);
+    expect((await fs.readFile(dest)).equals(body)).toBe(true);
+    expect(await fs.readdir(path.dirname(dest))).toEqual(['ggml-tiny.bin']);
+  });
+
+  // Catches: a download that ended early was renamed into place as the model.
+  it('refuses a download shorter than its Content-Length, keeping nothing', async () => {
+    const dest = path.join(dir, 'ggml-tiny.bin');
+    const body = model(5000);
+    stubFetch(body, body.length * 2);
+    await expect(defaultDownloader('https://example.invalid/m', dest, () => undefined)).rejects.toThrow(`the download ended after ${body.length} of ${body.length * 2} bytes`);
+    expect(await fs.readdir(dir)).toEqual([]);
+  });
+
+  // Catches: an HTML error page served with 200 was saved as the model.
+  it('refuses a file that is not a ggml model, keeping nothing', async () => {
+    const dest = path.join(dir, 'ggml-tiny.bin');
+    const page = Buffer.from('<!doctype html><title>Sign in</title>');
+    stubFetch(page, page.length);
+    await expect(defaultDownloader('https://example.invalid/m', dest, () => undefined)).rejects.toThrow('not a ggml whisper model');
+    stubFetch(page);
+    await expect(defaultDownloader('https://example.invalid/m', dest, () => undefined)).rejects.toThrow('not a ggml whisper model');
+    expect(await fs.readdir(dir)).toEqual([]);
+  });
+
+  // Catches: part files of downloads that died stayed beside the model, each up to its size.
+  it('removes part files dead downloads left, and keeps one still being written', async () => {
+    const dest = path.join(dir, 'ggml-tiny.bin');
+    const old = new Date(Date.now() - STALE_PART_MS - 60_000);
+    for (const name of ['ggml-tiny.bin.part', 'ggml-tiny.bin.1-abc-def.part', 'ggml-tiny.bin.2-live-xyz.part', 'ggml-base.bin.9-x-y.part']) {
+      await fs.writeFile(path.join(dir, name), 'partial');
+      if (!name.includes('live')) await fs.utimes(path.join(dir, name), old, old);
+    }
+    const body = model(100);
+    stubFetch(body, body.length);
+    await defaultDownloader('https://example.invalid/m', dest, () => undefined);
+    expect((await fs.readdir(dir)).sort()).toEqual(['ggml-base.bin.9-x-y.part', 'ggml-tiny.bin', 'ggml-tiny.bin.2-live-xyz.part']);
+  });
+
+  // Catches: two downloads of one model shared `<dest>.part`, interleaving their bytes.
+  it('two downloads of the same model at once each write their own part file', async () => {
+    const dest = path.join(dir, 'ggml-tiny.bin');
+    const a = model(200_000, 1);
+    const b = model(200_000, 2);
+    let calls = 0;
+    vi.stubGlobal('fetch', async () => {
+      const body = calls++ === 0 ? a : b;
+      let at = 0;
+      const stream = new ReadableStream<Uint8Array>({
+        async pull(controller) {
+          if (at >= body.length) return controller.close();
+          await new Promise((r) => setTimeout(r, 1));
+          controller.enqueue(new Uint8Array(body.subarray(at, at + 4096)));
+          at += 4096;
+        },
+      });
+      return new Response(stream, { status: 200, headers: { 'content-length': String(body.length) } });
+    });
+    await Promise.all([
+      defaultDownloader('https://example.invalid/m', dest, () => undefined),
+      defaultDownloader('https://example.invalid/m', dest, () => undefined),
+    ]);
+    const got = await fs.readFile(dest);
+    expect(got.equals(a) || got.equals(b)).toBe(true);
+    expect(await fs.readdir(dir)).toEqual(['ggml-tiny.bin']);
   });
 });
 

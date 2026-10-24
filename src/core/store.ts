@@ -71,6 +71,17 @@ export interface LoadOptions extends StoreOptions {
    * carries its path with an empty lexicon. Ignored with `includeUntrusted`.
    */
   parseSkipped?: boolean;
+  /**
+   * When the global file changed since its parse was cached and is at least
+   * STALE_GLOBAL_MIN_BYTES, use the cached parse of its previous text instead
+   * of parsing it now, and set `globalStale` on the result. Default false.
+   * For the prompt hook only: a 5000-term file took about 350 ms to parse and
+   * 150 ms more to index, past the hook's 200 ms budget, so the hook serves
+   * the previous version for that prompt and refreshes the caches in the
+   * background. Bytes recorded as a parse failure still throw, and nothing is
+   * written: the caller is expected to load again without it.
+   */
+  staleGlobal?: boolean;
 }
 
 export const PROJECT_FILE_NAME = '.lexicon.yaml';
@@ -292,32 +303,138 @@ function readLexiconFileForWrite(filePath: string, scope: TermScope): Promise<Le
 }
 
 async function readGlobalLexiconCached(filePath: string, opts: { writeBack?: boolean } = {}): Promise<LexiconFile> {
+  return (await readGlobalLexiconMaybeStale(filePath, opts)).file;
+}
+
+/**
+ * readGlobalLexiconCached, and with `stale` the cached parse of the file's
+ * previous text when its text changed since (see LoadOptions.staleGlobal):
+ * `stale: true` on the result then says so. Bytes cached as a failure
+ * (see PARSE_FAILURE_FILE_NAME) still throw.
+ */
+async function readGlobalLexiconMaybeStale(filePath: string, opts: { writeBack?: boolean; stale?: boolean } = {}): Promise<{ file: LexiconFile; stale?: true }> {
   const read = await readLexiconText(filePath);
-  if (read === undefined) return { path: filePath, scope: 'global', lexicon: emptyLexicon(), exists: false };
-  if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, 'global');
+  if (read === undefined) return { file: { path: filePath, scope: 'global', lexicon: emptyLexicon(), exists: false } };
+  if (read.text.length < PARSE_CACHE_MIN_BYTES) return { file: parseLexiconText(read.text, filePath, 'global') };
   const cachePath = path.join(path.dirname(filePath), PARSE_CACHE_FILE_NAME);
   const key = path.resolve(filePath);
+  let previous: Lexicon | undefined;
   try {
     const cached: unknown = JSON.parse(await fs.readFile(cachePath, 'utf8'));
     if (
       isPlainObject(cached) &&
       cached.version === PARSE_CACHE_VERSION &&
       cached.path === key &&
-      cached.text === read.text &&
+      typeof cached.text === 'string' &&
       typeof cached.lexicon === 'string' &&
       cached.sum === cacheChecksum(cached.lexicon)
     ) {
       const lexicon: unknown = JSON.parse(cached.lexicon);
       if (isPlainObject(lexicon) && Array.isArray(lexicon.terms)) {
-        return { path: filePath, scope: 'global', lexicon: lexicon as unknown as Lexicon, exists: true };
+        const file: LexiconFile = { path: filePath, scope: 'global', lexicon: lexicon as unknown as Lexicon, exists: true };
+        if (cached.text === read.text) return { file };
+        if (opts.stale && read.text.length >= STALE_GLOBAL_MIN_BYTES) previous = file.lexicon;
       }
     }
   } catch {
     // missing, unreadable or stale: parse for real below
   }
-  const file = parseLexiconText(read.text, filePath, 'global');
-  if (opts.writeBack !== false) await writeParseCache(filePath, read.text, file.lexicon, read.mode);
-  return file;
+  // The same bytes failed last time: say so again without the parse.
+  const failure = await readParseFailure(path.dirname(filePath), key, read.text);
+  if (failure !== undefined) throw new Error(`${failure.kind === 'yaml' ? 'Failed to parse lexicon YAML' : 'Invalid lexicon'} at ${filePath}: ${failure.reason}`);
+  if (previous !== undefined) return { file: { path: filePath, scope: 'global', lexicon: previous, exists: true }, stale: true };
+  let file: LexiconFile;
+  try {
+    file = parseLexiconText(read.text, filePath, 'global');
+  } catch (err) {
+    if (opts.writeBack !== false) await writeParseFailure(filePath, read.text, err, read.mode);
+    throw err;
+  }
+  if (opts.writeBack !== false) {
+    await writeParseCache(filePath, read.text, file.lexicon, read.mode);
+    await fs.unlink(path.join(path.dirname(filePath), PARSE_FAILURE_FILE_NAME)).catch(() => undefined);
+  }
+  return { file };
+}
+
+/**
+ * Smallest global lexicon (bytes of YAML) `loadLexicon` with `staleGlobal`
+ * serves from the previous parse once it has changed: 64 KB, about 800
+ * terms, where a fresh parse and index build start to take most of the
+ * hook's 200 ms budget. A smaller file is parsed at once.
+ */
+export const STALE_GLOBAL_MIN_BYTES = 64 * 1024;
+
+/**
+ * The global lexicon text that last failed to parse or validate, kept beside
+ * it (`parse-failure.json`) with the reason, so the next read of exactly
+ * those bytes throws the same error without parsing again.
+ *
+ * A global file that does not parse is reported on every prompt (the hook's
+ * "is correcting nothing" note) until the user fixes it, and each prompt
+ * parsed it again: a 5000-term file that failed validation cost about 400 ms
+ * of YAML parse and schema check per prompt, twice the hook's budget, to
+ * reach the same answer. Like the parse cache, reuse is decided by the
+ * content: an entry is a hit only when its `text` is the file's text,
+ * character for character, so any edit (the fix included) parses for real;
+ * a success deletes the entry. It is written only for a file of at least
+ * PARSE_CACHE_MIN_BYTES, with the lexicon's own permission bits, and holds
+ * the reason only (the error message without its path, which is the current
+ * path when it is thrown again).
+ */
+export const PARSE_FAILURE_FILE_NAME = 'parse-failure.json';
+
+/** Entry format of PARSE_FAILURE_FILE_NAME. */
+export const PARSE_FAILURE_VERSION = 1;
+
+/** The two store errors a lexicon text can fail with: `kind` picks the message prefix. */
+interface ParseFailure {
+  kind: 'yaml' | 'schema';
+  reason: string;
+}
+
+/** The cached failure for exactly `text` of the global file `key` (an absolute path) in `dir`, else undefined. Never throws. */
+async function readParseFailure(dir: string, key: string, text: string): Promise<ParseFailure | undefined> {
+  if (text.length < PARSE_CACHE_MIN_BYTES) return undefined;
+  try {
+    const cached: unknown = JSON.parse(await fs.readFile(path.join(dir, PARSE_FAILURE_FILE_NAME), 'utf8'));
+    if (
+      isPlainObject(cached) &&
+      cached.version === PARSE_FAILURE_VERSION &&
+      cached.path === key &&
+      cached.text === text &&
+      (cached.kind === 'yaml' || cached.kind === 'schema') &&
+      typeof cached.reason === 'string'
+    ) {
+      return { kind: cached.kind, reason: cached.reason };
+    }
+  } catch {
+    // missing, unreadable or foreign: parse for real
+  }
+  return undefined;
+}
+
+/** Record `err` (a parseLexiconText error) as the failure of `text`. Best effort, never throws. */
+async function writeParseFailure(filePath: string, text: string, err: unknown, mode: number): Promise<void> {
+  if (text.length < PARSE_CACHE_MIN_BYTES) return;
+  const message = errorMessage(err);
+  const yaml = `Failed to parse lexicon YAML at ${filePath}: `;
+  const schema = `Invalid lexicon at ${filePath}: `;
+  const failure: ParseFailure | undefined = message.startsWith(yaml)
+    ? { kind: 'yaml', reason: message.slice(yaml.length) }
+    : message.startsWith(schema)
+      ? { kind: 'schema', reason: message.slice(schema.length) }
+      : undefined;
+  if (failure === undefined) return;
+  try {
+    await writeFileAtomic(
+      path.join(path.dirname(filePath), PARSE_FAILURE_FILE_NAME),
+      JSON.stringify({ version: PARSE_FAILURE_VERSION, path: path.resolve(filePath), text, ...failure }),
+      { mode },
+    );
+  } catch {
+    // a cache, not state: the next read parses again
+  }
 }
 
 /**
@@ -1121,9 +1238,26 @@ export function getHitsPath(opts: StoreOptions = {}): string {
   return path.join(path.dirname(resolvePaths(opts).global), HITS_FILE_NAME);
 }
 
-/** The key a canonical is counted under. Matches `sameCanonical`. */
+/**
+ * The key a canonical is counted under. Matches `sameCanonical`: trimmed,
+ * lowercased and in NFC. It was lowercased only, so `Café` written
+ * precomposed and with a combining accent (one term to every other part of
+ * the store) were counted under two keys, and a term whose file spelling
+ * changed form lost its count. `hits.json` keys written before are read
+ * through the same fold (see validCounts), so they stay valid.
+ */
 function hitKey(canonical: string): string {
-  return canonical.trim().toLowerCase();
+  return foldKey(canonical);
+}
+
+/**
+ * The form two spellings are compared in across the store: trimmed,
+ * lowercased and in NFC, so `Café` (precomposed) and `Cafe` plus U+0301 are
+ * one canonical or one alias. For callers outside this module that look a
+ * term or an alias up the way the store does (MCP tools, `lexicon doctor`).
+ */
+export function spellingKey(spelling: string): string {
+  return foldKey(spelling);
 }
 
 /** Absolute path with symlinks resolved when the file exists (macOS /var vs /private/var). */
@@ -1167,10 +1301,18 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * The valid counts of one `hits.json` entry, keyed by `hitKey`. A key written
+ * before hitKey folded to NFC (a canonical typed with a combining accent) is
+ * folded the same way, and two keys that fold together are added up, so an
+ * old file keeps its counts; the next write stores the folded keys.
+ */
 function validCounts(counts: Record<string, unknown>): Record<string, number> {
   const entry: Record<string, number> = {};
   for (const [canonical, n] of Object.entries(counts)) {
-    if (typeof n === 'number' && Number.isInteger(n) && n > 0) entry[canonical] = n;
+    if (typeof n !== 'number' || !Number.isInteger(n) || n <= 0) continue;
+    const key = hitKey(canonical);
+    entry[key] = (entry[key] ?? 0) + n;
   }
   return entry;
 }
@@ -1310,7 +1452,14 @@ async function hydrateHits(merged: Lexicon, project: LexiconFile | undefined, op
  */
 export async function loadLexicon(opts: LoadOptions = {}): Promise<LoadedLexicon> {
   const paths = resolvePaths(opts);
-  const global = await readGlobalLexiconCached(paths.global);
+  const read = await readGlobalLexiconMaybeStale(paths.global, opts.staleGlobal ? { stale: true } : {});
+  const global = read.file;
+  if (read.stale) return { ...(await loadLexiconWith(global, paths, opts)), globalStale: true };
+  return loadLexiconWith(global, paths, opts);
+}
+
+/** loadLexicon once the global file is read. */
+async function loadLexiconWith(global: LexiconFile, paths: { global: string; project?: string }, opts: LoadOptions): Promise<LoadedLexicon> {
   if (!paths.project) return { merged: await hydrated(mergeLexicons(global.lexicon)), global };
 
   // With parseSkipped false the gate runs before the parse, on a stand-in

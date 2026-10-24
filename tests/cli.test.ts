@@ -1773,6 +1773,23 @@ describe('runDoctorReport', () => {
     expect(report.versions.lexicon).toMatch(/^\d+\.\d+\.\d+/);
   });
 
+  // Catches: doctor keyed canonicals lowercased only, so one term written precomposed and decomposed passed as two unique terms.
+  it('counts a canonical written in two Unicode forms as one term defined twice', async () => {
+    const lexicon = {
+      version: 1 as const,
+      terms: [
+        { canonical: 'Caf\u00e9', aliases: ['kafay'] },
+        { canonical: 'Cafe\u0301', aliases: [] },
+        { canonical: 'Bistro', aliases: ['cafe\u0301'] },
+      ],
+    };
+    vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon, exists: true });
+    const messages = (await runDoctorReport({}, { platform: 'linux', env: { PATH: '' }, exec: () => '' })).checks.map((c) => c.message);
+    expect(messages).toContain('2 unique terms across 1 file');
+    expect(messages).toContain('"Caf\u00e9" is defined 2 times in the global lexicon');
+    expect(messages).toContain('alias "cafe\u0301" of "Bistro" equals the canonical of "Caf\u00e9" (conflict)');
+  });
+
   it('counts one unique term in the singular', async () => {
     vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: { version: 1, terms: [FIXED_LEXICON.terms[0]] }, exists: true });
     const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '' }, exec: () => '' });

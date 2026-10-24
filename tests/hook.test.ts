@@ -626,11 +626,24 @@ describe('runHook', () => {
     expect(await runHook(payload('plain prompt'))).toBe('');
   });
 
-  it('treats a missing or unknown event as UserPromptSubmit', async () => {
+  it('treats a missing event as UserPromptSubmit', async () => {
     const { runHook } = await import('../src/hooks/user-prompt-submit.js');
-    const ctx = context(await runHook(JSON.stringify({ prompt: 'hi Ashler', hook_event_name: 'SomethingElse' })));
-    expect(ctx).toContain('Corrected prompt:\nhi Ashlr.AI');
-    expect(context(await runHook(JSON.stringify({ prompt: 'hi Ashler' })))).toContain('Corrected prompt:');
+    expect(context(await runHook(JSON.stringify({ prompt: 'hi Ashler' })))).toContain('Corrected prompt:\nhi Ashlr.AI');
+  });
+
+  // Catches: an unknown event carrying a prompt got a corrections note tagged
+  // UserPromptSubmit, an event it never was.
+  it('prints nothing for an unknown event, even one carrying a prompt, and reads no lexicon', async () => {
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      for (const event of ['SomethingElse', 'PreToolUse', 'userpromptsubmit', 'sessionstart', 42, null, { name: 'UserPromptSubmit' }]) {
+        expect(await runHook(JSON.stringify({ prompt: 'hi Ashler', cwd: '/fake/repo', hook_event_name: event }))).toBe('');
+      }
+      expect(mocks.loadLexicon).not.toHaveBeenCalled();
+    } finally {
+      stderr.mockRestore();
+    }
   });
 
   // Catches: an unknown event or a non-object payload was handled without a word anywhere.
@@ -641,7 +654,7 @@ describe('runHook', () => {
       await runHook(JSON.stringify({ prompt: 'hi', hook_event_name: 'PreToolUse\u001b[31m' }));
       expect(stderr).toHaveBeenCalledTimes(1);
       const line = String(stderr.mock.calls[0]?.[0]);
-      expect(line).toContain('[lexicon hook] unknown hook_event_name "PreToolUse"; handled as UserPromptSubmit');
+      expect(line).toContain('[lexicon hook] unknown hook_event_name "PreToolUse"; nothing to do');
       expect(line).not.toContain('\u001b');
       stderr.mockClear();
       await runHook(JSON.stringify({ prompt: 'hi', hook_event_name: 42 }));
@@ -1296,5 +1309,163 @@ describe('corrections are queued for review, never learned by the hook', () => {
     } finally {
       vi.unstubAllEnvs();
     }
+  });
+});
+
+describe('stdin is read up to HOOK_STDIN_MAX_BYTES', () => {
+  /** A source handing out `total` bytes of `fill`, `chunk` at a time; `syncFails` makes the sync read throw after `syncChunks` reads. */
+  function source(total: number, chunk: number, opts: { syncChunks?: number } = {}) {
+    let left = total;
+    let reads = 0;
+    let streamed = 0;
+    return {
+      get reads() {
+        return reads;
+      },
+      get streamed() {
+        return streamed;
+      },
+      readSync(buffer: Buffer): number {
+        if (opts.syncChunks !== undefined && reads >= opts.syncChunks) throw Object.assign(new Error('EAGAIN'), { code: 'EAGAIN' });
+        reads += 1;
+        const n = Math.min(left, chunk, buffer.length);
+        buffer.fill(0x61, 0, n);
+        left -= n;
+        return n;
+      },
+      async *stream() {
+        while (left > 0) {
+          const n = Math.min(left, chunk);
+          left -= n;
+          streamed += 1;
+          yield Buffer.alloc(n, 0x61);
+        }
+      },
+    };
+  }
+
+  // Catches: stdin had no bound, so a caller piping a huge file was read whole into memory before anything looked at it.
+  it('stops reading as soon as the input passes the cap, sync or streamed', async () => {
+    const { readStdin, HOOK_STDIN_MAX_BYTES } = await import('../src/hooks/user-prompt-submit.js');
+    expect(HOOK_STDIN_MAX_BYTES).toBe(16 * 1024 * 1024);
+    const sync = source(10_000_000, 64 * 1024);
+    const read = await readStdin(1_000_000, sync);
+    expect(read.bytes).toBeUndefined();
+    expect(read.overflow).toBeGreaterThan(1_000_000);
+    expect(read.overflow).toBeLessThanOrEqual(1_000_000 + 64 * 1024);
+    expect(sync.reads).toBeLessThanOrEqual(Math.ceil(1_000_000 / (64 * 1024)) + 1);
+    const streamed = source(10_000_000, 100_000, { syncChunks: 2 });
+    const r2 = await readStdin(1_000_000, streamed);
+    expect(r2.overflow).toBeGreaterThan(1_000_000);
+    expect(streamed.streamed).toBeLessThan(15);
+  });
+
+  it('returns every byte of an input at or under the cap', async () => {
+    const { readStdin } = await import('../src/hooks/user-prompt-submit.js');
+    expect((await readStdin(1000, source(1000, 64))).bytes?.length).toBe(1000);
+    expect((await readStdin(1000, source(999, 300, { syncChunks: 1 }))).bytes?.length).toBe(999);
+    expect((await readStdin(1000, source(0, 64))).bytes?.length).toBe(0);
+  });
+
+  it('names the cap in its stderr line and never quotes the input', async () => {
+    const { formatStdinOverflow } = await import('../src/hooks/user-prompt-submit.js');
+    const line = formatStdinOverflow(17_000_000);
+    expect(line).toBe(`[lexicon hook] stdin is over ${16 * 1024 * 1024} bytes (stopped reading at 17000000); a Claude Code hook payload is far smaller, nothing to do\n`);
+  });
+});
+
+describe('a UTF-16 payload (Windows piping) is decoded', () => {
+  const json = JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd: '/fake/repo', prompt: 'hi Ashler, café \u{1F600}' });
+  const be = (text: string): Buffer => Buffer.from(text, 'utf16le').swap16();
+
+  // Catches: UTF-16 stdin was decoded as UTF-8 and reported only as "not valid JSON".
+  it('decodes UTF-16LE and UTF-16BE with or without a byte order mark, and UTF-8 with one', async () => {
+    const { decodeStdin } = await import('../src/hooks/user-prompt-submit.js');
+    const cases: Buffer[] = [
+      Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(json, 'utf16le')]),
+      Buffer.concat([Buffer.from([0xfe, 0xff]), be(json)]),
+      Buffer.from(json, 'utf16le'),
+      be(json),
+      Buffer.from(`${json}\r\n`, 'utf16le'),
+      Buffer.concat([Buffer.from([0xef, 0xbb, 0xbf]), Buffer.from(json, 'utf8')]),
+      Buffer.from(json, 'utf8'),
+    ];
+    for (const bytes of cases) expect(decodeStdin(bytes).trim()).toBe(json);
+    // An odd trailing byte (a cut-off code unit) is dropped, not thrown on.
+    expect(decodeStdin(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('{}', 'utf16le'), Buffer.from([0x0a])]))).toBe('{}');
+  });
+
+  it('corrects the prompt of a decoded UTF-16 payload end to end through runHook', async () => {
+    const { decodeStdin, runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const ctx = context(await runHook(decodeStdin(Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(json, 'utf16le')]))));
+    expect(ctx).toContain('"Ashler" -> "Ashlr.AI"');
+  });
+
+  it('names UTF-16 in the stderr line when such bytes reach runHook as UTF-8 text', async () => {
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      for (const raw of [Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(json, 'utf16le')]).toString('utf8'), Buffer.from(json, 'utf16le').toString('utf8')]) {
+        stderr.mockClear();
+        expect(await runHook(raw)).toBe('');
+        expect(stderr).toHaveBeenCalledTimes(1);
+        const line = String(stderr.mock.calls[0]?.[0]);
+        expect(line).toContain('[lexicon hook] stdin looks like UTF-16 read as UTF-8');
+        expect(line).not.toContain('Ashler');
+      }
+    } finally {
+      stderr.mockRestore();
+    }
+  });
+});
+
+describe('quoted text is not the user correcting a spelling', () => {
+  // Catches: "it's X not Y" in a Markdown blockquote or in text a screen "says:" got a learn_correction line and a pending entry.
+  it('reads no correction out of a blockquote or reported UI text', async () => {
+    const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+    for (const text of [
+      "> it's Vercel not versel",
+      ">it's Vercel not versel",
+      "   > it's Vercel not versel\n\nwhat does this mean?",
+      "Here is the reply:\n> thanks!\n> it's Vercel not versel\nShould I answer?",
+      'The banner says: it\'s Vercel not versel.',
+      'The toast reads: it\'s Vercel not versel. Why does it say that?',
+      'the error printed: it\'s Vercel not versel',
+      'The dialog shows: it’s Vercel not versel!',
+    ]) {
+      expect(parseCorrections(text), text).toEqual([]);
+    }
+  });
+
+  it('still reads a correction the user makes around quoted text', async () => {
+    const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+    const vercel = [{ heard: 'versel', meant: 'Vercel' }];
+    for (const text of [
+      "it's Vercel not versel",
+      "no, it's Vercel not versel",
+      "Note: it's Vercel not versel.",
+      "I said: it's Vercel not versel.",
+      "> some quoted line\nit's Vercel not versel",
+      "The banner says: hello there. it's Vercel not versel.",
+      "a > b, and it's Vercel not versel",
+      "it's \"Vercel\" not \"versel\"",
+    ]) {
+      expect(parseCorrections(text), text).toEqual(vercel);
+    }
+    expect(parseCorrections("the error reads: it's Vercel not versel\nalso it's Supabase not super base")).toEqual([{ heard: 'super base', meant: 'Supabase' }]);
+  });
+
+  // Catches: a side quoted anywhere in the prompt kept an ordinary contrast as a spelling correction.
+  it('counts a side as quoted only in the sentence the correction is in', async () => {
+    const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+    expect(parseCorrections('it\'s flaky not broken. The test is named "broken".')).toEqual([]);
+    expect(parseCorrections('it\'s "flaky" not "broken". The test is named broken.')).toEqual([{ heard: 'broken', meant: 'flaky' }]);
+  });
+
+  it('gives a blockquoted correction no learn_correction line and queues nothing', async () => {
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const out = await runHook(payload("> it's Vercel not versel\n\nwhat does this mean?"));
+    expect(out).toBe('');
+    expect(mocks.queueCorrections).not.toHaveBeenCalled();
   });
 });

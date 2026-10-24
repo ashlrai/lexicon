@@ -127,6 +127,12 @@ export interface VoiceDeps {
   download?: Downloader;
   /** Resolves when the foreground recording should stop; the value says why. */
   waitForStop?: () => Promise<'enter' | 'sigint'>;
+  /**
+   * Resolves on Ctrl-C during a `--seconds` recording, which Enter does not
+   * stop (a script's stdin may end at once). Stops listening once `signal`
+   * aborts.
+   */
+  waitForInterrupt?: (signal: AbortSignal) => Promise<'sigint'>;
   /** Clipboard writer; default: the detected platform backend. */
   clipboardWrite?: (text: string) => Promise<void>;
   /** Paste keystroke; default: osascript Cmd+V. */
@@ -487,6 +493,7 @@ function transcribeOptions(r: Resolved, opts: VoiceOptions, deps: VoiceDeps, lex
     exec: r.exec,
     tmpDir: r.tmpDir,
     log: r.log,
+    platform: r.platform,
   };
 }
 
@@ -521,6 +528,18 @@ function defaultWaitForStop(): Promise<'enter' | 'sigint'> {
     } catch {
       // no stdin (launcher); only SIGINT or --seconds can stop us
     }
+  });
+}
+
+/** Resolve on SIGINT until `signal` aborts (see VoiceDeps.waitForInterrupt). */
+function defaultWaitForInterrupt(signal: AbortSignal): Promise<'sigint'> {
+  return new Promise((resolveInterrupt) => {
+    const onSigint = (): void => {
+      process.removeListener('SIGINT', onSigint);
+      resolveInterrupt('sigint');
+    };
+    process.on('SIGINT', onSigint);
+    signal.addEventListener('abort', () => process.removeListener('SIGINT', onSigint), { once: true });
   });
 }
 
@@ -755,7 +774,25 @@ async function recordForeground(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps
   const child = startRecorder({ ffmpeg: tools.ffmpeg, spawn: r.spawn, input, wav, detached: false, ...(seconds !== undefined ? { seconds } : {}) });
 
   if (seconds !== undefined) {
-    r.log(`recording for ${seconds}s ...`);
+    r.log(`recording for ${seconds}s ... (Ctrl-C stops early)`);
+    // Ctrl-C used to end the whole process here (no handler was installed for
+    // this mode), so a recording stopped early was never transcribed and its
+    // WAV stayed in the temp directory. ffmpeg got the same SIGINT from the
+    // terminal and finalizes the file; transcribe what it recorded.
+    const listening = new AbortController();
+    const waitForInterrupt = deps.waitForInterrupt ?? defaultWaitForInterrupt;
+    const why = await Promise.race([waitForInterrupt(listening.signal), child.exited.then(() => 'exited' as const)]);
+    listening.abort();
+    if (why === 'sigint' && child.pid !== undefined) {
+      await stopRecorder({
+        pid: child.pid,
+        isAlive: r.isAlive,
+        kill: r.kill,
+        alreadySignalled: true,
+        platform: r.platform,
+        ...(deps.sleep ? { sleep: deps.sleep } : {}),
+      });
+    }
     await child.exited;
   } else {
     r.log('recording ... press Enter (or Ctrl-C) to stop');

@@ -7561,6 +7561,13 @@ var require_node_crypto = __commonJS({
   }
 });
 
+// builtin-cjs:node:child_process
+var require_node_child_process = __commonJS({
+  "builtin-cjs:node:child_process"(exports, module) {
+    module.exports = __require("node:child_process");
+  }
+});
+
 // src/hooks/user-prompt-submit.ts
 var import_node_fs8 = __toESM(require_node_fs(), 1);
 var import_node_path8 = __toESM(require_node_path(), 1);
@@ -19981,25 +19988,70 @@ function cacheChecksum(text) {
   }
   return (h >>> 0).toString(16).padStart(8, "0");
 }
-async function readGlobalLexiconCached(filePath, opts = {}) {
+async function readGlobalLexiconMaybeStale(filePath, opts = {}) {
   const read = await readLexiconText(filePath);
-  if (read === void 0) return { path: filePath, scope: "global", lexicon: emptyLexicon(), exists: false };
-  if (read.text.length < PARSE_CACHE_MIN_BYTES) return parseLexiconText(read.text, filePath, "global");
+  if (read === void 0) return { file: { path: filePath, scope: "global", lexicon: emptyLexicon(), exists: false } };
+  if (read.text.length < PARSE_CACHE_MIN_BYTES) return { file: parseLexiconText(read.text, filePath, "global") };
   const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_CACHE_FILE_NAME);
   const key = import_node_path5.default.resolve(filePath);
+  let previous;
   try {
     const cached2 = JSON.parse(await import_node_fs5.promises.readFile(cachePath, "utf8"));
-    if (isPlainObject2(cached2) && cached2.version === PARSE_CACHE_VERSION && cached2.path === key && cached2.text === read.text && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(cached2.lexicon)) {
+    if (isPlainObject2(cached2) && cached2.version === PARSE_CACHE_VERSION && cached2.path === key && typeof cached2.text === "string" && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(cached2.lexicon)) {
       const lexicon = JSON.parse(cached2.lexicon);
       if (isPlainObject2(lexicon) && Array.isArray(lexicon.terms)) {
-        return { path: filePath, scope: "global", lexicon, exists: true };
+        const file2 = { path: filePath, scope: "global", lexicon, exists: true };
+        if (cached2.text === read.text) return { file: file2 };
+        if (opts.stale && read.text.length >= STALE_GLOBAL_MIN_BYTES) previous = file2.lexicon;
       }
     }
   } catch {
   }
-  const file = parseLexiconText(read.text, filePath, "global");
-  if (opts.writeBack !== false) await writeParseCache(filePath, read.text, file.lexicon, read.mode);
-  return file;
+  const failure2 = await readParseFailure(import_node_path5.default.dirname(filePath), key, read.text);
+  if (failure2 !== void 0) throw new Error(`${failure2.kind === "yaml" ? "Failed to parse lexicon YAML" : "Invalid lexicon"} at ${filePath}: ${failure2.reason}`);
+  if (previous !== void 0) return { file: { path: filePath, scope: "global", lexicon: previous, exists: true }, stale: true };
+  let file;
+  try {
+    file = parseLexiconText(read.text, filePath, "global");
+  } catch (err) {
+    if (opts.writeBack !== false) await writeParseFailure(filePath, read.text, err, read.mode);
+    throw err;
+  }
+  if (opts.writeBack !== false) {
+    await writeParseCache(filePath, read.text, file.lexicon, read.mode);
+    await import_node_fs5.promises.unlink(import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_FAILURE_FILE_NAME)).catch(() => void 0);
+  }
+  return { file };
+}
+var STALE_GLOBAL_MIN_BYTES = 64 * 1024;
+var PARSE_FAILURE_FILE_NAME = "parse-failure.json";
+var PARSE_FAILURE_VERSION = 1;
+async function readParseFailure(dir, key, text) {
+  if (text.length < PARSE_CACHE_MIN_BYTES) return void 0;
+  try {
+    const cached2 = JSON.parse(await import_node_fs5.promises.readFile(import_node_path5.default.join(dir, PARSE_FAILURE_FILE_NAME), "utf8"));
+    if (isPlainObject2(cached2) && cached2.version === PARSE_FAILURE_VERSION && cached2.path === key && cached2.text === text && (cached2.kind === "yaml" || cached2.kind === "schema") && typeof cached2.reason === "string") {
+      return { kind: cached2.kind, reason: cached2.reason };
+    }
+  } catch {
+  }
+  return void 0;
+}
+async function writeParseFailure(filePath, text, err, mode) {
+  if (text.length < PARSE_CACHE_MIN_BYTES) return;
+  const message = errorMessage(err);
+  const yaml = `Failed to parse lexicon YAML at ${filePath}: `;
+  const schema = `Invalid lexicon at ${filePath}: `;
+  const failure2 = message.startsWith(yaml) ? { kind: "yaml", reason: message.slice(yaml.length) } : message.startsWith(schema) ? { kind: "schema", reason: message.slice(schema.length) } : void 0;
+  if (failure2 === void 0) return;
+  try {
+    await writeFileAtomic(
+      import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_FAILURE_FILE_NAME),
+      JSON.stringify({ version: PARSE_FAILURE_VERSION, path: import_node_path5.default.resolve(filePath), text, ...failure2 }),
+      { mode }
+    );
+  } catch {
+  }
 }
 async function writeParseCache(filePath, text, lexicon, mode) {
   if (text.length < PARSE_CACHE_MIN_BYTES) return;
@@ -20202,7 +20254,7 @@ function getHitsPath(opts = {}) {
   return import_node_path5.default.join(import_node_path5.default.dirname(resolvePaths(opts).global), HITS_FILE_NAME);
 }
 function hitKey(canonical) {
-  return canonical.trim().toLowerCase();
+  return foldKey(canonical);
 }
 async function canonicalPath2(filePath) {
   const resolved = import_node_path5.default.resolve(filePath);
@@ -20239,7 +20291,9 @@ function isPlainObject2(value) {
 function validCounts(counts) {
   const entry = {};
   for (const [canonical, n] of Object.entries(counts)) {
-    if (typeof n === "number" && Number.isInteger(n) && n > 0) entry[canonical] = n;
+    if (typeof n !== "number" || !Number.isInteger(n) || n <= 0) continue;
+    const key = hitKey(canonical);
+    entry[key] = (entry[key] ?? 0) + n;
   }
   return entry;
 }
@@ -20262,7 +20316,12 @@ async function hydrateHits(merged, project, opts) {
 }
 async function loadLexicon(opts = {}) {
   const paths = resolvePaths(opts);
-  const global = await readGlobalLexiconCached(paths.global);
+  const read = await readGlobalLexiconMaybeStale(paths.global, opts.staleGlobal ? { stale: true } : {});
+  const global = read.file;
+  if (read.stale) return { ...await loadLexiconWith(global, paths, opts), globalStale: true };
+  return loadLexiconWith(global, paths, opts);
+}
+async function loadLexiconWith(global, paths, opts) {
   if (!paths.project) return { merged: await hydrated(mergeLexicons(global.lexicon)), global };
   const gateFirst = opts.parseSkipped === false && !opts.includeUntrusted;
   let project;
@@ -20989,6 +21048,52 @@ function cliCommand(args) {
 }
 
 // src/hooks/user-prompt-submit.ts
+var REFRESH_CACHE_FLAG = "--refresh-cache";
+var REFRESH_LOCK_FILE = "index-refresh.lock";
+var REFRESH_LOCK_STALE_MS = 3e4;
+async function claimCacheRefresh(globalPath, now = Date.now()) {
+  const lock = (0, import_node_path8.join)((0, import_node_path8.dirname)(globalPath), REFRESH_LOCK_FILE);
+  try {
+    await import_node_fs8.promises.writeFile(lock, `${JSON.stringify({ pid: process.pid, at: new Date(now).toISOString() })}
+`, { flag: "wx", mode: 384 });
+    return "claimed";
+  } catch (err) {
+    if (err?.code !== "EEXIST") return "unavailable";
+  }
+  try {
+    const st = await import_node_fs8.promises.stat(lock);
+    if (now - st.mtimeMs < REFRESH_LOCK_STALE_MS) return "running";
+    await import_node_fs8.promises.unlink(lock);
+  } catch {
+  }
+  return "unavailable";
+}
+async function releaseCacheRefresh(globalPath) {
+  await import_node_fs8.promises.unlink((0, import_node_path8.join)((0, import_node_path8.dirname)(globalPath), REFRESH_LOCK_FILE)).catch(() => void 0);
+}
+async function refreshHookCaches(cwd) {
+  let globalPath;
+  try {
+    const loaded = await loadLexicon({ cwd, parseSkipped: false });
+    globalPath = loaded.global.path;
+    if (loaded.merged.terms.length > 0) await loadMatcherIndex(loaded);
+  } catch {
+  } finally {
+    await releaseCacheRefresh(globalPath ?? resolvePaths({ cwd }).global);
+  }
+}
+async function spawnCacheRefresh(cwd) {
+  const { spawn } = await Promise.resolve().then(() => __toESM(require_node_child_process(), 1));
+  const execArgv = process.execArgv.filter((a) => !/^--inspect/.test(a));
+  const child = spawn(process.execPath, [...execArgv, (0, import_node_url2.fileURLToPath)(import.meta.url), REFRESH_CACHE_FLAG, cwd], {
+    detached: true,
+    stdio: "ignore",
+    windowsHide: true
+  });
+  child.on("error", () => void 0);
+  child.unref();
+}
+var STALE_LEXICON_NOTE = "Lexicon note: the lexicon file changed since it was last read, so these corrections used the previous version while the new one is prepared in the background; a term just added or changed applies from the next prompt.";
 var HOOK_MATCH_BUDGET_MS = 100;
 var HOOK_PROMPT_MAX_CHARS = 5e4;
 var HOOK_LOCK_TIMEOUT_MS = 50;
@@ -21109,20 +21214,37 @@ var SENTENCE_BREAK_RE = /(?<=[.!?])\s+/;
 function parseCorrections(text) {
   const found = [];
   const seen = /* @__PURE__ */ new Set();
-  const add = (c) => {
+  const keyOf = (c) => `${collapse2(c.heard)}\0${collapse2(c.meant)}`;
+  const add = (c, source) => {
     if (!c || c.heard.trim() === "" || c.meant.trim() === "") return;
     if (CODE_SHAPE_RE.test(c.heard) || CODE_SHAPE_RE.test(c.meant)) return;
-    if (isOrdinaryContrast(text, c)) return;
-    const key = `${collapse2(c.heard)}\0${collapse2(c.meant)}`;
+    if (isOrdinaryContrast(source, c)) return;
+    const key = keyOf(c);
     if (seen.has(key)) return;
     seen.add(key);
     found.push(c);
   };
-  const prose = blankCode(text);
-  add(parseCorrection(prose));
-  if (!SENTENCE_BREAK_RE.test(prose)) return found;
-  for (const sentence of prose.split(SENTENCE_BREAK_RE)) add(parseCorrection(sentence));
+  const prose = blankQuoted(blankCode(text));
+  const whole = parseCorrection(prose);
+  if (!SENTENCE_BREAK_RE.test(prose)) {
+    add(whole, prose);
+    return found;
+  }
+  const perSentence = prose.split(SENTENCE_BREAK_RE).map((sentence) => ({ sentence, c: parseCorrection(sentence) }));
+  const wholeKey = whole ? keyOf(whole) : void 0;
+  add(whole, perSentence.find((p) => p.c !== void 0 && keyOf(p.c) === wholeKey)?.sentence ?? prose);
+  for (const { sentence, c } of perSentence) add(c, sentence);
   return found;
+}
+var REPORTED_RE = /(?<!\bI\s)\b(?:says|said|reads|read|shows|showed|displays|displayed|prints|printed|states|stated|writes|wrote|outputs|returns|returned)\s*:[^\S\n]*[^\n]*?(?:[.!?](?=\s|$)|(?=\n)|$)/giu;
+var BLOCKQUOTE_LINE_RE = /^[ \t]{0,3}>[^\n]*/gmu;
+function blankQuoted(text) {
+  if (!/[>:]/.test(text)) return text;
+  const blank = (m) => m.replace(/[^\n]/g, " ");
+  return text.replace(BLOCKQUOTE_LINE_RE, blank).replace(REPORTED_RE, (m) => {
+    const colon = m.indexOf(":");
+    return m.slice(0, colon + 1) + blank(m.slice(colon + 1));
+  });
 }
 var CODE_SHAPE_RE = /[\p{L}\p{N}_]\(|[{};=]/u;
 function blankCode(text) {
@@ -21340,6 +21462,11 @@ function parseInput(raw) {
   try {
     parsed = JSON.parse(trimmed);
   } catch {
+    if (looksLikeUtf16(trimmed)) {
+      process.stderr.write(`[lexicon hook] stdin looks like UTF-16 read as UTF-8 (${Buffer.byteLength(trimmed, "utf8")} bytes, NUL bytes between the characters); send the hook payload as UTF-8, nothing to do
+`);
+      return {};
+    }
     process.stderr.write(`[lexicon hook] stdin is not valid JSON (${Buffer.byteLength(trimmed, "utf8")} bytes); expected the Claude Code hook payload object, nothing to do
 `);
     return {};
@@ -21352,13 +21479,35 @@ function parseInput(raw) {
   }
   return parsed;
 }
+function looksLikeUtf16(text) {
+  return text.startsWith("\uFFFD\uFFFD") || text.includes("\0");
+}
+function decodeStdin(bytes) {
+  if (bytes.length >= 3 && bytes[0] === 239 && bytes[1] === 187 && bytes[2] === 191) return bytes.toString("utf8", 3);
+  if (bytes.length >= 2 && bytes[0] === 255 && bytes[1] === 254) return utf16le(bytes.subarray(2));
+  if (bytes.length >= 2 && bytes[0] === 254 && bytes[1] === 255) return utf16be(bytes.subarray(2));
+  if (bytes.length >= 2 && bytes.includes(0)) {
+    let odd = 0;
+    let even = 0;
+    for (let i = 0; i < Math.min(bytes.length, 4096); i += 1) if (bytes[i] === 0) i % 2 === 1 ? odd += 1 : even += 1;
+    return odd >= even ? utf16le(bytes) : utf16be(bytes);
+  }
+  return bytes.toString("utf8");
+}
+function utf16le(bytes) {
+  return bytes.toString("utf16le", 0, bytes.length - bytes.length % 2);
+}
+function utf16be(bytes) {
+  const even = Buffer.from(bytes.subarray(0, bytes.length - bytes.length % 2));
+  return even.swap16().toString("utf16le");
+}
 function shownValue(value) {
   const text = typeof value === "string" ? value : JSON.stringify(value) ?? String(value);
   return JSON.stringify(sanitizeForDisplayMax(text, 60));
 }
-async function loadOrExplain(cwd) {
+async function loadOrExplain(cwd, staleGlobal = false) {
   try {
-    return { loaded: await loadLexicon({ cwd, parseSkipped: false }) };
+    return { loaded: await loadLexicon(staleGlobal ? { cwd, parseSkipped: false, staleGlobal: true } : { cwd, parseSkipped: false }) };
   } catch (err) {
     const message = neutralizeForModel(err instanceof Error ? err.message : String(err));
     if (!UNPARSEABLE_LEXICON_RE.test(message)) {
@@ -21404,7 +21553,24 @@ async function userPromptSubmit(payload, opts) {
   }
   if (typeof prompt !== "string" || prompt.trim() === "") return "";
   const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
-  const attempt = await loadOrExplain(cwd);
+  let attempt = await loadOrExplain(cwd, opts.startRefresh !== void 0);
+  let staleNote = "";
+  if (attempt.loaded?.globalStale && opts.startRefresh) {
+    const globalPath = attempt.loaded.global.path;
+    let claim2 = await claimCacheRefresh(globalPath);
+    if (claim2 === "claimed") {
+      try {
+        await opts.startRefresh(cwd);
+      } catch (err) {
+        process.stderr.write(`[lexicon hook] could not start the cache refresh: ${sanitizeForDisplayMax(errorText(err), 200)}
+`);
+        await releaseCacheRefresh(globalPath);
+        claim2 = "unavailable";
+      }
+    }
+    if (claim2 === "unavailable") attempt = await loadOrExplain(cwd);
+    else staleNote = STALE_LEXICON_NOTE;
+  }
   if (!attempt.loaded) return emit("UserPromptSubmit", [attempt.note ?? ""]);
   const loaded = attempt.loaded;
   const skippedNote = formatSkippedProjectNote(loaded);
@@ -21435,6 +21601,7 @@ async function userPromptSubmit(payload, opts) {
   if (budgetNote) parts.push(budgetNote);
   if (correctionNote) parts.push(correctionNote);
   if (skippedNote) parts.push(skippedNote);
+  if (staleNote) parts.push(staleNote);
   return emit("UserPromptSubmit", parts);
 }
 function formatBudgetNote(budgetMs) {
@@ -21466,26 +21633,42 @@ async function runHook(input, opts = {}) {
   const event = payload.hook_event_name;
   if (event === "SessionStart") return sessionStart(payload, opts);
   if (event !== void 0 && event !== "UserPromptSubmit") {
-    process.stderr.write(`[lexicon hook] unknown hook_event_name ${shownValue(event)}; handled as UserPromptSubmit (this hook handles UserPromptSubmit and SessionStart)
+    process.stderr.write(`[lexicon hook] unknown hook_event_name ${shownValue(event)}; nothing to do (this hook handles UserPromptSubmit and SessionStart)
 `);
+    return "";
   }
   return userPromptSubmit(payload, opts);
 }
-async function readStdin() {
+var HOOK_STDIN_MAX_BYTES = 16 * 1024 * 1024;
+var processStdin = {
+  readSync: (buffer) => (0, import_node_fs8.readSync)(0, buffer, 0, buffer.length, null),
+  stream: () => process.stdin
+};
+async function readStdin(max = HOOK_STDIN_MAX_BYTES, source = processStdin) {
   const chunks = [];
+  let total = 0;
+  const take = (chunk) => {
+    chunks.push(chunk);
+    total += chunk.length;
+    return total > max;
+  };
   try {
     const buf = Buffer.allocUnsafe(64 * 1024);
     for (; ; ) {
-      const n = (0, import_node_fs8.readSync)(0, buf, 0, buf.length, null);
-      if (n === 0) return Buffer.concat(chunks).toString("utf8");
-      chunks.push(Buffer.from(buf.subarray(0, n)));
+      const n = source.readSync(buf);
+      if (n === 0) return { bytes: Buffer.concat(chunks) };
+      if (take(Buffer.from(buf.subarray(0, n)))) return { overflow: total };
     }
   } catch {
   }
-  for await (const chunk of process.stdin) {
-    chunks.push(typeof chunk === "string" ? Buffer.from(chunk) : chunk);
+  for await (const chunk of source.stream()) {
+    if (take(typeof chunk === "string" ? Buffer.from(chunk) : chunk)) return { overflow: total };
   }
-  return Buffer.concat(chunks).toString("utf8");
+  return { bytes: Buffer.concat(chunks) };
+}
+function formatStdinOverflow(read, max = HOOK_STDIN_MAX_BYTES) {
+  return `[lexicon hook] stdin is over ${max} bytes (stopped reading at ${read}); a Claude Code hook payload is far smaller, nothing to do
+`;
 }
 var processSink = {
   writeSync: (fd, buffer, offset, length) => (0, import_node_fs8.writeSync)(fd, buffer, offset, length),
@@ -21526,6 +21709,11 @@ function hookFlagOutput(argv) {
   return void 0;
 }
 async function main(argv = process.argv.slice(2)) {
+  if (argv[0] === REFRESH_CACHE_FLAG) {
+    await refreshHookCaches(argv[1] ?? process.cwd());
+    process.exitCode = 0;
+    return;
+  }
   const flagOutput = hookFlagOutput(argv);
   if (flagOutput !== void 0) {
     writeStdout(`${flagOutput}
@@ -21534,8 +21722,12 @@ async function main(argv = process.argv.slice(2)) {
     return;
   }
   try {
-    const raw = await readStdin();
-    const out = await runHook(raw);
+    const read = await readStdin();
+    if (read.overflow !== void 0) {
+      process.stderr.write(formatStdinOverflow(read.overflow));
+      return;
+    }
+    const out = await runHook(decodeStdin(read.bytes), { startRefresh: spawnCacheRefresh });
     if (out) writeStdout(out);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -21566,12 +21758,19 @@ export {
   HOOK_LOCK_TIMEOUT_MS,
   HOOK_MATCH_BUDGET_MS,
   HOOK_PROMPT_MAX_CHARS,
+  HOOK_STDIN_MAX_BYTES,
   ONBOARD_NOTE,
   ONBOARD_NOTE_FILE,
   ONBOARD_NOTE_INTERVAL_MS,
+  REFRESH_CACHE_FLAG,
+  REFRESH_LOCK_FILE,
+  REFRESH_LOCK_STALE_MS,
   SESSION_CONTEXT_MAX_CHARS,
+  STALE_LEXICON_NOTE,
   capCorrectionList,
+  claimCacheRefresh,
   dataBlockSpans,
+  decodeStdin,
   dropCorrectionSpans,
   dropDataBlockSpans,
   formatAdditionalContext,
@@ -21580,14 +21779,18 @@ export {
   formatCorrectionNotes,
   formatLengthNote,
   formatSkippedProjectNote,
+  formatStdinOverflow,
   hookFlagOutput,
   main,
   onboardNotePath,
   parseCorrections,
+  readStdin,
+  refreshHookCaches,
   runHook,
   runSessionStartHook,
   runUserPromptSubmitHook,
   shouldEmitOnboardNote,
+  spawnCacheRefresh,
   truncateSessionContext,
   writeStdout
 };
