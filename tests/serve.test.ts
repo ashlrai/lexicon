@@ -1072,6 +1072,20 @@ describe('limits and errors', () => {
     );
   });
 
+  // Catches: a body with a byte order mark (PowerShell 5.1 and .NET send one)
+  // or a gzip body was answered "not valid JSON", which sent the client
+  // looking for a syntax error that was not there.
+  it('reads a body past a byte order mark and answers 415 to a compressed one', async () => {
+    const bom = await api('POST', '/normalize', `\uFEFF${JSON.stringify({ text: 'ping ashler', dryRun: true })}`);
+    expect(bom.status).toBe(200);
+    expect(((await bom.json()) as { replacements: Array<{ canonical: string }> }).replacements.map((r) => r.canonical)).toEqual(['Ashlr.AI']);
+    const gz = await api('POST', '/normalize', JSON.stringify({ text: 'x' }), { 'Content-Encoding': 'gzip' });
+    expect(gz.status).toBe(415);
+    expect(((await gz.json()) as { error: string }).error).toContain('request bodies are not decompressed (Content-Encoding: gzip)');
+    const identity = await api('POST', '/normalize', JSON.stringify({ text: 'x', dryRun: true }), { 'Content-Encoding': 'identity' });
+    expect(identity.status).toBe(200);
+  });
+
   it('400 on bad JSON and on a non-object body', async () => {
     const bad = await api('POST', '/normalize', '{"text": ');
     expect(bad.status).toBe(400);
