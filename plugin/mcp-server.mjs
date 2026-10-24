@@ -61975,8 +61975,11 @@ function pbcopyBackend(exec = defaultClipboardExec) {
 function wlBackend(exec = defaultClipboardExec) {
   return {
     name: "wl",
-    description: "wl-paste --no-newline / wl-copy (Wayland, wl-clipboard)",
-    read: () => readOrEmpty(exec, "wl-paste", ["--no-newline"]),
+    description: "wl-paste --no-newline --type text / wl-copy (Wayland, wl-clipboard)",
+    // `--type text` asks for any text type: without it wl-paste hands over the
+    // first offered type when no text is offered, so a copied image came back
+    // as PNG bytes. With no text on offer it exits non-zero, which reads as ''.
+    read: () => readOrEmpty(exec, "wl-paste", ["--no-newline", "--type", "text"]),
     write: async (text) => {
       await exec("wl-copy", [], text);
     }
