@@ -282,10 +282,12 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
           ...(person !== undefined ? { person } : {}),
           // runSetup takes the CLI's comma-separated form. Omitted means "none" here, never
           // "every detected client": the plan names the detected ones and the model asks.
-          clients: clients !== undefined && clients.length > 0 ? clients.join(',') : 'none',
+          // Duplicates are dropped here, in the order first named, so the
+          // options (and the command the plan echoes) list each client once.
+          clients: clients !== undefined && clients.length > 0 ? [...new Set(clients)].join(',') : 'none',
           // Same for the starter packs: only an explicit list installs any (runSetup with yes
           // and no --packs installs none); omitted leaves the plan's default set for the model to offer.
-          ...(packs !== undefined ? { packs: packs.length > 0 ? packs.join(',') : 'none' } : {}),
+          ...(packs !== undefined ? { packs: packs.length > 0 ? [...new Set(packs)].join(',') : 'none' } : {}),
           // The login service is opt-in; runSetup with yes also refuses it unless serve is true.
           serve: serve === true,
           // So is the harvest (a write inside the user's repo). The plan lists the
