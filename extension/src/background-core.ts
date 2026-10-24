@@ -13,6 +13,7 @@ import {
   FETCH_TIMEOUT_MS,
   HEALTH_TTL_MS,
   pairableBaseUrl,
+  pairPortOrigins,
   RECENT_LIMIT,
   STORAGE_KEYS,
   TOKEN_RE,
@@ -23,6 +24,7 @@ import type {
   LearnReply,
   Mode,
   NormalizeReply,
+  PairPortReply,
   PairReply,
   Reply,
   Request,
@@ -44,6 +46,12 @@ export interface BackgroundDeps {
   now?: () => number;
   /** Called when the "any site" toggle changes; registers/unregisters the dynamic content script. */
   setAnySite?: (enabled: boolean) => Promise<void>;
+  /**
+   * Runs `pair.js` on the /pair page of a non-default port (`origins` from
+   * `pairPortOrigins`, already granted), or stops it (undefined). Throws
+   * `PAIR_PORT_DENIED_MESSAGE` when the origins are not granted.
+   */
+  setPairPort?: (origins: string[] | undefined) => Promise<void>;
 }
 
 export interface Background {
@@ -403,6 +411,17 @@ export function createBackground(deps: BackgroundDeps): Background {
     return { ok: true, baseUrl, terms: h.health?.terms ?? terms, version: h.health?.version ?? '?' };
   }
 
+  async function pairPortReq(rawBaseUrl: string): Promise<PairPortReply | Failure> {
+    if (!pairableBaseUrl(String(rawBaseUrl ?? ''))) return { ok: false, error: 'Pairing works only with a lexicon serve on 127.0.0.1 or localhost, with its port in the URL.' };
+    const origins = pairPortOrigins(rawBaseUrl);
+    try {
+      await deps.setPairPort?.(origins);
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+    return origins ? { ok: true, origins } : { ok: true };
+  }
+
   async function handle(req: Request): Promise<Reply> {
     if (!req || typeof req !== 'object' || typeof (req as { type?: unknown }).type !== 'string') {
       return { ok: false, error: 'bad request' };
@@ -418,6 +437,8 @@ export function createBackground(deps: BackgroundDeps): Background {
         return syncReq();
       case 'pair':
         return pairReq(req.baseUrl, req.token);
+      case 'pairPort':
+        return pairPortReq(req.baseUrl);
       case 'anySite': {
         try {
           await deps.setAnySite?.(req.enabled === true);

@@ -44,6 +44,7 @@ import {
   isOriginAllowed,
   isPairHost,
   pairPageHtml,
+  pairPortNote,
   readServeConfig,
   DEFAULT_PORT,
   EXPORT_NOTE_HEADER,
@@ -947,6 +948,11 @@ describe('GET /pair', () => {
     expect(isLoopbackAddress('10.0.0.5')).toBe(false);
     expect(isLoopbackAddress(undefined)).toBe(false);
     // Attribute values are escaped, so a hostile version string cannot break out of the tag.
+    // Off the default port the install hint says how to pair there instead.
+    expect(pairPageHtml({ token: 'abc', port: 5000, version: '1' })).toContain(
+      `The extension pairs itself on port ${DEFAULT_PORT} only. For port 5000, open its Options, set Base URL to this page's address without <code>/pair</code> and click <strong>pair in this browser</strong> there`,
+    );
+    expect(pairPageHtml({ token: 'abc', port: DEFAULT_PORT, version: '1' })).not.toContain('other-port');
     const html = pairPageHtml({ token: 'abc', port: 1, version: '1"><script>' });
     expect(html).toContain('content="1&quot;&gt;&lt;script&gt;"');
     expect(html).not.toContain('<script>');
@@ -1860,6 +1866,12 @@ describe('lexicon serve (CLI)', () => {
     expect(pairUrl(info.port)).toBe(url);
     expect(calls).toEqual([['open', url]]);
     expect(io.out.join('')).toContain(`opening ${url} in your browser`);
+    // Catches: on a port other than 41733 the extension never ran on the page
+    // and nothing said how to pair with it.
+    expect(io.out.join('')).toContain(pairPortNote(info.port));
+    expect(pairPortNote(info.port)).toBe(
+      `the extension pairs itself on port ${DEFAULT_PORT} only; for port ${info.port}, open its Options, set Base URL to http://127.0.0.1:${info.port} and click "pair in this browser" there, then allow access to that port`,
+    );
     expect(io.err.join('')).toBe('');
 
     // Linux and Windows openers, no shell interpolation of the URL.
@@ -1875,7 +1887,8 @@ describe('lexicon serve (CLI)', () => {
     const json = memIO();
     expect(await runServe({ pair: true, json: true, port: info.port, globalPath: env.globalPath }, json, { platform: 'darwin', exec: fakeExec([]) })).toBe(0);
     // Catches: a pair that opened the browser had no `ok`, though one that did not leads with `ok: false`.
-    expect(JSON.parse(json.out.join(''))).toEqual({ ok: true, up: true, url, opened: true });
+    // The test server is on a random port, so the note on pairing off 41733 comes with it.
+    expect(JSON.parse(json.out.join(''))).toEqual({ ok: true, up: true, url, opened: true, note: pairPortNote(info.port) });
     expect(Object.keys(JSON.parse(json.out.join('')))[0]).toBe('ok');
   });
 

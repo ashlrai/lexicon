@@ -18,7 +18,7 @@ import type { ContentHandle } from '../extension/src/content-core.js';
 import { applyCorrections, flatten, invertCorrections, readText } from '../extension/src/editable.js';
 import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
-import { ANY_SITE_DENIED_MESSAGE, API_MAX_BODY_BYTES, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
+import { ANY_SITE_DENIED_MESSAGE, API_MAX_BODY_BYTES, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 import { setMessage } from '../extension/src/rich-text.js';
@@ -942,7 +942,7 @@ describe('extension errors name the next step', () => {
     expect(extensionRequestFailedLine('no response. ')).toMatch(/^no response\. Reload/);
     const options = readFileSync(resolve(process.cwd(), 'extension/src/options.ts'), 'utf8');
     const catches = options.split('\n').filter((l) => /\.catch\(\(err: unknown\)/.test(l)).length;
-    expect(catches).toBe(3);
+    expect(catches).toBe(4);
     expect(options.match(/extensionRequestFailedLine\(errorMessage\(err\)\)/g)).toHaveLength(catches);
   });
 
@@ -1591,5 +1591,57 @@ describe('adapters: code editors are never composers', () => {
     expect(findComposer(document, GENERIC)).toBe(r);
     (document.getElementById('t') as HTMLElement).focus();
     expect(findComposer(document, GENERIC)?.id).toBe('t');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('pairing with lexicon serve on another --port', () => {
+  const manifest = JSON.parse(readFileSync(resolve(process.cwd(), 'extension/manifest.json'), 'utf8')) as {
+    host_permissions: string[];
+    optional_host_permissions: string[];
+    content_scripts: { matches: string[]; js: string[] }[];
+  };
+
+  // Catches: the manifest covers port 41733 only, so `lexicon serve --port
+  // 5000 --pair` opened a page no content script ran on, and nothing said how
+  // to pair with it.
+  it('a non-default loopback port needs exactly its two loopback origins, the default port none', () => {
+    expect(pairPortOrigins('http://127.0.0.1:41733')).toBeUndefined();
+    expect(pairPortOrigins('http://localhost:41733/')).toBeUndefined();
+    expect(pairPortOrigins('http://127.0.0.1:5000')).toEqual(['http://127.0.0.1:5000/*', 'http://localhost:5000/*']);
+    expect(pairPortOrigins('http://localhost:5000')).toEqual(['http://127.0.0.1:5000/*', 'http://localhost:5000/*']);
+    for (const bad of ['http://evil.example:5000', 'https://127.0.0.1:5000', 'http://127.0.0.1', 'http://127.0.0.1:5000/x', 'not a url']) {
+      expect(pairPortOrigins(bad), bad).toBeUndefined();
+    }
+    expect(pairScriptMatches(['http://127.0.0.1:5000/*', 'http://localhost:5000/*'])).toEqual(['http://127.0.0.1:5000/pair*', 'http://localhost:5000/pair*']);
+  });
+
+  it('the manifest keeps its fixed permissions to the default port; other ports come from the optional grant', () => {
+    expect(manifest.host_permissions.filter((p) => p.startsWith('http://'))).toEqual(['http://127.0.0.1:41733/*', 'http://localhost:41733/*']);
+    // permissions.request may only ask for what optional_host_permissions covers.
+    expect(manifest.optional_host_permissions).toEqual(['<all_urls>']);
+    const pair = manifest.content_scripts.find((c) => c.js.includes('pair.js'))!;
+    expect(pair.matches).toEqual(pairScriptMatches(['http://127.0.0.1:41733/*', 'http://localhost:41733/*']));
+  });
+
+  it('the background registers the /pair script for the port, clears it for the default port, and names a refused permission', async () => {
+    const data: Record<string, unknown> = {};
+    const store: KeyValueStore = {
+      get: async (keys) => Object.fromEntries(keys.filter((k) => k in data).map((k) => [k, data[k]])),
+      set: async (items) => {
+        Object.assign(data, items);
+      },
+    };
+    const setPairPort = vi.fn(async (_origins: string[] | undefined) => undefined);
+    const bg = createBackground({ fetch: vi.fn() as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML, setPairPort });
+    expect(await bg.handle({ type: 'pairPort', baseUrl: 'http://127.0.0.1:5000' })).toEqual({ ok: true, origins: ['http://127.0.0.1:5000/*', 'http://localhost:5000/*'] });
+    expect(setPairPort).toHaveBeenLastCalledWith(['http://127.0.0.1:5000/*', 'http://localhost:5000/*']);
+    expect(await bg.handle({ type: 'pairPort', baseUrl: 'http://127.0.0.1:41733' })).toEqual({ ok: true });
+    expect(setPairPort).toHaveBeenLastCalledWith(undefined);
+    expect(await bg.handle({ type: 'pairPort', baseUrl: 'http://evil.example:5000' })).toMatchObject({ ok: false, error: expect.stringContaining('127.0.0.1 or localhost') });
+    setPairPort.mockRejectedValueOnce(new Error(PAIR_PORT_DENIED_MESSAGE));
+    expect(await bg.handle({ type: 'pairPort', baseUrl: 'http://127.0.0.1:5000' })).toEqual({ ok: false, error: PAIR_PORT_DENIED_MESSAGE });
+    expect(PAIR_PORT_DENIED_MESSAGE).toContain('Allow');
   });
 });
