@@ -81,7 +81,7 @@ import {
 } from '../src/cli/cmd-serve.js';
 import { programPathFromPlist, programPathFromUnit } from '../src/cli/serve-paths.js';
 import type { ExecResult, ServeExec } from '../src/cli/cmd-serve.js';
-import { stableNodePath } from '../src/cli/cmd-serve.js';
+import { capServiceLog, launchAgentPlist, stableNodePath, SERVE_LOG_MAX_BYTES } from '../src/cli/cmd-serve.js';
 import type { IO } from '../src/cli/commands.js';
 import { FileLockError } from '../src/util/atomic.js';
 import { InputError } from '../src/util/errors.js';
@@ -2274,6 +2274,48 @@ describe('lexicon serve (CLI)', () => {
     expect(io.err.join('')).not.toContain('warning');
   });
 
+  // Catches: the LaunchAgent sent stdout and stderr to serve.log and ran
+  // `serve` without --quiet, so every request added a line and the file grew
+  // without limit; --quiet also dropped the stop line the service log needs.
+  it('the service runs serve --quiet, and a serve.log over the cap is rotated at start', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-log-'));
+    try {
+      expect(launchAgentPlist('/n', '/c', '/l')).toContain('<string>serve</string>\n    <string>--quiet</string>\n  </array>');
+      expect(systemdUnit('/n', '/c')).toContain('ExecStart="/n" "/c" serve --quiet\n');
+      expect(scheduledTaskXml('C:\\n.exe', 'C:\\c.js')).toContain('<Arguments>&quot;C:\\c.js&quot; serve --quiet</Arguments>');
+
+      const logPath = launchAgentLogPath(home);
+      await fs.mkdir(path.dirname(logPath), { recursive: true });
+      await fs.writeFile(logPath, 'x'.repeat(SERVE_LOG_MAX_BYTES + 1));
+      const other = path.join(home, 'other.log');
+      await fs.writeFile(other, 'y'.repeat(SERVE_LOG_MAX_BYTES + 1));
+      const otherHandle = await fs.open(other, 'a');
+      const handle = await fs.open(logPath, 'a');
+      try {
+        // Another file on the descriptor is never touched.
+        expect(await capServiceLog(logPath, otherHandle.fd)).toBe(false);
+        expect((await fs.stat(other)).size).toBe(SERVE_LOG_MAX_BYTES + 1);
+
+        const io = memIO();
+        const controller = new AbortController();
+        controller.abort();
+        expect(await runServe({ port: 0, quiet: true, cwd: env.cwd, globalPath: env.globalPath }, io, { home, signal: controller.signal, logFd: handle.fd })).toBe(0);
+        expect((await fs.stat(logPath)).size).toBe(0);
+        expect((await fs.stat(`${logPath}.1`)).size).toBe(SERVE_LOG_MAX_BYTES + 1);
+        expect(io.out.join('')).toContain('lexicon serve stopped');
+        // Under the cap, nothing moves.
+        await handle.write('small\n');
+        expect(await capServiceLog(logPath, handle.fd)).toBe(false);
+        expect(await fs.readFile(logPath, 'utf8')).toBe('small\n');
+      } finally {
+        await handle.close();
+        await otherHandle.close();
+      }
+    } finally {
+      await fs.rm(home, { recursive: true, force: true });
+    }
+  });
+
   // Catches: the --json listening line had no `ok`, though a failed start prints `{ ok: false, error }`.
   it('--json prints one listening document that leads with ok: true', async () => {
     const io = memIO();
@@ -2902,7 +2944,7 @@ describe('lexicon serve (CLI)', () => {
             nodePath: 'C:\\node\\node.exe',
           }),
         ).toBe(0);
-        expect(xml).toContain(`<Arguments>&quot;${cli}&quot; serve</Arguments>`);
+        expect(xml).toContain(`<Arguments>&quot;${cli}&quot; serve --quiet</Arguments>`);
         await expect(fs.access(envFile)).rejects.toThrow();
       } finally {
         await fs.rm(envFile, { force: true });
@@ -3113,7 +3155,7 @@ describe('lexicon serve (CLI)', () => {
     // means one thing on all three platforms.
     expect(programPathFromTaskXml(xml)).toBe('C:\\lex & co\\index.js');
     expect(xml).toContain('<Command>C:\\Program Files\\nodejs\\node.exe</Command>');
-    expect(xml).toContain('<Arguments>&quot;C:\\lex &amp; co\\index.js&quot; serve</Arguments>');
+    expect(xml).toContain('<Arguments>&quot;C:\\lex &amp; co\\index.js&quot; serve --quiet</Arguments>');
     expect(xml).toContain('<UserId>BOX\\me</UserId>');
     expect(xml).toContain('<LogonTrigger>');
     // Task Scheduler's default 72-hour kill would take the server down.

@@ -66611,6 +66611,8 @@ async function probeHealth(baseUrl, opts = {}) {
 // src/cli/cmd-serve.ts
 init_errors3();
 init_atomic();
+var SERVICE_SERVE_ARGS = ["serve", "--quiet"];
+var SERVE_LOG_MAX_BYTES = 4 * 1024 * 1024;
 var BOOTOUT_POLL_MS = 100;
 var BOOTOUT_POLL_TRIES = 50;
 function storeOpts(opts) {
@@ -66670,7 +66672,7 @@ function envReport(env) {
 `).join("");
 }
 function launchAgentPlist(nodePath, cliPath, logPath, label = LAUNCH_AGENT_LABEL, env) {
-  const args = [nodePath, cliPath, "serve"].map((a) => `    <string>${xmlEscape2(a)}</string>`).join("\n");
+  const args = [nodePath, cliPath, ...SERVICE_SERVE_ARGS].map((a) => `    <string>${xmlEscape2(a)}</string>`).join("\n");
   const envBlock = env && Object.keys(env).length > 0 ? [
     "  <key>EnvironmentVariables</key>",
     "  <dict>",
@@ -66703,7 +66705,7 @@ function launchAgentPlist(nodePath, cliPath, logPath, label = LAUNCH_AGENT_LABEL
   ].join("\n");
 }
 function scheduledTaskXml(nodePath, cliPath, userId, envFile) {
-  const args = `${envFile ? `--env-file="${envFile}" ` : ""}"${cliPath}" serve`;
+  const args = `${envFile ? `--env-file="${envFile}" ` : ""}"${cliPath}" ${SERVICE_SERVE_ARGS.join(" ")}`;
   const principal = [
     "  <Principals>",
     '    <Principal id="Author">',
@@ -66780,7 +66782,7 @@ function systemdUnit(nodePath, cliPath, env) {
     "[Service]",
     "Type=simple",
     ...envLines,
-    `ExecStart=${unitQuote(nodePath)} ${unitArg(cliPath)} serve`,
+    `ExecStart=${unitQuote(nodePath)} ${unitArg(cliPath)} ${SERVICE_SERVE_ARGS.join(" ")}`,
     "Restart=on-failure",
     "RestartSec=2",
     "",
@@ -66856,9 +66858,9 @@ async function runServeInstall(opts, io, deps = {}) {
     await import_node_fs26.promises.mkdir(import_node_path25.default.dirname(logPath), { recursive: true });
     await writeServiceFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv));
     line(io, `wrote ${safe(plistPath)}`);
-    line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} serve`);
+    line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} ${SERVICE_SERVE_ARGS.join(" ")}`);
     io.stdout(envReport(serviceEnv));
-    line(io, `  RunAtLoad + KeepAlive, logs in ${safe(logPath)}`);
+    line(io, `  RunAtLoad + KeepAlive, failures and start/stop logged in ${safe(logPath)} (moved to serve.log.1 at start once over ${SERVE_LOG_MAX_BYTES / 1024 / 1024} MiB)`);
     const uid = deps.uid ?? process.getuid?.() ?? 501;
     const target = `gui/${uid}/${label}`;
     const bootout = await exec("launchctl", ["bootout", target]);
@@ -66891,7 +66893,7 @@ async function runServeInstall(opts, io, deps = {}) {
     await import_node_fs26.promises.mkdir(import_node_path25.default.dirname(unitPath), { recursive: true });
     await writeServiceFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv));
     line(io, `wrote ${safe(unitPath)}`);
-    line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} serve`);
+    line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} ${SERVICE_SERVE_ARGS.join(" ")}`);
     io.stdout(envReport(serviceEnv));
     await runAndReport(exec, io, "systemctl", ["--user", "daemon-reload"]);
     const enable = await runAndReport(exec, io, "systemctl", ["--user", "enable", SYSTEMD_UNIT_NAME]);
@@ -66944,7 +66946,7 @@ async function runServeInstall(opts, io, deps = {}) {
     }
     line(io, `created Scheduled Task ${safe(taskName)} (trigger: at logon)`);
     line(io, `  Command:   ${safe(nodePath)}`);
-    line(io, `  Arguments: ${envFile ? `--env-file="${safe(envFile)}" ` : ""}"${safe(cliPath)}" serve`);
+    line(io, `  Arguments: ${envFile ? `--env-file="${safe(envFile)}" ` : ""}"${safe(cliPath)}" ${SERVICE_SERVE_ARGS.join(" ")}`);
     io.stdout(envFile ? envReport(serviceEnv) : "");
     const ended = await runAndReport(exec, io, "schtasks", ["/End", "/TN", taskName]);
     if (ended.code !== 0 && !await schtasksNothingToEnd(exec, taskName, ended)) {
