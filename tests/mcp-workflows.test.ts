@@ -710,6 +710,22 @@ describe('normalize_transcript limits', () => {
     expect(payload.incomplete).toBeUndefined();
   });
 
+  // Catches: `text` had no maximum, so a pasted 50 MB file was taken whole
+  // and echoed back in `output` although only 100000 characters were checked.
+  it('refuses text over the input maximum without echoing it, and takes text at it', async () => {
+    const { MCP_NORMALIZE_INPUT_MAX_CHARS, MCP_NORMALIZE_MAX_CHARS } = await import('../src/mcp/tools/terms.js');
+    const over = `Hetsner ${'x'.repeat(MCP_NORMALIZE_INPUT_MAX_CHARS)}`;
+    const res = await call('normalize_transcript', { text: over });
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain(`longer than ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters, so nothing was checked`);
+    expect(res.text).toContain(`pieces of at most ${MCP_NORMALIZE_MAX_CHARS} characters`);
+    expect(res.text.length).toBeLessThan(5000);
+    const at = `Hetsner ${'x'.repeat(MCP_NORMALIZE_INPUT_MAX_CHARS - 8)}`;
+    const payload = await callWith({ normalizeBudgetMs: 60_000 }, { text: at });
+    expect((payload.output as string).startsWith('Hetzner ')).toBe(true);
+    expect(payload.incomplete).toMatchObject({ reasons: ['length'], totalChars: MCP_NORMALIZE_INPUT_MAX_CHARS });
+  });
+
   it('applies the default length cap', async () => {
     const { MCP_NORMALIZE_MAX_CHARS } = await import('../src/mcp/tools/terms.js');
     const text = `Hetsner ${'word '.repeat(Math.ceil(MCP_NORMALIZE_MAX_CHARS / 5))}Hetsner`;
