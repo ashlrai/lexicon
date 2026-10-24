@@ -63859,6 +63859,12 @@ var registerTrustTools = (server, ctx) => {
       const shown = (text) => neutralizeMarkup(sanitizeForDisplay(text));
       const safePath2 = filePath === void 0 ? void 0 : shown(filePath);
       if (action === "status") {
+        const problem = await trustRegistryProblem({ cwd: ctx.cwd });
+        if (problem !== void 0) {
+          throw new Error(
+            `the trust registry at ${shown(registry2)} ${shown(problem)}, so the trusted project lexicons cannot be listed and every project reads as untrusted until it is fixed. Ask the user to fix the JSON in that file, or move it aside (then run ${cliCommand("trust")} in each project again). Do not call trust_project with action 'trust' until then: it refuses the broken file.`
+          );
+        }
         const base = {
           action,
           registry: shown(registry2),

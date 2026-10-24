@@ -35,6 +35,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 - The `serve.log` cap also empties the log when the server's descriptor can only append (as on Windows), by truncating the file by path, and compares file ids exactly. Before, the copy to `serve.log.1` was made but the log kept its size, which turned main CI red on Windows.
 - A LEXICON_PATH under a regular file (`notes.txt\lexicon.yaml`) is named as unreadable on Windows too. Windows answers such a path with ENOENT rather than ENOTDIR, so the lexicon read as missing there and only a later write failed.
+- MCP `trust_project` `status` reports a `trust.json` it cannot use as an error naming the file, its problem and the fix. It read the broken registry as empty and answered `trusted: []` and `status: "untrusted"`, so the agent asked to trust a file the next call refused.
 - `lexicon trust` refuses a `trust.json` it cannot use before it shows the preview and asks. It asked `trust <file>?` first and only then found the registry broken, so a yes was answered with a refusal.
 - `lexicon setup --phonetic <hint>` says when the hint was not used. It is the company term's hint, so with no company term seeded (no `--company` and nothing to guess, or a lexicon already seeded) it was dropped without a word; setup now says so and to pass `--company` with it.
 - `lexicon learn <words> --from "<sentence>"` is refused, writing nothing. The words were dropped without a word and only the sentence was learned, so `lexicon learn Ashler Ashlr.AI --from "..."` never learned Ashler.

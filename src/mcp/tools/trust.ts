@@ -25,6 +25,7 @@ import {
   neutralizeMarkup,
   parsedContentHash,
   trustSummaryForModel,
+  trustRegistryProblem,
 } from '../../core/index.js';
 import type { LexiconFile } from '../../core/index.js';
 import { HARVEST_ROOTS_ENV, containedPath, guarded, nonBlank, shellWord, textResult, trustPreview } from '../shared.js';
@@ -154,6 +155,15 @@ export const registerTrustTools: ToolRegistrar = (server, ctx) => {
         const safePath = filePath === undefined ? undefined : shown(filePath);
 
         if (action === 'status') {
+          // A broken registry reads as empty, so `trusted` was [] and every
+          // file 'untrusted', with trusting it as the fix, which then failed.
+          const problem = await trustRegistryProblem({ cwd: ctx.cwd });
+          if (problem !== undefined) {
+            throw new Error(
+              `the trust registry at ${shown(registry)} ${shown(problem)}, so the trusted project lexicons cannot be listed and every project reads as untrusted until it is fixed. ` +
+                `Ask the user to fix the JSON in that file, or move it aside (then run ${cliCommand('trust')} in each project again). Do not call trust_project with action 'trust' until then: it refuses the broken file.`,
+            );
+          }
           const base = {
             action,
             registry: shown(registry),
