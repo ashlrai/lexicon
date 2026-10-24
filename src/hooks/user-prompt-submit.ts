@@ -863,12 +863,14 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   let timedOut = false;
   const shouldStop = (): boolean => (timedOut ||= process.hrtime.bigint() - started >= limit);
   let result = index ? normalizeWithIndex(head, index, { shouldStop }) : undefined;
-  if (result && tail) result = { ...result, input: prompt, output: result.output + tail };
   const budgetNote = timedOut ? formatBudgetNote(budget) : '';
   // The words the user is correcting are not dictation: leave them alone and do not count them as hits.
   for (const correction of corrections) if (result) result = dropCorrectionSpans(result, correction);
   // Neither is a pasted dictionary (`word,replacement` rows): the misspellings in it are the point.
   if (result) result = dropDataBlockSpans(result);
+  // Both passes above read `head` only, where every replacement is: run over
+  // the whole prompt they walked a 10 MB paste character by character (3 s).
+  if (result && tail) result = { ...result, input: prompt, output: result.output + tail };
   const changed = result?.changed === true;
   if (result && changed) recordHitsInBackground(result, cwd, loaded);
 

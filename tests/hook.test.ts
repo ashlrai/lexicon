@@ -1035,6 +1035,23 @@ describe('a long prompt stays inside the hook budget', () => {
     expect(opts.shouldStop()).toBe(false);
   });
 
+  // Catches: the correction and data-block passes ran over the whole prompt,
+  // not the HOOK_PROMPT_MAX_CHARS head that was matched, so a 10 MB paste
+  // after a correction took about 3 s (foldWithOffsets walked every
+  // character), far past the 200 ms budget and near the plugin's timeout.
+  it('runs the correction and data-block passes over the checked head only', async () => {
+    const { runUserPromptSubmitHook, HOOK_PROMPT_MAX_CHARS } = await import('../src/hooks/user-prompt-submit.js');
+    const tail = 'deploy the config to the edge and check the logs today. '.repeat(190_000);
+    const prompt = `it's Vercel not versel. ping Ashler now. ${tail}`;
+    expect(prompt.length).toBeGreaterThan(200 * HOOK_PROMPT_MAX_CHARS);
+    const started = Date.now();
+    const out = await runUserPromptSubmitHook(payload(prompt));
+    const ms = Date.now() - started;
+    expect(context(out)).toContain('"Ashler" -> "Ashlr.AI"');
+    expect(context(out)).toContain('learn_correction');
+    expect(ms).toBeLessThan(1000);
+  });
+
   it('does not repeat a huge prompt back as the corrected copy', async () => {
     const { formatAdditionalContext, CORRECTED_PROMPT_MAX_CHARS } = await import('../src/hooks/user-prompt-submit.js');
     const big = `hi Ashler ${'x'.repeat(CORRECTED_PROMPT_MAX_CHARS)}`;

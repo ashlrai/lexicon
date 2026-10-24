@@ -21422,10 +21422,10 @@ async function userPromptSubmit(payload, opts) {
   let timedOut = false;
   const shouldStop = () => timedOut ||= process.hrtime.bigint() - started >= limit;
   let result = index ? normalizeWithIndex(head, index, { shouldStop }) : void 0;
-  if (result && tail) result = { ...result, input: prompt, output: result.output + tail };
   const budgetNote = timedOut ? formatBudgetNote(budget) : "";
   for (const correction of corrections) if (result) result = dropCorrectionSpans(result, correction);
   if (result) result = dropDataBlockSpans(result);
+  if (result && tail) result = { ...result, input: prompt, output: result.output + tail };
   const changed = result?.changed === true;
   if (result && changed) recordHitsInBackground(result, cwd, loaded);
   if (!changed && !skippedNote && !correctionNote && !budgetNote && !lengthNote) return "";
