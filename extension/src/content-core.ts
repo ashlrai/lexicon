@@ -66,6 +66,8 @@ export function installContent(deps: ContentDeps): ContentHandle {
   let precheckTimer: number | undefined;
   let liveTimer: number | undefined;
   let liveInFlight = false;
+  /** True while Undo writes the original wording back: its own input events are not the user typing. */
+  let restoring = false;
 
   const setTimer = (fn: () => void, ms: number): number | undefined => win?.setTimeout(fn, ms);
   const clearTimer = (id: number | undefined): void => {
@@ -82,8 +84,15 @@ export function installContent(deps: ContentDeps): ContentHandle {
     }
   }
 
-  function toastFor(composer: HTMLElement, original: string, corrections: Correction[], reply: NormalizeReply): void {
+  /**
+   * `rewritten` is what the composer held right after the rewrite: the reply's
+   * output on send, but in live mode the corrected prefix plus the untouched
+   * text after the caret. Comparing with `reply.output` alone made Undo do
+   * nothing after a live rewrite that had text after the caret.
+   */
+  function toastFor(composer: HTMLElement, original: string, corrections: Correction[], reply: NormalizeReply, rewritten?: string): void {
     if (!reply.ok) return;
+    const expected = rewritten ?? reply.output;
     showToast(doc, corrections, {
       mode: reply.mode,
       durationMs: deps.toastMs,
@@ -91,18 +100,29 @@ export function installContent(deps: ContentDeps): ContentHandle {
       ...(reply.fallback ? { fallback: reply.fallback } : {}),
       onUndo: () => {
         const current = readText(composer);
-        if (current === reply.output) {
-          void applyCorrections(doc, composer, invertCorrections(corrections), original);
+        let restore: readonly Correction[];
+        if (current === expected) {
+          restore = invertCorrections(corrections);
         } else if (current.trim() === '') {
           // Already sent: put the original wording back so the user can
           // resend it as dictated.
-          void applyCorrections(doc, composer, [], original);
+          restore = [];
         } else {
           // The composer now holds something else (an edit, or the next
           // message): restoring the old text would destroy it.
           return;
         }
+        // The restore fires input events. Taken as typing, they cleared the
+        // precheck and scheduled a new check, so live mode corrected the
+        // restored text straight back and the next Enter corrected it again.
+        clearTimer(precheckTimer);
+        clearTimer(liveTimer);
+        restoring = true;
         precheck = { text: original, changed: false };
+        void applyCorrections(doc, composer, restore, original).finally(() => {
+          restoring = false;
+          precheck = { text: readText(composer), changed: false };
+        });
       },
     });
   }
@@ -255,7 +275,7 @@ export function installContent(deps: ContentDeps): ContentHandle {
           // the corrections changed before it.
           if (composer === doc.activeElement || composer.contains(doc.activeElement)) setCaret(doc, composer, reply.output.length);
           precheck = null;
-          toastFor(composer, full, reply.replacements, reply);
+          toastFor(composer, full, reply.replacements, reply, output);
         })
         .finally(() => {
           liveInFlight = false;
@@ -264,7 +284,7 @@ export function installContent(deps: ContentDeps): ContentHandle {
   }
 
   function onInput(ev: Event): void {
-    if (passthrough || !settings.enabled) return;
+    if (passthrough || restoring || !settings.enabled) return;
     const composer = composerFromTarget(ev.target, adapter);
     if (!composer) return;
     precheck = null;

@@ -106,7 +106,7 @@ With **Local API** selected, the extension falls back to the embedded lexicon wh
 - Text the worker already vetted as unchanged (checked on a short debounce while you type) is not intercepted at all: zero added delay for ordinary sentences.
 - Rich editors (ProseMirror on ChatGPT and Claude, Lexical on Perplexity, Quill on Gemini) get ranged `insertText` edits, the same path an IME or spellcheck uses, so their internal state stays in sync and formatting survives. Textareas get the React-safe native setter plus an `input` event.
 - Code spans, fenced blocks, URLs and emails are never touched (`skipCode` in the core matcher).
-- **Undo** puts the original wording back in the box. If the message already went out it cannot unsend it; it gives you the dictated text to resend, but only into an empty box: once you have edited the text or started the next message, Undo leaves the box alone.
+- **Undo** puts the original wording back in the box. If the message already went out it cannot unsend it; it gives you the dictated text to resend, but only into an empty box: once you have edited the text or started the next message, Undo leaves the box alone. In live mode Undo also restores the text after the caret, and the restored wording is not corrected straight back, by live mode or by the next Enter; type more and live mode checks the new text again.
 
 ## Supported sites
 

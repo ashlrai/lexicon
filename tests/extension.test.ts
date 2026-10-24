@@ -281,6 +281,64 @@ describe('content: send interception', () => {
     expect(t.value).toBe('ping Ashlr.AI and ashler');
     expect(t.selectionEnd).toBe('ping Ashlr.AI'.length);
   });
+
+  // Catches: the toast compared the composer with the corrected prefix only,
+  // so after a live rewrite with text after the caret Undo did nothing.
+  it('undo after a live rewrite puts the original back when text follows the caret', async () => {
+    document.body.innerHTML = '<form><textarea placeholder="Ask Grok anything"></textarea></form>';
+    const t = document.querySelector('textarea')!;
+    handle = installContent({ doc: document, hostname: 'grok.com', send: vi.fn(fakeSend), settings: { enabled: true, live: true }, liveDebounceMs: 5, precheckDebounceMs: 1000, toastMs: 60_000 });
+    t.value = 'ping ashler and ashler';
+    t.setSelectionRange(11, 11);
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(40);
+    expect(t.value).toBe('ping Ashlr.AI and ashler');
+    document.getElementById(TOAST_ID)!.shadowRoot!.querySelector<HTMLButtonElement>('button.undo')!.click();
+    // Past the live debounce: the restored text is not corrected straight back.
+    await wait(40);
+    expect(t.value).toBe('ping ashler and ashler');
+  });
+
+  // Catches: the undo's own input event cleared the precheck and scheduled a
+  // new dry run, so the next Enter corrected the restored wording again.
+  it('after undo, Enter sends the restored wording as it is', async () => {
+    document.body.innerHTML = '<form><textarea placeholder="Ask Grok anything"></textarea></form>';
+    const t = document.querySelector('textarea')!;
+    const send = vi.fn(fakeSend);
+    handle = installContent({ doc: document, hostname: 'grok.com', send, settings: { enabled: true, live: false }, precheckDebounceMs: 5, toastMs: 60_000 });
+    t.addEventListener('keydown', (ev) => ev.preventDefault());
+    t.value = 'ping ashler';
+    t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    expect(t.value).toBe('ping Ashlr.AI');
+    document.getElementById(TOAST_ID)!.shadowRoot!.querySelector<HTMLButtonElement>('button.undo')!.click();
+    expect(t.value).toBe('ping ashler');
+    await wait(40);
+    send.mockClear();
+    t.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    expect(t.value).toBe('ping ashler');
+    expect(send).not.toHaveBeenCalled();
+  });
+
+  it('undo after a live rewrite in a contenteditable restores the text after the caret too', async () => {
+    document.body.innerHTML = '<div id="e" contenteditable="true"><p>ping ashler and more</p></div>';
+    const e = document.getElementById('e')!;
+    handle = installContent({ doc: document, hostname: 'example.org', send: vi.fn(fakeSend), settings: { enabled: true, live: true }, liveDebounceMs: 5, precheckDebounceMs: 1000, toastMs: 60_000 });
+    e.focus();
+    const node = e.querySelector('p')!.firstChild as Text;
+    const r = document.createRange();
+    r.setStart(node, 11);
+    r.collapse(true);
+    document.getSelection()!.removeAllRanges();
+    document.getSelection()!.addRange(r);
+    e.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(40);
+    expect(readText(e)).toBe('ping Ashlr.AI and more');
+    document.getElementById(TOAST_ID)!.shadowRoot!.querySelector<HTMLButtonElement>('button.undo')!.click();
+    await wait(40);
+    expect(readText(e)).toBe('ping ashler and more');
+  });
 });
 
 describe('content: matching that stopped early', () => {
