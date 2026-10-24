@@ -1195,6 +1195,23 @@ describe('positiveIntOption', () => {
   });
 });
 
+// Catches: runExport and runHarvest called with a string option (not through
+// commander's positiveIntOption) still used parseInt, so '5abc' became 5.
+describe('handler integer options', () => {
+  it('take only a string of digits, as positiveIntOption does', async () => {
+    for (const bad of ['5abc', '1.5', '1e3', '0x10', '-1', 'abc', '']) {
+      await expect(runExport('csv', { limit: bad }, makeIO()), bad).rejects.toThrow('--limit must be a non-negative integer');
+      await expect(runHarvest(os.tmpdir(), { minCount: bad }, makeIO(), { isInteractive: () => false }), bad).rejects.toThrow(
+        '--min-count must be a non-negative integer',
+      );
+    }
+    await expect(runExport('csv', { limit: 1.5 }, makeIO())).rejects.toThrow('--limit must be a non-negative integer');
+    vi.mocked(core.harvestRepo).mockResolvedValueOnce([]);
+    expect(await runHarvest(os.tmpdir(), { limit: ' 5 ', minCount: '2' }, makeIO(), { isInteractive: () => false })).toBe(0);
+    expect(vi.mocked(core.harvestRepo)).toHaveBeenLastCalledWith(os.tmpdir(), { limit: 5, minCount: 2 });
+  });
+});
+
 describe('--json failure documents', () => {
   it('fail() always carries nextStep: the unreadable-lexicon hint, the trust step, else the default', () => {
     const plain = makeIO();

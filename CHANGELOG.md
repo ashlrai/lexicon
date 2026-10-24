@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `runExport` and `runHarvest` called with a string `limit` or `minCount` (not through the `lexicon` CLI flags) take only a string of digits, as `--limit` does: `5abc` was read as 5 and `1.5` as 1. A non-integer number is refused too.
 - `lexicon export csv --limit 5` (or wispr, superwhisper, macos, espanso) on a lexicon whose terms all lack an alias says the export has no rows and names `lexicon add`, on stderr and as the `--json` `note`, as MCP `export_lexicon` and `GET /export/:format` do. `--limit` counts only terms with an alias for these formats, so 0 terms were exported and nothing was said.
 - The MCP `lexicon://json` resource adds a `note` when the lexicon has no terms, the sentence `lexicon://me` ends with (no spellings to apply yet; offer the onboard prompt or `setup_lexicon`). It was a bare `{ version: 1, terms: [] }`. The JSON stays valid and the lexicon keys are unchanged; a lexicon with terms reads exactly as before.
 - `POST /normalize` on the local API adds a `hint` when the lexicon has no terms, naming `lexicon setup` (or `lexicon trust` when only an untrusted project lexicon has terms). An unchanged result read like text that needed no correction. The field is additive and absent otherwise.

@@ -118,6 +118,7 @@ import {
   safe,
   safeLines,
   skippedProjectJson,
+  wholeNumber,
   stillInLine,
   unreadableLexiconHint,
   untrustedAliasLine,
@@ -170,10 +171,15 @@ function findGitRoot(start: string): string | undefined {
   }
 }
 
+/**
+ * An integer option handed to a handler directly (commander already parsed
+ * `--limit` with positiveIntOption). A string takes the same digits-only rule
+ * (wholeNumber): parseInt read `5abc` as 5.
+ */
 function parseIntOption(value: string | number | undefined, flag: string): number | undefined {
   if (value === undefined) return undefined;
-  const n = typeof value === 'number' ? value : Number.parseInt(value, 10);
-  if (!Number.isFinite(n) || n < 0) throw new Error(`${flag} must be a non-negative integer`);
+  const n = typeof value === 'number' ? value : wholeNumber(value);
+  if (n === undefined || !Number.isSafeInteger(n) || n < 0) throw new Error(`${flag} must be a non-negative integer`);
   return n;
 }
 

@@ -507,12 +507,22 @@ export function conflictLine(c: LearnConflict): string {
  */
 export function positiveIntOption(flag: string, example: number): (value: string) => number {
   return (value: string): number => {
-    // Whole digits only: parseInt read `5abc` as 5 and `1.5` as 1.
-    const text = value.trim();
-    const n = /^[0-9]+$/.test(text) ? Number(text) : Number.NaN;
-    if (!Number.isSafeInteger(n) || n <= 0) throw new InvalidArgumentError(`expected a positive integer, e.g. ${flag} ${example}`);
+    const n = wholeNumber(value);
+    if (n === undefined || n <= 0) throw new InvalidArgumentError(`expected a positive integer, e.g. ${flag} ${example}`);
     return n;
   };
+}
+
+/**
+ * A string of digits (surrounding spaces aside) as a safe integer, else
+ * undefined. The rule positiveIntOption and the handlers' own integer options
+ * share: parseInt read `5abc` as 5 and `1.5` as 1.
+ */
+export function wholeNumber(value: string): number | undefined {
+  const text = value.trim();
+  if (!/^[0-9]+$/.test(text)) return undefined;
+  const n = Number(text);
+  return Number.isSafeInteger(n) ? n : undefined;
 }
 
 /**
