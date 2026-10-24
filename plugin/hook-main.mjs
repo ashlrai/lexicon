@@ -20778,8 +20778,22 @@ function quotedNames(names, max = 10) {
 
 // src/core/exporters/assemblyai.ts
 var ASSEMBLYAI_WORD_BOOST_MAX = 1e3;
-function exportAssemblyai(lexicon, _opts = {}) {
-  const word_boost = canonicalList(sortByImportance(lexicon.terms)).slice(0, ASSEMBLYAI_WORD_BOOST_MAX).map((c) => c.canonical);
+var ASSEMBLYAI_PHRASE_MAX_WORDS = 6;
+function exportAssemblyai(lexicon, _opts = {}, notes) {
+  const tooLong = [];
+  const overCap = [];
+  const word_boost = [];
+  for (const { canonical } of canonicalList(sortByImportance(lexicon.terms))) {
+    if (canonical.trim().split(/\s+/u).length > ASSEMBLYAI_PHRASE_MAX_WORDS) tooLong.push(canonical);
+    else if (word_boost.length >= ASSEMBLYAI_WORD_BOOST_MAX) overCap.push(canonical);
+    else word_boost.push(canonical);
+  }
+  if (tooLong.length > 0) {
+    notes?.push(`left out ${tooLong.length} phrase${tooLong.length === 1 ? "" : "s"} over AssemblyAI's ${ASSEMBLYAI_PHRASE_MAX_WORDS} words per phrase: ${quotedNames(tooLong)}`);
+  }
+  if (overCap.length > 0) {
+    notes?.push(`left out ${overCap.length} phrase${overCap.length === 1 ? "" : "s"} past AssemblyAI's ${ASSEMBLYAI_WORD_BOOST_MAX} word_boost entries (the most used kept): ${quotedNames(overCap)}`);
+  }
   return JSON.stringify({ word_boost, boost_param: "high" }, null, 2) + "\n";
 }
 

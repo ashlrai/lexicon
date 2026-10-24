@@ -79,3 +79,20 @@ describe('google and azure: phrase-set limits', () => {
     expect(exportLexiconWithNotes(lex(many(3)), 'azure').notes).toEqual([]);
   });
 });
+
+describe('assemblyai: words per phrase', () => {
+  // Catches: a canonical over the per-phrase word limit was sent, and the
+  // 1,000-entry cap dropped names with no word of which.
+  it('leaves out a phrase over 6 words and names it', () => {
+    const seven = 'one two three four five six seven';
+    const { text, notes } = exportLexiconWithNotes(lex([{ canonical: seven, aliases: [] }, { canonical: 'one two three four five six', aliases: [] }]), 'assemblyai');
+    expect((JSON.parse(text) as { word_boost: string[] }).word_boost).toEqual(['one two three four five six']);
+    expect(notes).toEqual([`left out 1 phrase over AssemblyAI's 6 words per phrase: "${seven}"`]);
+  });
+
+  it('names what the 1,000-entry cap left out', () => {
+    const terms = Array.from({ length: 1001 }, (_, i) => ({ canonical: `N${String(i).padStart(4, '0')}`, aliases: [], hits: 2000 - i }));
+    const { notes } = exportLexiconWithNotes(lex(terms), 'assemblyai');
+    expect(notes).toEqual([`left out 1 phrase past AssemblyAI's 1000 word_boost entries (the most used kept): "N1000"`]);
+  });
+});
