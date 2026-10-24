@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon pack show`, `pack add` and `pack update` sanitize what a registry index and a community pack file say before it reaches the terminal: the index's version and author, and the pack's title and description, were printed as is, so a registry could put escape sequences on the screen (clear it, recolour the preview the user is asked to approve). Update errors are sanitized too.
 - `lexicon pack add <author>/<name> --registry <relative path>` records the index as the absolute path it was read from. It was recorded as typed, so `lexicon pack update` and `pack remove` run from another directory looked for a different file ("registry index not found"), and MCP `list_packs` and `add_pack` never counted the index as one the user chose.
 - A whisper model download that runs out of disk space says there is no space left in the models directory, with the model's size, and that `LEXICON_WHISPER_MODELS` can name a directory on another disk. It said to check the network.
 - `lexicon voice --model <name>` with a name that is no whisper model (`base-en`) says there is no model of that name, and names some that exist (`tiny.en`, `base.en`, `small.en`, ...). The download answered 404 and the error said to check the network.

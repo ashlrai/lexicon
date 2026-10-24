@@ -236,7 +236,7 @@ export async function runPackShow(name: string, opts: PackRegistryCliOptions, io
           line(io, JSON.stringify(jsonOk({ ref: entry.ref, author: entry.author, homepage: entry.homepage, version: entry.version, checksum: entry.checksum, pack }), null, 2));
           return 0;
         }
-        line(io, `${safe(entry.ref)} ${dim(`(community pack${entry.author ? ` by ${entry.author}` : ''}, version ${entry.version || 'unversioned'}, checksum ${entry.checksum.slice(0, 12)}...)`)}`);
+        line(io, `${safe(entry.ref)} ${dim(`(community pack${entry.author ? ` by ${safe(entry.author)}` : ''}, version ${safe(entry.version || 'unversioned')}, checksum ${entry.checksum.slice(0, 12)}...)`)}`);
         printPackTerms(io, pack);
         return 0;
       } finally {
@@ -256,8 +256,9 @@ export async function runPackShow(name: string, opts: PackRegistryCliOptions, io
 }
 
 function printPackTerms(io: IO, pack: { name: string; title: string; description: string; lexicon: { terms: Term[] } }): void {
-  line(io, `${pack.name}: ${pack.title} (${plural(pack.lexicon.terms.length, 'term')})`);
-  if (pack.description) line(io, pack.description);
+  // A community pack file is a stranger's text: its title and description reach the terminal sanitized.
+  line(io, `${safe(pack.name)}: ${safe(pack.title)} (${plural(pack.lexicon.terms.length, 'term')})`);
+  if (pack.description) line(io, safeMessage(pack.description));
   line(io);
   line(io, JSON.stringify(pack.lexicon.terms, null, 2));
 }
@@ -434,7 +435,7 @@ async function runPackAddRegistry(
   if (!opts.json && result.alreadyInstalled) {
     line(io, alreadyInstalledLine(result.ref, result));
   } else if (!opts.json) {
-    line(io, `installed ${safe(result.ref)} (${entry.title}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`);
+    line(io, `installed ${safe(result.ref)} (${safe(entry.title)}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`);
     if (parsed.version !== undefined) line(io, dim(`  pinned at version ${parsed.version}; pack update will not move it`));
     line(io, dim(`  ${TERMS_LIVE}`));
   }
@@ -532,7 +533,7 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
             io,
             result.alreadyInstalled
               ? alreadyInstalledLine(result.pack.name, result)
-              : `installed ${safe(result.pack.name)} (${result.pack.title}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`,
+              : `installed ${safe(result.pack.name)} (${safe(result.pack.title)}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`,
           );
         }
       }
@@ -621,7 +622,7 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
       const previews = await previewRegistryUpdates(group, source, storeOpts, deps.registry);
       for (const preview of previews) {
         if (preview.status === 'current') {
-          if (!opts.json) line(io, dim(`${preview.ref}: already current${preview.to ? ` (version ${preview.to})` : ''}`));
+          if (!opts.json) line(io, dim(`${safe(preview.ref)}: already current${preview.to ? ` (version ${safe(preview.to)})` : ''}`));
           reports.push({ ref: preview.ref, status: preview.status, from: preview.from, to: preview.to });
           continue;
         }
@@ -631,14 +632,14 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
           continue;
         }
         if (preview.status === 'not-installed' || preview.status === 'failed') {
-          const msg = preview.status === 'failed' ? `: ${preview.error}` : ' (not installed from a registry)';
+          const msg = preview.status === 'failed' ? `: ${safeMessage(preview.error ?? '')}` : ' (not installed from a registry)';
           if (!opts.json) line(io, `${safe(preview.ref)}: ${preview.status}${msg}`);
           reports.push({ ref: preview.ref, status: preview.status, ...(preview.error ? { error: preview.error } : {}) });
           continue;
         }
         // 'available': show the diff, then ask. This is the re-approval the trust story demands.
         if (!opts.json) {
-          line(io, bold(`${preview.ref}: update available${preview.from || preview.to ? ` (${preview.from ?? '?'} -> ${preview.to ?? '?'})` : ''}`));
+          line(io, bold(`${safe(preview.ref)}: update available${preview.from || preview.to ? ` (${safe(preview.from ?? '?')} -> ${safe(preview.to ?? '?')})` : ''}`));
           if (preview.added.length > 0) line(io, `  new terms: ${safe(preview.added.join(', '))}`);
           if (preview.removed.length > 0) line(io, `  dropped by the new file (kept in your lexicon): ${safe(preview.removed.join(', '))}`);
           if (preview.added.length === 0 && preview.removed.length === 0) line(io, dim('  (only aliases or metadata changed)'));
@@ -664,7 +665,7 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
         if (applied.status === 'updated' && !opts.json) {
           line(io, `  updated ${safe(applied.ref)}: ${applied.added} added, ${applied.merged} merged`);
         } else if (!opts.json) {
-          line(io, `  ${safe(applied.ref)}: ${applied.status}${applied.error ? `: ${applied.error}` : ''}`);
+          line(io, `  ${safe(applied.ref)}: ${applied.status}${applied.error ? `: ${safeMessage(applied.error)}` : ''}`);
         }
         reports.push(applied);
       }

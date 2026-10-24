@@ -707,3 +707,33 @@ describe('pack add --json names the ref it stopped at', () => {
     expect(single.err).not.toContain('not attempted');
   });
 });
+
+describe('registry text on the terminal', () => {
+  // Catches: the index's version and the pack file's title and description reached the terminal unsanitized, escape sequences and all.
+  it('sanitizes what the index and the pack file say in show, add and update', async () => {
+    const ESC = '\u001b';
+    const hostile = PACK.replace('description: Heart words.', 'description: "Heart \\e[2J words."');
+    indexPath = writeIndex('1\\e[31m', hostile);
+
+    const show = makeIO();
+    expect(await runPackShow('example/cardiology', baseOpts(), show)).toBe(0);
+    expect(show.out).toContain('Heart');
+    expect(show.out).not.toContain(ESC);
+
+    const add = makeIO();
+    expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), yes: true }, add)).toBe(0);
+    expect(add.out).toContain('installed example/cardiology');
+    expect(add.out).not.toContain(ESC);
+
+    const current = makeIO();
+    expect(await runPackUpdate([], { globalPath, registry: indexPath }, current)).toBe(0);
+    expect(current.out).toContain('already current');
+    expect(current.out).not.toContain(ESC);
+
+    indexPath = writeIndex('2\\e[31m', `${hostile}  - canonical: Atenolol\n    aliases: [atenolol]\n    category: brand\n`);
+    const update = makeIO();
+    expect(await runPackUpdate([], { globalPath, registry: indexPath, yes: true }, update)).toBe(0);
+    expect(update.out).toContain('update available');
+    expect(update.out).not.toContain(ESC);
+  });
+});
