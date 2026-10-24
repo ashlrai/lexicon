@@ -12,8 +12,8 @@ import { prunePairPorts, registerPairPort } from './pair-port.js';
 import type { PairPortApi } from './pair-port.js';
 import type { Request } from './shared.js';
 
-/** `chrome.scripting` and `chrome.permissions` as any-site.ts takes them. */
-const anySiteApi: AnySiteApi = { scripting: chrome.scripting, permissions: chrome.permissions };
+/** `chrome.scripting` and `chrome.permissions` as any-site.ts takes them, with storage to remember a refused key in. */
+const anySiteApi: AnySiteApi = { scripting: chrome.scripting, permissions: chrome.permissions, store: chromeStore, browser: navigator.userAgent };
 
 function setAnySite(enabled: boolean): Promise<void> {
   return setAnySiteWith(anySiteApi, enabled);
