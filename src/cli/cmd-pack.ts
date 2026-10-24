@@ -32,6 +32,7 @@ import {
   parsePackText,
   parseRegistryRef,
   previewRegistryUpdates,
+  REGISTRY_REF_RE,
   readRegistryState,
   searchRegistryIndex,
   uninstallPack,
@@ -87,10 +88,10 @@ function warnRegistryMismatch(io: IO, mismatch: RegistryRecordMismatch, scope?: 
   const where = scope ? `the ${scope} lexicon's settings.packs` : 'the lexicon files\' settings.packs';
   const flag = scope === 'project' ? ' --project' : '';
   for (const ref of mismatch.fileOnly) {
-    io.stderr(`lexicon: warn: ${safe(ref)} is in ${where} but has no registry record, so pack update will not check it (reinstall: lexicon pack add ${safe(ref)} --registry <index>${flag})\n`);
+    io.stderr(`lexicon: warn: ${safe(ref)} is in ${where} but has no registry record, so pack update will not check it (reinstall: lexicon pack add ${shownWord(ref)} --registry <index>${flag})\n`);
   }
   for (const ref of mismatch.recordOnly) {
-    io.stderr(`lexicon: warn: ${safe(ref)} has a registry record but is not in ${where}, so it is listed as not installed (lexicon pack remove ${safe(ref)}${flag} clears the record)\n`);
+    io.stderr(`lexicon: warn: ${safe(ref)} has a registry record but is not in ${where}, so it is listed as not installed (${shownCommand(['lexicon', 'pack', 'remove', ref, ...(flag ? ['--project'] : [])])} clears the record)\n`);
   }
 }
 
@@ -308,7 +309,7 @@ export async function runPackSearch(query: string, opts: PackRegistryCliOptions,
         ['ref', 'title', 'terms', 'version', 'installed', 'author', 'description'],
       ),
     );
-    line(io, dim(`install with: lexicon pack add <ref> --registry ${opts.registry}   (shows the term list before writing)`));
+    line(io, dim(`install with: lexicon pack add <ref> --registry ${shownWord(opts.registry)}   (shows the term list before writing)`));
     return 0;
   } catch (err) {
     return fail(io, err, opts.json);
@@ -336,6 +337,22 @@ function yesCommand(sub: 'add' | 'update', ref: string, opts: PackRegistryCliOpt
   if (opts.project) words.push('--project');
   words.push('--yes');
   return shownCommand(words);
+}
+
+/**
+ * The step that moves a pinned community pack to the index's version: the
+ * whole `pack add <ref>@<version>` command with the index it was checked
+ * against, quoted for the shell. It was assembled by hand with `--registry
+ * <index>` left as a placeholder, and the index's version (free text, up to
+ * 32 characters) went in unquoted, so a version with a space or `;` printed
+ * a line that ran something else. A version no pin can name (empty, a space,
+ * a `/`) gets the unpinned add, which takes the index's file and drops the pin.
+ */
+function movePinStep(ref: string, to: string | undefined, source: string, opts: PackRegistryCliOptions): string {
+  const flags = ['--registry', source, ...(opts.project ? ['--project'] : [])];
+  const pin = to !== undefined ? `${ref}@${to}` : undefined;
+  if (pin !== undefined && REGISTRY_REF_RE.test(pin)) return `\`${shownCommand(['lexicon', 'pack', 'add', pin, ...flags])}\` to move it`;
+  return `that version cannot be pinned by name; \`${shownCommand(['lexicon', 'pack', 'add', ref, ...flags])}\` takes the index's file and drops the pin`;
 }
 
 /** The answer to a community write: yes, no at the question, or no terminal to ask on. */
@@ -627,7 +644,7 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
           continue;
         }
         if (preview.status === 'pinned') {
-          if (!opts.json) line(io, `${safe(preview.ref)}: pinned at version ${safe(preview.from ?? '?')} (index has ${safe(preview.to ?? '?')}); \`lexicon pack add ${safe(preview.ref)}@${safe(preview.to ?? '')} --registry <index>\` to move it`);
+          if (!opts.json) line(io, `${safe(preview.ref)}: pinned at version ${safe(preview.from ?? '?')} (index has ${safe(preview.to ?? '?')}); ${movePinStep(preview.ref, preview.to, source, opts)}`);
           reports.push({ ref: preview.ref, status: preview.status, from: preview.from, to: preview.to });
           continue;
         }
