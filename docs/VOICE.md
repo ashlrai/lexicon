@@ -136,6 +136,14 @@ reported in `--json` and in `history.jsonl` is wall clock for a recording this c
 stopped, and the audio's own length (bytes over 32000 a second) for one that had
 already ended on its own.
 
+Each press reads its own flags. The press that starts records with its `--device`
+and `--seconds` (and refuses a `--model` path that is not there); the press that
+stops transcribes and delivers with its own `--model`, `--lang`, `--translate`,
+`--no-prompt`, `--no-history`, `--copy` and `--paste`. `--json` shapes each press's
+own output. Nothing from the first press is remembered, so a `--paste` given only to
+the start press is not applied: bind one command line with every flag to the hotkey
+and both presses run it.
+
 Stopping differs by platform. On macOS and Linux the recorder gets SIGINT and ffmpeg
 finalizes the WAV header on its way out. Windows has no equivalent: Node maps every
 signal to `TerminateProcess`, and a detached recorder stopped by a different process

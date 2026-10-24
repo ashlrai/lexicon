@@ -674,6 +674,20 @@ describe('lexicon learn (CLI)', () => {
     expect(await runLearn(['Ashlur', '=>', 'Ashlr.AI'], { cwd: '/fake/repo' }, captureIO().io)).toBe(0);
   });
 
+  // Catches: words given with --from were dropped without a word, so
+  // `lexicon learn Ashler Ashlr.AI --from "..."` learned only the sentence.
+  it('refuses words given with --from and writes nothing', async () => {
+    const { io, out, err } = captureIO();
+    expect(await runLearn(['Ashler', 'Ashlr.AI'], { from: "it's Vercel not Versel", json: true, cwd: '/fake/repo' }, io)).toBe(1);
+    expect(JSON.parse(out())).toEqual({
+      ok: false,
+      error: '--from and the words Ashler Ashlr.AI were both given; learn takes one correction, so nothing was learned',
+      nextStep: 'pass either <heard> <meant> or --from "<sentence>", not both',
+    });
+    expect(err()).toContain('lexicon: --from and the words');
+    expect(store.addTerm).not.toHaveBeenCalled();
+  });
+
   it('--from learns a parsed correction', async () => {
     const { io, out } = captureIO();
     const code = await runLearn([], { from: "it's Ashlr.AI not Ashlur", cwd: '/fake/repo' }, io);

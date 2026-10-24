@@ -132,8 +132,9 @@ export function isClipboardTooLarge(err: unknown): boolean {
 }
 
 /**
- * Most stderr bytes a failed write keeps for its error message. A write's
- * stderr was ignored, so a refused write said only "exited with code N".
+ * Most stderr bytes a failed read or write keeps for its error message. A
+ * write's stderr was ignored, so a refused write said only "exited with code
+ * N"; a read's was kept whole, however much the tool printed.
  */
 export const MAX_CLIPBOARD_WRITE_STDERR_BYTES = 4 * 1024;
 /** How long a failed write waits for the rest of its stderr after the exit. */
@@ -143,8 +144,8 @@ const WRITE_STDERR_GRACE_MS = 200;
  * Default process runner. Writes (a `stdin` payload) ignore stdout and
  * resolve as soon as the process exits: `xclip -i` forks a child that keeps
  * the selection alive and would otherwise hold the pipes open forever. A
- * write's stderr is read, at most MAX_CLIPBOARD_WRITE_STDERR_BYTES of it, so
- * a failed write names why; the pipe is let go of at the exit (after up to
+ * read's or write's stderr is kept, at most MAX_CLIPBOARD_WRITE_STDERR_BYTES of
+ * it, so a failure names why; the pipe is let go of at the exit (after up to
  * 200 ms for the rest of a failed write's message), so a forked child that
  * inherited it cannot keep the process alive. A read
  * whose stdout passes MAX_CLIPBOARD_READ_BYTES kills the tool and rejects with
@@ -189,11 +190,9 @@ export function defaultClipboardExec(
       out.push(chunk);
     });
     let errSize = 0;
+    // Bounded for a read as well: a tool that floods stderr while reading
+    // (a looping warning) was buffered whole until it exited or timed out.
     child.stderr?.on('data', (chunk: Buffer) => {
-      if (!isWrite) {
-        errChunks.push(chunk);
-        return;
-      }
       const room = MAX_CLIPBOARD_WRITE_STDERR_BYTES - errSize;
       if (room <= 0) return;
       const kept = chunk.length > room ? chunk.subarray(0, room) : chunk;

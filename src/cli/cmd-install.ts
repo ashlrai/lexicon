@@ -887,7 +887,12 @@ async function installText(
   if (scope !== 'user' && scope !== 'project') {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
-  const project = scope === 'project' || opts.project === true;
+  // Taken as project, the preview showed the repo file while the --apply line
+  // it printed (--scope user) wrote the user one, and --json said "user".
+  if (scope === 'user' && opts.project === true) {
+    throw new CliRefusal('--scope user and --project contradict each other; nothing was changed', 'pass one of them: --scope user for your own config, or --project (--scope project) for the repo-level file');
+  }
+  const project = scope === 'project';
 
   const name = (client ?? 'generic').toLowerCase();
   if (!isInstallClient(name)) {

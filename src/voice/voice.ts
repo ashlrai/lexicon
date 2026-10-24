@@ -420,13 +420,11 @@ export async function deliver(
   };
   if (!opts.json) io.stdout(`${result.output}\n`);
 
-  let wantCopy = opts.copy === true || opts.paste === true;
+  const wantCopy = opts.copy === true || opts.paste === true;
   let wantPaste = opts.paste === true;
-  if (wantPaste && r.platform !== 'darwin') {
-    io.stderr(`lexicon voice: --paste is not supported yet on ${r.platform}; the text is on the clipboard, paste it with your usual shortcut\n`);
-    wantPaste = false;
-    wantCopy = true;
-  }
+  /** --paste where it cannot paste: copy only, and say so once the copy has run. */
+  const pasteUnsupported = wantPaste && r.platform !== 'darwin';
+  if (pasteUnsupported) wantPaste = false;
   if (wantCopy) {
     try {
       const write =
@@ -437,10 +435,13 @@ export async function deliver(
         });
       await write(result.output);
     } catch (e) {
+      // Said before the copy ran, "the text is on the clipboard" was false here.
+      if (pasteUnsupported) io.stderr(`lexicon voice: --paste is not supported yet on ${r.platform}, and the copy it falls back to failed, so the text is not on the clipboard\n`);
       io.stderr(`lexicon voice: could not copy to the clipboard: ${message(e)}\n`);
       printJson(jsonFailure(EXIT_ERROR, `could not copy to the clipboard: ${message(e)}`, 'the corrected text is in output; run `lexicon doctor` to check the clipboard backend'));
       return EXIT_ERROR;
     }
+    if (pasteUnsupported) io.stderr(`lexicon voice: --paste is not supported yet on ${r.platform}; the text is on the clipboard, paste it with your usual shortcut\n`);
   }
   if (wantPaste) {
     try {

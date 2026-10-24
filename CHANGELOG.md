@@ -6,6 +6,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Security
 
+- `lexicon review --project` and `lexicon edit --project` re-pin trust only over the bytes they wrote or checked. They re-hashed the file when re-pinning, so a writer that takes no lock (a `git pull`, a hand edit) landing between the write and the re-pin had its terms trusted as the user's edit; such a file now stays untrusted until `lexicon trust`, and `edit` says it was not re-trusted.
 - `lexicon review --project` no longer trusts terms nobody reviewed. A trusted project lexicon rewritten during the review by something that does not re-pin trust (a `git pull`, a hand edit) had its new terms merged into the review's write, which then re-pinned trust over them; such a file is now left as it is, nothing is written, and the review says to run `lexicon trust` first.
 - Credentials no longer reach error text from an upstream.
   - The browser extension's popup errors quoted the server's `{ error }` text, so a server at the configured base URL that quoted the bearer token back showed the token. That text is now redacted.
@@ -16,6 +17,8 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Documentation
 
+- `lexicon learn --help` says where a correction goes without `--project`: to the file that already holds the meant term, else the global lexicon. It said `--project` wrote to the project lexicon "instead of the global one", though a term already in the project lexicon gets its alias there either way.
+- `lexicon voice --toggle` says which press reads which flag, in `--help` and docs/VOICE.md: the start press records with its `--device` and `--seconds`, the stop press transcribes and delivers with its own `--model`, `--lang`, `--translate`, `--no-prompt`, `--no-history`, `--copy` and `--paste`, so a hotkey should pass the same flags to both. A `--paste` given only to the start press was dropped without a word.
 - docs/EXTENSION.md: the Firefox notes now say to allow `127.0.0.1` and `localhost` in the add-on's permissions panel as well as the chat sites; pairing, Test connection and Sync need them.
 - `docs/PHANTOM-USAGE.md`: using Lexicon with Phantom. Lexicon makes no model calls and has no gateway or base URL setting; `phantom exec` around an agent is unaffected; the `serve.json` token is local and not a Phantom secret.
 
@@ -32,6 +35,16 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 - The `serve.log` cap also empties the log when the server's descriptor can only append (as on Windows), by truncating the file by path, and compares file ids exactly. Before, the copy to `serve.log.1` was made but the log kept its size, which turned main CI red on Windows.
 - A LEXICON_PATH under a regular file (`notes.txt\lexicon.yaml`) is named as unreadable on Windows too. Windows answers such a path with ENOENT rather than ENOTDIR, so the lexicon read as missing there and only a later write failed.
+- `lexicon setup --phonetic <hint>` says when the hint was not used. It is the company term's hint, so with no company term seeded (no `--company` and nothing to guess, or a lexicon already seeded) it was dropped without a word; setup now says so and to pass `--company` with it.
+- `lexicon learn <words> --from "<sentence>"` is refused, writing nothing. The words were dropped without a word and only the sentence was learned, so `lexicon learn Ashler Ashlr.AI --from "..."` never learned Ashler.
+- `lexicon trust --list` reports a `trust.json` it cannot use. A registry that was not valid JSON or could not be read was listed as empty, `no trusted project lexicons (run: lexicon trust)`, and `lexicon trust` then refused the broken file; the list now names the file and its problem, says to fix or move it, and exits 1 (`{ ok: false, error, nextStep, registry }` under `--json`).
+- `lexicon install <client> --scope user --project` is refused, writing nothing. It was taken as project scope: the preview named the repo-level file while the `--apply` line it printed (`--scope user`) wrote the user one, and `--json` reported `scope: "user"`.
+- `lexicon daemon --interval` under 20 ms says on stderr that it polls every 20 ms. The value was raised to 20 without a word, so `--interval 5` looked like it polled every 5 ms; `--help` now names the minimum too.
+- A clipboard read keeps at most 4 KiB of what the tool printed on stderr, as a write does. A read buffered all of it, so a tool that kept printing warnings while it read grew the daemon's memory until it exited or timed out.
+- `lexicon daemon --once --paste` off macOS no longer says the text is on the clipboard when the clipboard held binary data, nothing or no text it looked at. It now says the clipboard holds no text to paste, and why, and that it was left as it was.
+- `lexicon voice --paste` off macOS says the text is on the clipboard only after the copy it falls back to worked. It said so before the copy ran, so a copy that failed left that line false; a failed copy now says plainly that the text is not on the clipboard.
+- `lexicon review` no longer writes over a lexicon that changed during the review and cannot be read. It wrote the reviewed version over it, so what the other writer put there was lost; it now writes nothing, says the review's removals and edits were not saved and to fix the file and review again, and exits 1.
+- `lexicon review` matches a term rewritten elsewhere during the review by its canonical in NFC, as the store does. It compared canonicals by case only, so a canonical saved on disk in another Unicode normal form (`Cafe` plus U+0301 against `Café`) was taken as a second term, and a term edited in the review was written twice.
 - `lexicon voice --toggle` no longer takes a `pid` of `-1`, `0`, a fraction or an unsafe integer from a damaged `voice/recording.json` as the recorder. The stop press could send SIGINT to `-1` (every process the user owns) or `0` (its own process group); such a file now reads as malformed, as a non-number pid already did.
 - `lexicon voice` no longer writes a voice history entry over 16 MiB. No reader looks past the newest 16 MiB, and keeping the entry dropped every older one to make room, so the history was left with nothing anyone could read; the older history is kept instead.
 - `lexicon suggest` and MCP `suggest_terms` see a newest voice history entry over 8 MiB. They read the newest 8 MiB while `lexicon voice` keeps a newest entry of up to 16 MiB on its own, so such an entry was cut at the window start and dropped and suggest saw no history at all. Both now read the file with one reader and one 16 MiB bound.

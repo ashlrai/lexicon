@@ -103,6 +103,17 @@ describe('runClipboardDaemon', () => {
     await h.done;
   });
 
+  // Catches: an --interval under 20 ms was raised to 20 without a word.
+  it('warns on stderr when the interval is raised to the 20 ms minimum', async () => {
+    const err: string[] = [];
+    const controller = new AbortController();
+    const done = runClipboardDaemon({ intervalMs: 5, read: async () => '', write: async () => undefined, signal: controller.signal, quiet: true, err: (s) => err.push(s) });
+    await vi.advanceTimersByTimeAsync(50);
+    controller.abort();
+    await done;
+    expect(err.join('')).toContain('clipboard daemon: --interval 5 is below the 20 ms minimum; polling every 20 ms\n');
+  });
+
   // Catches: with no terms the daemon watched in silence and never said
   // nothing would be corrected.
   it('says once at start when the lexicon has no terms', async () => {
@@ -647,6 +658,21 @@ describe('runClipboardOnce', () => {
     expect(result.written).toBe(true);
     expect(h.err.join('')).toMatch(/macOS-only/);
   });
+
+  // Catches: off macOS, --paste said "the text is on the clipboard" when the
+  // clipboard held binary data or nothing, which was never looked at.
+  it('--paste off macOS does not claim text is on a clipboard that holds none', async () => {
+    for (const [content, why] of [
+      ['', 'clipboard is empty or not text'],
+      ['PNG\u0000\u0001data', 'clipboard holds binary data, not text'],
+    ] as const) {
+      const { h, read, write, out, err } = onceHarness(content);
+      await runClipboardOnce({ read, write, out, err, paste: true, platform: 'linux' });
+      const said = h.err.join('');
+      expect(said).not.toContain('the text is on the clipboard');
+      expect(said).toBe(`--paste is macOS-only (uses osascript), and the clipboard holds no text to paste (${why}); it was left as it was (platform: linux)\n`);
+    }
+  });
 });
 
 describe('runDaemonCommand', () => {
@@ -969,6 +995,17 @@ describe('a clipboard too large to correct', () => {
     for (const name of ['pbcopy', 'wl', 'xclip', 'xsel', 'powershell'] as const) {
       await expect(createClipboardBackend(name, exec).read()).rejects.toMatchObject({ name: 'ClipboardTimeoutError' });
     }
+  }, 20_000);
+
+  // Catches: a read kept every byte the tool printed on stderr, unbounded,
+  // while a write's was capped.
+  it('a failed read keeps at most the capped stderr in its error', async () => {
+    const big = backends.MAX_CLIPBOARD_WRITE_STDERR_BYTES * 4;
+    const err = (await backends
+      .defaultClipboardExec(process.execPath, ['-e', `process.stderr.write('e'.repeat(${big}), () => process.exit(2))`])
+      .catch((e: unknown) => e)) as InstanceType<typeof backends.ExecError>;
+    expect(err).toMatchObject({ name: 'ExecError', exitCode: 2 });
+    expect(err.stderr.length).toBe(backends.MAX_CLIPBOARD_WRITE_STDERR_BYTES);
   }, 20_000);
 
   // Catches: a write's stderr was 'ignore', so a clipboard tool that refused

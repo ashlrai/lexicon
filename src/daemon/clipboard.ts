@@ -248,13 +248,21 @@ export function daemonStopExitCode(stop: ClipboardDaemonStop): number {
   return stop === 'SIGINT' ? 130 : stop === 'SIGTERM' ? 143 : 0;
 }
 
+/** The shortest poll interval the watching daemon uses; a smaller `intervalMs` is raised to it, with a warning. */
+export const MIN_DAEMON_INTERVAL_MS = 20;
+
 export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Promise<ClipboardDaemonStop> {
-  const intervalMs = Math.max(20, opts.intervalMs ?? 250);
   const dryRun = opts.dryRun ?? false;
   const quiet = opts.quiet ?? false;
   const cwd = opts.cwd ?? process.cwd();
   const out = opts.out ?? ((s: string) => void process.stdout.write(s));
   const err = opts.err ?? ((s: string) => void process.stderr.write(s));
+  const requestedMs = opts.intervalMs ?? 250;
+  const intervalMs = Math.max(MIN_DAEMON_INTERVAL_MS, requestedMs);
+  // Raised without a word, `--interval 5` looked like it polled every 5 ms.
+  if (requestedMs < MIN_DAEMON_INTERVAL_MS) {
+    err(`clipboard daemon: --interval ${requestedMs} is below the ${MIN_DAEMON_INTERVAL_MS} ms minimum; polling every ${MIN_DAEMON_INTERVAL_MS} ms\n`);
+  }
 
   const clipboard = await resolveClipboard(opts);
   const { read, write } = clipboard;
@@ -544,12 +552,24 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
   }
 
   if (opts.paste) {
+    const what =
+      notText === undefined
+        ? undefined
+        : notText.startsWith('clipboard holds binary')
+          ? 'clipboard holds binary data, not text'
+          : notText === 'no letters'
+            ? 'clipboard has no letters to correct'
+            : notText;
     if (platform !== 'darwin') {
-      err(`--paste is macOS-only (uses osascript); the text is on the clipboard, paste it with your usual shortcut (platform: ${platform})\n`);
+      // "the text is on the clipboard" is true only when the clipboard held text that was looked at.
+      err(
+        what === undefined
+          ? `--paste is macOS-only (uses osascript); the text is on the clipboard, paste it with your usual shortcut (platform: ${platform})\n`
+          : `--paste is macOS-only (uses osascript), and the clipboard holds no text to paste (${what}); it was left as it was (platform: ${platform})\n`,
+      );
     } else if (text.length === 0 && !tooLarge) {
       err('--paste skipped: clipboard is empty\n');
-    } else if (notText !== undefined) {
-      const what = notText.startsWith('clipboard holds binary') ? 'clipboard holds binary data, not text' : notText === 'no letters' ? 'clipboard has no letters to correct' : notText;
+    } else if (what !== undefined) {
       err(`--paste skipped: ${what}, so it was left as it was and nothing was pasted\n`);
     } else {
       const sendPaste =

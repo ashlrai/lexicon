@@ -617,6 +617,21 @@ describe('runSetup --yes', () => {
     expect(ok.code).toBe(0);
   });
 
+  // Catches: --phonetic with no company term to put it on was dropped without a word.
+  it('says --phonetic was not used when no company term is seeded', async () => {
+    const f = fakes({
+      exec: (file, args) => {
+        if (file === 'git' && args.join(' ') === 'config --global user.name') return 'Mason Wyatt';
+        throw new Error(`no ${file}`);
+      },
+    });
+    const { code, io } = await run({ yes: true, clients: 'none', phonetic: 'ASH-ler' }, f);
+    expect(code).toBe(0);
+    expect(io.out).toContain('--phonetic was not used: it is the hint for the company term, and no company term was seeded');
+    const seeded = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', phonetic: 'ASH-ler' }, fakes());
+    expect(seeded.io.out).not.toContain('--phonetic was not used');
+  });
+
   // Catches: a multi-line or over-cap --phonetic created the lexicon and
   // seeded the person term, then failed at the company write.
   it('refuses a multi-line or over-cap --phonetic up front, in a dry run too', async () => {

@@ -194,8 +194,13 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   // package scope), but a name passed explicitly (--person, --company, or
   // setup_lexicon's company/person) is always seeded: the user just typed it.
   const gated = before >= SEEDED_TERMS && !ctx.opts.reseed;
+  // --phonetic is the company term's hint: with no company term it went nowhere, without a word.
+  const phoneticUnused = (): void => {
+    if (ctx.opts.phonetic !== undefined) ctx.say(dim('   --phonetic was not used: it is the hint for the company term, and no company term was seeded (pass --company "Your Co" with it)'));
+  };
   if (gated && !ctx.opts.person && !ctx.opts.company) {
     ctx.say(dim(`   already has ${before} terms; skipping the seed (use --reseed to add more)`));
+    phoneticUnused();
     return;
   }
   if (gated) ctx.say(dim(`   already has ${before} terms; seeding only the names you passed`));
@@ -278,6 +283,7 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   }
   if (!company) {
     if (!gated && !companySkipped) ctx.say(dim('   no company term (add one later: lexicon add "Your Co" --category brand)'));
+    phoneticUnused();
     return;
   }
   const aliases = suggestAliases(company);

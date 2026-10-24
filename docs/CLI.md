@@ -325,7 +325,8 @@ Options:
                     after dictating)
   --paste           with --once: send Cmd+V afterwards (macOS only; needs
                     Accessibility permission)
-  --interval <ms>   poll interval in milliseconds (default: 250)
+  --interval <ms>   poll interval in milliseconds (at least 20; a smaller value
+                    is raised to 20, with a warning) (default: 250)
   --dry-run         report corrections without writing to the clipboard
   --quiet           do not print corrections
   --backend <name>  force a clipboard backend: pbcopy|wl|xclip|xsel|powershell
@@ -467,8 +468,9 @@ Arguments:
 
 Options:
   --from <sentence>  parse a natural-language correction, e.g. "it's Ashlr.AI
-                     not Ashler"
-  --project          write to the project lexicon instead of the global one
+                     not Ashler" (instead of <heard> <meant>, not with them)
+  --project          write to the project lexicon (default: the file that
+                     already holds the meant term, else the global one)
   --json             print the result as JSON
   -h, --help         display help for command
 ```
@@ -543,7 +545,11 @@ with the lexicon
 
 Options:
   --toggle               hotkey mode: first call starts recording in the
-                         background, second call stops and transcribes
+                         background, second call stops and transcribes. the
+                         first call records with its --device and --seconds, the
+                         second transcribes and delivers with its own --model,
+                         --lang, --translate, --no-prompt, --no-history, --copy
+                         and --paste, so give both calls the same flags
   --status               print "recording since <time>" (exit 0) or "idle" (exit
                          1)
   --list-devices         print the audio input devices ffmpeg can see

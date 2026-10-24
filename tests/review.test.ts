@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
-import { runHarvestInteractive, runReview, runEdit, editorCommand, isTerminalEditor, resolveEditorSpawn } from '../src/cli/cmd-review.js';
+import { reconcileReview, runHarvestInteractive, runReview, runEdit, editorCommand, isTerminalEditor, resolveEditorSpawn } from '../src/cli/cmd-review.js';
 import type { SpawnEditor } from '../src/cli/cmd-review.js';
 import { runAdd, runHarvest, runRemove } from '../src/cli/commands.js';
 import { PromptClosedError, askKey, splitList } from '../src/cli/prompt.js';
@@ -594,12 +594,38 @@ describe('review', () => {
     expect(io.out).toContain(`kept 3, removed 1, edited 1. Wrote ${globalPath}`);
   });
 
+  // Catches: a file changed during the review that could not be re-read (a
+  // half-done hand edit) was overwritten with the reviewed version, losing
+  // what the other writer had put there.
+  it('leaves a file changed during the review that cannot be re-read as it is, and exits 1', async () => {
+    await seedGlobal(terms);
+    const broken = 'version: 1\nterms:\n  - canonical: [unclosed\n';
+    const p = withHook(scripted(['d', 'k', 'k', 'k']), 1, () => fs.writeFile(globalPath, broken, 'utf8'));
+    const io = makeIO();
+    expect(await runReview({ cwd: tmp, globalPath }, io, p)).toBe(1);
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(broken);
+    expect(io.err).toMatch(/changed during review and cannot be read \(.+\), so nothing was written and this review's 1 removal and 0 edits were not saved; fix the file/);
+    expect(io.out).not.toContain('Wrote');
+  });
+
   it('does not report a merge when nothing changed on disk', async () => {
     await seedGlobal(terms);
     const io = makeIO();
     expect(await runReview({ cwd: tmp, globalPath }, io, scripted(['d', 'k', 'k', 'k']))).toBe(0);
     expect(io.out).not.toContain('made elsewhere');
     expect((await readYaml(globalPath)).terms).toHaveLength(3);
+  });
+
+  // Catches: reconcileReview keyed canonicals by trim and lowercase only, so a
+  // canonical written in NFD on disk was a different term from the session's
+  // NFC one and an edited term came out twice.
+  it('reconcileReview matches a canonical on disk in another Unicode normal form', () => {
+    const session: Term = { canonical: 'Caf\u00e9', aliases: ['kafay'] };
+    const disk: Term = { canonical: 'Cafe\u0301', aliases: [], hits: 3 };
+    const snapshot = new Map([['caf\u00e9', JSON.stringify(session)]]);
+    const merged = reconcileReview([session], snapshot, [disk], new Set([session]), new Set());
+    expect(merged.terms).toHaveLength(1);
+    expect(merged.terms[0]).toMatchObject({ canonical: 'Caf\u00e9', aliases: ['kafay'], hits: 3 });
   });
 
   it('--never-hit and --category filter what is walked; q stops without writing', async () => {

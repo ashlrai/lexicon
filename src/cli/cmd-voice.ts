@@ -57,7 +57,7 @@ export function registerVoiceCommands(program: Command, io: IO): void {
   program
     .command('voice')
     .description('dictate locally: record the microphone, transcribe with whisper.cpp, correct with the lexicon')
-    .option('--toggle', 'hotkey mode: first call starts recording in the background, second call stops and transcribes')
+    .option('--toggle', 'hotkey mode: first call starts recording in the background, second call stops and transcribes. the first call records with its --device and --seconds, the second transcribes and delivers with its own --model, --lang, --translate, --no-prompt, --no-history, --copy and --paste, so give both calls the same flags')
     .option('--status', 'print "recording since <time>" (exit 0) or "idle" (exit 1)')
     .option('--list-devices', 'print the audio input devices ffmpeg can see')
     .option('--seconds <n>', 'stop recording after n seconds instead of waiting for Enter (with --toggle, at most 600)', positiveNumber)

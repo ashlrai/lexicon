@@ -253,6 +253,21 @@ describe('a trust.json that does not parse', () => {
     expect(JSON.parse(json.out)).toMatchObject({ ok: false, action: 'untrust', path: projectPath });
     expect(await fs.readFile(registryPath, 'utf8')).toBe(text);
   });
+
+  // Catches: trust --list read a broken registry as empty and said "no trusted
+  // project lexicons (run: lexicon trust)", which lexicon trust then refused.
+  it('lexicon trust --list names a registry it cannot read and exits 1', async () => {
+    process.env.LEXICON_PATH = globalPath;
+    await writeRegistry('{ "version": 1, "trusted": {');
+    const registryPath = getTrustPath({ globalPath });
+    const io = makeIO();
+    expect(await runTrust(undefined, { cwd: path.dirname(projectPath), list: true }, io)).toBe(1);
+    expect(io.out).not.toContain('no trusted project lexicons');
+    expect(io.err).toContain(`the trust registry at ${registryPath} is not valid JSON`);
+    const json = makeIO();
+    expect(await runTrust(undefined, { cwd: path.dirname(projectPath), list: true, json: true }, json)).toBe(1);
+    expect(JSON.parse(json.out)).toMatchObject({ ok: false, registry: registryPath, nextStep: expect.stringContaining('move it aside') });
+  });
 });
 
 describe('untrustProject', () => {
