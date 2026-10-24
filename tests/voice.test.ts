@@ -28,7 +28,7 @@ import {
   parsePulseSources,
   pickDevice,
 } from '../src/voice/devices.js';
-import { HISTORY_MAX_LINES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
+import { HISTORY_MAX_BYTES, HISTORY_MAX_LINES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
 import { expandTilde, modelFileName, modelUrl, resolveModel } from '../src/voice/models.js';
 import type { Downloader } from '../src/voice/models.js';
 import { installHint, locateWhisperCli, makeProcessDescribe, makeProcessList } from '../src/voice/process.js';
@@ -1530,6 +1530,43 @@ describe('history', () => {
     expect(text.endsWith('\n')).toBe(true);
     expect(text.split('\n').filter(Boolean)).toHaveLength(5);
     expect(HISTORY_MAX_LINES).toBe(1000);
+  });
+
+  const entry = (i: number, raw = `r${i}`) => ({ at: `t${i}`, raw, output: `o${i}`, model: 'base.en', ms: { record: 0, transcribe: 0, normalize: 0 } });
+
+  // Catches: appendHistory read, added a line and wrote back with no lock, so two dictations finishing together lost one entry.
+  it('keeps every entry when several dictations append at once', async () => {
+    const h = await harness();
+    await Promise.all(Array.from({ length: 12 }, (_, i) => appendHistory(h.globalPath, entry(i))));
+    const kept = (await readHistory(h.globalPath)).map((e) => e.at).sort();
+    expect(kept).toEqual(Array.from({ length: 12 }, (_, i) => `t${i}`).sort());
+    // No lock file is left behind.
+    expect((await fs.readdir(voiceDir(h.globalPath))).filter((n) => n.includes('lock'))).toEqual([]);
+  });
+
+  // Catches: a truncated last line (a crash or a full disk mid-write) and foreign lines were carried forward forever, and readHistory returned JSON that was not an entry.
+  it('drops truncated and foreign lines on the next append, and reads only entries', async () => {
+    const h = await harness();
+    await ensureVoiceDir(h.globalPath);
+    const good = JSON.stringify(entry(0));
+    await fs.writeFile(historyPath(h.globalPath), `${good}\nnull\n42\n[1]\n{"at":"x"}\nnot json\n${good.slice(0, 20)}`);
+    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t0']);
+    await appendHistory(h.globalPath, entry(1));
+    const text = await fs.readFile(historyPath(h.globalPath), 'utf8');
+    expect(text).toBe(`${good}\n${JSON.stringify(entry(1))}\n`);
+  });
+
+  // Catches: only the line count was capped, so long dictations grew the file (read and rewritten on every append) without bound.
+  it('caps the file at HISTORY_MAX_BYTES, oldest first, always keeping the newest entry', async () => {
+    const h = await harness();
+    expect(HISTORY_MAX_BYTES).toBe(4 * 1024 * 1024);
+    const big = 'x'.repeat(1024 * 1024);
+    for (let i = 0; i < 6; i += 1) await appendHistory(h.globalPath, entry(i, big));
+    const text = await fs.readFile(historyPath(h.globalPath), 'utf8');
+    expect(Buffer.byteLength(text)).toBeLessThanOrEqual(HISTORY_MAX_BYTES);
+    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t3', 't4', 't5']);
+    await appendHistory(h.globalPath, entry(9, 'y'.repeat(HISTORY_MAX_BYTES)));
+    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t9']);
   });
 });
 
