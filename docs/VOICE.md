@@ -70,7 +70,9 @@ checkout; `LEXICON_FFMPEG_BIN` does the same for ffmpeg.
 ### First-run model download
 
 `--model` defaults to `base.en`. A model name maps to `ggml-<name>.bin` under
-`~/.config/lexicon/models/` (override with `LEXICON_WHISPER_MODELS`); a repo checkout
+`~/.config/lexicon/models/` (override with `LEXICON_WHISPER_MODELS`, an absolute directory
+or one starting with `~/`; a relative value is refused, since it would name a different
+directory in every working directory); a repo checkout
 also looks in `bench/audio/models/` so the benchmark's download is reused. A missing
 named model is fetched from
 `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-<name>.bin` with a

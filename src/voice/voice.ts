@@ -37,7 +37,7 @@ import { ExecError, detectClipboardBackend } from '../daemon/clipboard-backends.
 import type { ClipboardExec } from '../daemon/clipboard-backends.js';
 import { formatDeviceList, listAudioDevices } from './devices.js';
 import { appendHistory } from './history.js';
-import { DEFAULT_MODEL, isModelPath, resolveModel } from './models.js';
+import { DEFAULT_MODEL, isModelPath, modelsDir, resolveModel } from './models.js';
 import type { Downloader } from './models.js';
 import {
   defaultExec,
@@ -590,7 +590,16 @@ const DEVICE_HINT = 'run `lexicon voice --list-devices` and pass one of them wit
  */
 function refuseMissingModelPath(opts: VoiceOptions, io: VoiceIO, r: Resolved): number | undefined {
   const spec = opts.model ?? DEFAULT_MODEL;
-  if (!isModelPath(spec)) return undefined;
+  if (!isModelPath(spec)) {
+    // A named model lives in the models directory: a LEXICON_WHISPER_MODELS
+    // that cannot be used is said before anything is recorded.
+    try {
+      modelsDir(r.globalPath, r.env);
+    } catch (e) {
+      return refuseWith(r, io, message(e), 'set LEXICON_WHISPER_MODELS to an absolute directory (or ~/...), or unset it to use the default');
+    }
+    return undefined;
+  }
   const model = resolveModel(spec, { globalPath: r.globalPath, env: r.env });
   if (model.present) return undefined;
   const error = `whisper model not found: ${model.path}`;

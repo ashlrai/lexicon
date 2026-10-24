@@ -62728,7 +62728,15 @@ function modelUrl(name) {
   return `${MODEL_BASE_URL}/${modelFileName(name)}`;
 }
 function modelsDir(globalPath, env = process.env) {
-  return env.LEXICON_WHISPER_MODELS || import_node_path19.default.join(import_node_path19.default.dirname(globalPath), "models");
+  const raw = env.LEXICON_WHISPER_MODELS;
+  if (!raw) return import_node_path19.default.join(import_node_path19.default.dirname(globalPath), "models");
+  const dir = expandTilde(raw);
+  if (!import_node_path19.default.isAbsolute(dir)) {
+    throw new Error(
+      `LEXICON_WHISPER_MODELS must be an absolute path or start with ~/ (it is ${JSON.stringify(raw)}); a relative one would mean a different directory in every working directory`
+    );
+  }
+  return dir;
 }
 function expandTilde(spec, homeArg) {
   if (spec !== "~" && !spec.startsWith("~/") && !(process.platform === "win32" && spec.startsWith("~\\"))) return spec;
@@ -64247,8 +64255,15 @@ async function runDoctorReport(opts, deps = {}) {
   const ffmpegBin = ffmpegOverride ? (0, import_node_fs23.existsSync)(ffmpegOverride) ? ffmpegOverride : void 0 : locateToolSync(["ffmpeg"], env, platform);
   if (ffmpegBin) push2("ok", `ffmpeg found: ${ffmpegBin}`);
   else push2("warn", `ffmpeg not found (needed by lexicon voice; ${installHint(platform, { ffmpeg: true, whisper: false })})`);
-  const model = resolveModel(DEFAULT_MODEL, { globalPath: paths.global, env });
-  push2("info", model.present ? `whisper model ${DEFAULT_MODEL} present: ${model.path}` : `whisper model ${DEFAULT_MODEL} absent (lexicon voice downloads it to ${model.path} on first run)`);
+  let model;
+  try {
+    model = resolveModel(DEFAULT_MODEL, { globalPath: paths.global, env });
+  } catch (e) {
+    push2("warn", `${e instanceof Error ? e.message : String(e)} (lexicon voice refuses to run with it)`);
+  }
+  if (model) {
+    push2("info", model.present ? `whisper model ${DEFAULT_MODEL} present: ${model.path}` : `whisper model ${DEFAULT_MODEL} absent (lexicon voice downloads it to ${model.path} on first run)`);
+  }
   if (platform === "darwin") {
     push2("info", "lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)");
   }

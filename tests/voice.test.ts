@@ -29,7 +29,7 @@ import {
   pickDevice,
 } from '../src/voice/devices.js';
 import { HISTORY_MAX_BYTES, HISTORY_MAX_LINES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
-import { GGML_MAGIC, STALE_PART_MS, defaultDownloader, expandTilde, modelFileName, modelUrl, resolveModel } from '../src/voice/models.js';
+import { GGML_MAGIC, STALE_PART_MS, defaultDownloader, expandTilde, modelFileName, modelUrl, modelsDir, resolveModel } from '../src/voice/models.js';
 import type { Downloader } from '../src/voice/models.js';
 import { installHint, locateWhisperCli, makeProcessDescribe, makeProcessList } from '../src/voice/process.js';
 import type { ChildHandle, ExecResult, SpawnOptions, VoiceExec, VoiceSpawn } from '../src/voice/process.js';
@@ -1378,6 +1378,22 @@ describe('lexicon voice (foreground)', () => {
     h.deps.waitForStop = async () => 'enter';
     await runVoice(h.opts, h.io, h.deps);
     expect(whisperCall(h)!.args).toEqual(expect.arrayContaining(['-m', path.join(alt, 'ggml-base.en.bin')]));
+  });
+
+  // Catches: LEXICON_WHISPER_MODELS was used as is: `~/models` named a
+  // directory called `~` under the cwd, and `models` a different directory in
+  // every working directory.
+  it('LEXICON_WHISPER_MODELS expands ~/ and refuses a relative directory before recording', async () => {
+    expect(modelsDir(path.join('/cfg', 'lexicon.yaml'), { LEXICON_WHISPER_MODELS: '~/lexicon-models' })).toBe(path.join(os.homedir(), 'lexicon-models'));
+    expect(() => modelsDir(path.join('/cfg', 'lexicon.yaml'), { LEXICON_WHISPER_MODELS: 'models' })).toThrow(
+      'LEXICON_WHISPER_MODELS must be an absolute path or start with ~/ (it is "models")',
+    );
+    const h = await harness();
+    h.deps.env = { PATH: h.binDir, LEXICON_WHISPER_MODELS: 'models' };
+    h.deps.waitForStop = async () => 'enter';
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.spawnCalls).toHaveLength(0);
+    expect(JSON.parse(h.out[0])).toMatchObject({ ok: false, nextStep: expect.stringContaining('set LEXICON_WHISPER_MODELS to an absolute directory') });
   });
 
   it('--list-devices prints the avfoundation audio devices', async () => {

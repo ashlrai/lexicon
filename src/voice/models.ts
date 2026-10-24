@@ -41,9 +41,25 @@ export function modelUrl(name: string): string {
   return `${MODEL_BASE_URL}/${modelFileName(name)}`;
 }
 
-/** The directory new models are downloaded into. */
+/**
+ * The directory new models are downloaded into: `LEXICON_WHISPER_MODELS`
+ * with a leading `~/` expanded, else `<dirname(globalPath)>/models`. A
+ * relative value throws: it was used as is, so `~/models` named a directory
+ * called `~` under whatever the current directory was, and `models` a
+ * different directory from every working directory `lexicon voice` ran in
+ * (a model downloaded again and again, and `lexicon doctor` looking in yet
+ * another place).
+ */
 export function modelsDir(globalPath: string, env: NodeJS.ProcessEnv = process.env): string {
-  return env.LEXICON_WHISPER_MODELS || path.join(path.dirname(globalPath), 'models');
+  const raw = env.LEXICON_WHISPER_MODELS;
+  if (!raw) return path.join(path.dirname(globalPath), 'models');
+  const dir = expandTilde(raw);
+  if (!path.isAbsolute(dir)) {
+    throw new Error(
+      `LEXICON_WHISPER_MODELS must be an absolute path or start with ~/ (it is ${JSON.stringify(raw)}); a relative one would mean a different directory in every working directory`,
+    );
+  }
+  return dir;
 }
 
 export interface ResolveModelOptions {
