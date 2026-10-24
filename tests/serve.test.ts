@@ -2432,9 +2432,13 @@ describe('lexicon serve (CLI)', () => {
         const file = files[platform];
         await fs.mkdir(path.dirname(file), { recursive: true });
         await fs.writeFile(file, 'previous service file\n');
+        // writeFileAtomic writes beside the realpath of the target, and on
+        // macOS (/var -> /private/var) and Windows (8.3 short names in TEMP)
+        // that differs from the path as given, so match both spellings.
+        const dirs = [path.dirname(file), await fs.realpath(path.dirname(file))];
         const realWrite = fs.writeFile.bind(fs);
         const spy = vi.spyOn(fs, 'writeFile').mockImplementation(async (target, data, options) => {
-          if (!String(target).startsWith(path.dirname(file))) return realWrite(target, data, options);
+          if (!dirs.some((d) => String(target).startsWith(d))) return realWrite(target, data, options);
           await realWrite(target, String(data).slice(0, 5), options);
           throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
         });
