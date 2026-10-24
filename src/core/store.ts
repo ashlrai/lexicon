@@ -1238,9 +1238,26 @@ export function getHitsPath(opts: StoreOptions = {}): string {
   return path.join(path.dirname(resolvePaths(opts).global), HITS_FILE_NAME);
 }
 
-/** The key a canonical is counted under. Matches `sameCanonical`. */
+/**
+ * The key a canonical is counted under. Matches `sameCanonical`: trimmed,
+ * lowercased and in NFC. It was lowercased only, so `Café` written
+ * precomposed and with a combining accent (one term to every other part of
+ * the store) were counted under two keys, and a term whose file spelling
+ * changed form lost its count. `hits.json` keys written before are read
+ * through the same fold (see validCounts), so they stay valid.
+ */
 function hitKey(canonical: string): string {
-  return canonical.trim().toLowerCase();
+  return foldKey(canonical);
+}
+
+/**
+ * The form two spellings are compared in across the store: trimmed,
+ * lowercased and in NFC, so `Café` (precomposed) and `Cafe` plus U+0301 are
+ * one canonical or one alias. For callers outside this module that look a
+ * term or an alias up the way the store does (MCP tools, `lexicon doctor`).
+ */
+export function spellingKey(spelling: string): string {
+  return foldKey(spelling);
 }
 
 /** Absolute path with symlinks resolved when the file exists (macOS /var vs /private/var). */
@@ -1284,10 +1301,18 @@ function isPlainObject(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value);
 }
 
+/**
+ * The valid counts of one `hits.json` entry, keyed by `hitKey`. A key written
+ * before hitKey folded to NFC (a canonical typed with a combining accent) is
+ * folded the same way, and two keys that fold together are added up, so an
+ * old file keeps its counts; the next write stores the folded keys.
+ */
 function validCounts(counts: Record<string, unknown>): Record<string, number> {
   const entry: Record<string, number> = {};
   for (const [canonical, n] of Object.entries(counts)) {
-    if (typeof n === 'number' && Number.isInteger(n) && n > 0) entry[canonical] = n;
+    if (typeof n !== 'number' || !Number.isInteger(n) || n <= 0) continue;
+    const key = hitKey(canonical);
+    entry[key] = (entry[key] ?? 0) + n;
   }
   return entry;
 }

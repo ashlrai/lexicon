@@ -55036,7 +55036,10 @@ function getHitsPath(opts = {}) {
   return import_node_path5.default.join(import_node_path5.default.dirname(resolvePaths(opts).global), HITS_FILE_NAME);
 }
 function hitKey(canonical) {
-  return canonical.trim().toLowerCase();
+  return foldKey(canonical);
+}
+function spellingKey(spelling) {
+  return foldKey(spelling);
 }
 async function canonicalPath2(filePath) {
   const resolved2 = import_node_path5.default.resolve(filePath);
@@ -55073,7 +55076,9 @@ function isPlainObject3(value) {
 function validCounts(counts) {
   const entry = {};
   for (const [canonical, n] of Object.entries(counts)) {
-    if (typeof n === "number" && Number.isInteger(n) && n > 0) entry[canonical] = n;
+    if (typeof n !== "number" || !Number.isInteger(n) || n <= 0) continue;
+    const key = hitKey(canonical);
+    entry[key] = (entry[key] ?? 0) + n;
   }
   return entry;
 }
@@ -61350,13 +61355,13 @@ function normalizeCut(text, max) {
   return cut;
 }
 function holds(terms, canonical) {
-  const key = canonical.trim().toLowerCase();
-  return (terms ?? []).some((t) => t.canonical.trim().toLowerCase() === key);
+  const key = spellingKey(canonical);
+  return (terms ?? []).some((t) => spellingKey(t.canonical) === key);
 }
 function holdsAlias(terms, canonical, alias) {
-  const key = canonical.trim().toLowerCase();
-  const drop = alias.trim().toLowerCase();
-  return (terms ?? []).some((t) => t.canonical.trim().toLowerCase() === key && t.aliases.some((a) => a.trim().toLowerCase() === drop));
+  const key = spellingKey(canonical);
+  const drop = spellingKey(alias);
+  return (terms ?? []).some((t) => spellingKey(t.canonical) === key && t.aliases.some((a) => spellingKey(a) === drop));
 }
 var registerTermTools = (server, ctx) => {
   const { load } = ctx;
@@ -61898,9 +61903,9 @@ var registerHarvestTools = (server, ctx) => {
     const alias = suggestion.alias?.trim();
     let target = scope ?? suggestion.scope;
     if (kind === "alias" || kind === "never") {
-      const key = canonical.trim().toLowerCase();
+      const key = spellingKey(canonical);
       const loaded = await current();
-      const existing = loaded.merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
+      const existing = loaded.merged.terms.find((t) => spellingKey(t.canonical) === key);
       if (!existing) {
         throw new Error(
           `no term "${canonical}" in the lexicon, so there is nothing to add this ${kind === "alias" ? "alias" : "never word"} to (it may have been removed since suggest_terms ran); nothing was written. Call suggest_terms again, or add_term if the user wants the term created.`
@@ -61997,8 +62002,8 @@ var registerHarvestTools = (server, ctx) => {
     };
     for (const [index, s] of list.entries()) {
       try {
-        const key = s.canonical.trim().toLowerCase();
-        const sameTerm = (t) => t.canonical.trim().toLowerCase() === key;
+        const key = spellingKey(s.canonical);
+        const sameTerm = (t) => spellingKey(t.canonical) === key;
         if ((s.kind === "alias" || s.kind === "never") && run.some((b) => sameTerm(b.p.term)) && !(await current()).merged.terms.some(sameTerm)) {
           await flush();
         }
@@ -64005,7 +64010,7 @@ async function runDoctorReport(opts, deps = {}) {
     for (const term of f.lexicon.terms) {
       const entry = { term, scope: f.scope };
       allTerms.push(entry);
-      const key = term.canonical.trim().toLowerCase();
+      const key = spellingKey(term.canonical);
       const list = canonicalOwners.get(key) ?? [];
       list.push(entry);
       canonicalOwners.set(key, list);
@@ -64025,13 +64030,13 @@ async function runDoctorReport(opts, deps = {}) {
   for (const { term } of allTerms) {
     const never2 = new Set((term.never ?? []).map(fold2));
     for (const alias of term.aliases) {
-      const key = alias.trim().toLowerCase();
+      const key = spellingKey(alias);
       if (!key) continue;
       if (never2.has(fold2(alias))) {
         push2("warn", `alias "${alias}" of "${term.canonical}" is also in its never list, so it never fires (remove one of them)`);
       }
       const other = canonicalOwners.get(key);
-      if (other && !other.some((o) => o.term === term) && key !== term.canonical.trim().toLowerCase()) {
+      if (other && !other.some((o) => o.term === term) && key !== spellingKey(term.canonical)) {
         push2("fail", `alias "${alias}" of "${term.canonical}" equals the canonical of "${other[0].term.canonical}" (conflict)`);
       }
       if (COMMON_WORDS.has(key)) {
@@ -64043,7 +64048,7 @@ async function runDoctorReport(opts, deps = {}) {
     }
   }
   for (const [alias, owners] of aliasOwners) {
-    const distinct = new Set(owners.map((t) => t.canonical.toLowerCase()));
+    const distinct = new Set(owners.map((t) => spellingKey(t.canonical)));
     if (distinct.size > 1) {
       push2("warn", `alias "${alias}" belongs to several terms: ${[...distinct].join(", ")} (ambiguous)`);
     }

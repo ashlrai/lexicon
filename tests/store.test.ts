@@ -947,6 +947,24 @@ describe('removeAlias', () => {
 });
 
 describe('recordHits', () => {
+  // Catches: hitKey lowercased without NFC, so a canonical written precomposed
+  // and with a combining accent (one term everywhere else) was counted under
+  // two keys, and a hit recorded for one form never reached the other.
+  it('counts a canonical under one key whatever its Unicode form, and keeps old non-NFC keys', async () => {
+    const nfc = 'Caf\u00e9';
+    const nfd = 'Cafe\u0301';
+    await addTerm({ canonical: nfc, aliases: [] }, { cwd: tmp, globalPath });
+    const hitsPath = getHitsPath({ globalPath });
+    // A hits.json written before the fold: the key as the old hitKey made it from an NFD canonical.
+    await fs.writeFile(hitsPath, JSON.stringify({ version: 1, projects: {}, global: { [nfd.toLowerCase()]: 2 } }));
+    expect(await readGlobalHits({ globalPath })).toEqual({ ['caf\u00e9']: 2 });
+    expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, nfc)?.hits).toBe(2);
+    await recordHits([nfd, nfc], { cwd: tmp, globalPath });
+    const written = JSON.parse(await fs.readFile(hitsPath, 'utf8')) as { global: Record<string, number> };
+    expect(written.global).toEqual({ ['caf\u00e9']: 4 });
+    expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, nfd)?.hits).toBe(4);
+  });
+
   /**
    * A repo with a trusted project lexicon holding `P`, and a global one
    * holding `G`. Returns the project path and its bytes before anything ran.

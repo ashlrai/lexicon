@@ -42,6 +42,7 @@ import {
   TOP_TERMS,
   DEFAULT_MIN_CONFIDENCE,
   INVENTED_BOUNDARY_CONFIDENCE,
+  spellingKey,
 } from '../../core/index.js';
 import type { NormalizeIncomplete, NormalizeResult, Term, TermScope } from '../../core/index.js';
 import { NOT_BLANK_RE, filePathsInUse, guarded, log, mcpWriteOpts, nonBlank, skippedProjectFields, textResult, untrustedWriteFields } from '../shared.js';
@@ -92,17 +93,17 @@ export function normalizeCut(text: string, max: number): number {
   return cut;
 }
 
-/** Case-insensitive canonical lookup, matching how the store compares canonicals. */
+/** Canonical lookup, case-insensitive and in NFC, matching how the store compares canonicals. */
 function holds(terms: readonly Term[] | undefined, canonical: string): boolean {
-  const key = canonical.trim().toLowerCase();
-  return (terms ?? []).some((t) => t.canonical.trim().toLowerCase() === key);
+  const key = spellingKey(canonical);
+  return (terms ?? []).some((t) => spellingKey(t.canonical) === key);
 }
 
-/** Whether `terms` has `canonical` with `alias` among its aliases (both case-insensitive). */
+/** Whether `terms` has `canonical` with `alias` among its aliases (both case-insensitive and in NFC, as the store compares them). */
 function holdsAlias(terms: readonly Term[] | undefined, canonical: string, alias: string): boolean {
-  const key = canonical.trim().toLowerCase();
-  const drop = alias.trim().toLowerCase();
-  return (terms ?? []).some((t) => t.canonical.trim().toLowerCase() === key && t.aliases.some((a) => a.trim().toLowerCase() === drop));
+  const key = spellingKey(canonical);
+  const drop = spellingKey(alias);
+  return (terms ?? []).some((t) => spellingKey(t.canonical) === key && t.aliases.some((a) => spellingKey(a) === drop));
 }
 
 export const registerTermTools: ToolRegistrar = (server, ctx) => {

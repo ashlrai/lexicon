@@ -2051,3 +2051,39 @@ describe('limit maxima', () => {
     }
   });
 });
+
+// Catches: the MCP tools looked terms up lowercased only, while the store
+// compares spellings in NFC too, so a canonical passed with a combining
+// accent (as macOS writes it) was "not found" where the store would find it.
+describe('canonicals given in another Unicode form', () => {
+  const NFC = 'Café';
+  const NFD = 'Café';
+
+  it('remove_term names the file that holds the term when the canonical is given decomposed', async () => {
+    await trustedProjectFile();
+    expect((await call('add_term', { canonical: NFC, aliases: ['kafay'], scope: 'project' })).isError).toBe(false);
+    const miss = JSON.parse((await call('remove_term', { canonical: NFD, scope: 'global' })).text) as { removed: boolean; foundIn?: string };
+    expect(miss.removed).toBe(false);
+    expect(miss.foundIn).toBe('project');
+  });
+
+  it('apply_suggestion adds an alias to a term whose canonical is given decomposed', async () => {
+    expect((await call('add_term', { canonical: NFC, aliases: ['kafay'] })).isError).toBe(false);
+    const applied = await call('apply_suggestion', { suggestion: { kind: 'alias', canonical: NFD, alias: 'kaffay' } });
+    expect(applied.isError, applied.text).toBe(false);
+    const normalized = JSON.parse((await call('normalize_transcript', { text: 'meet at kaffay' })).text) as { output: string };
+    expect(normalized.output).toBe(`meet at ${NFC}`);
+  });
+
+  it('apply_suggestions sees a term an earlier suggestion of the same call adds, in either form', async () => {
+    const res = await call('apply_suggestion', {
+      suggestions: [
+        { kind: 'term', canonical: NFC, aliases: ['kafay'] },
+        { kind: 'alias', canonical: NFD, alias: 'kaffay' },
+      ],
+    });
+    expect(res.isError, res.text).toBe(false);
+    const normalized = JSON.parse((await call('normalize_transcript', { text: 'meet at kaffay' })).text) as { output: string };
+    expect(normalized.output).toBe(`meet at ${NFC}`);
+  });
+});

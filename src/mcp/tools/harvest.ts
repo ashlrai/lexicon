@@ -19,6 +19,7 @@ import {
   loadVoiceHistory,
   removeTerm,
   resolvePaths,
+  spellingKey,
   suggestAliases,
   suggestTerms,
   termHolders,
@@ -265,9 +266,9 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
       // suggest_terms ran, or only in a skipped project file) addTerm
       // used to create a new term holding just this word, reported as
       // "saved": a term the user never asked for.
-      const key = canonical.trim().toLowerCase();
+      const key = spellingKey(canonical);
       const loaded = await current();
-      const existing = loaded.merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
+      const existing = loaded.merged.terms.find((t) => spellingKey(t.canonical) === key);
       if (!existing) {
         throw new Error(
           `no term "${canonical}" in the lexicon, so there is nothing to add this ${kind === 'alias' ? 'alias' : 'never word'} to (it may have been removed since suggest_terms ran); ` +
@@ -408,8 +409,8 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
       try {
         // An alias or never word for a term only an earlier suggestion of
         // this call adds must see that term, so write the run first.
-        const key = s.canonical.trim().toLowerCase();
-        const sameTerm = (t: Term): boolean => t.canonical.trim().toLowerCase() === key;
+        const key = spellingKey(s.canonical);
+        const sameTerm = (t: Term): boolean => spellingKey(t.canonical) === key;
         if ((s.kind === 'alias' || s.kind === 'never') && run.some((b) => sameTerm(b.p.term)) && !(await current()).merged.terms.some(sameTerm)) {
           await flush();
         }

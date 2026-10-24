@@ -18,7 +18,7 @@ import { readDoctorConfigJson, readDoctorConfigText } from './doctor-config-read
 import { errorMessage } from '../util/errors.js';
 import { checkPhantomPresence } from './phantom-presence.js';
 import { packageVersion } from '../util/package.js';
-import { getTrustPath, isTrusted, readLexiconFile, resolvePaths } from '../core/index.js';
+import { getTrustPath, isTrusted, readLexiconFile, resolvePaths, spellingKey } from '../core/index.js';
 import { configPathFor } from './cmd-install.js';
 import { findGitRoot } from './setup/detect.js';
 import { cliCommand } from '../util/cli-hint.js';
@@ -677,7 +677,8 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
     for (const term of f.lexicon.terms) {
       const entry = { term, scope: f.scope };
       allTerms.push(entry);
-      const key = term.canonical.trim().toLowerCase();
+      // Folded as the store compares canonicals (NFC too): `Café` written two ways is one term defined twice.
+      const key = spellingKey(term.canonical);
       const list = canonicalOwners.get(key) ?? [];
       list.push(entry);
       canonicalOwners.set(key, list);
@@ -701,13 +702,13 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
     // also one of them is dead weight that looks like it works.
     const never = new Set((term.never ?? []).map(fold));
     for (const alias of term.aliases) {
-      const key = alias.trim().toLowerCase();
+      const key = spellingKey(alias);
       if (!key) continue;
       if (never.has(fold(alias))) {
         push('warn', `alias "${alias}" of "${term.canonical}" is also in its never list, so it never fires (remove one of them)`);
       }
       const other = canonicalOwners.get(key);
-      if (other && !other.some((o) => o.term === term) && key !== term.canonical.trim().toLowerCase()) {
+      if (other && !other.some((o) => o.term === term) && key !== spellingKey(term.canonical)) {
         push('fail', `alias "${alias}" of "${term.canonical}" equals the canonical of "${other[0].term.canonical}" (conflict)`);
       }
       if (COMMON_WORDS.has(key)) {
@@ -719,7 +720,7 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
     }
   }
   for (const [alias, owners] of aliasOwners) {
-    const distinct = new Set(owners.map((t) => t.canonical.toLowerCase()));
+    const distinct = new Set(owners.map((t) => spellingKey(t.canonical)));
     if (distinct.size > 1) {
       push('warn', `alias "${alias}" belongs to several terms: ${[...distinct].join(', ')} (ambiguous)`);
     }

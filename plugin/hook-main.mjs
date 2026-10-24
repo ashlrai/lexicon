@@ -20254,7 +20254,7 @@ function getHitsPath(opts = {}) {
   return import_node_path5.default.join(import_node_path5.default.dirname(resolvePaths(opts).global), HITS_FILE_NAME);
 }
 function hitKey(canonical) {
-  return canonical.trim().toLowerCase();
+  return foldKey(canonical);
 }
 async function canonicalPath2(filePath) {
   const resolved = import_node_path5.default.resolve(filePath);
@@ -20291,7 +20291,9 @@ function isPlainObject2(value) {
 function validCounts(counts) {
   const entry = {};
   for (const [canonical, n] of Object.entries(counts)) {
-    if (typeof n === "number" && Number.isInteger(n) && n > 0) entry[canonical] = n;
+    if (typeof n !== "number" || !Number.isInteger(n) || n <= 0) continue;
+    const key = hitKey(canonical);
+    entry[key] = (entry[key] ?? 0) + n;
   }
   return entry;
 }
