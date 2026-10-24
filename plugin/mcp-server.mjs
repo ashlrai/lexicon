@@ -60229,6 +60229,9 @@ function csvTextField(value) {
 function xmlEscape(value) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
+function listItem(value) {
+  return value.includes(",") || value.trim().startsWith('"') ? `"${value.replace(/"/g, '""')}"` : value;
+}
 function joinAliasList(aliases) {
   return aliases.map((a) => a.includes(",") || a.trim().startsWith('"') ? `"${a.replace(/"/g, '""')}"` : a).join(", ");
 }
@@ -60564,7 +60567,7 @@ function exportWhisperPrompt(lexicon, opts = {}, sink) {
   const dropped = [];
   let used = 0;
   for (const name of names) {
-    const cost = estimateWhisperTokens(kept.length > 0 ? `, ${name}` : name);
+    const cost = estimateWhisperTokens(kept.length > 0 ? `, ${listItem(name)}` : listItem(name));
     if (dropped.length === 0 && used + cost <= WHISPER_PROMPT_TOKEN_BUDGET) {
       kept.push(name);
       used += cost;
@@ -60588,7 +60591,7 @@ function exportWhisperPrompt(lexicon, opts = {}, sink) {
     );
   }
   if (sink) sink.names = kept.length;
-  return kept.join(", ");
+  return kept.map(listItem).join(", ");
 }
 
 // src/core/exporters/openai.ts

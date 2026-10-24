@@ -149,6 +149,16 @@ export function xmlEscape(value: string): string {
 }
 
 /**
+ * One item of a `, `-separated list that has no quoting rule of its own (the
+ * whisper-prompt and openai lines): an item holding a comma, or starting with
+ * a double quote, wrapped in double quotes with inner quotes doubled, CSV
+ * style, so it reads as one item; any other item as is.
+ */
+export function listItem(value: string): string {
+  return value.includes(',') || value.trim().startsWith('"') ? `"${value.replace(/"/g, '""')}"` : value;
+}
+
+/**
  * Join aliases into a `, `-separated list that the markdown importer can split
  * back. An alias holding a comma (or starting with a double quote) is wrapped
  * in double quotes with inner quotes doubled, CSV style; every other alias is
