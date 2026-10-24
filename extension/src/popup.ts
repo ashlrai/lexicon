@@ -2,7 +2,7 @@
 /** Popup: engine status, per-site switch, recent corrections, "learn" mini-form. */
 import { sendToBackground } from './chrome-store.js';
 import { setMessage } from './rich-text.js';
-import { coerceSettings, describeCorrection, hostKey, siteEnabled, statusFailedView, statusView, STORAGE_KEYS } from './shared.js';
+import { coerceSettings, describeCorrection, hostKey, siteEnabled, statusFailedView, statusView, STORAGE_KEYS, withSiteSwitch } from './shared.js';
 import type { Failure, LearnReply, StatusReply } from './shared.js';
 
 function $<T extends HTMLElement>(id: string): T {
@@ -102,9 +102,7 @@ async function loadSite(): Promise<void> {
 ui.siteEnabled.addEventListener('change', () => {
   void (async () => {
     const raw = await chrome.storage.local.get([STORAGE_KEYS.settings]);
-    const settings = coerceSettings(raw[STORAGE_KEYS.settings], '');
-    settings.sites[hostKey(currentHost)] = ui.siteEnabled.checked;
-    await chrome.storage.local.set({ [STORAGE_KEYS.settings]: settings });
+    await chrome.storage.local.set({ [STORAGE_KEYS.settings]: withSiteSwitch(raw[STORAGE_KEYS.settings], currentHost, ui.siteEnabled.checked) });
     ui.siteNote.textContent = ui.siteEnabled.checked ? 'Corrections run before each send.' : 'Paused on this site.';
   })();
 });

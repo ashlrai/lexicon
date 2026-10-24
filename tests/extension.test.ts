@@ -20,7 +20,7 @@ import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
 import { prunePairPorts, registerPairPort } from '../extension/src/pair-port.js';
 import type { PairPortApi } from '../extension/src/pair-port.js';
-import { ANY_SITE_DENIED_MESSAGE, API_MAX_BODY_BYTES, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
+import { ANY_SITE_DENIED_MESSAGE, API_MAX_BODY_BYTES, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META, withConnection, withSiteSwitch, yamlBoxAfterChange } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 import { setMessage } from '../extension/src/rich-text.js';
@@ -1574,6 +1574,45 @@ describe('Options > Sync from the local API result', () => {
     expect(syncedLine({ ok: true, terms: 2, yaml: '', skippedProject: { path: '/repo/.lexicon.yaml', trust: 'changed' } })).toContain(
       'The project lexicon /repo/.lexicon.yaml has changed since it was trusted, so its terms were left out',
     );
+  });
+});
+
+describe('popup and Options write only what they change', () => {
+  // Catches: the popup stored coerceSettings(stored, ''), so the first site
+  // switch on a fresh install saved an empty YAML and the embedded lexicon
+  // corrected nothing.
+  it('the popup site switch keeps every stored field and leaves the YAML to its default when none is stored', () => {
+    const fresh = withSiteSwitch(undefined, 'www.Perplexity.ai', false);
+    expect(fresh).toEqual({ sites: { 'perplexity.ai': false } });
+    expect(coerceSettings(fresh, EXAMPLE_YAML).yaml).toBe(EXAMPLE_YAML);
+    const stored = { token: 'a'.repeat(32), yaml: 'version: 1\nterms: []\n', sites: { 'claude.ai': false }, anySite: true };
+    expect(withSiteSwitch(stored, 'chatgpt.com', false)).toEqual({ ...stored, sites: { 'claude.ai': false, 'chatgpt.com': false } });
+    expect(stored.sites).toEqual({ 'claude.ai': false });
+  });
+
+  // Catches: Test connection and Sync saved the whole Options form, so a word
+  // the popup had just learned into the embedded YAML (or a site it paused)
+  // was overwritten with what Options had loaded.
+  it('Test connection and Sync store only the connection fields over what is stored now', () => {
+    const stored = { baseUrl: 'http://127.0.0.1:41733', token: '', mode: 'api', yaml: 'learned: yes', sites: { 'grok.com': false } };
+    expect(withConnection(stored, { baseUrl: 'http://localhost:41800', token: 'b'.repeat(32), mode: 'api' })).toEqual({
+      ...stored,
+      baseUrl: 'http://localhost:41800',
+      token: 'b'.repeat(32),
+    });
+    expect(withConnection(stored, { token: '', mode: 'embedded' })).toMatchObject({ baseUrl: 'http://127.0.0.1:41733', mode: 'embedded', yaml: 'learned: yes' });
+    expect(withConnection(undefined, { token: 't', mode: 'api' })).toEqual({ token: 't', mode: 'api' });
+    const options = readFileSync(resolve(process.cwd(), 'extension/src/options.ts'), 'utf8');
+    const handler = (id: string): string => options.slice(options.indexOf(`ui.${id}.addEventListener('click'`), options.indexOf('});', options.indexOf(`ui.${id}.addEventListener('click'`)));
+    for (const id of ['test', 'sync']) {
+      expect(handler(id)).toContain('await saveConnection();');
+      expect(handler(id)).not.toMatch(/await save\(\)/);
+    }
+  });
+
+  it('the Options YAML box follows a YAML changed elsewhere unless it holds an unsaved edit', () => {
+    expect(yamlBoxAfterChange('a', 'a', 'b')).toBe('b');
+    expect(yamlBoxAfterChange('edited', 'a', 'b')).toBe('edited');
   });
 });
 

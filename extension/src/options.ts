@@ -4,7 +4,7 @@ import { ADAPTERS } from './adapters.js';
 import { sendToBackground } from './chrome-store.js';
 import { setMessage } from './rich-text.js';
 import { parseLexicon, parseYaml } from './core.js';
-import { ANY_SITE_DENIED_MESSAGE, coerceSettings, connectionTestLine, countOf, errorMessage, extensionRequestFailedLine, pairPortOrigins, pairUrl, PAIR_PORT_DENIED_MESSAGE, syncedLine, STORAGE_KEYS } from './shared.js';
+import { ANY_SITE_DENIED_MESSAGE, coerceSettings, connectionTestLine, countOf, errorMessage, extensionRequestFailedLine, pairPortOrigins, pairUrl, PAIR_PORT_DENIED_MESSAGE, syncedLine, STORAGE_KEYS, withConnection, yamlBoxAfterChange } from './shared.js';
 import type { Failure, PairPortReply, Settings, StatusReply, SyncReply } from './shared.js';
 import defaultYaml from '../../examples/lexicon.example.yaml';
 
@@ -143,6 +143,19 @@ async function save(): Promise<void> {
   }, 1500);
 }
 
+/**
+ * Store the base URL, token and mode on screen, and nothing else (see
+ * withConnection): what Test connection and Sync need the background to use.
+ */
+async function saveConnection(): Promise<void> {
+  const form = collect();
+  const raw = await chrome.storage.local.get([STORAGE_KEYS.settings]);
+  const merged = withConnection(raw[STORAGE_KEYS.settings], { baseUrl: form.baseUrl, token: form.token ?? '', mode: form.mode ?? 'api' });
+  await chrome.storage.local.set({ [STORAGE_KEYS.settings]: merged });
+  const next = coerceSettings(merged, defaultYaml);
+  settings = { ...settings, baseUrl: next.baseUrl, token: next.token, mode: next.mode };
+}
+
 ui.save.addEventListener('click', () => void save());
 
 // The manifest runs the pairing script on port 41733 only. For a `lexicon
@@ -184,7 +197,7 @@ ui.test.addEventListener('click', () => {
   ui.testResult.textContent = 'Testing...';
   void (async () => {
     // Save the URL/token first so the background tests what is on screen.
-    await save();
+    await saveConnection();
     const status = await sendToBackground<StatusReply | Failure>({ type: 'status' });
     if (!status.ok) {
       setMessage(ui.testResult, status.error);
@@ -200,7 +213,7 @@ ui.sync.addEventListener('click', () => {
   ui.sync.disabled = true;
   ui.yamlOk.textContent = 'Syncing...';
   void (async () => {
-    await save();
+    await saveConnection();
     const reply = await sendToBackground<SyncReply | Failure>({ type: 'sync' });
     if (reply.ok) {
       ui.yaml.value = reply.yaml;
@@ -256,6 +269,12 @@ ui.anySite.addEventListener('change', () => {
 chrome.storage.onChanged.addListener((changes, area) => {
   if (area !== 'local' || !changes[STORAGE_KEYS.settings]) return;
   const next = coerceSettings(changes[STORAGE_KEYS.settings].newValue, defaultYaml);
+  // A Learn in the popup (embedded mode) changed the YAML: show it unless the box holds an unsaved edit.
+  if (next.yaml !== settings.yaml) {
+    ui.yaml.value = yamlBoxAfterChange(ui.yaml.value, settings.yaml, next.yaml);
+    settings.yaml = next.yaml;
+    validateYaml();
+  }
   if (next.token === settings.token && next.baseUrl === settings.baseUrl && next.mode === settings.mode) return;
   settings = { ...settings, token: next.token, baseUrl: next.baseUrl, mode: next.mode };
   ui.baseUrl.value = settings.baseUrl;
