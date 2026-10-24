@@ -51,7 +51,7 @@ export const EXPORT_FORMAT_INFO: Record<ExportFormat, { description: string; ext
   'claude-md': { description: 'Markdown snippet for CLAUDE.md / system prompt', ext: 'md' },
   'csv': { description: 'Generic canonical,alias CSV', ext: 'csv' },
   'json': { description: 'Raw lexicon JSON', ext: 'json' },
-  'deepgram': { description: 'Deepgram keywords with boost', ext: 'json' },
+  'deepgram': { description: 'Deepgram keyterm list (Nova-3) and keywords with boost (Nova-2 and older)', ext: 'json' },
   'espanso': { description: 'espanso match YAML', ext: 'yml' },
   'assemblyai': { description: 'AssemblyAI word_boost JSON', ext: 'json' },
   'azure': { description: 'Azure Speech phraseList JSON', ext: 'json' },

@@ -96,3 +96,28 @@ describe('assemblyai: words per phrase', () => {
     expect(notes).toEqual([`left out 1 phrase past AssemblyAI's 1000 word_boost entries (the most used kept): "N1000"`]);
   });
 });
+
+describe('deepgram: keyterm for Nova-3, deduped keywords', () => {
+  // Catches: only `keywords` was written, which Nova-3 does not take, and two
+  // canonicals that read alike once the colon is a space were both sent.
+  it('writes keyterm as written and keywords once per spelling', () => {
+    const { text, notes } = exportLexiconWithNotes(
+      lex([
+        { canonical: 'Win 2', aliases: [], category: 'brand', hits: 5 },
+        { canonical: 'Win:2', aliases: [], hits: 1 },
+      ]),
+      'deepgram',
+    );
+    expect(JSON.parse(text)).toEqual({ keyterm: ['Win 2', 'Win:2'], keywords: ['Win 2:2'] });
+    expect(notes).toEqual(['left out 1 name from keywords that read as one already listed once its colon is a space: "Win:2"']);
+  });
+
+  it('caps keyterm at 100, the most used kept', () => {
+    const terms = Array.from({ length: 101 }, (_, i) => ({ canonical: `K${String(i).padStart(3, '0')}`, aliases: [], hits: 500 - i }));
+    const { text, notes } = exportLexiconWithNotes(lex(terms), 'deepgram');
+    const out = JSON.parse(text) as { keyterm: string[]; keywords: string[] };
+    expect(out.keyterm).toHaveLength(100);
+    expect(out.keywords).toHaveLength(101);
+    expect(notes).toEqual(['left out 1 name from keyterm past the 100 kept (the most used; a conservative cap for Nova-3 keyterms): "K100"']);
+  });
+});

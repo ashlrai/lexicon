@@ -58589,13 +58589,31 @@ function exportCsv(lexicon, _opts = {}) {
 }
 
 // src/core/exporters/deepgram.ts
-function exportDeepgram(lexicon, _opts = {}) {
+var DEEPGRAM_KEYTERM_MAX = 100;
+function exportDeepgram(lexicon, _opts = {}, notes) {
+  const ordered = canonicalList(sortByImportance(lexicon.terms));
+  const keyterm = ordered.slice(0, DEEPGRAM_KEYTERM_MAX).map((c) => c.canonical.replace(/\s+/g, " ").trim()).filter((k) => k !== "");
+  const overCap = ordered.slice(DEEPGRAM_KEYTERM_MAX).map((c) => c.canonical);
   const keywords = [];
-  for (const { term, canonical } of canonicalList(sortByImportance(lexicon.terms))) {
+  const seen = /* @__PURE__ */ new Set();
+  const collided = [];
+  for (const { term, canonical } of ordered) {
     const keyword = canonical.replace(/:/g, " ").replace(/\s+/g, " ").trim();
-    if (keyword) keywords.push(`${keyword}:${isProperNounCategory(term.category) ? 2 : 1}`);
+    if (!keyword) continue;
+    if (seen.has(keyword)) {
+      collided.push(canonical);
+      continue;
+    }
+    seen.add(keyword);
+    keywords.push(`${keyword}:${isProperNounCategory(term.category) ? 2 : 1}`);
   }
-  return JSON.stringify({ keywords }, null, 2) + "\n";
+  if (overCap.length > 0) {
+    notes?.push(`left out ${overCap.length} name${overCap.length === 1 ? "" : "s"} from keyterm past the ${DEEPGRAM_KEYTERM_MAX} kept (the most used; a conservative cap for Nova-3 keyterms): ${quotedNames(overCap)}`);
+  }
+  if (collided.length > 0) {
+    notes?.push(`left out ${collided.length} name${collided.length === 1 ? "" : "s"} from keywords that read as one already listed once its colon is a space: ${quotedNames(collided)}`);
+  }
+  return JSON.stringify({ keyterm, keywords }, null, 2) + "\n";
 }
 
 // src/core/exporters/espanso.ts
@@ -58784,7 +58802,7 @@ var EXPORT_FORMAT_INFO = {
   "claude-md": { description: "Markdown snippet for CLAUDE.md / system prompt", ext: "md" },
   "csv": { description: "Generic canonical,alias CSV", ext: "csv" },
   "json": { description: "Raw lexicon JSON", ext: "json" },
-  "deepgram": { description: "Deepgram keywords with boost", ext: "json" },
+  "deepgram": { description: "Deepgram keyterm list (Nova-3) and keywords with boost (Nova-2 and older)", ext: "json" },
   "espanso": { description: "espanso match YAML", ext: "yml" },
   "assemblyai": { description: "AssemblyAI word_boost JSON", ext: "json" },
   "azure": { description: "Azure Speech phraseList JSON", ext: "json" },

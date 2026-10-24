@@ -262,7 +262,7 @@ describe('exportLexicon', () => {
     expect(exportLexicon(empty, 'whisper-prompt')).toBe('');
     expect(exportLexicon(empty, 'macos')).toContain('<array>\n</array>');
     expect(exportLexicon(empty, 'claude-md')).toContain('| --- | --- | --- |\n\nIf a word');
-    expect(JSON.parse(exportLexicon(empty, 'deepgram'))).toEqual({ keywords: [] });
+    expect(JSON.parse(exportLexicon(empty, 'deepgram'))).toEqual({ keyterm: [], keywords: [] });
     expect(parseYaml(exportLexicon(empty, 'espanso'))).toEqual({ matches: [] });
   });
 
