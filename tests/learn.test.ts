@@ -73,6 +73,19 @@ describe('parseCorrection', () => {
     expect(parseCorrection('not Ashler, it\u2019s Ashlr.AI')).toEqual(ashlr);
   });
 
+  // Speech-to-text often spells the contraction out, or drops its apostrophe.
+  it('accepts "it is X not Y" spelled out, and "its X not Y" without the apostrophe', () => {
+    expect(parseCorrection('it is Ashlr.AI not Ashler')).toEqual(ashlr);
+    expect(parseCorrection('It is Ashlr.AI, not Ashler.')).toEqual(ashlr);
+    expect(parseCorrection('no, it is spelled Ashlr.AI not Ashler')).toEqual(ashlr);
+    expect(parseCorrection('it is "Ashlr.AI" not "Ashler"')).toEqual(ashlr);
+    expect(parseCorrection('not Ashler, it is Ashlr.AI')).toEqual(ashlr);
+    expect(parseCorrection('its Ashlr.AI not Ashler')).toEqual(ashlr);
+    expect(parseCorrection('Its Ashlr.AI, not Ashler.')).toEqual(ashlr);
+    // "it is" must be its own words: "edit is" or "split is" never leads one.
+    expect(parseCorrection('the edit is Ashlr.AI not Ashler')).toBeUndefined();
+  });
+
   it.each([
     ["it's Ashlr.AI not Ashler", ashlr],
     ["it's Ashlr.AI, not Ashler", ashlr],

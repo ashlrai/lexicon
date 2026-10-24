@@ -379,6 +379,11 @@ describe('runUserPromptSubmitHook', () => {
         "it's a typo not a bug",
         "it's a regression not flaky",
         'I think it\'s a race condition not a deadlock',
+        // Spelled out or without the apostrophe, the same gate applies.
+        'it is flaky not broken',
+        'I think it is a race condition not a deadlock',
+        'its flaky not broken',
+        'the build failed but its config not code',
       ]) {
         expect(parseCorrections(prompt), prompt).toEqual([]);
         expect(await runUserPromptSubmitHook(payload(prompt)), prompt).toBe('');
@@ -395,6 +400,9 @@ describe('runUserPromptSubmitHook', () => {
       expect(parseCorrections("it's k8s not kates")).toEqual([{ heard: 'kates', meant: 'k8s' }]);
       expect(parseCorrections('it\'s "flaky" not "broken"')).toEqual([{ heard: 'broken', meant: 'flaky' }]);
       expect(parseCorrections('it\'s `prod` not staging')).toEqual([{ heard: 'staging', meant: 'prod' }]);
+      expect(parseCorrections('it is vercel not versel')).toEqual([{ heard: 'versel', meant: 'vercel' }]);
+      expect(parseCorrections('ok it is Ashlr.AI not Ashler')).toEqual([{ heard: 'Ashler', meant: 'Ashlr.AI' }]);
+      expect(parseCorrections('its Supabase not super base')).toEqual([{ heard: 'super base', meant: 'Supabase' }]);
     });
 
     it('still corrects an unrelated garble in the same prompt', async () => {
