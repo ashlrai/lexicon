@@ -16,9 +16,9 @@ lexicon export <format> --out <file>
 | `superwhisper` | Replacements JSON | Superwhisper replacements |
 | `macos` | Text Replacement `.plist` | Drag into System Settings > Keyboard > Text Replacements |
 | `espanso` | espanso match YAML. A `{{` in a name is escaped as `\{\{`, so espanso types it instead of reading a variable; a name holding a literal `\{\{` or `\}\}` (which espanso always unescapes) is left out, named in a `# left out` comment at the top | `~/.config/espanso/match/lexicon.yml` |
-| `whisper-prompt` | One line for Whisper `initial_prompt` | Any Whisper wrapper. Keep it under about 100 terms or it stops helping |
+| `whisper-prompt` | One line for Whisper `initial_prompt`, canonicals joined with `, ` | Any Whisper wrapper. Keep it under about 100 terms or it stops helping. Whisper reads the line as text it has already heard and never splits it, so a name holding `, ` still biases the right spelling, though a person cannot tell where it ends |
 | `openai` | One line of canonicals | OpenAI transcription `prompt` field (same as `whisper-prompt`) |
-| `deepgram` | Keyword boost JSON | Deepgram `keywords` parameter |
+| `deepgram` | Keyword boost JSON (`keyword:boost`) | Deepgram `keywords` parameter. The format has no escape for a colon, so one in a name becomes a space (`Win:2` is written `Win 2:1`) |
 | `assemblyai` | `word_boost` JSON | AssemblyAI `word_boost` / `boost_param` |
 | `azure` | `phraseList` JSON | Azure Speech `PhraseListGrammar` |
 | `google` | Adaptation `phraseSets` JSON | Google Speech-to-Text model adaptation (boost 20 for brand/person/product, 10 otherwise) |

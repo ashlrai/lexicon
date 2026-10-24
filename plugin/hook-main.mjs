@@ -20553,9 +20553,11 @@ function exportCsv(lexicon, _opts = {}) {
 
 // src/core/exporters/deepgram.ts
 function exportDeepgram(lexicon, _opts = {}) {
-  const keywords = sortByImportance(lexicon.terms).map(
-    (t) => `${t.canonical}:${isProperNounCategory(t.category) ? 2 : 1}`
-  );
+  const keywords = [];
+  for (const t of sortByImportance(lexicon.terms)) {
+    const keyword = t.canonical.replace(/:/g, " ").replace(/\s+/g, " ").trim();
+    if (keyword) keywords.push(`${keyword}:${isProperNounCategory(t.category) ? 2 : 1}`);
+  }
   return JSON.stringify({ keywords }, null, 2) + "\n";
 }
 

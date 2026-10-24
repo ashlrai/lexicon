@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon export deepgram`: a colon in a name becomes a space (`Win:2` is written `Win 2:1`), so each keyword holds one colon, before its boost; `Win:2:1` could read as the keyword `Win` boosted 2. `docs/EXPORTS.md` says so, and that `whisper-prompt` joins names with `, ` though Whisper never splits the line, so a name holding `, ` still biases the right spelling.
 - `lexicon export espanso`: a name holding `{{` (`{{name}}`) is escaped as espanso documents (`\{\{name}}`), so espanso types it instead of reading a variable and failing the expansion. A name holding a literal `\{\{` or `\}\}`, which espanso always unescapes, is left out and named in a `# left out` comment at the top of the file rather than written to type something else.
 - `lexicon export claude-md`: a `|` right after a backslash (`a\|b`) stays in its cell on GitHub and in other GFM renderers. It was written `a\\|b`, which GFM reads as an escaped backslash and a cell boundary, so the row split and the note moved into the wrong column. A zero-width space now sits between the backslash and the escaped pipe; `lexicon import` strips it and stores `a\|b`.
 - `lexicon add`, `learn`, `import`, MCP `add_term` and `POST /add` clean a name as the lexicon file is read (invisible characters removed, then trimmed) before comparing or writing it: `Ash` + U+200B + `ler` was added beside `Ashler` and written with the invisible character, which the next read dropped, leaving a duplicate.

@@ -236,6 +236,23 @@ describe('exportLexicon', () => {
     expect(exportLexicon(lexicon, 'espanso')).not.toContain('# left out');
   });
 
+  // Catches: `canonical:boost` with a colon in the canonical (`Win:2`) read
+  // as another keyword and boost: Deepgram's keywords have no escape for it.
+  it('deepgram: a colon in a canonical becomes a space, so each keyword has one colon, before its boost', () => {
+    const lex: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'Ashlr:AI', aliases: [], category: 'brand' },
+        { canonical: 'Win:2', aliases: [] },
+        { canonical: 'a :: b', aliases: [] },
+        { canonical: ':', aliases: [] },
+      ],
+    };
+    const out = JSON.parse(exportLexicon(lex, 'deepgram')) as { keywords: string[] };
+    expect(out.keywords).toEqual(['Ashlr AI:2', 'a b:1', 'Win 2:1']);
+    for (const k of out.keywords) expect(k.split(':')).toHaveLength(2);
+  });
+
   it('handles an empty lexicon in every format', () => {
     const empty: Lexicon = { version: 1, terms: [] };
     expect(exportLexicon(empty, 'wispr').trim()).toBe('word,replacement');

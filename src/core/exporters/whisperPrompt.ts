@@ -2,6 +2,11 @@
  * Whisper `initial_prompt`: a single line of comma-separated proper nouns.
  * Whisper biases toward spellings it sees in the prompt, so we list canonicals
  * only (never aliases). Capped at opts.limit ?? 100; extra terms are dropped.
+ *
+ * The `, ` join is not a delimiter Whisper parses: the prompt is read as text
+ * already heard, so a canonical holding `, ` biases the same spelling either
+ * way, and nothing reads the line back. Left as is and documented in
+ * docs/EXPORTS.md rather than switching separators for every lexicon.
  */
 import type { ExportOptions, Lexicon } from '../types.js';
 import { sortByImportance } from './shared.js';
