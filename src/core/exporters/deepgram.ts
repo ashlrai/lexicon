@@ -27,8 +27,24 @@ export const DEEPGRAM_KEYTERM_MAX = 100;
 
 export function exportDeepgram(lexicon: Lexicon, _opts: ExportOptions = {}, sink?: ExportSink): string {
   const ordered = canonicalList(sortByImportance(lexicon.terms));
-  const keyterm = ordered.slice(0, DEEPGRAM_KEYTERM_MAX).map((c) => c.canonical.replace(/\s+/g, ' ').trim()).filter((k) => k !== '');
-  const overCap = ordered.slice(DEEPGRAM_KEYTERM_MAX).map((c) => c.canonical);
+  // Whitespace collapsed, then each keyterm once: two canonicals that differ
+  // only in whitespace (`Ashlr  AI`, `Ashlr AI`, a no-break space) were each
+  // sent, as the same keyterm, and took a place under the cap.
+  const keyterm: string[] = [];
+  const keytermSeen = new Set<string>();
+  const keytermRepeats: string[] = [];
+  const overCap: string[] = [];
+  for (const { canonical } of ordered) {
+    const k = canonical.replace(/\s+/g, ' ').trim();
+    if (!k) continue;
+    if (keytermSeen.has(k)) {
+      keytermRepeats.push(canonical);
+      continue;
+    }
+    keytermSeen.add(k);
+    if (keyterm.length < DEEPGRAM_KEYTERM_MAX) keyterm.push(k);
+    else overCap.push(canonical);
+  }
   const keywords: string[] = [];
   const seen = new Set<string>();
   const collided: string[] = [];
@@ -44,6 +60,9 @@ export function exportDeepgram(lexicon: Lexicon, _opts: ExportOptions = {}, sink
   }
   if (overCap.length > 0) {
     sink?.notes.push(`left out ${overCap.length} name${overCap.length === 1 ? '' : 's'} from keyterm past the ${DEEPGRAM_KEYTERM_MAX} kept (the most used; a conservative cap for Nova-3 keyterms): ${quotedNames(overCap)}`);
+  }
+  if (keytermRepeats.length > 0) {
+    sink?.notes.push(`left out ${keytermRepeats.length} name${keytermRepeats.length === 1 ? '' : 's'} from keyterm that read as one already listed once whitespace is collapsed: ${quotedNames(keytermRepeats)}`);
   }
   if (collided.length > 0) {
     sink?.notes.push(`left out ${collided.length} name${collided.length === 1 ? '' : 's'} from keywords that read as one already listed once its colon is a space: ${quotedNames(collided)}`);

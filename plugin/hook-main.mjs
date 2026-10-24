@@ -21344,8 +21344,21 @@ function exportCsv(lexicon, _opts = {}, sink) {
 var DEEPGRAM_KEYTERM_MAX = 100;
 function exportDeepgram(lexicon, _opts = {}, sink) {
   const ordered = canonicalList(sortByImportance(lexicon.terms));
-  const keyterm = ordered.slice(0, DEEPGRAM_KEYTERM_MAX).map((c) => c.canonical.replace(/\s+/g, " ").trim()).filter((k) => k !== "");
-  const overCap = ordered.slice(DEEPGRAM_KEYTERM_MAX).map((c) => c.canonical);
+  const keyterm = [];
+  const keytermSeen = /* @__PURE__ */ new Set();
+  const keytermRepeats = [];
+  const overCap = [];
+  for (const { canonical } of ordered) {
+    const k = canonical.replace(/\s+/g, " ").trim();
+    if (!k) continue;
+    if (keytermSeen.has(k)) {
+      keytermRepeats.push(canonical);
+      continue;
+    }
+    keytermSeen.add(k);
+    if (keyterm.length < DEEPGRAM_KEYTERM_MAX) keyterm.push(k);
+    else overCap.push(canonical);
+  }
   const keywords = [];
   const seen = /* @__PURE__ */ new Set();
   const collided = [];
@@ -21361,6 +21374,9 @@ function exportDeepgram(lexicon, _opts = {}, sink) {
   }
   if (overCap.length > 0) {
     sink?.notes.push(`left out ${overCap.length} name${overCap.length === 1 ? "" : "s"} from keyterm past the ${DEEPGRAM_KEYTERM_MAX} kept (the most used; a conservative cap for Nova-3 keyterms): ${quotedNames(overCap)}`);
+  }
+  if (keytermRepeats.length > 0) {
+    sink?.notes.push(`left out ${keytermRepeats.length} name${keytermRepeats.length === 1 ? "" : "s"} from keyterm that read as one already listed once whitespace is collapsed: ${quotedNames(keytermRepeats)}`);
   }
   if (collided.length > 0) {
     sink?.notes.push(`left out ${collided.length} name${collided.length === 1 ? "" : "s"} from keywords that read as one already listed once its colon is a space: ${quotedNames(collided)}`);

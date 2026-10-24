@@ -130,6 +130,26 @@ describe('deepgram: keyterm for Nova-3, deduped keywords', () => {
     expect(notes).toEqual(['left out 1 name from keywords that read as one already listed once its colon is a space: "Win:2"']);
   });
 
+  // Catches: keyterm collapsed whitespace but kept every entry, so canonicals
+  // that differ only in whitespace were sent as the same keyterm twice and
+  // each took a place under the 100 cap.
+  it('writes a keyterm once when canonicals differ only in whitespace, and caps the distinct ones', () => {
+    const { text, notes } = exportLexiconWithNotes(
+      lex([
+        { canonical: 'Ashlr AI', aliases: [], hits: 9 },
+        { canonical: 'Ashlr  AI', aliases: [], hits: 5 },
+        { canonical: 'Ashlr\u00a0AI', aliases: [], hits: 1 },
+      ]),
+      'deepgram',
+    );
+    expect((JSON.parse(text) as { keyterm: string[] }).keyterm).toEqual(['Ashlr AI']);
+    expect(notes).toContain('left out 2 names from keyterm that read as one already listed once whitespace is collapsed: "Ashlr  AI" and "Ashlr\u00a0AI"');
+    const many = [{ canonical: 'K 000', aliases: [], hits: 1000 }, { canonical: 'K  000', aliases: [], hits: 999 }, ...Array.from({ length: 100 }, (_, i) => ({ canonical: `K${String(i + 1).padStart(3, '0')}`, aliases: [], hits: 500 - i }))];
+    const capped = (JSON.parse(exportLexiconWithNotes(lex(many), 'deepgram').text) as { keyterm: string[] }).keyterm;
+    expect(new Set(capped).size).toBe(100);
+    expect(capped).toContain('K099');
+  });
+
   it('caps keyterm at 100, the most used kept', () => {
     const terms = Array.from({ length: 101 }, (_, i) => ({ canonical: `K${String(i).padStart(3, '0')}`, aliases: [], hits: 500 - i }));
     const { text, notes } = exportLexiconWithNotes(lex(terms), 'deepgram');
