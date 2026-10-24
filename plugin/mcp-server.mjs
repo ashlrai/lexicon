@@ -68417,7 +68417,6 @@ async function serveTarget() {
   return { base: serveUrl(port), ...config2?.token ? { token: config2.token } : {}, notConfigured };
 }
 var registerSetupTools = (server, ctx) => {
-  const { load } = ctx;
   server.registerTool(
     "lexicon_doctor",
     {

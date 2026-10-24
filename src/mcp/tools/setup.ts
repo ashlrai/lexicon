@@ -58,7 +58,6 @@ async function serveTarget(): Promise<{ base: string; token?: string; notConfigu
 
 export const registerSetupTools: ToolRegistrar = (server, ctx) => {
   // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
-  const { load } = ctx;
   server.registerTool(
     'lexicon_doctor',
     {
