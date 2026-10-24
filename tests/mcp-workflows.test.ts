@@ -357,7 +357,7 @@ describe('suggest_canonical with an untrusted project lexicon', () => {
       projectTrust?: string;
     };
     expect(payload.suggestions).toEqual([]);
-    expect(payload.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+    expect(payload.skippedProject).toBe(pathForModel(path.join(repo, '.lexicon.yaml')));
     expect(payload.projectTrust).toBe('untrusted');
     expect(JSON.stringify(payload)).not.toContain('Kubectl');
   });
@@ -476,7 +476,7 @@ describe('normalize_transcript with an untrusted project lexicon', () => {
     const payload = JSON.parse(res.text) as { output: string; changed: boolean; skippedProject?: string; projectTrust?: string; note?: string };
     expect(payload.output).toBe('ask fantom');
     expect(payload.changed).toBe(false);
-    expect(payload.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+    expect(payload.skippedProject).toBe(pathForModel(path.join(repo, '.lexicon.yaml')));
     expect(payload.projectTrust).toBe('untrusted');
     expect(payload.note).toMatch(/lexicon trust/);
     expect(res.text).not.toContain('Fantom');
@@ -641,7 +641,7 @@ describe('lexicon_stats and voice-context with an untrusted project lexicon', ()
     const stats = await call('lexicon_stats', {});
     const payload = JSON.parse(stats.text) as { termCount: number; skippedProject?: string; note?: string };
     expect(payload.termCount).toBe(0);
-    expect(payload.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+    expect(payload.skippedProject).toBe(pathForModel(path.join(repo, '.lexicon.yaml')));
     expect(payload.note).toMatch(/lexicon trust/);
     expect(stats.text).not.toContain('Fantom');
 
@@ -998,7 +998,7 @@ describe('tool and resource descriptions agree with what the code does', () => {
       const parsed = JSON.parse(text) as { version: number; terms: unknown[]; skippedProject?: string; projectTrust?: string; note?: string };
       expect(parsed.terms).toEqual([]);
       expect(parsed.version).toBe(1);
-      expect(parsed.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+      expect(parsed.skippedProject).toBe(pathForModel(path.join(repo, '.lexicon.yaml')));
       expect(parsed.projectTrust).toBe('untrusted');
       expect(parsed.note).toMatch(/lexicon trust/);
       // Catches: with the global file empty too, the note named the skipped
@@ -1159,7 +1159,7 @@ describe('list_packs with an untrusted project lexicon', () => {
     };
     expect(payload.packs.find((p) => p.name === 'developer')?.installed).toBe(false);
     expect(payload.projectTrust).toBe('untrusted');
-    expect(payload.skippedProject).toBe(projectFile);
+    expect(payload.skippedProject).toBe(pathForModel(projectFile));
     expect(payload.note).toMatch(/lexicon trust/);
     expect(payload.note).toMatch(/shows as not installed/);
     expect(JSON.stringify(payload)).not.toContain('Kubectl');
@@ -1187,10 +1187,15 @@ describe('lexicon list --full and MCP list_terms', () => {
     expect(ok).toBe(true);
     expect(Object.keys(JSON.parse(full.out) as object)[0]).toBe('ok');
     expect(Object.keys(cli).sort()).toEqual(Object.keys(mcp).sort());
-    const { note: cliNote, ...cliRest } = cli;
-    const { note: mcpNote, ...mcpRest } = mcp;
+    // The CLI prints the skipped file's path whole; MCP gives the model the
+    // path through pathForModel (its last components), so on a deep temp dir
+    // (macOS /private/var/folders/..., Windows AppData\Local\Temp) they differ.
+    const { note: cliNote, skippedProject: cliSkipped, ...cliRest } = cli;
+    const { note: mcpNote, skippedProject: mcpSkipped, ...mcpRest } = mcp;
     expect(cliRest).toEqual(mcpRest);
-    expect(cliRest).toMatchObject({ counts: { matched: 1, total: 2, global: 2, project: 0 }, projectTrust: 'untrusted', skippedProject: path.join(repo, '.lexicon.yaml') });
+    expect(cliRest).toMatchObject({ counts: { matched: 1, total: 2, global: 2, project: 0 }, projectTrust: 'untrusted' });
+    expect(cliSkipped).toBe(path.join(repo, '.lexicon.yaml'));
+    expect(mcpSkipped).toBe(pathForModel(path.join(repo, '.lexicon.yaml')));
     expect(cliNote).toMatch(/lexicon trust/);
     expect(mcpNote).toMatch(/lexicon trust/);
     expect(full.out).not.toContain('Secret');
@@ -1568,7 +1573,7 @@ describe('project-scope writes from MCP never trust the project file', () => {
     expect(await trustStatus()).toBe('untrusted');
     const listed = JSON.parse((await call('list_terms', {})).text) as { terms: unknown[]; skippedProject?: string };
     expect(listed.terms).toEqual([]);
-    expect(listed.skippedProject).toBe(projectPath);
+    expect(listed.skippedProject).toBe(pathForModel(projectPath));
   });
 
   // Catches: a write into an existing untrusted file returned the file's own
@@ -1730,7 +1735,7 @@ describe('harvest_repo and suggest_terms on a model-chosen path', () => {
     // Not merged: list_terms sees only the (empty) global lexicon and names the skipped file.
     const listed = JSON.parse((await call('list_terms', {})).text) as { terms: unknown[]; skippedProject?: string };
     expect(listed.terms).toEqual([]);
-    expect(listed.skippedProject).toBe(projectPath);
+    expect(listed.skippedProject).toBe(pathForModel(projectPath));
 
     // A second harvest merges into the untrusted file rather than failing the trust gate.
     const again = await call('harvest_repo', { add: true, minCount: 1 });
