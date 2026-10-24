@@ -20561,14 +20561,30 @@ function exportDeepgram(lexicon, _opts = {}) {
 
 // src/core/exporters/espanso.ts
 var import_yaml2 = __toESM(require_dist());
+var ESPANSO_VAR_RE = /\{\{\s*(\w+)(\.(\w+))?\s*\}\}/;
+function espansoRenders(body) {
+  if (ESPANSO_VAR_RE.test(body)) return void 0;
+  return body.replaceAll("\\{\\{", "{{").replaceAll("\\}\\}", "}}");
+}
+function espansoEscape(canonical) {
+  return canonical.replace(/\{{2,}/g, (run) => (run.length % 2 === 1 ? "{" : "") + "\\{\\{".repeat(Math.floor(run.length / 2)));
+}
 function exportEspanso(lexicon, _opts = {}) {
-  const matches = aliasPairs(lexicon).map(({ alias, canonical }) => ({
-    trigger: alias,
-    replace: canonical,
-    word: true,
-    propagate_case: false
-  }));
-  return (0, import_yaml2.stringify)({ matches }, { lineWidth: 0 });
+  const leftOut = [];
+  const matches = [];
+  for (const { alias, canonical } of aliasPairs(lexicon)) {
+    const replace = espansoEscape(canonical);
+    const typed = espansoRenders(replace);
+    if (typed !== canonical) {
+      const as = typed === void 0 ? "read a variable in it" : `type it as ${JSON.stringify(typed)}`;
+      leftOut.push(`# left out ${JSON.stringify(alias)} -> ${JSON.stringify(canonical)}: espanso would ${as}`);
+      continue;
+    }
+    matches.push({ trigger: alias, replace, word: true, propagate_case: false });
+  }
+  const body = (0, import_yaml2.stringify)({ matches }, { lineWidth: 0 });
+  return leftOut.length > 0 ? `${leftOut.join("\n")}
+${body}` : body;
 }
 
 // src/core/exporters/google.ts

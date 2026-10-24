@@ -202,6 +202,40 @@ describe('exportLexicon', () => {
     expect(parsed.matches.find((m) => m.trigger === 'Open "Claw"')?.replace).toBe('OpenClaw');
   });
 
+  // Catches: a canonical holding `{{name}}` was written as is, and espanso
+  // reads `{{name}}` in a replace as a variable injection: the expansion
+  // failed or typed the variable's value instead of the name.
+  it('espanso: braces in a canonical are escaped so espanso types them as written', () => {
+    // espanso-render: a body matching VAR_REGEX is a variable injection; every
+    // body then has `\{\{` and `\}\}` unescaped (renderer/mod.rs and util.rs).
+    const VAR_REGEX = /\{\{\s*(\w+)(\.(\w+))?\s*\}\}/;
+    const render = (body: string): string | undefined =>
+      VAR_REGEX.test(body) ? undefined : body.replaceAll('\\{\\{', '{{').replaceAll('\\}\\}', '}}');
+    const names = ['{{name}}', 'a {{{b}}} c', '{{ x.y }}', '{x}', '{{', '}}', 'p\\}q}}', 'r\\{{s}}'];
+    const lex: Lexicon = { version: 1, terms: names.map((canonical, i) => ({ canonical, aliases: [`alias${i}`] })) };
+    const parsed = parseYaml(exportLexicon(lex, 'espanso')) as { matches: { trigger: string; replace: string }[] };
+    expect(parsed.matches).toHaveLength(names.length);
+    for (const [i, canonical] of names.entries()) {
+      const match = parsed.matches.find((m) => m.trigger === `alias${i}`);
+      expect(render(match?.replace ?? '')).toBe(canonical);
+    }
+    // A name espanso cannot be made to type as written is left out, with a comment saying so.
+    const odd: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'x\\{\\{y', aliases: ['odd'] },
+        { canonical: 'p\\}\\}q', aliases: ['odder'] },
+        { canonical: 'Fine', aliases: ['fine'] },
+      ],
+    };
+    const text = exportLexicon(odd, 'espanso');
+    expect((parseYaml(text) as { matches: { trigger: string }[] }).matches.map((m) => m.trigger)).toEqual(['fine']);
+    expect(text).toMatch(/^# left out "odd" -> "x\\\\\{\\\\\{y": espanso would type it as "x\{\{y"/m);
+    expect(text).toMatch(/^# left out "odder" -> "p\\\\\}\\\\\}q": espanso would type it as "p\}\}q"/m);
+    // A name without braces is written as before.
+    expect(exportLexicon(lexicon, 'espanso')).not.toContain('# left out');
+  });
+
   it('handles an empty lexicon in every format', () => {
     const empty: Lexicon = { version: 1, terms: [] };
     expect(exportLexicon(empty, 'wispr').trim()).toBe('word,replacement');

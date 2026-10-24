@@ -15,7 +15,7 @@ lexicon export <format> --out <file>
 | `wispr` | CSV `word,replacement` | Wispr Flow > Dictionary > Import |
 | `superwhisper` | Replacements JSON | Superwhisper replacements |
 | `macos` | Text Replacement `.plist` | Drag into System Settings > Keyboard > Text Replacements |
-| `espanso` | espanso match YAML | `~/.config/espanso/match/lexicon.yml` |
+| `espanso` | espanso match YAML. A `{{` in a name is escaped as `\{\{`, so espanso types it instead of reading a variable; a name holding a literal `\{\{` or `\}\}` (which espanso always unescapes) is left out, named in a `# left out` comment at the top | `~/.config/espanso/match/lexicon.yml` |
 | `whisper-prompt` | One line for Whisper `initial_prompt` | Any Whisper wrapper. Keep it under about 100 terms or it stops helping |
 | `openai` | One line of canonicals | OpenAI transcription `prompt` field (same as `whisper-prompt`) |
 | `deepgram` | Keyword boost JSON | Deepgram `keywords` parameter |
