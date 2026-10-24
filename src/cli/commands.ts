@@ -54,6 +54,7 @@ import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
   DEMO_LEXICON,
+  EXPORT_ALIAS_ROW_FORMATS,
   EXPORT_FORMATS,
   TERM_CATEGORIES,
   EXPORT_FORMAT_INFO,
@@ -1045,15 +1046,29 @@ function exportFormatNextStep(): string {
 }
 
 /**
- * Why an export holds no terms, ending in the step that fixes it, or undefined
- * when it holds some. The CLI form of MCP export_lexicon's note.
+ * Why an export holds no terms (or, for a format that writes one row per
+ * alias, no rows), ending in the step that fixes it, or undefined when it
+ * holds some. The CLI form of MCP export_lexicon's note. `aliasRows` is the
+ * format and the terms it was handed; only an alias-row format
+ * (EXPORT_ALIAS_ROW_FORMATS) whose terms all lack an alias gets the no-rows
+ * note.
  */
 export function emptyExportNote(
   loaded: Pick<LoadedLexicon, 'merged' | 'skippedProject'>,
   categories: readonly string[] | undefined,
   exported: number,
+  aliasRows?: { format: ExportFormat; terms: readonly Pick<Term, 'aliases'>[] },
 ): string | undefined {
-  if (exported > 0) return undefined;
+  if (exported > 0) {
+    if (
+      aliasRows !== undefined &&
+      EXPORT_ALIAS_ROW_FORMATS.includes(aliasRows.format) &&
+      !aliasRows.terms.some((t) => t.aliases.some((a) => a.trim() !== ''))
+    ) {
+      return `No exported term has an alias, and ${aliasRows.format} writes one row per alias, so the export has no rows; add one with: lexicon add <canonical> <alias>.`;
+    }
+    return undefined;
+  }
   if (loaded.merged.terms.length === 0) {
     return loaded.skippedProject
       ? 'The export is empty: the only terms are in the untrusted project lexicon, which was left out; review it and run `lexicon trust`.'
@@ -1113,11 +1128,12 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
   const { merged } = loaded;
   const text = ensureNewline(exportLexicon(merged, format, exportOpts));
   // The terms actually exported: the same category filter and cap exportLexicon applies.
-  const terms = selectExportTerms(merged, exportOpts, format).length;
+  const selected = selectExportTerms(merged, exportOpts, format);
+  const terms = selected.length;
   const bytes = Buffer.byteLength(text, 'utf8');
   // An empty export read as a complete one: no word on stderr or under --json,
   // where MCP export_lexicon says why in a note. stderr only, as above.
-  const empty = emptyExportNote(loaded, exportOpts.categories, terms);
+  const empty = emptyExportNote(loaded, exportOpts.categories, terms, { format, terms: selected });
   if (empty) io.stderr(`lexicon: ${safe(empty.charAt(0).toLowerCase() + empty.slice(1))}\n`);
   const skipped = skippedProjectJson(loaded, 'Its terms are not in the export.');
   const notes = { ...skipped, ...(empty || skipped.note ? { note: [empty, skipped.note].filter(Boolean).join(' ') } : {}) };

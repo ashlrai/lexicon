@@ -954,6 +954,30 @@ describe('export', () => {
     expect(some.err).toBe('');
   });
 
+  // Catches: an alias-row export (csv, wispr, ...) of terms that have no
+  // alias wrote no rows with no word on stderr or under --json, while MCP
+  // export_lexicon notes it.
+  it('says an alias-row export has no rows when no term has an alias, on stderr and as the --json note', async () => {
+    const bare = { version: 1 as const, terms: [{ canonical: 'Quokka', aliases: [] }, { canonical: 'Wombat', aliases: ['  '] }] };
+    const loadedBare = { merged: bare, global: { path: state.globalPath, scope: 'global' as const, lexicon: bare, exists: true } };
+    const note = 'No exported term has an alias, and csv writes one row per alias, so the export has no rows; add one with: lexicon add <canonical> <alias>.';
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedBare);
+    const plain = makeIO();
+    expect(await runExport('csv', {}, plain)).toBe(0);
+    expect(plain.out).toBe('export:csv\n');
+    expect(plain.err).toBe(`lexicon: ${note.charAt(0).toLowerCase()}${note.slice(1)}\n`);
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedBare);
+    const asJson = makeIO();
+    expect(await runExport('csv', { json: true }, asJson)).toBe(0);
+    expect(JSON.parse(asJson.out)).toMatchObject({ ok: true, note });
+    // A format that writes every term (json, claude-md) is not empty.
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedBare);
+    const whole = makeIO();
+    expect(await runExport('json', { json: true }, whole)).toBe(0);
+    expect(JSON.parse(whole.out)).not.toHaveProperty('note');
+    expect(whole.err).toBe('');
+  });
+
   it('--out reports the number of terms written after --category and --limit, not the lexicon size', async () => {
     const dir = await tempDir('lexicon-cli-');
     try {
