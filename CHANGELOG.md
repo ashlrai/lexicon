@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon remove Nope` on a lexicon with no terms says there is nothing to remove and names `lexicon setup` and `lexicon add`, as text and as the `--json` `nextStep` (or `lexicon trust` when the only terms are in an untrusted project lexicon). It pointed to `lexicon list`, which shows nothing there.
 - `lexicon normalize` with empty stdin (or an empty argument) prints a stderr note that there was no text and how to pass it (`lexicon normalize "ping ashler"`, or `echo "ping ashler" | lexicon normalize`). It exited 0 without a word. The exit code and stdout are unchanged.
 - `lexicon edit Nope` says that edit takes no term because it opens the whole lexicon file in `$VISUAL`/`$EDITOR`, and that `lexicon add <canonical> <alias...>` or `lexicon remove <term>` changes one term, as text and under `--json`. It said only "Expected 0 arguments but got 1".
 - A positive integer flag given `0` or a non-number (`harvest --limit/--min-count`, `export --limit`, `suggest --limit`, `daemon --interval`) now shows a value that works for that flag: `option '--limit <n>' argument '0' is invalid. expected a positive integer, e.g. --limit 50`. It ended at "expected a positive integer".

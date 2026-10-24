@@ -515,11 +515,18 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
   const other = scope ? holders.find((h) => h.scope !== scope) : undefined;
   // What to do about a miss, also the `nextStep` under --json: the flag for
   // the file that does hold it, else how to find the exact spelling.
+  // An empty lexicon: `lexicon list` shows nothing, so pointing there was a
+  // dead end; say there are no terms and how to get some.
+  const noTerms = loaded !== undefined && loaded.merged.terms.length === 0;
   const missStep = other
     ? `it is in the ${other.scope} lexicon (${other.path}); run with --${other.scope} to remove it`
     : untrusted
       ? undefined
-      : 'run lexicon list to see the exact canonical spellings';
+      : noTerms
+        ? loaded.skippedProject
+          ? 'the only terms are in the untrusted project lexicon, which is not loaded; review it and run lexicon trust'
+          : 'the lexicon has no terms yet, so there is nothing to remove; run lexicon setup, or add one with: lexicon add <canonical> <alias>'
+        : 'run lexicon list to see the exact canonical spellings';
   const notFound = (): string =>
     `lexicon: term "${safe(canonical)}" not found${scope ? ` in ${scope} lexicon` : ''}\n` +
     (missStep ? `lexicon: ${safeLines(missStep)}\n` : '') +

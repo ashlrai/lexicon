@@ -555,6 +555,31 @@ describe('add / remove / path', () => {
     expect(io.err).toContain('lexicon: --project and --global cannot be combined');
   });
 
+  // Catches: on an empty lexicon `lexicon remove Nope` pointed to `lexicon list`, which shows nothing.
+  it('remove on an empty lexicon points to lexicon setup / lexicon add, not lexicon list', async () => {
+    const empty = { version: 1 as const, terms: [] };
+    const loadedEmpty = { merged: empty, global: { path: state.globalPath, scope: 'global' as const, lexicon: empty, exists: true } };
+    const step = 'the lexicon has no terms yet, so there is nothing to remove; run lexicon setup, or add one with: lexicon add <canonical> <alias>';
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedEmpty);
+    const plain = makeIO();
+    expect(await runRemove('Nope', {}, plain)).toBe(1);
+    expect(plain.err).toContain(`lexicon: ${step}`);
+    expect(plain.err).not.toContain('lexicon list');
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedEmpty);
+    const asJson = makeIO();
+    expect(await runRemove('Nope', { json: true }, asJson)).toBe(1);
+    expect(JSON.parse(asJson.out)).toMatchObject({ ok: false, error: 'term "Nope" not found', nextStep: step, removed: false });
+    // Only untrusted project terms: the way to them is lexicon trust.
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({
+      ...loadedEmpty,
+      projectTrust: 'untrusted',
+      skippedProject: { path: '/tmp/proj/.lexicon.yaml', scope: 'project', lexicon: empty, exists: true },
+    });
+    const skipped = makeIO();
+    expect(await runRemove('Nope', {}, skipped)).toBe(1);
+    expect(skipped.err).toContain('the only terms are in the untrusted project lexicon, which is not loaded; review it and run lexicon trust');
+  });
+
   // Catches: every `remove --json` failure document (not found, unknown alias,
   // refused untrusted copy) lacked `ok: false`, the key every other --json
   // refusal leads with, so a script had to special-case remove.
