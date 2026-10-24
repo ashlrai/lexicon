@@ -5,8 +5,10 @@
  *
  * node:http only, no framework. Every request must carry a `Host` that names
  * this server (isAllowedHost, the DNS rebinding guard). Every request except
- * `GET /health` (without `?cwd=`) and `GET /pair` needs
- * `Authorization: Bearer <token>` (token from serve.json, see ./config.ts). `/pair` is the one-click pairing page for the browser
+ * an `OPTIONS` preflight (204, no body, on any path), `GET /health` (without
+ * `?cwd=`) and `GET /pair` needs `Authorization: Bearer <token>` (token from
+ * serve.json, see ./config.ts); a 401 carries `WWW-Authenticate: Bearer`.
+ * `/pair` is the one-click pairing page for the browser
  * extension: it carries the token in a <meta> tag and is served only to a
  * loopback client whose `Host` header names this port (see pairPageHtml).
  * CORS headers are set only for browser-extension origins or the exact
