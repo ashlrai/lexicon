@@ -276,6 +276,30 @@ describe('runSetup --yes', () => {
     expect(summary.serve).toBe('installed');
   });
 
+  // Catches: a step's failure line went through `safe`, which cuts at 200
+  // characters, so a reason naming a deep path (a long TMPDIR, as macOS CI
+  // has) ended in "...does not e…" and lost the file name and the rest.
+  it('prints a failing step\'s reason whole, however long the path in it', async () => {
+    const deep = path.join(home, 'a'.repeat(120), 'b'.repeat(120), 'index.js');
+    const serveWhy = `lexicon: refusing to install the login service: ${deep} does not exist`;
+    const clientWhy = `failed: could not write ${deep}: EACCES`;
+    const f = fakes({
+      installClient: async (_client, _opts, io) => {
+        io.stderr(`   ${clientWhy}\n`);
+        return 1;
+      },
+      installServe: async (_o, io) => {
+        io.stderr(`${serveWhy}\n`);
+        return 1;
+      },
+    });
+    const { code, io } = await run({ yes: true, clients: 'claude', company: 'Ashlr.AI', serve: true }, f);
+    expect(code).toBe(1);
+    expect(io.err).toContain(`   failed ${serveWhy}\n`);
+    expect(io.err).toContain(`   claude: failed ${clientWhy}\n`);
+    expect(io.err).not.toContain('\u2026');
+  });
+
   it('marks serve as failed when the installer fails and skips it on Windows', async () => {
     const f = fakes({ installServe: async (_o, io) => { io.stderr('launchctl: nope\n'); return 1; } });
     const { code, summary } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', serve: true }, f);

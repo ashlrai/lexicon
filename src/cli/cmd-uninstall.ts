@@ -123,9 +123,14 @@ function isBlankOrComment(l: string): boolean {
   return t === '' || t.startsWith('#');
 }
 
-/** A TOML basic-string or array-of-basic-strings value, as `codexBlock` writes it; undefined otherwise. */
+/**
+ * A TOML basic-string or array-of-basic-strings value, as `codexBlock` writes
+ * it; undefined otherwise. The key may be bare or quoted (`"command"`,
+ * `'command'`), as install's key-based matching reads it: only the bare key
+ * was read, so a table install recognised as lexicon's was kept by uninstall.
+ */
 function tomlValue(lines: readonly string[], key: string): unknown {
-  const re = new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*(#[^"\\]]*)?$`);
+  const re = new RegExp(`^\\s*(?:${key}|"${key}"|'${key}')\\s*=\\s*(.+?)\\s*(#[^"\\]]*)?$`);
   for (const l of lines) {
     const m = re.exec(l);
     if (!m) continue;

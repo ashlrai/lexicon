@@ -64197,12 +64197,14 @@ function isClipboardTimeout(err) {
 function isClipboardTooLarge(err) {
   return err instanceof Error && err.name === "ClipboardTooLargeError";
 }
+var MAX_CLIPBOARD_WRITE_STDERR_BYTES = 4 * 1024;
+var WRITE_STDERR_GRACE_MS = 200;
 function defaultClipboardExec(cmd, args, stdin, opts = {}) {
   const isWrite = stdin !== void 0;
   const { timeoutMs = CLIPBOARD_EXEC_TIMEOUT_MS, env } = typeof opts === "number" ? { timeoutMs: opts, env: void 0 } : opts;
   return new Promise((resolve5, reject) => {
     const child = (0, import_node_child_process4.spawn)(cmd, [...args], {
-      stdio: [isWrite ? "pipe" : "ignore", isWrite ? "ignore" : "pipe", isWrite ? "ignore" : "pipe"],
+      stdio: [isWrite ? "pipe" : "ignore", isWrite ? "ignore" : "pipe", "pipe"],
       windowsHide: true,
       ...env ? { env } : {}
     });
@@ -64230,13 +64232,42 @@ function defaultClipboardExec(cmd, args, stdin, opts = {}) {
       }
       out.push(chunk);
     });
-    child.stderr?.on("data", (chunk) => errChunks.push(chunk));
-    child.once(isWrite ? "exit" : "close", (code) => {
+    let errSize = 0;
+    child.stderr?.on("data", (chunk) => {
+      if (!isWrite) {
+        errChunks.push(chunk);
+        return;
+      }
+      const room = MAX_CLIPBOARD_WRITE_STDERR_BYTES - errSize;
+      if (room <= 0) return;
+      const kept = chunk.length > room ? chunk.subarray(0, room) : chunk;
+      errChunks.push(kept);
+      errSize += kept.length;
+    });
+    const finish = (code) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       if (code === 0) resolve5(Buffer.concat(out).toString("utf8"));
       else reject(new ExecError(cmd, code, Buffer.concat(errChunks).toString("utf8")));
+    };
+    child.once(isWrite ? "exit" : "close", (code) => {
+      if (settled) return;
+      if (!isWrite || code === 0 || !child.stderr || child.stderr.readableEnded) {
+        child.stderr?.destroy();
+        finish(code);
+        return;
+      }
+      clearTimeout(timer);
+      const stderr = child.stderr;
+      const done = () => {
+        clearTimeout(grace);
+        stderr.destroy();
+        finish(code);
+      };
+      const grace = setTimeout(done, WRITE_STDERR_GRACE_MS);
+      stderr.once("end", done);
+      stderr.once("error", done);
     });
     if (isWrite && child.stdin) {
       child.stdin.once("error", () => void 0);
@@ -66909,7 +66940,7 @@ async function runServeInstall(opts, io, deps = {}) {
     line(io, `  Arguments: ${envFile ? `--env-file="${safe(envFile)}" ` : ""}"${safe(cliPath)}" serve`);
     io.stdout(envFile ? envReport(serviceEnv) : "");
     const ended = await runAndReport(exec, io, "schtasks", ["/End", "/TN", taskName]);
-    if (ended.code !== 0 && !schtasksNotRunning(ended)) {
+    if (ended.code !== 0 && !await schtasksNothingToEnd(exec, taskName, ended)) {
       io.stderr(
         `lexicon: created the Scheduled Task "${safe(taskName)}" but could not end its running instance (schtasks /End failed, see above), so the old one may still be serving; run \`schtasks /End /TN "${safe(taskName)}"\` then \`schtasks /Run /TN "${safe(taskName)}"\`
 `
@@ -66931,9 +66962,24 @@ async function runServeInstall(opts, io, deps = {}) {
 `);
   return 1;
 }
-function schtasksNotRunning(result) {
+async function schtasksNothingToEnd(exec, taskName, result) {
+  const state = await schtasksTaskState(exec, taskName);
+  if (!state.exists || state.running === false) return true;
   return schtasksNotFound(result) || /not (currently )?running|no running instance/i.test(`${result.stderr}
 ${result.stdout}`);
+}
+var SCHED_S_TASK_RUNNING = "267009";
+async function schtasksTaskState(exec, taskName) {
+  let result;
+  try {
+    result = await exec("schtasks", ["/Query", "/TN", taskName, "/FO", "CSV", "/NH", "/V"]);
+  } catch {
+    return { exists: false };
+  }
+  if (result.code !== 0) return { exists: false };
+  const rows = result.stdout.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.startsWith('"')).map((l) => [...l.matchAll(/"((?:[^"]|"")*)"/g)].map((m) => (m[1] ?? "").replace(/""/g, '"')));
+  if (rows.length === 0) return { exists: true };
+  return { exists: true, running: rows.some((fields) => fields.some((f) => f.trim() === SCHED_S_TASK_RUNNING)) };
 }
 function serveEnvPath(opts) {
   return import_node_path25.default.join(import_node_path25.default.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
@@ -67013,13 +67059,13 @@ async function stepLexicon(ctx) {
   if (ctx.plan) ctx.plan.lexiconPath = global;
   const existed = ctx.exists(global);
   if (existed) {
-    ctx.say(`   exists: ${safe(tildify(global, ctx.home))}`);
+    ctx.say(`   exists: ${safePath(tildify(global, ctx.home))}`);
   } else if (ctx.plan) {
-    ctx.say(`   would create ${safe(tildify(global, ctx.home))}`);
+    ctx.say(`   would create ${safePath(tildify(global, ctx.home))}`);
   } else {
     const captured = captureIO();
     await runInit({ cwd: ctx.cwd }, captured);
-    ctx.say(`   created ${safe(tildify(global, ctx.home))}`);
+    ctx.say(`   created ${safePath(tildify(global, ctx.home))}`);
   }
   if (ctx.plan) ctx.plan.lexiconExists = existed;
   const before = existed ? (await readLexiconFile(global, "global")).lexicon.terms.length : 0;
@@ -67239,13 +67285,13 @@ async function stepHarvest(ctx) {
   candidates = candidates.filter((c) => !skipped.includes(c));
   if (skipped.length > 0) ctx.say(dim(`   already in the global lexicon: ${safe(skipped.map((c) => c.canonical).join(", "))}`));
   if (candidates.length === 0) {
-    ctx.say(dim(`   nothing worth adding in ${safe(tildify(root, ctx.home))}`));
+    ctx.say(dim(`   nothing worth adding in ${safePath(tildify(root, ctx.home))}`));
     return;
   }
   if (ctx.plan) {
     ctx.plan.wouldHarvest = candidates.map((c) => c.canonical);
-    const file3 = safe(import_node_path26.default.join(tildify(root, ctx.home), ".lexicon.yaml"));
-    const found = `${candidates.length} name${candidates.length === 1 ? "" : "s"} in ${safe(tildify(root, ctx.home))}: ${safe(ctx.plan.wouldHarvest.join(", "))}`;
+    const file3 = safePath(import_node_path26.default.join(tildify(root, ctx.home), ".lexicon.yaml"));
+    const found = `${candidates.length} name${candidates.length === 1 ? "" : "s"} in ${safePath(tildify(root, ctx.home))}: ${safe(ctx.plan.wouldHarvest.join(", "))}`;
     if (ctx.opts.harvest === true) {
       ctx.say(`   would add to ${file3}: ${found}`);
     } else if (ctx.plan.interactive) {
@@ -67257,10 +67303,10 @@ async function stepHarvest(ctx) {
     return;
   }
   if (ctx.prompter) {
-    ctx.say(`   found ${plural2(candidates.length, "name")} in ${safe(tildify(root, ctx.home))}:`);
+    ctx.say(`   found ${plural2(candidates.length, "name")} in ${safePath(tildify(root, ctx.home))}:`);
     const rows = candidates.map((c) => [c.canonical, c.category, String(c.count), c.suggestedAliases.slice(0, 3).join(", ")]);
     ctx.say(renderTable(rows, ["canonical", "category", "count", "suggested aliases"]).replace(/\n$/, ""));
-    if (!await ctx.prompter.confirm(`   add them to the project lexicon (${safe(import_node_path26.default.join(tildify(root, ctx.home), ".lexicon.yaml"))})?`, false)) {
+    if (!await ctx.prompter.confirm(`   add them to the project lexicon (${safePath(import_node_path26.default.join(tildify(root, ctx.home), ".lexicon.yaml"))})?`, false)) {
       ctx.say(dim("   skipped; add them later with: lexicon harvest --add, or one by one with: lexicon harvest --interactive"));
       return;
     }
@@ -67288,10 +67334,10 @@ async function stepHarvest(ctx) {
   }
   if (leaveUntrusted && file2 !== void 0) {
     ctx.summary.untrustedProject = file2;
-    ctx.say(`   added ${created} new term${created === 1 ? "" : "s"}, merged ${merged} in ${safe(tildify(file2, ctx.home))} (not trusted: review it and run lexicon trust)`);
+    ctx.say(`   added ${created} new term${created === 1 ? "" : "s"}, merged ${merged} in ${safePath(tildify(file2, ctx.home))} (not trusted: review it and run lexicon trust)`);
     return;
   }
-  ctx.say(`   added ${created} new term${created === 1 ? "" : "s"}, merged ${merged} in ${safe(tildify(file2 ?? root, ctx.home))} (trusted)`);
+  ctx.say(`   added ${created} new term${created === 1 ? "" : "s"}, merged ${merged} in ${safePath(tildify(file2 ?? root, ctx.home))} (trusted)`);
 }
 async function stepClients(ctx) {
   stepHeading(ctx, 4, "Agent clients");
@@ -67299,7 +67345,7 @@ async function stepClients(ctx) {
     const detected = (await detectClients({ ...ctx.deps, home: ctx.home }, ctx.cwd)).filter((c) => c.detected);
     ctx.plan.detectedClients = detected.map((c) => c.name);
     ctx.say(
-      detected.length > 0 ? `   detected: ${detected.map((c) => `${c.name} ${dim(safe(tildify(c.evidence ?? "", ctx.home)))}`).join(", ")}` : dim("   none detected")
+      detected.length > 0 ? `   detected: ${detected.map((c) => `${c.name} ${dim(safePath(tildify(c.evidence ?? "", ctx.home)))}`).join(", ")}` : dim("   none detected")
     );
     const chosen2 = ctx.opts.clients !== void 0 ? parseClientList(ctx.opts.clients) : detected.map((c) => c.name);
     ctx.plan.wouldInstallClients = chosen2;
@@ -67325,7 +67371,7 @@ async function stepClients(ctx) {
     if (ctx.prompter) {
       chosen = await ctx.prompter.choose(
         "   install the lexicon MCP server (and hooks) into:",
-        detected.map((c) => ({ label: `${c.name}  ${dim(safe(tildify(c.evidence ?? "", ctx.home)))}`, value: c.name })),
+        detected.map((c) => ({ label: `${c.name}  ${dim(safePath(tildify(c.evidence ?? "", ctx.home)))}`, value: c.name })),
         { multi: true }
       );
       if (chosen.length === 0) {
@@ -67360,11 +67406,11 @@ async function stepClients(ctx) {
     }
     if (code === 0) {
       ctx.summary.clients.push({ name: client, status: "installed", detail });
-      ctx.say(`   ${client}: installed ${dim(safe(detail))}`);
+      ctx.say(`   ${client}: installed ${dim(safeMessage(detail))}`);
     } else {
       const failure2 = lastLine(captured.err) || detail || `exit ${code}`;
       ctx.summary.clients.push({ name: client, status: "failed", detail: failure2 });
-      ctx.warn(`   ${client}: failed ${safe(failure2)}`);
+      ctx.warn(`   ${client}: failed ${safeMessage(failure2)}`);
       ctx.warn(ctx.opts.forAgent ? `   (retry with: install_client with client: "${client}" and apply: true)` : `   (retry with: lexicon install ${client} --apply)`);
     }
   }
@@ -67391,7 +67437,7 @@ async function stepServe(ctx) {
       const blocked = await (ctx.deps.serveBlocker ?? serveInstallBlocker)(serveDepsFor(ctx));
       if (blocked) {
         ctx.plan.serveBlocked = blocked;
-        ctx.say(`   would not install the login service: ${safe(blocked)}`);
+        ctx.say(`   would not install the login service: ${safeMessage(blocked)}`);
         return;
       }
     }
@@ -67433,10 +67479,10 @@ async function stepServe(ctx) {
   }
   if (code === 0) {
     ctx.summary.serve = "installed";
-    ctx.say(`   installed ${dim(safe(lastLine(captured.out)))}`);
+    ctx.say(`   installed ${dim(safeMessage(lastLine(captured.out)))}`);
   } else {
     ctx.summary.serve = "failed";
-    ctx.warn(`   failed ${safe(lastLine(captured.err) || lastLine(captured.out))}`);
+    ctx.warn(`   failed ${safeMessage(lastLine(captured.err) || lastLine(captured.out))}`);
     ctx.warn(ctx.opts.forAgent ? "   (retry with: setup_lexicon with apply: true and serve: true)" : "   (retry with: lexicon serve --install)");
   }
 }
@@ -67485,8 +67531,8 @@ async function stepExport(ctx) {
   if (ctx.plan) {
     const alt = existing !== void 0 ? await freeExportPath(dir, format, ext, void 0) : void 0;
     ctx.plan.wouldExport.push({ format, path: alt ?? file2 });
-    const shown = safe(tildify(file2, ctx.home));
-    const keep = alt === void 0 ? "" : ctx.plan.interactive ? `; ${shown} exists, so it would ask before replacing it (default no: writes ${safe(tildify(alt, ctx.home))})` : `; ${shown} exists, so it would be kept and ${safe(tildify(alt, ctx.home))} written, unless it holds this same export`;
+    const shown = safePath(tildify(file2, ctx.home));
+    const keep = alt === void 0 ? "" : ctx.plan.interactive ? `; ${shown} exists, so it would ask before replacing it (default no: writes ${safePath(tildify(alt, ctx.home))})` : `; ${shown} exists, so it would be kept and ${safePath(tildify(alt, ctx.home))} written, unless it holds this same export`;
     ctx.say(
       ctx.plan.wouldAsk.includes("export") ? `   would ask which app; ${APP_LABELS[app].label} (the default) writes ${shown}${keep}` : `   would write ${shown} for ${APP_LABELS[app].label}${keep}`
     );
@@ -67496,7 +67542,7 @@ async function stepExport(ctx) {
   const exported = exportLexiconWithNotes(loaded.merged, format);
   let target = file2;
   if (existing !== void 0 && existing !== exported.text) {
-    const shown = safe(tildify(file2, ctx.home));
+    const shown = safePath(tildify(file2, ctx.home));
     const replace = ctx.prompter ? await ctx.prompter.confirm(`   ${shown} exists and differs from this export (edited by hand?); replace it?`, false) : false;
     if (!replace) {
       ctx.say(`   kept ${shown} as it was: it differs from this export${ctx.prompter ? "" : " (no terminal to ask on)"}`);
@@ -67511,7 +67557,7 @@ async function stepExport(ctx) {
   await writeFileAtomic(target, exported.text);
   ctx.summary.exports.push({ format, path: target });
   const count = exported.rows !== void 0 ? plural2(exported.rows, "row") : plural2(loaded.merged.terms.length, "term");
-  ctx.say(`   wrote ${safe(tildify(target, ctx.home))} (${count})`);
+  ctx.say(`   wrote ${safePath(tildify(target, ctx.home))} (${count})`);
   for (const note of exported.notes) ctx.warn(`   ${safeLines(note)}`);
   ctx.say(`   import it in ${APP_LABELS[app].where}`);
 }
@@ -67555,7 +67601,7 @@ function printPlan(ctx, p) {
       p.interactive ? "   this is what the same command without --dry-run does if you press Enter at every prompt." : "   this is what the same command without --dry-run does; nothing here is prompted for."
     )
   );
-  ctx.say(`   lexicon: ${safe(tildify(p.lexiconPath, ctx.home))}${p.lexiconExists ? "" : dim(" (would be created)")}`);
+  ctx.say(`   lexicon: ${safePath(tildify(p.lexiconPath, ctx.home))}${p.lexiconExists ? "" : dim(" (would be created)")}`);
   ctx.say(`   would seed: ${p.wouldSeed.length > 0 ? safe(p.wouldSeed.join(", ")) : dim("nothing")}`);
   const packs = p.wouldInstallPacks.length > 0 ? p.wouldInstallPacks.join(", ") : dim("none");
   ctx.say(
@@ -67571,9 +67617,9 @@ function printPlan(ctx, p) {
     asks("clients") ? `   would install into: ${dim("asks")} (checked: ${p.wouldInstallClients.length > 0 ? p.wouldInstallClients.join(", ") : dim("none")})` : `   would install into: ${p.wouldInstallClients.length > 0 ? p.wouldInstallClients.join(", ") : dim("none")}`
   );
   ctx.say(
-    p.serveBlocked !== void 0 ? `   login service: would not install (${safe(p.serveBlocked)})` : asks("serve") ? `   login service: ${dim("asks")} (default yes) would install a login service that runs the local API` : `   login service: ${p.wouldInstallServe ? "would install" : dim("skipped (--serve installs it)")}`
+    p.serveBlocked !== void 0 ? `   login service: would not install (${safeMessage(p.serveBlocked)})` : asks("serve") ? `   login service: ${dim("asks")} (default yes) would install a login service that runs the local API` : `   login service: ${p.wouldInstallServe ? "would install" : dim("skipped (--serve installs it)")}`
   );
-  const exports = p.wouldExport.length > 0 ? safe(p.wouldExport.map((e) => tildify(e.path, ctx.home)).join(", ")) : dim("nothing");
+  const exports = p.wouldExport.length > 0 ? safeMessage(p.wouldExport.map((e) => tildify(e.path, ctx.home)).join(", ")) : dim("nothing");
   ctx.say(
     asks("export") ? `   dictation export: ${dim("asks")} which app, and Enter writes ${exports}` : `   would export: ${p.wouldExport.length > 0 ? exports : dim("nothing (--app <app> writes one)")}`
   );
@@ -67644,7 +67690,7 @@ function printSummary(ctx) {
 }
 function printWritten(ctx) {
   const s = ctx.summary;
-  ctx.say(`   lexicon: ${safe(tildify(s.lexiconPath, ctx.home))}`);
+  ctx.say(`   lexicon: ${safePath(tildify(s.lexiconPath, ctx.home))}`);
   ctx.say(`   terms added: ${s.termsAdded.length > 0 ? safe(s.termsAdded.join(", ")) : dim("none")}`);
   ctx.say(`   packs: ${s.packs.length > 0 ? s.packs.map((p) => `${p.name} (${p.added} added)`).join(", ") : dim("none")}`);
   const installed = s.clients.filter((c) => c.status === "installed").map((c) => c.name);
@@ -67653,7 +67699,7 @@ function printWritten(ctx) {
     `   clients: ${installed.length > 0 ? installed.join(", ") : dim("none")}${failed.length > 0 ? ` (failed: ${failed.join(", ")})` : ""}`
   );
   ctx.say(`   local API: ${s.serve}`);
-  ctx.say(`   exports: ${s.exports.length > 0 ? safe(s.exports.map((e) => tildify(e.path, ctx.home)).join(", ")) : dim("none")}`);
+  ctx.say(`   exports: ${s.exports.length > 0 ? safeMessage(s.exports.map((e) => tildify(e.path, ctx.home)).join(", ")) : dim("none")}`);
 }
 async function runSetup(opts, io, deps = {}) {
   const cwd = import_node_path27.default.resolve(opts.cwd ?? process.cwd());
@@ -67803,7 +67849,7 @@ function isBlankOrComment2(l) {
   return t === "" || t.startsWith("#");
 }
 function tomlValue(lines, key) {
-  const re = new RegExp(`^\\s*${key}\\s*=\\s*(.+?)\\s*(#[^"\\]]*)?$`);
+  const re = new RegExp(`^\\s*(?:${key}|"${key}"|'${key}')\\s*=\\s*(.+?)\\s*(#[^"\\]]*)?$`);
   for (const l of lines) {
     const m = re.exec(l);
     if (!m) continue;

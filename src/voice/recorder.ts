@@ -88,6 +88,22 @@ export async function touchPrivateFile(file: string): Promise<void> {
 }
 
 /**
+ * Create `file` new and empty with mode 0600, refusing (EEXIST) when anything
+ * is already at that path, a symlink included: `O_CREAT | O_EXCL` never
+ * follows one. For a file in a directory other accounts can write to (the
+ * foreground WAV in the temp directory), where touchPrivateFile would open a
+ * file or symlink someone else put there first.
+ */
+export async function createPrivateFile(file: string): Promise<void> {
+  const handle = await fs.open(file, 'wx', VOICE_FILE_MODE);
+  try {
+    await handle.chmod(VOICE_FILE_MODE);
+  } finally {
+    await handle.close();
+  }
+}
+
+/**
  * Create `file` empty with mode 0600, emptying one that is already there.
  * The detached recorder's stderr log is opened for append, and it was never
  * emptied: it grew by every recording's errors, and a recording that failed

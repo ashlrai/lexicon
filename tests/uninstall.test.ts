@@ -208,6 +208,17 @@ describe('uninstall codex sees every spelling install sees', () => {
     }
   });
 
+  // Catches: tomlValue read `command` and `args` only as bare keys, so a
+  // table whose keys were quoted ("command", 'args') was kept as not ours.
+  it('reads quoted command and args keys', () => {
+    for (const body of [`"command" = "node"\n'args' = [${JSON.stringify(SERVER)}]\n`, `'command'="node"\n"args" = [${JSON.stringify(SERVER)}]  # ours\n`]) {
+      const text = `a = 1\n\n[mcp_servers.lexicon]\n${body}\n[other]\nb = 2\n`;
+      expect(removeServerFromToml(text)).toEqual({ next: 'a = 1\n\n[other]\nb = 2\n', outcome: 'removed' });
+    }
+    // A quoted key that is another key is still not command.
+    expect(removeServerFromToml(`[mcp_servers.lexicon]\n"commandx" = "node"\nargs = [${JSON.stringify(SERVER)}]\n`).outcome).toBe('kept');
+  });
+
   it('refuses an inline table or dotted keys, writing nothing', async () => {
     const file = path.join(home, '.codex', 'config.toml');
     await fs.mkdir(path.dirname(file), { recursive: true });
