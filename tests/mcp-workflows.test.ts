@@ -306,6 +306,21 @@ describe('remove_term', () => {
   });
 });
 
+// Catches: the description said it returns ranked { canonical, confidence,
+// aliases } candidates, while the result is { heard, suggestions } with at
+// most three of them, so an agent looked for an array that is not there.
+describe('suggest_canonical result shape', () => {
+  it('is { heard, suggestions } with at most 3, as the description says', async () => {
+    for (const canonical of ['Ashlr.AI', 'Ashley', 'Asher', 'Ashlar Labs', 'Ashland']) await call('add_term', { canonical, aliases: [] });
+    const payload = JSON.parse((await call('suggest_canonical', { heard: 'Ashler' })).text) as { heard: string; suggestions: { canonical: string; confidence: number }[] };
+    expect(payload.heard).toBe('Ashler');
+    expect(payload.suggestions.length).toBeGreaterThan(0);
+    expect(payload.suggestions.length).toBeLessThanOrEqual(3);
+    const tool = (await listTools()).find((t) => t.name === 'suggest_canonical');
+    expect(tool?.description).toContain('It returns { heard, suggestions }: `suggestions` holds at most 3 candidates');
+  });
+});
+
 describe('suggest_canonical with an untrusted project lexicon', () => {
   // Catches: no suggestions read as "not in the lexicon" while the name sat in the skipped project file.
   it('reports the skipped project file by path, never its terms', async () => {

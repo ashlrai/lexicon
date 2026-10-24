@@ -629,9 +629,10 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'WHEN TO CALL: when normalize_transcript left a suspicious proper noun alone. It only matches above a confidence threshold, ' +
         'so a badly mangled name gets through unchanged; call this before guessing, and before asking the user an open question. ' +
         'WHAT IT CHANGES: nothing. It only reads the lexicon. ' +
-        'WHAT IT WILL NOT DO: it will not decide for you. It returns ranked { canonical, confidence, aliases } candidates: above ' +
+        'WHAT IT WILL NOT DO: it will not decide for you. It returns { heard, suggestions }: `suggestions` holds at most 3 candidates scoring 0.6 or more, best first, ' +
+        'each { canonical, confidence, aliases, category? }: above ' +
         "about 0.8 use the canonical and mention it in passing, below that ask \"did you mean X?\" and call learn_correction once " +
-        'the user confirms, so the next transcript needs no asking. No suggestions means the name is simply not in the lexicon yet: ' +
+        'the user confirms, so the next transcript needs no asking. An empty `suggestions` means the name is simply not in the lexicon yet: ' +
         'offer to add it with add_term, unless the result carries `skippedProject`: then the name may be in the untrusted project lexicon, so tell the user ' + cliCommand('trust') + ' would enable it.',
       inputSchema: {
         heard: nonBlank().describe(
