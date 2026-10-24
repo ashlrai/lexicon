@@ -21466,8 +21466,9 @@ async function runHook(input, opts = {}) {
   const event = payload.hook_event_name;
   if (event === "SessionStart") return sessionStart(payload, opts);
   if (event !== void 0 && event !== "UserPromptSubmit") {
-    process.stderr.write(`[lexicon hook] unknown hook_event_name ${shownValue(event)}; handled as UserPromptSubmit (this hook handles UserPromptSubmit and SessionStart)
+    process.stderr.write(`[lexicon hook] unknown hook_event_name ${shownValue(event)}; nothing to do (this hook handles UserPromptSubmit and SessionStart)
 `);
+    return "";
   }
   return userPromptSubmit(payload, opts);
 }

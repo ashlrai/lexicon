@@ -626,11 +626,24 @@ describe('runHook', () => {
     expect(await runHook(payload('plain prompt'))).toBe('');
   });
 
-  it('treats a missing or unknown event as UserPromptSubmit', async () => {
+  it('treats a missing event as UserPromptSubmit', async () => {
     const { runHook } = await import('../src/hooks/user-prompt-submit.js');
-    const ctx = context(await runHook(JSON.stringify({ prompt: 'hi Ashler', hook_event_name: 'SomethingElse' })));
-    expect(ctx).toContain('Corrected prompt:\nhi Ashlr.AI');
-    expect(context(await runHook(JSON.stringify({ prompt: 'hi Ashler' })))).toContain('Corrected prompt:');
+    expect(context(await runHook(JSON.stringify({ prompt: 'hi Ashler' })))).toContain('Corrected prompt:\nhi Ashlr.AI');
+  });
+
+  // Catches: an unknown event carrying a prompt got a corrections note tagged
+  // UserPromptSubmit, an event it never was.
+  it('prints nothing for an unknown event, even one carrying a prompt, and reads no lexicon', async () => {
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    try {
+      for (const event of ['SomethingElse', 'PreToolUse', 'userpromptsubmit', 'sessionstart', 42, null, { name: 'UserPromptSubmit' }]) {
+        expect(await runHook(JSON.stringify({ prompt: 'hi Ashler', cwd: '/fake/repo', hook_event_name: event }))).toBe('');
+      }
+      expect(mocks.loadLexicon).not.toHaveBeenCalled();
+    } finally {
+      stderr.mockRestore();
+    }
   });
 
   // Catches: an unknown event or a non-object payload was handled without a word anywhere.
@@ -641,7 +654,7 @@ describe('runHook', () => {
       await runHook(JSON.stringify({ prompt: 'hi', hook_event_name: 'PreToolUse\u001b[31m' }));
       expect(stderr).toHaveBeenCalledTimes(1);
       const line = String(stderr.mock.calls[0]?.[0]);
-      expect(line).toContain('[lexicon hook] unknown hook_event_name "PreToolUse"; handled as UserPromptSubmit');
+      expect(line).toContain('[lexicon hook] unknown hook_event_name "PreToolUse"; nothing to do');
       expect(line).not.toContain('\u001b');
       stderr.mockClear();
       await runHook(JSON.stringify({ prompt: 'hi', hook_event_name: 42 }));

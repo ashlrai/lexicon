@@ -103,7 +103,7 @@ export function formatLengthNote(checkedChars: number, totalChars: number): stri
  */
 export const CORRECTED_PROMPT_MAX_CHARS = 8000;
 
-/** Hook events this entry point handles. Anything else is treated as UserPromptSubmit. */
+/** Hook events this entry point handles. A payload with no event name is treated as UserPromptSubmit; any other name gets no output. */
 export type HookEventName = 'UserPromptSubmit' | 'SessionStart';
 
 /** Subset of the Claude Code hook payload this file reads. */
@@ -942,16 +942,20 @@ export async function runSessionStartHook(input: string, opts: HookOptions = {})
 }
 
 /**
- * Dispatches on `hook_event_name`. Unknown or missing events are handled as
- * UserPromptSubmit; an unknown one (registered for an event this hook does
- * not handle, or a misspelling) also gets one stderr line.
+ * Dispatches on `hook_event_name`. A missing event is handled as
+ * UserPromptSubmit (callers that predate the field). An unknown one
+ * (registered for an event this hook does not handle, or a misspelling) gets
+ * one stderr line and no output: answering it with output tagged
+ * UserPromptSubmit put a corrections note on an event that never carried a
+ * user prompt, and a client that checks the tag rejects the whole reply.
  */
 export async function runHook(input: string, opts: HookOptions = {}): Promise<string> {
   const payload = parseInput(input);
   const event: unknown = payload.hook_event_name;
   if (event === 'SessionStart') return sessionStart(payload, opts);
   if (event !== undefined && event !== 'UserPromptSubmit') {
-    process.stderr.write(`[lexicon hook] unknown hook_event_name ${shownValue(event)}; handled as UserPromptSubmit (this hook handles UserPromptSubmit and SessionStart)\n`);
+    process.stderr.write(`[lexicon hook] unknown hook_event_name ${shownValue(event)}; nothing to do (this hook handles UserPromptSubmit and SessionStart)\n`);
+    return '';
   }
   return userPromptSubmit(payload, opts);
 }
