@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon serve`: the POST routes (`/normalize`, `/learn`, `/add`, `/packs/:name`) refuse a query parameter with a 400 naming the body fields, as the docs said every route but `/pair` does. A query parameter was dropped, so `POST /packs/developer?scope=project` installed the pack into the global lexicon and answered 200, and `POST /normalize?cwd=...` corrected against the server's own directory.
 - MCP `add_pack` refuses a blank `name` at the schema (`must not be blank at name`), as the other required string arguments do; it passed the schema and came back as `unknown pack "  "`. The other tool schemas were checked: every other required string argument already makes this check.
 - MCP `import_vocabulary` says reading mail needs new OAuth scopes and reading Slack needs a workspace token, as each source's own description says; it read as both needing OAuth scopes.
 - `lexicon harvest --min-count` help says it applies only to names found in file text (default 2); the directory name, git authors, package names and dot-TLD brands (Ashlr.AI) are proposed at any count. It said only "minimum occurrences". This matches MCP `harvest_repo`'s `minCount`.

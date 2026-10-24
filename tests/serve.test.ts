@@ -784,6 +784,29 @@ describe('GET /lexicon, /export/:format, /stats', () => {
     expect((await api('GET', '/aliases?canonical=Vercel')).status).toBe(200);
   });
 
+  // Catches: the POST routes never looked at the query string, so
+  // `POST /packs/developer?scope=project` installed into the global lexicon and
+  // answered 200, and `POST /normalize?cwd=...` corrected against the server's
+  // own directory, while the docs said query strings are strict on every route.
+  it('POST routes refuse a query parameter and write nothing', async () => {
+    const before = await fs.readFile(env.globalPath, 'utf8');
+    const cases: [string, unknown, string][] = [
+      ['/normalize?cwd=/tmp', { text: 'ping ashler' }, 'POST /normalize takes { text, dryRun?, minConfidence?, cwd? }'],
+      ['/learn?scope=project', { heard: 'Ashlur', meant: 'Ashlr.AI' }, 'POST /learn takes { heard, meant, scope?, cwd? }'],
+      ['/add?dryRun=1', { canonical: 'Querystringco' }, 'POST /add takes { canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }'],
+      ['/packs/developer?scope=project', {}, 'POST /packs/:name takes { scope?, cwd? } or an empty body'],
+    ];
+    for (const [route, body, shape] of cases) {
+      const res = await api('POST', route, body);
+      expect(res.status, route).toBe(400);
+      const key = new URL(route, 'http://x').searchParams.keys().next().value;
+      expect(((await res.json()) as { error: string }).error, route).toBe(
+        `unknown query parameter "${key}" (a POST takes its options in the JSON body, not the query string: ${shape})`,
+      );
+    }
+    expect(await fs.readFile(env.globalPath, 'utf8')).toBe(before);
+  });
+
   it('/stats returns LexiconStats', async () => {
     const res = await api('GET', '/stats');
     expect(res.status).toBe(200);
