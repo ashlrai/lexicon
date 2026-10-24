@@ -1544,6 +1544,12 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     }
 
     if (method === 'OPTIONS') {
+      // Private Network Access: Chrome asks before a public page reaches a
+      // loopback server. Granted only with the CORS headers above, so only to
+      // an allowed origin and never on /pair.
+      if (cors['Access-Control-Allow-Origin'] !== undefined && /^true$/i.test(String(req.headers['access-control-request-private-network'] ?? '').trim())) {
+        cors['Access-Control-Allow-Private-Network'] = 'true';
+      }
       res.writeHead(204, cors);
       res.end();
       return;

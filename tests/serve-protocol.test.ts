@@ -12,7 +12,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addTerm } from '../src/core/index.js';
-import { BROKEN_LEXICON_ANONYMOUS, createServer, HEADERS_TIMEOUT_MS, MAX_BODY_BYTES, REQUEST_TIMEOUT_MS } from '../src/serve/index.js';
+import {
+  BROKEN_LEXICON_ANONYMOUS,
+  createServer,
+  ensureServeConfig,
+  HEADERS_TIMEOUT_MS,
+  MAX_BODY_BYTES,
+  REQUEST_TIMEOUT_MS,
+  writeServeConfig,
+} from '../src/serve/index.js';
 import type { LexiconHttpServer, ServeStartInfo } from '../src/serve/index.js';
 
 let home: string;
@@ -187,6 +195,41 @@ describe('a request that arrives too slowly', () => {
     expect(HEADERS_TIMEOUT_MS).toBeLessThanOrEqual(REQUEST_TIMEOUT_MS);
     expect(srv.server.requestTimeout).toBe(REQUEST_TIMEOUT_MS);
     expect(srv.server.headersTimeout).toBe(HEADERS_TIMEOUT_MS);
+  });
+});
+
+describe('Private Network Access preflight', () => {
+  // Catches: a page in allowedOrigins (a web app the user allowed) was
+  // blocked by Chrome's Private Network Access check: the preflight carried
+  // Access-Control-Request-Private-Network and the answer did not grant it.
+  it('grants Access-Control-Allow-Private-Network to an allowed origin only', async () => {
+    const dir = await fs.mkdtemp(path.join(home, 'pna-'));
+    const gp = path.join(dir, 'lexicon.yaml');
+    const cfg = await ensureServeConfig({ globalPath: gp });
+    await writeServeConfig({ ...cfg, allowedOrigins: ['https://app.example'] }, { globalPath: gp });
+    const own = createServer({ port: 0, cwd, globalPath: gp, quiet: true, version: '9.9.9' });
+    const ownInfo = await own.start();
+    const preflight = (route: string, origin: string, pna = 'true'): Promise<Response> =>
+      fetch(`${ownInfo.url}${route}`, {
+        method: 'OPTIONS',
+        headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Private-Network': pna },
+      });
+    try {
+      const ok = await preflight('/normalize', 'https://app.example');
+      expect(ok.status).toBe(204);
+      expect(ok.headers.get('access-control-allow-origin')).toBe('https://app.example');
+      expect(ok.headers.get('access-control-allow-private-network')).toBe('true');
+      const ext = await preflight('/normalize', 'chrome-extension://abcdef');
+      expect(ext.headers.get('access-control-allow-private-network')).toBe('true');
+      const other = await preflight('/normalize', 'https://evil.example');
+      expect(other.headers.get('access-control-allow-private-network')).toBeNull();
+      const pair = await preflight('/pair', 'https://app.example');
+      expect(pair.headers.get('access-control-allow-private-network')).toBeNull();
+      const notAsked = await preflight('/normalize', 'https://app.example', 'false');
+      expect(notAsked.headers.get('access-control-allow-private-network')).toBeNull();
+    } finally {
+      await own.stop();
+    }
   });
 });
 

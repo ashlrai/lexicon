@@ -27,6 +27,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon serve` answers Chrome's Private Network Access preflight: a page listed in `serve.json`'s `allowedOrigins` was blocked from the loopback API because the preflight asked with `Access-Control-Request-Private-Network: true` and the answer did not grant it. `Access-Control-Allow-Private-Network: true` is now sent with the CORS headers, so only to an allowed origin and never on `/pair`.
 - `lexicon serve`'s per-directory lexicon cache drops the least recently used directory once it holds 32, not the first one loaded, so the directory a client asks for most is no longer reloaded each time 32 others have been asked for once.
 - `lexicon serve` gives a request 30 seconds to arrive (its headers 10), then answers 408 with `{ error }` and closes it. Node's default was 300 s, so a client that sent its headers and trickled the body, or never sent it, held one of the 64 request slots for five minutes.
 - `lexicon serve`'s plain `/health`, asked without the token (the browser extension's status check does this), says when a lexicon file does not parse and names `lexicon serve --status` and `lexicon doctor` for the file and line. It said only `internal error (the lexicon serve log has the detail)`, so the popup gave no hint that the fix was an edit to the lexicon. The path is still left out without the token.

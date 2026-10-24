@@ -68,7 +68,10 @@ IP address as well); anything else is 403 on every route, which is what stops
 a DNS rebinding page. Every request except `GET /health` (without `?cwd=`),
 `GET /pair` and an `OPTIONS` preflight needs `Authorization: Bearer <token>`;
 `OPTIONS` answers 204 with no body on any path, carrying the CORS headers
-only for an allowed origin. Requests and responses are JSON
+only for an allowed origin (and, when the preflight asks with
+`Access-Control-Request-Private-Network: true`,
+`Access-Control-Allow-Private-Network: true`, again only for an allowed
+origin). Requests and responses are JSON
 (`Content-Type: application/json`) unless noted. Every GET route also answers
 `HEAD` (`curl -I`) with the status and headers GET would send, `Content-Length`
 included, and no body. Errors are
