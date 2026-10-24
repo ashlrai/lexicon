@@ -535,6 +535,12 @@ describe('add / remove / path', () => {
     expect(JSON.parse(fresh.out)).toMatchObject({ created: true, suggested: ['Ashler', 'Ashlar', 'Ashlr AI'] });
   });
 
+  // Catches: `add X --suggest --never <w>` put a suggested spelling that is also a never word among the aliases, where the never word blocks it.
+  it('--suggest leaves out a suggestion that is one of the --never words', async () => {
+    await runAdd('Ashlr.AI', ['Ashler'], { suggest: true, never: [' ashlar '] }, makeIO());
+    expect(core.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ aliases: ['Ashler', 'Ashlr AI'] }), expect.anything());
+  });
+
   it('does not suggest when aliases are given unless --suggest', async () => {
     await runAdd('Ashlr.AI', ['Ashler'], {}, makeIO());
     expect(core.suggestAliases).not.toHaveBeenCalled();

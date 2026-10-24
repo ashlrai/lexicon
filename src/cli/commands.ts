@@ -368,7 +368,9 @@ export async function runAdd(
   // term (addTerm's defaultAliases), so `add X --never w` on an existing X adds none.
   const fallbackOnly = !opts.suggest && aliases.length === 0 && !p;
   if (opts.suggest || aliases.length === 0) {
-    const have = new Set(aliases.map((a) => a.toLowerCase()));
+    // A never word is excluded as given (`--suggest --never sass` on SaaS): the
+    // store refuses an alias that is also a never word, since it never applies.
+    const have = new Set([...aliases, ...(opts.never ?? []).map((w) => w.trim())].map((a) => a.toLowerCase()));
     suggested = suggestAliases(trimmed).filter((s) => {
       const key = s.toLowerCase();
       if (key === trimmed.toLowerCase() || have.has(key)) return false;

@@ -1805,10 +1805,13 @@ function mergeTermInto(file: LexiconFile, incoming: Term, scope: TermScope, opts
     return { term: replaced, created: false };
   }
 
+  // A generated alias that is one of the term's never words would be blocked
+  // by it (see assertNoNeverAliasClash), so it is not offered at all.
+  const neverKeys = new Set((incoming.never ?? []).map(foldKey));
   const created: Term = {
     ...incoming,
     ...(incoming.aliases.length === 0 && opts.defaultAliases?.length
-      ? { aliases: dedupeAliases([...opts.defaultAliases], canonical) }
+      ? { aliases: dedupeAliases(opts.defaultAliases.filter((a) => !neverKeys.has(foldKey(a))), canonical) }
       : {}),
     scope,
     source: incoming.source ?? 'user',
@@ -1834,10 +1837,33 @@ export async function addTerm(
   return withLexiconLock(targetPath, async () => {
     const file = await readLexiconFileForWrite(targetPath, scope);
     if (!opts.leaveUntrusted) await assertParsedProjectWritable(file, opts);
+    assertNoNeverAliasClash(file, incoming, opts);
     const result = mergeTermInto(file, incoming, scope, opts);
     await writeAddedFile(file, opts);
     return { file, ...result };
   });
+}
+
+/**
+ * Refuse an add that makes one spelling both an alias and a never word of the
+ * same term. The matcher checks a term's never words before its aliases, so
+ * such an alias is never applied, while the add answered success and listed
+ * it (`lexicon add Wex wexx --never wexx`, or `learn wexx Wex` on a term that
+ * never rewrites `wexx`). Only a clash this call brings in is refused: a file
+ * that already holds one (a hand edit) is still written to, and a replacing
+ * write (`merge: false`, the recase `learn` does) carries the term as it is.
+ */
+function assertNoNeverAliasClash(file: LexiconFile, incoming: Term, opts: AddTermOptions): void {
+  if (opts.merge === false) return;
+  const existing = findTerm(file.lexicon, incoming.canonical);
+  const never = new Set([...(existing?.never ?? []), ...(incoming.never ?? [])].map(foldKey));
+  const aliases = new Set([...(existing?.aliases ?? []), ...incoming.aliases].map(foldKey));
+  const clash = incoming.aliases.find((a) => never.has(foldKey(a))) ?? (incoming.never ?? []).find((w) => aliases.has(foldKey(w)));
+  if (clash === undefined) return;
+  throw new InputError(
+    `term not added: "${clash}" would be both an alias and a never word of "${existing?.canonical ?? incoming.canonical}", ` +
+      'and a never word stops every correction of that spelling to the term, so the alias would never apply; drop it from one of the two',
+  );
 }
 
 /**

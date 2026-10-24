@@ -43140,9 +43140,10 @@ function mergeTermInto(file2, incoming, scope, opts) {
     file2.lexicon.terms[idx] = replaced;
     return { term: replaced, created: false };
   }
+  const neverKeys = new Set((incoming.never ?? []).map(foldKey));
   const created = {
     ...incoming,
-    ...incoming.aliases.length === 0 && opts.defaultAliases?.length ? { aliases: dedupeAliases([...opts.defaultAliases], canonical) } : {},
+    ...incoming.aliases.length === 0 && opts.defaultAliases?.length ? { aliases: dedupeAliases(opts.defaultAliases.filter((a) => !neverKeys.has(foldKey(a))), canonical) } : {},
     scope,
     source: incoming.source ?? "user",
     createdAt: incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
@@ -43157,10 +43158,22 @@ async function addTerm(term, opts = {}) {
   return withLexiconLock(targetPath, async () => {
     const file2 = await readLexiconFileForWrite(targetPath, scope);
     if (!opts.leaveUntrusted) await assertParsedProjectWritable(file2, opts);
+    assertNoNeverAliasClash(file2, incoming, opts);
     const result = mergeTermInto(file2, incoming, scope, opts);
     await writeAddedFile(file2, opts);
     return { file: file2, ...result };
   });
+}
+function assertNoNeverAliasClash(file2, incoming, opts) {
+  if (opts.merge === false) return;
+  const existing = findTerm(file2.lexicon, incoming.canonical);
+  const never2 = new Set([...existing?.never ?? [], ...incoming.never ?? []].map(foldKey));
+  const aliases = new Set([...existing?.aliases ?? [], ...incoming.aliases].map(foldKey));
+  const clash = incoming.aliases.find((a) => never2.has(foldKey(a))) ?? (incoming.never ?? []).find((w) => aliases.has(foldKey(w)));
+  if (clash === void 0) return;
+  throw new InputError(
+    `term not added: "${clash}" would be both an alias and a never word of "${existing?.canonical ?? incoming.canonical}", and a never word stops every correction of that spelling to the term, so the alias would never apply; drop it from one of the two`
+  );
 }
 async function addTerms(terms, opts = {}) {
   const scope = opts.scope ?? "global";

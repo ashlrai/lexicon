@@ -666,6 +666,25 @@ describe('addTerm', () => {
     expect(explicit.term.aliases).toEqual(['Versal']);
   });
 
+  // Catches: an alias that is also one of the term's never words was saved and reported, though the never word blocks it, so it never applied.
+  it('refuses an alias that would also be a never word of the term, writing nothing', async () => {
+    const message = /"wexx" would be both an alias and a never word of "Wex".*the alias would never apply/;
+    await expect(addTerm({ canonical: 'Wex', aliases: ['wexx'], never: ['Wexx'] }, { cwd: tmp, globalPath })).rejects.toThrow(message);
+    await expect(fs.stat(globalPath)).rejects.toThrow();
+    await addTerm({ canonical: 'Wex', aliases: ['wexx'] }, { cwd: tmp, globalPath });
+    const before = await fs.readFile(globalPath, 'utf8');
+    // A never word that is an alias already, and an alias that is a never word already.
+    await expect(addTerm({ canonical: 'wex', aliases: [], never: ['WEXX'] }, { cwd: tmp, globalPath })).rejects.toThrow(/"WEXX" would be both an alias and a never word of "Wex"/);
+    await addTerm({ canonical: 'Vox', aliases: [], never: ['voxx'] }, { cwd: tmp, globalPath });
+    await expect(addTerm({ canonical: 'Vox', aliases: ['Voxx'] }, { cwd: tmp, globalPath })).rejects.toThrow(/"Voxx" would be both an alias and a never word of "Vox"/);
+    expect((await readLexiconFile(globalPath, 'global')).lexicon.terms.find((t) => t.canonical === 'Wex')?.never).toBeUndefined();
+    expect(before).toContain('wexx');
+    // A generated alias that is a never word is left out, not refused.
+    const created = await addTerm({ canonical: 'SaaS', aliases: [], never: ['sass'] }, { cwd: tmp, globalPath, defaultAliases: ['sass', 'SaS'] });
+    expect(created.term.aliases).toEqual(['SaS']);
+    expect(created.term.never).toEqual(['sass']);
+  });
+
   it('creates a new term in the global file with defaults', async () => {
     const term: Term = { canonical: ' Ashlr.AI ', aliases: [' Ashler ', 'ashler', 'ASHLR.AI', 'Ashlar'] };
     const result = await addTerm(term, { cwd: tmp, globalPath });
