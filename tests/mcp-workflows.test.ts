@@ -890,6 +890,17 @@ describe('learn_correction when another term already claims `heard`', () => {
     expect(payload.summary).toContain('remove_term with canonical "The \\"Verse\\" Co", alias "Ver\\"sel", scope "global"');
   });
 
+  // Catches: heard the canonical and meant one of its aliases ("it's Ashlr
+  // not ashlr.ai") said the canonical spelling was already in place.
+  it('says a correction runs the other way round from the lexicon, and how to flip it', async () => {
+    await call('add_term', { canonical: 'Ashlr.AI', aliases: ['Ashlr'] });
+    const payload = JSON.parse((await call('learn_correction', { heard: 'ashlr.ai', meant: 'Ashlr' })).text) as { reversed?: boolean; aliasAdded: boolean; summary: string };
+    expect(payload).toMatchObject({ reversed: true, aliasAdded: false, created: false });
+    expect(payload.summary).toMatch(/^"Ashlr" is an alias of "Ashlr.AI", so it is already corrected to "Ashlr.AI", the other way round/);
+    expect(payload.summary).toContain('call remove_term with canonical "Ashlr.AI"');
+    expect(payload.summary).not.toContain('already the canonical spelling');
+  });
+
   it('names a term whose canonical is the heard spelling, which no alias can override', async () => {
     await call('add_term', { canonical: 'Verse', aliases: ['vurse'] });
     const payload = JSON.parse((await call('learn_correction', { heard: 'Verse', meant: 'Vercel' })).text) as { conflict?: { canonical: string; as: string }; summary: string };

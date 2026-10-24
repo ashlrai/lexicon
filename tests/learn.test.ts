@@ -14,6 +14,7 @@ import {
   CORRECTION_EXAMPLES,
   conflictNote,
   learnCorrection,
+  learnUnchangedNote,
   parseCorrection,
   spellingsAlike,
   suggestCanonicalFor,
@@ -282,6 +283,42 @@ describe('learnCorrection: an untrusted project lexicon that claims heard', () =
 });
 
 describe('learnCorrection', () => {
+  // Catches: "it's Ashler not ashlr.ai" (meant an alias of Ashlr.AI, heard its
+  // canonical) reported "Ashlr.AI is already the canonical spelling; ashlr.ai
+  // is corrected to it", as if the correction were in place, while the
+  // lexicon corrects Ashler to Ashlr.AI: the other way round.
+  it('reports a reversed correction and writes nothing', async () => {
+    const r = await learnCorrection({ heard: 'ashlr.ai', meant: 'Ashler' });
+    expect(r).toMatchObject({ created: false, aliasAdded: false, reversed: true, term: { canonical: 'Ashlr.AI' }, file: { scope: 'global' } });
+    expect(store.addTerm).not.toHaveBeenCalled();
+    // An ordinary case-only repeat is not reversed.
+    expect((await learnCorrection({ heard: 'Ashler', meant: 'Ashlr.AI' })).reversed).toBeUndefined();
+  });
+
+  it('says what is really the case, and how to make meant the canonical', () => {
+    expect(learnUnchangedNote('ashlr.ai', 'Ashlr.AI', { meant: 'Ashler', scope: 'global', platform: 'linux' })).toBe(
+      'Nothing was added: "Ashler" is an alias of "Ashlr.AI", so it is already corrected to "Ashlr.AI", the other way round from this correction ("ashlr.ai" to "Ashler"). ' +
+        'If you want "Ashler" written instead, make it the canonical: run lexicon edit and rename the term "Ashlr.AI" to "Ashler", keeping "Ashlr.AI" as an alias.',
+    );
+    expect(learnUnchangedNote('ashlr.ai', 'Ashlr.AI', { meant: 'Ashler', scope: 'project' })).toContain('run lexicon edit --project and rename');
+    expect(learnUnchangedNote('ashlr.ai', 'Ashlr.AI', { meant: 'Ashler', scope: 'global', audience: 'mcp' })).toContain(
+      'call remove_term with canonical "Ashlr.AI", scope "global", and add_term with canonical "Ashler", scope "global", and aliases "Ashlr.AI" plus',
+    );
+    // Without meant, or with meant the canonical, the old sentences.
+    expect(learnUnchangedNote('ashlr.ai', 'Ashlr.AI')).toBe('Nothing was added: "Ashlr.AI" is already the canonical spelling; "ashlr.ai" is corrected to it.');
+    expect(learnUnchangedNote('ashlr.ai', 'Ashlr.AI', { meant: 'ASHLR.AI' })).toContain('is already the canonical spelling');
+  });
+
+  it('lexicon learn prints the reversed sentence, text and --json', async () => {
+    const text = captureIO();
+    expect(await runLearn(["it's Ashler not ashlr.ai"], { cwd: '/fake/repo' }, text.io)).toBe(0);
+    expect(text.out()).toContain('Nothing was added: "Ashler" is an alias of "Ashlr.AI", so it is already corrected to "Ashlr.AI", the other way round');
+    expect(text.out()).not.toContain('already the canonical spelling');
+    const json = captureIO();
+    expect(await runLearn(['ashlr.ai', 'Ashler'], { cwd: '/fake/repo', json: true }, json.io)).toBe(0);
+    expect(JSON.parse(json.out())).toMatchObject({ unchanged: true, reversed: true, note: expect.stringContaining('the other way round') });
+  });
+
   it('adds heard as an alias of an existing canonical (in its own scope)', async () => {
     const result = await learnCorrection({ heard: 'Ashlur', meant: 'ashlr.ai' }, { cwd: '/fake/repo' });
     expect(store.addTerm).toHaveBeenCalledWith(

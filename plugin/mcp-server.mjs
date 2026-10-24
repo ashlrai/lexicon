@@ -59850,6 +59850,14 @@ function conflictNote(conflicts, audience = "cli", platform = hostPlatform()) {
 function unchangedTermNote(canonical) {
   return `Nothing was added: ${JSON.stringify(canonical)} already has every alias and field given.`;
 }
+function said(s) {
+  return s.trim().replace(/\s+/g, " ");
+}
+function reversedCorrectionNote(heard, meant, canonical, scope, audience = "cli", platform = hostPlatform()) {
+  const [h, m, c] = [said(heard), said(meant), canonical].map((x) => JSON.stringify(x));
+  const lead = `Nothing was added: ${m} is an alias of ${c}, so it is already corrected to ${c}, the other way round from this correction (${h} to ${m}).`;
+  return audience === "mcp" ? `${lead} If the user wants ${m} written instead, ask them, then make it the canonical: call remove_term with canonical ${c}, scope "${scope}", and add_term with canonical ${m}, scope "${scope}", and aliases ${c} plus the term's other aliases.` : `${lead} If you want ${m} written instead, make it the canonical: run ${commandLine(["lexicon", "edit", ...scope === "project" ? ["--project"] : []], platform)} and rename the term ${c} to ${m}, keeping ${c} as an alias.`;
+}
 
 // src/core/learn.ts
 var MAX_CORRECTION_LENGTH = 60;
@@ -59946,6 +59954,10 @@ async function learnCorrection(c, opts = {}) {
   const untrusted = untrustedClaim(loaded, heard, existing?.canonical ?? meant);
   const withConflict = { ...conflict ? { conflict } : {}, ...untrusted ? { untrustedProject: untrusted } : {} };
   if (existing) {
+    if (sameText(existing.canonical, heard) && !sameText(existing.canonical, meant)) {
+      const holder = (existing.scope === "project" ? loaded.project : loaded.global) ?? loaded.global;
+      return { term: existing, created: false, file: holder, aliasAdded: false, reversed: true, ...withConflict };
+    }
     const targetScope = scope ?? existing.scope ?? "global";
     const targetFile = targetScope === "project" ? loaded.project : loaded.global;
     const inTarget = scope === void 0 ? existing : targetFile?.lexicon.terms.find((t) => sameText(t.canonical, existing.canonical));
@@ -62180,7 +62192,7 @@ var registerTermTools = (server, ctx) => {
       const meantText = meant.trim().replace(/\s+/g, " ");
       const caseOnly = heardText.toLowerCase() === meantText.toLowerCase();
       const term = untrusted && !learned.created ? { canonical: meantText, aliases: learned.aliasAdded && !caseOnly ? [heardText] : [] } : learned.term;
-      const saved = learned.aliasAdded ? `"${heardText}" -> "${term.canonical}" saved` : heardText.toLowerCase() === term.canonical.toLowerCase() ? `"${term.canonical}" is already the canonical spelling; "${heardText}" is corrected to it` : `"${heardText}" was already an alias of "${term.canonical}"`;
+      const saved = learned.aliasAdded ? `"${heardText}" -> "${term.canonical}" saved` : learned.reversed && !untrusted ? reversedCorrectionNote(heardText, meantText, term.canonical, learned.file.scope, "mcp").replace(/^Nothing was added: /, "").replace(/\.$/, "") : heardText.toLowerCase() === term.canonical.toLowerCase() ? `"${term.canonical}" is already the canonical spelling; "${heardText}" is corrected to it` : `"${heardText}" was already an alias of "${term.canonical}"`;
       const { conflict, untrustedProject } = learned;
       const conflictText = conflict ? `. ${conflictNote([conflict], "mcp")}` : "";
       const untrustedNote = !untrustedProject ? "" : ` The project lexicon ${untrustedProject.path} is ${untrustedProject.trust === "changed" ? "changed since it was trusted" : "not trusted"}, so it was not loaded, and another term in it also claims "${heardText}": once it is trusted that term wins over this correction. Tell the user; they can review the file with trust_project status, or ` + cliCommand("trust") + ", which previews it first. Do not open it with Read or cat.";
@@ -62190,6 +62202,7 @@ var registerTermTools = (server, ctx) => {
         path: learned.file.path,
         created: learned.created,
         aliasAdded: learned.aliasAdded,
+        ...learned.reversed && !untrusted ? { reversed: true } : {},
         ...conflict ? { conflict } : {},
         ...untrustedProject ? { untrustedProject } : {},
         ...pending ?? {},

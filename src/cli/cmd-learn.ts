@@ -161,7 +161,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
       const { file, ...rest } = result;
       const unchanged = !result.created && !result.aliasAdded;
       const notes = [
-        ...(unchanged ? [learnUnchangedNote(correction.heard, result.term.canonical)] : []),
+        ...(unchanged ? [learnUnchangedNote(correction.heard, result.term.canonical, { meant: correction.meant, scope: file.scope })] : []),
         ...(result.conflict ? [conflictNote([result.conflict])] : []),
       ];
       line(
@@ -184,7 +184,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
     }
     if (!result.created && !result.aliasAdded) {
       // It said "learned X -> Y (already known)", which reads as a write.
-      line(io, `${learnUnchangedNote(safe(correction.heard), safe(result.term.canonical))} (${result.file.scope}: ${safe(result.file.path)})`);
+      line(io, `${learnUnchangedNote(safe(correction.heard), safe(result.term.canonical), { meant: safe(correction.meant), scope: result.file.scope })} (${result.file.scope}: ${safe(result.file.path)})`);
     } else {
       line(io, `learned ${safe(correction.heard)} -> ${safe(result.term.canonical)} (${result.created ? 'new term' : 'alias added'}) in ${safe(result.file.path)}`);
     }

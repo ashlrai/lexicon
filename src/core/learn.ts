@@ -18,8 +18,8 @@ import type { LearnConflict } from './conflict-note.js';
 
 // The conflict wording lives in a module with no IO so the browser extension
 // bundles the same sentences (extension/src/core.ts re-exports it).
-export { conflictNote, conflictRemoveCommand, conflictRemoveTermCommand, learnUnchangedNote, unchangedTermNote } from './conflict-note.js';
-export type { ConflictNoteAudience, LearnConflict } from './conflict-note.js';
+export { conflictNote, conflictRemoveCommand, conflictRemoveTermCommand, learnUnchangedNote, reversedCorrectionNote, unchangedTermNote } from './conflict-note.js';
+export type { ConflictNoteAudience, LearnConflict, LearnUnchangedContext } from './conflict-note.js';
 
 export interface Correction {
   /**
@@ -40,6 +40,13 @@ export interface LearnResult {
   file: LexiconFile;
   /** False when `heard` was already an alias (or the canonical) of the term. */
   aliasAdded: boolean;
+  /**
+   * True when `meant` is an alias of `term` and `heard` is its canonical
+   * ("it's Ashlr not ashlr.ai" with the term Ashlr.AI holding Ashlr): the
+   * lexicon already corrects the other way, `meant` to `heard`, and nothing
+   * was written (`created` and `aliasAdded` false). Absent otherwise.
+   */
+  reversed?: true;
   /**
    * Another term that also claims `heard` (as an alias, or as its own
    * canonical), so a transcript can still be corrected to that term instead.
@@ -422,6 +429,14 @@ export async function learnCorrection(
   const withConflict = { ...(conflict ? { conflict } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
 
   if (existing) {
+    // "it's Ashlr not ashlr.ai" where Ashlr is an alias of the term Ashlr.AI:
+    // the correction asks for the reverse of what the lexicon does. Adding
+    // the canonical as its own alias changes nothing, and the answer said
+    // "already the canonical spelling" as if the correction were in place.
+    if (sameText(existing.canonical, heard) && !sameText(existing.canonical, meant)) {
+      const holder = (existing.scope === 'project' ? loaded.project : loaded.global) ?? loaded.global;
+      return { term: existing, created: false, file: holder, aliasAdded: false, reversed: true, ...withConflict };
+    }
     const targetScope: TermScope = scope ?? existing.scope ?? 'global';
     // Known where it would be written: the term's own file, or the file an
     // explicit scope names. Learning the same correction again rewrote the
