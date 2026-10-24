@@ -1088,6 +1088,27 @@ describe('a long prompt stays inside the hook budget', () => {
     expect(opts.shouldStop()).toBe(false);
   });
 
+  // Catches: the match budget was counted from the scan start only, so the
+  // time Node's start, the load and the index load had already taken came on
+  // top: a 50k-character paste against 5000 terms took about 300 ms.
+  it('the real hook budget is what the process has left of HOOK_TOTAL_BUDGET_MS, never under the floor', async () => {
+    const { runUserPromptSubmitHook, hookMatchBudget, HOOK_MATCH_BUDGET_MS, HOOK_MATCH_FLOOR_MS, HOOK_TOTAL_BUDGET_MS } = await import('../src/hooks/user-prompt-submit.js');
+    expect(hookMatchBudget(0)).toBe(HOOK_MATCH_BUDGET_MS);
+    expect(hookMatchBudget(HOOK_TOTAL_BUDGET_MS - 50)).toBe(50);
+    expect(hookMatchBudget(HOOK_TOTAL_BUDGET_MS)).toBe(HOOK_MATCH_FLOOR_MS);
+    expect(hookMatchBudget(10_000)).toBe(HOOK_MATCH_FLOOR_MS);
+    expect(hookMatchBudget(Number.NaN)).toBe(HOOK_MATCH_FLOOR_MS);
+    expect(HOOK_MATCH_FLOOR_MS).toBeGreaterThan(0);
+    mocks.normalize.mockImplementationOnce((text: string, _l: unknown, opts?: { shouldStop?: () => boolean }) => {
+      // Time the floor runs out, then report what was found.
+      const until = Date.now() + HOOK_MATCH_FLOOR_MS + 30;
+      while (Date.now() < until && !opts?.shouldStop?.());
+      return fakeNormalize(text);
+    });
+    const out = await runUserPromptSubmitHook(payload('a long prompt with no names'), { elapsedMs: () => 10_000 });
+    expect(context(out)).toMatch(new RegExp(`after its ${HOOK_MATCH_FLOOR_MS} ms budget`));
+  });
+
   // Catches: the correction and data-block passes ran over the whole prompt,
   // not the HOOK_PROMPT_MAX_CHARS head that was matched, so a 10 MB paste
   // after a correction took about 3 s (foldWithOffsets walked every

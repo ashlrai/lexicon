@@ -21658,6 +21658,12 @@ async function loadForHook(cwd, opts) {
   return { attempt, stale: true, problemNote: problem !== void 0 ? formatStaleProblemNote(problem) : "" };
 }
 var HOOK_MATCH_BUDGET_MS = 100;
+var HOOK_TOTAL_BUDGET_MS = 160;
+var HOOK_MATCH_FLOOR_MS = 20;
+function hookMatchBudget(spentMs) {
+  const left = Number.isFinite(spentMs) ? HOOK_TOTAL_BUDGET_MS - spentMs : HOOK_MATCH_FLOOR_MS;
+  return Math.round(Math.max(HOOK_MATCH_FLOOR_MS, Math.min(HOOK_MATCH_BUDGET_MS, left)));
+}
 var HOOK_PROMPT_MAX_CHARS = 5e4;
 var HOOK_LOCK_TIMEOUT_MS = 50;
 function promptCut(text, max) {
@@ -22150,7 +22156,7 @@ async function userPromptSubmit(payload, opts) {
   const correctionNote = corrections.length > 0 ? formatCorrectionNotes(corrections) : "";
   if (corrections.length > 0) await queueForReview(corrections, loaded);
   const index = loaded.merged.terms.length > 0 ? await loadMatcherIndex(loaded) : void 0;
-  const budget = opts.matchBudgetMs ?? HOOK_MATCH_BUDGET_MS;
+  const budget = opts.matchBudgetMs ?? (opts.elapsedMs ? hookMatchBudget(opts.elapsedMs()) : HOOK_MATCH_BUDGET_MS);
   const started = process.hrtime.bigint();
   const limit = BigInt(Math.max(0, Math.round(budget * 1e6)));
   let timedOut = false;
@@ -22297,7 +22303,7 @@ async function main(argv = process.argv.slice(2)) {
       process.stderr.write(formatStdinOverflow(read.overflow));
       return;
     }
-    const out = await runHook(decodeStdin(read.bytes), { startRefresh: spawnCacheRefresh });
+    const out = await runHook(decodeStdin(read.bytes), { startRefresh: spawnCacheRefresh, elapsedMs: () => process.uptime() * 1e3 });
     if (out) writeStdout(out);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -22328,8 +22334,10 @@ export {
   HOOK_CORRECTION_BUDGET_MS,
   HOOK_LOCK_TIMEOUT_MS,
   HOOK_MATCH_BUDGET_MS,
+  HOOK_MATCH_FLOOR_MS,
   HOOK_PROMPT_MAX_CHARS,
   HOOK_STDIN_MAX_BYTES,
+  HOOK_TOTAL_BUDGET_MS,
   LOAD_ERROR_NOTE_MAX_CHARS,
   ONBOARD_NOTE,
   ONBOARD_NOTE_FILE,
@@ -22355,6 +22363,7 @@ export {
   formatStaleProblemNote,
   formatStdinOverflow,
   hookFlagOutput,
+  hookMatchBudget,
   main,
   onboardNotePath,
   parseCorrections,
