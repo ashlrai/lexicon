@@ -694,6 +694,20 @@ describe('runSetup --dry-run', () => {
     expect(io.out).toContain('nothing here is prompted for');
   });
 
+  // Catches: with --no-harvest the plan said "repo harvest: nothing to add",
+  // as if the repo had been scanned and held no names, while the run itself
+  // says "skipped (--no-harvest)".
+  it('a dry run with --no-harvest says the harvest is skipped, as the run does', async () => {
+    const f = fakes({
+      harvest: async () => [
+        { canonical: 'Fernwold', category: 'brand', source: 'harvest:repo', evidence: ['README.md'], count: 2, suggestedAliases: [] },
+      ],
+    });
+    const { io } = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI', harvest: false }, f);
+    expect(io.out).toContain('repo harvest: skipped (--no-harvest)');
+    expect(io.out).not.toContain('repo harvest: nothing to add');
+  });
+
   // Catches: the plan card ended "run again without --dry-run to apply", so the
   // reader had to rebuild a command with a quoted company name and five flags.
   it('ends with the exact command that applies it, keeping the flags this run was given', async () => {
