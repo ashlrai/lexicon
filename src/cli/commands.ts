@@ -650,9 +650,12 @@ async function runRemoveAlias(
     result = await removeAlias(canonical, alias, scope ? { scope, cwd } : { cwd });
   } catch (err) {
     const message = errorMessage(err);
+    // Compared as the store compares spellings (spellingKey: trimmed,
+    // lowercased, NFC): `Cafe` plus U+0301 typed for a stored `Café` missed
+    // here though removeAlias would find it, so the --global hint was lost.
     const holdsAlias = (file: LexiconFile | undefined): boolean =>
       file?.lexicon.terms.some(
-        (t) => t.canonical.trim().toLowerCase() === canonical.trim().toLowerCase() && t.aliases.some((a) => a.trim().toLowerCase() === alias.trim().toLowerCase()),
+        (t) => spellingKey(t.canonical) === spellingKey(canonical) && t.aliases.some((a) => spellingKey(a) === spellingKey(alias)),
       ) === true;
     // --project or --global named a file whose copy lacks the term or the
     // alias while the other (loaded) file's copy has it: name that file and

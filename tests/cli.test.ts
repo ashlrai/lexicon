@@ -3154,6 +3154,28 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
     }
   }, 30_000);
 
+  // Catches: the wrong-scope hint compared spellings with trim and lowercase
+  // only, so a canonical or alias typed in another Unicode form (NFD
+  // `Cafe` plus U+0301 for a stored NFC `Café`) lost the hint naming the file
+  // and flag, though the store matches them as one spelling.
+  it('remove --alias with the wrong scope names the other file for a spelling in another Unicode form', async () => {
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-alias-nfc-'));
+    try {
+      const repo = path.join(tmp, 'repo');
+      const globalPath = path.join(tmp, 'config', 'lexicon.yaml');
+      await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+      expect(lexicon(['add', 'Caf\u00e9', 'kaf\u00e9', '--cwd', repo], globalPath).status).toBe(0);
+
+      const wrong = lexicon(['remove', 'Cafe\u0301', '--alias', 'KAFE\u0301', '--project', '--json', '--cwd', repo], globalPath);
+      expect(wrong.status).toBe(1);
+      expect(JSON.parse(wrong.stdout).nextStep).toBe(
+        `it is an alias of "Cafe\u0301" in the global lexicon (${globalPath}); run with --global to remove it there, or with neither flag to remove it from every file whose copy has it`,
+      );
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
   // Catches: `remove --alias` with --project (or --global) naming a file
   // whose copy lacked the term or the alias stopped at the bare error, while
   // `remove` without --alias names the other file and the flag to pass.
