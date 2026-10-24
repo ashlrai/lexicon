@@ -5,7 +5,7 @@
  * injected deps so no launchctl/systemctl is ever spawned.
  */
 import { spawn } from 'node:child_process';
-import { promises as fs } from 'node:fs';
+import { promises as fs, writeFileSync } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
 import os from 'node:os';
@@ -276,6 +276,41 @@ describe('serve.json', () => {
       await server.start();
       await server.stop();
       expect(lines.some((l) => l.startsWith('[serve] warning: ') && l.includes('had no usable token'))).toBe(true);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Catches: when the bound port differed from serve.json's, start() wrote
+  // back the copy it had read before binding, with only the port changed, so
+  // an edit made in between (a hand-added allowedOrigins, a token minted by
+  // --show after the file was deleted) was undone and that token refused.
+  it('recording the bound port re-reads serve.json and changes only the port', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-port-'));
+    try {
+      const gp = path.join(dir, 'lexicon.yaml');
+      await fs.writeFile(gp, 'version: 1\nterms: []\n');
+      const servePath = getServePath({ globalPath: gp });
+      await fs.writeFile(servePath, JSON.stringify({ port: 41733, token: 'ab'.repeat(16), createdAt: '2026-01-01T00:00:00.000Z' }), { mode: 0o600 });
+      const edited = { port: 41733, token: 'cd'.repeat(16), createdAt: '2026-02-02T00:00:00.000Z', allowedOrigins: ['https://example.test'], note: 'kept' };
+      const server = createServer({ port: 0, globalPath: gp, cwd: dir, quiet: true, log: () => {} });
+      // The edit lands after start() read serve.json and before it records the port.
+      const listen = server.server.listen.bind(server.server) as (...args: unknown[]) => http.Server;
+      (server.server as unknown as { listen: (...args: unknown[]) => http.Server }).listen = (...args: unknown[]) => {
+        writeFileSync(servePath, JSON.stringify(edited), { mode: 0o600 });
+        return listen(...args);
+      };
+      const started = await server.start();
+      try {
+        const onDisk = JSON.parse(await fs.readFile(servePath, 'utf8'));
+        expect(onDisk).toEqual({ ...edited, port: started.port });
+        expect(started.token).toBe(edited.token);
+        expect((await fetch(`${started.url}/stats`, { headers: { Authorization: `Bearer ${edited.token}` } })).status).toBe(200);
+        const preflight = await fetch(`${started.url}/stats`, { method: 'OPTIONS', headers: { Origin: 'https://example.test', 'Access-Control-Request-Method': 'GET' } });
+        expect(preflight.headers.get('access-control-allow-origin')).toBe('https://example.test');
+      } finally {
+        await server.stop();
+      }
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }

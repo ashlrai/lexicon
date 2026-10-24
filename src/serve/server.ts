@@ -94,7 +94,7 @@ import {
   getServePath,
   isOriginAllowed,
   serveUrl,
-  writeServeConfig,
+  recordServePort,
 } from './config.js';
 import type { ServeConfig } from './config.js';
 import { isHeldLockError } from '../util/atomic.js';
@@ -1667,9 +1667,10 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     const address = server.address();
     boundPort = typeof address === 'object' && address !== null ? address.port : requestedPort;
     // Keep serve.json pointing at the live port so `--show`/`--status` and clients find it.
+    // Only the port changes: serve.json is re-read under its lock, so an edit
+    // made while the server was binding (allowedOrigins, a new token) is kept.
     if (config.port !== boundPort) {
-      config = { ...config, port: boundPort };
-      await writeServeConfig(config, storeOpts);
+      config = await recordServePort(boundPort, config, storeOpts);
     }
     const shownHost = host.includes(':') ? `[${host}]` : host;
     return {

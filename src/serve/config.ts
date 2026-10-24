@@ -142,6 +142,45 @@ export async function writeServeConfig(config: ServeConfig, opts: StoreOptions =
 }
 
 /**
+ * Record `port` in serve.json, changing nothing else, and return the config
+ * the file now holds. The file is re-read under its lock, so an edit made
+ * since `fallback` was read (a hand-added `allowedOrigins`, a token minted by
+ * `lexicon serve --show` after the file was deleted, any other key) is kept;
+ * writing `fallback` back with the new port undid it. A file that is missing
+ * or has no usable token gets `fallback` with the port; one that is not
+ * valid JSON is left alone (`ensureServeConfig` refuses to write over it too)
+ * and `fallback` is returned with the port.
+ */
+export async function recordServePort(port: number, fallback: ServeConfig, opts: StoreOptions = {}): Promise<ServeConfig> {
+  return withServeConfigLock(async () => {
+    const file = getServePath(opts);
+    let text: string | undefined;
+    try {
+      text = await fs.readFile(file, 'utf8');
+    } catch (err) {
+      if ((err as { code?: unknown }).code !== 'ENOENT') throw err;
+    }
+    let raw: unknown;
+    if (text !== undefined && text.replace(/^\uFEFF/, '').trim() !== '') {
+      try {
+        raw = parseServeJson(text);
+      } catch {
+        return { ...fallback, port };
+      }
+    }
+    const current = parseServeConfig(raw);
+    if (current && typeof raw === 'object' && raw !== null && !Array.isArray(raw)) {
+      const updated = { ...(raw as Record<string, unknown>), port };
+      await writeFileAtomic(file, formatJson(updated), { mode: SERVE_FILE_MODE });
+      return { ...current, port };
+    }
+    const config = { ...fallback, port };
+    await writeServeConfig(config, opts);
+    return config;
+  }, opts);
+}
+
+/**
  * Put an existing serve.json back to 0600 when group or other can read it.
  *
  * The file is created 0600, but one that already exists is reused as found:
