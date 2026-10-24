@@ -25,7 +25,7 @@ export default defineConfig({
         test: {
           name: 'unit',
           include: ['tests/**/*.test.ts', 'src/**/*.test.ts', 'bench/**/*.test.ts'],
-          exclude: ['**/node_modules/**', ...(nodeMajor < 22 ? ['tests/extension.test.ts', 'tests/extension-api-health.test.ts', 'tests/exporters-xml.test.ts'] : []), ...PERF_FILES],
+          exclude: ['**/node_modules/**', ...(nodeMajor < 22 ? ['tests/extension.test.ts', 'tests/extension-api-health.test.ts', 'tests/extension-frames.test.ts', 'tests/extension-editing.test.ts', 'tests/exporters-xml.test.ts'] : []), ...PERF_FILES],
           sequence: { groupOrder: 0 },
         },
       },

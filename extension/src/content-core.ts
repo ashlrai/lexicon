@@ -19,10 +19,16 @@ import {
   sendButtonFromTarget,
 } from './adapters.js';
 import type { SiteAdapter } from './adapters.js';
-import { applyCorrections, caretOffset, codeRanges, invertCorrections, maskCode, performEnterDefault, readText, setCaret } from './editable.js';
+import { applyCorrections, caretOffset, codeRanges, composerTooLarge, invertCorrections, maskCode, performEnterDefault, readText, setCaret, snapshot } from './editable.js';
 import { incompleteNotice, LIVE_DEBOUNCE_MS, PRECHECK_DEBOUNCE_MS } from './shared.js';
 import type { Correction, NormalizeReply, Request } from './shared.js';
 import { removeToast, showToast } from './toast.js';
+
+/** The toast line when a known site took neither the replayed Enter nor a send-button click. */
+export const NOT_SENT_NOTICE = 'Not sent: this site ignored the replayed Enter and its send button was not found. Press Enter again to send.';
+
+/** The toast line when Enter or the send button is pressed on a composer over MAX_COMPOSER_CHARS. */
+export const TOO_LARGE_NOTICE = 'Not checked: this message is over the 1 MB a lexicon check takes, so it was left as typed.';
 
 export interface ContentSettings {
   enabled: boolean;
@@ -73,6 +79,16 @@ export function installContent(deps: ContentDeps): ContentHandle {
   let restoring = false;
   /** True between compositionstart and compositionend: an IME owns the text being typed. */
   let composing = false;
+  /**
+   * Whether this page acts on a script-dispatched Enter in the composer:
+   * `works` once one was cancelled (taken by the page) or the page cancelled
+   * a real Enter the guard let through, `fails` once one was not taken while
+   * no send button matched. A known site whose button selector no longer
+   * matches is sent to only through that Enter, so until it is known to
+   * work there the guard lets the user's own Enter through rather than
+   * swallow a send it may not be able to replay.
+   */
+  let enterReplay: 'unknown' | 'works' | 'fails' = 'unknown';
 
   const setTimer = (fn: () => void, ms: number): number | undefined => win?.setTimeout(fn, ms);
   const clearTimer = (id: number | undefined): void => {
@@ -97,8 +113,8 @@ export function installContent(deps: ContentDeps): ContentHandle {
    * `output` is rebuilt from `text` itself. `text` must be what `composer`
    * held when this is called, or a prefix of it.
    */
-  async function normalizeComposer(composer: HTMLElement, text: string, dryRun: boolean): Promise<NormalizeReply> {
-    const ranges = codeRanges(composer).filter(([start]) => start < text.length);
+  async function normalizeComposer(composer: HTMLElement, text: string, dryRun: boolean, codeAt?: Array<[number, number]>): Promise<NormalizeReply> {
+    const ranges = (codeAt ?? codeRanges(composer)).filter(([start]) => start < text.length);
     if (ranges.length === 0) return normalizeText(text, dryRun);
     const reply = await normalizeText(maskCode(text, ranges), dryRun);
     if (!reply.ok) return reply;
@@ -162,8 +178,8 @@ export function installContent(deps: ContentDeps): ContentHandle {
   }
 
   /** Normalize the composer, rewrite it when needed, then run `resend`. */
-  async function correctThen(composer: HTMLElement, text: string, resend: () => void): Promise<void> {
-    const reply = await normalizeComposer(composer, text, false);
+  async function correctThen(composer: HTMLElement, text: string, resend: () => void, codeAt?: Array<[number, number]>): Promise<void> {
+    const reply = await normalizeComposer(composer, text, false, codeAt);
     if (reply.ok && reply.changed && reply.replacements.length > 0) {
       // The composer may have moved on while we waited (fast typist, voice
       // input still streaming). Only rewrite when it still holds `text`.
@@ -187,6 +203,11 @@ export function installContent(deps: ContentDeps): ContentHandle {
       if (reply.incomplete) showToast(doc, [], { mode: reply.mode, durationMs: deps.toastMs, notice: incompleteNotice(reply.incomplete), ...(reply.fallback ? { fallback: reply.fallback } : {}) });
     }
     resend();
+  }
+
+  /** Says, without holding the send, that a composer over MAX_COMPOSER_CHARS was not checked. */
+  function tooLargeNotice(): void {
+    showToast(doc, [], { durationMs: deps.toastMs, notice: TOO_LARGE_NOTICE });
   }
 
   function withPassthrough(fn: () => void): void {
@@ -220,8 +241,30 @@ export function installContent(deps: ContentDeps): ContentHandle {
     if (ev.defaultPrevented) return;
     const composer = composerFromTarget(eventOrigin(ev), adapter);
     if (!composer) return;
-    const text = readText(composer);
-    if (shouldSkip(text)) return;
+    if (composerTooLarge(composer)) {
+      tooLargeNotice();
+      return;
+    }
+    const { text, ranges } = snapshot(doc, composer);
+    // A press that goes on as typed: if the page takes it (cancels it, as a
+    // composer that sends on Enter does), a replayed Enter is likely to be
+    // taken too. Checked a task later, once every listener has run.
+    const learnFromPress = (): void => {
+      if (!adapter.send || enterReplay !== 'unknown') return;
+      setTimer(() => {
+        if (ev.defaultPrevented && enterReplay === 'unknown') enterReplay = 'works';
+      }, 0);
+    };
+    if (shouldSkip(text)) {
+      learnFromPress();
+      return;
+    }
+    if (adapter.send && enterReplay !== 'works' && !findSendButton(doc, adapter, composer)) {
+      // Nothing to click, and a synthetic Enter is not known to send here:
+      // the original press goes on as typed rather than being swallowed.
+      learnFromPress();
+      return;
+    }
 
     ev.preventDefault();
     ev.stopImmediatePropagation();
@@ -242,11 +285,22 @@ export function installContent(deps: ContentDeps): ContentHandle {
     guard(() =>
       correctThen(composer, text, () => {
         withPassthrough(() => {
-          if (!composer.dispatchEvent(new KeyboardEvent('keydown', init))) return;
+          if (!composer.dispatchEvent(new KeyboardEvent('keydown', init))) {
+            enterReplay = 'works';
+            return;
+          }
           // Nobody consumed the synthetic Enter; fall back to the button.
           const button = findSendButton(doc, adapter, composer);
           if (button) {
             button.click();
+            return;
+          }
+          if (adapter.send) {
+            // The page ignored the replay and its button is gone too: the
+            // message is corrected but not sent. Say so, and let the next
+            // Enter through as typed (the precheck now holds the text).
+            enterReplay = 'fails';
+            showToast(doc, [], { durationMs: deps.toastMs, notice: NOT_SENT_NOTICE });
             return;
           }
           // A known site sends through its button only; anywhere else the
@@ -258,7 +312,7 @@ export function installContent(deps: ContentDeps): ContentHandle {
           if (!composer.dispatchEvent(new KeyboardEvent('keypress', { ...init, charCode: 13 } as KeyboardEventInit))) return;
           performEnterDefault(doc, composer);
         });
-      }),
+      }, ranges),
     );
   }
 
@@ -268,15 +322,24 @@ export function installContent(deps: ContentDeps): ContentHandle {
     if (!button) return;
     const composer = findComposer(doc, adapter);
     if (!composer) return;
-    const text = readText(composer);
+    if (composerTooLarge(composer)) {
+      tooLargeNotice();
+      return;
+    }
+    const { text, ranges } = snapshot(doc, composer);
     if (shouldSkip(text)) return;
 
     ev.preventDefault();
     ev.stopImmediatePropagation();
     guard(() =>
-      correctThen(composer, text, () => {
-        withPassthrough(() => button.click());
-      }),
+      correctThen(
+        composer,
+        text,
+        () => {
+          withPassthrough(() => button.click());
+        },
+        ranges,
+      ),
     );
   }
 
@@ -285,9 +348,10 @@ export function installContent(deps: ContentDeps): ContentHandle {
   function schedulePrecheck(composer: HTMLElement): void {
     clearTimer(precheckTimer);
     precheckTimer = setTimer(() => {
-      const text = readText(composer);
+      if (composerTooLarge(composer)) return;
+      const { text, ranges } = snapshot(doc, composer);
       if (!text.trim()) return;
-      void normalizeComposer(composer, text, true).then((reply) => {
+      void normalizeComposer(composer, text, true, ranges).then((reply) => {
         // A dry run reports `changed: false` by design (nothing was applied),
         // so the replacements list is what says whether Enter must be intercepted.
         // A check that stopped early is intercepted too, so the send can say so.
@@ -303,13 +367,12 @@ export function installContent(deps: ContentDeps): ContentHandle {
     liveTimer = setTimer(() => {
       // Mid-composition the IME owns the text: a rewrite there cancels or
       // garbles the word being composed. compositionend schedules it again.
-      if (liveInFlight || composing) return;
-      const full = readText(composer);
-      const caret = caretOffset(doc, composer);
+      if (liveInFlight || composing || composerTooLarge(composer)) return;
+      const { text: full, caret, ranges } = snapshot(doc, composer);
       const prefix = full.slice(0, caret);
       if (!prefix.trim()) return;
       liveInFlight = true;
-      void normalizeComposer(composer, prefix, false)
+      void normalizeComposer(composer, prefix, false, ranges)
         .then(async (reply) => {
           if (!reply.ok || !reply.changed || reply.replacements.length === 0) return;
           if (readText(composer) !== full || composing) return;
@@ -333,6 +396,7 @@ export function installContent(deps: ContentDeps): ContentHandle {
     const composer = composerFromTarget(eventOrigin(ev), adapter);
     if (!composer) return;
     precheck = null;
+    if (composerTooLarge(composer)) return;
     schedulePrecheck(composer);
     // An input event inside a composition (IME, some dictation) is not a
     // finished word: live mode waits for compositionend.

@@ -220,6 +220,31 @@ describe('parseCorrection', () => {
     expect(spellingsAlike('Versel', 'Vercel')).toBe(true);
   });
 
+  it('takes a name STT wrote by sound when the loose keys meet', () => {
+    expect(parseCorrection("it's Siobhan not Shivon")).toEqual({ heard: 'Shivon', meant: 'Siobhan' });
+    expect(parseCorrection("it's Saoirse, not Seersha")).toEqual({ heard: 'Seersha', meant: 'Saoirse' });
+  });
+
+  it('takes a dissimilar name only when the lexicon holds the meant side', () => {
+    const lex = { terms: [{ canonical: 'Niamh', aliases: [] }, { canonical: 'Postgres', aliases: ['postgress'] }, { canonical: 'API', aliases: [] }, { canonical: 'Redis', aliases: [] }] };
+    expect(parseCorrection("it's Niamh not Neve")).toBeUndefined();
+    expect(parseCorrection("it's Niamh not Neve", { lexicon: lex })).toEqual({ heard: 'Neve', meant: 'Niamh' });
+    // An alias of the term counts as a spelling it holds.
+    expect(parseCorrection("it's postgress not MySQL", { lexicon: lex })).toBeUndefined();
+  });
+
+  it.each([
+    ["it's the API not the UI"],
+    ["it's Monday not Tuesday"],
+    ["it's Postgres not MySQL"],
+    ["it's Kafka not Redis"],
+    ["it's Siobhan not seven"],
+  ])('still refuses the change of meaning %j, with or without the lexicon', (text) => {
+    const lex = { terms: [{ canonical: 'API', aliases: [] }, { canonical: 'Monday', aliases: [] }, { canonical: 'Postgres', aliases: [] }, { canonical: 'Kafka', aliases: [] }, { canonical: 'Redis', aliases: [] }, { canonical: 'Siobhan', aliases: [] }] };
+    expect(parseCorrection(text)).toBeUndefined();
+    expect(parseCorrection(text, { lexicon: lex })).toBeUndefined();
+  });
+
   it('strips trailing punctuation and collapses whitespace', () => {
     expect(parseCorrection("it's   Ashlr.AI   not   Ashler...")).toEqual(ashlr);
     expect(parseCorrection('Ashler ->  Ashlr.AI?')).toEqual(ashlr);
@@ -279,6 +304,20 @@ describe('learnCorrection: an untrusted project lexicon that claims heard', () =
     expect(out()).toContain('warn: the untrusted project lexicon /fake/repo/.lexicon.yaml also claims Versel for another term');
     expect(out()).toContain('lexicon trust');
     expect(out()).not.toContain('Hostile Name');
+  });
+});
+
+describe('runLearn: a name the lexicon holds, written by sound', () => {
+  it('learns "it\'s Niamh not Neve" when Niamh is a term, and refuses it when not', async () => {
+    const withNiamh: Lexicon = { version: 1, terms: [...lexicon.terms, { canonical: 'Niamh', aliases: [], scope: 'global' }] };
+    store.loadLexicon.mockResolvedValue({ ...loaded, merged: withNiamh, global: { ...loaded.global, lexicon: withNiamh } });
+    const ok = captureIO();
+    expect(await runLearn(["it's Niamh not Neve"], { cwd: '/fake/repo' }, ok.io)).toBe(0);
+    expect(store.addTerm).toHaveBeenCalledWith(expect.objectContaining({ canonical: 'Niamh', aliases: ['Neve'] }), expect.anything());
+
+    store.loadLexicon.mockResolvedValue(loaded);
+    const refused = captureIO();
+    expect(await runLearn(["it's Niamh not Neve"], { cwd: '/fake/repo' }, refused.io)).toBe(1);
   });
 });
 

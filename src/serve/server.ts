@@ -464,6 +464,21 @@ function projectTrustRefusal(err: Error & { path?: unknown; status?: unknown }, 
   return `project lexicon at ${file} ${why}, so nothing was written. Review it and run \`lexicon trust\`, then retry; or retry with ${global} to use the global lexicon instead`;
 }
 
+/**
+ * The 500 detail a caller without the token gets when a lexicon file does not
+ * parse: what is wrong and where to read the file and line, without the path.
+ * It said only `internal error (the lexicon serve log has the detail)`, so
+ * the browser extension's status line, which asks plain /health, gave no hint
+ * that the fix was an edit to the lexicon.
+ */
+export const BROKEN_LEXICON_ANONYMOUS = 'a lexicon file does not parse; run `lexicon serve --status` (or `lexicon doctor`) for the file and the line, then fix it';
+
+/** True for store.ts's error for a lexicon file that does not parse or validate. */
+function brokenLexicon(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : '';
+  return message.startsWith('Failed to parse lexicon YAML at ') || message.startsWith('Invalid lexicon at ');
+}
+
 class HttpError extends Error {
   constructor(
     readonly status: number,
@@ -643,6 +658,17 @@ function tokenMatches(header: string | undefined, token: string): boolean {
   return timingSafeEqual(given, expected);
 }
 
+/** True when the request carries `Expect: 100-continue`. */
+function expectsContinue(req: http.IncomingMessage): boolean {
+  return String(req.headers.expect ?? '').trim().toLowerCase() === '100-continue';
+}
+
+/** True when the request announces a body (`Content-Length`) over `cap`. */
+function declaresOver(req: http.IncomingMessage, cap: number): boolean {
+  const declared = Number(req.headers['content-length']);
+  return Number.isFinite(declared) && declared > cap;
+}
+
 /**
  * Read a body of at most `cap` bytes. Beyond the cap the rest is drained
  * (never buffered) and the promise rejects with 413 once the client has
@@ -663,8 +689,15 @@ function readBody(req: http.IncomingMessage, cap: number): Promise<string> {
       else resolve(Buffer.concat(chunks).toString('utf8'));
     };
     const tooLarge = (): HttpError => new HttpError(413, `request body exceeds ${cap} bytes`);
-    const declared = Number(req.headers['content-length']);
-    if (Number.isFinite(declared) && declared > cap) overflow = true;
+    if (declaresOver(req, cap)) {
+      // A client waiting on `Expect: 100-continue` has not sent the body (the
+      // server's checkContinue handler did not invite it): refuse it now.
+      if (expectsContinue(req)) {
+        settle(tooLarge());
+        return;
+      }
+      overflow = true;
+    }
     req.on('data', (chunk: Buffer) => {
       size += chunk.length;
       if (!overflow && size > cap) {
@@ -1514,7 +1547,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
         if (status === 500) {
           message = authed
             ? `internal error: ${message}`
-            : 'internal error (the lexicon serve log has the detail)';
+            : brokenLexicon(err)
+              ? `internal error: ${BROKEN_LEXICON_ANONYMOUS}`
+              : 'internal error (the lexicon serve log has the detail)';
         }
         const heldLock = isHeldLockError(err);
         if (heldLock) message = heldLockMessage(err, authed);
@@ -1525,6 +1560,37 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
         if (status === 401) extra['WWW-Authenticate'] = 'Bearer';
         send(res, json(status, { error: message }), extra, head);
       });
+  });
+
+  // Node answers `Expect: 100-continue` with 100 Continue on its own, so a
+  // client announcing a 20 MB body uploaded it, and past readBody's drain
+  // limit the connection was cut: a reset instead of the 413. A body over
+  // the limit is not invited; readBody answers 413 before it is sent.
+  server.on('checkContinue', (req, res) => {
+    if (!declaresOver(req, MAX_BODY_BYTES)) res.writeContinue();
+    server.emit('request', req, res);
+  });
+
+  // A request the HTTP parser cannot read never reaches the handler, and
+  // Node's own answer is a bare status line with no body, where every other
+  // error of this API is `{ error }`. Same statuses as Node's: 431 for
+  // headers over the limit, 408 for a request that took too long, else 400.
+  server.on('clientError', (err: NodeJS.ErrnoException, socket: net.Socket) => {
+    if (err.code === 'ECONNRESET' || !socket.writable) {
+      socket.destroy();
+      return;
+    }
+    const [status, reason, what] =
+      err.code === 'HPE_HEADER_OVERFLOW'
+        ? [431, 'Request Header Fields Too Large', 'request headers are too large']
+        : err.code === 'ERR_HTTP_REQUEST_TIMEOUT'
+          ? [408, 'Request Timeout', 'the request did not arrive in time']
+          : [400, 'Bad Request', 'malformed HTTP request'];
+    const body = JSON.stringify({ error: `${what} (${err.code ?? 'parse error'}); nothing was run` });
+    if (!opts.quiet) log(`[serve] ${status} ${what} (${err.code ?? 'parse error'})`);
+    socket.end(
+      `HTTP/1.1 ${status} ${reason}\r\nContent-Type: application/json; charset=utf-8\r\nContent-Length: ${Buffer.byteLength(body, 'utf8')}\r\nCache-Control: no-store\r\nConnection: close\r\n\r\n${body}`,
+    );
   });
 
   // Close idle keep-alive sockets quickly on stop(); the default 5 s is fine while running.

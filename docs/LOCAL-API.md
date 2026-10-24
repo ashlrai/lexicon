@@ -96,7 +96,8 @@ says nothing was written, and gives both ways on: `lexicon trust` and a retry,
 or a retry with `"scope": "global"` in the body, `?scope=global` on a DELETE), or `/pair` with a non-loopback client
 / a cross-origin `Origin`, 404 unknown route (the `error` lists every route as
 `METHOD /path`) or export format,
-405 wrong method (with an `Allow` header naming the route's methods: `GET, HEAD` on a GET route, `POST`, or `POST, DELETE` on `/packs/:name`), 413 body over 1 MB, 415 a compressed body (any `Content-Encoding` but `identity`; bodies are read as UTF-8 JSON, a leading byte order mark allowed), 500 a problem on the server's side,
+405 wrong method (with an `Allow` header naming the route's methods: `GET, HEAD` on a GET route, `POST`, or `POST, DELETE` on `/packs/:name`), 413 body over 1 MB (a client that sends `Expect: 100-continue` with a larger `Content-Length` gets the 413 before it sends the body, and no `100 Continue`), 415 a compressed body (any `Content-Encoding` but `identity`; bodies are read as UTF-8 JSON, a leading byte order mark allowed), 500 a problem on the server's side,
+a request the HTTP parser cannot read is answered `{ error }` too, with 400 (431 for headers over Node's limit, 408 for one that did not arrive in time) and `Connection: close`;
 503 more than 64 requests in flight, a lexicon file another writer still holds the lock on, or any route but plain `/health` before the server has finished starting (in each case nothing was written; the `error` says to retry after the `Retry-After` seconds, 1).
 
 400 always means the request itself is wrong: fix the input and do not retry
@@ -106,8 +107,9 @@ missing, mistyped or unknown) ends with the fields that route takes, such as
 lexicon file does not parse (`internal error: Failed to parse lexicon YAML at
 <path>: ...`), or the file or its lock cannot be read or written. The message names the cause and the file, so fix
 that and retry. An unauthenticated `/health` that hits the same problem gets
-only `internal error (the lexicon serve log has the detail)`; the detail is
-on the server's stderr either way.
+only `internal error (the lexicon serve log has the detail)`, or, for a lexicon
+file that does not parse, ``internal error: a lexicon file does not parse; run `lexicon serve --status` (or `lexicon doctor`) for the file and the line, then fix it``
+(no path); the detail is on the server's stderr either way.
 
 A write that waited out a lock another writer (the prompt hook, the MCP
 server, a CLI command) still holds is a 503 with `Retry-After: 1`, not a 500:

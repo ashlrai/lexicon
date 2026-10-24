@@ -1,10 +1,10 @@
 /// <reference types="chrome" />
 /** Options page: server pairing, mode, live toggle, embedded YAML editor, site list, any-site opt-in. */
-import { ADAPTERS } from './adapters.js';
+import { siteRows } from './adapters.js';
 import { sendToBackground } from './chrome-store.js';
 import { setMessage } from './rich-text.js';
 import { parseLexicon, parseYaml } from './core.js';
-import { ANY_SITE_DENIED_MESSAGE, coerceSettings, connectionTestLine, countOf, errorMessage, extensionRequestFailedLine, pairPortOrigins, pairUrl, PAIR_PORT_DENIED_MESSAGE, syncedLine, STORAGE_KEYS, withConnection, yamlBoxAfterChange } from './shared.js';
+import { ANY_SITE_DENIED_MESSAGE, coerceHostList, coerceSettings, connectionTestLine, countOf, errorMessage, extensionRequestFailedLine, pairPortOrigins, pairUrl, PAIR_PORT_DENIED_MESSAGE, syncedLine, STORAGE_KEYS, withConnection, yamlBoxAfterChange } from './shared.js';
 import type { Failure, PairPortReply, Settings, StatusReply, SyncReply } from './shared.js';
 import defaultYaml from '../../examples/lexicon.example.yaml';
 
@@ -57,20 +57,12 @@ function validateYaml(): boolean {
   }
 }
 
+/** Hosts the guard ran on through "Any site" (STORAGE_KEYS.anySiteHosts). */
+let anySiteHosts: string[] = [];
+
 function renderSites(): void {
   ui.sites.replaceChildren();
-  const known = new Set<string>();
-  const rows: { label: string; host: string }[] = [];
-  for (const a of ADAPTERS) {
-    for (const host of a.hosts) {
-      known.add(host);
-      rows.push({ label: a.label, host });
-    }
-  }
-  for (const host of Object.keys(settings.sites)) {
-    if (!known.has(host)) rows.push({ label: host, host });
-  }
-  for (const row of rows) {
+  for (const row of siteRows(settings.sites, anySiteHosts)) {
     const li = document.createElement('li');
     const label = document.createElement('label');
     const box = document.createElement('input');
@@ -287,7 +279,8 @@ chrome.storage.onChanged.addListener((changes, area) => {
 
 void (async () => {
   ui.version.textContent = `v${chrome.runtime.getManifest().version}`;
-  const raw = await chrome.storage.local.get([STORAGE_KEYS.settings]);
+  const raw = await chrome.storage.local.get([STORAGE_KEYS.settings, STORAGE_KEYS.anySiteHosts]);
   settings = coerceSettings(raw[STORAGE_KEYS.settings], defaultYaml);
+  anySiteHosts = coerceHostList(raw[STORAGE_KEYS.anySiteHosts]);
   render();
 })();

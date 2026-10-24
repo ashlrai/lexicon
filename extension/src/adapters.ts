@@ -171,10 +171,56 @@ export function deepActiveElement(doc: Document): Element | null {
   return el;
 }
 
+/**
+ * The selection that holds the caret in `node`'s tree: inside an open shadow
+ * root its own (`ShadowRoot.getSelection`, Chromium), because
+ * `document.getSelection()` there is retargeted to the shadow host, so the
+ * caret read as outside the composer; else the document's.
+ */
+export function selectionFor(doc: Document, node: Node): Selection | null {
+  const root = typeof node.getRootNode === 'function' ? node.getRootNode() : null;
+  if (root && root !== doc && typeof (root as { getSelection?: unknown }).getSelection === 'function') {
+    const sel = (root as unknown as { getSelection(): Selection | null }).getSelection();
+    if (sel) return sel;
+  }
+  return doc.getSelection?.() ?? null;
+}
+
 /** The node an event really started at: the first of `composedPath()` (inside an open shadow root), else its target. */
 export function eventOrigin(ev: Event): EventTarget | null {
   const path = typeof ev.composedPath === 'function' ? ev.composedPath() : [];
   return path[0] ?? ev.target;
+}
+
+/** One row of the Options site list. `anySite`: reached through "Any site", not a built-in chat site. */
+export interface SiteRow {
+  label: string;
+  host: string;
+  anySite?: boolean;
+}
+
+/**
+ * The Options site list: every built-in chat site, then each host with a
+ * stored switch, then each host the guard ran on through "Any site"
+ * (`seen`, see the background's `rememberAnySiteHost`). It listed only the
+ * first two, so a site reached through "Any site" could be paused from the
+ * popup but never from Options.
+ */
+export function siteRows(sites: Record<string, boolean>, seen: readonly string[]): SiteRow[] {
+  const rows: SiteRow[] = [];
+  const known = new Set<string>();
+  for (const a of ADAPTERS) {
+    for (const host of a.hosts) {
+      known.add(host);
+      rows.push({ label: a.label, host });
+    }
+  }
+  for (const host of [...Object.keys(sites), ...seen]) {
+    if (known.has(host)) continue;
+    known.add(host);
+    rows.push({ label: host, host, anySite: true });
+  }
+  return rows;
 }
 
 export function adapterFor(hostname: string): SiteAdapter {
@@ -245,7 +291,7 @@ export function holdsCode(doc: Document, root: HTMLElement): boolean {
   // An embedded code editor (CodeMirror, Monaco, Ace) owns its DOM: a rewrite
   // of the page around it could still replace the editor's nodes.
   if (root.querySelector(CODE_EDITOR_SELECTOR)) return true;
-  const anchor = doc.getSelection?.()?.anchorNode ?? null;
+  const anchor = selectionFor(doc, root)?.anchorNode ?? null;
   if (!anchor || !root.contains(anchor)) return false;
   const el = anchor.nodeType === 1 ? (anchor as Element) : anchor.parentElement;
   const code = el?.closest(CODE_SELECTOR) ?? null;

@@ -369,6 +369,13 @@ describe('runUserPromptSubmitHook', () => {
       expect(parseCorrections("it's Vercel not versel. It's vercel not Versel.")).toHaveLength(1);
     });
 
+    it('passes the loaded lexicon to parseCorrection, so a name it holds is caught by sound', async () => {
+      const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+      expect(parseCorrections("it's Niamh not Neve")).toEqual([]);
+      expect(parseCorrections("it's Niamh not Neve", { terms: [{ canonical: 'Niamh', aliases: [] }] })).toEqual([{ heard: 'Neve', meant: 'Niamh' }]);
+      expect(parseCorrections("it's Siobhan not Shivon")).toEqual([{ heard: 'Shivon', meant: 'Siobhan' }]);
+    });
+
     it('does not flag "it\'s X not Y" that contrasts two ordinary words', async () => {
       const { runUserPromptSubmitHook, parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
       // An agent that followed a learn_correction line here made "broken" an alias of "flaky".
