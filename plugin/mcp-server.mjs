@@ -67315,8 +67315,12 @@ async function stepLexicon(ctx) {
   if (ctx.plan) ctx.plan.lexiconExists = existed;
   const before = existed ? (await readLexiconFile(global, "global")).lexicon.terms.length : 0;
   const gated = before >= SEEDED_TERMS && !ctx.opts.reseed;
+  const phoneticUnused = () => {
+    if (ctx.opts.phonetic !== void 0) ctx.say(dim('   --phonetic was not used: it is the hint for the company term, and no company term was seeded (pass --company "Your Co" with it)'));
+  };
   if (gated && !ctx.opts.person && !ctx.opts.company) {
     ctx.say(dim(`   already has ${before} terms; skipping the seed (use --reseed to add more)`));
+    phoneticUnused();
     return;
   }
   if (gated) ctx.say(dim(`   already has ${before} terms; seeding only the names you passed`));
@@ -67385,6 +67389,7 @@ async function stepLexicon(ctx) {
   }
   if (!company) {
     if (!gated && !companySkipped) ctx.say(dim('   no company term (add one later: lexicon add "Your Co" --category brand)'));
+    phoneticUnused();
     return;
   }
   const aliases = suggestAliases(company);
