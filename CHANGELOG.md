@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon daemon` prints its error lines (a clipboard tool's stderr, a lexicon reload or `recordHits` failure naming a path) and correction summaries without control characters or escape sequences. They were written as they came, so an escape sequence in a tool's message or a directory name reached the terminal.
 - `lexicon daemon` retries the clipboard text after a lexicon that would not load. The next poll skipped that text, printed `working again` while the lexicon was still broken, and the text was never corrected once the file was fixed.
 - `lexicon edit` treats an editor that exits non-zero (vim `:cq`) as an aborted edit: it says so, does not re-trust a trusted project file (and says when the file changed anyway and needs `lexicon trust`), and exits 1. It only noted the exit code, then checked and re-trusted whatever the editor left, which blessed content the user had backed out of.
 - `lexicon remove <canonical> --alias <alias>` that misses names the aliases the term does have and the command that removes one (or that it has none), or `lexicon list --query <canonical>` when no file in reach holds the term, on stderr and as `nextStep` under `--json`. It gave the generic "fix what error names" step.

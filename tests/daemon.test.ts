@@ -4,6 +4,7 @@ import type { Lexicon, NormalizeResult } from '../src/core/types.js';
 vi.mock('../src/core/index.js', async () => {
   // The shared note wording (core/notes.ts) is used as is.
   const notes = await vi.importActual<typeof import('../src/core/notes.js')>('../src/core/notes.js');
+  const { sanitizeForDisplayMax } = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
   const lexicon: Lexicon = { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }] };
   const normalize = (text: string): NormalizeResult => {
     const output = text.replace(/Ashler/g, 'Ashlr.AI');
@@ -20,6 +21,7 @@ vi.mock('../src/core/index.js', async () => {
   };
   return {
     ...notes,
+    sanitizeForDisplayMax,
     normalize: vi.fn(normalize),
     diffSummary: vi.fn((r: NormalizeResult) => r.replacements.map((x) => `"${x.original}" -> "${x.replacement}"`).join('\n')),
     loadLexicon: vi.fn(async () => ({ merged: lexicon, global: { path: '/g', scope: 'global', lexicon, exists: true } })),
@@ -192,6 +194,21 @@ describe('runClipboardDaemon', () => {
     } finally {
       broken = false;
     }
+  });
+
+  // Catches: error lines were written as they came, so an escape sequence in a clipboard tool's stderr or a
+  // lexicon path (a directory named after one) reached the terminal and could retitle or recolour it.
+  it('prints a failure without its control characters', async () => {
+    const h = start('');
+    h.read.mockImplementation(async () => {
+      throw new Error('xclip exited with code 1: \u001b]0;pwned\u0007bad \u001b[31mdisplay');
+    });
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.err).toHaveLength(1);
+    expect(h.err[0]).toContain('xclip exited with code 1: bad display');
+    expect(h.err[0]).not.toMatch(/[\u001b\u0007]/);
+    h.controller.abort();
+    await h.done;
   });
 
   it('dryRun never records hits', async () => {
