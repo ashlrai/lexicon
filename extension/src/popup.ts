@@ -3,7 +3,7 @@
 import { sendToBackground } from './chrome-store.js';
 import { siteNote } from './adapters.js';
 import { setMessage } from './rich-text.js';
-import { coerceSettings, describeCorrection, hostKey, siteEnabled, statusFailedView, statusView, STORAGE_KEYS, withSiteSwitch } from './shared.js';
+import { coerceSettings, describeCorrection, errorMessage, hostKey, recentRows, siteEnabled, statusFailedView, statusView, STORAGE_KEYS, storageWriteFailedLine, withSiteSwitch } from './shared.js';
 import type { Failure, LearnReply, StatusReply } from './shared.js';
 
 function $<T extends HTMLElement>(id: string): T {
@@ -46,13 +46,14 @@ function renderStatus(s: StatusReply): void {
   setMessage(ui.server, view.line);
 
   ui.recent.replaceChildren();
-  if (s.recent.length === 0) {
+  const recent = recentRows(s.recent);
+  if (recent.length === 0) {
     const li = document.createElement('li');
     li.className = 'muted small';
     li.textContent = 'None yet.';
     ui.recent.appendChild(li);
   }
-  for (const c of s.recent) {
+  for (const c of recent) {
     const li = document.createElement('li');
     li.setAttribute('aria-label', describeCorrection(c));
     const from = document.createElement('span');
@@ -103,12 +104,17 @@ async function loadSite(): Promise<void> {
 }
 
 ui.siteEnabled.addEventListener('change', () => {
+  const wanted = ui.siteEnabled.checked;
   void (async () => {
     const raw = await chrome.storage.local.get([STORAGE_KEYS.settings]);
-    const next = withSiteSwitch(raw[STORAGE_KEYS.settings], currentHost, ui.siteEnabled.checked);
+    const next = withSiteSwitch(raw[STORAGE_KEYS.settings], currentHost, wanted);
     await chrome.storage.local.set({ [STORAGE_KEYS.settings]: next });
     ui.siteNote.textContent = siteNote(coerceSettings(next, ''), currentUrl);
-  })();
+  })().catch((err: unknown) => {
+    // Nothing was stored: put the switch back and say why.
+    ui.siteEnabled.checked = !wanted;
+    setMessage(ui.siteNote, storageWriteFailedLine(errorMessage(err)));
+  });
 });
 
 ui.learn.addEventListener('submit', (ev) => {

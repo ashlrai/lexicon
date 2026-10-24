@@ -168,6 +168,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
             }
           }
         }
+        const noneToAdd = add === true && candidates.length === 0;
         const payload = {
           root,
           candidates,
@@ -178,9 +179,12 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
             : {}),
           // The 5000-file cap was never reported, so a large tree looked fully scanned.
           ...(report.truncated ? { truncated: true } : {}),
-          ...(failures.length > 0 || report.truncated
+          ...(failures.length > 0 || report.truncated || noneToAdd
             ? {
                 note: [
+                  // add: true with no candidates returned added: 0 and no word,
+                  // which read like a write that silently dropped every name.
+                  ...(noneToAdd ? ['No candidates were found, so nothing was written to the project lexicon'] : []),
                   ...(failures.length > 0
                     ? [`${failures.length} of ${candidates.length} candidate${candidates.length === 1 ? ' was' : 's were'} not added (first: ${failures[0]?.error}); see failures`]
                     : []),

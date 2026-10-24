@@ -506,7 +506,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         '`page: { offset, limit?, returned, nextOffset? }` says where it started and, while more matches remain, the `offset` that gets the next page (`counts.matched` is how many there are in all).',
       inputSchema: {
         query: z.string().optional().describe('Case-insensitive substring matched against canonical and aliases.'),
-        category: z.enum(TERM_CATEGORIES).optional(),
+        category: z.enum(TERM_CATEGORIES).optional().describe('Only terms in this category; a term without one counts as other.'),
         offset: z.number().int().nonnegative().optional().describe('Matching terms to skip before the page starts (0 when omitted); pass `page.nextOffset` to get the next page.'),
         limit: z.number().int().positive().optional().describe('Most terms to return. Omitted with `offset` omitted too: every matching term.'),
       },
@@ -517,7 +517,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         const loaded = await load({ parseSkipped: false });
         const needle = query?.trim().toLowerCase();
         const matched = loaded.merged.terms.filter((t) => {
-          if (category && t.category !== category) return false;
+          // A term without a category is an `other` one, as for export_lexicon.
+          if (category && (t.category ?? 'other') !== category) return false;
           if (!needle) return true;
           if (t.canonical.toLowerCase().includes(needle)) return true;
           return t.aliases.some((a) => a.toLowerCase().includes(needle));

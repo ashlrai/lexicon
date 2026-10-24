@@ -21732,8 +21732,9 @@ async function shouldEmitOnboardNote(globalPath, now = Date.now()) {
 `, "utf8");
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
-    process.stderr.write(`[lexicon hook] onboard-note: ${message}
+    process.stderr.write(`[lexicon hook] onboard-note: ${message} (note skipped: its once a day state cannot be recorded)
 `);
+    return false;
   }
   return true;
 }

@@ -261,8 +261,9 @@ describe('normalize', () => {
     expect(json.err).toBe('');
   });
 
-  // Catches: `normalize --json --min-confidence 5` printed `{ ok: false, error }` with no nextStep.
-  it.each([5, 'high', -1])('refuses --min-confidence %s with a nextStep, before reading stdin', async (value) => {
+  // Catches: `normalize --json --min-confidence 5` printed `{ ok: false, error }` with no nextStep,
+  // and a blank value ('' or spaces, as an unset shell variable gives) was read as 0.
+  it.each([5, 'high', -1, '', '  '])('refuses --min-confidence %s with a nextStep, before reading stdin', async (value) => {
     const json = makeIO();
     const readInput = vi.fn(async () => 'meet Ashler');
     expect(await runNormalize([], { json: true, minConfidence: value }, json, readInput)).toBe(1);
@@ -380,6 +381,19 @@ describe('list', () => {
     expect(io.out).toContain('Mason Wyatt');
     expect(io.out).toContain(`global: ${state.globalPath}`);
     expect(io.out).toContain('project: (none)');
+  });
+
+  // Catches: `--category other` left out a term with no category, which
+  // export --category and the rest of the code count as other.
+  it('--category other lists the terms without a category', async () => {
+    const mixed: Lexicon = { version: 1, terms: [...FIXED_LEXICON.terms, { canonical: 'Plain', aliases: ['plane'], scope: 'global' }] };
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({
+      merged: mixed,
+      global: { path: state.globalPath, scope: 'global', lexicon: mixed, exists: true },
+    });
+    const io = makeIO();
+    expect(await runList({ category: 'other', json: true }, io)).toBe(0);
+    expect((JSON.parse(io.out) as Array<{ canonical: string }>).map((t) => t.canonical)).toEqual(['Plain']);
   });
 
   it('shows the project path when one is present', async () => {

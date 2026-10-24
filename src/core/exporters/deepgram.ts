@@ -15,7 +15,7 @@
  * escape for a colon, which separates a keyword from its boost, so a
  * canonical holding one (`Win:2`) would read as another keyword and boost. A
  * colon is never spoken, so it becomes a space (`Win 2:1`), whitespace
- * collapsed; a canonical with nothing else in it is left out, and one that
+ * collapsed; a canonical with nothing else in it is left out, with a note, and one that
  * then reads as a keyword already listed (`Win:2` next to `Win 2`) is written
  * once, for the more important term, with a note.
  */
@@ -48,9 +48,13 @@ export function exportDeepgram(lexicon: Lexicon, _opts: ExportOptions = {}, sink
   const keywords: string[] = [];
   const seen = new Set<string>();
   const collided: string[] = [];
+  const onlyColons: string[] = [];
   for (const { term, canonical } of ordered) {
     const keyword = canonical.replace(/:/g, ' ').replace(/\s+/g, ' ').trim();
-    if (!keyword) continue;
+    if (!keyword) {
+      onlyColons.push(canonical);
+      continue;
+    }
     if (seen.has(keyword)) {
       collided.push(canonical);
       continue;
@@ -63,6 +67,9 @@ export function exportDeepgram(lexicon: Lexicon, _opts: ExportOptions = {}, sink
   }
   if (keytermRepeats.length > 0) {
     sink?.notes.push(`left out ${keytermRepeats.length} name${keytermRepeats.length === 1 ? '' : 's'} from keyterm that read as one already listed once whitespace is collapsed: ${quotedNames(keytermRepeats)}`);
+  }
+  if (onlyColons.length > 0) {
+    sink?.notes.push(`left out ${onlyColons.length} name${onlyColons.length === 1 ? '' : 's'} from keywords that hold nothing but colons and whitespace (a colon becomes a space there): ${quotedNames(onlyColons)}`);
   }
   if (collided.length > 0) {
     sink?.notes.push(`left out ${collided.length} name${collided.length === 1 ? '' : 's'} from keywords that read as one already listed once its colon is a space: ${quotedNames(collided)}`);

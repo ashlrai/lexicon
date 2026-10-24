@@ -101,6 +101,47 @@ export interface Correction {
   confidence: number;
 }
 
+/**
+ * True for a correction of the shape the engine writes: whole offsets with
+ * `0 <= start <= end`, the three strings, a string `reason` and a finite
+ * `confidence`. The background checks each `/normalize` entry with it before
+ * the reply is used or kept in "recent", where a malformed one broke the
+ * popup's list.
+ */
+export function isCorrection(value: unknown): value is Correction {
+  if (typeof value !== 'object' || value === null) return false;
+  const c = value as Record<string, unknown>;
+  return (
+    Number.isSafeInteger(c.start) &&
+    Number.isSafeInteger(c.end) &&
+    (c.start as number) >= 0 &&
+    (c.start as number) <= (c.end as number) &&
+    typeof c.original === 'string' &&
+    typeof c.replacement === 'string' &&
+    typeof c.canonical === 'string' &&
+    typeof c.reason === 'string' &&
+    typeof c.confidence === 'number' &&
+    Number.isFinite(c.confidence)
+  );
+}
+
+/**
+ * The popup's "recent" rows: `original` and `replacement` of each entry that
+ * has both as strings, the rest skipped, and none for a value that is not a
+ * list. A malformed entry stored by an older release threw in the popup and
+ * left the list half drawn.
+ */
+export function recentRows(recent: unknown): Array<Pick<Correction, 'original' | 'replacement'>> {
+  if (!Array.isArray(recent)) return [];
+  const rows: Array<Pick<Correction, 'original' | 'replacement'>> = [];
+  for (const entry of recent as unknown[]) {
+    if (typeof entry !== 'object' || entry === null) continue;
+    const { original, replacement } = entry as Record<string, unknown>;
+    if (typeof original === 'string' && typeof replacement === 'string') rows.push({ original, replacement });
+  }
+  return rows;
+}
+
 export interface ServerHealth {
   ok: boolean;
   version: string;
@@ -275,6 +316,24 @@ export function yamlBoxAfterChange(box: string, loaded: string, stored: string):
   return box === loaded ? stored : box;
 }
 
+/**
+ * The Options page's site switches after the stored ones changed elsewhere
+ * (the popup paused or resumed a site): each host whose stored switch went
+ * from `previous` to something else in `next` takes the stored value, and
+ * every other host keeps `current`, the page's own switches, unsaved edits
+ * included. Options only followed the YAML and connection fields, so its
+ * Save wrote back the switches it had loaded and undid the popup's.
+ */
+export function sitesAfterChange(current: Readonly<Record<string, boolean>>, previous: Readonly<Record<string, boolean>>, next: Readonly<Record<string, boolean>>): Record<string, boolean> {
+  const out = { ...current };
+  for (const host of new Set([...Object.keys(previous), ...Object.keys(next)])) {
+    if (previous[host] === next[host]) continue;
+    if (Object.hasOwn(next, host)) out[host] = next[host] as boolean;
+    else delete out[host];
+  }
+  return out;
+}
+
 /** `www.perplexity.ai` and `perplexity.ai` share one switch. */
 export function hostKey(hostname: string): string {
   return hostname.toLowerCase().replace(/^www\./, '');
@@ -379,6 +438,16 @@ export function statusView(s: StatusReply, now = Date.now()): StatusView {
  */
 export function extensionRequestFailedLine(error: string): string {
   return `${error.replace(/[.\s]+$/, '')}. Reload this page; if it persists, reload Lexicon on the browser's extensions page.`;
+}
+
+/**
+ * Options' Save or the popup's site switch when the browser refused the
+ * settings write (`chrome.storage.local.set` rejected, most likely over its
+ * quota): nothing was stored, what failed, then what to try. The failure was
+ * not caught, so Save said nothing and the switch looked applied.
+ */
+export function storageWriteFailedLine(error: string): string {
+  return `Not saved: ${error.replace(/[.\s]+$/, '')}. The browser refused to store the settings (its storage for Lexicon may be full); try again, and if it persists make the embedded lexicon smaller or reload Lexicon on the browser's extensions page.`;
 }
 
 /**
