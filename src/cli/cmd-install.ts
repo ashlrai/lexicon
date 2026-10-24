@@ -906,7 +906,9 @@ async function installText(
     // would print the snippet and write nothing, exit 0, though the printout
     // said "add --apply to write the config".
     if (opts.apply || project) {
-      const flags = [opts.apply ? '--apply' : '', project ? '--project' : ''].filter(Boolean).join(' ');
+      // Name the flag as typed: `--scope project` was reported as `--project`.
+      const scopeFlag = opts.project === true ? '--project' : '--scope project';
+      const flags = [opts.apply ? '--apply' : '', project ? scopeFlag : ''].filter(Boolean).join(' ');
       const clients = INSTALL_CLIENTS.filter((c) => c !== 'generic');
       throw new CliRefusal(
         `${flags} needs a client: with none named, lexicon install only prints the generic configuration and writes nothing`,

@@ -577,6 +577,11 @@ describe('generic, claude and the commander wiring', () => {
       error: '--apply --project needs a client: with none named, lexicon install only prints the generic configuration and writes nothing',
       nextStep: 'name the client to write, e.g. lexicon install cursor --apply --project (one of: claude, codex, cursor, windsurf, gemini, claude-desktop, vscode)',
     });
+    // Catches: `--scope project` with no client was refused as `--project needs a client`, a flag never typed.
+    await expect(run('generic', { scope: 'project' })).rejects.toMatchObject({
+      message: expect.stringMatching(/^--scope project needs a client/),
+      nextStep: expect.stringContaining('lexicon install cursor --scope project ('),
+    });
     expect(await fs.readdir(home)).toEqual([]);
     expect(await fs.readdir(cwd)).toEqual([]);
     expect((await run('generic')).io.out).toContain('name a client and add --apply to write its config');

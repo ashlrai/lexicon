@@ -65514,7 +65514,8 @@ async function installText(client, opts, io, deps) {
   }
   if (name === "generic") {
     if (opts.apply || project) {
-      const flags = [opts.apply ? "--apply" : "", project ? "--project" : ""].filter(Boolean).join(" ");
+      const scopeFlag = opts.project === true ? "--project" : "--scope project";
+      const flags = [opts.apply ? "--apply" : "", project ? scopeFlag : ""].filter(Boolean).join(" ");
       const clients = INSTALL_CLIENTS.filter((c) => c !== "generic");
       throw new CliRefusal(
         `${flags} needs a client: with none named, lexicon install only prints the generic configuration and writes nothing`,
