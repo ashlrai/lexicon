@@ -1236,6 +1236,31 @@ describe('export', () => {
     }
   });
 
+  // Catches: when neither the lexicon file nor --out existed yet, the paths
+  // were compared as given, so --out reaching the lexicon path through a
+  // symlinked directory was written as the lexicon file.
+  it('--out refuses the lexicon path reached through a symlinked directory before either exists', async () => {
+    const dir = await fs.realpath(await tempDir('lexicon-cli-out-link-'));
+    const real = path.join(dir, 'real');
+    await fs.mkdir(real);
+    const link = path.join(dir, 'link');
+    try {
+      await fs.symlink(real, link, 'dir');
+    } catch {
+      return; // no symlinks here (Windows without the privilege)
+    }
+    const saved = state.globalPath;
+    try {
+      state.globalPath = path.join(real, 'sub', 'lexicon.yaml');
+      const io = makeIO();
+      expect(await runExport('json', { out: path.join(link, 'sub', 'lexicon.yaml') }, io)).toBe(1);
+      expect(io.err).toContain('is the global lexicon file the export reads, so nothing was written');
+      expect(existsSync(state.globalPath)).toBe(false);
+    } finally {
+      state.globalPath = saved;
+    }
+  });
+
   // Catches: an empty export (no terms yet, or --category matching none) came
   // out with no word on stderr or under --json, read as a complete export,
   // while MCP export_lexicon says why in a note.

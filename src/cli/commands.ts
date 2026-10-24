@@ -1307,11 +1307,23 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
 
 /** `p` resolved through links when it exists, case-folded where the filesystem usually ignores case. */
 async function samePathKey(p: string): Promise<string> {
-  let real = path.resolve(p);
-  try {
-    real = await fs.realpath(real);
-  } catch {
-    // Not there yet: compare the path as given.
+  const resolved = path.resolve(p);
+  // Not there yet: resolve the nearest ancestor that exists and keep the rest
+  // as given, so an --out reaching a lexicon path that does not exist yet
+  // through a symlinked directory (`link/lexicon.yaml`, `link` -> its
+  // directory) still compares equal. The path as given missed it.
+  let real = resolved;
+  const rest: string[] = [];
+  for (let dir = resolved; ; ) {
+    try {
+      real = path.join(await fs.realpath(dir), ...rest);
+      break;
+    } catch {
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      rest.unshift(path.basename(dir));
+      dir = parent;
+    }
   }
   return process.platform === 'win32' || process.platform === 'darwin' ? real.toLowerCase().normalize('NFC') : real;
 }
