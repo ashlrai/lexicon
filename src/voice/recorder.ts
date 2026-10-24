@@ -201,16 +201,48 @@ export async function claimStop(globalPath: string): Promise<RecordingState | un
     voiceDir(globalPath),
     `${STOPPING_PREFIX}${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.json`,
   );
+  // Rename alone is not exclusive on Windows: libuv renames through a handle
+  // to the file, so a press that opened the state file before another press
+  // renamed it goes on to rename the already-claimed file a second time, and
+  // both presses read it (one capture delivered twice). An O_EXCL lock file is
+  // exclusive on every platform, so only its creator goes on to rename. A lock
+  // left by a press that died is past STOPPING_TTL_MS and is broken here (and
+  // swept by sweepVoiceDir, which shares the prefix and suffix).
+  const lock = path.join(voiceDir(globalPath), `${STOPPING_PREFIX}lock.json`);
+  if (!(await takeClaimLock(lock))) return undefined;
   try {
-    await fs.rename(stateFilePath(globalPath), claimed);
-  } catch {
-    return undefined;
-  }
-  try {
-    return await readStateFile(claimed);
+    try {
+      await fs.rename(stateFilePath(globalPath), claimed);
+    } catch {
+      return undefined;
+    }
+    try {
+      return await readStateFile(claimed);
+    } finally {
+      await fs.rm(claimed, { force: true }).catch(() => undefined);
+    }
   } finally {
-    await fs.rm(claimed, { force: true }).catch(() => undefined);
+    await fs.rm(lock, { force: true }).catch(() => undefined);
   }
+}
+
+async function takeClaimLock(lock: string): Promise<boolean> {
+  for (let attempt = 0; attempt < 2; attempt += 1) {
+    try {
+      await fs.mkdir(path.dirname(lock), { recursive: true });
+      await (await fs.open(lock, 'wx')).close();
+      return true;
+    } catch (err) {
+      if ((err as NodeJS.ErrnoException).code !== 'EEXIST') return false;
+      const age = await fs
+        .stat(lock)
+        .then((st) => Date.now() - st.mtimeMs)
+        .catch(() => 0);
+      if (age <= STOPPING_TTL_MS) return false;
+      await fs.rm(lock, { force: true }).catch(() => undefined);
+    }
+  }
+  return false;
 }
 
 /** A claim breadcrumb older than this was left by a press that died mid-stop. */
