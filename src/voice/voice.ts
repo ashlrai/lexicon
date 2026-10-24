@@ -75,8 +75,8 @@ import {
   findOrphanRecorder,
 } from './recorder.js';
 import type { RecordingState, WavCheck } from './recorder.js';
-import { MissingToolError, WhisperExitError, transcribeFile } from './transcribe.js';
-import type { TranscribeResult } from './transcribe.js';
+import { MissingToolError, TranscribeInterruptedError, WhisperExitError, transcribeFile } from './transcribe.js';
+import type { TranscribeOptions, TranscribeResult } from './transcribe.js';
 
 export const EXIT_OK = 0;
 export const EXIT_ERROR = 1;
@@ -133,6 +133,12 @@ export interface VoiceDeps {
    * aborts.
    */
   waitForInterrupt?: (signal: AbortSignal) => Promise<'sigint'>;
+  /**
+   * Resolves on Ctrl-C while a capture is being transcribed (a model
+   * download, then whisper-cli); stops listening once `signal` aborts.
+   * Default: SIGINT, as waitForInterrupt.
+   */
+  waitForTranscribeInterrupt?: (signal: AbortSignal) => Promise<'sigint'>;
   /** Clipboard writer; default: the detected platform backend. */
   clipboardWrite?: (text: string) => Promise<void>;
   /** Paste keystroke; default: osascript Cmd+V. */
@@ -693,11 +699,34 @@ async function transcribeCapture(
   }
   try {
     r.log('transcribing ...');
-    const result = await transcribeFile(wav, transcribeOptions(r, opts, deps, loaded.merged, tools.whisperCli));
+    const result = await transcribeInterruptibly(wav, transcribeOptions(r, opts, deps, loaded.merged, tools.whisperCli), deps);
     await keepOrRemoveTranscribed(result, wav, io, timing.keepBecause);
     return await deliver(result, recordMs, seconds, opts, io, deps, r, loaded);
   } catch (e) {
     return transcribeFailed(r, io, e, wav, opts);
+  }
+}
+
+/**
+ * transcribeFile, stopped by Ctrl-C. Without a handler the process simply
+ * died on SIGINT, whisper with it, and the capture (a temp file in the
+ * foreground mode) was left with nothing saying it was there. The interrupt
+ * now stops the model download or whisper-cli and the run ends with
+ * TranscribeInterruptedError, which transcribeFailed reports with the path
+ * of the kept audio.
+ */
+async function transcribeInterruptibly(wav: string, options: TranscribeOptions, deps: VoiceDeps): Promise<TranscribeResult> {
+  const interrupted = new AbortController();
+  const listening = new AbortController();
+  const wait = deps.waitForTranscribeInterrupt ?? defaultWaitForInterrupt;
+  void wait(listening.signal).then(
+    () => interrupted.abort(),
+    () => undefined,
+  );
+  try {
+    return await transcribeFile(wav, { ...options, signal: interrupted.signal });
+  } finally {
+    listening.abort();
   }
 }
 
@@ -727,6 +756,11 @@ function whisperExitStep(e: WhisperExitError, wav: string, spec: string): string
  * step, on stderr and in --json (a download failure already names its own).
  */
 function transcribeFailed(r: Resolved, io: VoiceIO, e: unknown, wav: string, opts: Pick<VoiceOptions, 'model'>): number {
+  if (e instanceof TranscribeInterruptedError) {
+    const step = `run lexicon voice again to record anew; the interrupted capture stays at ${wav} until you delete it`;
+    io.stderr(`lexicon voice: ${e.message}; the recording is kept at ${wav}\n`);
+    return failed(r, EXIT_ERROR, `${e.message} (audio kept at ${wav})`, step);
+  }
   const missing = e instanceof MissingToolError;
   const step = missing
     ? installSteps(r.platform, { ffmpeg: false, whisper: true }).join(' ')
@@ -826,7 +860,7 @@ async function recordForeground(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps
 
   try {
     r.log('transcribing ...');
-    const result = await transcribeFile(wav, transcribeOptions(r, opts, deps, loaded.merged, tools.whisperCli));
+    const result = await transcribeInterruptibly(wav, transcribeOptions(r, opts, deps, loaded.merged, tools.whisperCli), deps);
     await keepOrRemoveTranscribed(result, wav, io);
     return await deliver(result, recordMs, recordMs / 1000, opts, io, deps, r, loaded);
   } catch (e) {

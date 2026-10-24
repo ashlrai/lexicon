@@ -919,6 +919,48 @@ describe('lexicon voice (foreground)', () => {
     expect(await fs.readdir(path.join(h.dir, 'tmp'))).toEqual([]);
   });
 
+  // Catches: Ctrl-C while whisper ran killed the process with no handler, so
+  // the capture stayed in the temp directory and nothing said where.
+  it('Ctrl-C during transcription stops whisper and names the kept capture', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    const exec = h.deps.exec!;
+    let whisperSignal: AbortSignal | undefined;
+    let whisperStarted: () => void = () => undefined;
+    const started = new Promise<void>((r) => (whisperStarted = r));
+    h.deps.exec = async (cmd, args, opts) => {
+      if (path.basename(cmd) !== 'whisper-cli') return exec(cmd, args, opts);
+      whisperSignal = opts?.signal;
+      whisperStarted();
+      // whisper-cli runs until it is stopped
+      return new Promise<ExecResult>((resolve) => opts?.signal?.addEventListener('abort', () => resolve({ code: null, stdout: '', stderr: '' })));
+    };
+    let listening: AbortSignal | undefined;
+    h.deps.waitForTranscribeInterrupt = async (signal) => {
+      listening = signal;
+      await started;
+      return 'sigint';
+    };
+    const run = runVoice({ ...h.opts, json: true }, h.io, h.deps);
+    const code = await Promise.race([run, new Promise<'hung'>((r) => setTimeout(() => r('hung'), 3000))]);
+    expect(code).toBe(EXIT_ERROR);
+    expect(whisperSignal?.aborted).toBe(true);
+    expect(listening?.aborted).toBe(true);
+    const [wav] = await fs.readdir(path.join(h.dir, 'tmp'));
+    const kept = path.join(h.dir, 'tmp', wav);
+    expect(wav).toMatch(/^lexicon-voice-.*\.wav$/);
+    expect(h.err.join('')).toContain(`lexicon voice: interrupted while transcribing; the recording is kept at ${kept}\n`);
+    expect(JSON.parse(h.out[0])).toMatchObject({ ok: false, code: EXIT_ERROR, error: `interrupted while transcribing (audio kept at ${kept})` });
+  });
+
+  it('the transcription interrupt listener is released after an ordinary run', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    const before = process.listenerCount('SIGINT');
+    expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(process.listenerCount('SIGINT')).toBe(before);
+  });
+
   it('--seconds: the interrupt listener is released when the recording ends on its own', async () => {
     const h = await harness();
     let listening: AbortSignal | undefined;

@@ -20,6 +20,11 @@ export interface ExecOptions {
   stdin?: string;
   /** Kill the child after this many milliseconds (resolves with code null). */
   timeoutMs?: number;
+  /**
+   * Stop the child (SIGTERM) when this aborts, resolving with code null: the
+   * caller was interrupted (Ctrl-C) and the result is no longer wanted.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -91,6 +96,13 @@ export function defaultExec(cmd: string, args: readonly string[], opts: ExecOpti
     child.once('close', (code) => finish(code));
     if (opts.timeoutMs !== undefined) {
       timer = setTimeout(() => child.kill('SIGKILL'), opts.timeoutMs);
+    }
+    if (opts.signal) {
+      const stop = (): void => {
+        if (!settled) child.kill('SIGTERM');
+      };
+      if (opts.signal.aborted) stop();
+      else opts.signal.addEventListener('abort', stop, { once: true });
     }
     if (opts.stdin !== undefined && child.stdin) {
       child.stdin.once('error', () => undefined);

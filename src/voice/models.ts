@@ -117,8 +117,12 @@ export interface DownloadProgress {
   total?: number;
 }
 
-/** Fetch `url` into `dest` (atomically via a `.part` file). Injectable for tests. */
-export type Downloader = (url: string, dest: string, onProgress: (p: DownloadProgress) => void) => Promise<void>;
+/**
+ * Fetch `url` into `dest` (atomically via a `.part` file). Injectable for
+ * tests. `signal` aborts the download (Ctrl-C): nothing is kept and the
+ * promise rejects.
+ */
+export type Downloader = (url: string, dest: string, onProgress: (p: DownloadProgress) => void, signal?: AbortSignal) => Promise<void>;
 
 /**
  * The first bytes of every whisper.cpp ggml model: GGML_FILE_MAGIC
@@ -177,10 +181,10 @@ export async function sweepStaleParts(dest: string, nowMs: number = Date.now()):
   }
 }
 
-export async function defaultDownloader(url: string, dest: string, onProgress: (p: DownloadProgress) => void): Promise<void> {
+export async function defaultDownloader(url: string, dest: string, onProgress: (p: DownloadProgress) => void, signal?: AbortSignal): Promise<void> {
   await fs.mkdir(path.dirname(dest), { recursive: true });
   await sweepStaleParts(dest);
-  const res = await fetch(url, { redirect: 'follow' });
+  const res = await fetch(url, { redirect: 'follow', ...(signal ? { signal } : {}) });
   if (!res.ok || !res.body) throw new Error(`download failed: ${res.status} ${res.statusText} (${url})`);
   const total = Number(res.headers.get('content-length')) || undefined;
   let received = 0;
@@ -196,7 +200,7 @@ export async function defaultDownloader(url: string, dest: string, onProgress: (
     onProgress({ received, total });
   });
   try {
-    await pipeline(source, createWriteStream(tmp));
+    await pipeline(source, createWriteStream(tmp), ...(signal ? [{ signal }] : []));
     const bad = checkDownloadedModel(head, received, total);
     if (bad !== undefined) throw new Error(`${bad} (${url})`);
     await fs.rename(tmp, dest);
@@ -220,6 +224,8 @@ export interface EnsureModelOptions extends ResolveModelOptions {
   /** Progress sink (stderr). Called with a line to print; carriage-return updates use `progress`. */
   log?: (line: string) => void;
   progress?: (line: string) => void;
+  /** Aborts a download in progress (passed to the downloader). */
+  signal?: AbortSignal;
 }
 
 /** Resolve a model, downloading a named one when absent. Throws for a missing explicit path. */
@@ -241,8 +247,9 @@ export async function ensureModel(spec: string, opts: EnsureModelOptions): Promi
         lastPct = pct;
         progress(formatProgress(modelFileName(resolved.name), p));
       }
-    });
+    }, opts.signal);
   } catch (e) {
+    if (opts.signal?.aborted) throw new Error(`the download of whisper model ${resolved.name} was interrupted; nothing was kept`);
     // The failure alone ("fetch failed") said nothing about what to do next.
     const why = e instanceof Error ? e.message : String(e);
     throw new Error(

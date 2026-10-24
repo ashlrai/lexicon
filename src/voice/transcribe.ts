@@ -101,6 +101,12 @@ export interface TranscribeOptions {
   log?: (line: string) => void;
   /** Picks the install hint of a whisper-cli that cannot be started. Default process.platform. */
   platform?: NodeJS.Platform;
+  /**
+   * Aborts the transcription (Ctrl-C): a model download or whisper-cli in
+   * progress is stopped and TranscribeInterruptedError is thrown. The WAV is
+   * left as it is; the caller says where it is.
+   */
+  signal?: AbortSignal;
 }
 
 export interface TranscribeResult {
@@ -140,10 +146,47 @@ export class WhisperExitError extends Error {
   }
 }
 
+/** The transcription was interrupted (TranscribeOptions.signal aborted) before whisper finished. */
+export class TranscribeInterruptedError extends Error {
+  constructor() {
+    super('interrupted while transcribing');
+    this.name = 'TranscribeInterruptedError';
+  }
+}
+
+/**
+ * Wait up to `ms` for `signal` to abort. A whisper-cli killed by a signal is
+ * most often the user's Ctrl-C, which the terminal sends to whisper and to
+ * this process at once; the child's exit can be seen before our own handler
+ * runs, and would then read as whisper failing.
+ */
+async function settleAbort(signal: AbortSignal | undefined, ms: number): Promise<void> {
+  if (!signal || signal.aborted) return;
+  await new Promise<void>((resolve) => {
+    const timer = setTimeout(resolve, ms);
+    signal.addEventListener(
+      'abort',
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
+  });
+}
+
 /** Run whisper-cli on `wav` and normalize the transcript with the lexicon. */
 export async function transcribeFile(wav: string, opts: TranscribeOptions): Promise<TranscribeResult> {
   const exec = opts.exec ?? defaultExec;
-  const model = await ensureModel(opts.model ?? 'base.en', opts.modelOptions);
+  const signal = opts.signal;
+  let model: ResolvedModel;
+  try {
+    model = await ensureModel(opts.model ?? 'base.en', { ...opts.modelOptions, ...(signal ? { signal } : {}) });
+  } catch (e) {
+    if (signal?.aborted) throw new TranscribeInterruptedError();
+    throw e;
+  }
+  if (signal?.aborted) throw new TranscribeInterruptedError();
   const prompt = opts.prompt === false ? undefined : buildWhisperPrompt(opts.lexicon) || undefined;
   const tmpDir = opts.tmpDir ?? os.tmpdir();
   await fs.mkdir(tmpDir, { recursive: true });
@@ -153,7 +196,7 @@ export async function transcribeFile(wav: string, opts: TranscribeOptions): Prom
   const t0 = Date.now();
   let r;
   try {
-    r = await exec(opts.whisperCli, args);
+    r = signal ? await exec(opts.whisperCli, args, { signal }) : await exec(opts.whisperCli, args);
   } catch (e) {
     // The hint was `brew install whisper-cpp` on every platform.
     if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new MissingToolError('whisper-cli', installHint(opts.platform ?? process.platform, { ffmpeg: false, whisper: true }));
@@ -168,6 +211,8 @@ export async function transcribeFile(wav: string, opts: TranscribeOptions): Prom
     json = undefined;
   }
   await fs.rm(jsonPath, { force: true }).catch(() => undefined);
+  if (r.code === null) await settleAbort(signal, 200);
+  if (signal?.aborted) throw new TranscribeInterruptedError();
   if (r.code !== 0 && json === undefined) {
     const tail = r.stderr.trim().split('\n').slice(-5).join('\n');
     throw new WhisperExitError(`whisper-cli exited ${r.code ?? 'null'}${tail ? `: ${tail}` : ''}`, opts.whisperCli, model.path);
