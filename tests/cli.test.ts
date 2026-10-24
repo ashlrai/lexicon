@@ -978,6 +978,35 @@ describe('export', () => {
     expect(whole.err).toBe('');
   });
 
+  // Catches: for an alias-row format, "wrote csv export (2 terms)" and --json `terms` counted a term with no alias, which writes no row.
+  it('an alias-row export reports the rows it wrote and the terms that wrote none', async () => {
+    const mixed = { version: 1 as const, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler', 'Ashlar', ' '] }, { canonical: 'Quokka', aliases: [] }] };
+    const loadedMixed = { merged: mixed, global: { path: state.globalPath, scope: 'global' as const, lexicon: mixed, exists: true } };
+    const dir = await tempDir('lexicon-cli-');
+    try {
+      vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedMixed);
+      const human = makeIO();
+      expect(await runExport('csv', { out: path.join(dir, 'lex.csv') }, human)).toBe(0);
+      expect(human.out).toContain('wrote csv export (2 rows from 1 term; 1 term without an alias wrote no row) to ');
+      vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedMixed);
+      const asJson = makeIO();
+      expect(await runExport('csv', { out: path.join(dir, 'lex.csv'), json: true }, asJson)).toBe(0);
+      // `terms` keeps its meaning (the terms after --category and --limit); `rows` is what the file holds.
+      expect(JSON.parse(asJson.out)).toMatchObject({ ok: true, format: 'csv', terms: 2, rows: 2 });
+      // A format that writes every term has no rows field and keeps the plain count.
+      vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedMixed);
+      const whole = makeIO();
+      expect(await runExport('json', { out: path.join(dir, 'lex.json'), json: true }, whole)).toBe(0);
+      expect(JSON.parse(whole.out)).not.toHaveProperty('rows');
+      vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedMixed);
+      const wholeHuman = makeIO();
+      expect(await runExport('json', { out: path.join(dir, 'lex.json') }, wholeHuman)).toBe(0);
+      expect(wholeHuman.out).toContain('wrote json export (2 terms) to ');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('--out reports the number of terms written after --category and --limit, not the lexicon size', async () => {
     const dir = await tempDir('lexicon-cli-');
     try {
@@ -1030,7 +1059,7 @@ describe('export', () => {
     it('without --out embeds the export as content', async () => {
       const io = makeIO();
       expect(await runExport('wispr-flow', { json: true }, io)).toBe(0);
-      expect(JSON.parse(io.out)).toEqual({ ok: true, format: 'wispr', terms: 2, bytes: 13, content: 'export:wispr\n' });
+      expect(JSON.parse(io.out)).toEqual({ ok: true, format: 'wispr', terms: 2, rows: 3, bytes: 13, content: 'export:wispr\n' });
     });
 
     it('with no format lists the formats as JSON', async () => {

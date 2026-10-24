@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon export` to a one-row-per-alias format (csv, wispr, superwhisper, macos, espanso) reports the rows it wrote: `wrote csv export (2 rows from 1 term; 1 term without an alias wrote no row)`, and `--json` adds `rows`. It said `(2 terms)`, counting a term without an alias that wrote nothing. `terms` keeps its meaning.
 - `lexicon setup --yes` (and the dry run) skips a git `user.name` the write would refuse (over 80 characters, or holding a control character) with a note that says to pass `--person "Your Name"`, instead of creating the lexicon and then failing at the person write. A terminal setup no longer offers that name either.
 - `lexicon setup` refuses a multi-line or over-cap `--phonetic` (over 200 characters) before any step runs, in a dry run too, as it does a bad `--company` or `--person`. It created the lexicon and seeded the person term, then failed at the company write. On a terminal, a company, extra term name or phonetic hint typed at the prompt that the write would refuse (over the cap, or holding a control character) is now asked again instead of failing setup halfway.
 - `lexicon export --help` now says which terms `--limit` keeps (applied after `--category`, the most hits first; at equal hits brand, person and product terms first, then canonical A to Z) and that the one-row-per-alias formats count only terms with an alias. It said only "cap the number of terms", while MCP `export_lexicon` described both.
