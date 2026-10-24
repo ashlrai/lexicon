@@ -96,6 +96,30 @@ describe('lexicon stats (CLI)', () => {
   it('says so when no hits were recorded', () => {
     const text = renderStats(computeStats(loadedOf([{ canonical: 'Zoë', aliases: [] }])));
     expect(text).toContain('no hits yet');
+    // Catches: the hint named normalize_transcript, an MCP tool a person at a shell cannot call.
+    expect(text).toContain('counted when lexicon normalize, the prompt hook or the MCP server fixes something');
+    expect(text).not.toContain('normalize_transcript');
+  });
+
+  // Catches: `lexicon stats` on a lexicon with no terms printed a report of
+  // zeros with no step, in text and under --json alike.
+  it('runStats names the next step when the lexicon has no terms', async () => {
+    const tmp = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-stats-empty-')));
+    const prev = process.env.LEXICON_PATH;
+    process.env.LEXICON_PATH = path.join(tmp, 'config', 'lexicon.yaml');
+    const note = 'The lexicon has no terms yet, so nothing is corrected or counted; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.';
+    try {
+      const text: string[] = [];
+      expect(await runStats({ cwd: tmp }, { stdout: (s) => void text.push(s), stderr: () => undefined })).toBe(0);
+      expect(text.join('')).toMatch(/^terms: 0 {3}aliases: 0 {3}hits: 0\nThe lexicon has no terms yet, so nothing is corrected or counted; run `lexicon setup`/);
+      const json: string[] = [];
+      expect(await runStats({ cwd: tmp, json: true }, { stdout: (s) => void json.push(s), stderr: () => undefined })).toBe(0);
+      expect(JSON.parse(json.join(''))).toMatchObject({ ok: true, termCount: 0, note });
+    } finally {
+      if (prev === undefined) delete process.env.LEXICON_PATH;
+      else process.env.LEXICON_PATH = prev;
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
   });
 
   it('totals a project term across the committed file and this user\'s sidecar', async () => {

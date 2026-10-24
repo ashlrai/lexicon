@@ -22,6 +22,7 @@ import {
   removeTerm,
   resolveExportFormat,
   selectExportTerms,
+  EXPORT_ALIAS_ROW_FORMATS,
   conflictNote,
   unchangedTermNote,
   spellingConflicts,
@@ -145,14 +146,15 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a ' +
         'term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. ' +
         `Only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. ` +
-        'Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently, ' +
+        'Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently ' +
+        '(except with dryRun: true, where nothing is applied, so `output` is the input and `changed` is false even when `replacements` lists corrections: read `replacements` for what a real call would fix), ' +
         'unless the result also carries `skippedProject`: then this repo has a project lexicon that is not trusted yet, so tell the user once that ' + cliCommand('trust') + ' would enable it.',
       inputSchema: {
         text: z.string().describe('The dictated or transcribed text to correct.'),
         dryRun: z
           .boolean()
           .optional()
-          .describe('When true, report candidate replacements without applying them (output === input).'),
+          .describe('When true, report candidate replacements without applying them: `output` is the input, `changed` is false even when `replacements` is not empty, and no hit is recorded.'),
         minConfidence: z
           .number()
           .min(0)
@@ -237,7 +239,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'found, which beats inventing your own; show the user what was generated so they can veto one, and when the result has no aliases ' +
         'propose some or ask the user. Pass `aliases: []` to add the term with no aliases and none generated. On an existing term, omitted aliases add none, ' +
         'so passing only never, phonetic, category or notes changes just that. When another term already holds one of the aliases, ' +
-        'the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term.',
+        'the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term. ' +
+        'A field over the lexicon caps given on each argument is an error naming that field, and nothing is written.',
       inputSchema: {
         canonical: z
           .string()
@@ -248,14 +251,18 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         aliases: z
           .array(z.string())
           .optional()
-          .describe('Spellings STT actually produces for this term. Omit to auto-suggest (new terms only; often none are found). An explicit [] adds none and generates none.'),
-        phonetic: z.string().optional().describe('Pronunciation hint, e.g. "ASH-ler".'),
+          .describe(
+            `Spellings STT actually produces for this term, each at most ${LIMITS.word} characters; a term holds at most ${LIMITS.aliases}. Omit to auto-suggest (new terms only; often none are found). An explicit [] adds none and generates none.`,
+          ),
+        phonetic: z.string().optional().describe(`Pronunciation hint, e.g. "ASH-ler": one line, at most ${LIMITS.text} characters.`),
         category: z.enum(TERM_CATEGORIES).optional(),
-        notes: z.string().optional().describe('Free text shown to agents, e.g. "my company; never write Ashlar".'),
+        notes: z.string().optional().describe(`Free text shown to agents, e.g. "my company; never write Ashlar": one line, at most ${LIMITS.text} characters.`),
         never: z
           .array(z.string())
           .optional()
-          .describe('Ordinary words that must never be rewritten to this term even if they sound alike, e.g. ["sauce"] for SaaS.'),
+          .describe(
+            `Ordinary words that must never be rewritten to this term even if they sound alike, e.g. ["sauce"] for SaaS; each at most ${LIMITS.word} characters, at most ${LIMITS.aliases} per term.`,
+          ),
         scope: z
           .enum(TERM_SCOPES)
           .optional()
@@ -330,10 +337,12 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead, otherwise the `note` points at list_terms. With `alias`, an ' +
         'unknown term or an alias the term does not have is an error; when the other lexicon file\'s copy of the term has that alias, the error names that file and the scope to pass.',
       inputSchema: {
-        canonical: nonBlank(),
+        canonical: nonBlank().describe(
+          'The canonical spelling of the term to remove, as list_terms shows it (case-insensitive), e.g. "Ashlr.AI"; must not be blank. With `alias`, the term that alias is removed from.',
+        ),
         alias: nonBlank()
           .optional()
-          .describe('Remove only this alias (case-insensitive) from the term instead of the whole term.'),
+          .describe('Remove only this alias (case-insensitive) from the term instead of the whole term; must not be blank.'),
         scope: z
           .enum(TERM_SCOPES)
           .optional()
@@ -473,6 +482,13 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           },
           paths: filePathsInUse(loaded),
           ...skippedProjectFields(loaded),
+          // Why nothing came back, as `lexicon list` says it: no terms at
+          // all, or a filter that matched none of them.
+          ...(terms.length > 0 || loaded.skippedProject
+            ? {}
+            : loaded.merged.terms.length === 0
+              ? { note: 'The lexicon has no terms yet; add_term or setup_lexicon adds some.' }
+              : { note: `No term matches the ${[...(category ? ['category'] : []), ...(needle ? ['query'] : [])].join(' and ')} given; the lexicon has ${loaded.merged.terms.length} term${loaded.merged.terms.length === 1 ? '' : 's'} in all, which list_terms without ${category && needle ? 'them' : 'it'} returns.` }),
         });
       }),
   );
@@ -489,7 +505,15 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
       inputSchema: {
         format: z.enum(EXPORT_FORMAT_NAMES),
         categories: z.array(z.enum(TERM_CATEGORIES)).optional().describe('Only include terms in these categories. Omitted: every category.'),
-        limit: z.number().int().positive().optional().describe('Cap the number of terms exported, applied after `categories`; the most-used terms are kept. Omitted: every term.'),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            `Cap the number of terms exported, applied after \`categories\`: up to this many terms are kept, in this order: the most hits first; at equal hits (every term starts at 0) brand, person and product terms first; then canonical A to Z. ` +
+              `The formats that write one row per alias (${EXPORT_ALIAS_ROW_FORMATS.join(', ')}) count only terms that have an alias, since a term without one writes no row. Omitted: every term.`,
+          ),
       },
     },
     async ({ format, categories, limit }) =>
@@ -512,6 +536,11 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           notes.push('The lexicon has no terms yet, so the export is empty; add_term or setup_lexicon adds some.');
         } else if (selectExportTerms(loaded.merged, opts).length === 0) {
           notes.push(`No term matched categories ${JSON.stringify(categories ?? [])}, so the export is empty; list_terms shows each term's category.`);
+        } else if (
+          EXPORT_ALIAS_ROW_FORMATS.includes(resolved) &&
+          !selectExportTerms(loaded.merged, opts, resolved).some((t) => t.aliases.some((a) => a.trim() !== ''))
+        ) {
+          notes.push(`No exported term has an alias, and ${resolved} writes one row per alias, so the export has no rows; add_term with aliases adds some.`);
         }
         const skipped = skippedProjectFields(loaded, 'Its terms are not in this export.').note;
         if (skipped) notes.push(skipped);
@@ -520,6 +549,18 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         return result;
       }),
   );
+
+  /**
+   * learn_correction with only one of heard and meant: the default zod text
+   * (`expected string, received undefined`) did not say that one spelling is
+   * not a correction. The same words `lexicon learn Ashler` gives.
+   */
+  const oneSpellingError =
+    (missing: 'heard' | 'meant') =>
+    (iss: { input?: unknown }): string | undefined =>
+      iss.input === undefined
+        ? `${missing} is missing: only one spelling was given; learn_correction needs heard (the spelling STT wrote) and meant (the one the user meant), so nothing was learned`
+        : undefined;
 
   server.registerTool(
     'learn_correction',
@@ -538,8 +579,18 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'pass only the misspelled name as `heard`, not the sentence around it, and it never edits another term: when one already claims `heard` ' +
         'the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call; when an untrusted project lexicon also claims it, `untrustedProject` { path, trust } (path only, never its contents). Then get on with what the user actually asked for.',
       inputSchema: {
-        heard: z.string().min(1).describe(`The wrong form that was written, e.g. "Ashler": only the name, at most ${MAX_CORRECTION_LENGTH} characters.`),
-        meant: z.string().min(1).describe(`The spelling the user wants, e.g. "Ashlr.AI", at most ${MAX_CORRECTION_LENGTH} characters.`),
+        // nonBlank's check: `.min(1)` let "  " through to the handler, whose
+        // refusal did not name the argument.
+        heard: z
+          .string({ error: oneSpellingError('heard') })
+          .min(1)
+          .regex(/\S/, 'must not be blank')
+          .describe(`The wrong form that was written, e.g. "Ashler": only the name, at most ${MAX_CORRECTION_LENGTH} characters; must not be blank.`),
+        meant: z
+          .string({ error: oneSpellingError('meant') })
+          .min(1)
+          .regex(/\S/, 'must not be blank')
+          .describe(`The spelling the user wants, e.g. "Ashlr.AI", at most ${MAX_CORRECTION_LENGTH} characters; must not be blank.`),
         scope: z
           .enum(TERM_SCOPES)
           .optional()
@@ -609,9 +660,10 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'WHEN TO CALL: when normalize_transcript left a suspicious proper noun alone. It only matches above a confidence threshold, ' +
         'so a badly mangled name gets through unchanged; call this before guessing, and before asking the user an open question. ' +
         'WHAT IT CHANGES: nothing. It only reads the lexicon. ' +
-        'WHAT IT WILL NOT DO: it will not decide for you. It returns ranked { canonical, confidence, aliases } candidates: above ' +
+        'WHAT IT WILL NOT DO: it will not decide for you. It returns { heard, suggestions }: `suggestions` holds at most 3 candidates scoring 0.6 or more, best first, ' +
+        'each { canonical, confidence, aliases, category? }: above ' +
         "about 0.8 use the canonical and mention it in passing, below that ask \"did you mean X?\" and call learn_correction once " +
-        'the user confirms, so the next transcript needs no asking. No suggestions means the name is simply not in the lexicon yet: ' +
+        'the user confirms, so the next transcript needs no asking. An empty `suggestions` means the name is simply not in the lexicon yet: ' +
         'offer to add it with add_term, unless the result carries `skippedProject`: then the name may be in the untrusted project lexicon, so tell the user ' + cliCommand('trust') + ' would enable it.',
       inputSchema: {
         heard: nonBlank().describe(
@@ -649,7 +701,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
       description:
         'Counts of terms and aliases, total hits, the most-used terms, terms that never fired, and a per-file breakdown of the merged lexicon. ' +
         '`neverHit` lists at most the first 20 terms that never fired; `neverHitCount` is how many there are in all. ' +
-        'An untrusted project .lexicon.yaml is not counted; when one was skipped, `skippedProject` and `note` say so (path only).',
+        'An untrusted project .lexicon.yaml is not counted; when one was skipped, `skippedProject` and `note` say so (path only). With no terms at all, `note` says so and names setup_lexicon and add_term.',
       inputSchema: {},
     },
     async () =>
@@ -657,7 +709,13 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         // Path only for a skipped project file (skippedProjectFields), so it is never parsed.
         const loaded = await load({ parseSkipped: false });
         // Otherwise the counts silently leave out the repo's own terms.
-        return textResult({ ...computeStats(loaded), ...skippedProjectFields(loaded) });
+        // No terms at all: zeros alone named no step, so say what adds some
+        // (`lexicon stats` names the CLI commands).
+        const empty =
+          loaded.merged.terms.length === 0 && !loaded.skippedProject
+            ? { note: 'The lexicon has no terms yet, so nothing is corrected or counted; setup_lexicon or add_term adds some.' }
+            : {};
+        return textResult({ ...computeStats(loaded), ...skippedProjectFields(loaded), ...empty });
       }),
   );
 

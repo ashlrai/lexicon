@@ -395,7 +395,12 @@ describe('Host guard (DNS rebinding)', () => {
     const q = `/health?cwd=${encodeURIComponent(env.untrustedProject)}`;
     const anon = await fetch(`${info.url}${q}`);
     expect(anon.status).toBe(401);
-    expect(await anon.text()).not.toContain('projectTrust');
+    // Catches: this 401 named only `lexicon serve --show` after the main 401
+    // learned `--pair`, how an extension user gets the token.
+    expect(await anon.json()).toEqual({
+      error:
+        '/health?cwd= needs the bearer token, which plain /health does not (pair the browser extension with: lexicon serve --pair; for any other client, copy the token from: lexicon serve --show)',
+    });
     const authed = await api('GET', q);
     expect(authed.status).toBe(200);
     expect(((await authed.json()) as { projectTrust?: string }).projectTrust).toBe('untrusted');
@@ -1114,22 +1119,32 @@ describe('limits and errors', () => {
     await new Promise<void>((resolve) => early.server.listen(0, '127.0.0.1', () => resolve()));
     try {
       const address = early.server.address() as net.AddressInfo;
-      const res = await new Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }>((resolve, reject) => {
-        // Host names port 0: start() has not run, so that is the port the server believes it has.
-        const req = http.request({ host: '127.0.0.1', port: address.port, path: '/pair', headers: { Host: '127.0.0.1:0' } }, (r) => {
-          let body = '';
-          r.setEncoding('utf8');
-          r.on('data', (d: string) => {
-            body += d;
+      const get = (path: string, extra: Record<string, string> = {}) =>
+        new Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }>((resolve, reject) => {
+          // Host names port 0: start() has not run, so that is the port the server believes it has.
+          const req = http.request({ host: '127.0.0.1', port: address.port, path, headers: { Host: '127.0.0.1:0', ...extra } }, (r) => {
+            let body = '';
+            r.setEncoding('utf8');
+            r.on('data', (d: string) => {
+              body += d;
+            });
+            r.on('end', () => resolve({ status: r.statusCode ?? 0, body, headers: r.headers }));
           });
-          r.on('end', () => resolve({ status: r.statusCode ?? 0, body, headers: r.headers }));
+          req.on('error', reject);
+          req.end();
         });
-        req.on('error', reject);
-        req.end();
-      });
+      const res = await get('/pair');
       expect(res.status).toBe(503);
       expect(res.headers['retry-after']).toBe('1');
       expect(JSON.parse(res.body)).toEqual({ error: 'server is starting; retry after 1 second (Retry-After)' });
+      // Catches: a bearer route (and /health?cwd=) answered 401 "missing or
+      // invalid bearer token" here, though no token could be checked yet.
+      for (const path of ['/stats', `/health?cwd=${encodeURIComponent(env.cwd)}`]) {
+        const bearer = await get(path, { Authorization: `Bearer ${'0'.repeat(32)}` });
+        expect(bearer.status).toBe(503);
+        expect(bearer.headers['retry-after']).toBe('1');
+        expect(JSON.parse(bearer.body)).toEqual({ error: 'server is starting; retry after 1 second (Retry-After)' });
+      }
     } finally {
       await new Promise<void>((resolve) => {
         early.server.close(() => resolve());
@@ -2488,6 +2503,17 @@ describe('packs and aliases routes', () => {
     } finally {
       expect((await api2('DELETE', '/packs/voice-tools')).status).toBe(200);
     }
+  });
+
+  // Catches: the pack card showed the server summary, which names the full
+  // lexicon file path, in one fixed-height line with no truncation or `~`.
+  // No Swift toolchain runs here, so this pins the view's source.
+  it('the menu bar pack card shortens the summary path and keeps it to one line', async () => {
+    const swift = await fs.readFile(path.join(process.cwd(), 'apps/macos/LexiconBar/Sources/LexiconBar/Onboarding/OnboardingViews.swift'), 'utf8');
+    const card = swift.slice(swift.indexOf('private struct PackCard'), swift.indexOf('private var symbol: String'));
+    expect(card).toContain('Text(Self.homeShortened(summary))');
+    expect(card).toMatch(/\.lineLimit\(1\)\.truncationMode\(\.middle\)\s*\.help\(summary\)/);
+    expect(card).toContain('summary.replacingOccurrences(of: home + "/", with: "~/")');
   });
 
   it('POST /packs/:name installs (idempotent, empty body allowed), GET /packs reflects it, DELETE /packs/:name removes', async () => {

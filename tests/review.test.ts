@@ -10,7 +10,7 @@ import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
 import { runHarvestInteractive, runReview, runEdit, editorCommand } from '../src/cli/cmd-review.js';
 import type { SpawnEditor } from '../src/cli/cmd-review.js';
 import { runAdd, runHarvest } from '../src/cli/commands.js';
-import { askKey, splitList } from '../src/cli/prompt.js';
+import { PromptClosedError, askKey, splitList } from '../src/cli/prompt.js';
 import type { Prompter } from '../src/cli/prompt.js';
 import { addTerm, loadLexicon, recordHits, trustProject, writeLexiconFile } from '../src/core/index.js';
 import type { HarvestCandidate, Lexicon, Term } from '../src/core/index.js';
@@ -65,6 +65,23 @@ function candidate(canonical: string, extra: Partial<HarvestCandidate> = {}): Ha
   };
 }
 
+/** A scripted prompter whose input closes (ctrl-D) once `answers` run out, as createPrompter's does. */
+function closingAfter(answers: Parameters<typeof scripted>[0]): Prompter {
+  const inner = scripted(answers);
+  let left = answers.length;
+  const gate = <T>(answer: () => Promise<T>): Promise<T> => {
+    if (left === 0) return Promise.reject(new PromptClosedError());
+    left -= 1;
+    return answer();
+  };
+  return {
+    ask: (question, opts) => gate(() => inner.ask(question, opts)),
+    confirm: (question, def) => gate(() => inner.confirm(question, def)),
+    choose: (question, choices, opts) => gate(() => inner.choose(question, choices, opts)),
+    close: () => inner.close(),
+  };
+}
+
 /** Written as raw YAML: writeLexiconFile pins `hits` to what is on disk, and the seed's counts are the point. */
 async function seedGlobal(terms: Term[]): Promise<void> {
   await fs.mkdir(path.dirname(globalPath), { recursive: true });
@@ -116,6 +133,27 @@ describe('harvest --interactive', () => {
     expect(io.out).toContain(`project lexicon trusted (${projectPath})`);
     // The caller's candidates were not mutated by the edit.
     expect(candidates[2].suggestedAliases).toEqual(['Gamma x', 'Gammay']);
+  });
+
+  // Catches: ctrl-D threw `input closed before the prompt was answered`
+  // (exit 1) with no summary, though the terms accepted before it had
+  // already been written, so nothing said they were kept.
+  it('ctrl-D stops like q and says the terms added before it are kept', async () => {
+    const candidates = [candidate('Alpha'), candidate('Beta'), candidate('Gamma')];
+    const io = makeIO();
+    expect(await runHarvestInteractive(candidates, { cwd: repo, globalPath }, io, closingAfter(['y', 'e']))).toBe(0);
+    expect((await readYaml(projectPath)).terms.map((t) => t.canonical)).toEqual(['Alpha']);
+    expect(io.out).toContain('input closed at candidate 2 of 3; the terms added before it stay in the project lexicon');
+    expect(io.out).toContain(`added 1 new term, merged 0, skipped 2 in ${projectPath}`);
+
+    const none = makeIO();
+    expect(await runHarvestInteractive(candidates, { cwd: repo, globalPath }, none, closingAfter([]))).toBe(0);
+    expect(none.out).toContain('input closed at candidate 1 of 3; nothing was added');
+    expect(none.out).toContain('added 0 new terms, merged 0, skipped 3');
+    // Catches: the summary ended the run with no next step. One is named only
+    // when something was added.
+    expect(io.out).toContain('next: run lexicon list to see the terms');
+    expect(none.out).not.toContain('next:');
   });
 
   it('c changes the category and a adds every remaining candidate without asking', async () => {
@@ -299,6 +337,18 @@ describe('add --interactive', () => {
     expect(written.terms[0].phonetic).toBeUndefined();
   });
 
+  // Catches: ctrl-D threw `input closed before the prompt was answered`
+  // (exit 1) with no word that nothing was added.
+  it('ctrl-D at any prompt stops cleanly and says nothing was added', async () => {
+    for (const answers of [[], [[1]], [[1], ''], [[1], '', 'ASH-ler']] as Parameters<typeof scripted>[0][]) {
+      const io = makeIO();
+      expect(await runAdd('Ashlr.AI', [], { interactive: true, globalPath }, io, closingAfter(answers))).toBe(0);
+      expect(io.out).toContain('input closed before Ashlr.AI was saved; nothing was added');
+      expect(io.out).not.toContain('created');
+      await expect(fs.access(globalPath)).rejects.toThrow();
+    }
+  });
+
   it('errors without a terminal or a prompter', async () => {
     await expect(runAdd('X', [], { interactive: true, globalPath }, makeIO())).rejects.toThrow(/needs a terminal/);
   });
@@ -335,8 +385,13 @@ describe('review', () => {
       notes: 'my name',
     });
     expect(io.out).toContain('[2/4] Stale');
-    expect(io.out).toContain('deleted Stale');
-    expect(io.out).toContain(`kept 3, deleted 1, edited 3. Wrote ${globalPath}`);
+    // Catches: `d` printed `deleted Stale` and the summary `deleted 1`, where
+    // `lexicon remove` reports the same outcome as `removed X from <path>`.
+    expect(io.out).toContain(`removed Stale from ${globalPath}`);
+    expect(io.out).toContain(`kept 3, removed 1, edited 3. Wrote ${globalPath}`);
+    expect(io.out).not.toContain('deleted');
+    // Catches: the summary ended the run with no next step.
+    expect(io.out).toContain('next: run lexicon list to see the terms');
   });
 
   it('merges hits and terms written elsewhere while the review was running instead of overwriting them', async () => {
@@ -383,7 +438,7 @@ describe('review', () => {
     expect(written.terms[3]).toMatchObject({ canonical: 'Newcomer', aliases: ['new comer'] });
     // Keeper's alias and Newcomer; the hit counts never touched the file.
     expect(io.out).toContain('merged 2 changes made elsewhere during review');
-    expect(io.out).toContain(`kept 3, deleted 1, edited 1. Wrote ${globalPath}`);
+    expect(io.out).toContain(`kept 3, removed 1, edited 1. Wrote ${globalPath}`);
   });
 
   it('does not report a merge when nothing changed on disk', async () => {
@@ -408,6 +463,71 @@ describe('review', () => {
     expect(io2.out).toContain('1 term in');
     expect(io2.out).toContain('[1/1] Mason Wyatt');
     expect((await readYaml(globalPath)).terms).toHaveLength(4);
+  });
+
+  // Catches: `review --project` with no project file said `run: lexicon init
+  // --project`, which makes an empty file that review then has nothing in.
+  it('--project with no project file names a step that gives review terms', async () => {
+    await expect(runReview({ cwd: repo, project: true, globalPath }, makeIO(), scripted([]))).rejects.toThrow(
+      `no project lexicon found for ${repo}, so nothing to review yet ` +
+        '(run: lexicon harvest -i to pull names from this repo, or lexicon add "Ashlr.AI" Ashler --project)',
+    );
+  });
+
+  // Catches: a first `lexicon review` said only `no global lexicon at <path>`,
+  // and an empty file and a filter that matched none both said `no terms to
+  // review`, none of them naming a way on (`lexicon list` names one for each).
+  it('a missing lexicon, an empty one and a filter that matches none each name the next step', async () => {
+    const missing = makeIO();
+    expect(await runReview({ globalPath }, missing, scripted([]))).toBe(0);
+    expect(missing.out).toContain(`no global lexicon at ${globalPath} yet; run lexicon setup to create one`);
+
+    await seedGlobal([]);
+    const empty = makeIO();
+    expect(await runReview({ globalPath, neverHit: true }, empty, scripted([]))).toBe(0);
+    expect(empty.out).toContain(`no terms to review in ${globalPath} yet. Try: lexicon add "Ashlr.AI" Ashler`);
+
+    await seedGlobal(terms);
+    const miss = makeIO();
+    expect(await runReview({ globalPath, category: 'place' }, miss, scripted([]))).toBe(0);
+    expect(miss.out).toContain(`no terms to review in ${globalPath}: 4 terms there, none matching --category place (run lexicon review without it to see them)`);
+  });
+
+  // Catches: `?` or a mistyped key re-asked `[k/d/e/p/n/q]` with no word
+  // on what the letters do; the one line naming them had scrolled away.
+  it('an answer that is not a key prints what each key does, in review and harvest -i', async () => {
+    await seedGlobal(terms);
+    const io = makeIO();
+    expect(await runReview({ globalPath, category: 'person' }, io, scripted(['?', 'x', 'k']))).toBe(0);
+    const help = '  [k]eep  [d]elete  [e]dit aliases  [p]honetic  [n]otes  [q]uit  (Enter = k)';
+    expect(io.out.split('\n').filter((l) => l === help)).toHaveLength(2);
+    expect(io.out).toContain('kept 1, removed 0, edited 0 (nothing written)');
+
+    const h = makeIO();
+    expect(await runHarvestInteractive([candidate('Alpha')], { cwd: repo, globalPath }, h, scripted(['h', 'n']))).toBe(0);
+    expect(h.out).toContain('  [y]es  [n]o  [e]dit aliases  [c]ategory  [a]ll remaining  [q]uit  (Enter = y)\n');
+  });
+
+  // Catches: `q` on term 2 of 4 reported `kept 1, removed 0, edited 0`, no
+  // word on the two terms never shown; and ctrl-D threw `input closed before
+  // the prompt was answered`, exit 1, losing the deletion already made with
+  // no word on what was kept.
+  it('q and ctrl-D say how many terms were not reviewed, and ctrl-D keeps the answers given', async () => {
+    await seedGlobal(terms);
+    const quit = makeIO();
+    expect(await runReview({ globalPath }, quit, scripted(['k', 'q']))).toBe(0);
+    expect(quit.out).toContain('kept 1, removed 0, edited 0, 3 not reviewed (left as they were) (nothing written)');
+
+    const io = makeIO();
+    expect(await runReview({ globalPath }, io, closingAfter(['k', 'd']))).toBe(0);
+    expect(io.out).toContain('input closed at term 3 of 4; keeping the answers given before it');
+    expect(io.out).toContain(`kept 1, removed 1, edited 0, 2 not reviewed (left as they were). Wrote ${globalPath}`);
+    expect((await readYaml(globalPath)).terms.map((t) => t.canonical)).toEqual(['Ashlr.AI', 'Mason Wyatt', 'Keeper']);
+
+    const all = makeIO();
+    expect(await runReview({ globalPath }, all, scripted(['k', 'k', 'k']))).toBe(0);
+    expect(all.out).toContain('kept 3, removed 0, edited 0 (nothing written)');
+    expect(all.out).not.toContain('next:');
   });
 
   it('--project reviews the project file, refuses it when untrusted, and re-pins trust after a write', async () => {
@@ -516,6 +636,16 @@ describe('edit', () => {
     expect(io.out).toContain('no $VISUAL or $EDITOR set');
     expect(io.out).toContain(globalPath);
     expect((await readYaml(globalPath)).terms).toEqual([]);
+    // Catches: the path was the last word, with nothing to check the edit
+    // afterwards, and for a project file no word that a hand edit leaves it
+    // untrusted (its terms unused) until `lexicon trust`.
+    expect(io.out).toContain('after saving, check it with: lexicon doctor');
+    await fs.writeFile(projectPath, 'version: 1\nterms: []\n', 'utf8');
+    await trustProject(projectPath, { cwd: repo, globalPath });
+    const project = makeIO();
+    expect(await runEdit({ cwd: repo, project: true, globalPath }, project, undefined, {})).toBe(0);
+    expect(project.out).toContain(projectPath);
+    expect(project.out).toContain('after saving, run: lexicon trust (it shows the terms and trusts the file; until then its terms are not used)');
   });
 
   it('spawns $EDITOR on the file (real subprocess) and reports the re-parsed term count', async () => {

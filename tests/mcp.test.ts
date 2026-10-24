@@ -96,7 +96,10 @@ vi.mock('../src/core/index.js', async (importOriginal) => ({
 }));
 vi.mock('../src/cli/commands.js', () => ({ runDoctorReport: cli.runDoctorReport }));
 vi.mock('../src/cli/cmd-import.js', () => ({ MAX_IMPORT_BYTES: 8 * 1024 * 1024, runImport: cli.runImport }));
-vi.mock('../src/cli/cmd-install.js', () => ({ runInstall: cli.runInstall }));
+vi.mock('../src/cli/cmd-install.js', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  runInstall: cli.runInstall,
+}));
 vi.mock('../src/cli/cmd-setup.js', () => ({ runSetup: cli.runSetup }));
 vi.mock('../src/cli/cmd-serve.js', () => ({ serveInstallBlocker: cli.serveInstallBlocker }));
 
@@ -228,10 +231,13 @@ beforeEach(() => {
   mocks.suggestTerms.mockResolvedValue([aliasSuggestion]);
   mocks.loadVoiceHistory.mockResolvedValue([]);
   cli.runDoctorReport.mockResolvedValue(doctorReport);
-  cli.runInstall.mockImplementation(async (client: string, opts: { apply?: boolean }, io: IO) => {
-    io.stdout(`1. Add the lexicon MCP server to ${client}\n   ${opts.apply ? 'merge into' : 'would merge into'} /home/u/.cursor/mcp.json\n`);
-    return 0;
-  });
+  cli.runInstall.mockImplementation(
+    async (client: string, opts: { apply?: boolean }, io: IO, deps?: { onWritten?: (file: string, outcome: string) => void }) => {
+      io.stdout(`1. Add the lexicon MCP server to ${client}\n   ${opts.apply ? 'merge into' : 'would merge into'} /home/u/.cursor/mcp.json\n`);
+      if (opts.apply) deps?.onWritten?.('/home/u/.cursor/mcp.json', 'created');
+      return 0;
+    },
+  );
   cli.runImport.mockImplementation(async (file: string, opts: { dryRun?: boolean; project?: boolean }, io: IO, readInput?: (f: string, c: string) => Promise<string>) => {
     const content = readInput ? await readInput(file, '/fake/repo') : '';
     io.stdout(
@@ -770,6 +776,26 @@ describe('lexicon MCP server', () => {
         expect(a.output).toContain('merge into');
         expect(a.next).toBeUndefined();
         expect(cli.runInstall).toHaveBeenLastCalledWith('codex', { cwd: '/fake/repo', apply: true, scope: 'project' }, expect.anything(), expect.anything());
+      } finally {
+        await close();
+      }
+    });
+
+    // Catches: install_client returned only `output`, so an agent had to parse
+    // prose for the files `lexicon install --json` lists in `written`.
+    it('install_client returns the written list lexicon install --json returns', async () => {
+      const { client, close } = await connect();
+      try {
+        const preview = JSON.parse(textOf(await client.callTool({ name: 'install_client', arguments: { client: 'cursor' } }))) as Record<string, unknown>;
+        expect(preview.written).toEqual([]);
+        const applied = JSON.parse(textOf(await client.callTool({ name: 'install_client', arguments: { client: 'cursor', apply: true } }))) as Record<string, unknown>;
+        expect(applied.written).toEqual([{ file: '/home/u/.cursor/mcp.json', outcome: 'created' }]);
+        // Catches: only claude-desktop said the client must be restarted or reloaded to load the server.
+        expect(applied.reload).toMatch(/^reload the Cursor window/);
+        const desktop = JSON.parse(textOf(await client.callTool({ name: 'install_client', arguments: { client: 'claude-desktop', apply: true } }))) as Record<string, unknown>;
+        expect(desktop.reload).toMatch(/^restart Claude Desktop/);
+        const tool = (await client.listTools()).tools.find((t) => t.name === 'install_client');
+        expect(tool?.description).toContain('`written`');
       } finally {
         await close();
       }
@@ -1582,6 +1608,28 @@ describe('lexicon MCP server', () => {
     });
 
     // Catches: a plugin install's plan promised a login service the apply then refused.
+    // Catches: the plan seeded a 100-character company without a word, and the
+    // apply then failed on aliases[0] and aliases[1], fields the agent never passed.
+    it('setup_lexicon refuses a company or person over the term cap, in the preview too', async () => {
+      const { client, close } = await connect();
+      try {
+        const long = 'x'.repeat(81);
+        for (const args of [{ company: long }, { company: long, apply: true }, { person: 'Ada\nLovelace' }, { company: '   ' }]) {
+          const result = await client.callTool({ name: 'setup_lexicon', arguments: args });
+          expect(result.isError).toBe(true);
+          expect(textOf(result)).toMatch(/^(company|person) must .+; nothing was written/);
+        }
+        expect(textOf(await client.callTool({ name: 'setup_lexicon', arguments: { company: long } }))).toContain('company must be at most 80 characters (it has 81)');
+        expect(cli.runSetup).not.toHaveBeenCalled();
+        const tool = (await client.listTools()).tools.find((t) => t.name === 'setup_lexicon');
+        expect((tool?.inputSchema.properties as Record<string, { description?: string }>).company?.description).toContain('at most 80 characters');
+        const ok = await client.callTool({ name: 'setup_lexicon', arguments: { company: 'x'.repeat(80) } });
+        expect(ok.isError).toBeFalsy();
+      } finally {
+        await close();
+      }
+    });
+
     it('setup_lexicon relays serveBlocked and tells the agent not to offer serve: true', async () => {
       const blocked = 'this copy is running from an npx or Claude Code plugin cache (/x), which may be deleted. Install it for real first (npm i -g @ashlr/lexicon), then run: lexicon serve --install';
       cli.runSetup.mockResolvedValueOnce({ code: 0, summary: { lexiconPath: '', termsAdded: [], packs: [], clients: [], serve: 'skipped', exports: [] }, plan: { ...setupPlan, serveBlocked: blocked } });

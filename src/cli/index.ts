@@ -144,7 +144,7 @@ program
   .alias('ls')
   .description('list terms from the merged global + project lexicon')
   .option('--json', 'print terms as JSON (a bare array)')
-  .option('--full', 'print { ok: true, terms, counts, paths } as JSON, ok and then the object MCP list_terms returns, plus projectTrust, skippedProject and note when an untrusted project lexicon was left out (implies --json)')
+  .option('--full', 'print { ok: true, terms, counts, paths } as JSON, ok and then the object MCP list_terms returns, plus projectTrust, skippedProject and note when an untrusted project lexicon was left out, or note alone when nothing matched (implies --json)')
   .option('--category <category>', 'only this category')
   .option('--query <text>', 'only terms whose canonical or aliases contain this text')
   .action(async (opts: ListOptions) => done(await runList(withGlobals(opts), io)));
@@ -184,7 +184,7 @@ program
   .argument('[format]')
   .option('--out <file>', 'write to a file instead of stdout')
   .option('--category <categories...>', 'only these categories')
-  .option('--limit <n>', 'cap the number of terms', positiveInt)
+  .option('--limit <n>', 'cap the number of terms, applied after --category, keeping the most hits first (at equal hits brand, person and product terms first, then canonical A to Z); csv, wispr, superwhisper, macos and espanso (one row per alias) count only terms that have an alias', positiveInt)
   .option('--json', 'print { ok: true, format, terms, bytes, path } after writing --out, or { ok: true, format, terms, bytes, content } with the export as a string without it; { ok: true, formats } with no format (plus projectTrust, skippedProject and note when an untrusted project lexicon was left out)')
   .action(async (format: string | undefined, opts: ExportCliOptions) =>
     done(await runExport(format, withGlobals(opts), io)),

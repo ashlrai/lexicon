@@ -61,3 +61,18 @@ export function conflictNote(conflicts: readonly LearnConflict[], audience: Conf
 export function unchangedTermNote(canonical: string): string {
   return `Nothing was added: ${JSON.stringify(canonical)} already has every alias and field given.`;
 }
+
+/**
+ * The sentence `lexicon learn` and serve `POST /learn` give for a correction
+ * that wrote nothing (neither `created` nor `aliasAdded`): the "Nothing was
+ * added:" lead of `unchangedTermNote` with the reason MCP learn_correction
+ * gives, `heard` already an alias of the term or already its canonical in
+ * another case. `heard` is trimmed and its whitespace collapsed, as
+ * learnCorrection does. Unsanitized.
+ */
+export function learnUnchangedNote(heard: string, canonical: string): string {
+  const said = heard.trim().replace(/\s+/g, ' ');
+  return said.toLowerCase() === canonical.toLowerCase()
+    ? `Nothing was added: ${JSON.stringify(canonical)} is already the canonical spelling; ${JSON.stringify(said)} is corrected to it.`
+    : `Nothing was added: ${JSON.stringify(said)} was already an alias of ${JSON.stringify(canonical)}.`;
+}

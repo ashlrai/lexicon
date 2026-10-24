@@ -26,7 +26,7 @@ import {
   writeLexiconFile,
 } from '../core/index.js';
 import type { HarvestCandidate, LexiconFile, Term, TermCategory, TermScope } from '../core/index.js';
-import { askKey, createPrompter, isInteractive, splitList } from './prompt.js';
+import { PromptClosedError, askKey, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
 import { errorMessage } from '../util/errors.js';
 import { CliRefusal, bold, dim, line, parseCategory, plural, refuse, resolveCwd, safe, safeLines } from './io.js';
@@ -45,6 +45,14 @@ async function askCategory(prompter: Prompter, def: TermCategory): Promise<TermC
   }
 }
 
+/**
+ * What a walk prints for an answer that is not one of its keys: the key list
+ * again, since the one line naming them scrolled away terms ago.
+ */
+function keyHelp(io: IO, help: string, def: string): (answer: string) => void {
+  return () => line(io, `  ${dim(`${help}  (Enter = ${def})`)}`);
+}
+
 /** Options every interactive handler shares. `globalPath` is a test hook (no CLI flag). */
 export interface InteractiveOptions extends CommonOptions {
   /** Explicit global lexicon path; overrides $LEXICON_PATH (tests). */
@@ -60,6 +68,9 @@ function storeOpts(opts: InteractiveOptions, cwd: string): { cwd: string; global
 // ---------------------------------------------------------------------------
 
 export type HarvestInteractiveOptions = InteractiveOptions;
+
+/** The next step after `harvest -i` or `review` changed the lexicon. */
+const NEXT_LIST = 'next: run lexicon list to see the terms';
 
 const HARVEST_KEYS = ['y', 'n', 'e', 'c', 'a', 'q'] as const;
 const HARVEST_HELP = '[y]es  [n]o  [e]dit aliases  [c]ategory  [a]ll remaining  [q]uit';
@@ -158,54 +169,75 @@ export async function runHarvestInteractive(
     }
   };
 
-  for (let i = 0; i < work.length && !quit && !addAll; i += 1) {
-    const c = work[i];
-    showCandidate(io, c, i, work.length);
-    let decided = false;
-    while (!decided) {
-      const key = await askKey(prompter, `  add? ${dim('[y/n/e/c/a/q]')}`, HARVEST_KEYS, 'y');
-      switch (key) {
-        case 'y':
-          if (!(await add(c))) return 1;
-          decided = true;
-          break;
-        case 'n':
-          skipped += 1;
-          decided = true;
-          break;
-        case 'e': {
-          const answer = await prompter.ask('  aliases (comma-separated, replaces the suggestions)', {
-            default: c.suggestedAliases.join(', '),
-          });
-          c.suggestedAliases = splitList(answer).filter((a) => a.toLowerCase() !== c.canonical.toLowerCase());
-          line(io, `  aliases:  ${c.suggestedAliases.length > 0 ? safe(c.suggestedAliases.join(', ')) : dim('(none)')}`);
-          break;
+  /** The candidate on screen; where ctrl-D stopped the walk, if it did. */
+  let current = 0;
+  let closedAt: number | undefined;
+  try {
+    for (let i = 0; i < work.length && !quit && !addAll; i += 1) {
+      current = i;
+      const c = work[i];
+      showCandidate(io, c, i, work.length);
+      let decided = false;
+      while (!decided) {
+        const key = await askKey(prompter, `  add? ${dim('[y/n/e/c/a/q]')}`, HARVEST_KEYS, 'y', keyHelp(io, HARVEST_HELP, 'y'));
+        switch (key) {
+          case 'y':
+            if (!(await add(c))) return 1;
+            decided = true;
+            break;
+          case 'n':
+            skipped += 1;
+            decided = true;
+            break;
+          case 'e': {
+            const answer = await prompter.ask('  aliases (comma-separated, replaces the suggestions)', {
+              default: c.suggestedAliases.join(', '),
+            });
+            c.suggestedAliases = splitList(answer).filter((a) => a.toLowerCase() !== c.canonical.toLowerCase());
+            line(io, `  aliases:  ${c.suggestedAliases.length > 0 ? safe(c.suggestedAliases.join(', ')) : dim('(none)')}`);
+            break;
+          }
+          case 'c':
+            c.category = await askCategory(prompter, c.category);
+            line(io, `  category: ${c.category}`);
+            break;
+          case 'a':
+            addAll = true;
+            if (!(await addRest(i))) return 1;
+            decided = true;
+            break;
+          case 'q':
+            quit = true;
+            skipped += work.length - i;
+            decided = true;
+            break;
+          default:
+            break;
         }
-        case 'c':
-          c.category = await askCategory(prompter, c.category);
-          line(io, `  category: ${c.category}`);
-          break;
-        case 'a':
-          addAll = true;
-          if (!(await addRest(i))) return 1;
-          decided = true;
-          break;
-        case 'q':
-          quit = true;
-          skipped += work.length - i;
-          decided = true;
-          break;
-        default:
-          break;
       }
+      line(io);
     }
+  } catch (err) {
+    // ctrl-D is a quit. Rethrown, it printed only `input closed before the
+    // prompt was answered`, so the terms already added (each is written as
+    // it is accepted) went unmentioned.
+    if (!(err instanceof PromptClosedError)) throw err;
+    closedAt = current;
+    skipped += work.length - current;
     line(io);
   }
   for (const result of rest) report(result);
 
+  if (closedAt !== undefined) {
+    const kept = created + merged > 0 ? 'the terms added before it stay in the project lexicon' : 'nothing was added';
+    line(io, `input closed at candidate ${closedAt + 1} of ${work.length}; ${kept}`);
+  }
+
   const where = filePath ? ` in ${safe(filePath)}` : '';
   line(io, `added ${plural(created, 'new term')}, merged ${merged}, skipped ${skipped}${where}`);
   if (filePath) line(io, dim(`project lexicon trusted (${safe(filePath)})`));
+  // One way on, and only when there is something new to look at.
+  if (created + merged > 0) line(io, dim(NEXT_LIST));
   return 0;
 }
 
@@ -326,6 +358,9 @@ export function reconcileReview(
   return { terms, changes };
 }
 
+/** What creates a project lexicon with terms in it, for review to walk. */
+const PROJECT_FIRST_STEP = 'lexicon harvest -i to pull names from this repo, or lexicon add "Ashlr.AI" Ashler --project';
+
 /**
  * Pick the file a review/edit targets. Global by default; `--project` picks the
  * project file found for cwd (an error when there is none).
@@ -337,7 +372,11 @@ async function pickFile(
   if (opts.project && opts.global) throw new Error('--project and --global are mutually exclusive');
   const paths = resolvePaths(storeOpts(opts, cwd));
   if (opts.project) {
-    if (!paths.project) throw new Error(`no project lexicon found for ${cwd} (run: lexicon init --project)`);
+    // `lexicon init --project` makes an empty file, which review then calls
+    // empty: name a step that gives it terms to review.
+    if (!paths.project) {
+      throw new Error(`no project lexicon found for ${cwd}, so nothing to review yet (run: ${PROJECT_FIRST_STEP})`);
+    }
     return readLexiconFile(paths.project, 'project');
   }
   return readLexiconFile(paths.global, 'global');
@@ -354,7 +393,10 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
 
   const file = await pickFile(opts, cwd);
   if (!file.exists) {
-    line(io, dim(`no ${file.scope} lexicon at ${safe(file.path)}`));
+    // A first run of `lexicon review` landed here and was told only that
+    // there was nothing, with no way on.
+    const create = file.scope === 'global' ? 'lexicon setup' : PROJECT_FIRST_STEP;
+    line(io, dim(`no ${file.scope} lexicon at ${safe(file.path)} yet; run ${create} to create one`));
     return 0;
   }
   if (file.scope === 'project') {
@@ -378,7 +420,19 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
     (t) => (!opts.neverHit || effectiveHits(t, hits) === 0) && (category === undefined || t.category === category),
   );
   if (subject.length === 0) {
-    line(io, dim(`no terms to review in ${safe(file.path)}`));
+    // Which of the two it is, as `lexicon list` says it: an empty file wants
+    // a term, a filter that matched none wants the filter dropped.
+    const filters = [...(opts.neverHit ? ['--never-hit'] : []), ...(category !== undefined ? [`--category ${category}`] : [])];
+    const total = file.lexicon.terms.length;
+    line(
+      io,
+      dim(
+        total === 0 || filters.length === 0
+          ? `no terms to review in ${safe(file.path)} yet. Try: lexicon add "Ashlr.AI" Ashler`
+          : `no terms to review in ${safe(file.path)}: ${plural(total, 'term')} there, none matching ${filters.join(' ')} ` +
+              `(run lexicon review without ${filters.length === 1 ? 'it' : 'them'} to see them)`,
+      ),
+    );
     return 0;
   }
 
@@ -389,17 +443,21 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   let edited = 0;
   let kept = 0;
   let changed = false;
+  /** Index of the first term with no answer: `q` there, or the prompt ctrl-D closed. */
+  let stoppedAt = subject.length;
+  let inputClosed = false;
 
   try {
     line(io, `${bold(`${plural(subject.length, 'term')} in ${safe(file.path)}`)} ${dim(REVIEW_HELP)}`);
     line(io);
     for (let i = 0; i < subject.length; i += 1) {
+      stoppedAt = i;
       const t = subject[i];
       showTerm(io, t, i, subject.length, effectiveHits(t, hits));
       let decided = false;
       let quit = false;
       while (!decided) {
-        const key = await askKey(p, `  ${dim('[k/d/e/p/n/q]')}`, REVIEW_KEYS, 'k');
+        const key = await askKey(p, `  ${dim('[k/d/e/p/n/q]')}`, REVIEW_KEYS, 'k', keyHelp(io, REVIEW_HELP, 'k'));
         switch (key) {
           case 'k':
             kept += 1;
@@ -408,7 +466,8 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
           case 'd':
             deleted.add(t);
             changed = true;
-            line(io, `  deleted ${bold(safe(t.canonical))}`);
+            // Worded as `lexicon remove` reports the same outcome.
+            line(io, `  removed ${bold(safe(t.canonical))} from ${safe(file.path)}`);
             decided = true;
             break;
           case 'e': {
@@ -459,10 +518,19 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
       }
       line(io);
       if (quit) break;
+      stoppedAt = i + 1;
     }
+  } catch (err) {
+    // ctrl-D (or a closed pipe) is a quit: the answers already given stand,
+    // as they do in `harvest -i`, where each one is written as it is given.
+    // Rethrown, the review lost every deletion and edit with no word on it.
+    if (!(err instanceof PromptClosedError)) throw err;
+    inputClosed = true;
+    line(io);
   } finally {
     if (own) p.close();
   }
+  const notReviewed = subject.length - stoppedAt;
 
   let mergedElsewhere = 0;
   if (changed) {
@@ -501,8 +569,13 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
       await refreshIndexCache(file, store);
     }
   }
+  if (inputClosed) line(io, `input closed at term ${stoppedAt + 1} of ${subject.length}; keeping the answers given before it`);
   if (mergedElsewhere > 0) line(io, `merged ${plural(mergedElsewhere, 'change')} made elsewhere during review`);
-  line(io, `kept ${kept}, deleted ${deleted.size}, edited ${edited}${changed ? `. Wrote ${safe(file.path)}` : ' (nothing written)'}`);
+  // A quit used to report only the terms answered, so "kept 1, removed 0"
+  // after `q` on term 2 of 40 said nothing of the other 39.
+  const rest = notReviewed > 0 ? `, ${notReviewed} not reviewed (left as they were)` : '';
+  line(io, `kept ${kept}, removed ${deleted.size}, edited ${edited}${rest}${changed ? `. Wrote ${safe(file.path)}` : ' (nothing written)'}`);
+  if (changed) line(io, dim(NEXT_LIST));
   return 0;
 }
 
@@ -580,6 +653,16 @@ export async function runEdit(
   if (!editor) {
     line(io, `no $VISUAL or $EDITOR set; edit the file directly:`);
     line(io, safe(target));
+    // Nothing checks the file afterwards on this path, and a hand edit leaves
+    // a project file untrusted (its terms unused) until it is trusted again.
+    line(
+      io,
+      dim(
+        scope === 'project'
+          ? 'after saving, run: lexicon trust (it shows the terms and trusts the file; until then its terms are not used)'
+          : 'after saving, check it with: lexicon doctor',
+      ),
+    );
     return 0;
   }
 

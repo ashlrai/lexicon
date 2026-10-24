@@ -270,10 +270,36 @@ function clientCaveat(client: InstallClient, project: boolean): string | undefin
   if (client === 'gemini') {
     return 'If your settings.json sets mcp.allowed, add "lexicon" to that list or Gemini CLI will skip this server.';
   }
-  if (client === 'claude-desktop') {
-    return 'Claude Desktop reads this only at launch: quit it completely and reopen.';
-  }
   return undefined;
+}
+
+/**
+ * What the user does after the write so the client loads the new server. No
+ * client here starts a server it was not running when its config changed on
+ * disk: the CLIs (Claude Code, Codex, Gemini CLI) read their config when a
+ * session starts, Claude Desktop only at launch, Cursor and VS Code on a
+ * window reload, and Windsurf when its MCP panel is refreshed. Undefined for
+ * `generic`, whose client is unknown.
+ */
+export function reloadStepFor(client: InstallClient): string | undefined {
+  switch (client) {
+    case 'claude':
+      return 'restart Claude Code: a running session keeps the MCP servers and hooks it started with, so exit it and start a new one (/mcp then lists lexicon).';
+    case 'codex':
+      return 'restart Codex: it reads config.toml when a session starts, so exit any running codex session and start a new one (/mcp then lists lexicon).';
+    case 'cursor':
+      return 'reload the Cursor window (Command Palette: Developer: Reload Window) or restart Cursor, then check that lexicon is enabled in Cursor Settings > MCP.';
+    case 'windsurf':
+      return 'refresh the MCP servers in Windsurf (the refresh button in the Cascade MCP panel) or restart Windsurf.';
+    case 'gemini':
+      return 'restart Gemini CLI: it reads settings.json when it starts, so exit any running gemini session and start a new one (/mcp then lists lexicon).';
+    case 'claude-desktop':
+      return 'restart Claude Desktop: it reads this only at launch, so quit it completely (not just the window) and reopen it.';
+    case 'vscode':
+      return 'reload the VS Code window (Command Palette: Developer: Reload Window), or start lexicon from MCP: List Servers.';
+    default:
+      return undefined;
+  }
 }
 
 function labelFor(client: InstallClient): string {
@@ -517,6 +543,35 @@ function jsonSnippet(key: 'mcpServers' | 'servers', entry: StdioServerEntry | Vs
   return JSON.stringify({ [key]: { lexicon: entry } }, null, 2);
 }
 
+/** Quote one word of a printed command for a POSIX shell, only when it needs it. */
+export function shellWord(s: string): string {
+  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+}
+
+/**
+ * The command a preview names to write what it showed: `lexicon install
+ * <client>` with the flags this run was given (`--cwd`, `--scope` or
+ * `--project`, `--home`) and `--apply`, so the line can be copied as it is.
+ * `--cwd` is named only when it is not the current directory.
+ */
+export function installApplyCommand(client: InstallClient, opts: InstallOptions): string {
+  const words = ['lexicon'];
+  if (opts.cwd !== undefined && path.resolve(opts.cwd) !== process.cwd()) words.push('--cwd', opts.cwd);
+  words.push('install', client);
+  if (opts.scope !== undefined) words.push('--scope', opts.scope);
+  else if (opts.project) words.push('--project');
+  if (opts.home) words.push('--home', opts.home);
+  words.push('--apply');
+  return safe(words.map(shellWord).join(' '));
+}
+
+/** How to take the lexicon entry back out of a client's config file by hand. */
+function undoEntry(target: InstallTarget): string {
+  return target.format === 'toml'
+    ? `delete the [${CODEX_TABLE}] table from ${safe(target.file)}`
+    : `delete the "lexicon" entry under "${target.key}" in ${safe(target.file)}`;
+}
+
 function printExportHint(io: IO, step: number, client: InstallClient): void {
   line(io, bold(`${step}. Give ${labelFor(client)} the vocabulary`));
   line(io, `   lexicon export claude-md >> ${rulesFileFor(client)}`);
@@ -670,7 +725,7 @@ async function installText(
       ...(deps.exec ? { exec: deps.exec } : {}),
       env,
     };
-    return runInstallClaude({ ...claudeOpts, cwd }, io, claudeDeps);
+    return runInstallClaude({ ...claudeOpts, cwd, applyCommand: installApplyCommand('claude', opts) }, io, claudeDeps);
   }
 
   const target = targetFor(name, serverPath, { home, cwd, platform, env, project });
@@ -687,15 +742,20 @@ async function installText(
     } else {
       line(io, green(`   ${outcome} ${safe(target.file)}: ${target.format === 'toml' ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
     }
+    // The write named its file but not the way back; the rest of the file is
+    // the user's, so the undo is the one entry, not the file.
+    line(io, dim(`   undo: ${undoEntry(target)}`));
   }
   const caveat = clientCaveat(name, project);
   if (caveat !== undefined) line(io, dim(`   note: ${caveat}`));
+  const reload = reloadStepFor(name);
+  if (reload !== undefined) line(io, opts.apply ? `   then: ${reload}` : dim(`   after --apply: ${reload}`));
   line(io);
 
   printExportHint(io, 2, name);
   if (!opts.apply) {
     line(io);
-    line(io, dim('run again with --apply to write step 1'));
+    line(io, dim(`to write step 1, run: ${installApplyCommand(name, opts)}`));
   }
   return 0;
 }
@@ -725,6 +785,12 @@ export function registerInstallCommands(program: Command, io: IO): void {
 export interface InstallClaudeOptions extends CommonOptions {
   apply?: boolean;
   scope?: string;
+  /**
+   * The command a preview names to perform steps 1 and 2. Default
+   * `lexicon install claude [--scope project] --apply`; runInstall passes
+   * `installApplyCommand` so the flags the user gave are kept.
+   */
+  applyCommand?: string;
 }
 
 /** What an installer did to one file; reported through `InstallClaudeDeps.onWritten` / `InstallDeps.onWritten`. */
@@ -810,6 +876,7 @@ export async function runInstallClaude(
     try {
       const out = exec('claude', mcpArgs).trim();
       line(io, green(`   ${out || 'registered'}`));
+      line(io, dim(`   undo: claude mcp remove --scope ${scope} lexicon`));
     } catch (err) {
       const message = errorMessage(err);
       if (/already exists/i.test(message)) {
@@ -817,6 +884,7 @@ export async function runInstallClaude(
         // idempotent case, not a failure: every other writer here reports "already
         // present, nothing changed" and carries on, so this one does too.
         line(io, dim('   already registered with claude, nothing changed'));
+        line(io, dim(`   undo: claude mcp remove --scope ${scope} lexicon`));
       } else {
         failed = true;
         line(io, red(`   failed: ${safeLines(message)}`));
@@ -852,15 +920,23 @@ export async function runInstallClaude(
       line(io, dim(`   ${safe(settingsPath)}: hooks already present, nothing changed`));
       deps.onWritten?.(settingsPath, 'unchanged');
     }
+    line(io, dim(`   undo: delete the lexicon hook entries under ${HOOK_EVENTS.map((e) => `hooks.${e}`).join(' and ')} in ${safe(settingsPath)}`));
   }
   line(io);
 
   // 3. CLAUDE.md nudge ----------------------------------------------------------------
   line(io, bold('3. Add to your CLAUDE.md'));
   line(io, `   ${CLAUDE_MD_SNIPPET}`);
+  if (opts.apply && !failed) {
+    line(io);
+    line(io, `then: ${reloadStepFor('claude')}`);
+  } else if (!opts.apply) {
+    line(io, dim(`   after --apply: ${reloadStepFor('claude')}`));
+  }
   if (!opts.apply) {
     line(io);
-    line(io, dim('run again with --apply to perform steps 1 and 2'));
+    const command = opts.applyCommand ?? `lexicon install claude${scope === 'project' ? ' --scope project' : ''} --apply`;
+    line(io, dim(`to perform steps 1 and 2, run: ${command}`));
   }
   return failed ? 1 : 0;
 }

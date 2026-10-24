@@ -1191,6 +1191,16 @@ describe('Options > Test connection result', () => {
     expect(connectionTestLine({ ...base, server: null, serverError: 'timeout' })).toBe('Unreachable: timeout. Start it with `lexicon serve`.');
     expect(connectionTestLine({ ...base, server: null, serverError: 'start it with `lexicon serve`' })).toBe('Unreachable: start it with `lexicon serve`.');
   });
+
+  // Catches: a server holding one term read "1 terms" in Test connection and
+  // in the popup status line.
+  it('puts the term count in the right number', () => {
+    const one = { ...base, server: { ok: true as const, version: '1.2.3', terms: 1 }, embeddedTerms: 1 };
+    expect(connectionTestLine({ ...one, tokenSet: true, activeMode: 'api' })).toBe('Connected: lexicon 1.2.3, 1 term.');
+    expect(connectionTestLine(one)).toBe('Server is up, not paired: lexicon 1.2.3, 1 term. Corrections use the embedded lexicon until you run `lexicon serve --pair`.');
+    expect(statusView({ ...one, tokenSet: true, activeMode: 'api' }).line).toBe('lexicon 1.2.3, 1 term');
+    expect(statusView({ ...one, server: null, serverError: 'down' }).line.startsWith('1 embedded term · ')).toBe(true);
+  });
 });
 
 describe('Options > Sync from the local API result', () => {

@@ -27,6 +27,8 @@ microphone -> ffmpeg (16 kHz mono s16 WAV) -> whisper.cpp (--prompt <canonicals>
    `[BLANK_AUDIO]` and noise annotations like `(applause)` are stripped.
 3. **Correct.** `normalize()` applies the lexicon (alias, phonetic, fuzzy) to what
    Whisper wrote. Matched terms get a `hits` bump like every other entry point.
+   With no terms in the lexicon yet, stderr says `nothing was corrected` and how
+   to add one (`lexicon setup` or `lexicon learn <heard> <meant>`).
 4. **Output.** The corrected text goes to stdout (default), the clipboard (`--copy`),
    or the frontmost app (`--paste`: copy plus an AppleScript Cmd+V, macOS only for
    now; elsewhere it falls back to `--copy` with a notice). `--json` prints

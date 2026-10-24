@@ -4,9 +4,9 @@
  * Handlers are exported for tests; registerLearnCommands() only wires commander.
  */
 import type { Command } from 'commander';
-import { CORRECTION_EXAMPLES, computeStats, conflictNote, learnCorrection, loadLexicon, parseCorrection } from '../core/index.js';
-import type { Correction, LexiconStats, TermScope } from '../core/index.js';
-import { conflictLine, fail, jsonOk, line, printJsonError, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
+import { CORRECTION_EXAMPLES, computeStats, conflictNote, learnCorrection, learnUnchangedNote, loadLexicon, parseCorrection } from '../core/index.js';
+import type { Correction, LexiconStats, LoadedLexicon, TermScope } from '../core/index.js';
+import { conflictLine, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** On stderr: it follows an error, and stdout must stay parseable under --json. */
@@ -19,6 +19,24 @@ function usageHint(io: IO): void {
 // ---------------------------------------------------------------------------
 // learn
 // ---------------------------------------------------------------------------
+
+/** `word` as one shell word in a command to copy: bare when it needs no quotes. */
+function argWord(word: string): string {
+  return /^[\p{L}\p{N}_.@+:,/-]+$/u.test(word) ? word : JSON.stringify(word);
+}
+
+/**
+ * `lexicon learn Ashler`: the error and next step for a single spelling. The
+ * wording matches MCP learn_correction called with `heard` and no `meant`.
+ * Exported for tests.
+ */
+export function oneSpellingRefusal(word: string): [error: string, nextStep: string] {
+  const spelling = word.trim().replace(/\s+/g, ' ');
+  return [
+    `only one spelling was given ("${spelling}"); learn needs the spelling STT wrote and the one you meant, so nothing was learned`,
+    `run: lexicon learn ${argWord(spelling)} <meant>, where <meant> is the spelling you want`,
+  ];
+}
 
 export interface LearnOptions extends CommonOptions {
   /** Write to the project .lexicon.yaml instead of the global file / the term's current file. */
@@ -62,6 +80,13 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
     return 1;
   }
   const correction = correctionFromArgs(words, opts.from);
+  if (!correction && opts.from === undefined && words.length === 1 && words[0].trim() !== '') {
+    // One word is one spelling, not a sentence that failed to parse: it said
+    // `could not find a correction in "Ashler"` and dumped the whole usage.
+    // MCP learn_correction without `meant` names the same missing half.
+    const [error, nextStep] = oneSpellingRefusal(words[0]);
+    return refuse(io, opts.json, error, nextStep);
+  }
   if (!correction) {
     const source = opts.from ?? words.join(' ');
     if (opts.json) {
@@ -109,7 +134,15 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
       // in a one-correction result.
       // A conflict comes with the `note` naming the scoped remove command, as
       // `add --json` and the MCP summary do.
+      // Nothing written (heard was already an alias, or the canonical in
+      // another case): `unchanged: true` and the note POST /learn gives, so
+      // two false flags are not read as a failure or a merge.
       const { file, ...rest } = result;
+      const unchanged = !result.created && !result.aliasAdded;
+      const notes = [
+        ...(unchanged ? [learnUnchangedNote(correction.heard, result.term.canonical)] : []),
+        ...(result.conflict ? [conflictNote([result.conflict])] : []),
+      ];
       line(
         io,
         JSON.stringify(
@@ -119,7 +152,8 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
             file: { path: file.path, scope: file.scope },
             heard: correction.heard,
             meant: correction.meant,
-            ...(result.conflict ? { note: conflictNote([result.conflict]) } : {}),
+            ...(unchanged ? { unchanged: true } : {}),
+            ...(notes.length > 0 ? { note: notes.join(' ') } : {}),
           }),
           null,
           2,
@@ -127,12 +161,12 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
       );
       return 0;
     }
-    const what = result.created
-      ? 'new term'
-      : result.aliasAdded
-        ? 'alias added'
-        : 'already known';
-    line(io, `learned ${safe(correction.heard)} -> ${safe(result.term.canonical)} (${what}) in ${safe(result.file.path)}`);
+    if (!result.created && !result.aliasAdded) {
+      // It said "learned X -> Y (already known)", which reads as a write.
+      line(io, `${learnUnchangedNote(safe(correction.heard), safe(result.term.canonical))} (${result.file.scope}: ${safe(result.file.path)})`);
+    } else {
+      line(io, `learned ${safe(correction.heard)} -> ${safe(result.term.canonical)} (${result.created ? 'new term' : 'alias added'}) in ${safe(result.file.path)}`);
+    }
     line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : '(none)'}`);
     if (result.conflict) line(io, conflictLine(result.conflict));
     const u = result.untrustedProject;
@@ -157,9 +191,21 @@ export interface StatsOptions extends CommonOptions {
   json?: boolean;
 }
 
-export function renderStats(stats: LexiconStats): string {
+/**
+ * What `lexicon stats` says when the lexicon has no terms at all: a report of
+ * zeros named no step. Undefined when there are terms, and when a skipped
+ * project file holds them (warnSkippedProject names `lexicon trust` then).
+ * MCP lexicon_stats says the same in tool terms.
+ */
+export function emptyStatsNote(loaded: Pick<LoadedLexicon, 'merged' | 'skippedProject'>): string | undefined {
+  if (loaded.merged.terms.length > 0 || loaded.skippedProject) return undefined;
+  return 'The lexicon has no terms yet, so nothing is corrected or counted; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.';
+}
+
+export function renderStats(stats: LexiconStats, note?: string): string {
   const out: string[] = [];
   out.push(`terms: ${stats.termCount}   aliases: ${stats.aliasCount}   hits: ${stats.totalHits}`);
+  if (note) out.push(safe(note));
   const categories = Object.entries(stats.byCategory)
     .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
     .map(([k, v]) => `${k} ${v}`)
@@ -174,7 +220,7 @@ export function renderStats(stats: LexiconStats): string {
 
   out.push('top terms');
   if (stats.topTerms.length === 0) {
-    out.push('  (no hits yet. They are counted when normalize_transcript or the hook fixes something)');
+    out.push('  (no hits yet. They are counted when lexicon normalize, the prompt hook or the MCP server fixes something)');
   } else {
     out.push(
       renderTable(
@@ -204,10 +250,11 @@ export async function runStats(opts: StatsOptions, io: IO): Promise<number> {
     // The counts leave a skipped project file out; say so, as lexicon_stats does.
     warnSkippedProject(loaded, io);
     const stats = computeStats(loaded);
+    const empty = emptyStatsNote(loaded);
     if (opts.json) {
-      line(io, JSON.stringify(jsonOk({ ...stats, ...skippedProjectJson(loaded) }), null, 2));
+      line(io, JSON.stringify(jsonOk({ ...stats, ...skippedProjectJson(loaded), ...(empty ? { note: empty } : {}) }), null, 2));
     } else {
-      io.stdout(renderStats(stats));
+      io.stdout(renderStats(stats, empty));
     }
     return 0;
   } catch (err) {

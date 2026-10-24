@@ -96,6 +96,15 @@ const JSON_CASES: JsonClientCase[] = [
   },
 ];
 
+const RELOAD: Record<string, string> = {
+  cursor: 'reload the Cursor window (Command Palette: Developer: Reload Window) or restart Cursor',
+  windsurf: 'refresh the MCP servers in Windsurf',
+  gemini: 'restart Gemini CLI',
+  'claude-desktop': 'restart Claude Desktop: it reads this only at launch',
+  vscode: 'reload the VS Code window',
+  codex: 'restart Codex',
+};
+
 describe('lexicon install <json client> --apply', () => {
   for (const c of JSON_CASES) {
     describe(c.client, () => {
@@ -105,6 +114,10 @@ describe('lexicon install <json client> --apply', () => {
         const first = await run(c.client, { apply: true });
         expect(first.code).toBe(0);
         expect(first.io.out).toContain(`created ${file}`);
+        // Catches: the write named its file but not how to take the entry out again.
+        expect(first.io.out).toContain(`undo: delete the "lexicon" entry under "${c.key}" in ${file}`);
+        // Catches: only claude-desktop named the step that makes the client load the new server.
+        expect(first.io.out).toContain(`then: ${RELOAD[c.client]}`);
         expect(first.io.out).toContain('lexicon export claude-md');
         expect(first.io.out).toContain(c.rulesHint);
 
@@ -156,6 +169,7 @@ describe('lexicon install <json client> --apply', () => {
         expect(io.out).toContain('would merge into');
         expect(io.out).toContain(file);
         expect(io.out).toContain('--apply');
+        expect(io.out).not.toContain('undo:');
         await expect(fs.access(file)).rejects.toThrow();
       });
 
@@ -234,6 +248,8 @@ describe('lexicon install codex --apply (TOML)', () => {
     const first = await run('codex', { apply: true });
     expect(first.code).toBe(0);
     expect(first.io.out).toContain(`created ${file}`);
+    expect(first.io.out).toContain(`then: ${RELOAD.codex}`);
+    expect(first.io.out).toContain(`undo: delete the [${CODEX_TABLE}] table from ${file}`);
     expect(first.io.out).toContain('AGENTS.md');
     expect(await fs.readFile(file, 'utf8')).toBe(`${block}\n`);
 
@@ -591,6 +607,30 @@ describe('installing from an npx cache', () => {
   });
 });
 
+// Catches: a preview ended `run again with --apply to write step 1`, leaving the
+// user to rebuild the command, and the flags it was run with, by hand.
+describe('a preview names the full command that applies it', () => {
+  it('keeps --cwd, --project or --scope and --home', async () => {
+    const project = await run('cursor', { project: true });
+    expect(project.io.out).toContain(`to write step 1, run: lexicon --cwd ${cwd} install cursor --project --home ${home} --apply`);
+    const scoped = await run('codex', { scope: 'user' });
+    expect(scoped.io.out).toContain(`to write step 1, run: lexicon --cwd ${cwd} install codex --scope user --home ${home} --apply`);
+    expect(scoped.io.out).not.toContain('run again with --apply');
+  });
+
+  it('quotes a path that needs it and names no --cwd for the current directory', async () => {
+    const io = makeIO();
+    const spaced = path.join(home, "it's here");
+    await runInstall('windsurf', { home: spaced, cwd: process.cwd() }, io, baseDeps());
+    expect(io.out).toContain(`to write step 1, run: lexicon install windsurf --home '${spaced.replace("'", "'\\''")}' --apply`);
+  });
+
+  it('for claude names steps 1 and 2 with the scope given', async () => {
+    const { io } = await run('claude', { scope: 'project' });
+    expect(io.out).toContain(`to perform steps 1 and 2, run: lexicon --cwd ${cwd} install claude --scope project --home ${home} --apply`);
+  });
+});
+
 describe('claude registration is idempotent', () => {
   it('reports an existing `claude mcp add` entry as unchanged rather than failed', async () => {
     const io = makeIO();
@@ -604,6 +644,13 @@ describe('claude registration is idempotent', () => {
     expect(code).toBe(0);
     expect(io.out).toContain('already registered with claude, nothing changed');
     expect(io.out).not.toContain('failed:');
+    // Catches: neither step said how to take lexicon back out of Claude Code.
+    expect(io.out).toContain('undo: claude mcp remove --scope user lexicon');
+    expect(io.out).toContain(
+      `undo: delete the lexicon hook entries under hooks.UserPromptSubmit and hooks.SessionStart in ${path.join(home, '.claude', 'settings.json')}`,
+    );
+    // Catches: Claude Code was not told to restart, so a running session kept running without lexicon.
+    expect(io.out).toContain('then: restart Claude Code: a running session keeps the MCP servers and hooks it started with');
   });
 
   it('still fails, with the reason, for a real error', async () => {

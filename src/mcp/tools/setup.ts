@@ -14,11 +14,14 @@ import {
 } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import type { SetupOptions } from '../../cli/cmd-setup.js';
+import { LIMITS } from '../../core/index.js';
 import { isRecord } from '../../util/json.js';
 import { errorMessage } from '../../util/errors.js';
 import { runDoctorReport } from '../../cli/commands.js';
-import { runInstall } from '../../cli/cmd-install.js';
+import { reloadStepFor, runInstall } from '../../cli/cmd-install.js';
+import type { InstallOutcome } from '../../cli/cmd-install.js';
 import { runSetup } from '../../cli/cmd-setup.js';
+import { setupNameProblem } from '../../cli/setup/detect.js';
 import { serveInstallBlocker } from '../../cli/cmd-serve.js';
 import { cliCommand } from '../../util/cli-hint.js';
 import { join } from 'node:path';
@@ -71,7 +74,8 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         "Register the lexicon MCP server (and, for Claude Code, its hooks) in an agent client's config: claude, codex, cursor, windsurf, gemini, vscode or claude-desktop. " +
         'Call with apply omitted (or false) first: that is a preview that returns the exact file and entry that would change and writes nothing. ' +
         'Show the preview to the user and call again with apply: true only after they confirm. Idempotent: an entry that is already present is left alone. ' +
-        'Check `ok`: false means the preview or install did not complete (`output` and `stderr` say which step failed, and `nextStep` what to do), so do not report it as installed or call again with apply: true. ' +
+        'Returns { client, scope, applied, ok, written, output, reload?, stderr?, next?, nextStep? }: `reload` is what the user must do so the client loads the server (restart it, or reload its window), to relay after an apply; `written` lists each config file the call touched as { file, outcome } with outcome created, updated or unchanged (empty for a preview), the same list the CLI install command prints with --json, so read it instead of parsing `output`. ' +
+          'Check `ok`: false means the preview or install did not complete (`output` and `stderr` say which step failed, and `nextStep` what to do), so do not report it as installed or call again with apply: true. ' +
         "windsurf and claude-desktop have no project-level config: scope 'project' with them is an error that says to call again without scope.",
       inputSchema: {
         client: z.enum(INSTALL_CLIENT_VALUES).describe('Which client to configure.'),
@@ -86,13 +90,19 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
       guarded(async () => {
         const io = bufferIO();
         const cliDir = cliDirForInstall();
+        // The same `written` list `lexicon install --json` returns, so an agent
+        // reads which files changed without parsing `output`.
+        const written: { file: string; outcome: InstallOutcome }[] = [];
+        const onWritten = (file: string, outcome: InstallOutcome): void => {
+          written.push({ file, outcome });
+        };
         let code: number;
         try {
           code = await runInstall(
             client,
             { cwd: ctx.cwd, apply: apply === true, ...(scope !== undefined ? { scope } : {}) },
             io,
-            cliDir !== undefined ? { cliDir } : {},
+            { ...(cliDir !== undefined ? { cliDir } : {}), onWritten },
           );
         } catch (err) {
           // The CLI's message says `drop --project`, a flag this tool does not take.
@@ -108,9 +118,12 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
           scope: scope ?? 'user',
           applied: apply === true,
           ok,
+          written,
           output: io.out().trimEnd(),
           ...(stderr ? { stderr } : {}),
           // A failed preview is not one to confirm: `next` said to apply it anyway.
+          // What the user does so the client loads the server (also the output's `then:` line).
+          ...(ok ? { reload: reloadStepFor(client) } : {}),
           ...(!ok
             ? { nextStep: `The ${apply === true ? 'install' : 'preview'} did not complete; output and stderr say which step failed. Tell the user what failed and do not call again with apply: true until it is fixed.` }
             : apply === true
@@ -134,8 +147,14 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         'does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. ' +
         'Runs non-interactively and returns { ok, applied: true, summary, nextStep? }; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file that was not trusted already is left untrusted for the user to review).',
       inputSchema: {
-        company: z.string().optional().describe('Company or product name, spelled exactly as it should appear.'),
-        person: z.string().optional().describe("The user's own name as they write it."),
+        company: z
+          .string()
+          .optional()
+          .describe(`Company or product name, spelled exactly as it should appear: one name of at most ${LIMITS.word} characters once trimmed, on one line (the lexicon's cap for a term). A longer, blank or multi-line one is refused, in the preview too, and nothing is written.`),
+        person: z
+          .string()
+          .optional()
+          .describe(`The user's own name as they write it: at most ${LIMITS.word} characters once trimmed, on one line. A longer, blank or multi-line one is refused, in the preview too, and nothing is written.`),
         clients: z
           .array(z.enum(INSTALL_CLIENT_VALUES))
           .optional()
@@ -157,6 +176,15 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
     },
     async ({ company, person, clients, packs, harvest, serve, apply }) =>
       guarded(async () => {
+        // The plan seeded a 100-character company without a word, then the
+        // apply refused it with errors about generated aliases the agent never
+        // passed. Check both names against the term caps up front, for both.
+        for (const [field, value] of [['company', company], ['person', person]] as const) {
+          const problem = value === undefined ? undefined : setupNameProblem(value);
+          if (problem !== undefined) {
+            throw new Error(`${field} ${problem}; nothing was written. Pass only the name, spelled as the user writes it, or omit ${field}.`);
+          }
+        }
         const io = bufferIO();
         const cliDir = cliDirForInstall();
         const applied = apply === true;

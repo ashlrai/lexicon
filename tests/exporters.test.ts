@@ -1,10 +1,12 @@
 import { describe, expect, it } from 'vitest';
 import { parse as parseYaml } from 'yaml';
 import {
+  EXPORT_ALIAS_ROW_FORMATS,
   EXPORT_FORMAT_INFO,
   EXPORT_FORMATS,
   exportLexicon,
   isExportFormat,
+  selectExportTerms,
 } from '../src/core/exporters/index.js';
 import type { ExportFormat, Lexicon } from '../src/core/types.js';
 
@@ -50,6 +52,31 @@ describe('exportLexicon', () => {
     const json = JSON.parse(exportLexicon(lexicon, 'json', { limit: 2 })) as Lexicon;
     // Keeps the two most important (hits desc) in original order.
     expect(json.terms.map((t) => t.canonical)).toEqual(['Ashlr.AI', 'kubectl']);
+  });
+
+  // Catches: with every hit at 0 the cap took the first proper noun A to Z, a
+  // term with no alias, so `limit: 1` wrote a CSV of only its header row.
+  it('limit counts only terms with an alias for the formats that write one row per alias', () => {
+    const zero: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'kubectl', aliases: ['cube control'], category: 'identifier' },
+        { canonical: 'Ashlr.AI', aliases: [], category: 'brand' },
+        { canonical: 'Lexicon', aliases: ['Lexicun'], category: 'product' },
+        { canonical: 'Zephyr', aliases: ['Zefir'], category: 'product' },
+      ],
+    };
+    expect(EXPORT_ALIAS_ROW_FORMATS).toEqual(['csv', 'wispr', 'superwhisper', 'macos', 'espanso']);
+    // Ties at 0 hits: brand/person/product first, then A to Z, skipping the alias-less term.
+    expect(exportLexicon(zero, 'csv', { limit: 1 })).toBe('canonical,alias,category,phonetic\nLexicon,Lexicun,product,\n');
+    expect(exportLexicon(zero, 'wispr', { limit: 2 })).toBe('word,replacement\nLexicun,Lexicon\nZefir,Zephyr\n');
+    expect(selectExportTerms(zero, { limit: 3 }, 'csv').map((t) => t.canonical)).toEqual(['kubectl', 'Lexicon', 'Zephyr']);
+    // A canonical-list format still counts the alias-less term.
+    expect(exportLexicon(zero, 'text', { limit: 1 })).toBe('Ashlr.AI\n');
+    expect(selectExportTerms(zero, { limit: 1 }).map((t) => t.canonical)).toEqual(['Ashlr.AI']);
+    // Hits still come first.
+    const hit: Lexicon = { ...zero, terms: zero.terms.map((t) => (t.canonical === 'kubectl' ? { ...t, hits: 3 } : t)) };
+    expect(exportLexicon(hit, 'csv', { limit: 1 })).toBe('canonical,alias,category,phonetic\nkubectl,cube control,identifier,\n');
   });
 
   it('wispr: CSV with header and quoting', () => {

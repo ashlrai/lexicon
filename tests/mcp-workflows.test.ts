@@ -55,6 +55,21 @@ async function call(name: string, args: Record<string, unknown>): Promise<{ isEr
   }
 }
 
+/** The tool list an agent reads, from a server on the temp repo. */
+async function listTools() {
+  const server = createServer({ cwd: repo });
+  const client = new Client({ name: 'test', version: '0' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  try {
+    return (await client.listTools()).tools;
+  } finally {
+    await client.close();
+    await server.close();
+  }
+}
+
 /**
  * The repo's .lexicon.yaml, created empty and trusted as `lexicon trust`
  * would: an MCP write into a trusted file keeps it trusted, so the tests
@@ -291,6 +306,39 @@ describe('remove_term', () => {
   });
 });
 
+// Catches: the description said it returns ranked { canonical, confidence,
+// aliases } candidates, while the result is { heard, suggestions } with at
+// most three of them, so an agent looked for an array that is not there.
+// Catches: add_term's aliases, never, phonetic and notes arguments named no
+// cap, so an agent learned the 80, 64 and 200 limits only from a refusal.
+describe('add_term argument descriptions', () => {
+  it('state the caps the write enforces', async () => {
+    const props = (await listTools()).find((t) => t.name === 'add_term')?.inputSchema.properties as Record<string, { description?: string }>;
+    expect(props.aliases?.description).toContain('each at most 80 characters; a term holds at most 64');
+    expect(props.never?.description).toContain('each at most 80 characters, at most 64 per term');
+    expect(props.phonetic?.description).toContain('one line, at most 200 characters');
+    expect(props.notes?.description).toContain('one line, at most 200 characters');
+    // And the write refuses past them, as described.
+    const many = await call('add_term', { canonical: 'Foo', aliases: Array.from({ length: 65 }, (_, i) => `foo${i}`) });
+    expect(many.isError).toBe(true);
+    expect(many.text).toContain('at most 64 aliases per term');
+    const notes = await call('add_term', { canonical: 'Foo', notes: 'x'.repeat(201) });
+    expect(notes.text).toContain('notes: must be at most 200 characters');
+  });
+});
+
+describe('suggest_canonical result shape', () => {
+  it('is { heard, suggestions } with at most 3, as the description says', async () => {
+    for (const canonical of ['Ashlr.AI', 'Ashley', 'Asher', 'Ashlar Labs', 'Ashland']) await call('add_term', { canonical, aliases: [] });
+    const payload = JSON.parse((await call('suggest_canonical', { heard: 'Ashler' })).text) as { heard: string; suggestions: { canonical: string; confidence: number }[] };
+    expect(payload.heard).toBe('Ashler');
+    expect(payload.suggestions.length).toBeGreaterThan(0);
+    expect(payload.suggestions.length).toBeLessThanOrEqual(3);
+    const tool = (await listTools()).find((t) => t.name === 'suggest_canonical');
+    expect(tool?.description).toContain('It returns { heard, suggestions }: `suggestions` holds at most 3 candidates');
+  });
+});
+
 describe('suggest_canonical with an untrusted project lexicon', () => {
   // Catches: no suggestions read as "not in the lexicon" while the name sat in the skipped project file.
   it('reports the skipped project file by path, never its terms', async () => {
@@ -357,6 +405,21 @@ describe('add_term errors', () => {
       expect(res.text).not.toContain('Refusing to write lexicon');
     }
     expect(await fs.readFile(process.env.LEXICON_PATH as string, 'utf8')).toBe(before);
+  });
+});
+
+// Catches: the description said a `changed: false` result means the text was
+// already correct, but with dryRun `changed` is false even when `replacements`
+// lists corrections, so an agent following it dropped them.
+describe('normalize_transcript with dryRun', () => {
+  it('says changed is false with replacements listed, as the result has it', async () => {
+    await call('add_term', { canonical: 'Ashlr.AI', aliases: ['Ashler'] });
+    const payload = JSON.parse((await call('normalize_transcript', { text: 'ask Ashler', dryRun: true })).text) as { output: string; changed: boolean; replacements: unknown[] };
+    expect(payload).toMatchObject({ output: 'ask Ashler', changed: false });
+    expect(payload.replacements).toHaveLength(1);
+    const tool = (await listTools()).find((t) => t.name === 'normalize_transcript');
+    expect(tool?.description).toContain('`changed` is false even when `replacements` lists corrections');
+    expect((tool?.inputSchema.properties as Record<string, { description?: string }>).dryRun?.description).toContain('`changed` is false even when `replacements` is not empty');
   });
 });
 
@@ -465,6 +528,20 @@ describe('blank required strings', () => {
     expect(suggest.text).toMatch(/must not be blank at heard/);
   });
 
+  // Catches: learn_correction's heard and meant were `.min(1)`, so "  " passed
+  // the schema and the refusal came from the handler, not naming the argument.
+  it('are refused for learn_correction heard and meant at the schema, naming the argument', async () => {
+    for (const [args, field] of [
+      [{ heard: '   ', meant: 'Ashlr.AI' }, 'heard'],
+      [{ heard: 'Ashler', meant: '\t ' }, 'meant'],
+    ] as const) {
+      const res = await call('learn_correction', args);
+      expect(res.isError).toBe(true);
+      expect(res.text).toMatch(new RegExp(`must not be blank at ${field}`));
+    }
+    await expect(fs.stat(path.join(home, 'lexicon.yaml'))).rejects.toThrow();
+  });
+
   // import_dictionary with blank content answered a success with 0 terms, so an
   // agent that lost the file's text on the way reported an import that read nothing.
   it('are refused for import_dictionary content and path', async () => {
@@ -519,6 +596,10 @@ describe('lexicon_stats and voice-context with an untrusted project lexicon', ()
   it('add nothing when there is no project file', async () => {
     const payload = JSON.parse((await call('lexicon_stats', {})).text) as Record<string, unknown>;
     expect(payload).not.toHaveProperty('skippedProject');
+    // Catches: an empty lexicon answered zeros with no word on what adds terms.
+    expect(payload.note).toBe('The lexicon has no terms yet, so nothing is corrected or counted; setup_lexicon or add_term adds some.');
+    await call('add_term', { canonical: 'Zork', aliases: ['zorc'] });
+    expect(JSON.parse((await call('lexicon_stats', {})).text)).not.toHaveProperty('note');
   });
 });
 
@@ -689,6 +770,39 @@ describe('apply_suggestion stale on a term in both lexicon files', () => {
   });
 });
 
+describe('list_terms with nothing to return', () => {
+  // Catches: an empty result carried no word on why, where `lexicon list`
+  // says the lexicon has no terms or that the filter matched none.
+  it('says the lexicon has no terms, or that the filter matched none of them', async () => {
+    const none = JSON.parse((await call('list_terms', { category: 'person' })).text) as { terms: unknown[]; note?: string };
+    expect(none.terms).toEqual([]);
+    expect(none.note).toBe('The lexicon has no terms yet; add_term or setup_lexicon adds some.');
+    await call('add_term', { canonical: 'Zork', aliases: ['zorc'] });
+    const miss = JSON.parse((await call('list_terms', { category: 'person', query: 'nope' })).text) as { note?: string };
+    expect(miss.note).toBe('No term matches the category and query given; the lexicon has 1 term in all, which list_terms without them returns.');
+    const hit = JSON.parse((await call('list_terms', { query: 'zorc' })).text) as Record<string, unknown>;
+    expect(hit).not.toHaveProperty('note');
+  });
+});
+
+describe('learn_correction given only one spelling', () => {
+  // Catches: learn_correction with heard and no meant answered only zod's
+  // `expected string, received undefined`, where `lexicon learn Ashler` says
+  // that one spelling was given and names the missing half.
+  it('says only one spelling was given, as lexicon learn does, and writes nothing', async () => {
+    for (const [args, missing] of [
+      [{ heard: 'Ashler' }, 'meant'],
+      [{ meant: 'Ashlr.AI' }, 'heard'],
+    ] as const) {
+      const res = await call('learn_correction', args);
+      expect(res.isError).toBe(true);
+      expect(res.text).toContain(`${missing} is missing: only one spelling was given`);
+      expect(res.text).toContain('so nothing was learned');
+    }
+    await expect(fs.stat(path.join(home, 'lexicon.yaml'))).rejects.toThrow();
+  });
+});
+
 describe('learn_correction when another term already claims `heard`', () => {
   // Catches: "it's Vercel not Versel" while Versel is an alias of Verse.
   // The alias was added to Vercel and reported saved, but the next transcript
@@ -824,6 +938,17 @@ describe('tool and resource descriptions agree with what the code does', () => {
     expect(props('suggest_terms').limit?.description).toContain('(default 20)');
     expect(props('export_lexicon').limit?.description).toContain('Omitted: every term.');
     expect(props('export_lexicon').categories?.description).toContain('Omitted: every category.');
+  });
+
+  // Catches: remove_term's canonical had no description at all.
+  it('remove_term canonical and learn_correction heard/meant describe themselves and say blank is refused', async () => {
+    const { tools } = await listed();
+    const props = (name: string): Record<string, { description?: string }> =>
+      (tools.find((t) => t.name === name) as { inputSchema?: { properties?: Record<string, { description?: string }> } } | undefined)?.inputSchema?.properties ?? {};
+    expect(props('remove_term').canonical?.description).toMatch(/^The canonical spelling of the term to remove/);
+    for (const d of [props('remove_term').canonical?.description, props('learn_correction').heard?.description, props('learn_correction').meant?.description]) {
+      expect(d).toContain('must not be blank');
+    }
   });
 
   // Catches: the 60-character cap on heard and meant was in no schema

@@ -44,6 +44,7 @@ import type { InstallPackResult, RegistryDeps, RegistryRecordMismatch, RegistryI
 import { CliRefusal, PACK_NOT_FOUND_NEXT_STEP, bold, dim, exampleAfterMissingArgument, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, safeMessage, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
+import { shellWord } from './cmd-install.js';
 import { createPrompter, isInteractive } from './prompt.js';
 import type { Prompter } from './prompt.js';
 
@@ -322,11 +323,6 @@ function needRegistry(opts: PackRegistryCliOptions, io: IO): boolean {
     return false;
   }
   return true;
-}
-
-/** Quote one word of a printed command for a POSIX shell, only when it needs it. */
-function shellWord(s: string): string {
-  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
 }
 
 /**

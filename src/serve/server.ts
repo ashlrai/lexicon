@@ -32,6 +32,7 @@ import {
   addTerm,
   computeStats,
   conflictNote,
+  learnUnchangedNote,
   diffSummary,
   exportLexicon,
   findRegistryRecordMismatch,
@@ -364,21 +365,31 @@ const BODY_SHAPES = {
 } as const;
 type BodyRoute = keyof typeof BODY_SHAPES;
 
-/**
- * The `note` of a POST /learn that wrote nothing: the "Nothing was added:"
- * lead of POST /add (`unchangedTermNote`) with the reason MCP
- * learn_correction gives, `heard` already an alias of the term or already
- * its canonical in another case.
- */
-function learnUnchangedNote(heard: string, canonical: string): string {
-  const said = heard.trim().replace(/\s+/g, ' ');
-  return said.toLowerCase() === canonical.toLowerCase()
-    ? `Nothing was added: ${JSON.stringify(canonical)} is already the canonical spelling; ${JSON.stringify(said)} is corrected to it.`
-    : `Nothing was added: ${JSON.stringify(said)} was already an alias of ${JSON.stringify(canonical)}.`;
-}
-
 /** Seconds a 503 asks the client to wait (its `Retry-After`) before sending the same request again. */
 const BUSY_RETRY_AFTER_S = 1;
+
+/**
+ * Both ways to get the bearer token, for every 401: an extension user pairs
+ * (`--pair`), any other client copies it (`--show`). The `/health?cwd=` 401
+ * named only `--show` after the main one learned `--pair`.
+ */
+const TOKEN_SOURCES = 'pair the browser extension with: lexicon serve --pair; for any other client, copy the token from: lexicon serve --show';
+
+/**
+ * The 503 before start() has read serve.json (an embedder that listens on
+ * `server` itself): there is no token to check yet, so nothing is wrong with
+ * the request; say when to send it again, as the busy 503 does.
+ */
+function serverStarting(): HttpError {
+  return new HttpError(503, `server is starting; retry after ${BUSY_RETRY_AFTER_S} second (Retry-After)`, {
+    'Retry-After': String(BUSY_RETRY_AFTER_S),
+  });
+}
+
+/** The 401 for a request that needs the bearer token; `what` names what needed it. */
+function tokenRequired(what = 'missing or invalid bearer token'): HttpError {
+  return new HttpError(401, `${what} (${TOKEN_SOURCES})`);
+}
 
 /** `/packs/<name>`; the name is validated again by `loadPack` (PACK_NAME_RE). */
 const PACK_ROUTE_RE = /^\/packs\/([a-z0-9-]+)$/;
@@ -1071,14 +1082,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
    * localhost on the bound port (DNS rebinding arrives with another Host).
    */
   function pairPage(req: http.IncomingMessage): Response {
-    // Only before start() has read serve.json (an embedder that listens on
-    // `server` itself): nothing is wrong with the request, so say when to
-    // send it again, as the busy 503 does.
-    if (!config) {
-      throw new HttpError(503, `server is starting; retry after ${BUSY_RETRY_AFTER_S} second (Retry-After)`, {
-        'Retry-After': String(BUSY_RETRY_AFTER_S),
-      });
-    }
+    if (!config) throw serverStarting();
     if (!isLoopbackAddress(req.socket.remoteAddress)) throw new HttpError(403, 'the pairing page is served on the loopback interface only');
     if (!isPairHost(req.headers.host, boundPort)) {
       throw new HttpError(403, `the pairing page is served for Host 127.0.0.1:${boundPort} or localhost:${boundPort} only`);
@@ -1111,8 +1115,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       // let any local caller probe which directories carry a .lexicon.yaml
       // and whether they are trusted.
       const cwdParam = url.searchParams.get('cwd');
-      if (cwdParam !== null && (!config || !tokenMatches(req.headers.authorization, config.token))) {
-        throw new HttpError(401, '/health?cwd= needs the bearer token (see: lexicon serve --show); plain /health does not');
+      if (cwdParam !== null && !config) throw serverStarting();
+      if (cwdParam !== null && config && !tokenMatches(req.headers.authorization, config.token)) {
+        throw tokenRequired('/health?cwd= needs the bearer token, which plain /health does not');
       }
       return json(200, await health(await resolveCwd(cwdParam)));
     }
@@ -1121,13 +1126,12 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       return pairPage(req);
     }
 
-    if (!config || !tokenMatches(req.headers.authorization, config.token)) {
-      // Both ways to get the token: an extension user pairs (`--pair`), any
-      // other client copies it (`--show`). It named only `--show`.
-      throw new HttpError(
-        401,
-        'missing or invalid bearer token (pair the browser extension with: lexicon serve --pair; for any other client, copy the token from: lexicon serve --show)',
-      );
+    // Before start() has read serve.json no token could match, so the right
+    // token was answered 401 "invalid" too. That is the starting 503; a wrong
+    // token once the config is loaded stays the 401.
+    if (!config) throw serverStarting();
+    if (!tokenMatches(req.headers.authorization, config.token)) {
+      throw tokenRequired();
     }
 
     if (pathname === '/normalize') {

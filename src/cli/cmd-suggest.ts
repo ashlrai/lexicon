@@ -354,7 +354,11 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
       } else {
         // Removing a term is the one irreversible step: never the default, never swept up by "all".
         const def = s.kind === 'stale' ? 'n' : 'y';
-        key = await askKey(prompter, `  apply? ${dim(`[y/n/a/q]`)}`, APPLY_KEYS, def);
+        // An answer that is not a key reprints what the keys do, as review and
+        // harvest -i do; the one line naming them scrolled away suggestions ago.
+        key = await askKey(prompter, `  apply? ${dim(`[y/n/a/q]`)}`, APPLY_KEYS, def, () =>
+          line(io, `  ${dim(`${APPLY_HELP}  (Enter = ${def})`)}`),
+        );
       }
       if (key === 'q') {
         skipped += suggestions.length - i;

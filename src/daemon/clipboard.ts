@@ -129,6 +129,28 @@ function reportable(text: string): boolean {
   return text.length > 0 && text.length <= MAX_CLIPBOARD_CHARS && hasLetters(text);
 }
 
+/**
+ * Why `loaded` corrects nothing at all, ending in the step that fixes it, or
+ * undefined when it has terms. A first run with an empty lexicon answered
+ * every clipboard with a bare "no changes", which reads as "nothing to fix".
+ */
+export function emptyLexiconHint(loaded: Pick<LoadedLexicon, 'merged' | 'skippedProject'>): string | undefined {
+  if (loaded.merged.terms.length > 0) return undefined;
+  return loaded.skippedProject
+    ? 'the project lexicon is not trusted, so its terms were not used; review it and run `lexicon trust`'
+    : 'the lexicon has no terms yet; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>';
+}
+
+/**
+ * The line above a correction summary. Under --dry-run it says the clipboard
+ * was left as it was: `(dry-run) 2 corrections` alone did not say whether
+ * they had been written.
+ */
+function correctionsHeader(count: number, dryRun: boolean): string {
+  const n = `${count} correction${count === 1 ? '' : 's'}`;
+  return dryRun ? `(dry-run) ${n}; the clipboard was left unchanged` : n;
+}
+
 function formatSummary(result: NormalizeResult): string {
   const summary = diffSummary(result);
   return summary.endsWith('\n') || summary === '' ? summary : `${summary}\n`;
@@ -210,7 +232,7 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
       recordHitsInBackground(result, cwd, loaded, err);
     }
     if (!quiet) {
-      const header = `[${timestamp()}]${dryRun ? ' (dry-run)' : ''} ${result.replacements.length} correction${result.replacements.length === 1 ? '' : 's'}`;
+      const header = `[${timestamp()}] ${correctionsHeader(result.replacements.length, dryRun)}`;
       out(`${header}\n${formatSummary(result)}`);
     }
   }
@@ -267,7 +289,21 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
         `lexicon daemon watching clipboard (${clipboard.name}) every ${intervalMs}ms${dryRun ? ' (dry-run)' : ''}; ctrl-C to stop\n`,
       );
     }
-    void tick();
+    // Said once at start: with no terms the daemon would watch in silence and
+    // never correct anything. A lexicon that fails to load is reported by
+    // the first poll instead.
+    const startTick = async (): Promise<void> => {
+      if (!quiet) {
+        try {
+          const hint = emptyLexiconHint(await currentLexicon());
+          if (hint) err(`[${timestamp()}] clipboard daemon: nothing will be corrected: ${hint}\n`);
+        } catch {
+          // the first poll reports it
+        }
+      }
+      await tick();
+    };
+    void startTick();
   });
 }
 
@@ -324,11 +360,12 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
         recordHitsInBackground(normalized, cwd, loaded, err);
       }
       if (!quiet) {
-        const header = `${dryRun ? '(dry-run) ' : ''}${normalized.replacements.length} correction${normalized.replacements.length === 1 ? '' : 's'}`;
+        const header = correctionsHeader(normalized.replacements.length, dryRun);
         out(`${header}\n${formatSummary(normalized)}`);
       }
     } else if (!quiet) {
-      out('no changes\n');
+      const hint = emptyLexiconHint(loaded);
+      out(hint ? `no changes (${hint})\n` : 'no changes\n');
     }
   }
 
@@ -398,7 +435,9 @@ export async function runDaemonCommand(opts: DaemonCommandOptions = {}): Promise
   }
 
   if (opts.paste && !opts.once) {
-    throw new Error('--paste only makes sense with --once');
+    // It named no way on: the watcher cannot paste (it would paste on every
+    // clipboard change), so say what --once does and the command to run.
+    throw new Error('--paste works only with --once (correct the clipboard once, then paste); run: lexicon daemon --once --paste');
   }
 
   if (opts.once) {

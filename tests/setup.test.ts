@@ -464,6 +464,42 @@ describe('runSetup --yes', () => {
     expect(existsSync(globalPath)).toBe(false);
   });
 
+  // Catches: a 100-character --company created the lexicon, then failed at the
+  // write on canonical, aliases[0] and aliases[1]; a dry run planned it as seeded.
+  it('refuses a blank, multi-line or over-cap --company / --person up front, in a dry run too', async () => {
+    const f = fakes();
+    for (const dryRun of [false, true]) {
+      await expect(run({ yes: true, dryRun, clients: 'none', company: 'x'.repeat(100) }, f)).rejects.toThrow(
+        /^--company must be at most 80 characters \(it has 100\); nothing was written/,
+      );
+      await expect(run({ yes: true, dryRun, clients: 'none', company: '   ' }, f)).rejects.toThrow(/^--company must not be blank/);
+      await expect(run({ yes: true, dryRun, clients: 'none', person: 'Mason\nWyatt' }, f)).rejects.toThrow(
+        /^--person must be one line, with no control characters/,
+      );
+    }
+    expect(existsSync(globalPath)).toBe(false);
+    expect(f.installed).toEqual([]);
+    // At the cap is fine.
+    const ok = await run({ yes: true, dryRun: true, clients: 'none', company: ` ${'x'.repeat(80)} ` }, f);
+    expect(ok.code).toBe(0);
+  });
+
+  // Catches: a multi-line or over-cap --phonetic created the lexicon and
+  // seeded the person term, then failed at the company write.
+  it('refuses a multi-line or over-cap --phonetic up front, in a dry run too', async () => {
+    const f = fakes();
+    for (const dryRun of [false, true]) {
+      await expect(run({ yes: true, dryRun, clients: 'none', company: 'Ashlr.AI', phonetic: 'ASH\nler' }, f)).rejects.toThrow(
+        /^--phonetic must be one line, with no control characters; nothing was written/,
+      );
+      await expect(run({ yes: true, dryRun, clients: 'none', company: 'Ashlr.AI', phonetic: 'x'.repeat(201) }, f)).rejects.toThrow(
+        /^--phonetic must be at most 200 characters \(it has 201\); nothing was written/,
+      );
+    }
+    expect(existsSync(globalPath)).toBe(false);
+    expect(f.installed).toEqual([]);
+  });
+
   it('--json prints only the summary on stdout and progress on stderr', async () => {
     const f = fakes();
     const { summary, io } = await run({ yes: true, json: true, clients: 'claude', company: 'Ashlr.AI' }, f);
@@ -652,6 +688,21 @@ describe('runSetup --dry-run', () => {
     expect(io.out).toContain('nothing here is prompted for');
   });
 
+  // Catches: the plan card ended "run again without --dry-run to apply", so the
+  // reader had to rebuild a command with a quoted company name and five flags.
+  it('ends with the exact command that applies it, keeping the flags this run was given', async () => {
+    const { io } = await run(
+      { yes: true, dryRun: true, clients: 'none', company: "Ashlr's AI", phonetic: 'ASH-ler', packs: false, harvest: false, serve: true, app: 'none' },
+      fakes(),
+    );
+    expect(io.out).toContain(
+      `to apply, run: lexicon --cwd ${cwd} setup --yes --clients none --company 'Ashlr'\\''s AI' --phonetic ASH-ler --app none --no-packs --no-harvest --serve`,
+    );
+    // An interactive dry run names the interactive command: no --yes was given.
+    const asked = await run({ dryRun: true }, fakes({ isInteractive: () => true }));
+    expect(asked.io.out).toMatch(new RegExp(`to apply, run: lexicon --cwd \\S+ setup\\n`));
+  });
+
   it('still lists the detected clients under --clients none, and serve/export stay off unless asked', async () => {
     const f = fakes({}, [path.join(home, '.claude'), '/Applications/Cursor.app']);
     const { plan } = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI' }, f);
@@ -724,6 +775,39 @@ describe('runSetup interactive', () => {
     expect(summary.exports).toEqual([{ format: 'superwhisper', path: path.join(exportDir, 'lexicon-superwhisper.json') }]);
     expect(p.asked[1]).toContain('company or product name');
     expect(p.closed).toBe(false); // the caller owns an injected prompter
+  });
+
+  // Catches: a company, extra term or hint typed at the prompt skipped the
+  // checks --company and --phonetic get, so an over-cap name or a hint with a
+  // control character failed setup at the write, after the lexicon was created
+  // and the person term seeded.
+  it('asks again for a typed name or hint the write would refuse, before writing it', async () => {
+    const p = scripted([
+      'y', // add "Mason Wyatt" as a person term?
+      'x'.repeat(100), // company: over the cap -> asked again
+      'Ashlr.AI',
+      'ASH\u0007ler', // phonetic: a control character -> asked again
+      'ASH-ler',
+      'y', // add another term?
+      'y'.repeat(81), // name: over the cap -> asked again
+      'Locus',
+      'z'.repeat(201), // hint: over the cap -> asked again
+      '', // Enter: no hint
+      'product',
+      'n', // add another term?
+    ]);
+    const f = fakes({ isInteractive: () => true, createPrompter: () => p });
+    const { code, summary, io } = await run({ clients: 'none', packs: false, harvest: false, serve: false, app: 'none' }, f);
+    expect(code).toBe(0);
+    expect(summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI', 'Locus']);
+    const terms = (await readLexiconFile(globalPath, 'global')).lexicon.terms;
+    expect(terms.find((t) => t.canonical === 'Ashlr.AI')?.phonetic).toBe('ASH-ler');
+    expect(terms.find((t) => t.canonical === 'Locus')?.phonetic).toBeUndefined();
+    expect(io.out).toContain('the name must be at most 80 characters (it has 100); type it again (Enter to skip)');
+    expect(io.out).toContain('the hint must be one line, with no control characters; type it again (Enter to skip)');
+    expect(io.out).toContain('the name must be at most 80 characters (it has 81)');
+    expect(io.out).toContain('the hint must be at most 200 characters (it has 201)');
+    expect(p.asked.filter((q) => q.includes('company or product name'))).toHaveLength(2);
   });
 
   it('Enter everywhere takes the defaults: person yes, suggested company, default packs, harvest NO, all clients, serve yes, first app', async () => {

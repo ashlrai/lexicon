@@ -1021,6 +1021,25 @@ describe('lexicon voice (foreground)', () => {
     expect(h.err.join('')).toContain('whisper read nothing out of this capture, so the recording is kept at');
   });
 
+  // Catches: with no terms the raw transcript came back with no word that
+  // the lexicon is empty or how to add a term.
+  it('says nothing was corrected and how to add a term when the lexicon has no terms', async () => {
+    const h = await harness({ lexicon: 'version: 1\nterms: []\n' });
+    h.deps.waitForStop = async () => 'enter';
+    h.opts.quiet = false;
+    expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.out).toEqual(['ping ashler about the cooper netties rollout\n']);
+    expect(h.err.join('')).toContain(
+      'lexicon voice: nothing was corrected: the lexicon has no terms yet; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>\n',
+    );
+
+    const full = await harness();
+    full.deps.waitForStop = async () => 'enter';
+    full.opts.quiet = false;
+    expect(await runVoice(full.opts, full.io, full.deps)).toBe(EXIT_OK);
+    expect(full.err.join('')).not.toContain('nothing was corrected');
+  });
+
   it('removes the capture once whisper has read something out of it', async () => {
     const h = await harness();
     h.deps.waitForStop = async () => 'enter';

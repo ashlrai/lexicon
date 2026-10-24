@@ -598,7 +598,7 @@ describe('index cache after writes outside store.ts', () => {
   it('lexicon review --project', async () => {
     const io = makeIO();
     expect(await runReview({ cwd: repo, globalPath, project: true }, io, scripted(['d']))).toBe(0);
-    expect(io.out).toContain('deleted 1');
+    expect(io.out).toContain('removed 1');
     await expectHit('ping kwuxly', 'ping kwuxly');
   });
 

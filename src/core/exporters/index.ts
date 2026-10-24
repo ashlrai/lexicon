@@ -100,37 +100,57 @@ const EXPORTERS: Record<ExportFormat, (lexicon: Lexicon, opts: ExportOptions) =>
   'markdown': exportMarkdown,
 };
 
+/**
+ * The formats that write one row per alias (`canonical,alias`, a replacement
+ * pair, a trigger), so a term without an alias contributes nothing to them.
+ */
+export const EXPORT_ALIAS_ROW_FORMATS: readonly ExportFormat[] = ['csv', 'wispr', 'superwhisper', 'macos', 'espanso'];
+
+/** Whether a term has an alias an alias-row format can write a row for. */
+function hasAliasRow(term: Term): boolean {
+  return term.aliases.some((a) => a.trim() !== '');
+}
+
 export function exportLexicon(lexicon: Lexicon, format: ExportFormat, opts: ExportOptions = {}): string {
   const exporter = EXPORTERS[format];
   if (!exporter) {
     throw new Error(`Unknown export format "${format}". Known: ${EXPORT_FORMATS.join(', ')}`);
   }
-  return exporter(applyOptions(lexicon, opts), opts);
+  return exporter(applyOptions(lexicon, opts, format), opts);
 }
 
 /**
- * The terms `exportLexicon` hands the exporter: those in `opts.categories`
- * (all when none are given), capped at `opts.limit`. A format with its own
- * cap (`whisper-prompt`) may write fewer.
+ * The terms `exportLexicon(lexicon, format, opts)` hands the exporter: those
+ * in `opts.categories` (all when none are given), capped at `opts.limit`. A
+ * format with its own cap (`whisper-prompt`) may write fewer. Without
+ * `format` the cap counts every term, as for a format that is not an
+ * alias-row one.
  */
-export function selectExportTerms(lexicon: Lexicon, opts: ExportOptions = {}): Term[] {
-  return applyOptions(lexicon, opts).terms;
+export function selectExportTerms(lexicon: Lexicon, opts: ExportOptions = {}, format?: ExportFormat): Term[] {
+  return applyOptions(lexicon, opts, format).terms;
 }
 
 /**
- * Apply the category filter and term cap before dispatching. The cap keeps the
- * most important terms (hits desc, proper nouns first) but preserves the
- * lexicon's original term order afterwards so per-format sorting is unaffected.
+ * Apply the category filter and term cap before dispatching. The cap keeps
+ * the most-used terms: hits, highest first; at equal hits brand, person and
+ * product terms first; then canonical A to Z (sortByImportance). For an
+ * alias-row format only terms with an alias are counted, since one without
+ * writes no row: `limit: 1` on a lexicon whose first term had no alias wrote
+ * a CSV with only its header. The lexicon's own term order is kept afterwards
+ * so per-format sorting is unaffected.
  */
-function applyOptions(lexicon: Lexicon, opts: ExportOptions): Lexicon {
+function applyOptions(lexicon: Lexicon, opts: ExportOptions, format?: ExportFormat): Lexicon {
   let terms: Term[] = lexicon.terms;
   if (opts.categories && opts.categories.length > 0) {
     const allowed = new Set(opts.categories);
     terms = terms.filter((t) => t.category !== undefined && allowed.has(t.category));
   }
-  if (opts.limit !== undefined && terms.length > opts.limit) {
-    const keep = new Set(sortByImportance(terms).slice(0, Math.max(0, opts.limit)));
-    terms = terms.filter((t) => keep.has(t));
+  if (opts.limit !== undefined) {
+    const candidates = format !== undefined && EXPORT_ALIAS_ROW_FORMATS.includes(format) ? terms.filter(hasAliasRow) : terms;
+    if (candidates.length > opts.limit || candidates.length < terms.length) {
+      const keep = new Set(sortByImportance(candidates).slice(0, Math.max(0, opts.limit)));
+      terms = terms.filter((t) => keep.has(t));
+    }
   }
   if (terms === lexicon.terms) return lexicon;
   return { ...lexicon, terms };

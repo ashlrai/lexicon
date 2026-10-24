@@ -519,6 +519,27 @@ describe('lexicon learn (CLI)', () => {
     expect(store.addTerm).toHaveBeenCalledWith(expect.anything(), { cwd: path.resolve('/fake/repo'), scope: 'project' });
   });
 
+  // Catches: `lexicon learn Ashler` said `could not find a correction in "Ashler"`
+  // and printed the whole usage block, though one word is one spelling.
+  it('says only one spelling was given and names the command with it, without the usage', async () => {
+    const { io, out, err } = captureIO();
+    expect(await runLearn(['Ashler'], { cwd: '/fake/repo' }, io)).toBe(1);
+    expect(err()).toBe(
+      'lexicon: only one spelling was given ("Ashler"); learn needs the spelling STT wrote and the one you meant, so nothing was learned\n' +
+        'lexicon: run: lexicon learn Ashler <meant>, where <meant> is the spelling you want\n',
+    );
+    expect(out()).toBe('');
+    const json = captureIO();
+    expect(await runLearn(['Mason White'], { json: true, cwd: '/fake/repo' }, json.io)).toBe(1);
+    expect(JSON.parse(json.out())).toEqual({
+      ok: false,
+      error: 'only one spelling was given ("Mason White"); learn needs the spelling STT wrote and the one you meant, so nothing was learned',
+      nextStep: 'run: lexicon learn "Mason White" <meant>, where <meant> is the spelling you want',
+    });
+    expect(json.err()).not.toContain('usage:');
+    expect(store.addTerm).not.toHaveBeenCalled();
+  });
+
   it('prints the supported forms when nothing matched', async () => {
     const { io, out, err } = captureIO();
     const code = await runLearn([], { from: 'not sure it\'s ready' }, io);
@@ -568,6 +589,26 @@ describe('lexicon learn (CLI)', () => {
     expect(code).toBe(0);
     const payload = JSON.parse(out()) as { heard: string; meant: string; aliasAdded: boolean };
     expect(payload).toMatchObject({ heard: 'Ashlur', meant: 'Ashlr.AI', aliasAdded: true });
+  });
+
+  // Catches: a spelling the term already held printed "learned Ashler ->
+  // Ashlr.AI (already known)", which reads as a write, and `--json` had no
+  // `unchanged`, unlike serve POST /learn.
+  it('says nothing was added when heard is already an alias, in text and --json', async () => {
+    const text = captureIO();
+    expect(await runLearn(['Ashler', 'Ashlr.AI'], { cwd: '/fake/repo' }, text.io)).toBe(0);
+    expect(text.out().split('\n')[0]).toBe('Nothing was added: "Ashler" was already an alias of "Ashlr.AI". (global: /fake/global.yaml)');
+    expect(text.out()).not.toContain('learned');
+
+    const json = captureIO();
+    expect(await runLearn(['Ashler', 'Ashlr.AI'], { cwd: '/fake/repo', json: true }, json.io)).toBe(0);
+    expect(JSON.parse(json.out())).toMatchObject({
+      ok: true,
+      created: false,
+      aliasAdded: false,
+      unchanged: true,
+      note: 'Nothing was added: "Ashler" was already an alias of "Ashlr.AI".',
+    });
   });
 
   // Catches: --json dumped the whole lexicon file (every term in it) under `file` and had no `path`, unlike learn_correction.

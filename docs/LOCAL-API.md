@@ -82,7 +82,7 @@ included, and no body. Errors are
 | GET | `/aliases` | `?canonical=X` | `{ canonical, aliases }`: the spellings STT is likely to produce for a name, for an onboarding form. `canonical` loses invisible characters and outer spaces first, as a stored canonical does, and is then at most 80 characters with no control character or newline left inside it (400 otherwise, as for a stored canonical) |
 | GET | `/export/:format` | | the export as text; `Content-Type` per format (see below). `?category=` (repeat it or separate with commas) and `?limit=<n>` filter and cap it like `lexicon export --category` and `--limit`; an unknown format is a 404 whose `error` lists the formats |
 
-Status codes: 400 invalid JSON, a bad or unknown field (bodies are strict: a misspelled key such as `dry_run` is refused, not ignored), an unknown or repeated query parameter on any route but `/pair` (query strings are strict the same way: `/lexicon?cdw=` and `/health?cdw=` are refused, with or without the token; only `/export`'s `category` may repeat), an unknown `category` or a `limit` that is not a positive integer on `/export`, a `cwd` that is empty or not an existing directory, or a body on `DELETE /packs/:name`, 401 missing or wrong token (the `error` names `lexicon serve --pair` for the browser extension and `lexicon serve --show` for any other client),
+Status codes: 400 invalid JSON, a bad or unknown field (bodies are strict: a misspelled key such as `dry_run` is refused, not ignored), an unknown or repeated query parameter on any route but `/pair` (query strings are strict the same way: `/lexicon?cdw=` and `/health?cdw=` are refused, with or without the token; only `/export`'s `category` may repeat), an unknown `category` or a `limit` that is not a positive integer on `/export`, a `cwd` that is empty or not an existing directory, or a body on `DELETE /packs/:name`, 401 missing or wrong token, `/health?cwd=` included (the `error` names `lexicon serve --pair` for the browser extension and `lexicon serve --show` for any other client),
 403 a `Host` that does not name this server (any route), a project-scope
 write into an untrusted or changed `.lexicon.yaml` (the `error` names the file,
 says nothing was written, and gives both ways on: `lexicon trust` and a retry,
@@ -90,7 +90,7 @@ or a retry with `"scope": "global"` in the body, `?scope=global` on a DELETE), o
 / a cross-origin `Origin`, 404 unknown route (the `error` lists every route as
 `METHOD /path`) or export format,
 405 wrong method (with an `Allow` header naming the route's methods: `GET, HEAD` on a GET route, `POST`, or `POST, DELETE` on `/packs/:name`), 413 body over 1 MB, 500 a problem on the server's side,
-503 more than 64 requests in flight, a lexicon file another writer still holds the lock on, or `/pair` before the server has finished starting (in each case nothing was written; the `error` says to retry after the `Retry-After` seconds, 1).
+503 more than 64 requests in flight, a lexicon file another writer still holds the lock on, or any route but plain `/health` before the server has finished starting (in each case nothing was written; the `error` says to retry after the `Retry-After` seconds, 1).
 
 400 always means the request itself is wrong: fix the input and do not retry
 as is. A 400 about a POST body (empty, not JSON, not an object, or a field that is

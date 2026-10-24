@@ -54,6 +54,7 @@ import { existsSync, promises as fs } from 'node:fs';
 import path from 'node:path';
 import {
   DEMO_LEXICON,
+  EXPORT_ALIAS_ROW_FORMATS,
   EXPORT_FORMATS,
   TERM_CATEGORIES,
   EXPORT_FORMAT_INFO,
@@ -91,6 +92,7 @@ import type {
   HarvestCandidate,
   HarvestOptions,
   LexiconFile,
+  LoadedLexicon,
   NormalizeOptions,
   RemoveAliasResult,
   Term,
@@ -148,7 +150,7 @@ export type { DoctorAudience, DoctorCheck, DoctorCliOptions, DoctorDeps, DoctorL
 export { CLAUDE_MD_SNIPPET, runInstallClaude } from './cmd-install.js';
 export type { InstallClaudeDeps, InstallClaudeOptions, InstallOutcome } from './cmd-install.js';
 import { runHarvestInteractive } from './cmd-review.js';
-import { createPrompter, isInteractive, splitList } from './prompt.js';
+import { PromptClosedError, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
 import { errorMessage, isInputError } from '../util/errors.js';
 
@@ -247,16 +249,26 @@ export async function runInit(opts: InitOptions, io: IO): Promise<number> {
   const created = await createLexiconFile(target, scope);
   // The user asked for this file; that is the approval `lexicon trust` records.
   if (created && scope === 'project') await trustProject(target, { cwd });
+  // `trust` for a project file only: an existing one may be untrusted, which
+  // is what decides whether its terms are merged.
+  const trust = scope === 'project' ? await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) : undefined;
+  // An existing project file init did not create may be one the user never
+  // reviewed (a cloned repo's) or edited since: its terms are not used until
+  // it is trusted, which "already exists" alone did not say.
+  const untrustedStep =
+    trust !== undefined && trust !== 'trusted'
+      ? `${trust === 'changed' ? 'it has changed since it was trusted' : 'it is not trusted yet'}, so its terms are not used; review it and run: lexicon trust`
+      : undefined;
   if (opts.json) {
-    // `trust` for a project file only: an existing one may be untrusted, which
-    // is what decides whether its terms are merged.
-    const trust =
-      scope === 'project' ? { trust: await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) } : {};
-    line(io, JSON.stringify(jsonOk({ scope, path: target, created, ...trust }), null, 2));
+    line(
+      io,
+      JSON.stringify(jsonOk({ scope, path: target, created, ...(trust !== undefined ? { trust } : {}), ...(untrustedStep ? { nextStep: untrustedStep } : {}) }), null, 2),
+    );
     return 0;
   }
   if (!created) {
     line(io, `${scope} lexicon already exists: ${safe(target)}`);
+    if (untrustedStep) line(io, dim(untrustedStep));
     return 0;
   }
   line(io, `created ${scope} lexicon: ${safe(target)}`);
@@ -303,6 +315,17 @@ export interface AddOptions extends CommonOptions {
   globalPath?: string;
 }
 
+/**
+ * ctrl-D during `add -i` is a cancel: nothing has been written yet, so say so
+ * and exit 0, as `review` and `harvest -i` stop. Any other error is rethrown.
+ */
+function addInputClosed(err: unknown, canonical: string, io: IO): number {
+  if (!(err instanceof PromptClosedError)) throw err;
+  line(io);
+  line(io, `input closed before ${safe(canonical)} was saved; nothing was added`);
+  return 0;
+}
+
 export async function runAdd(
   canonical: string,
   aliasArgs: readonly string[],
@@ -338,21 +361,26 @@ export async function runAdd(
     });
     if (p && aliasArgs.length === 0) {
       // Interactive: the suggestions are a checklist, not a fait accompli.
-      const kept =
-        suggested.length > 0
-          ? await p.choose(
-              `aliases for ${trimmed} (what STT is likely to write)`,
-              suggested.map((s) => ({ label: s, value: s })),
-              { multi: true },
-            )
-          : [];
-      const extra = splitList(await p.ask('more aliases (comma-separated, Enter for none)')).filter((a) => {
-        const key = a.toLowerCase();
-        if (key === trimmed.toLowerCase() || kept.some((k) => k.toLowerCase() === key)) return false;
-        return true;
-      });
-      suggested = kept;
-      aliases.push(...kept, ...extra);
+      try {
+        const kept =
+          suggested.length > 0
+            ? await p.choose(
+                `aliases for ${trimmed} (what STT is likely to write)`,
+                suggested.map((s) => ({ label: s, value: s })),
+                { multi: true },
+              )
+            : [];
+        const extra = splitList(await p.ask('more aliases (comma-separated, Enter for none)')).filter((a) => {
+          const key = a.toLowerCase();
+          if (key === trimmed.toLowerCase() || kept.some((k) => k.toLowerCase() === key)) return false;
+          return true;
+        });
+        suggested = kept;
+        aliases.push(...kept, ...extra);
+      } catch (err) {
+        if (ownPrompter) p.close();
+        return addInputClosed(err, trimmed, io);
+      }
     } else if (!fallbackOnly) {
       aliases.push(...suggested);
     }
@@ -375,6 +403,8 @@ export async function runAdd(
         }
         io.stderr(`lexicon: unknown category "${answer}"\n`);
       }
+    } catch (err) {
+      return addInputClosed(err, trimmed, io);
     } finally {
       if (ownPrompter) p.close();
     }
@@ -601,15 +631,35 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
   let terms = loaded.merged.terms;
   const category = parseCategory(opts.category);
   if (category) terms = terms.filter((t) => t.category === category);
-  if (opts.query) {
-    const q = opts.query.toLowerCase();
+  // Trimmed, as MCP list_terms trims it: a pasted " Ashler" matched nothing
+  // here while the agent's list_terms found the term, and a query of only
+  // spaces filters nothing in either.
+  const query = opts.query?.trim();
+  if (query) {
+    const q = query.toLowerCase();
     terms = terms.filter(
       (t) => t.canonical.toLowerCase().includes(q) || t.aliases.some((a) => a.toLowerCase().includes(q)),
     );
   }
 
+  const filters = [
+    ...(opts.category !== undefined ? [`--category ${opts.category}`] : []),
+    ...(query ? [`--query ${JSON.stringify(query)}`] : []),
+  ];
+  const total = loaded.merged.terms.length;
+  // Why the list is empty, as MCP list_terms says it in `note`: "no terms
+  // match" for a lexicon that had none at all sent a first user to fix the
+  // filter, and a filter that missed named no way to see what is there.
+  const emptyNote =
+    terms.length > 0 || loaded.skippedProject
+      ? undefined
+      : total === 0
+        ? 'The lexicon has no terms yet; add one with: lexicon add "Ashlr.AI" Ashler, or run `lexicon setup`.'
+        : `No term matches ${filters.join(' ')}; ${plural(total, 'term')} in all, which lexicon list without ${filters.length === 1 ? 'it' : 'them'} shows.`;
+
   if (opts.full) {
     // The MCP list_terms shape; plain --json keeps the bare array scripts already parse.
+    const skipped = skippedProjectJson(loaded);
     const payload = {
       terms,
       counts: {
@@ -619,7 +669,8 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
         project: loaded.project?.lexicon.terms.length ?? 0,
       },
       paths: { global: loaded.global.path, ...(loaded.project ? { project: loaded.project.path } : {}) },
-      ...skippedProjectJson(loaded),
+      ...skipped,
+      ...(emptyNote ? { note: emptyNote } : {}),
     };
     line(io, JSON.stringify(jsonOk(payload), null, 2));
     return 0;
@@ -635,7 +686,14 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
     const empty = loaded.skippedProject
       ? ' applied: the project lexicon is not trusted, so its terms are not loaded. Review it and run: lexicon trust'
       : ' yet. Try: lexicon add "Ashlr.AI" Ashler';
-    line(io, dim('no terms' + (opts.query || category ? ' match' : empty)));
+    line(
+      io,
+      dim(
+        total > 0 && filters.length > 0
+          ? `no terms match ${safe(filters.join(' '))} (${plural(total, 'term')} in all; run lexicon list without ${filters.length === 1 ? 'it' : 'them'} to see them)`
+          : 'no terms' + empty,
+      ),
+    );
   } else {
     const rows = terms.map((t) => [
       t.canonical,
@@ -987,6 +1045,41 @@ function exportFormatNextStep(): string {
   return `run: lexicon export <format>, with one of: ${EXPORT_FORMATS.join(', ')} (lexicon export with no format describes each)`;
 }
 
+/**
+ * Why an export holds no terms (or, for a format that writes one row per
+ * alias, no rows), ending in the step that fixes it, or undefined when it
+ * holds some. The CLI form of MCP export_lexicon's note. `aliasRows` is the
+ * format and the terms it was handed; only an alias-row format
+ * (EXPORT_ALIAS_ROW_FORMATS) whose terms all lack an alias gets the no-rows
+ * note.
+ */
+export function emptyExportNote(
+  loaded: Pick<LoadedLexicon, 'merged' | 'skippedProject'>,
+  categories: readonly string[] | undefined,
+  exported: number,
+  aliasRows?: { format: ExportFormat; terms: readonly Pick<Term, 'aliases'>[] },
+): string | undefined {
+  if (exported > 0) {
+    if (
+      aliasRows !== undefined &&
+      EXPORT_ALIAS_ROW_FORMATS.includes(aliasRows.format) &&
+      !aliasRows.terms.some((t) => t.aliases.some((a) => a.trim() !== ''))
+    ) {
+      return `No exported term has an alias, and ${aliasRows.format} writes one row per alias, so the export has no rows; add one with: lexicon add <canonical> <alias>.`;
+    }
+    return undefined;
+  }
+  if (loaded.merged.terms.length === 0) {
+    return loaded.skippedProject
+      ? 'The export is empty: the only terms are in the untrusted project lexicon, which was left out; review it and run `lexicon trust`.'
+      : 'The lexicon has no terms yet, so the export is empty; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.';
+  }
+  if (categories !== undefined && categories.length > 0) {
+    return `No term matched --category ${categories.join(' ')}, so the export is empty; lexicon list shows each term's category.`;
+  }
+  return undefined;
+}
+
 export async function runExport(requested: string | undefined, opts: ExportCliOptions, io: IO): Promise<number> {
   const json = opts.json === true;
   if (requested === undefined) {
@@ -1035,20 +1128,27 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
   const { merged } = loaded;
   const text = ensureNewline(exportLexicon(merged, format, exportOpts));
   // The terms actually exported: the same category filter and cap exportLexicon applies.
-  const terms = selectExportTerms(merged, exportOpts).length;
+  const selected = selectExportTerms(merged, exportOpts, format);
+  const terms = selected.length;
   const bytes = Buffer.byteLength(text, 'utf8');
+  // An empty export read as a complete one: no word on stderr or under --json,
+  // where MCP export_lexicon says why in a note. stderr only, as above.
+  const empty = emptyExportNote(loaded, exportOpts.categories, terms, { format, terms: selected });
+  if (empty) io.stderr(`lexicon: ${safe(empty.charAt(0).toLowerCase() + empty.slice(1))}\n`);
+  const skipped = skippedProjectJson(loaded, 'Its terms are not in the export.');
+  const notes = { ...skipped, ...(empty || skipped.note ? { note: [empty, skipped.note].filter(Boolean).join(' ') } : {}) };
 
   if (opts.out) {
     const outPath = path.resolve(cwd, opts.out);
     await fs.mkdir(path.dirname(outPath), { recursive: true });
     await fs.writeFile(outPath, text, 'utf8');
     if (json) {
-      line(io, JSON.stringify(jsonOk({ format, terms, bytes, path: outPath, ...skippedProjectJson(loaded, 'Its terms are not in the export.') }), null, 2));
+      line(io, JSON.stringify(jsonOk({ format, terms, bytes, path: outPath, ...notes }), null, 2));
     } else {
       line(io, `wrote ${format} export (${plural(terms, 'term')}) to ${safe(outPath)}`);
     }
   } else if (json) {
-    line(io, JSON.stringify(jsonOk({ format, terms, bytes, content: text, ...skippedProjectJson(loaded, 'Its terms are not in the export.') }), null, 2));
+    line(io, JSON.stringify(jsonOk({ format, terms, bytes, content: text, ...notes }), null, 2));
   } else {
     io.stdout(text);
   }

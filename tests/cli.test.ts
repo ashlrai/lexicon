@@ -413,6 +413,57 @@ describe('list', () => {
     const terms = JSON.parse(io2.out) as { canonical: string }[];
     expect(terms.map((t) => t.canonical)).toEqual(['Ashlr.AI']);
   });
+
+  // Catches: `list --query " wyeth "` matched nothing (the spaces were part
+  // of the substring) while MCP list_terms trims the query and found the
+  // term, and a query of only spaces filtered out every term.
+  it('trims --query as MCP list_terms does', async () => {
+    const padded = makeIO();
+    await runList({ query: '  wyeth ', json: true }, padded);
+    expect((JSON.parse(padded.out) as { canonical: string }[]).map((t) => t.canonical)).toEqual(['Mason Wyatt']);
+
+    const blank = makeIO();
+    await runList({ query: '   ', full: true }, blank);
+    const all = JSON.parse(blank.out) as { counts: { matched: number; total: number }; note?: string };
+    expect(all.counts.matched).toBe(all.counts.total);
+    expect(all.note).toBeUndefined();
+
+    const miss = makeIO();
+    await runList({ query: ' zork ' }, miss);
+    expect(miss.out).toContain('no terms match --query "zork" (');
+  });
+
+  // Catches: a filter on a lexicon with no terms said `no terms match`, which
+  // sent a first user to fix the filter, and a filter that missed named no
+  // way to see the terms there are; --full carried no word on either.
+  it('says why the list is empty: no terms at all, or a filter that matched none', async () => {
+    const miss = makeIO();
+    expect(await runList({ category: 'product', query: 'zork' }, miss)).toBe(0);
+    expect(miss.out).toContain('no terms match --category product --query "zork" (2 terms in all; run lexicon list without them to see them)\n');
+    const missFull = makeIO();
+    expect(await runList({ category: 'product', full: true }, missFull)).toBe(0);
+    expect(JSON.parse(missFull.out)).toMatchObject({
+      counts: { matched: 0, total: 2 },
+      note: 'No term matches --category product; 2 terms in all, which lexicon list without it shows.',
+    });
+
+    const empty = { version: 1 as const, terms: [] };
+    const loadEmpty = () =>
+      vi.mocked(core.loadLexicon).mockResolvedValueOnce({ merged: empty, global: { path: state.globalPath, scope: 'global', lexicon: empty, exists: false } });
+    loadEmpty();
+    const none = makeIO();
+    expect(await runList({ category: 'person' }, none)).toBe(0);
+    expect(none.out).toContain('no terms yet. Try: lexicon add "Ashlr.AI" Ashler\n');
+    expect(none.out).not.toContain('match');
+    loadEmpty();
+    const noneFull = makeIO();
+    expect(await runList({ full: true }, noneFull)).toBe(0);
+    expect(JSON.parse(noneFull.out).note).toBe('The lexicon has no terms yet; add one with: lexicon add "Ashlr.AI" Ashler, or run `lexicon setup`.');
+
+    const hit = makeIO();
+    expect(await runList({ category: 'brand', full: true }, hit)).toBe(0);
+    expect(JSON.parse(hit.out)).not.toHaveProperty('note');
+  });
 });
 
 describe('add / remove / path', () => {
@@ -868,6 +919,63 @@ describe('export', () => {
     await runExport('json', { out: path.join(dir, 'sub', 'lex.json') }, io2);
     expect(await fs.readFile(path.join(dir, 'sub', 'lex.json'), 'utf8')).toBe('export:json\n');
     expect(io2.out).toContain('wrote json export');
+  });
+
+  // Catches: an empty export (no terms yet, or --category matching none) came
+  // out with no word on stderr or under --json, read as a complete export,
+  // while MCP export_lexicon says why in a note.
+  it('says why an export is empty and what to run, on stderr and as the --json note', async () => {
+    const empty = { version: 1 as const, terms: [] };
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({ merged: empty, global: { path: state.globalPath, scope: 'global', lexicon: empty, exists: false } });
+    const none = makeIO();
+    expect(await runExport('wispr', {}, none)).toBe(0);
+    expect(none.out).toBe('export:wispr\n');
+    expect(none.err).toBe(
+      'lexicon: the lexicon has no terms yet, so the export is empty; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.\n',
+    );
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({ merged: empty, global: { path: state.globalPath, scope: 'global', lexicon: empty, exists: false } });
+    const noneJson = makeIO();
+    expect(await runExport('csv', { json: true }, noneJson)).toBe(0);
+    expect(JSON.parse(noneJson.out)).toMatchObject({
+      ok: true,
+      terms: 0,
+      note: 'The lexicon has no terms yet, so the export is empty; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.',
+    });
+    const unmatched = makeIO();
+    expect(await runExport('csv', { json: true, category: ['product'] }, unmatched)).toBe(0);
+    expect(JSON.parse(unmatched.out)).toMatchObject({
+      terms: 0,
+      note: "No term matched --category product, so the export is empty; lexicon list shows each term's category.",
+    });
+    expect(unmatched.err).toContain('lexicon: no term matched --category product, so the export is empty');
+    const some = makeIO();
+    expect(await runExport('csv', { json: true }, some)).toBe(0);
+    expect(JSON.parse(some.out)).not.toHaveProperty('note');
+    expect(some.err).toBe('');
+  });
+
+  // Catches: an alias-row export (csv, wispr, ...) of terms that have no
+  // alias wrote no rows with no word on stderr or under --json, while MCP
+  // export_lexicon notes it.
+  it('says an alias-row export has no rows when no term has an alias, on stderr and as the --json note', async () => {
+    const bare = { version: 1 as const, terms: [{ canonical: 'Quokka', aliases: [] }, { canonical: 'Wombat', aliases: ['  '] }] };
+    const loadedBare = { merged: bare, global: { path: state.globalPath, scope: 'global' as const, lexicon: bare, exists: true } };
+    const note = 'No exported term has an alias, and csv writes one row per alias, so the export has no rows; add one with: lexicon add <canonical> <alias>.';
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedBare);
+    const plain = makeIO();
+    expect(await runExport('csv', {}, plain)).toBe(0);
+    expect(plain.out).toBe('export:csv\n');
+    expect(plain.err).toBe(`lexicon: ${note.charAt(0).toLowerCase()}${note.slice(1)}\n`);
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedBare);
+    const asJson = makeIO();
+    expect(await runExport('csv', { json: true }, asJson)).toBe(0);
+    expect(JSON.parse(asJson.out)).toMatchObject({ ok: true, note });
+    // A format that writes every term (json, claude-md) is not empty.
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedBare);
+    const whole = makeIO();
+    expect(await runExport('json', { json: true }, whole)).toBe(0);
+    expect(JSON.parse(whole.out)).not.toHaveProperty('note');
+    expect(whole.err).toBe('');
   });
 
   it('--out reports the number of terms written after --category and --limit, not the lexicon size', async () => {
@@ -1459,6 +1567,29 @@ describe('runDoctorReport', () => {
       expect(report.ok).toBe(true);
       expect(report.ready).toBe(false);
       expect(report.nextStep).toBe('Run: lexicon setup');
+    });
+
+    // Catches: with no global lexicon the failing check said `(run: lexicon
+    // init)` while nextStep said `Run: lexicon setup`, two different first
+    // steps in one report, and init leaves an empty file behind.
+    it('names lexicon setup in the missing-lexicon check and in nextStep alike', async () => {
+      vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: { version: 1, terms: [] }, exists: false });
+      const empty = await tempDir('lexicon-nohooks-');
+      const deps = {
+        platform: 'linux' as const,
+        env: { PATH: '/nonexistent' },
+        exec: () => '',
+        settingsPath: path.join(empty, 'settings.json'),
+        installedPluginsPath: path.join(empty, 'installed_plugins.json'),
+        home: empty,
+      };
+      const report = await runDoctorReport({}, deps);
+      expect(report.error).toBe(`global lexicon missing: ${state.globalPath} (run: lexicon setup)`);
+      expect(report.nextStep).toBe('Run: lexicon setup');
+      expect(JSON.stringify(report)).not.toContain('lexicon init');
+      const mcp = await runDoctorReport({ audience: 'mcp' }, deps);
+      expect(mcp.error).toBe(`global lexicon missing: ${state.globalPath} (call setup_lexicon; it previews first, apply: true once the user confirms)`);
+      expect(mcp.nextStep).toContain('call setup_lexicon');
     });
 
     it('is not ready, and names the install command, when terms exist but nothing is wired up', async () => {
@@ -2108,6 +2239,23 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       expect(JSON.parse(project.stdout)).toEqual({ ok: true, scope: 'project', path: path.join(repo, '.lexicon.yaml'), created: true, trust: 'trusted' });
       // Without --json the text is unchanged.
       expect(lexicon(['init', '--cwd', repo], globalPath).stdout).toBe(`global lexicon already exists: ${globalPath}\n`);
+
+      // Catches: init --project on an existing file that changed since it was
+      // trusted (or was never trusted) said only "already exists", though its
+      // terms are not used until it is trusted.
+      const projectPath = path.join(repo, '.lexicon.yaml');
+      expect(lexicon(['init', '--project', '--cwd', repo], globalPath).stdout).toBe(`project lexicon already exists: ${projectPath}\n`);
+      await fs.appendFile(projectPath, '# hand edit\n');
+      const step = 'it has changed since it was trusted, so its terms are not used; review it and run: lexicon trust';
+      expect(lexicon(['init', '--project', '--cwd', repo], globalPath).stdout).toBe(`project lexicon already exists: ${projectPath}\n${step}\n`);
+      expect(JSON.parse(lexicon(['init', '--project', '--json', '--cwd', repo], globalPath).stdout)).toEqual({
+        ok: true,
+        scope: 'project',
+        path: projectPath,
+        created: false,
+        trust: 'changed',
+        nextStep: step,
+      });
     } finally {
       await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }

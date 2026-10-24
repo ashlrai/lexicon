@@ -31,7 +31,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { diffSummary, loadLexicon, recordHits, resolvePaths, sanitizeForDisplay } from '../core/index.js';
 import type { Lexicon, LoadedLexicon } from '../core/index.js';
-import { PASTE_APPLESCRIPT } from '../daemon/clipboard.js';
+import { PASTE_APPLESCRIPT, emptyLexiconHint } from '../daemon/clipboard.js';
 import { ExecError, detectClipboardBackend } from '../daemon/clipboard-backends.js';
 import type { ClipboardExec } from '../daemon/clipboard-backends.js';
 import { formatDeviceList, listAudioDevices } from './devices.js';
@@ -378,6 +378,11 @@ export async function deliver(
       r.log(`lexicon voice: recordHits: ${message(e)}`);
     });
     r.log(`${result.normalized.replacements.length} correction${result.normalized.replacements.length === 1 ? '' : 's'}: ${diffSummary(result.normalized).replace(/\n/g, '; ')}`);
+  } else {
+    // A first run with no terms printed the raw transcript as if the lexicon
+    // had looked at it and found nothing, naming no way to add a term.
+    const hint = loaded ? emptyLexiconHint(loaded) : undefined;
+    if (hint) r.log(`lexicon voice: nothing was corrected: ${hint}`);
   }
 
   // Under --json the one document waits for the clipboard and paste steps, so

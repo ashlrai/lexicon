@@ -123,12 +123,23 @@ directory instead.
 
 ### Where writing the file is not quite enough
 
-Four clients have a discovery rule this command cannot check for you, so it prints a note after writing. They are not bugs in the config:
+Three clients have a discovery rule this command cannot check for you, so it prints a note after writing. They are not bugs in the config:
 
 - **Codex, `--project`.** A repo-local `.codex/config.toml` is loaded but *disabled* until you mark the project as trusted in Codex. The user-level `~/.codex/config.toml` has no such condition.
 - **VS Code, user scope.** VS Code keeps `mcp.json` per profile. The path above is the default profile of VS Code stable; on a custom profile, Insiders, or with `--user-data-dir`, run **MCP: Open User Configuration** in VS Code and paste the entry there. Workspace scope (`./.vscode/mcp.json`, via `--project`) has no such ambiguity and is the more reliable target.
 - **Gemini CLI.** If your `settings.json` sets `mcp.allowed`, add `"lexicon"` to that list or the server is skipped.
-- **Claude Desktop.** The config is read at launch only: quit the app completely and reopen. The Linux path is best effort (`$XDG_CONFIG_HOME/Claude/`, else `~/.config/Claude/`), because Anthropic documents only the macOS and Windows locations.
+
+Claude Desktop's Linux path is best effort (`$XDG_CONFIG_HOME/Claude/`, else `~/.config/Claude/`), because Anthropic documents only the macOS and Windows locations.
+
+No client starts a server it was not running when its config changed on disk, so after `--apply` the command prints a `then:` line naming the step each one needs (a preview prints it as `after --apply:`) (MCP `install_client` returns the same text as `reload`):
+
+| Client | Step |
+|---|---|
+| Claude Code, Codex, Gemini CLI | Restart it: the config is read when a session starts, so exit a running session and start a new one (`/mcp` then lists `lexicon`) |
+| Claude Desktop | Restart it: quit the app completely and reopen |
+| Cursor | Reload the window (Developer: Reload Window) or restart Cursor, then check `lexicon` is enabled in Cursor Settings > MCP |
+| VS Code | Reload the window (Developer: Reload Window), or start `lexicon` from MCP: List Servers |
+| Windsurf | Press refresh in the Cascade MCP panel, or restart Windsurf |
 
 ### Running without installing anything
 

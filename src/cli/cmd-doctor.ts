@@ -373,7 +373,7 @@ export type DoctorAudience = 'cli' | 'mcp';
 function mcpCommandHint(commands: string): string {
   const install = /^lexicon install (\S+) --apply$/.exec(commands);
   if (install) return `call install_client with client "${install[1]}"; it previews first, apply: true once the user confirms`;
-  if (commands === 'lexicon init') return 'call setup_lexicon; it previews first, apply: true once the user confirms';
+  if (commands === 'lexicon setup' || commands === 'lexicon init') return 'call setup_lexicon; it previews first, apply: true once the user confirms';
   if (commands === 'lexicon trust') return 'call trust_project with action "trust", which asks the user directly';
   const steps = commands.split(/\s*&&\s*/).map((c) => cliCommand(c.replace(/^lexicon /, '')));
   return `ask the user to run ${steps.join(', then ')}`;
@@ -607,7 +607,11 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
       push('ok', `global lexicon parses: ${paths.global} (${plural(g.lexicon.terms.length, 'term')})`);
       files.push(g);
     } else {
-      push('fail', `global lexicon missing: ${paths.global} (run: lexicon init)`);
+      // `lexicon setup`, not `lexicon init`: init creates an empty file and
+      // stops, so a first-time user who followed it was then told the
+      // lexicon has no terms. Setup creates the file, seeds it and wires a
+      // client, and it is the verdict's next step for this state too.
+      push('fail', `global lexicon missing: ${paths.global} (run: lexicon setup)`);
     }
   } catch (err) {
     const error = errorMessage(err);

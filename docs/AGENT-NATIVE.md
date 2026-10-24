@@ -135,7 +135,8 @@ checks, because it did not have to read them.
 `client`: `claude`, `codex`, `cursor`, `windsurf`, `gemini`, `vscode` or
 `claude-desktop`. Without `apply` it returns the file and the entry that
 would be merged and writes nothing. With `apply: true` it writes (idempotent:
-an existing entry is left alone). `scope: 'project'` targets the repo-level
+an existing entry is left alone) and `written` lists each file it touched as
+`{ file, outcome }`, so the agent need not parse `output`. `scope: 'project'` targets the repo-level
 config (`./.cursor/mcp.json`, `claude mcp add --scope project`).
 
 > **Agent:** *calls `install_client { client: "cursor" }`*
@@ -144,7 +145,7 @@ config (`./.cursor/mcp.json`, `claude mcp add --scope project`).
 > Apply it?
 > **User:** yes
 > **Agent:** *calls `install_client { client: "cursor", apply: true }`*
-> Written. Restart Cursor to pick it up.
+> Written. Reload the Cursor window (Developer: Reload Window) to pick it up.
 
 ### `trust_project { action, path? }`
 

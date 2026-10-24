@@ -58013,25 +58013,32 @@ var EXPORTERS = {
   "text": exportText,
   "markdown": exportMarkdown
 };
+var EXPORT_ALIAS_ROW_FORMATS = ["csv", "wispr", "superwhisper", "macos", "espanso"];
+function hasAliasRow(term) {
+  return term.aliases.some((a) => a.trim() !== "");
+}
 function exportLexicon(lexicon, format, opts = {}) {
   const exporter = EXPORTERS[format];
   if (!exporter) {
     throw new Error(`Unknown export format "${format}". Known: ${EXPORT_FORMATS.join(", ")}`);
   }
-  return exporter(applyOptions(lexicon, opts), opts);
+  return exporter(applyOptions(lexicon, opts, format), opts);
 }
-function selectExportTerms(lexicon, opts = {}) {
-  return applyOptions(lexicon, opts).terms;
+function selectExportTerms(lexicon, opts = {}, format) {
+  return applyOptions(lexicon, opts, format).terms;
 }
-function applyOptions(lexicon, opts) {
+function applyOptions(lexicon, opts, format) {
   let terms = lexicon.terms;
   if (opts.categories && opts.categories.length > 0) {
     const allowed = new Set(opts.categories);
     terms = terms.filter((t) => t.category !== void 0 && allowed.has(t.category));
   }
-  if (opts.limit !== void 0 && terms.length > opts.limit) {
-    const keep = new Set(sortByImportance(terms).slice(0, Math.max(0, opts.limit)));
-    terms = terms.filter((t) => keep.has(t));
+  if (opts.limit !== void 0) {
+    const candidates = format !== void 0 && EXPORT_ALIAS_ROW_FORMATS.includes(format) ? terms.filter(hasAliasRow) : terms;
+    if (candidates.length > opts.limit || candidates.length < terms.length) {
+      const keep = new Set(sortByImportance(candidates).slice(0, Math.max(0, opts.limit)));
+      terms = terms.filter((t) => keep.has(t));
+    }
   }
   if (terms === lexicon.terms) return lexicon;
   return { ...lexicon, terms };
@@ -60773,10 +60780,10 @@ var registerTermTools = (server, ctx) => {
     "normalize_transcript",
     {
       title: "Normalize dictated text",
-      description: `Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a real name but not quite ('Ashler', "Cooper Nettie's", 'pie dentic'). One garbled proper noun is reason enough. You do not need the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit counter. Use the \`output\` field as the message you act on, and mention the correction only if it changes what you are about to do. WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. Only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. Returns { output, changed, replacements, summary }; when \`changed\` is false the text was already correct and you should carry on silently, unless the result also carries \`skippedProject\`: then this repo has a project lexicon that is not trusted yet, so tell the user once that ` + cliCommand("trust") + " would enable it.",
+      description: `Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a real name but not quite ('Ashler', "Cooper Nettie's", 'pie dentic'). One garbled proper noun is reason enough. You do not need the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit counter. Use the \`output\` field as the message you act on, and mention the correction only if it changes what you are about to do. WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. Only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. Returns { output, changed, replacements, summary }; when \`changed\` is false the text was already correct and you should carry on silently (except with dryRun: true, where nothing is applied, so \`output\` is the input and \`changed\` is false even when \`replacements\` lists corrections: read \`replacements\` for what a real call would fix), unless the result also carries \`skippedProject\`: then this repo has a project lexicon that is not trusted yet, so tell the user once that ` + cliCommand("trust") + " would enable it.",
       inputSchema: {
         text: external_exports.string().describe("The dictated or transcribed text to correct."),
-        dryRun: external_exports.boolean().optional().describe("When true, report candidate replacements without applying them (output === input)."),
+        dryRun: external_exports.boolean().optional().describe("When true, report candidate replacements without applying them: `output` is the input, `changed` is false even when `replacements` is not empty, and no hit is recorded."),
         minConfidence: external_exports.number().min(0).max(1).optional().describe("Override the minimum confidence (0..1) a fuzzy/phonetic match needs. Exact alias matches are always 1.")
       }
     },
@@ -60827,16 +60834,20 @@ var registerTermTools = (server, ctx) => {
     "add_term",
     {
       title: "Add a lexicon term",
-      description: "Teach the lexicon a name, so dictation is corrected to it from now on. WHEN TO CALL: when the user names something they want spelled a particular way, or during setup for each extra name they give you. For the one specific case of the user correcting a spelling that came out wrong, prefer learn_correction: it finds the right term for you. Do not add a name the user did not ask you to remember. WHAT IT CHANGES: writes one term to the user's lexicon file (global by default, or the repo's .lexicon.yaml with scope: 'project'). It merges rather than clobbers: an existing term with the same canonical keeps its own spelling and only gains the new aliases. A project file that is not trusted yet is written but left untrusted (the result says `trusted: false`): relay `nextStep`, since the term applies only after the user runs " + cliCommand("trust") + ". WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling exactly as the user writes it. Omit `aliases` on a new term and likely STT misspellings are generated for you when any can be found, which beats inventing your own; show the user what was generated so they can veto one, and when the result has no aliases propose some or ask the user. Pass `aliases: []` to add the term with no aliases and none generated. On an existing term, omitted aliases add none, so passing only never, phonetic, category or notes changes just that. When another term already holds one of the aliases, the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term.",
+      description: "Teach the lexicon a name, so dictation is corrected to it from now on. WHEN TO CALL: when the user names something they want spelled a particular way, or during setup for each extra name they give you. For the one specific case of the user correcting a spelling that came out wrong, prefer learn_correction: it finds the right term for you. Do not add a name the user did not ask you to remember. WHAT IT CHANGES: writes one term to the user's lexicon file (global by default, or the repo's .lexicon.yaml with scope: 'project'). It merges rather than clobbers: an existing term with the same canonical keeps its own spelling and only gains the new aliases. A project file that is not trusted yet is written but left untrusted (the result says `trusted: false`): relay `nextStep`, since the term applies only after the user runs " + cliCommand("trust") + ". WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling exactly as the user writes it. Omit `aliases` on a new term and likely STT misspellings are generated for you when any can be found, which beats inventing your own; show the user what was generated so they can veto one, and when the result has no aliases propose some or ask the user. Pass `aliases: []` to add the term with no aliases and none generated. On an existing term, omitted aliases add none, so passing only never, phonetic, category or notes changes just that. When another term already holds one of the aliases, the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term. A field over the lexicon caps given on each argument is an error naming that field, and nothing is written.",
       inputSchema: {
         canonical: external_exports.string().min(1).describe(
           `The correct spelling, exactly as the user wants it written. At most ${LIMITS.word} characters once surrounding whitespace is trimmed (the lexicon file schema's cap, also enforced by the CLI); a longer one is refused and nothing is written.`
         ),
-        aliases: external_exports.array(external_exports.string()).optional().describe("Spellings STT actually produces for this term. Omit to auto-suggest (new terms only; often none are found). An explicit [] adds none and generates none."),
-        phonetic: external_exports.string().optional().describe('Pronunciation hint, e.g. "ASH-ler".'),
+        aliases: external_exports.array(external_exports.string()).optional().describe(
+          `Spellings STT actually produces for this term, each at most ${LIMITS.word} characters; a term holds at most ${LIMITS.aliases}. Omit to auto-suggest (new terms only; often none are found). An explicit [] adds none and generates none.`
+        ),
+        phonetic: external_exports.string().optional().describe(`Pronunciation hint, e.g. "ASH-ler": one line, at most ${LIMITS.text} characters.`),
         category: external_exports.enum(TERM_CATEGORIES).optional(),
-        notes: external_exports.string().optional().describe('Free text shown to agents, e.g. "my company; never write Ashlar".'),
-        never: external_exports.array(external_exports.string()).optional().describe('Ordinary words that must never be rewritten to this term even if they sound alike, e.g. ["sauce"] for SaaS.'),
+        notes: external_exports.string().optional().describe(`Free text shown to agents, e.g. "my company; never write Ashlar": one line, at most ${LIMITS.text} characters.`),
+        never: external_exports.array(external_exports.string()).optional().describe(
+          `Ordinary words that must never be rewritten to this term even if they sound alike, e.g. ["sauce"] for SaaS; each at most ${LIMITS.word} characters, at most ${LIMITS.aliases} per term.`
+        ),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default, ~/.config/lexicon) or 'project' (.lexicon.yaml in the current repo).")
       }
     },
@@ -60880,8 +60891,10 @@ var registerTermTools = (server, ctx) => {
       title: "Remove a lexicon term or one of its aliases",
       description: "Delete a term from the user's lexicon by canonical spelling (case-insensitive), or, with `alias`, drop just that one alias from the term and keep the rest of it. WHEN TO CALL: only when the user asks for a name to be forgotten or for one wrong correction to stop (pass `alias` for that), or after they accepted a 'stale' suggestion from suggest_terms. Never tidy the lexicon on your own initiative. WHAT IT CHANGES: removes that one term (or alias), and the corrections it was making stop happening. Without `alias` it edits one lexicon file; when the term also has a copy in the other file, the result lists it in `stillIn` (each { scope, path }) with a `note`, and that copy keeps correcting until removed with its own scope. When the untrusted project lexicon also has the term (with `alias`: when its copy of the term holds that alias), the result carries `untrustedProject` { path, trust } and a `note`: that file is never edited here, and its copy corrects again once the user trusts it. There is no undo through this server. WHAT IT WILL NOT DO: it does not touch any other term and will not remove a term you cannot name exactly -- use list_terms first if you are unsure which canonical the user means. A term that is not found is not an error (isError stays false, unlike the CLI remove command, which exits 1): check `removed`. The result has `removed: false` and a `note`; when the term lives in the other lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead, otherwise the `note` points at list_terms. With `alias`, an unknown term or an alias the term does not have is an error; when the other lexicon file's copy of the term has that alias, the error names that file and the scope to pass.",
       inputSchema: {
-        canonical: nonBlank(),
-        alias: nonBlank().optional().describe("Remove only this alias (case-insensitive) from the term instead of the whole term."),
+        canonical: nonBlank().describe(
+          'The canonical spelling of the term to remove, as list_terms shows it (case-insensitive), e.g. "Ashlr.AI"; must not be blank. With `alias`, the term that alias is removed from.'
+        ),
+        alias: nonBlank().optional().describe("Remove only this alias (case-insensitive) from the term instead of the whole term; must not be blank."),
         scope: external_exports.enum(TERM_SCOPES).optional().describe(
           "Which lexicon file to remove it from. Omitted: the project file first, then global (with `alias`, every file whose copy of the term has it)."
         )
@@ -60983,7 +60996,10 @@ var registerTermTools = (server, ctx) => {
           project: loaded.project?.lexicon.terms.length ?? 0
         },
         paths: filePathsInUse(loaded),
-        ...skippedProjectFields(loaded)
+        ...skippedProjectFields(loaded),
+        // Why nothing came back, as `lexicon list` says it: no terms at
+        // all, or a filter that matched none of them.
+        ...terms.length > 0 || loaded.skippedProject ? {} : loaded.merged.terms.length === 0 ? { note: "The lexicon has no terms yet; add_term or setup_lexicon adds some." } : { note: `No term matches the ${[...category ? ["category"] : [], ...needle ? ["query"] : []].join(" and ")} given; the lexicon has ${loaded.merged.terms.length} term${loaded.merged.terms.length === 1 ? "" : "s"} in all, which list_terms without ${category && needle ? "them" : "it"} returns.` }
       });
     })
   );
@@ -60995,7 +61011,9 @@ var registerTermTools = (server, ctx) => {
       inputSchema: {
         format: external_exports.enum(EXPORT_FORMAT_NAMES),
         categories: external_exports.array(external_exports.enum(TERM_CATEGORIES)).optional().describe("Only include terms in these categories. Omitted: every category."),
-        limit: external_exports.number().int().positive().optional().describe("Cap the number of terms exported, applied after `categories`; the most-used terms are kept. Omitted: every term.")
+        limit: external_exports.number().int().positive().optional().describe(
+          `Cap the number of terms exported, applied after \`categories\`: up to this many terms are kept, in this order: the most hits first; at equal hits (every term starts at 0) brand, person and product terms first; then canonical A to Z. The formats that write one row per alias (${EXPORT_ALIAS_ROW_FORMATS.join(", ")}) count only terms that have an alias, since a term without one writes no row. Omitted: every term.`
+        )
       }
     },
     async ({ format, categories, limit }) => guarded(async () => {
@@ -61012,6 +61030,8 @@ var registerTermTools = (server, ctx) => {
         notes.push("The lexicon has no terms yet, so the export is empty; add_term or setup_lexicon adds some.");
       } else if (selectExportTerms(loaded.merged, opts).length === 0) {
         notes.push(`No term matched categories ${JSON.stringify(categories ?? [])}, so the export is empty; list_terms shows each term's category.`);
+      } else if (EXPORT_ALIAS_ROW_FORMATS.includes(resolved2) && !selectExportTerms(loaded.merged, opts, resolved2).some((t) => t.aliases.some((a) => a.trim() !== ""))) {
+        notes.push(`No exported term has an alias, and ${resolved2} writes one row per alias, so the export has no rows; add_term with aliases adds some.`);
       }
       const skipped = skippedProjectFields(loaded, "Its terms are not in this export.").note;
       if (skipped) notes.push(skipped);
@@ -61020,14 +61040,17 @@ var registerTermTools = (server, ctx) => {
       return result;
     })
   );
+  const oneSpellingError = (missing) => (iss) => iss.input === void 0 ? `${missing} is missing: only one spelling was given; learn_correction needs heard (the spelling STT wrote) and meant (the one the user meant), so nothing was learned` : void 0;
   server.registerTool(
     "learn_correction",
     {
       title: "Learn from a spelling correction",
       description: 'Record that the user corrected a spelling: they meant `meant`, but the transcript or you wrote `heard`. WHEN TO CALL: the moment the user corrects a name -- "it\'s Ashlr.AI not Ashler", "I said Hetzner", or they simply retype a name you got wrong. Call it while you reply. Do not ask permission for this one: it is the user\'s own correction being written down, and asking every time is the irritating version of this product. WHAT IT CHANGES: adds `heard` as an alias of `meant`, creating the term if it is new (a new term also gets generated STT misspellings; the result\'s `term.aliases` lists them, so tell the user). A case-only correction ("ashlr" should be "Ashlr") adds no alias: it recases the term\'s canonical, or creates the term spelled that way. One term; nothing else is touched. With scope project and a project file that is not trusted yet, the file is written but left untrusted (`trusted: false`): relay `nextStep`. WHAT IT WILL NOT DO: it does not rewrite the message you already sent, and it cannot help if you hand it a whole phrase -- pass only the misspelled name as `heard`, not the sentence around it, and it never edits another term: when one already claims `heard` the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call; when an untrusted project lexicon also claims it, `untrustedProject` { path, trust } (path only, never its contents). Then get on with what the user actually asked for.',
       inputSchema: {
-        heard: external_exports.string().min(1).describe(`The wrong form that was written, e.g. "Ashler": only the name, at most ${MAX_CORRECTION_LENGTH} characters.`),
-        meant: external_exports.string().min(1).describe(`The spelling the user wants, e.g. "Ashlr.AI", at most ${MAX_CORRECTION_LENGTH} characters.`),
+        // nonBlank's check: `.min(1)` let "  " through to the handler, whose
+        // refusal did not name the argument.
+        heard: external_exports.string({ error: oneSpellingError("heard") }).min(1).regex(/\S/, "must not be blank").describe(`The wrong form that was written, e.g. "Ashler": only the name, at most ${MAX_CORRECTION_LENGTH} characters; must not be blank.`),
+        meant: external_exports.string({ error: oneSpellingError("meant") }).min(1).regex(/\S/, "must not be blank").describe(`The spelling the user wants, e.g. "Ashlr.AI", at most ${MAX_CORRECTION_LENGTH} characters; must not be blank.`),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default; or wherever the term already lives) or 'project' (.lexicon.yaml in the current repo).")
       }
     },
@@ -61068,7 +61091,7 @@ var registerTermTools = (server, ctx) => {
     "suggest_canonical",
     {
       title: "Suggest the canonical form of a garbled word",
-      description: 'Look up what a garbled word was probably meant to be. WHEN TO CALL: when normalize_transcript left a suspicious proper noun alone. It only matches above a confidence threshold, so a badly mangled name gets through unchanged; call this before guessing, and before asking the user an open question. WHAT IT CHANGES: nothing. It only reads the lexicon. WHAT IT WILL NOT DO: it will not decide for you. It returns ranked { canonical, confidence, aliases } candidates: above about 0.8 use the canonical and mention it in passing, below that ask "did you mean X?" and call learn_correction once the user confirms, so the next transcript needs no asking. No suggestions means the name is simply not in the lexicon yet: offer to add it with add_term, unless the result carries `skippedProject`: then the name may be in the untrusted project lexicon, so tell the user ' + cliCommand("trust") + " would enable it.",
+      description: 'Look up what a garbled word was probably meant to be. WHEN TO CALL: when normalize_transcript left a suspicious proper noun alone. It only matches above a confidence threshold, so a badly mangled name gets through unchanged; call this before guessing, and before asking the user an open question. WHAT IT CHANGES: nothing. It only reads the lexicon. WHAT IT WILL NOT DO: it will not decide for you. It returns { heard, suggestions }: `suggestions` holds at most 3 candidates scoring 0.6 or more, best first, each { canonical, confidence, aliases, category? }: above about 0.8 use the canonical and mention it in passing, below that ask "did you mean X?" and call learn_correction once the user confirms, so the next transcript needs no asking. An empty `suggestions` means the name is simply not in the lexicon yet: offer to add it with add_term, unless the result carries `skippedProject`: then the name may be in the untrusted project lexicon, so tell the user ' + cliCommand("trust") + " would enable it.",
       inputSchema: {
         heard: nonBlank().describe(
           `The suspicious word or phrase as it appeared in the transcript, at most ${MAX_CORRECTION_LENGTH} characters.`
@@ -61095,12 +61118,13 @@ var registerTermTools = (server, ctx) => {
     "lexicon_stats",
     {
       title: "Lexicon usage statistics",
-      description: "Counts of terms and aliases, total hits, the most-used terms, terms that never fired, and a per-file breakdown of the merged lexicon. `neverHit` lists at most the first 20 terms that never fired; `neverHitCount` is how many there are in all. An untrusted project .lexicon.yaml is not counted; when one was skipped, `skippedProject` and `note` say so (path only).",
+      description: "Counts of terms and aliases, total hits, the most-used terms, terms that never fired, and a per-file breakdown of the merged lexicon. `neverHit` lists at most the first 20 terms that never fired; `neverHitCount` is how many there are in all. An untrusted project .lexicon.yaml is not counted; when one was skipped, `skippedProject` and `note` say so (path only). With no terms at all, `note` says so and names setup_lexicon and add_term.",
       inputSchema: {}
     },
     async () => guarded(async () => {
       const loaded = await load({ parseSkipped: false });
-      return textResult({ ...computeStats(loaded), ...skippedProjectFields(loaded) });
+      const empty = loaded.merged.terms.length === 0 && !loaded.skippedProject ? { note: "The lexicon has no terms yet, so nothing is corrected or counted; setup_lexicon or add_term adds some." } : {};
+      return textResult({ ...computeStats(loaded), ...skippedProjectFields(loaded), ...empty });
     })
   );
 };
@@ -62152,10 +62176,27 @@ function clientCaveat(client, project) {
   if (client === "gemini") {
     return 'If your settings.json sets mcp.allowed, add "lexicon" to that list or Gemini CLI will skip this server.';
   }
-  if (client === "claude-desktop") {
-    return "Claude Desktop reads this only at launch: quit it completely and reopen.";
-  }
   return void 0;
+}
+function reloadStepFor(client) {
+  switch (client) {
+    case "claude":
+      return "restart Claude Code: a running session keeps the MCP servers and hooks it started with, so exit it and start a new one (/mcp then lists lexicon).";
+    case "codex":
+      return "restart Codex: it reads config.toml when a session starts, so exit any running codex session and start a new one (/mcp then lists lexicon).";
+    case "cursor":
+      return "reload the Cursor window (Command Palette: Developer: Reload Window) or restart Cursor, then check that lexicon is enabled in Cursor Settings > MCP.";
+    case "windsurf":
+      return "refresh the MCP servers in Windsurf (the refresh button in the Cascade MCP panel) or restart Windsurf.";
+    case "gemini":
+      return "restart Gemini CLI: it reads settings.json when it starts, so exit any running gemini session and start a new one (/mcp then lists lexicon).";
+    case "claude-desktop":
+      return "restart Claude Desktop: it reads this only at launch, so quit it completely (not just the window) and reopen it.";
+    case "vscode":
+      return "reload the VS Code window (Command Palette: Developer: Reload Window), or start lexicon from MCP: List Servers.";
+    default:
+      return void 0;
+  }
 }
 function labelFor(client) {
   switch (client) {
@@ -62327,6 +62368,22 @@ async function applyToml(target) {
 function jsonSnippet(key, entry) {
   return JSON.stringify({ [key]: { lexicon: entry } }, null, 2);
 }
+function shellWord2(s) {
+  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+}
+function installApplyCommand(client, opts) {
+  const words = ["lexicon"];
+  if (opts.cwd !== void 0 && import_node_path20.default.resolve(opts.cwd) !== process.cwd()) words.push("--cwd", opts.cwd);
+  words.push("install", client);
+  if (opts.scope !== void 0) words.push("--scope", opts.scope);
+  else if (opts.project) words.push("--project");
+  if (opts.home) words.push("--home", opts.home);
+  words.push("--apply");
+  return safe(words.map(shellWord2).join(" "));
+}
+function undoEntry(target) {
+  return target.format === "toml" ? `delete the [${CODEX_TABLE}] table from ${safe(target.file)}` : `delete the "lexicon" entry under "${target.key}" in ${safe(target.file)}`;
+}
 function printExportHint(io, step, client) {
   line(io, bold(`${step}. Give ${labelFor(client)} the vocabulary`));
   line(io, `   lexicon export claude-md >> ${rulesFileFor(client)}`);
@@ -62430,7 +62487,7 @@ async function installText(client, opts, io, deps) {
       ...deps.exec ? { exec: deps.exec } : {},
       env
     };
-    return runInstallClaude({ ...claudeOpts, cwd }, io, claudeDeps);
+    return runInstallClaude({ ...claudeOpts, cwd, applyCommand: installApplyCommand("claude", opts) }, io, claudeDeps);
   }
   const target = targetFor(name, serverPath, { home, cwd, platform, env, project });
   const body = target.format === "toml" ? codexBlock(target.entry) : jsonSnippet(target.key, target.entry);
@@ -62445,14 +62502,17 @@ async function installText(client, opts, io, deps) {
     } else {
       line(io, green(`   ${outcome} ${safe(target.file)}: ${target.format === "toml" ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
     }
+    line(io, dim(`   undo: ${undoEntry(target)}`));
   }
   const caveat = clientCaveat(name, project);
   if (caveat !== void 0) line(io, dim(`   note: ${caveat}`));
+  const reload = reloadStepFor(name);
+  if (reload !== void 0) line(io, opts.apply ? `   then: ${reload}` : dim(`   after --apply: ${reload}`));
   line(io);
   printExportHint(io, 2, name);
   if (!opts.apply) {
     line(io);
-    line(io, dim("run again with --apply to write step 1"));
+    line(io, dim(`to write step 1, run: ${installApplyCommand(name, opts)}`));
   }
   return 0;
 }
@@ -62499,10 +62559,12 @@ async function runInstallClaude(opts, io, deps = {}) {
     try {
       const out = exec("claude", mcpArgs).trim();
       line(io, green(`   ${out || "registered"}`));
+      line(io, dim(`   undo: claude mcp remove --scope ${scope} lexicon`));
     } catch (err) {
       const message = errorMessage(err);
       if (/already exists/i.test(message)) {
         line(io, dim("   already registered with claude, nothing changed"));
+        line(io, dim(`   undo: claude mcp remove --scope ${scope} lexicon`));
       } else {
         failed = true;
         line(io, red(`   failed: ${safeLines(message)}`));
@@ -62535,13 +62597,21 @@ async function runInstallClaude(opts, io, deps = {}) {
       line(io, dim(`   ${safe(settingsPath)}: hooks already present, nothing changed`));
       deps.onWritten?.(settingsPath, "unchanged");
     }
+    line(io, dim(`   undo: delete the lexicon hook entries under ${HOOK_EVENTS.map((e) => `hooks.${e}`).join(" and ")} in ${safe(settingsPath)}`));
   }
   line(io);
   line(io, bold("3. Add to your CLAUDE.md"));
   line(io, `   ${CLAUDE_MD_SNIPPET}`);
+  if (opts.apply && !failed) {
+    line(io);
+    line(io, `then: ${reloadStepFor("claude")}`);
+  } else if (!opts.apply) {
+    line(io, dim(`   after --apply: ${reloadStepFor("claude")}`));
+  }
   if (!opts.apply) {
     line(io);
-    line(io, dim("run again with --apply to perform steps 1 and 2"));
+    const command = opts.applyCommand ?? `lexicon install claude${scope === "project" ? " --scope project" : ""} --apply`;
+    line(io, dim(`to perform steps 1 and 2, run: ${command}`));
   }
   return failed ? 1 : 0;
 }
@@ -62841,7 +62911,7 @@ function editCommand(scope) {
 function mcpCommandHint(commands) {
   const install = /^lexicon install (\S+) --apply$/.exec(commands);
   if (install) return `call install_client with client "${install[1]}"; it previews first, apply: true once the user confirms`;
-  if (commands === "lexicon init") return "call setup_lexicon; it previews first, apply: true once the user confirms";
+  if (commands === "lexicon setup" || commands === "lexicon init") return "call setup_lexicon; it previews first, apply: true once the user confirms";
   if (commands === "lexicon trust") return 'call trust_project with action "trust", which asks the user directly';
   const steps = commands.split(/\s*&&\s*/).map((c) => cliCommand(c.replace(/^lexicon /, "")));
   return `ask the user to run ${steps.join(", then ")}`;
@@ -62946,7 +63016,7 @@ async function runDoctorReport(opts, deps = {}) {
       push2("ok", `global lexicon parses: ${paths.global} (${plural2(g.lexicon.terms.length, "term")})`);
       files.push(g);
     } else {
-      push2("fail", `global lexicon missing: ${paths.global} (run: lexicon init)`);
+      push2("fail", `global lexicon missing: ${paths.global} (run: lexicon setup)`);
     }
   } catch (err) {
     const error62 = errorMessage(err);
@@ -63303,13 +63373,18 @@ async function runInit(opts, io) {
   const target = opts.project ? paths.project ?? import_node_path23.default.join(findGitRoot2(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
   const created = await createLexiconFile(target, scope);
   if (created && scope === "project") await trustProject(target, { cwd });
+  const trust = scope === "project" ? await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) : void 0;
+  const untrustedStep = trust !== void 0 && trust !== "trusted" ? `${trust === "changed" ? "it has changed since it was trusted" : "it is not trusted yet"}, so its terms are not used; review it and run: lexicon trust` : void 0;
   if (opts.json) {
-    const trust = scope === "project" ? { trust: await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) } : {};
-    line(io, JSON.stringify(jsonOk({ scope, path: target, created, ...trust }), null, 2));
+    line(
+      io,
+      JSON.stringify(jsonOk({ scope, path: target, created, ...trust !== void 0 ? { trust } : {}, ...untrustedStep ? { nextStep: untrustedStep } : {} }), null, 2)
+    );
     return 0;
   }
   if (!created) {
     line(io, `${scope} lexicon already exists: ${safe(target)}`);
+    if (untrustedStep) line(io, dim(untrustedStep));
     return 0;
   }
   line(io, `created ${scope} lexicon: ${safe(target)}`);
@@ -63366,6 +63441,20 @@ function captureIO() {
 function lastLine(text) {
   const lines = text.split("\n").map((l) => l.replace(/\x1b\[[0-9;]*m/g, "").trim()).filter(Boolean);
   return lines[lines.length - 1] ?? "";
+}
+function setupNameProblem(value) {
+  const name = stripInvisible(value).trim();
+  if (name === "") return "must not be blank";
+  if (hasControlChars(name)) return "must be one line, with no control characters";
+  if (name.length > LIMITS.word) return `must be at most ${LIMITS.word} characters (it has ${name.length})`;
+  return void 0;
+}
+function setupHintProblem(value) {
+  const hint = stripInvisible(value).trim();
+  if (hint === "") return void 0;
+  if (hasControlChars(hint)) return "must be one line, with no control characters";
+  if (hint.length > LIMITS.text) return `must be at most ${LIMITS.text} characters (it has ${hint.length})`;
+  return void 0;
 }
 function isSetupClient(value) {
   return SETUP_CLIENTS.includes(value);
@@ -63976,6 +64065,18 @@ async function seedTerm(ctx, term) {
 function gitUserName(ctx) {
   return tryExec2(ctx.exec, "git", ["config", "--global", "user.name"]) ?? tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "config", "user.name"]) ?? (ctx.env.GIT_AUTHOR_NAME?.trim() || ctx.env.GIT_COMMITTER_NAME?.trim() || void 0);
 }
+async function askChecked(ctx, question, def, what, problem) {
+  const prompter = ctx.prompter;
+  let fallback = def;
+  for (; ; ) {
+    const answer = (await prompter.ask(question, { default: fallback })).trim();
+    if (answer === "") return "";
+    const wrong = problem(answer);
+    if (wrong === void 0) return answer;
+    ctx.say(`   the ${what} ${wrong}; type it again (Enter to skip)`);
+    fallback = "";
+  }
+}
 async function stepLexicon(ctx) {
   stepHeading(ctx, 1, "Global lexicon");
   const global = resolvePaths({ cwd: ctx.cwd }).global;
@@ -64038,9 +64139,13 @@ async function stepLexicon(ctx) {
   let company = ctx.opts.company ?? (ctx.prompter ? void 0 : suggestion);
   let phonetic = ctx.opts.phonetic;
   if (ctx.prompter && !ctx.opts.company && !gated) {
-    company = (await ctx.prompter.ask("   Your company or product name (as you want it spelled; Enter to skip)", {
-      default: suggestion ?? ""
-    })).trim();
+    company = await askChecked(
+      ctx,
+      "   Your company or product name (as you want it spelled; Enter to skip)",
+      suggestion ?? "",
+      "name",
+      setupNameProblem
+    );
   }
   if (!company) {
     if (!gated) ctx.say(dim('   no company term (add one later: lexicon add "Your Co" --category brand)'));
@@ -64050,7 +64155,7 @@ async function stepLexicon(ctx) {
   if (ctx.prompter) {
     if (aliases.length > 0) ctx.say(dim(`   STT will likely write: ${safe(aliases.join(", "))}`));
     if (!phonetic) {
-      phonetic = (await ctx.prompter.ask("   phonetic hint (e.g. ASH-ler, Enter for none)", { default: "" })).trim() || void 0;
+      phonetic = await askChecked(ctx, "   phonetic hint (e.g. ASH-ler, Enter for none)", "", "hint", setupHintProblem) || void 0;
     }
   }
   const term = { canonical: company, aliases, category: "brand", source: "user" };
@@ -64058,9 +64163,9 @@ async function stepLexicon(ctx) {
   await seedTerm(ctx, term);
   ctx.company = company;
   while (ctx.prompter && !gated && await ctx.prompter.confirm("   add another term?", false)) {
-    const name = (await ctx.prompter.ask("   name (as you want it spelled; Enter to stop)", { default: "" })).trim();
+    const name = await askChecked(ctx, "   name (as you want it spelled; Enter to stop)", "", "name", setupNameProblem);
     if (!name) break;
-    const hint = (await ctx.prompter.ask("   phonetic hint (Enter for none)", { default: "" })).trim();
+    const hint = await askChecked(ctx, "   phonetic hint (Enter for none)", "", "hint", setupHintProblem);
     const categoryAnswer = (await ctx.prompter.ask("   category (brand|person|product|acronym|identifier|place|other)", { default: "brand" })).trim().toLowerCase();
     const category = ["brand", "person", "product", "acronym", "identifier", "place", "other"].find(
       (c) => c === categoryAnswer
@@ -64493,7 +64598,29 @@ function printPlan(ctx, p) {
     asks("export") ? `   dictation export: ${dim("asks")} which app, and Enter writes ${exports}` : `   would export: ${p.wouldExport.length > 0 ? exports : dim("nothing (--app <app> writes one)")}`
   );
   ctx.say();
-  ctx.say(dim("   run again without --dry-run to apply."));
+  ctx.say(dim(`   to apply, run: ${setupApplyCommand(ctx.opts)}`));
+}
+function setupApplyCommand(opts) {
+  const words = ["lexicon"];
+  if (opts.cwd !== void 0 && import_node_path28.default.resolve(opts.cwd) !== process.cwd()) words.push("--cwd", opts.cwd);
+  words.push("setup");
+  if (opts.yes) words.push("--yes");
+  if (opts.clients !== void 0) words.push("--clients", opts.clients);
+  if (opts.company !== void 0) words.push("--company", opts.company);
+  if (opts.person !== void 0) words.push("--person", opts.person);
+  if (opts.phonetic !== void 0) words.push("--phonetic", opts.phonetic);
+  if (opts.app !== void 0) words.push("--app", opts.app);
+  if (opts.exportDir !== void 0) words.push("--export-dir", opts.exportDir);
+  if (typeof opts.packs === "string") words.push("--packs", opts.packs);
+  else if (opts.packs === false) words.push("--no-packs");
+  if (opts.harvest === true) words.push("--harvest");
+  else if (opts.harvest === false) words.push("--no-harvest");
+  if (opts.serve === true) words.push("--serve");
+  else if (opts.serve === false) words.push("--no-serve");
+  if (opts.reseed) words.push("--reseed");
+  if (opts.home) words.push("--home", opts.home);
+  if (opts.json) words.push("--json");
+  return safe(words.map(shellWord2).join(" "));
 }
 function printNext(ctx) {
   const s = ctx.summary;
@@ -64533,6 +64660,16 @@ async function runSetup(opts, io, deps = {}) {
   const cwd = import_node_path28.default.resolve(opts.cwd ?? process.cwd());
   const home = opts.home ? import_node_path28.default.resolve(opts.home) : deps.home ?? import_node_os11.default.homedir();
   if (opts.clients !== void 0) parseClientList(opts.clients);
+  for (const [flag, value] of [["--company", opts.company], ["--person", opts.person]]) {
+    const problem = value === void 0 ? void 0 : setupNameProblem(value);
+    if (problem !== void 0) {
+      throw new Error(`${flag} ${problem}; nothing was written. Pass only the name, spelled as you want it written, or leave ${flag} out.`);
+    }
+  }
+  const hintProblem = opts.phonetic === void 0 ? void 0 : setupHintProblem(opts.phonetic);
+  if (hintProblem !== void 0) {
+    throw new Error(`--phonetic ${hintProblem}; nothing was written. Pass only the pronunciation hint, e.g. ASH-ler, or leave --phonetic out.`);
+  }
   if (opts.app !== void 0 && !isSetupApp(opts.app.trim().toLowerCase())) {
     throw new Error(`unknown app "${opts.app}" (expected one of: ${SETUP_APPS.join(", ")})`);
   }
@@ -64636,7 +64773,7 @@ var registerSetupTools = (server, ctx) => {
     "install_client",
     {
       title: "Register the lexicon MCP server in an agent client",
-      description: "Register the lexicon MCP server (and, for Claude Code, its hooks) in an agent client's config: claude, codex, cursor, windsurf, gemini, vscode or claude-desktop. Call with apply omitted (or false) first: that is a preview that returns the exact file and entry that would change and writes nothing. Show the preview to the user and call again with apply: true only after they confirm. Idempotent: an entry that is already present is left alone. Check `ok`: false means the preview or install did not complete (`output` and `stderr` say which step failed, and `nextStep` what to do), so do not report it as installed or call again with apply: true. windsurf and claude-desktop have no project-level config: scope 'project' with them is an error that says to call again without scope.",
+      description: "Register the lexicon MCP server (and, for Claude Code, its hooks) in an agent client's config: claude, codex, cursor, windsurf, gemini, vscode or claude-desktop. Call with apply omitted (or false) first: that is a preview that returns the exact file and entry that would change and writes nothing. Show the preview to the user and call again with apply: true only after they confirm. Idempotent: an entry that is already present is left alone. Returns { client, scope, applied, ok, written, output, reload?, stderr?, next?, nextStep? }: `reload` is what the user must do so the client loads the server (restart it, or reload its window), to relay after an apply; `written` lists each config file the call touched as { file, outcome } with outcome created, updated or unchanged (empty for a preview), the same list the CLI install command prints with --json, so read it instead of parsing `output`. Check `ok`: false means the preview or install did not complete (`output` and `stderr` say which step failed, and `nextStep` what to do), so do not report it as installed or call again with apply: true. windsurf and claude-desktop have no project-level config: scope 'project' with them is an error that says to call again without scope.",
       inputSchema: {
         client: external_exports.enum(INSTALL_CLIENT_VALUES).describe("Which client to configure."),
         apply: external_exports.boolean().optional().describe("false/omitted = preview only (default). true = write the config after the user confirmed."),
@@ -64646,13 +64783,17 @@ var registerSetupTools = (server, ctx) => {
     async ({ client, apply, scope }) => guarded(async () => {
       const io = bufferIO();
       const cliDir = cliDirForInstall();
+      const written = [];
+      const onWritten = (file2, outcome) => {
+        written.push({ file: file2, outcome });
+      };
       let code;
       try {
         code = await runInstall(
           client,
           { cwd: ctx.cwd, apply: apply === true, ...scope !== void 0 ? { scope } : {} },
           io,
-          cliDir !== void 0 ? { cliDir } : {}
+          { ...cliDir !== void 0 ? { cliDir } : {}, onWritten }
         );
       } catch (err) {
         if (scope === "project" && /has no project-level MCP config/.test(errorMessage(err))) {
@@ -64667,9 +64808,12 @@ var registerSetupTools = (server, ctx) => {
         scope: scope ?? "user",
         applied: apply === true,
         ok,
+        written,
         output: io.out().trimEnd(),
         ...stderr ? { stderr } : {},
         // A failed preview is not one to confirm: `next` said to apply it anyway.
+        // What the user does so the client loads the server (also the output's `then:` line).
+        ...ok ? { reload: reloadStepFor(client) } : {},
         ...!ok ? { nextStep: `The ${apply === true ? "install" : "preview"} did not complete; output and stderr say which step failed. Tell the user what failed and do not call again with apply: true until it is fixed.` } : apply === true ? {} : { next: "Show this to the user; call again with apply: true once they confirm." }
       });
     })
@@ -64680,8 +64824,8 @@ var registerSetupTools = (server, ctx) => {
       title: "One-shot onboarding (preview, then apply)",
       description: "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, packsOnOffer, packsToInstall, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, serveBlocked?, wouldExport } and is computed without writing anything; serveBlocked (with serve: true) says why the login service would be refused and how to fix it, so relay it instead of offering the service. It writes the global lexicon and each named client's config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), does not install starter packs unless packs: [...] names them (packsOnOffer, the same list as wouldInstallPacks, is the default set to offer, not what will be installed; packsToInstall is what this call would install, empty until packs names some; list_packs describes each), does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. Runs non-interactively and returns { ok, applied: true, summary, nextStep? }; tell the user what was installed and where the lexicon lives, and relay nextStep (a harvested project file that was not trusted already is left untrusted for the user to review).",
       inputSchema: {
-        company: external_exports.string().optional().describe("Company or product name, spelled exactly as it should appear."),
-        person: external_exports.string().optional().describe("The user's own name as they write it."),
+        company: external_exports.string().optional().describe(`Company or product name, spelled exactly as it should appear: one name of at most ${LIMITS.word} characters once trimmed, on one line (the lexicon's cap for a term). A longer, blank or multi-line one is refused, in the preview too, and nothing is written.`),
+        person: external_exports.string().optional().describe(`The user's own name as they write it: at most ${LIMITS.word} characters once trimmed, on one line. A longer, blank or multi-line one is refused, in the preview too, and nothing is written.`),
         clients: external_exports.array(external_exports.enum(INSTALL_CLIENT_VALUES)).optional().describe("Agent clients to register the server in, exactly as the user agreed. Omitted or empty = none (the plan lists the detected ones so you can ask)."),
         packs: external_exports.array(external_exports.string().regex(/^[a-z0-9-]+$/)).optional().describe("Starter packs to install into the global lexicon (developer, ai, business, voice-tools), exactly as the user agreed. Omitted or empty = none (the plan lists the defaults in packsOnOffer so you can ask)."),
         harvest: external_exports.boolean().optional().describe("true = also add the repo names in wouldHarvest to the project .lexicon.yaml; a file the user already trusted stays trusted, any other is left untrusted until the user trusts it (relay `nextStep`). Only after the user agreed; omitted = not harvested."),
@@ -64690,6 +64834,12 @@ var registerSetupTools = (server, ctx) => {
       }
     },
     async ({ company, person, clients, packs, harvest, serve, apply }) => guarded(async () => {
+      for (const [field, value] of [["company", company], ["person", person]]) {
+        const problem = value === void 0 ? void 0 : setupNameProblem(value);
+        if (problem !== void 0) {
+          throw new Error(`${field} ${problem}; nothing was written. Pass only the name, spelled as the user writes it, or omit ${field}.`);
+        }
+      }
       const io = bufferIO();
       const cliDir = cliDirForInstall();
       const applied = apply === true;

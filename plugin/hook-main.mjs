@@ -20603,22 +20603,29 @@ var EXPORTERS = {
   "text": exportText,
   "markdown": exportMarkdown
 };
+var EXPORT_ALIAS_ROW_FORMATS = ["csv", "wispr", "superwhisper", "macos", "espanso"];
+function hasAliasRow(term) {
+  return term.aliases.some((a) => a.trim() !== "");
+}
 function exportLexicon(lexicon, format, opts = {}) {
   const exporter = EXPORTERS[format];
   if (!exporter) {
     throw new Error(`Unknown export format "${format}". Known: ${EXPORT_FORMATS.join(", ")}`);
   }
-  return exporter(applyOptions(lexicon, opts), opts);
+  return exporter(applyOptions(lexicon, opts, format), opts);
 }
-function applyOptions(lexicon, opts) {
+function applyOptions(lexicon, opts, format) {
   let terms = lexicon.terms;
   if (opts.categories && opts.categories.length > 0) {
     const allowed = new Set(opts.categories);
     terms = terms.filter((t) => t.category !== void 0 && allowed.has(t.category));
   }
-  if (opts.limit !== void 0 && terms.length > opts.limit) {
-    const keep = new Set(sortByImportance(terms).slice(0, Math.max(0, opts.limit)));
-    terms = terms.filter((t) => keep.has(t));
+  if (opts.limit !== void 0) {
+    const candidates = format !== void 0 && EXPORT_ALIAS_ROW_FORMATS.includes(format) ? terms.filter(hasAliasRow) : terms;
+    if (candidates.length > opts.limit || candidates.length < terms.length) {
+      const keep = new Set(sortByImportance(candidates).slice(0, Math.max(0, opts.limit)));
+      terms = terms.filter((t) => keep.has(t));
+    }
   }
   if (terms === lexicon.terms) return lexicon;
   return { ...lexicon, terms };
