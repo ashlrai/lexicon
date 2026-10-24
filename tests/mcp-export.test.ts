@@ -91,6 +91,46 @@ describe('export_lexicon notes', () => {
     expect(result.blocks[1]).toContain('list_terms');
   });
 
+  // Catches: `limit: 1` with `format: 'csv'` returned only the header row and no
+  // note when every term had 0 hits: the cap took an alias-less term first.
+  it('limit returns up to N terms that have rows, and a note when no exported term has an alias', async () => {
+    const file = path.join(home, 'limit.yaml');
+    await fs.writeFile(
+      file,
+      'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: []\n    category: brand\n  - canonical: Lexicon\n    aliases: [Lexicun]\n    category: product\n',
+      'utf8',
+    );
+    const saved = process.env.LEXICON_PATH;
+    process.env.LEXICON_PATH = file;
+    try {
+      const one = await callExportBlocks({ format: 'csv', limit: 1 });
+      expect(one.blocks).toEqual(['canonical,alias,category,phonetic\nLexicon,Lexicun,product,\n']);
+      await fs.writeFile(file, 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: []\n', 'utf8');
+      const none = await callExportBlocks({ format: 'csv', limit: 1 });
+      expect(none.blocks[0]).toBe('canonical,alias,category,phonetic\n');
+      expect(none.blocks[1]).toMatch(/^Note \(not part of the export\): No exported term has an alias, and csv writes one row per alias/);
+    } finally {
+      process.env.LEXICON_PATH = saved;
+    }
+  });
+
+  it('describes the order limit keeps terms in', async () => {
+    const server = createServer({ cwd: home });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const { tools } = await client.listTools();
+      const props = tools.find((t) => t.name === 'export_lexicon')?.inputSchema.properties as Record<string, { description?: string }>;
+      expect(props.limit?.description).toContain('the most hits first; at equal hits (every term starts at 0) brand, person and product terms first; then canonical A to Z');
+      expect(props.limit?.description).toContain('count only terms that have an alias');
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
   it('names a skipped untrusted project lexicon in a second block, leaving the export as is', async () => {
     const repo = path.join(home, 'repo');
     await fs.mkdir(path.join(repo, '.git'), { recursive: true });

@@ -22,6 +22,7 @@ import {
   removeTerm,
   resolveExportFormat,
   selectExportTerms,
+  EXPORT_ALIAS_ROW_FORMATS,
   conflictNote,
   unchangedTermNote,
   spellingConflicts,
@@ -502,7 +503,15 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
       inputSchema: {
         format: z.enum(EXPORT_FORMAT_NAMES),
         categories: z.array(z.enum(TERM_CATEGORIES)).optional().describe('Only include terms in these categories. Omitted: every category.'),
-        limit: z.number().int().positive().optional().describe('Cap the number of terms exported, applied after `categories`; the most-used terms are kept. Omitted: every term.'),
+        limit: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe(
+            `Cap the number of terms exported, applied after \`categories\`: up to this many terms are kept, in this order: the most hits first; at equal hits (every term starts at 0) brand, person and product terms first; then canonical A to Z. ` +
+              `The formats that write one row per alias (${EXPORT_ALIAS_ROW_FORMATS.join(', ')}) count only terms that have an alias, since a term without one writes no row. Omitted: every term.`,
+          ),
       },
     },
     async ({ format, categories, limit }) =>
@@ -525,6 +534,11 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           notes.push('The lexicon has no terms yet, so the export is empty; add_term or setup_lexicon adds some.');
         } else if (selectExportTerms(loaded.merged, opts).length === 0) {
           notes.push(`No term matched categories ${JSON.stringify(categories ?? [])}, so the export is empty; list_terms shows each term's category.`);
+        } else if (
+          EXPORT_ALIAS_ROW_FORMATS.includes(resolved) &&
+          !selectExportTerms(loaded.merged, opts, resolved).some((t) => t.aliases.some((a) => a.trim() !== ''))
+        ) {
+          notes.push(`No exported term has an alias, and ${resolved} writes one row per alias, so the export has no rows; add_term with aliases adds some.`);
         }
         const skipped = skippedProjectFields(loaded, 'Its terms are not in this export.').note;
         if (skipped) notes.push(skipped);

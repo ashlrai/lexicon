@@ -1113,7 +1113,7 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
   const { merged } = loaded;
   const text = ensureNewline(exportLexicon(merged, format, exportOpts));
   // The terms actually exported: the same category filter and cap exportLexicon applies.
-  const terms = selectExportTerms(merged, exportOpts).length;
+  const terms = selectExportTerms(merged, exportOpts, format).length;
   const bytes = Buffer.byteLength(text, 'utf8');
   // An empty export read as a complete one: no word on stderr or under --json,
   // where MCP export_lexicon says why in a note. stderr only, as above.

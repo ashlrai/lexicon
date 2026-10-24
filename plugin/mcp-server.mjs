@@ -58013,25 +58013,32 @@ var EXPORTERS = {
   "text": exportText,
   "markdown": exportMarkdown
 };
+var EXPORT_ALIAS_ROW_FORMATS = ["csv", "wispr", "superwhisper", "macos", "espanso"];
+function hasAliasRow(term) {
+  return term.aliases.some((a) => a.trim() !== "");
+}
 function exportLexicon(lexicon, format, opts = {}) {
   const exporter = EXPORTERS[format];
   if (!exporter) {
     throw new Error(`Unknown export format "${format}". Known: ${EXPORT_FORMATS.join(", ")}`);
   }
-  return exporter(applyOptions(lexicon, opts), opts);
+  return exporter(applyOptions(lexicon, opts, format), opts);
 }
-function selectExportTerms(lexicon, opts = {}) {
-  return applyOptions(lexicon, opts).terms;
+function selectExportTerms(lexicon, opts = {}, format) {
+  return applyOptions(lexicon, opts, format).terms;
 }
-function applyOptions(lexicon, opts) {
+function applyOptions(lexicon, opts, format) {
   let terms = lexicon.terms;
   if (opts.categories && opts.categories.length > 0) {
     const allowed = new Set(opts.categories);
     terms = terms.filter((t) => t.category !== void 0 && allowed.has(t.category));
   }
-  if (opts.limit !== void 0 && terms.length > opts.limit) {
-    const keep = new Set(sortByImportance(terms).slice(0, Math.max(0, opts.limit)));
-    terms = terms.filter((t) => keep.has(t));
+  if (opts.limit !== void 0) {
+    const candidates = format !== void 0 && EXPORT_ALIAS_ROW_FORMATS.includes(format) ? terms.filter(hasAliasRow) : terms;
+    if (candidates.length > opts.limit || candidates.length < terms.length) {
+      const keep = new Set(sortByImportance(candidates).slice(0, Math.max(0, opts.limit)));
+      terms = terms.filter((t) => keep.has(t));
+    }
   }
   if (terms === lexicon.terms) return lexicon;
   return { ...lexicon, terms };
@@ -61002,7 +61009,9 @@ var registerTermTools = (server, ctx) => {
       inputSchema: {
         format: external_exports.enum(EXPORT_FORMAT_NAMES),
         categories: external_exports.array(external_exports.enum(TERM_CATEGORIES)).optional().describe("Only include terms in these categories. Omitted: every category."),
-        limit: external_exports.number().int().positive().optional().describe("Cap the number of terms exported, applied after `categories`; the most-used terms are kept. Omitted: every term.")
+        limit: external_exports.number().int().positive().optional().describe(
+          `Cap the number of terms exported, applied after \`categories\`: up to this many terms are kept, in this order: the most hits first; at equal hits (every term starts at 0) brand, person and product terms first; then canonical A to Z. The formats that write one row per alias (${EXPORT_ALIAS_ROW_FORMATS.join(", ")}) count only terms that have an alias, since a term without one writes no row. Omitted: every term.`
+        )
       }
     },
     async ({ format, categories, limit }) => guarded(async () => {
@@ -61019,6 +61028,8 @@ var registerTermTools = (server, ctx) => {
         notes.push("The lexicon has no terms yet, so the export is empty; add_term or setup_lexicon adds some.");
       } else if (selectExportTerms(loaded.merged, opts).length === 0) {
         notes.push(`No term matched categories ${JSON.stringify(categories ?? [])}, so the export is empty; list_terms shows each term's category.`);
+      } else if (EXPORT_ALIAS_ROW_FORMATS.includes(resolved2) && !selectExportTerms(loaded.merged, opts, resolved2).some((t) => t.aliases.some((a) => a.trim() !== ""))) {
+        notes.push(`No exported term has an alias, and ${resolved2} writes one row per alias, so the export has no rows; add_term with aliases adds some.`);
       }
       const skipped = skippedProjectFields(loaded, "Its terms are not in this export.").note;
       if (skipped) notes.push(skipped);
