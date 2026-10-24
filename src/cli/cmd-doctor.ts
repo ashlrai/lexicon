@@ -867,7 +867,7 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
       model.present
         ? `whisper model ${DEFAULT_MODEL} present: ${model.path}`
         : model.problem !== undefined
-          ? `whisper model ${DEFAULT_MODEL} at ${model.path} is not usable: ${model.problem} (lexicon voice downloads it again on its next run)`
+          ? `whisper model ${DEFAULT_MODEL} at ${model.path} is not usable: ${model.problem}${model.modified ? '' : ' (lexicon voice downloads it again on its next run)'}`
           : `whisper model ${DEFAULT_MODEL} absent (lexicon voice downloads it to ${model.path} on first run)`,
     );
   }

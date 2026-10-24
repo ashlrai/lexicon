@@ -6,7 +6,8 @@
  * needs no second download. Missing named models are fetched from Hugging
  * Face with a progress line. `--model <path>` is used as-is.
  */
-import { closeSync, createWriteStream, existsSync, openSync, promises as fs, readSync, statSync } from 'node:fs';
+import { createHash } from 'node:crypto';
+import { closeSync, createWriteStream, openSync, promises as fs, readFileSync, readSync, statSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import { homeDir, usableHome } from '../util/xdg.js';
 import path from 'node:path';
@@ -89,6 +90,12 @@ export interface ResolvedModel {
   present: boolean;
   /** Set when a file is at `path` but is not a usable model: why (`present` is false). */
   problem?: string;
+  /**
+   * With `problem`: the file is a model that changed since Lexicon
+   * downloaded it (its sha256 no longer matches the record), so it is not
+   * replaced by a fresh download: it may be the user's own.
+   */
+  modified?: true;
   /** Set when the model was found somewhere other than the primary models dir. */
   foundIn?: string;
   /** For named models only: the download URL. */
@@ -153,16 +160,129 @@ export function inspectModelFile(p: string): string | undefined | 'missing' {
   return undefined;
 }
 
+/**
+ * Beside every model Lexicon downloads, `<model>.sha256.json` records its
+ * sha256 with the size and mtime it had then (MODEL_HASH_VERSION). Lexicon
+ * ships no table of known-good hashes for the models (none it can check
+ * offline, and Hugging Face can replace a file); the download is checked
+ * against the sha256 Hugging Face sends for the file (`X-Linked-Etag`) when
+ * there is one, and the record lets every later use notice a model that
+ * changed on disk without hashing hundreds of megabytes each time: the hash
+ * is computed again only when the size or mtime moved.
+ */
+export const MODEL_HASH_SUFFIX = '.sha256.json';
+export const MODEL_HASH_VERSION = 1;
+
+interface ModelHashRecord {
+  version: number;
+  sha256: string;
+  size: number;
+  mtimeMs: number;
+}
+
+/** `<model>.sha256.json`. */
+export function modelHashPath(modelPath: string): string {
+  return `${modelPath}${MODEL_HASH_SUFFIX}`;
+}
+
+/** The sha256 (hex) of the file at `p`, read in 1 MiB chunks. */
+export function sha256OfFile(p: string): string {
+  const hash = createHash('sha256');
+  const buf = Buffer.alloc(1024 * 1024);
+  const fd = openSync(p, 'r');
+  try {
+    for (;;) {
+      const n = readSync(fd, buf, 0, buf.length, null);
+      if (n === 0) break;
+      hash.update(buf.subarray(0, n));
+    }
+  } finally {
+    closeSync(fd);
+  }
+  return hash.digest('hex');
+}
+
+/**
+ * Write the hash record of the model at `modelPath` (its current size and
+ * mtime). With `ino`, only while the file there is still that inode: of two
+ * downloads renaming into place at once, each records only its own file.
+ * Best effort, never throws.
+ */
+export function writeModelHashRecord(modelPath: string, sha256: string, ino?: number): void {
+  try {
+    const st = statSync(modelPath);
+    if (ino !== undefined && st.ino !== ino) return;
+    const record: ModelHashRecord = { version: MODEL_HASH_VERSION, sha256, size: st.size, mtimeMs: st.mtimeMs };
+    writeFileSync(modelHashPath(modelPath), `${JSON.stringify(record)}\n`, { mode: 0o644 });
+  } catch {
+    // a record, not the model: the model is still used, just not verified later
+  }
+}
+
+/** The model's hash record, when one parses. */
+function readModelHashRecord(modelPath: string): ModelHashRecord | undefined {
+  try {
+    const raw: unknown = JSON.parse(readFileSync(modelHashPath(modelPath), 'utf8'));
+    const r = raw as Partial<ModelHashRecord> | null;
+    if (r && r.version === MODEL_HASH_VERSION && typeof r.sha256 === 'string' && /^[0-9a-f]{64}$/.test(r.sha256) && typeof r.size === 'number' && typeof r.mtimeMs === 'number') {
+      return r as ModelHashRecord;
+    }
+  } catch {
+    // none, or not ours
+  }
+  return undefined;
+}
+
+/** The `modified` reason of a model that no longer matches its record. */
+export const MODEL_CHANGED_PREFIX = 'it changed since Lexicon downloaded it';
+
+/**
+ * Why the model at `modelPath` no longer matches the sha256 recorded at its
+ * download, or undefined when it does (or there is no record: a model Lexicon
+ * did not download is not checked). The file is hashed only when its size or
+ * mtime differs from the record's; a match under a new mtime updates the
+ * record. Never throws. Exported for tests.
+ */
+export function checkModelHashRecord(modelPath: string): string | undefined {
+  const record = readModelHashRecord(modelPath);
+  if (!record) return undefined;
+  let st;
+  try {
+    st = statSync(modelPath);
+  } catch {
+    return undefined;
+  }
+  if (st.size === record.size && st.mtimeMs === record.mtimeMs) return undefined;
+  const fix = `delete it to download it again, or delete ${modelHashPath(modelPath)} to keep using it as it is`;
+  if (st.size !== record.size) return `${MODEL_CHANGED_PREFIX} (${st.size} bytes now, ${record.size} then); ${fix}`;
+  let actual: string;
+  try {
+    actual = sha256OfFile(modelPath);
+  } catch {
+    return undefined;
+  }
+  if (actual !== record.sha256) return `${MODEL_CHANGED_PREFIX} (its sha256 is ${actual}, not the ${record.sha256} recorded); ${fix}`;
+  writeModelHashRecord(modelPath, actual);
+  return undefined;
+}
+
+/** inspectModelFile, then the hash record (checkModelHashRecord) of a file that passed. */
+function inspectAndVerify(p: string): string | undefined | 'missing' {
+  return inspectModelFile(p) ?? checkModelHashRecord(p);
+}
+
 /** Locate a model without downloading anything. */
 export function resolveModel(spec: string, opts: ResolveModelOptions): ResolvedModel {
   const exists = opts.exists;
-  const inspect = opts.inspect ?? (exists ? (p: string) => (exists(p) ? undefined : 'missing') : inspectModelFile);
+  const inspect = opts.inspect ?? (exists ? (p: string) => (exists(p) ? undefined : 'missing') : inspectAndVerify);
+  const flagged = (problem: string): { problem: string; modified?: true } =>
+    problem.startsWith(MODEL_CHANGED_PREFIX) ? { problem, modified: true } : { problem };
   if (isModelPath(spec)) {
     const abs = path.resolve(expandTilde(spec));
     const base = path.basename(abs);
     const name = base.replace(/^ggml-/, '').replace(/\.bin$/, '');
     const found = inspect(abs);
-    return { name, path: abs, present: found === undefined, ...(found !== undefined && found !== 'missing' ? { problem: found } : {}) };
+    return { name, path: abs, present: found === undefined, ...(found !== undefined && found !== 'missing' ? flagged(found) : {}) };
   }
   const file = modelFileName(spec);
   const primary = path.join(modelsDir(opts.globalPath, opts.env), file);
@@ -173,7 +293,7 @@ export function resolveModel(spec: string, opts: ResolveModelOptions): ResolvedM
     const candidate = path.join(dir, file);
     if (inspect(candidate) === undefined) return { name: spec, path: candidate, present: true, foundIn: dir, url: modelUrl(spec) };
   }
-  return { name: spec, path: primary, present: false, url: modelUrl(spec), ...(atPrimary !== 'missing' ? { problem: atPrimary } : {}) };
+  return { name: spec, path: primary, present: false, url: modelUrl(spec), ...(atPrimary !== 'missing' ? flagged(atPrimary) : {}) };
 }
 
 export interface DownloadProgress {
@@ -245,12 +365,27 @@ export async function sweepStaleParts(dest: string, nowMs: number = Date.now()):
   }
 }
 
+/**
+ * The sha256 the server states for the file: Hugging Face sends it for a
+ * Git LFS file (every ggml model) as `X-Linked-Etag`, and as `ETag` on the
+ * final redirect hop. Only a 64-hex value counts. Exported for tests.
+ */
+export function claimedSha256(headers: Headers): string | undefined {
+  for (const name of ['x-linked-etag', 'etag']) {
+    const value = headers.get(name)?.trim().replace(/^W\//, '').replace(/^"|"$/g, '').toLowerCase();
+    if (value && /^[0-9a-f]{64}$/.test(value)) return value;
+  }
+  return undefined;
+}
+
 export async function defaultDownloader(url: string, dest: string, onProgress: (p: DownloadProgress) => void, signal?: AbortSignal): Promise<void> {
   await fs.mkdir(path.dirname(dest), { recursive: true });
   await sweepStaleParts(dest);
   const res = await fetch(url, { redirect: 'follow', ...(signal ? { signal } : {}) });
   if (!res.ok || !res.body) throw new Error(`download failed: ${res.status} ${res.statusText} (${url})`);
   const total = Number(res.headers.get('content-length')) || undefined;
+  const claimed = claimedSha256(res.headers);
+  const hash = createHash('sha256');
   let received = 0;
   let head = Buffer.alloc(0);
   // One `.part` file per download: two `lexicon voice` runs fetching the same
@@ -261,13 +396,20 @@ export async function defaultDownloader(url: string, dest: string, onProgress: (
   source.on('data', (chunk: Buffer) => {
     if (head.length < GGML_MAGIC.length) head = Buffer.concat([head, chunk.subarray(0, GGML_MAGIC.length - head.length)]);
     received += chunk.length;
+    hash.update(chunk);
     onProgress({ received, total });
   });
   try {
     await pipeline(source, createWriteStream(tmp), ...(signal ? [{ signal }] : []));
     const bad = checkDownloadedModel(head, received, total);
     if (bad !== undefined) throw new Error(`${bad} (${url})`);
+    const sha256 = hash.digest('hex');
+    if (claimed !== undefined && claimed !== sha256) {
+      throw new Error(`the file downloaded does not match the sha256 the server gave for it (${claimed}; the download's is ${sha256}) (${url})`);
+    }
+    const { ino } = await fs.stat(tmp);
     await fs.rename(tmp, dest);
+    writeModelHashRecord(dest, sha256, ino);
   } catch (e) {
     await fs.rm(tmp, { force: true });
     throw e;
@@ -296,7 +438,7 @@ export interface EnsureModelOptions extends ResolveModelOptions {
 export async function ensureModel(spec: string, opts: EnsureModelOptions): Promise<ResolvedModel> {
   const resolved = resolveModel(spec, opts);
   if (resolved.present) return resolved;
-  if (!resolved.url) {
+  if (!resolved.url || resolved.modified) {
     if (resolved.problem !== undefined) throw new Error(`whisper model ${resolved.path} is not usable: ${resolved.problem}`);
     throw new Error(`whisper model not found: ${resolved.path}`);
   }

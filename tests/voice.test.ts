@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, promises as fs, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -29,7 +30,7 @@ import {
   pickDevice,
 } from '../src/voice/devices.js';
 import { HISTORY_MAX_BYTES, HISTORY_MAX_LINES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
-import { GGML_MAGIC, STALE_PART_MS, defaultDownloader, expandTilde, modelFileName, modelUrl, modelsDir, resolveModel } from '../src/voice/models.js';
+import { GGML_MAGIC, STALE_PART_MS, checkModelHashRecord, defaultDownloader, expandTilde, modelFileName, modelUrl, modelsDir, resolveModel } from '../src/voice/models.js';
 import type { Downloader } from '../src/voice/models.js';
 import { installHint, locateWhisperCli, makeProcessDescribe, makeProcessList } from '../src/voice/process.js';
 import type { ChildHandle, ExecResult, SpawnOptions, VoiceExec, VoiceSpawn } from '../src/voice/process.js';
@@ -1396,6 +1397,25 @@ describe('lexicon voice (foreground)', () => {
     expect(JSON.parse(h.out[0])).toMatchObject({ ok: false, nextStep: expect.stringContaining('set LEXICON_WHISPER_MODELS to an absolute directory') });
   });
 
+  it('a downloaded model that changed on disk is refused before recording, not downloaded over', async () => {
+    const h = await harness();
+    const model = path.join(h.dir, 'models', 'ggml-base.en.bin');
+    await fs.writeFile(`${model}.sha256.json`, JSON.stringify({ version: 1, sha256: '0'.repeat(64), size: 1, mtimeMs: 0 }));
+    h.deps.waitForStop = async () => 'enter';
+    let downloads = 0;
+    h.deps.download = async () => {
+      downloads += 1;
+    };
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.spawnCalls).toHaveLength(0);
+    expect(downloads).toBe(0);
+    expect(JSON.parse(h.out[0])).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(`whisper model ${model} is not usable: it changed since Lexicon downloaded it`),
+      nextStep: `delete ${model} to download it again, or delete ${model}.sha256.json to keep using it`,
+    });
+  });
+
   it('--list-devices prints the avfoundation audio devices', async () => {
     const h = await harness();
     const code = await runVoiceListDevices(h.opts, h.io, h.deps);
@@ -1756,7 +1776,7 @@ describe('model download', () => {
     stubFetch(body, body.length);
     await defaultDownloader('https://example.invalid/ggml-tiny.bin', dest, () => undefined);
     expect((await fs.readFile(dest)).equals(body)).toBe(true);
-    expect(await fs.readdir(path.dirname(dest))).toEqual(['ggml-tiny.bin']);
+    expect((await fs.readdir(path.dirname(dest))).sort()).toEqual(['ggml-tiny.bin', 'ggml-tiny.bin.sha256.json']);
   });
 
   // Catches: a download that ended early was renamed into place as the model.
@@ -1790,7 +1810,7 @@ describe('model download', () => {
     const body = model(100);
     stubFetch(body, body.length);
     await defaultDownloader('https://example.invalid/m', dest, () => undefined);
-    expect((await fs.readdir(dir)).sort()).toEqual(['ggml-base.bin.9-x-y.part', 'ggml-tiny.bin', 'ggml-tiny.bin.2-live-xyz.part']);
+    expect((await fs.readdir(dir)).sort()).toEqual(['ggml-base.bin.9-x-y.part', 'ggml-tiny.bin', 'ggml-tiny.bin.2-live-xyz.part', 'ggml-tiny.bin.sha256.json']);
   });
 
   // Catches: two downloads of one model shared `<dest>.part`, interleaving their bytes.
@@ -1818,7 +1838,11 @@ describe('model download', () => {
     ]);
     const got = await fs.readFile(dest);
     expect(got.equals(a) || got.equals(b)).toBe(true);
-    expect(await fs.readdir(dir)).toEqual(['ggml-tiny.bin']);
+    expect((await fs.readdir(dir)).sort()).toEqual(['ggml-tiny.bin', 'ggml-tiny.bin.sha256.json']);
+    // The record describes the file that won, whichever it was.
+    expect(checkModelHashRecord(dest)).toBeUndefined();
+    const record = JSON.parse(await fs.readFile(`${dest}.sha256.json`, 'utf8')) as { sha256: string };
+    expect(record.sha256).toBe(createHash('sha256').update(got).digest('hex'));
   });
 });
 

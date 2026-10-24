@@ -79,7 +79,16 @@ named model is fetched from
 progress line on stderr (`base.en` is 148 MB, `small.en` 488 MB). A model file that is
 already there is used only when it starts with the ggml magic bytes: an empty file or a
 saved error page is downloaded again (a named model) or refused before recording (a
-`--model` path), and `lexicon doctor` warns about it. `--model /path/to/ggml-x.bin`
+`--model` path), and `lexicon doctor` warns about it.
+
+Lexicon ships no table of known-good model hashes: none it could check offline, and the
+files on Hugging Face can be replaced. Instead each download is checked against the
+sha256 Hugging Face sends for the file (`X-Linked-Etag`) when it sends one, and its
+sha256 is recorded beside it (`ggml-<name>.bin.sha256.json`). A later run hashes the
+model again only when its size or modification time moved; a model whose bytes changed
+is refused with both ways out (delete it to download it again, or delete the record to
+keep it as it is) and is never downloaded over, since it may be one you put there. A
+model Lexicon did not download (a `--model` path, the benchmark's copy) is not checked. `--model /path/to/ggml-x.bin`
 uses a file directly and never downloads; a path that does not exist exits `1`
 before anything is recorded.
 

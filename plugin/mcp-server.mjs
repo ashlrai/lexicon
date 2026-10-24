@@ -53944,8 +53944,8 @@ async function readBoundedRegularFile(filePath, maxBytes) {
 // src/core/parsed-hash.ts
 var entries = /* @__PURE__ */ new WeakMap();
 async function sha256OfBytes(bytes) {
-  const { createHash: createHash4 } = await Promise.resolve().then(() => __toESM(require_node_crypto()));
-  return createHash4("sha256").update(bytes).digest("hex");
+  const { createHash: createHash5 } = await Promise.resolve().then(() => __toESM(require_node_crypto()));
+  return createHash5("sha256").update(bytes).digest("hex");
 }
 function rememberParsedBytes(file2, bytes) {
   entries.set(file2, { bytes });
@@ -54340,8 +54340,8 @@ async function canonicalPath(filePath) {
 async function hashFile(filePath) {
   try {
     const { bytes } = await readBoundedRegularFile(filePath, MAX_LEXICON_BYTES);
-    const { createHash: createHash4 } = await Promise.resolve().then(() => __toESM(require_node_crypto()));
-    return createHash4("sha256").update(bytes).digest("hex");
+    const { createHash: createHash5 } = await Promise.resolve().then(() => __toESM(require_node_crypto()));
+    return createHash5("sha256").update(bytes).digest("hex");
   } catch {
     return void 0;
   }
@@ -62710,6 +62710,7 @@ async function detectClipboardBackend(platform = process.platform, env = process
 }
 
 // src/voice/models.ts
+var import_node_crypto3 = __toESM(require_node_crypto());
 var import_node_fs18 = __toESM(require_node_fs());
 var import_node_path19 = __toESM(require_node_path());
 var import_node_stream = __toESM(require_node_stream());
@@ -62774,15 +62775,83 @@ function inspectModelFile(p) {
   if (read < GGML_MAGIC.length || !head.equals(GGML_MAGIC)) return "it is not a ggml whisper model (it does not start with the ggml magic bytes)";
   return void 0;
 }
+var MODEL_HASH_SUFFIX = ".sha256.json";
+var MODEL_HASH_VERSION = 1;
+function modelHashPath(modelPath) {
+  return `${modelPath}${MODEL_HASH_SUFFIX}`;
+}
+function sha256OfFile(p) {
+  const hash2 = (0, import_node_crypto3.createHash)("sha256");
+  const buf = Buffer.alloc(1024 * 1024);
+  const fd = (0, import_node_fs18.openSync)(p, "r");
+  try {
+    for (; ; ) {
+      const n = (0, import_node_fs18.readSync)(fd, buf, 0, buf.length, null);
+      if (n === 0) break;
+      hash2.update(buf.subarray(0, n));
+    }
+  } finally {
+    (0, import_node_fs18.closeSync)(fd);
+  }
+  return hash2.digest("hex");
+}
+function writeModelHashRecord(modelPath, sha256, ino) {
+  try {
+    const st = (0, import_node_fs18.statSync)(modelPath);
+    if (ino !== void 0 && st.ino !== ino) return;
+    const record2 = { version: MODEL_HASH_VERSION, sha256, size: st.size, mtimeMs: st.mtimeMs };
+    (0, import_node_fs18.writeFileSync)(modelHashPath(modelPath), `${JSON.stringify(record2)}
+`, { mode: 420 });
+  } catch {
+  }
+}
+function readModelHashRecord(modelPath) {
+  try {
+    const raw = JSON.parse((0, import_node_fs18.readFileSync)(modelHashPath(modelPath), "utf8"));
+    const r = raw;
+    if (r && r.version === MODEL_HASH_VERSION && typeof r.sha256 === "string" && /^[0-9a-f]{64}$/.test(r.sha256) && typeof r.size === "number" && typeof r.mtimeMs === "number") {
+      return r;
+    }
+  } catch {
+  }
+  return void 0;
+}
+var MODEL_CHANGED_PREFIX = "it changed since Lexicon downloaded it";
+function checkModelHashRecord(modelPath) {
+  const record2 = readModelHashRecord(modelPath);
+  if (!record2) return void 0;
+  let st;
+  try {
+    st = (0, import_node_fs18.statSync)(modelPath);
+  } catch {
+    return void 0;
+  }
+  if (st.size === record2.size && st.mtimeMs === record2.mtimeMs) return void 0;
+  const fix = `delete it to download it again, or delete ${modelHashPath(modelPath)} to keep using it as it is`;
+  if (st.size !== record2.size) return `${MODEL_CHANGED_PREFIX} (${st.size} bytes now, ${record2.size} then); ${fix}`;
+  let actual;
+  try {
+    actual = sha256OfFile(modelPath);
+  } catch {
+    return void 0;
+  }
+  if (actual !== record2.sha256) return `${MODEL_CHANGED_PREFIX} (its sha256 is ${actual}, not the ${record2.sha256} recorded); ${fix}`;
+  writeModelHashRecord(modelPath, actual);
+  return void 0;
+}
+function inspectAndVerify(p) {
+  return inspectModelFile(p) ?? checkModelHashRecord(p);
+}
 function resolveModel(spec, opts) {
   const exists = opts.exists;
-  const inspect = opts.inspect ?? (exists ? (p) => exists(p) ? void 0 : "missing" : inspectModelFile);
+  const inspect = opts.inspect ?? (exists ? (p) => exists(p) ? void 0 : "missing" : inspectAndVerify);
+  const flagged = (problem) => problem.startsWith(MODEL_CHANGED_PREFIX) ? { problem, modified: true } : { problem };
   if (isModelPath(spec)) {
     const abs = import_node_path19.default.resolve(expandTilde(spec));
     const base = import_node_path19.default.basename(abs);
     const name = base.replace(/^ggml-/, "").replace(/\.bin$/, "");
     const found = inspect(abs);
-    return { name, path: abs, present: found === void 0, ...found !== void 0 && found !== "missing" ? { problem: found } : {} };
+    return { name, path: abs, present: found === void 0, ...found !== void 0 && found !== "missing" ? flagged(found) : {} };
   }
   const file2 = modelFileName(spec);
   const primary = import_node_path19.default.join(modelsDir(opts.globalPath, opts.env), file2);
@@ -62792,7 +62861,7 @@ function resolveModel(spec, opts) {
     const candidate = import_node_path19.default.join(dir, file2);
     if (inspect(candidate) === void 0) return { name: spec, path: candidate, present: true, foundIn: dir, url: modelUrl(spec) };
   }
-  return { name: spec, path: primary, present: false, url: modelUrl(spec), ...atPrimary !== "missing" ? { problem: atPrimary } : {} };
+  return { name: spec, path: primary, present: false, url: modelUrl(spec), ...atPrimary !== "missing" ? flagged(atPrimary) : {} };
 }
 var GGML_MAGIC = Buffer.from([108, 109, 103, 103]);
 var STALE_PART_MS = 10 * 60 * 1e3;
@@ -64292,7 +64361,7 @@ async function runDoctorReport(opts, deps = {}) {
   if (model) {
     push2(
       model.problem !== void 0 ? "warn" : "info",
-      model.present ? `whisper model ${DEFAULT_MODEL} present: ${model.path}` : model.problem !== void 0 ? `whisper model ${DEFAULT_MODEL} at ${model.path} is not usable: ${model.problem} (lexicon voice downloads it again on its next run)` : `whisper model ${DEFAULT_MODEL} absent (lexicon voice downloads it to ${model.path} on first run)`
+      model.present ? `whisper model ${DEFAULT_MODEL} present: ${model.path}` : model.problem !== void 0 ? `whisper model ${DEFAULT_MODEL} at ${model.path} is not usable: ${model.problem}${model.modified ? "" : " (lexicon voice downloads it again on its next run)"}` : `whisper model ${DEFAULT_MODEL} absent (lexicon voice downloads it to ${model.path} on first run)`
     );
   }
   if (platform === "darwin") {
@@ -64537,7 +64606,7 @@ var import_node_os5 = __toESM(require_node_os());
 var import_node_path26 = __toESM(require_node_path());
 
 // src/serve/config.ts
-var import_node_crypto3 = __toESM(require_node_crypto());
+var import_node_crypto4 = __toESM(require_node_crypto());
 var import_node_net = __toESM(require_node_net());
 var import_node_fs25 = __toESM(require_node_fs());
 var import_node_path25 = __toESM(require_node_path());
@@ -64606,7 +64675,7 @@ async function keepOwnerOnly(file2) {
   }
 }
 function generateToken() {
-  return (0, import_node_crypto3.randomBytes)(16).toString("hex");
+  return (0, import_node_crypto4.randomBytes)(16).toString("hex");
 }
 async function ensureServeConfig(opts = {}) {
   return withServeConfigLock(async () => {
@@ -66266,7 +66335,7 @@ var registerSetupTools = (server, ctx) => {
 };
 
 // src/mcp/tools/packs.ts
-var import_node_crypto4 = __toESM(require_node_crypto());
+var import_node_crypto5 = __toESM(require_node_crypto());
 
 // src/cli/cmd-import.ts
 var import_node_fs30 = __toESM(require_node_fs());
@@ -66511,13 +66580,13 @@ var registerPackTools = (server, ctx) => {
           checksum: entry.checksum,
           terms: pack.lexicon.terms.map((t) => ({ ...t }))
         };
-        const digest = (0, import_node_crypto4.createHash)("sha256").update(JSON.stringify({
+        const digest = (0, import_node_crypto5.createHash)("sha256").update(JSON.stringify({
           name,
           registry: registry2,
           destination: destination(scope),
           entry,
           preview,
-          bytes: (0, import_node_crypto4.createHash)("sha256").update(bytes).digest("hex")
+          bytes: (0, import_node_crypto5.createHash)("sha256").update(bytes).digest("hex")
         })).digest("hex");
         if (confirm !== true) {
           return textResult({
@@ -66651,7 +66720,7 @@ var registerPackTools = (server, ctx) => {
       const chosen = wanted.filter((id) => availability.some((s) => s.id === id && s.implemented && s.available));
       const candidates = chosen.length === 0 ? [] : await harvestImportSources(chosen, {}, { limit: IMPORT_PREVIEW_MAX_CANDIDATES });
       while (imports.size >= IMPORT_PREVIEWS_KEPT) imports.delete(imports.keys().next().value);
-      const token = (0, import_node_crypto4.randomUUID)();
+      const token = (0, import_node_crypto5.randomUUID)();
       imports.set(token, { at: Date.now(), sources: [...new Set(wanted)].sort(), destination: destination(scope), candidates: structuredClone(candidates) });
       return textResult({
         sources: availability,

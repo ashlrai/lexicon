@@ -588,15 +588,23 @@ const DEVICE_HINT = 'run `lexicon voice --list-devices` and pass one of them wit
  * into a recording that could not be transcribed. A model name is not checked
  * here: a missing one is downloaded at transcription time.
  */
-function refuseMissingModelPath(opts: VoiceOptions, io: VoiceIO, r: Resolved): number | undefined {
+function refuseMissingModelPath(opts: VoiceOptions, io: VoiceIO, r: Resolved, deps: VoiceDeps): number | undefined {
   const spec = opts.model ?? DEFAULT_MODEL;
   if (!isModelPath(spec)) {
     // A named model lives in the models directory: a LEXICON_WHISPER_MODELS
     // that cannot be used is said before anything is recorded.
+    let named;
     try {
       modelsDir(r.globalPath, r.env);
+      named = resolveModel(spec, { globalPath: r.globalPath, env: r.env, ...(deps.modelFallbackDirs ? { fallbackDirs: deps.modelFallbackDirs } : {}) });
     } catch (e) {
       return refuseWith(r, io, message(e), 'set LEXICON_WHISPER_MODELS to an absolute directory (or ~/...), or unset it to use the default');
+    }
+    // A downloaded model that changed on disk is not downloaded over (it may be the user's own).
+    if (named.modified && named.problem !== undefined) {
+      const error = `whisper model ${named.path} is not usable: ${named.problem}`;
+      io.stderr(`lexicon voice: ${error}\n`);
+      return failed(r, EXIT_ERROR, error, `delete ${named.path} to download it again, or delete ${named.path}.sha256.json to keep using it`);
     }
     return undefined;
   }
@@ -813,7 +821,7 @@ export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps 
 async function recordForeground(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r: Resolved): Promise<number> {
   const tools = await requireTools(r, io, deps, { ffmpeg: true, whisper: true });
   if (!tools) return EXIT_MISSING_TOOL;
-  const noModel = refuseMissingModelPath(opts, io, r);
+  const noModel = refuseMissingModelPath(opts, io, r, deps);
   if (noModel !== undefined) return noModel;
 
   let loaded: LoadedLexicon;
@@ -1168,7 +1176,7 @@ async function recoverDeadRecorder(
 async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r: Resolved): Promise<number | 'lost'> {
   const tools = await requireTools(r, io, deps, { ffmpeg: true, whisper: true });
   if (!tools) return EXIT_MISSING_TOOL;
-  const noModel = refuseMissingModelPath(opts, io, r);
+  const noModel = refuseMissingModelPath(opts, io, r, deps);
   if (noModel !== undefined) return noModel;
 
   let input;
