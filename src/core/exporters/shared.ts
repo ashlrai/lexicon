@@ -2,6 +2,7 @@
  * Helpers shared by the exporters: deterministic ordering, alias pair
  * expansion and escaping. Internal to exporters/; not re-exported from core.
  */
+import { compareText } from '../collate.js';
 import type { Lexicon, Term, TermCategory } from '../types.js';
 
 /**
@@ -33,8 +34,6 @@ export function isProperNounCategory(category: TermCategory | undefined): boolea
   return category === 'brand' || category === 'person' || category === 'product';
 }
 
-let collator: Intl.Collator | undefined;
-
 /**
  * Canonical A to Z, the same on every machine: a fixed `en` collation, then
  * code units for the spellings it calls equal (`Café` precomposed and with a
@@ -43,8 +42,7 @@ let collator: Intl.Collator | undefined;
  * exported in another order, and `--limit` kept other terms.
  */
 export function compareCanonical(a: string, b: string): number {
-  collator ??= new Intl.Collator('en');
-  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+  return compareText(a, b);
 }
 
 /** hits desc, then brand/person/product before the rest, then alphabetical (compareCanonical). */

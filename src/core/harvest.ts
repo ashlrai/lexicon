@@ -24,6 +24,7 @@
 import { execFileSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { compareText } from './collate.js';
 import { STOPLIST } from './stoplist.js';
 import { suggestAliases } from './suggest.js';
 import type { HarvestCandidate, HarvestOptions, TermCategory, TermSource } from './types.js';
@@ -398,7 +399,7 @@ export async function harvestRepo(root: string, opts: HarvestOptions = {}): Prom
     });
   }
 
-  candidates.sort((a, b) => b.count - a.count || a.canonical.localeCompare(b.canonical));
+  candidates.sort((a, b) => b.count - a.count || compareText(a.canonical, b.canonical));
   return candidates.slice(0, Math.max(0, limit));
 }
 
@@ -419,7 +420,7 @@ function walk(root: string, ignore: Set<string>): WalkResult {
       continue;
     }
     // Deterministic order so counts/evidence are stable across runs.
-    entries.sort((a, b) => a.name.localeCompare(b.name));
+    entries.sort((a, b) => compareText(a.name, b.name));
     for (const entry of entries) {
       const full = path.join(dir, entry.name);
       if (entry.isDirectory()) {

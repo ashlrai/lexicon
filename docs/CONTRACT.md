@@ -217,6 +217,7 @@ Starter term packs: the curated lexicons in `packs/*.yaml` at the package root, 
 - `timeBudgetIncomplete(totalChars: number, budgetMs: number): NormalizeIncomplete` = `{ reasons: ['time'], totalChars, note }`, the note naming the budget: what a caller returns when its `shouldStop` budget ran out.
 
 ## src/core/suggest.ts
+- `compareText(a: string, b: string): number` (collate.ts): a fixed `en` collation, then code units, so an order never follows the user's locale. `computeStats`' `topTerms`, `suggestCanonicalFor`, `harvestRepo` (its candidates and the order it walks a directory) and `suggestTerms` break ties with it, and the exporters' `compareCanonical` is it.
 - `suggestAliases(canonical: string): string[]` generates likely STT misspellings (never a single STOPLIST word, which would be rewritten wherever it is said, except an acronym's pronounced form such as `sass`): split camel/dots ("Ashlr.AI" -> "Ashlr AI", "Ashler", "Ashlar"), vowel insertions for consonant clusters, drop dots/hyphens, common phoneme confusions. Deterministic, <= 8 results, never returns the canonical itself.
 
 ## src/core/learn.ts

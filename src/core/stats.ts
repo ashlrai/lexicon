@@ -10,6 +10,7 @@
  * `files` lists the lexicons the terms came from; the sidecar holds no terms
  * and is not one of them.
  */
+import { compareText } from './collate.js';
 import type { LoadedLexicon, TermScope } from './types.js';
 
 export interface LexiconStats {
@@ -60,7 +61,7 @@ export function computeStats(loaded: LoadedLexicon): LexiconStats {
   const topTerms = terms
     .filter((t) => (t.hits ?? 0) > 0)
     .map((t) => ({ canonical: t.canonical, hits: t.hits ?? 0 }))
-    .sort((a, b) => b.hits - a.hits || a.canonical.localeCompare(b.canonical))
+    .sort((a, b) => b.hits - a.hits || compareText(a.canonical, b.canonical))
     .slice(0, TOP_TERMS);
 
   const files: LexiconStats['files'] = [

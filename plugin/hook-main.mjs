@@ -20699,6 +20699,13 @@ function diffSummary(result) {
   return result.replacements.map((r) => `"${r.original}" -> "${r.replacement}" (${r.reason}, ${r.confidence.toFixed(2)})`).join("\n");
 }
 
+// src/core/collate.ts
+var collator;
+function compareText(a, b) {
+  collator ??= new Intl.Collator("en");
+  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+}
+
 // src/core/exporters/shared.ts
 var CATEGORY_ORDER = {
   brand: 0,
@@ -20715,10 +20722,8 @@ function categoryRank(category) {
 function isProperNounCategory(category) {
   return category === "brand" || category === "person" || category === "product";
 }
-var collator;
 function compareCanonical(a, b) {
-  collator ??= new Intl.Collator("en");
-  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+  return compareText(a, b);
 }
 function sortByImportance(terms) {
   return [...terms].sort(

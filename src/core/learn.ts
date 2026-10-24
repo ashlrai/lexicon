@@ -10,6 +10,7 @@
 import { STOPLIST, phoneticKey, similarity } from './matcher.js';
 import { addTerm, loadLexicon } from './store.js';
 import { InputError } from '../util/errors.js';
+import { compareText } from './collate.js';
 import type { StoreOptions } from './store.js';
 import { suggestAliases } from './suggest.js';
 import type { Lexicon, LexiconFile, LoadedLexicon, Term, TermScope } from './types.js';
@@ -507,6 +508,6 @@ export function suggestCanonicalFor(heard: string, lexicon: Lexicon): CanonicalS
     if (best >= MIN_SUGGEST_CONFIDENCE) scored.push({ term, confidence: best });
   }
 
-  scored.sort((a, b) => b.confidence - a.confidence || a.term.canonical.localeCompare(b.term.canonical));
+  scored.sort((a, b) => b.confidence - a.confidence || compareText(a.term.canonical, b.term.canonical));
   return scored.slice(0, MAX_SUGGESTIONS);
 }

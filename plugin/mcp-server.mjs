@@ -55761,6 +55761,13 @@ function diffSummary(result) {
   return result.replacements.map((r) => `"${r.original}" -> "${r.replacement}" (${r.reason}, ${r.confidence.toFixed(2)})`).join("\n");
 }
 
+// src/core/collate.ts
+var collator;
+function compareText(a, b) {
+  collator ??= new Intl.Collator("en");
+  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+}
+
 // src/core/harvest.ts
 var import_node_child_process = __toESM(require_node_child_process());
 var import_node_fs6 = __toESM(require_node_fs());
@@ -57409,7 +57416,7 @@ async function harvestRepo(root, opts = {}) {
       suggestedAliases: harvestAliases(bucket.canonical, bucket.category)
     });
   }
-  candidates.sort((a, b) => b.count - a.count || a.canonical.localeCompare(b.canonical));
+  candidates.sort((a, b) => b.count - a.count || compareText(a.canonical, b.canonical));
   return candidates.slice(0, Math.max(0, limit));
 }
 function walk(root, ignore2) {
@@ -57424,7 +57431,7 @@ function walk(root, ignore2) {
     } catch {
       continue;
     }
-    entries2.sort((a, b) => a.name.localeCompare(b.name));
+    entries2.sort((a, b) => compareText(a.name, b.name));
     for (const entry of entries2) {
       const full = import_node_path6.default.join(dir, entry.name);
       if (entry.isDirectory()) {
@@ -58435,10 +58442,8 @@ function categoryRank2(category) {
 function isProperNounCategory(category) {
   return category === "brand" || category === "person" || category === "product";
 }
-var collator;
 function compareCanonical(a, b) {
-  collator ??= new Intl.Collator("en");
-  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+  return compareText(a, b);
 }
 function sortByImportance(terms) {
   return [...terms].sort(
@@ -59977,7 +59982,7 @@ function suggestCanonicalFor(heard, lexicon) {
     }
     if (best >= MIN_SUGGEST_CONFIDENCE) scored.push({ term, confidence: best });
   }
-  scored.sort((a, b) => b.confidence - a.confidence || a.term.canonical.localeCompare(b.term.canonical));
+  scored.sort((a, b) => b.confidence - a.confidence || compareText(a.term.canonical, b.term.canonical));
   return scored.slice(0, MAX_SUGGESTIONS);
 }
 
@@ -60006,7 +60011,7 @@ function computeStats(loaded) {
     bump(byCategory, term.category ?? "uncategorized");
     bump(bySource, term.source ?? "unknown");
   }
-  const topTerms = terms.filter((t) => (t.hits ?? 0) > 0).map((t) => ({ canonical: t.canonical, hits: t.hits ?? 0 })).sort((a, b) => b.hits - a.hits || a.canonical.localeCompare(b.canonical)).slice(0, TOP_TERMS);
+  const topTerms = terms.filter((t) => (t.hits ?? 0) > 0).map((t) => ({ canonical: t.canonical, hits: t.hits ?? 0 })).sort((a, b) => b.hits - a.hits || compareText(a.canonical, b.canonical)).slice(0, TOP_TERMS);
   const files = [
     { path: loaded.global.path, scope: "global", terms: loaded.global.lexicon.terms.length }
   ];
@@ -60680,7 +60685,7 @@ async function suggestTerms(input2) {
     });
   }
   const merged = mergeSuggestions(suggestions);
-  merged.sort((a, b) => rank(b) - rank(a) || b.confidence - a.confidence || a.canonical.localeCompare(b.canonical));
+  merged.sort((a, b) => rank(b) - rank(a) || b.confidence - a.confidence || compareText(a.canonical, b.canonical));
   return merged.slice(0, limit).map((s) => withTarget(s, loaded));
 }
 function withTarget(s, loaded) {

@@ -13,6 +13,7 @@ export { INVENTED_BOUNDARY_CONFIDENCE } from './matcher/tuning.js';
 // The ranges `skipCode` leaves alone; the prompt hook reads no correction out of them.
 export { codeSpanRanges, collectRanges } from './matcher/tokenize.js';
 export * from './normalize.js';
+export { compareText } from './collate.js';
 export * from './harvest.js';
 export * from './import-sources.js';
 export * from './import-preview.js';
