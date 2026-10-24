@@ -27,6 +27,8 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon learn --from "spelled Zoë"` on Windows printed `lexicon learn <heard> & 'Zoë'`: the spelling was quoted as a whole PowerShell command, call operator included. It now prints `lexicon learn <heard> 'Zoë'`.
+- Two `lexicon voice` runs downloading the same model at once on Windows could fail the second, finished download with EPERM while the first was renaming its file into place. The rename into place is now retried for about a second on EPERM, EACCES and EBUSY.
 - `lexicon daemon` on Windows no longer reports a working clipboard as hung. Each read and write starts a new `powershell.exe`, and a cold start on a busy machine took over the 5 s limit, so the clipboard was left uncorrected; the PowerShell backend now allows 20 s. The other backends keep 5 s.
 - Browser extension:
   - A text box inside a web component (an open shadow root) is corrected on Enter and prechecked as you type. The content script read the shadow host, which is not editable, as the event target and the focused element, so such a composer was skipped on "any site".
