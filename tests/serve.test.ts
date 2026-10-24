@@ -859,6 +859,11 @@ describe('GET /lexicon, /export/:format, /stats', () => {
       expect(res.status).toBe(400);
       expect(((await res.json()) as { error: string }).error).toBe(`limit must be a positive integer, got "${limit}"`);
     }
+    // Catches: no upper bound, unlike `lexicon export --limit` and MCP export_lexicon.
+    const over = await api('GET', '/export/text?limit=10001');
+    expect(over.status).toBe(400);
+    expect(((await over.json()) as { error: string }).error).toBe('limit must be at most 10000, got 10001');
+    expect((await api('GET', '/export/text?limit=10000')).status).toBe(200);
   });
 
   it('GET routes refuse an unknown or repeated query parameter', async () => {

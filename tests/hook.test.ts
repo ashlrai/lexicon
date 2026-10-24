@@ -391,6 +391,31 @@ describe('runUserPromptSubmitHook', () => {
       expect(mocks.queueCorrections).not.toHaveBeenCalled();
     });
 
+    // Catches: a correction phrase inside pasted code (a fenced or indented
+    // block, an HTML <pre>) or a code expression got a learn_correction line
+    // and a pending entry: "expect(x).toBe('Ashler -> Ashlr.AI')" queued
+    // heard "expect(x).toBe('Ashler", and an indented line took the next
+    // line into heard ("versel ok").
+    it('does not flag a correction phrase inside code', async () => {
+      const { runUserPromptSubmitHook, parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+      for (const prompt of [
+        "Fix it.\n```\nit's Vercel not versel.\n```",
+        "Fix it.\n~~~\nit's Vercel not versel\n~~~\n",
+        "Look at this.\n\n    it's Vercel not versel\nok",
+        "Error copy is wrong. <pre>it's Vercel not versel</pre>",
+        "Update tests. expect(x).toBe('versel -> Vercel'). Done.",
+        "Fix the map. { versel: 1 } -> { Vercel: 1 }",
+      ]) {
+        expect(parseCorrections(prompt), prompt).toEqual([]);
+        expect(await runUserPromptSubmitHook(payload(prompt)), prompt).toBe('');
+      }
+      expect(mocks.queueCorrections).not.toHaveBeenCalled();
+      // Prose around the code is still read, and a one-word inline code span is a quoted spelling.
+      expect(parseCorrections("```\nconst a = 1\n```\nAlso it's Vercel not versel.")).toEqual([{ heard: 'versel', meant: 'Vercel' }]);
+      expect(parseCorrections("it's `Vercel` not versel")).toEqual([{ heard: 'versel', meant: 'Vercel' }]);
+      expect(parseCorrections("it's Vercel (the company) not versel")).toEqual([{ heard: 'versel', meant: 'Vercel (the company)' }]);
+    });
+
     it('still flags a lowercase correction whose sides resemble, a name-like side, or a quoted one', async () => {
       const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
       expect(parseCorrections("it's vercel not versel")).toEqual([{ heard: 'versel', meant: 'vercel' }]);
@@ -1008,6 +1033,23 @@ describe('a long prompt stays inside the hook budget', () => {
     await runUserPromptSubmitHook(payload('deploy Ashler tonight'), { matchBudgetMs: 40 });
     const opts = mocks.normalize.mock.calls[0][2] as { shouldStop: () => boolean };
     expect(opts.shouldStop()).toBe(false);
+  });
+
+  // Catches: the correction and data-block passes ran over the whole prompt,
+  // not the HOOK_PROMPT_MAX_CHARS head that was matched, so a 10 MB paste
+  // after a correction took about 3 s (foldWithOffsets walked every
+  // character), far past the 200 ms budget and near the plugin's timeout.
+  it('runs the correction and data-block passes over the checked head only', async () => {
+    const { runUserPromptSubmitHook, HOOK_PROMPT_MAX_CHARS } = await import('../src/hooks/user-prompt-submit.js');
+    const tail = 'deploy the config to the edge and check the logs today. '.repeat(190_000);
+    const prompt = `it's Vercel not versel. ping Ashler now. ${tail}`;
+    expect(prompt.length).toBeGreaterThan(200 * HOOK_PROMPT_MAX_CHARS);
+    const started = Date.now();
+    const out = await runUserPromptSubmitHook(payload(prompt));
+    const ms = Date.now() - started;
+    expect(context(out)).toContain('"Ashler" -> "Ashlr.AI"');
+    expect(context(out)).toContain('learn_correction');
+    expect(ms).toBeLessThan(1000);
   });
 
   it('does not repeat a huge prompt back as the corrected copy', async () => {

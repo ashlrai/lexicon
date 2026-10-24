@@ -379,6 +379,25 @@ describe('lexicon MCP server', () => {
     }
   });
 
+  // Catches: empty text answered { output: '', changed: false } and nothing
+  // else, while `lexicon normalize` with empty input says "no text to
+  // correct", so an agent that passed the wrong field could not tell.
+  it('normalize_transcript with empty or blank text says there was no text to correct', async () => {
+    const { client, close } = await connect();
+    try {
+      for (const text of ['', '  \n']) {
+        const result = await client.callTool({ name: 'normalize_transcript', arguments: { text } });
+        expect(result.isError).toBe(false);
+        const payload = JSON.parse(textOf(result)) as { output: string; changed: boolean; replacements: unknown[]; note?: string };
+        expect(payload).toMatchObject({ output: text, changed: false, replacements: [] });
+        expect(payload.note).toMatch(/^no text to correct/);
+      }
+      expect(mocks.recordHits).not.toHaveBeenCalled();
+    } finally {
+      await close();
+    }
+  });
+
   it('normalize_transcript with dryRun does not record hits', async () => {
     const { client, close } = await connect();
     try {
@@ -1267,6 +1286,24 @@ describe('lexicon MCP server', () => {
           expect(mocks.applyImportCandidates).not.toHaveBeenCalled();
           const applied = await client.callTool({ name: 'import_vocabulary', arguments: { apply: true, sources: ['github'], previewToken: preview.previewToken, approvedCandidateIds: ids } });
           expect(applied.isError).toBe(false);
+        } finally { await close(); }
+      });
+
+      // Catches: previewToken was any string, so a 100 KB token or one with
+      // newlines reached the lookup and was answered "preview is missing"
+      // instead of being refused at the argument.
+      it('refuses a previewToken that is not a preview token at the schema', async () => {
+        const { client, close } = await connect();
+        try {
+          const preview = JSON.parse(textOf(await client.callTool({ name: 'import_vocabulary', arguments: { sources: ['github'] } })));
+          expect(preview.previewToken).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+          for (const previewToken of ['x'.repeat(100_000), `${preview.previewToken}\n`, preview.previewToken.toUpperCase(), '']) {
+            const result = await client.callTool({ name: 'import_vocabulary', arguments: { apply: true, sources: ['github'], previewToken, approvedCandidateIds: [] } });
+            expect(result.isError).toBe(true);
+            expect(textOf(result)).toMatch(/at previewToken/);
+            expect(textOf(result)).not.toContain('preview is missing');
+          }
+          expect(mocks.applyImportCandidates).not.toHaveBeenCalled();
         } finally { await close(); }
       });
 

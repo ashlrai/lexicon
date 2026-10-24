@@ -786,6 +786,23 @@ describe('addTerm', () => {
     expect(await fs.readFile(globalPath, 'utf8')).not.toMatch(/[\u200b\ufeff]/);
   });
 
+  // Catches: an alias spelled like the canonical but in another Unicode
+  // normalisation form (NFD "Cafe" + U+0301 beside NFC "Café") was kept, so
+  // lexicon://me showed "Café | Café"; two such aliases were both kept too,
+  // and a second add of the term in NFD made a second term.
+  it('compares the canonical, aliases and never words under NFC', async () => {
+    const nfc = 'Café';
+    const nfd = 'Café';
+    const first = await addTerm({ canonical: nfc, aliases: [nfd, 'Kaffay', 'Kaffé', 'Kaffé'], never: ['cafés', 'cafés'] }, { cwd: tmp, globalPath });
+    expect(first.term.aliases).toEqual(['Kaffay', 'Kaffé']);
+    expect(first.term.never).toEqual(['cafés']);
+    const before = await fs.readFile(globalPath, 'utf8');
+    const again = await addTerm({ canonical: nfd, aliases: ['kaffé'] }, { cwd: tmp, globalPath });
+    expect(again.created).toBe(false);
+    expect(again.unchanged).toBe(true);
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(before);
+  });
+
   it('trims and dedupes the never words of a new term', async () => {
     const result = await addTerm({ canonical: 'SaaS', aliases: [], never: [' sauce ', 'Sauce', 'sass'] }, { cwd: tmp, globalPath });
     expect(result.term.never).toEqual(['sauce', 'sass']);
@@ -860,6 +877,13 @@ describe('removeAlias', () => {
     expect(result.files.map((f) => f.path)).toEqual([globalPath]);
     const term = findTerm((await readLexiconFile(globalPath, 'global')).lexicon, 'Ashlr.AI');
     expect(term).toMatchObject({ aliases: ['Ashlar'], notes: 'my company' });
+  });
+
+  it('removes an alias given in another normalisation form', async () => {
+    const { nested } = await makeRepo();
+    await addTerm({ canonical: 'Caf\u00e9', aliases: ['Kaff\u00e9', 'Kaffay'] }, { cwd: nested, globalPath });
+    const result = await removeAlias('Cafe\u0301', 'kaffe\u0301', { cwd: nested, globalPath });
+    expect(result.term.aliases).toEqual(['Kaffay']);
   });
 
   it('removes the alias from every file whose copy of the term holds it, unless a scope is given', async () => {

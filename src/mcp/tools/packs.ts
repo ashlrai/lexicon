@@ -230,6 +230,8 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
       }),
   );
 
+  /** The shape of randomUUID(), which mints every previewToken. */
+  const PREVIEW_TOKEN_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
   server.registerTool(
     'import_vocabulary',
     {
@@ -247,7 +249,13 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
           .describe('Explicit sources the user approved reading. Omitted sources returns only descriptions without probing or harvesting.'),
         apply: z.boolean().optional().describe('false/omitted = preview only: return availability and candidates, write nothing (default). true = write the candidates after the user approved the preview.'),
         scope: z.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
-        previewToken: z.string().optional().describe('Token from the approved preview; required to apply, refused without apply: true. Expires after five minutes or a server restart.'),
+        // The token is randomUUID()'s: anything else cannot name a preview, so
+        // it is refused here rather than looked up (a 100 KB string used to be).
+        previewToken: z
+          .string()
+          .regex(PREVIEW_TOKEN_RE, 'must be the previewToken a preview returned (a lowercase UUID)')
+          .optional()
+          .describe('Token from the approved preview (a lowercase UUID, as the preview returned it); required to apply, refused without apply: true. Expires after five minutes or a server restart.'),
         approvedCandidateIds: z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(IMPORT_PREVIEW_MAX_CANDIDATES).optional().describe('Only candidate ids approved by the user from that preview; required to apply, refused without apply: true; empty means import nothing.'),
       },
     },
@@ -332,7 +340,14 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         'A dry run against such a file does not read it, so its rows carry no `created` (the report has `untrustedTarget: true`).',
       inputSchema: {
         path: nonBlank().optional().describe('File to import. Its extension helps auto-detection. Alongside content it is not read, and only its extension and name are used.'),
-        content: nonBlank().max(MAX_IMPORT_BYTES).optional().describe('The dictionary text, when the file is not on this machine. Must not be blank.'),
+        // Bytes, not characters: `.max()` counted UTF-16 code units, so 4.5M
+        // two-byte characters passed and the import refused them later as "stdin".
+        content: nonBlank()
+          .refine((s) => Buffer.byteLength(s, 'utf8') <= MAX_IMPORT_BYTES, {
+            message: `must be at most ${MAX_IMPORT_BYTES} bytes (${MAX_IMPORT_BYTES / (1024 * 1024)} MB) of UTF-8`,
+          })
+          .optional()
+          .describe(`The dictionary text, when the file is not on this machine: at most ${MAX_IMPORT_BYTES} bytes (${MAX_IMPORT_BYTES / (1024 * 1024)} MB) of UTF-8. Must not be blank.`),
         format: z.enum(IMPORT_FORMAT_VALUES).optional().describe("Input format; 'auto' (default) sniffs it."),
         scope: z.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
         dryRun: z.boolean().optional().describe('Report what would be added without writing.'),

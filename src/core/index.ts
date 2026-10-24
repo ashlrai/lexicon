@@ -9,6 +9,8 @@ export * from './trust.js';
 export * from './matcher.js';
 // The score an exact match with an invented word break gets; normalize_transcript's minConfidence description names it.
 export { INVENTED_BOUNDARY_CONFIDENCE } from './matcher/tuning.js';
+// The ranges `skipCode` leaves alone; the prompt hook reads no correction out of them.
+export { codeSpanRanges, collectRanges } from './matcher/tokenize.js';
 export * from './normalize.js';
 export * from './harvest.js';
 export * from './import-sources.js';

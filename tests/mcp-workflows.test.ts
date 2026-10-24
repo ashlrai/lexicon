@@ -603,6 +603,19 @@ describe('blank required strings', () => {
     expect(res.text).toMatch(/must not be blank at path/);
   });
 
+  // Catches: content was capped at 8 MB of characters, not bytes, so 4.5M
+  // two-byte characters passed the schema and the refusal came later from
+  // the import as "stdin is ... bytes", naming the wrong input.
+  it('refuses import_dictionary content over 8 MB of UTF-8 at the schema, naming content', async () => {
+    const content = '\u00e9'.repeat(4.5 * 1024 * 1024);
+    expect(content.length).toBeLessThan(8 * 1024 * 1024);
+    const res = await call('import_dictionary', { content, dryRun: true });
+    expect(res.isError).toBe(true);
+    expect(res.text).toMatch(/at content/);
+    expect(res.text).toMatch(/8388608 bytes/);
+    expect(res.text).not.toContain('stdin');
+  });
+
   // Catches: the tool parses `lexicon import --json`, whose success now leads with the CLI's `ok: true`; the tool result keeps its shape.
   it('import_dictionary returns the import report without the CLI ok key', async () => {
     const res = await call('import_dictionary', { content: 'word,replacement\nhead sner,Hetzner\n', dryRun: true });
@@ -1021,7 +1034,7 @@ describe('tool and resource descriptions agree with what the code does', () => {
     const { tools } = await listed();
     const props = (name: string): Record<string, { description?: string }> =>
       (tools.find((t) => t.name === name) as { inputSchema?: { properties?: Record<string, { description?: string }> } } | undefined)?.inputSchema?.properties ?? {};
-    expect(props('suggest_terms').limit?.description).toContain('(default 20)');
+    expect(props('suggest_terms').limit?.description).toContain('(default 20,');
     expect(props('export_lexicon').limit?.description).toContain('Omitted: every term.');
     expect(props('export_lexicon').categories?.description).toContain('Omitted: every category.');
   });
@@ -2009,5 +2022,32 @@ describe('MCP input edge cases', () => {
     expect(r.text).toContain('available: ai, business, developer, voice-tools');
     expect(r.text).toContain('did you mean "developer"?');
     expect(r.text).toContain('Nothing was installed.');
+  });
+});
+
+// Catches: `limit` on harvest_repo, suggest_terms and export_lexicon had no
+// upper bound, so `limit: 1e9` passed the schema while `lexicon harvest`,
+// `suggest` and `export` take the same maxima the core exports.
+describe('limit maxima', () => {
+  it('refuse a limit over the maximum at the schema and take the maximum itself', async () => {
+    const { HARVEST_MAX_LIMIT, SUGGEST_MAX_LIMIT, EXPORT_MAX_LIMIT } = await import('../src/core/index.js');
+    expect([HARVEST_MAX_LIMIT, SUGGEST_MAX_LIMIT, EXPORT_MAX_LIMIT]).toEqual([1000, 500, 10000]);
+    for (const [name, max, extra] of [
+      ['harvest_repo', HARVEST_MAX_LIMIT, {}],
+      ['suggest_terms', SUGGEST_MAX_LIMIT, {}],
+      ['export_lexicon', EXPORT_MAX_LIMIT, { format: 'csv' }],
+    ] as const) {
+      const over = await call(name, { ...extra, limit: max + 1 });
+      expect(over.isError, name).toBe(true);
+      expect(over.text, name).toMatch(/at limit/);
+      const at = await call(name, { ...extra, limit: max });
+      expect(at.isError, name).toBe(false);
+    }
+    const tools = await listTools();
+    for (const name of ['harvest_repo', 'suggest_terms', 'export_lexicon']) {
+      const limit = (tools.find((t) => t.name === name)?.inputSchema.properties as Record<string, { maximum?: number; description?: string }>).limit;
+      expect(limit?.maximum, name).toBeGreaterThan(0);
+      expect(limit?.description, name).toContain(`at most ${limit?.maximum}`);
+    }
   });
 });

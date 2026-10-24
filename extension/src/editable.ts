@@ -478,13 +478,25 @@ function rebuildKeepingCode(doc: Document, el: HTMLElement, text: string): boole
   const usesParagraphs = Array.from(el.querySelectorAll('p')).some((p) => !codes.some((c) => c.contains(p)));
   while (el.firstChild) el.removeChild(el.firstChild);
   let prevWasLine = false;
-  for (const item of out) {
+  for (const [i, item] of out.entries()) {
     if ('block' in item) {
       el.appendChild(item.block);
       prevWasLine = false;
       continue;
     }
     const nodes = item.line.map((part) => (typeof part === 'string' ? doc.createTextNode(part) : part));
+    const next = out[i + 1];
+    if (!usesParagraphs && nodes.length === 0 && (next === undefined || 'block' in next)) {
+      // An empty line before a block element or the end: a `<br>` there
+      // reads as nothing (its break was left to a following text line, and a
+      // trailing one is dropped), so the line is an empty block of its own,
+      // as a browser writes one in a `<div>` composer.
+      const blank = doc.createElement('div');
+      blank.appendChild(doc.createElement('br'));
+      el.appendChild(blank);
+      prevWasLine = false;
+      continue;
+    }
     if (usesParagraphs) {
       const p = doc.createElement('p');
       if (nodes.length === 0) p.appendChild(doc.createElement('br'));

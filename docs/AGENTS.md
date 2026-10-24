@@ -125,8 +125,8 @@ Twenty in all; [MCP.md](MCP.md) is the full table. These five cover almost
 everything:
 
 - `normalize_transcript { text }` - correct a dictated string. Returns `output`,
-  `changed` and a `replacements[]` list you can show. Call this on input you have
-  reason to think was dictated.
+  `changed` and a `replacements[]` list you can show, plus a `note` when `text` is
+  empty or only whitespace. Call this on input you have reason to think was dictated.
 - `learn_correction { heard, meant }` - the user just corrected you. Record it as
   an alias so it never happens again. This is the highest-value call in the whole
   server; make it whenever a user restates a word you got wrong.

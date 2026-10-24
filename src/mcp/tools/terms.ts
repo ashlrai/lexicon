@@ -27,6 +27,7 @@ import {
   removeTerm,
   resolveExportFormat,
   EXPORT_ALIAS_ROW_FORMATS,
+  EXPORT_MAX_LIMIT,
   conflictNote,
   unchangedTermNote,
   spellingConflicts,
@@ -139,6 +140,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
     }
     return { note: `no term "${canonical}" in ${scope ? `the ${scope} lexicon` : 'the global or project lexicon'}; list_terms shows the exact canonical spellings` };
   }
+  /** What normalize_transcript adds for empty or whitespace-only text, as `lexicon normalize` says on empty input. */
+  const EMPTY_NORMALIZE_NOTE = 'no text to correct (text was empty or only whitespace); pass the dictated message itself as `text`';
   server.registerTool(
     'normalize_transcript',
     {
@@ -154,7 +157,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         "WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails (unless the lexicon's settings.skipCode is false), and it never invents a " +
         'term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. ' +
         `Only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. ` +
-        'Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently ' +
+        'Returns { output, changed, replacements, summary }, plus a `note` when `text` is empty or only whitespace; when `changed` is false the text was already correct and you should carry on silently ' +
         '(except with dryRun: true, where nothing is applied, so `output` is the input and `changed` is false even when `replacements` lists corrections: read `replacements` for what a real call would fix), ' +
         'unless the result also carries `skippedProject`: then this repo has a project lexicon that is not trusted yet, so tell the user once that ' + cliCommand('trust') + ' would enable it.',
       inputSchema: {
@@ -225,6 +228,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           replacements: result.replacements,
           summary: result.replacements.length > 0 ? diffSummary(result) : '',
           ...(incomplete ? { incomplete } : {}),
+          // As `lexicon normalize` says on empty input, so a call that passed
+          // the transcript in the wrong field does not read as "already correct".
+          ...(text.trim() === '' ? { note: EMPTY_NORMALIZE_NOTE } : {}),
           // Without this an unchanged transcript in a repo whose lexicon is not
           // trusted yet looks exactly like one that needed no correction.
           ...skippedProjectFields(loaded),
@@ -526,9 +532,10 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           .number()
           .int()
           .positive()
+          .max(EXPORT_MAX_LIMIT)
           .optional()
           .describe(
-            `Cap the number of terms exported, applied after \`categories\`: up to this many terms are kept, in this order: the most hits first; at equal hits (every term starts at 0) brand, person and product terms first; then canonical A to Z. ` +
+            `Cap the number of terms exported (at most ${EXPORT_MAX_LIMIT}), applied after \`categories\`: up to this many terms are kept, in this order: the most hits first; at equal hits (every term starts at 0) brand, person and product terms first; then canonical A to Z. ` +
               `The formats that write one row per alias (${EXPORT_ALIAS_ROW_FORMATS.join(', ')}) count only terms that have an alias, since a term without one writes no row. Omitted: every term.`,
           ),
       },

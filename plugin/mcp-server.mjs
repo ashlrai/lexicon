@@ -55341,9 +55341,9 @@ function untrustedTermHolder(loaded, canonical) {
 }
 function untrustedAliasHolder(loaded, canonical, alias) {
   const skipped = loaded.skippedProject;
-  const drop = alias.trim().toLowerCase();
+  const drop = foldKey(alias);
   const term = skipped?.lexicon.terms.find((t) => sameCanonical(t.canonical, canonical));
-  if (!skipped || !drop || !term || !term.aliases.some((a) => a.trim().toLowerCase() === drop)) return void 0;
+  if (!skipped || !drop || !term || !term.aliases.some((a) => foldKey(a) === drop)) return void 0;
   return { path: skipped.path, trust: loaded.projectTrust === "changed" ? "changed" : "untrusted" };
 }
 async function removeAlias(canonical, alias, opts = {}) {
@@ -55364,7 +55364,7 @@ async function removeAlias(canonical, alias, opts = {}) {
       const term = findTerm(file2.lexicon, wanted);
       if (!term) return;
       termFound = true;
-      const remaining = term.aliases.filter((a) => a.trim().toLowerCase() !== drop.toLowerCase());
+      const remaining = term.aliases.filter((a) => foldKey(a) !== foldKey(drop));
       if (remaining.length === term.aliases.length) return;
       await assertParsedProjectWritable(file2, opts);
       term.aliases = remaining;
@@ -55461,15 +55461,18 @@ function candidatePaths(opts, scope) {
   targets.push({ path: paths.global, scope: "global" });
   return targets;
 }
+function foldKey(s) {
+  return s.trim().toLowerCase().normalize("NFC");
+}
 function canonicalKey2(canonical) {
-  return canonical.trim().toLowerCase();
+  return foldKey(canonical);
 }
 function sameCanonical(a, b) {
   return canonicalKey2(a) === canonicalKey2(b);
 }
 function dedupeAliases(aliases, canonical) {
-  const canon = canonical.trim().toLowerCase();
-  return dedupeCaseInsensitive(aliases).filter((a) => a.toLowerCase() !== canon);
+  const canon = foldKey(canonical);
+  return dedupeCaseInsensitive(aliases).filter((a) => foldKey(a) !== canon);
 }
 function dedupeCaseInsensitive(values) {
   const seen = /* @__PURE__ */ new Set();
@@ -55477,7 +55480,7 @@ function dedupeCaseInsensitive(values) {
   for (const raw of values) {
     const value = typeof raw === "string" ? raw.trim() : "";
     if (!value) continue;
-    const key = value.toLowerCase();
+    const key = foldKey(value);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(value);
@@ -56209,6 +56212,7 @@ var GENERIC_IDENTIFIERS = /* @__PURE__ */ new Set([
   "XXX"
 ]);
 var GENERIC_PREFIXES = ["React", "Http", "Json", "HTML", "Html", "SVG", "Svg", "DOM", "CSS", "URL", "XML", "Xml"];
+var HARVEST_MAX_LIMIT = 1e3;
 var HARVEST_STOPLIST = /* @__PURE__ */ new Set([
   // articles, pronouns, determiners, conjunctions
   "The",
@@ -58477,6 +58481,7 @@ var EXPORTERS = {
   "text": exportText,
   "markdown": exportMarkdown
 };
+var EXPORT_MAX_LIMIT = 1e4;
 var EXPORT_ALIAS_ROW_FORMATS = ["csv", "wispr", "superwhisper", "macos", "espanso"];
 function hasAliasRow(term) {
   return term.aliases.some((a) => a.trim() !== "");
@@ -59386,8 +59391,11 @@ var COMPILED = PATTERNS.map((p) => {
   const source = p.template.replace(/\{[XY]\}/g, side);
   return { needle: p.needle, re: new RegExp(source, "iu"), order: p.order, bareNeedsName: p.bareNeedsName === true };
 });
+function foldText(s) {
+  return s.trim().toLowerCase().normalize("NFC");
+}
 function sameText(a, b) {
-  return a.trim().toLowerCase() === b.trim().toLowerCase();
+  return foldText(a) === foldText(b);
 }
 function termFor(lexicon, meant) {
   return lexicon.terms.find((t) => sameText(t.canonical, meant)) ?? lexicon.terms.find((t) => t.aliases.some((a) => sameText(a, meant)));
@@ -59398,7 +59406,7 @@ function dedupeCaseInsensitive2(values) {
   for (const raw of values) {
     const v = raw.trim();
     if (!v) continue;
-    const key = v.toLowerCase();
+    const key = foldText(v);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(v);
@@ -59619,6 +59627,7 @@ var import_node_fs8 = __toESM(require_node_fs());
 var import_node_path8 = __toESM(require_node_path());
 var import_fastest_levenshtein3 = __toESM(require_mod());
 var SUGGEST_DEFAULT_LIMIT = 20;
+var SUGGEST_MAX_LIMIT = 500;
 var STALE_AFTER_DAYS = 30;
 var AUTO_APPLY_CONFIDENCE = 0.8;
 var MAX_EVIDENCE2 = 5;
@@ -61320,11 +61329,12 @@ var registerTermTools = (server, ctx) => {
     }
     return { note: `no term "${canonical}" in ${scope ? `the ${scope} lexicon` : "the global or project lexicon"}; list_terms shows the exact canonical spellings` };
   }
+  const EMPTY_NORMALIZE_NOTE = "no text to correct (text was empty or only whitespace); pass the dictated message itself as `text`";
   server.registerTool(
     "normalize_transcript",
     {
       title: "Normalize dictated text",
-      description: `Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a real name but not quite ('Ashler', "Cooper Nettie's", 'pie dentic'). One garbled proper noun is reason enough. You do not need the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit counter. Use the \`output\` field as the message you act on, and mention the correction only if it changes what you are about to do. WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails (unless the lexicon's settings.skipCode is false), and it never invents a term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. Only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. Returns { output, changed, replacements, summary }; when \`changed\` is false the text was already correct and you should carry on silently (except with dryRun: true, where nothing is applied, so \`output\` is the input and \`changed\` is false even when \`replacements\` lists corrections: read \`replacements\` for what a real call would fix), unless the result also carries \`skippedProject\`: then this repo has a project lexicon that is not trusted yet, so tell the user once that ` + cliCommand("trust") + " would enable it.",
+      description: `Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a real name but not quite ('Ashler', "Cooper Nettie's", 'pie dentic'). One garbled proper noun is reason enough. You do not need the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit counter. Use the \`output\` field as the message you act on, and mention the correction only if it changes what you are about to do. WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails (unless the lexicon's settings.skipCode is false), and it never invents a term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. Only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. Returns { output, changed, replacements, summary }, plus a \`note\` when \`text\` is empty or only whitespace; when \`changed\` is false the text was already correct and you should carry on silently (except with dryRun: true, where nothing is applied, so \`output\` is the input and \`changed\` is false even when \`replacements\` lists corrections: read \`replacements\` for what a real call would fix), unless the result also carries \`skippedProject\`: then this repo has a project lexicon that is not trusted yet, so tell the user once that ` + cliCommand("trust") + " would enable it.",
       inputSchema: {
         text: external_exports.string().describe("The dictated or transcribed text to correct."),
         dryRun: external_exports.boolean().optional().describe("When true, report candidate replacements without applying them: `output` is the input, `changed` is false even when `replacements` is not empty, and no hit is recorded."),
@@ -61370,6 +61380,9 @@ var registerTermTools = (server, ctx) => {
         replacements: result.replacements,
         summary: result.replacements.length > 0 ? diffSummary(result) : "",
         ...incomplete ? { incomplete } : {},
+        // As `lexicon normalize` says on empty input, so a call that passed
+        // the transcript in the wrong field does not read as "already correct".
+        ...text.trim() === "" ? { note: EMPTY_NORMALIZE_NOTE } : {},
         // Without this an unchanged transcript in a repo whose lexicon is not
         // trusted yet looks exactly like one that needed no correction.
         ...skippedProjectFields(loaded)
@@ -61564,8 +61577,8 @@ var registerTermTools = (server, ctx) => {
       inputSchema: {
         format: external_exports.enum(EXPORT_FORMAT_NAMES),
         categories: external_exports.array(external_exports.enum(TERM_CATEGORIES)).optional().describe("Only include terms in these categories. Omitted: every category."),
-        limit: external_exports.number().int().positive().optional().describe(
-          `Cap the number of terms exported, applied after \`categories\`: up to this many terms are kept, in this order: the most hits first; at equal hits (every term starts at 0) brand, person and product terms first; then canonical A to Z. The formats that write one row per alias (${EXPORT_ALIAS_ROW_FORMATS.join(", ")}) count only terms that have an alias, since a term without one writes no row. Omitted: every term.`
+        limit: external_exports.number().int().positive().max(EXPORT_MAX_LIMIT).optional().describe(
+          `Cap the number of terms exported (at most ${EXPORT_MAX_LIMIT}), applied after \`categories\`: up to this many terms are kept, in this order: the most hits first; at equal hits (every term starts at 0) brand, person and product terms first; then canonical A to Z. The formats that write one row per alias (${EXPORT_ALIAS_ROW_FORMATS.join(", ")}) count only terms that have an alias, since a term without one writes no row. Omitted: every term.`
         )
       }
     },
@@ -61722,7 +61735,7 @@ var registerHarvestTools = (server, ctx) => {
       description: "Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without `add` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml. Show the candidate list and get a yes first. A file the user already trusted stays trusted; a new, untrusted or changed one is not trusted by the write (`trusted: false`) and applies only after the user reviews it and runs " + cliCommand("trust") + `: relay \`nextStep\`. \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts: { root, candidates: [{ canonical, category, source, evidence, count, suggestedAliases }], count }, where \`evidence\` names where a name was seen (a file path, "git log", "package.json#name"), never the text around it, and \`suggestedAliases\` is often empty on purpose (an identifier gets none). With \`add: true\` the result adds \`added\`, \`failures\` and \`path\`, and is an error when no candidate could be written.`,
       inputSchema: {
         path: nonBlank().optional().describe(`Repository root. Omit for the server working directory (a blank one is refused). Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
-        limit: external_exports.number().int().positive().optional().describe("Max candidates to return (default 50)."),
+        limit: external_exports.number().int().positive().max(HARVEST_MAX_LIMIT).optional().describe(`Max candidates to return (default 50, at most ${HARVEST_MAX_LIMIT}).`),
         minCount: external_exports.number().int().positive().optional().describe("Minimum occurrences for a name found only in file text (default 2). The directory name, git authors, package names and dot-TLD brands (Ashlr.AI) are proposed at any count."),
         add: external_exports.boolean().optional().describe("When true, add every candidate to the project lexicon. A file that is not trusted yet is left untrusted for the user to review.")
       }
@@ -61783,7 +61796,7 @@ var registerHarvestTools = (server, ctx) => {
       description: "Propose new aliases, terms and never-words from the user's voice history, usage and repo. Call weekly or when the user asks how to improve corrections; present them and apply accepted ones with apply_suggestion (or add_term). Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), or 'stale' (a term that never fires), plus reason, confidence and evidence, and `scope` and `path`: the lexicon file applying it would write (where the term lives, or the global file for a new term). Name that file when you present a suggestion. The result is a bare JSON array, best first. An empty array comes with a second text block saying why (no voice history yet, or nothing new in it) and what produces suggestions: relay it.",
       inputSchema: {
         cwd: nonBlank().optional().describe(`Repository to scan for evidence. Omit for the server working directory (a blank one is refused). Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
-        limit: external_exports.number().int().positive().optional().describe(`Max suggestions to return (default ${SUGGEST_DEFAULT_LIMIT}).`)
+        limit: external_exports.number().int().positive().max(SUGGEST_MAX_LIMIT).optional().describe(`Max suggestions to return (default ${SUGGEST_DEFAULT_LIMIT}, at most ${SUGGEST_MAX_LIMIT}).`)
       }
     },
     async ({ cwd: cwdArg, limit }) => guarded(async () => {
@@ -62110,8 +62123,8 @@ var registerTrustTools = (server, ctx) => {
 };
 
 // src/cli/commands.ts
-var import_node_fs23 = __toESM(require_node_fs());
-var import_node_path23 = __toESM(require_node_path());
+var import_node_fs24 = __toESM(require_node_fs());
+var import_node_path24 = __toESM(require_node_path());
 
 // src/cli/claude-settings.ts
 var import_node_fs17 = __toESM(require_node_fs());
@@ -62374,8 +62387,8 @@ function defaultExec(file2, args) {
 }
 
 // src/cli/cmd-doctor.ts
-var import_node_fs22 = __toESM(require_node_fs());
-var import_node_path22 = __toESM(require_node_path());
+var import_node_fs23 = __toESM(require_node_fs());
+var import_node_path23 = __toESM(require_node_path());
 
 // src/daemon/clipboard-backends.ts
 var import_node_child_process4 = __toESM(require_node_child_process());
@@ -63336,8 +63349,171 @@ function quoteArg(s, platform = process.platform) {
   return /[\s"'$`\\]/.test(s) ? `"${s.replace(/(["\\$`])/g, "\\$1")}"` : s;
 }
 
-// src/cli/serve-paths.ts
+// src/cli/setup/detect.ts
+var import_node_child_process6 = __toESM(require_node_child_process());
+var import_node_fs22 = __toESM(require_node_fs());
 var import_node_path21 = __toESM(require_node_path());
+
+// src/cli/setup/types.ts
+var SETUP_CLIENTS = INSTALL_CLIENTS.filter((c) => c !== "generic");
+var SETUP_APPS = ["wispr", "superwhisper", "macos", "none"];
+var HARVEST_LIMIT2 = 10;
+var HARVEST_MIN_COUNT2 = 2;
+var SEEDED_TERMS = 3;
+
+// src/cli/setup/detect.ts
+function captureIO() {
+  const sink = {
+    out: "",
+    err: "",
+    stdout(s) {
+      sink.out += s;
+    },
+    stderr(s) {
+      sink.err += s;
+    }
+  };
+  return sink;
+}
+function lastLine(text) {
+  const lines = text.split("\n").map((l) => l.replace(/\x1b\[[0-9;]*m/g, "").trim()).filter(Boolean);
+  return lines[lines.length - 1] ?? "";
+}
+function setupNameProblem(value) {
+  const name = stripInvisible(value).trim();
+  if (name === "") return "must not be blank";
+  if (hasControlChars(name)) return "must be one line, with no control characters";
+  const unencodable = findUnencodableChar(name);
+  if (unencodable) return `must not contain ${unencodable} (${UNENCODABLE_NOTE})`;
+  if (name.length > LIMITS.word) return `must be at most ${LIMITS.word} characters (it has ${name.length})`;
+  return void 0;
+}
+function setupHintProblem(value) {
+  const hint = stripInvisible(value).trim();
+  if (hint === "") return void 0;
+  if (hasControlChars(hint)) return "must be one line, with no control characters";
+  const unencodable = findUnencodableChar(hint);
+  if (unencodable) return `must not contain ${unencodable} (${UNENCODABLE_NOTE})`;
+  if (hint.length > LIMITS.text) return `must be at most ${LIMITS.text} characters (it has ${hint.length})`;
+  return void 0;
+}
+function isSetupClient(value) {
+  return SETUP_CLIENTS.includes(value);
+}
+function isSetupApp(value) {
+  return SETUP_APPS.includes(value);
+}
+function parseClientList(value) {
+  const out = [];
+  for (const raw of value.split(",")) {
+    const name = raw.trim().toLowerCase();
+    if (!name || name === "none") continue;
+    if (!isSetupClient(name)) {
+      throw new Error(`unknown client "${raw.trim()}" (expected one of: ${SETUP_CLIENTS.join(", ")}, none)`);
+    }
+    if (!out.includes(name)) out.push(name);
+  }
+  return out;
+}
+function parsePackList(value, available) {
+  const out = [];
+  for (const raw of value.split(",")) {
+    const name = raw.trim().toLowerCase();
+    if (!name || name === "none") continue;
+    if (!available.includes(name)) {
+      throw new Error(`unknown pack "${raw.trim()}" (expected one of: ${available.join(", ")}, none)`);
+    }
+    if (!out.includes(name)) out.push(name);
+  }
+  return out;
+}
+function findGitRoot2(start, exists) {
+  let dir = import_node_path21.default.resolve(start);
+  for (; ; ) {
+    if (exists(import_node_path21.default.join(dir, ".git"))) return dir;
+    const parent = import_node_path21.default.dirname(dir);
+    if (parent === dir) return void 0;
+    dir = parent;
+  }
+}
+function suggestCompany(packageName, remoteUrl) {
+  const scope = packageName?.match(/^@([A-Za-z0-9][\w.-]*)\//)?.[1];
+  if (scope) return scope.charAt(0).toUpperCase() + scope.slice(1);
+  if (remoteUrl) {
+    const m = remoteUrl.trim().match(/[:/]([A-Za-z0-9][\w.-]*)\/[\w.-]+?(?:\.git)?\/?$/);
+    if (m && !/^(users?|orgs?)$/i.test(m[1])) return m[1];
+  }
+  return void 0;
+}
+async function readPackageName(cwd) {
+  try {
+    const raw = await import_node_fs22.promises.readFile(import_node_path21.default.join(cwd, "package.json"), "utf8");
+    const pkg = JSON.parse(raw);
+    return typeof pkg.name === "string" ? pkg.name : void 0;
+  } catch {
+    return void 0;
+  }
+}
+var defaultSetupExec = (file2, args) => (0, import_node_child_process6.execFileSync)(file2, args, { encoding: "utf8", timeout: 5e3, stdio: ["ignore", "pipe", "ignore"] }).trim();
+function tryExec2(exec, file2, args) {
+  try {
+    const out = exec(file2, args).trim();
+    return out || void 0;
+  } catch {
+    return void 0;
+  }
+}
+var APP_BUNDLES = {
+  "claude-desktop": "Claude.app",
+  cursor: "Cursor.app",
+  vscode: "Visual Studio Code.app",
+  windsurf: "Windsurf.app"
+};
+var CLI_NAMES = {
+  claude: "claude",
+  codex: "codex",
+  gemini: "gemini",
+  vscode: "code",
+  cursor: "cursor",
+  windsurf: "windsurf"
+};
+function configDirFor(client, ctx) {
+  if (client === "claude") return claudeConfigDir(ctx.env, ctx.home);
+  const file2 = configPathFor(client, { home: ctx.home, cwd: ctx.cwd, platform: ctx.platform, env: ctx.env, project: false });
+  return client === "vscode" ? import_node_path21.default.dirname(import_node_path21.default.dirname(file2)) : import_node_path21.default.dirname(file2);
+}
+async function detectClients(deps = {}, cwd = process.cwd()) {
+  const ctx = {
+    home: deps.home ?? homeDir(),
+    cwd,
+    platform: deps.platform ?? process.platform,
+    env: deps.env ?? process.env,
+    exists: deps.exists ?? import_node_fs22.existsSync
+  };
+  const out = [];
+  for (const name of SETUP_CLIENTS) {
+    let evidence;
+    const dir = configDirFor(name, ctx);
+    if (ctx.exists(dir)) evidence = dir;
+    if (!evidence && ctx.platform === "darwin" && APP_BUNDLES[name]) {
+      const bundle = import_node_path21.default.join("/Applications", APP_BUNDLES[name]);
+      if (ctx.exists(bundle)) evidence = bundle;
+    }
+    if (!evidence && CLI_NAMES[name]) {
+      const bin = await findOnPath(CLI_NAMES[name], {
+        env: ctx.env,
+        platform: ctx.platform,
+        exists: async (candidate) => ctx.exists(candidate)
+      });
+      if (bin) evidence = bin;
+    }
+    out.push(evidence ? { name, detected: true, evidence } : { name, detected: false });
+  }
+  return out;
+}
+
+// src/cli/serve-paths.ts
+var import_node_path22 = __toESM(require_node_path());
 var LAUNCH_AGENT_LABEL = "ai.ashlr.lexicon.serve";
 var SYSTEMD_UNIT_NAME = "lexicon-serve.service";
 var SCHEDULED_TASK_NAME = "Lexicon";
@@ -63351,13 +63527,13 @@ function scheduledTaskName(env = process.env) {
   return override && /^[A-Za-z0-9._-]+$/.test(override) ? override : SCHEDULED_TASK_NAME;
 }
 function launchAgentPath(home, env = process.env) {
-  return import_node_path21.default.join(usableHome(home), "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
+  return import_node_path22.default.join(usableHome(home), "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
 }
 function launchAgentLogPath(home) {
-  return import_node_path21.default.join(usableHome(home), "Library", "Logs", "lexicon", "serve.log");
+  return import_node_path22.default.join(usableHome(home), "Library", "Logs", "lexicon", "serve.log");
 }
 function systemdUnitPath(home, env) {
-  return import_node_path21.default.join(xdgConfigHome(env, home), "systemd", "user", SYSTEMD_UNIT_NAME);
+  return import_node_path22.default.join(xdgConfigHome(env, home), "systemd", "user", SYSTEMD_UNIT_NAME);
 }
 function programPathFromPlist(plist) {
   const block = plist.match(/<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/);
@@ -63546,6 +63722,12 @@ function parsesAsJson(text) {
     return false;
   }
 }
+function projectSettingsCandidates(cwd) {
+  const dirs = [import_node_path23.default.resolve(cwd)];
+  const root = findGitRoot2(cwd, import_node_fs23.existsSync);
+  if (root !== void 0 && import_node_path23.default.resolve(root) !== dirs[0]) dirs.push(import_node_path23.default.resolve(root));
+  return dirs.flatMap((dir) => [import_node_path23.default.join(dir, ".claude", "settings.json"), import_node_path23.default.join(dir, ".claude", "settings.local.json")]);
+}
 var SERVE_REINSTALL_HINT = "run: lexicon serve --uninstall && lexicon serve --install";
 async function checkLoginService(probe) {
   const { platform, env, exec, home } = probe;
@@ -63585,7 +63767,7 @@ async function checkLoginService(probe) {
     if (!loaded) {
       return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
     }
-    if (program2 !== void 0 && !(0, import_node_fs22.existsSync)(program2)) {
+    if (program2 !== void 0 && !(0, import_node_fs23.existsSync)(program2)) {
       return { level: "fail", message: `${name} points at a missing file: ${program2} (${SERVE_REINSTALL_HINT})` };
     }
     return { level: "ok", message: `${name} is registered and runs at logon` };
@@ -63594,7 +63776,7 @@ async function checkLoginService(probe) {
   }
   let fileExists = false;
   try {
-    const text = await import_node_fs22.promises.readFile(file2, "utf8");
+    const text = await import_node_fs23.promises.readFile(file2, "utf8");
     fileExists = true;
     program2 = platform === "darwin" ? programPathFromPlist(text) : programPathFromUnit(text);
   } catch {
@@ -63603,7 +63785,7 @@ async function checkLoginService(probe) {
   if (!loaded && !fileExists) {
     return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
   }
-  if (program2 !== void 0 && !(0, import_node_fs22.existsSync)(program2)) {
+  if (program2 !== void 0 && !(0, import_node_fs23.existsSync)(program2)) {
     return { level: "fail", message: `${name} points at a missing file: ${program2} (${SERVE_REINSTALL_HINT})` };
   }
   if (!loaded) {
@@ -63816,32 +63998,41 @@ async function runDoctorReport(opts, deps = {}) {
   if (allTerms.length > 0 && !checks.some((c) => c.level === "fail" && c.message.includes("conflict"))) {
     push2("ok", "no alias/canonical conflicts");
   }
-  const settingsPath = deps.settingsPath ?? import_node_path22.default.join(claudeConfigDir(env, home), "settings.json");
-  const projectSettingsPath = deps.projectSettingsPath ?? import_node_path22.default.join(cwd, ".claude", "settings.json");
-  const sameSettingsFile = import_node_path22.default.resolve(projectSettingsPath) === import_node_path22.default.resolve(settingsPath);
-  const installedPluginsPath = deps.installedPluginsPath ?? import_node_path22.default.join(claudeConfigDir(env, home), "plugins", "installed_plugins.json");
+  const settingsPath = deps.settingsPath ?? import_node_path23.default.join(claudeConfigDir(env, home), "settings.json");
+  const projectSettingsPath = deps.projectSettingsPath ?? import_node_path23.default.join(cwd, ".claude", "settings.json");
+  const projectSettingsFiles = deps.projectSettingsPath !== void 0 ? [projectSettingsPath] : projectSettingsCandidates(cwd);
+  const projectFiles = projectSettingsFiles.filter((file2) => import_node_path23.default.resolve(file2) !== import_node_path23.default.resolve(settingsPath)).map((file2) => ({ file: file2, scope: file2.endsWith("settings.local.json") ? "local" : "project" }));
+  const installedPluginsPath = deps.installedPluginsPath ?? import_node_path23.default.join(claudeConfigDir(env, home), "plugins", "installed_plugins.json");
   const settings = await readDoctorConfigJson(settingsPath);
-  const projectSettings = sameSettingsFile ? { exists: false } : await readDoctorConfigJson(projectSettingsPath);
+  const projectReads = await Promise.all(projectFiles.map(async (f) => ({ ...f, read: await readDoctorConfigJson(f.file) })));
   const installed = await readDoctorConfigJson(installedPluginsPath);
   if (settings.error) push2("warn", `Claude settings configuration is unconfirmed (${settings.error})`);
-  if (!sameSettingsFile && projectSettings.error) {
-    push2("warn", `Claude project settings configuration is unconfirmed (${projectSettings.error}): ${projectSettingsPath}`);
+  for (const p of projectReads) {
+    if (p.read.error) push2("warn", `Claude ${p.scope} settings configuration is unconfirmed (${p.read.error}): ${p.file}`);
   }
   if (installed.error) push2("warn", `Claude installed-plugin configuration is unconfirmed (${installed.error})`);
-  const pluginId = findInstalledLexiconPlugin(settings.value, installed.value) ?? findInstalledLexiconPlugin(projectSettings.value, void 0);
+  let pluginId = findInstalledLexiconPlugin(settings.value, installed.value);
+  for (const p of projectReads) pluginId ??= findInstalledLexiconPlugin(p.read.value, void 0);
   if (pluginId) {
     wired = true;
     push2("ok", `lexicon plugin installed as ${pluginId} (its hooks and MCP server are used)`);
   } else {
     for (const event of HOOK_EVENTS) {
-      const inUser = settingsHasLexiconHook(settings.value, event);
-      const inProject = !sameSettingsFile && settingsHasLexiconHook(projectSettings.value, event);
-      if (inUser) push2("ok", `${event} hook found in ${settingsPath} (user scope)`);
-      if (inProject) push2("ok", `${event} hook found in ${projectSettingsPath} (project scope)`);
-      if (inUser || inProject) {
+      let found = false;
+      if (settingsHasLexiconHook(settings.value, event)) {
+        found = true;
+        push2("ok", `${event} hook found in ${settingsPath} (user scope)`);
+      }
+      for (const p of projectReads) {
+        if (!settingsHasLexiconHook(p.read.value, event)) continue;
+        found = true;
+        push2("ok", `${event} hook found in ${p.file} (${p.scope} scope)`);
+      }
+      if (found) {
         wired = true;
       } else {
-        const where = sameSettingsFile ? settingsPath : `${settingsPath} (user scope) or ${projectSettingsPath} (project scope)`;
+        const looked = [`${settingsPath} (user scope)`, ...projectFiles.map((p) => `${p.file} (${p.scope} scope)`)];
+        const where = looked.length === 1 ? looked[0] : `${looked.slice(0, -1).join(", ")} or ${looked.at(-1)}`;
         push2(
           "warn",
           `${event} hook not found in ${where} (fine if you use the plugin; otherwise run: lexicon install claude --apply)`
@@ -63900,11 +64091,11 @@ async function runDoctorReport(opts, deps = {}) {
     push2("warn", `no clipboard backend found (${errorMessage(err)})`);
   }
   const whisperOverride = env.LEXICON_WHISPER_BIN;
-  const whisperCli = whisperOverride ? (0, import_node_fs22.existsSync)(whisperOverride) ? whisperOverride : void 0 : locateToolSync(WHISPER_BIN_NAMES, env, platform);
+  const whisperCli = whisperOverride ? (0, import_node_fs23.existsSync)(whisperOverride) ? whisperOverride : void 0 : locateToolSync(WHISPER_BIN_NAMES, env, platform);
   if (whisperCli) push2("ok", `whisper-cli found: ${whisperCli}`);
   else push2("warn", `whisper-cli not found (needed by lexicon voice; ${installHint(platform, { ffmpeg: false, whisper: true })})`);
   const ffmpegOverride = env.LEXICON_FFMPEG_BIN;
-  const ffmpegBin = ffmpegOverride ? (0, import_node_fs22.existsSync)(ffmpegOverride) ? ffmpegOverride : void 0 : locateToolSync(["ffmpeg"], env, platform);
+  const ffmpegBin = ffmpegOverride ? (0, import_node_fs23.existsSync)(ffmpegOverride) ? ffmpegOverride : void 0 : locateToolSync(["ffmpeg"], env, platform);
   if (ffmpegBin) push2("ok", `ffmpeg found: ${ffmpegBin}`);
   else push2("warn", `ffmpeg not found (needed by lexicon voice; ${installHint(platform, { ffmpeg: true, whisper: false })})`);
   const model = resolveModel(DEFAULT_MODEL, { globalPath: paths.global, env });
@@ -63928,6 +64119,7 @@ async function runDoctorReport(opts, deps = {}) {
       trust: getTrustPath({ cwd }),
       settings: settingsPath,
       projectSettings: projectSettingsPath,
+      projectSettingsFiles,
       installedPlugins: installedPluginsPath
     },
     versions: { lexicon: packageVersion(import.meta.url), node: process.version, platform }
@@ -64072,11 +64264,11 @@ function createPrompter(io = {}) {
 
 // src/cli/commands.ts
 var PROJECT_FILE_NAME2 = ".lexicon.yaml";
-function findGitRoot2(start) {
-  let dir = import_node_path23.default.resolve(start);
+function findGitRoot3(start) {
+  let dir = import_node_path24.default.resolve(start);
   for (; ; ) {
-    if ((0, import_node_fs23.existsSync)(import_node_path23.default.join(dir, ".git"))) return dir;
-    const parent = import_node_path23.default.dirname(dir);
+    if ((0, import_node_fs24.existsSync)(import_node_path24.default.join(dir, ".git"))) return dir;
+    const parent = import_node_path24.default.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
@@ -64097,7 +64289,7 @@ async function runInit(opts, io) {
   const cwd = resolveCwd(opts);
   const paths = resolvePaths({ cwd });
   const scope = opts.project ? "project" : "global";
-  const target = opts.project ? paths.project ?? import_node_path23.default.join(findGitRoot2(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
+  const target = opts.project ? paths.project ?? import_node_path24.default.join(findGitRoot3(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
   const created = await createLexiconFile(target, scope);
   if (created && scope === "project") await trustProject(target, { cwd });
   const trust = scope === "project" ? await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) : void 0;
@@ -64125,12 +64317,12 @@ async function runInit(opts, io) {
 }
 async function createLexiconFile(target, scope) {
   return withLexiconLock(target, async () => {
-    if ((0, import_node_fs23.existsSync)(target)) return false;
+    if ((0, import_node_fs24.existsSync)(target)) return false;
     const lexicon = emptyLexicon();
     lexicon.settings = { minConfidence: 0.82, phonetic: true, fuzzy: true, skipCode: true };
     const file2 = { path: target, scope, lexicon, exists: false };
     await writeLexiconFile(file2);
-    await import_node_fs23.promises.appendFile(target, EXAMPLE_TERM_COMMENT, "utf8");
+    await import_node_fs24.promises.appendFile(target, EXAMPLE_TERM_COMMENT, "utf8");
     return true;
   });
 }
@@ -64138,167 +64330,6 @@ async function createLexiconFile(target, scope) {
 // src/cli/cmd-setup.ts
 var import_node_path28 = __toESM(require_node_path());
 var import_node_fs28 = __toESM(require_node_fs());
-
-// src/cli/setup/types.ts
-var SETUP_CLIENTS = INSTALL_CLIENTS.filter((c) => c !== "generic");
-var SETUP_APPS = ["wispr", "superwhisper", "macos", "none"];
-var HARVEST_LIMIT2 = 10;
-var HARVEST_MIN_COUNT2 = 2;
-var SEEDED_TERMS = 3;
-
-// src/cli/setup/detect.ts
-var import_node_child_process6 = __toESM(require_node_child_process());
-var import_node_fs24 = __toESM(require_node_fs());
-var import_node_path24 = __toESM(require_node_path());
-function captureIO() {
-  const sink = {
-    out: "",
-    err: "",
-    stdout(s) {
-      sink.out += s;
-    },
-    stderr(s) {
-      sink.err += s;
-    }
-  };
-  return sink;
-}
-function lastLine(text) {
-  const lines = text.split("\n").map((l) => l.replace(/\x1b\[[0-9;]*m/g, "").trim()).filter(Boolean);
-  return lines[lines.length - 1] ?? "";
-}
-function setupNameProblem(value) {
-  const name = stripInvisible(value).trim();
-  if (name === "") return "must not be blank";
-  if (hasControlChars(name)) return "must be one line, with no control characters";
-  const unencodable = findUnencodableChar(name);
-  if (unencodable) return `must not contain ${unencodable} (${UNENCODABLE_NOTE})`;
-  if (name.length > LIMITS.word) return `must be at most ${LIMITS.word} characters (it has ${name.length})`;
-  return void 0;
-}
-function setupHintProblem(value) {
-  const hint = stripInvisible(value).trim();
-  if (hint === "") return void 0;
-  if (hasControlChars(hint)) return "must be one line, with no control characters";
-  const unencodable = findUnencodableChar(hint);
-  if (unencodable) return `must not contain ${unencodable} (${UNENCODABLE_NOTE})`;
-  if (hint.length > LIMITS.text) return `must be at most ${LIMITS.text} characters (it has ${hint.length})`;
-  return void 0;
-}
-function isSetupClient(value) {
-  return SETUP_CLIENTS.includes(value);
-}
-function isSetupApp(value) {
-  return SETUP_APPS.includes(value);
-}
-function parseClientList(value) {
-  const out = [];
-  for (const raw of value.split(",")) {
-    const name = raw.trim().toLowerCase();
-    if (!name || name === "none") continue;
-    if (!isSetupClient(name)) {
-      throw new Error(`unknown client "${raw.trim()}" (expected one of: ${SETUP_CLIENTS.join(", ")}, none)`);
-    }
-    if (!out.includes(name)) out.push(name);
-  }
-  return out;
-}
-function parsePackList(value, available) {
-  const out = [];
-  for (const raw of value.split(",")) {
-    const name = raw.trim().toLowerCase();
-    if (!name || name === "none") continue;
-    if (!available.includes(name)) {
-      throw new Error(`unknown pack "${raw.trim()}" (expected one of: ${available.join(", ")}, none)`);
-    }
-    if (!out.includes(name)) out.push(name);
-  }
-  return out;
-}
-function findGitRoot3(start, exists) {
-  let dir = import_node_path24.default.resolve(start);
-  for (; ; ) {
-    if (exists(import_node_path24.default.join(dir, ".git"))) return dir;
-    const parent = import_node_path24.default.dirname(dir);
-    if (parent === dir) return void 0;
-    dir = parent;
-  }
-}
-function suggestCompany(packageName, remoteUrl) {
-  const scope = packageName?.match(/^@([A-Za-z0-9][\w.-]*)\//)?.[1];
-  if (scope) return scope.charAt(0).toUpperCase() + scope.slice(1);
-  if (remoteUrl) {
-    const m = remoteUrl.trim().match(/[:/]([A-Za-z0-9][\w.-]*)\/[\w.-]+?(?:\.git)?\/?$/);
-    if (m && !/^(users?|orgs?)$/i.test(m[1])) return m[1];
-  }
-  return void 0;
-}
-async function readPackageName(cwd) {
-  try {
-    const raw = await import_node_fs24.promises.readFile(import_node_path24.default.join(cwd, "package.json"), "utf8");
-    const pkg = JSON.parse(raw);
-    return typeof pkg.name === "string" ? pkg.name : void 0;
-  } catch {
-    return void 0;
-  }
-}
-var defaultSetupExec = (file2, args) => (0, import_node_child_process6.execFileSync)(file2, args, { encoding: "utf8", timeout: 5e3, stdio: ["ignore", "pipe", "ignore"] }).trim();
-function tryExec2(exec, file2, args) {
-  try {
-    const out = exec(file2, args).trim();
-    return out || void 0;
-  } catch {
-    return void 0;
-  }
-}
-var APP_BUNDLES = {
-  "claude-desktop": "Claude.app",
-  cursor: "Cursor.app",
-  vscode: "Visual Studio Code.app",
-  windsurf: "Windsurf.app"
-};
-var CLI_NAMES = {
-  claude: "claude",
-  codex: "codex",
-  gemini: "gemini",
-  vscode: "code",
-  cursor: "cursor",
-  windsurf: "windsurf"
-};
-function configDirFor(client, ctx) {
-  if (client === "claude") return claudeConfigDir(ctx.env, ctx.home);
-  const file2 = configPathFor(client, { home: ctx.home, cwd: ctx.cwd, platform: ctx.platform, env: ctx.env, project: false });
-  return client === "vscode" ? import_node_path24.default.dirname(import_node_path24.default.dirname(file2)) : import_node_path24.default.dirname(file2);
-}
-async function detectClients(deps = {}, cwd = process.cwd()) {
-  const ctx = {
-    home: deps.home ?? homeDir(),
-    cwd,
-    platform: deps.platform ?? process.platform,
-    env: deps.env ?? process.env,
-    exists: deps.exists ?? import_node_fs24.existsSync
-  };
-  const out = [];
-  for (const name of SETUP_CLIENTS) {
-    let evidence;
-    const dir = configDirFor(name, ctx);
-    if (ctx.exists(dir)) evidence = dir;
-    if (!evidence && ctx.platform === "darwin" && APP_BUNDLES[name]) {
-      const bundle = import_node_path24.default.join("/Applications", APP_BUNDLES[name]);
-      if (ctx.exists(bundle)) evidence = bundle;
-    }
-    if (!evidence && CLI_NAMES[name]) {
-      const bin = await findOnPath(CLI_NAMES[name], {
-        env: ctx.env,
-        platform: ctx.platform,
-        exists: async (candidate) => ctx.exists(candidate)
-      });
-      if (bin) evidence = bin;
-    }
-    out.push(evidence ? { name, detected: true, evidence } : { name, detected: false });
-  }
-  return out;
-}
 
 // src/cli/setup/steps.ts
 var import_node_fs27 = __toESM(require_node_fs());
@@ -65040,7 +65071,7 @@ async function stepHarvest(ctx) {
     ctx.say(dim("   skipped (--no-harvest)"));
     return;
   }
-  const root = findGitRoot3(ctx.cwd, ctx.exists);
+  const root = findGitRoot2(ctx.cwd, ctx.exists);
   if (!root) {
     ctx.say(dim("   not a git repository; run `lexicon harvest --add` inside one later"));
     return;
@@ -66355,6 +66386,7 @@ var registerPackTools = (server, ctx) => {
       });
     })
   );
+  const PREVIEW_TOKEN_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
   server.registerTool(
     "import_vocabulary",
     {
@@ -66364,7 +66396,9 @@ var registerPackTools = (server, ctx) => {
         sources: external_exports.array(external_exports.enum(IMPLEMENTED_IMPORT_SOURCES)).optional().describe("Explicit sources the user approved reading. Omitted sources returns only descriptions without probing or harvesting."),
         apply: external_exports.boolean().optional().describe("false/omitted = preview only: return availability and candidates, write nothing (default). true = write the candidates after the user approved the preview."),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
-        previewToken: external_exports.string().optional().describe("Token from the approved preview; required to apply, refused without apply: true. Expires after five minutes or a server restart."),
+        // The token is randomUUID()'s: anything else cannot name a preview, so
+        // it is refused here rather than looked up (a 100 KB string used to be).
+        previewToken: external_exports.string().regex(PREVIEW_TOKEN_RE, "must be the previewToken a preview returned (a lowercase UUID)").optional().describe("Token from the approved preview (a lowercase UUID, as the preview returned it); required to apply, refused without apply: true. Expires after five minutes or a server restart."),
         approvedCandidateIds: external_exports.array(external_exports.string().regex(/^[a-f0-9]{64}$/)).max(IMPORT_PREVIEW_MAX_CANDIDATES).optional().describe("Only candidate ids approved by the user from that preview; required to apply, refused without apply: true; empty means import nothing.")
       }
     },
@@ -66441,7 +66475,11 @@ var registerPackTools = (server, ctx) => {
       description: `Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB of UTF-8). With both, content is imported and path is not read: only its file name is used, so its extension steers format 'auto' (content passed with a .csv path is parsed as CSV). \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused with the command the user can run themselves. Use dryRun: true first to show the user what would be added, then run again without it. With scope project and a project file that is not trusted yet, the file is written but left untrusted (\`trusted: false\`): relay \`nextStep\`. A dry run against such a file does not read it, so its rows carry no \`created\` (the report has \`untrustedTarget: true\`).`,
       inputSchema: {
         path: nonBlank().optional().describe("File to import. Its extension helps auto-detection. Alongside content it is not read, and only its extension and name are used."),
-        content: nonBlank().max(MAX_IMPORT_BYTES).optional().describe("The dictionary text, when the file is not on this machine. Must not be blank."),
+        // Bytes, not characters: `.max()` counted UTF-16 code units, so 4.5M
+        // two-byte characters passed and the import refused them later as "stdin".
+        content: nonBlank().refine((s) => Buffer.byteLength(s, "utf8") <= MAX_IMPORT_BYTES, {
+          message: `must be at most ${MAX_IMPORT_BYTES} bytes (${MAX_IMPORT_BYTES / (1024 * 1024)} MB) of UTF-8`
+        }).optional().describe(`The dictionary text, when the file is not on this machine: at most ${MAX_IMPORT_BYTES} bytes (${MAX_IMPORT_BYTES / (1024 * 1024)} MB) of UTF-8. Must not be blank.`),
         format: external_exports.enum(IMPORT_FORMAT_VALUES).optional().describe("Input format; 'auto' (default) sniffs it."),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
         dryRun: external_exports.boolean().optional().describe("Report what would be added without writing.")

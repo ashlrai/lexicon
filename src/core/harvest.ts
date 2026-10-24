@@ -140,6 +140,13 @@ const GENERIC_PREFIXES = ['React', 'Http', 'Json', 'HTML', 'Html', 'SVG', 'Svg',
  * Capitalized English / doc words that appear in READMEs and must not be
  * mistaken for brands.
  */
+/**
+ * The most candidates `harvestRepo` callers may ask for: the cap `lexicon
+ * harvest --limit` and MCP `harvest_repo` take. A repo's speakable names run
+ * to dozens; a limit past this only makes the reply longer.
+ */
+export const HARVEST_MAX_LIMIT = 1000;
+
 export const HARVEST_STOPLIST: ReadonlySet<string> = new Set([
   // articles, pronouns, determiners, conjunctions
   'The', 'This', 'That', 'These', 'Those', 'There', 'Here', 'They', 'Them', 'Their', 'Then',

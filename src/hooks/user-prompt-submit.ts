@@ -27,7 +27,7 @@
 import { promises as fs, readSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, pathForModel, phoneticKey, queueCorrections, recordHits, sanitizeForDisplayMax, similarity } from '../core/index.js';
+import { codeSpanRanges, collectRanges, diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, pathForModel, phoneticKey, queueCorrections, recordHits, sanitizeForDisplayMax, similarity } from '../core/index.js';
 import type { Correction, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
 import { packageVersion } from '../util/package.js';
 import { cliCommand } from '../util/cli-hint.js';
@@ -354,17 +354,52 @@ export function parseCorrections(text: string): Correction[] {
   const seen = new Set<string>();
   const add = (c: Correction | undefined): void => {
     if (!c || c.heard.trim() === '' || c.meant.trim() === '') return;
+    if (CODE_SHAPE_RE.test(c.heard) || CODE_SHAPE_RE.test(c.meant)) return;
     if (isOrdinaryContrast(text, c)) return;
     const key = `${collapse(c.heard)}\u0000${collapse(c.meant)}`;
     if (seen.has(key)) return;
     seen.add(key);
     found.push(c);
   };
-  add(parseCorrection(text));
+  // Code is not the user speaking: a correction phrase in a pasted block is
+  // read as blanks (offsets kept), so it neither matches nor joins the prose.
+  const prose = blankCode(text);
+  add(parseCorrection(prose));
   // Only a prompt with a second sentence can hold a second correction.
-  if (!SENTENCE_BREAK_RE.test(text)) return found;
-  for (const sentence of text.split(SENTENCE_BREAK_RE)) add(parseCorrection(sentence));
+  if (!SENTENCE_BREAK_RE.test(prose)) return found;
+  for (const sentence of prose.split(SENTENCE_BREAK_RE)) add(parseCorrection(sentence));
   return found;
+}
+
+/**
+ * A side that reads as code, not a name: a call (`toBe(`), braces, `;` or
+ * `=`. "expect(x).toBe('Ashler -> Ashlr.AI')" matched "Y -> X" with heard
+ * "expect(x).toBe('Ashler". A name with a parenthetical ("Vercel (the
+ * company)") has a space before its parenthesis and is kept.
+ */
+const CODE_SHAPE_RE = /[\p{L}\p{N}_]\(|[{};=]/u;
+
+/**
+ * `text` with what the matcher's `skipCode` leaves alone (fenced and indented
+ * code blocks, HTML code elements, URLs, emails and paths) replaced by spaces,
+ * so offsets and sentence breaks stay where they were. An inline code span is
+ * blanked only when it holds a correction phrase itself (`` `it's Vercel not
+ * versel` ``): one around a word (`` it's `Vercel` not versel ``) is the user
+ * quoting a spelling.
+ */
+function blankCode(text: string): string {
+  if (!/[`~<\n@/:.]/.test(text)) return text;
+  const spans = new Set(codeSpanRanges(text).map((r) => `${r.start}:${r.end}`));
+  let out = '';
+  let pos = 0;
+  for (const r of collectRanges(text)) {
+    if (r.end <= pos) continue;
+    const start = Math.max(pos, r.start);
+    if (spans.has(`${r.start}:${r.end}`) && parseCorrection(text.slice(r.start, r.end).replace(/^`+|`+$/g, '')) === undefined) continue;
+    out += text.slice(pos, start) + text.slice(start, r.end).replace(/[^\n]/g, ' ');
+    pos = r.end;
+  }
+  return pos === 0 ? text : out + text.slice(pos);
 }
 
 /** Least similarity (letters and digits only, lowercased) at which two plain-word sides still read as one spelling. */
@@ -828,12 +863,14 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   let timedOut = false;
   const shouldStop = (): boolean => (timedOut ||= process.hrtime.bigint() - started >= limit);
   let result = index ? normalizeWithIndex(head, index, { shouldStop }) : undefined;
-  if (result && tail) result = { ...result, input: prompt, output: result.output + tail };
   const budgetNote = timedOut ? formatBudgetNote(budget) : '';
   // The words the user is correcting are not dictation: leave them alone and do not count them as hits.
   for (const correction of corrections) if (result) result = dropCorrectionSpans(result, correction);
   // Neither is a pasted dictionary (`word,replacement` rows): the misspellings in it are the point.
   if (result) result = dropDataBlockSpans(result);
+  // Both passes above read `head` only, where every replacement is: run over
+  // the whole prompt they walked a 10 MB paste character by character (3 s).
+  if (result && tail) result = { ...result, input: prompt, output: result.output + tail };
   const changed = result?.changed === true;
   if (result && changed) recordHitsInBackground(result, cwd, loaded);
 

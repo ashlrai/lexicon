@@ -20,6 +20,7 @@ import { checkPhantomPresence } from './phantom-presence.js';
 import { packageVersion } from '../util/package.js';
 import { getTrustPath, isTrusted, readLexiconFile, resolvePaths } from '../core/index.js';
 import { configPathFor } from './cmd-install.js';
+import { findGitRoot } from './setup/detect.js';
 import { cliCommand } from '../util/cli-hint.js';
 import type { LexiconFile, Term, TermScope } from '../core/index.js';
 import {
@@ -162,6 +163,18 @@ function parsesAsJson(text: string): boolean {
   }
 }
 
+/**
+ * The repo-level Claude settings files doctor reads for the lexicon hooks:
+ * `.claude/settings.json` and `.claude/settings.local.json` in `cwd` and, when
+ * `cwd` is below it, at the git root, in that order.
+ */
+export function projectSettingsCandidates(cwd: string): string[] {
+  const dirs = [path.resolve(cwd)];
+  const root = findGitRoot(cwd, existsSync);
+  if (root !== undefined && path.resolve(root) !== dirs[0]) dirs.push(path.resolve(root));
+  return dirs.flatMap((dir) => [path.join(dir, '.claude', 'settings.json'), path.join(dir, '.claude', 'settings.local.json')]);
+}
+
 export interface DoctorDeps {
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
@@ -169,7 +182,10 @@ export interface DoctorDeps {
   exec?: (file: string, args: readonly string[]) => string;
   /** Claude settings file. Default ~/.claude/settings.json. */
   settingsPath?: string;
-  /** Repo-level Claude settings (`install claude --scope project`). Default <cwd>/.claude/settings.json. */
+  /**
+   * Repo-level Claude settings (`install claude --scope project`). When set, the only project file read;
+   * default `projectSettingsCandidates(cwd)` (settings.json and settings.local.json in cwd and at the git root).
+   */
   projectSettingsPath?: string;
   /** Claude's plugin registry. Default ~/.claude/plugins/installed_plugins.json. */
   installedPluginsPath?: string;
@@ -223,6 +239,8 @@ export interface DoctorReport {
     settings: string;
     /** Repo-level Claude Code settings.json (<cwd>/.claude/settings.json) that was inspected for hooks. */
     projectSettings?: string;
+    /** Every repo-level settings file read for the hooks (projectSettingsCandidates), user settings.json excluded. */
+    projectSettingsFiles?: string[];
     /** Claude Code plugin registry that was inspected. */
     installedPlugins: string;
   };
@@ -712,36 +730,48 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
 
   // --- Claude Code plugin / hooks -------------------------------------------------
   // `lexicon install claude --scope project` writes its hooks into the repo's
-  // shared <cwd>/.claude/settings.json, not the user's file, so both are read
-  // and each hit names the scope it came from.
+  // shared .claude/settings.json, not the user's file, and Claude Code also
+  // reads the uncommitted settings.local.json beside it. Both are read in the
+  // working directory and, run from a subdirectory, at the git root (where
+  // Claude Code is usually started); each hit names the file and its scope.
   const settingsPath = deps.settingsPath ?? path.join(claudeConfigDir(env, home), 'settings.json');
   const projectSettingsPath = deps.projectSettingsPath ?? path.join(cwd, '.claude', 'settings.json');
-  const sameSettingsFile = path.resolve(projectSettingsPath) === path.resolve(settingsPath);
+  const projectSettingsFiles = deps.projectSettingsPath !== undefined ? [projectSettingsPath] : projectSettingsCandidates(cwd);
+  const projectFiles = projectSettingsFiles
+    .filter((file) => path.resolve(file) !== path.resolve(settingsPath))
+    .map((file) => ({ file, scope: file.endsWith('settings.local.json') ? ('local' as const) : ('project' as const) }));
   const installedPluginsPath =
     deps.installedPluginsPath ?? path.join(claudeConfigDir(env, home), 'plugins', 'installed_plugins.json');
   const settings = await readDoctorConfigJson(settingsPath);
-  const projectSettings = sameSettingsFile ? { exists: false as const } : await readDoctorConfigJson(projectSettingsPath);
+  const projectReads = await Promise.all(projectFiles.map(async (f) => ({ ...f, read: await readDoctorConfigJson(f.file) })));
   const installed = await readDoctorConfigJson(installedPluginsPath);
   if (settings.error) push('warn', `Claude settings configuration is unconfirmed (${settings.error})`);
-  if (!sameSettingsFile && projectSettings.error) {
-    push('warn', `Claude project settings configuration is unconfirmed (${projectSettings.error}): ${projectSettingsPath}`);
+  for (const p of projectReads) {
+    if (p.read.error) push('warn', `Claude ${p.scope} settings configuration is unconfirmed (${p.read.error}): ${p.file}`);
   }
   if (installed.error) push('warn', `Claude installed-plugin configuration is unconfirmed (${installed.error})`);
-  const pluginId =
-    findInstalledLexiconPlugin(settings.value, installed.value) ?? findInstalledLexiconPlugin(projectSettings.value, undefined);
+  let pluginId = findInstalledLexiconPlugin(settings.value, installed.value);
+  for (const p of projectReads) pluginId ??= findInstalledLexiconPlugin(p.read.value, undefined);
   if (pluginId) {
     wired = true;
     push('ok', `lexicon plugin installed as ${pluginId} (its hooks and MCP server are used)`);
   } else {
     for (const event of HOOK_EVENTS) {
-      const inUser = settingsHasLexiconHook(settings.value, event);
-      const inProject = !sameSettingsFile && settingsHasLexiconHook(projectSettings.value, event);
-      if (inUser) push('ok', `${event} hook found in ${settingsPath} (user scope)`);
-      if (inProject) push('ok', `${event} hook found in ${projectSettingsPath} (project scope)`);
-      if (inUser || inProject) {
+      let found = false;
+      if (settingsHasLexiconHook(settings.value, event)) {
+        found = true;
+        push('ok', `${event} hook found in ${settingsPath} (user scope)`);
+      }
+      for (const p of projectReads) {
+        if (!settingsHasLexiconHook(p.read.value, event)) continue;
+        found = true;
+        push('ok', `${event} hook found in ${p.file} (${p.scope} scope)`);
+      }
+      if (found) {
         wired = true;
       } else {
-        const where = sameSettingsFile ? settingsPath : `${settingsPath} (user scope) or ${projectSettingsPath} (project scope)`;
+        const looked = [`${settingsPath} (user scope)`, ...projectFiles.map((p) => `${p.file} (${p.scope} scope)`)];
+        const where = looked.length === 1 ? looked[0] : `${looked.slice(0, -1).join(', ')} or ${looked.at(-1)}`;
         push(
           'warn',
           `${event} hook not found in ${where} (fine if you use the plugin; otherwise run: lexicon install claude --apply)`,
@@ -847,6 +877,7 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
       trust: getTrustPath({ cwd }),
       settings: settingsPath,
       projectSettings: projectSettingsPath,
+      projectSettingsFiles,
       installedPlugins: installedPluginsPath,
     },
     versions: { lexicon: packageVersion(import.meta.url), node: process.version, platform },
