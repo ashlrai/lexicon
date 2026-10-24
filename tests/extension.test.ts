@@ -1161,6 +1161,63 @@ describe('live-site regressions (2026-09-19)', () => {
     expect(e.querySelectorAll('p')).toHaveLength(2);
   });
 
+  // Catches: a rewrite that joined two prose lines (an alias split by a line
+  // break) changed the line count of a prose region, so the ranged prose
+  // edits gave up and the last resort turned the <pre> into paragraphs.
+  it('setWholeText keeps code elements when a prose region loses a line', () => {
+    document.body.innerHTML =
+      '<div id="e" contenteditable="true"><p>ping ash</p><p>ler about <code>ashler()</code></p><pre><code>const ashler = 1</code></pre><p>thanks</p></div>';
+    const e = document.getElementById('e')!;
+    const pre = e.querySelector('pre')!;
+    const inline = e.querySelector('p code')!;
+    expect(readText(e)).toBe('ping ash\nler about ashler()\nconst ashler = 1\nthanks');
+    const next = 'ping Ashlr.AI about ashler()\nconst ashler = 1\nthanks';
+    setWholeText(document, e, next);
+    expect(readText(e)).toBe(next);
+    expect(e.querySelector('pre')).toBe(pre);
+    expect(pre.textContent).toBe('const ashler = 1');
+    expect(e.querySelector('p code')).toBe(inline);
+    expect(e.querySelectorAll('p')).toHaveLength(2);
+  });
+
+  it('setWholeText keeps code elements when a prose region gains a line, in a <br> composer too', () => {
+    document.body.innerHTML = '<div id="e" contenteditable="true">one two<br>see <code>npm i</code> now<pre>ls -la</pre>end</div>';
+    const e = document.getElementById('e')!;
+    const pre = e.querySelector('pre')!;
+    const inline = e.querySelector('code')!;
+    const next = 'one\ntwo\nsee npm i now\nls -la\nend';
+    setWholeText(document, e, next);
+    expect(readText(e)).toBe(next);
+    expect(e.querySelector('pre')).toBe(pre);
+    expect(e.querySelector('code')).toBe(inline);
+    expect(e.querySelector('p')).toBeNull();
+  });
+
+  // Catches: the prose before a code span held the code's own text (`npm`
+  // then <code>npm</code>), the first occurrence was taken as the code's
+  // place, and the misaligned edits fell back to flattening the code.
+  it('setWholeText aligns code with its own place when the prose holds the same text', () => {
+    document.body.innerHTML = '<div id="e" contenteditable="true"><p>ashler said npm, run <code>npm</code> ashler</p><pre><code>npm</code></pre></div>';
+    const e = document.getElementById('e')!;
+    const pre = e.querySelector('pre')!;
+    const inline = e.querySelector('p code')!;
+    const next = 'Ashlr.AI said npm, run npm Ashlr.AI\nnpm';
+    setWholeText(document, e, next);
+    expect(readText(e)).toBe(next);
+    expect(e.querySelector('pre')).toBe(pre);
+    expect(e.querySelector('p code')).toBe(inline);
+    expect(inline.textContent).toBe('npm');
+  });
+
+  it('setWholeText restores every node when a rebuild cannot keep the code', () => {
+    // The code text is not in the new text at all: nothing to keep, so the
+    // last resort runs, but the rebuild attempt must not have lost any node.
+    document.body.innerHTML = '<div id="e" contenteditable="true"><p>a <code>x</code></p><p>b</p></div>';
+    const e = document.getElementById('e')!;
+    setWholeText(document, e, 'a\nb\nc');
+    expect(readText(e)).toBe('a\nb\nc');
+  });
+
   it('setWholeText still rewrites the whole box when the code itself would change', () => {
     document.body.innerHTML = '<div id="e" contenteditable="true"><p>a</p><pre><code>ashler</code></pre></div>';
     const e = document.getElementById('e')!;
