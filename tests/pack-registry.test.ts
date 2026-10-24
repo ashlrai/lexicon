@@ -110,6 +110,23 @@ describe('pack add (community)', () => {
     expect(io.err).toContain('--registry');
   });
 
+  // Catches: `pack add ../x` (a slash, so read as a community ref) said
+  // community packs need --registry, for a name that can never be a pack.
+  it('refuses a malformed ref as malformed, with or without --registry', async () => {
+    for (const name of ['../x', '../../etc', 'Acme/Pack']) {
+      for (const opts of [{ globalPath }, baseOpts()]) {
+        const io = makeIO();
+        expect(await runPackAdd([name], opts, io)).toBe(1);
+        expect(io.err, name).toContain(`invalid pack ref "${name}"`);
+        expect(io.err, name).not.toContain('need --registry');
+        expect(io.err, name).toContain('lexicon pack list');
+      }
+      const json = makeIO();
+      expect(await runPackAdd([name], { globalPath, json: true }, json)).toBe(1);
+      expect(JSON.parse(json.out)).toMatchObject({ ok: false, ref: name, error: expect.stringContaining('invalid pack ref') });
+    }
+  });
+
   it('previews without writing when --json and no --yes', async () => {
     const io = makeIO();
     expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), json: true }, io)).toBe(0);

@@ -53,7 +53,7 @@ describe('extension: composers inside iframes', () => {
     const chat = manifest.content_scripts.find((c) => c.js.includes('content.js'));
     expect(chat?.all_frames).toBe(true);
     expect(chat?.match_about_blank).toBe(true);
-    expect(readFileSync(resolve(process.cwd(), 'extension/src/background.ts'), 'utf8')).toMatch(/allFrames: true/);
+    expect(readFileSync(resolve(process.cwd(), 'extension/src/any-site.ts'), 'utf8')).toMatch(/allFrames: true/);
   });
 
   it('covers the top frame, a same-origin frame and a chat-site frame, and leaves other cross-origin frames alone', () => {

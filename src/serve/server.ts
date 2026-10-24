@@ -125,6 +125,10 @@ export interface ServeServerOptions {
   maxConcurrent?: number;
   /** Matching budget per /normalize in ms. Default NORMALIZE_BUDGET_MS. */
   normalizeBudgetMs?: number;
+  /** Time for a whole request (headers and body) to arrive, in ms. Default REQUEST_TIMEOUT_MS (30000). */
+  requestTimeoutMs?: number;
+  /** Time for the request headers to arrive, in ms; at most `requestTimeoutMs`. Default HEADERS_TIMEOUT_MS (10000). */
+  headersTimeoutMs?: number;
 }
 
 export interface ServeStartInfo {
@@ -269,6 +273,15 @@ export const LEXICON_RELOAD_MS = 2_000;
  * timeout on purpose.
  */
 export const NORMALIZE_BUDGET_MS = 1_000;
+/**
+ * How long a whole request (headers and body) may take to arrive. Node's
+ * default is 300 s, so a client trickling a body held one of the
+ * MAX_CONCURRENT_REQUESTS slots for five minutes; a 1 MB body on loopback
+ * arrives in milliseconds. A late request gets 408 with `{ error }`.
+ */
+export const REQUEST_TIMEOUT_MS = 30_000;
+/** How long the request headers may take to arrive (Node's default is 60 s). */
+export const HEADERS_TIMEOUT_MS = 10_000;
 /** Path of the extension pairing page (`lexicon serve --pair` opens it). */
 export const PAIR_PATH = '/pair';
 /** `<meta name>` attributes the pairing page carries; extension/src/pair.ts reads the same names. */
@@ -281,7 +294,7 @@ export const PAIR_HEADERS: Readonly<Record<string, string>> = {
   'Content-Security-Policy': "default-src 'none'; style-src 'unsafe-inline'",
   'Referrer-Policy': 'no-referrer',
 };
-/** Bounded so a client cycling `cwd` values cannot grow the cache without limit. */
+/** Bounded so a client cycling `cwd` values cannot grow the cache without limit; the least recently used cwd goes first. */
 const MAX_CACHED_CWDS = 32;
 
 /** Content type per exporter file extension (`EXPORT_FORMAT_INFO[format].ext`). */
@@ -976,6 +989,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   const reloadMs = opts.reloadMs ?? LEXICON_RELOAD_MS;
   const maxConcurrent = opts.maxConcurrent ?? MAX_CONCURRENT_REQUESTS;
   const normalizeBudgetMs = opts.normalizeBudgetMs ?? NORMALIZE_BUDGET_MS;
+  const requestTimeout = opts.requestTimeoutMs ?? REQUEST_TIMEOUT_MS;
+  // Node refuses a headers timeout over the request timeout.
+  const headersTimeout = Math.min(opts.headersTimeoutMs ?? HEADERS_TIMEOUT_MS, requestTimeout);
 
   let config: ServeConfig | undefined;
   let boundPort = 0;
@@ -1012,16 +1028,23 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   async function loadEntry(cwd: string): Promise<CachedLexicon> {
     const now = Date.now();
     const hit = cache.get(cwd);
-    if (hit && now - hit.at < reloadMs) return hit;
+    if (hit && now - hit.at < reloadMs) {
+      // A Map iterates in insertion order: moving a hit to the end makes the
+      // first key the least recently used one, which is what eviction drops.
+      cache.delete(cwd);
+      cache.set(cwd, hit);
+      return hit;
+    }
     // No route reads a skipped project file's terms (each names it by path
     // only), so an untrusted or changed one is never parsed, as in the hook.
     const startedAt = generation;
     const loaded = await loadLexicon({ cwd, ...storeOpts, parseSkipped: false });
     const entry: CachedLexicon = { loaded, at: now };
     if (generation !== startedAt) return entry;
-    if (cache.size >= MAX_CACHED_CWDS && !cache.has(cwd)) {
-      const oldest = cache.keys().next().value;
-      if (oldest !== undefined) cache.delete(oldest);
+    cache.delete(cwd);
+    if (cache.size >= MAX_CACHED_CWDS) {
+      const leastRecent = cache.keys().next().value;
+      if (leastRecent !== undefined) cache.delete(leastRecent);
     }
     cache.set(cwd, entry);
     return entry;
@@ -1469,7 +1492,14 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     else res.end(body);
   }
 
-  const server = http.createServer((req, res) => {
+  const serverOptions: http.ServerOptions = {
+    requestTimeout,
+    headersTimeout,
+    // Node checks the timeouts on this cadence (default 30 s, a tenth of its
+    // default request timeout); keep the same proportion for ours.
+    connectionsCheckingInterval: Math.max(25, Math.min(1_000, Math.floor(headersTimeout / 4))),
+  };
+  const server = http.createServer(serverOptions, (req, res) => {
     const started = Date.now();
     const method = req.method ?? 'GET';
     const head = method === 'HEAD';
@@ -1514,6 +1544,12 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     }
 
     if (method === 'OPTIONS') {
+      // Private Network Access: Chrome asks before a public page reaches a
+      // loopback server. Granted only with the CORS headers above, so only to
+      // an allowed origin and never on /pair.
+      if (cors['Access-Control-Allow-Origin'] !== undefined && /^true$/i.test(String(req.headers['access-control-request-private-network'] ?? '').trim())) {
+        cors['Access-Control-Allow-Private-Network'] = 'true';
+      }
       res.writeHead(204, cors);
       res.end();
       return;
@@ -1576,7 +1612,10 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   // error of this API is `{ error }`. Same statuses as Node's: 431 for
   // headers over the limit, 408 for a request that took too long, else 400.
   server.on('clientError', (err: NodeJS.ErrnoException, socket: net.Socket) => {
-    if (err.code === 'ECONNRESET' || !socket.writable) {
+    // A response already under way (a request timeout can fire while a
+    // handler answers early) must not get a second status line written into it.
+    const pending = (socket as net.Socket & { _httpMessage?: http.ServerResponse | null })._httpMessage;
+    if (err.code === 'ECONNRESET' || !socket.writable || pending?.headersSent === true) {
       socket.destroy();
       return;
     }

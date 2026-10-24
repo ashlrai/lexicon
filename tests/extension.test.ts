@@ -18,9 +18,11 @@ import type { ContentHandle } from '../extension/src/content-core.js';
 import { applyCorrections, flatten, invertCorrections, readText, setWholeText } from '../extension/src/editable.js';
 import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
+import { ANY_SITE_SCRIPT_ID, setAnySite } from '../extension/src/any-site.js';
+import type { AnySiteApi, AnySiteScript } from '../extension/src/any-site.js';
 import { prunePairPorts, registerPairPort } from '../extension/src/pair-port.js';
 import type { PairPortApi } from '../extension/src/pair-port.js';
-import { ANY_SITE_DENIED_MESSAGE, API_MAX_BODY_BYTES, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META, withConnection, withSiteSwitch, yamlBoxAfterChange } from '../extension/src/shared.js';
+import { ANY_SITE_DENIED_MESSAGE, STORAGE_KEYS, API_MAX_BODY_BYTES, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META, withConnection, withSiteSwitch, yamlBoxAfterChange } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 import { setMessage } from '../extension/src/rich-text.js';
@@ -996,11 +998,122 @@ describe('extension errors name the next step', () => {
     expect(options.match(/extensionRequestFailedLine\(errorMessage\(err\)\)/g)).toHaveLength(catches);
   });
 
+  // Catches: the "Any site" registration had no matchOriginAsFallback, so an
+  // editor that builds its editable in an about:blank (or blob:) frame was
+  // never reached on a site other than the built-in ones.
+  it('the any-site registration reaches about:blank frames where the browser accepts it, and falls back where not', async () => {
+    const fakeApi = (acceptsFallback: boolean, initial: AnySiteScript[] = []): { api: AnySiteApi; scripts: Map<string, AnySiteScript>; registers: number } => {
+      const state = { api: undefined as unknown as AnySiteApi, scripts: new Map(initial.map((s) => [s.id, s])), registers: 0 };
+      state.api = {
+        scripting: {
+          getRegisteredContentScripts: async (filter) => [...state.scripts.values()].filter((s) => !filter?.ids || filter.ids.includes(s.id)),
+          registerContentScripts: async (list) => {
+            for (const s of list) {
+              if (!acceptsFallback && 'matchOriginAsFallback' in s) throw new Error('Type error for parameter scripts: Unexpected property "matchOriginAsFallback"');
+              if (state.scripts.has(s.id)) throw new Error(`Duplicate script ID '${s.id}'`);
+              state.scripts.set(s.id, s);
+              state.registers += 1;
+            }
+          },
+          unregisterContentScripts: async (filter) => {
+            for (const id of filter?.ids ?? [...state.scripts.keys()]) state.scripts.delete(id);
+          },
+        },
+        permissions: { contains: async () => true },
+      };
+      return state;
+    };
+    const chromeLike = fakeApi(true);
+    await setAnySite(chromeLike.api, true);
+    const reg = chromeLike.scripts.get(ANY_SITE_SCRIPT_ID)!;
+    expect(reg.matchOriginAsFallback).toBe(true);
+    expect(reg.allFrames).toBe(true);
+    expect(reg.matches).toEqual(['<all_urls>']);
+    // Already registered the same way: nothing is re-registered.
+    await setAnySite(chromeLike.api, true);
+    expect(chromeLike.registers).toBe(1);
+    // A registration from before the key is replaced.
+    const old = fakeApi(true, [{ ...reg, matchOriginAsFallback: undefined }]);
+    await setAnySite(old.api, true);
+    expect(old.scripts.get(ANY_SITE_SCRIPT_ID)?.matchOriginAsFallback).toBe(true);
+    // A browser that refuses the key still gets the frames registration.
+    const firefoxLike = fakeApi(false);
+    await setAnySite(firefoxLike.api, true);
+    const ff = firefoxLike.scripts.get(ANY_SITE_SCRIPT_ID)!;
+    expect(ff.allFrames).toBe(true);
+    expect('matchOriginAsFallback' in ff).toBe(false);
+    await setAnySite(firefoxLike.api, false);
+    expect(firefoxLike.scripts.size).toBe(0);
+    // Not granted: nothing registered.
+    const denied = fakeApi(true);
+    denied.api.permissions.contains = async () => false;
+    await expect(setAnySite(denied.api, true)).rejects.toThrow(ANY_SITE_DENIED_MESSAGE);
+    expect(denied.scripts.size).toBe(0);
+  });
+
+  // Catches: on a browser that refuses matchOriginAsFallback, every reconcile
+  // (install, startup, a permission change) unregistered and registered the
+  // script again, since the registration never matched the one with the key.
+  it('the any-site reconcile leaves a registration alone where the browser refused the key', async () => {
+    const fake = (acceptsFallback: () => boolean, browser: string, data?: Record<string, unknown>) => {
+      const state = { scripts: new Map<string, AnySiteScript>(), registers: 0, unregisters: 0, api: undefined as unknown as AnySiteApi };
+      state.api = {
+        scripting: {
+          getRegisteredContentScripts: async (filter) => [...state.scripts.values()].filter((s) => !filter?.ids || filter.ids.includes(s.id)),
+          registerContentScripts: async (list) => {
+            for (const s of list) {
+              if (!acceptsFallback() && 'matchOriginAsFallback' in s) throw new Error('Type error for parameter scripts: Unexpected property "matchOriginAsFallback"');
+              state.scripts.set(s.id, s);
+              state.registers += 1;
+            }
+          },
+          unregisterContentScripts: async (filter) => {
+            for (const id of filter?.ids ?? [...state.scripts.keys()]) state.scripts.delete(id);
+            state.unregisters += 1;
+          },
+        },
+        permissions: { contains: async () => true },
+        browser,
+        ...(data
+          ? {
+              store: {
+                get: async (keys: string[]) => Object.fromEntries(keys.filter((k) => k in data).map((k) => [k, data[k]])),
+                set: async (items: Record<string, unknown>) => void Object.assign(data, items),
+              },
+            }
+          : {}),
+      };
+      return state;
+    };
+    let accepts = false;
+    const data: Record<string, unknown> = {};
+    const firefox = fake(() => accepts, 'Firefox/128', data);
+    for (let i = 0; i < 3; i++) await setAnySite(firefox.api, true);
+    expect(firefox.registers).toBe(1);
+    expect(firefox.unregisters).toBe(0);
+    expect('matchOriginAsFallback' in firefox.scripts.get(ANY_SITE_SCRIPT_ID)!).toBe(false);
+    expect(data[STORAGE_KEYS.anySiteNoFallback]).toBe('Firefox/128');
+
+    // A browser update that accepts the key gets it on the next reconcile, once.
+    accepts = true;
+    firefox.api.browser = 'Firefox/140';
+    await setAnySite(firefox.api, true);
+    await setAnySite(firefox.api, true);
+    expect(firefox.registers).toBe(2);
+    expect(firefox.scripts.get(ANY_SITE_SCRIPT_ID)?.matchOriginAsFallback).toBe(true);
+    expect(data[STORAGE_KEYS.anySiteNoFallback]).toBeNull();
+
+    // With no store the refusal is remembered for the life of the module.
+    const bare = fake(() => false, 'NoStore/1');
+    for (let i = 0; i < 3; i++) await setAnySite(bare.api, true);
+    expect(bare.registers).toBe(1);
+  });
+
   // Catches: "Permission not granted." with no word of how to grant it or
   // whether the extension still works without it.
   it('the any-site refusal says how to grant it and what still works', () => {
     expect(ANY_SITE_DENIED_MESSAGE).toBe('The "any site" permission was not granted: tick the box again and choose Allow. The listed chat sites still work without it.');
-    for (const file of ['extension/src/options.ts', 'extension/src/background.ts']) {
+    for (const file of ['extension/src/options.ts', 'extension/src/any-site.ts']) {
       const src = readFileSync(resolve(process.cwd(), file), 'utf8');
       expect(src, file).toContain('ANY_SITE_DENIED_MESSAGE');
       expect(src, file).not.toMatch(/not granted\./);

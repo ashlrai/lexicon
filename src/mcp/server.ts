@@ -21,11 +21,12 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
-import { exportClaudeMdWithin, exportLexicon, loadLexicon, neutralizeMarkup, noTermsYet, pathForModel } from '../core/index.js';
+import { exportClaudeMdWithin, exportLexicon, loadLexicon, neutralizeMarkup, noTermsYet, pathForModel, selectExportTerms } from '../core/index.js';
 import type { LoadOptions, LoadedLexicon } from '../core/index.js';
 import { SERVER_NAME, log, readPackageVersion, skippedProjectFields, withLexiconFix } from './shared.js';
 import { errorMessage } from '../util/errors.js';
 import { TOOL_REGISTRARS } from './tools/index.js';
+import { toolAnnotations } from './annotations.js';
 import { MCP_NORMALIZE_BUDGET_MS, MCP_NORMALIZE_MAX_CHARS } from './tools/terms.js';
 import { cliCommand } from '../util/cli-hint.js';
 
@@ -54,6 +55,16 @@ export function strictInput(config: unknown): unknown {
   const shape = (config as { inputSchema?: unknown }).inputSchema;
   if (shape === undefined || shape instanceof z.ZodType) return config;
   return { ...config, inputSchema: z.object(shape as z.ZodRawShape).strict() };
+}
+
+/**
+ * A tool config with its `annotations` from TOOL_ANNOTATIONS, unless it
+ * names its own. Throws for a tool the table does not list.
+ */
+export function withAnnotations(name: string, config: unknown): unknown {
+  if (typeof config !== 'object' || config === null) return config;
+  const own = (config as { annotations?: unknown }).annotations;
+  return { ...config, annotations: own ?? toolAnnotations(name) };
 }
 
 /**
@@ -139,6 +150,51 @@ function lexiconForModel(loaded: LoadedLexicon): string {
   const full = exportLexicon(loaded.merged, 'claude-md');
   const text = full.length <= MODEL_CONTEXT_MAX_CHARS ? full : exportClaudeMdWithin(loaded.merged, MODEL_CONTEXT_MAX_CHARS, moreTermsLine).text;
   return neutralizeMarkup(text);
+}
+
+/**
+ * Most characters of `lexicon://json`. It is the merged lexicon pretty-printed,
+ * about four times the size of the same terms as the claude-md table, so the
+ * cap is four times MODEL_CONTEXT_MAX_CHARS. With no cap a 3000-term lexicon
+ * was about 1 MB of JSON in one resource read. Past it the most used terms are
+ * kept (the order `export_lexicon`'s `limit` uses), `omittedTerms` counts the
+ * rest and `note` says how to get them.
+ */
+export const LEXICON_JSON_MAX_CHARS = MODEL_CONTEXT_MAX_CHARS * 4;
+
+/** The `note` sentence when LEXICON_JSON_MAX_CHARS left terms out of lexicon://json. */
+function jsonOmittedNote(omitted: number, total: number): string {
+  return (
+    `${omitted} of ${total} term${total === 1 ? '' : 's'} left out to keep this resource under ${LEXICON_JSON_MAX_CHARS} characters (the most used, then brand, person and product names, are kept). ` +
+    'Call export_lexicon with format json for the whole lexicon, or list_terms with a query to look one up.'
+  );
+}
+
+/**
+ * The lexicon://json text: `merged` with `extra` (skipped-file fields and the
+ * note), whole when it fits in LEXICON_JSON_MAX_CHARS, otherwise with the most
+ * terms that fit (selectExportTerms order) plus `omittedTerms` and a note.
+ */
+function lexiconJsonWithin(merged: LoadedLexicon['merged'], extra: { note?: string; [key: string]: unknown }): string {
+  const render = (terms: LoadedLexicon['merged']['terms'], more: Record<string, unknown>): string =>
+    `${JSON.stringify({ ...merged, terms, ...extra, ...more }, null, 2)}\n`;
+  const full = render(merged.terms, {});
+  if (full.length <= LEXICON_JSON_MAX_CHARS) return full;
+  const total = merged.terms.length;
+  const capped = (keep: number): string => {
+    const omitted = total - keep;
+    const note = [extra.note, jsonOmittedNote(omitted, total)].filter((n): n is string => n !== undefined).join(' ');
+    return render(selectExportTerms(merged, { limit: keep }), { omittedTerms: omitted, note });
+  };
+  // The most terms that fit: the text grows with every term kept.
+  let lo = 0;
+  let hi = total - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (capped(mid).length <= LEXICON_JSON_MAX_CHARS) lo = mid;
+    else hi = mid - 1;
+  }
+  return capped(lo);
 }
 
 const VOICE_CONTEXT_INSTRUCTION =
@@ -263,7 +319,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   // advertises `additionalProperties: false` in tools/list.
   const registerTool = server.registerTool.bind(server);
   const gatedRegisterTool = (name: string, config: unknown, cb: (...args: unknown[]) => unknown): unknown =>
-    registerTool(name, strictInput(config) as never, (async (...args: unknown[]) => {
+    registerTool(name, withAnnotations(name, strictInput(config)) as never, (async (...args: unknown[]) => {
       if (rootsPending) await rootsPending;
       return cb(...args);
     }) as never);
@@ -327,7 +383,8 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     {
       title: 'Lexicon JSON',
       description:
-        'The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`. With no terms at all, `note` says so (after the skipped-file sentence, when there is one) and how to set the lexicon up.',
+        'The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`. With no terms at all, `note` says so (after the skipped-file sentence, when there is one) and how to set the lexicon up. ' +
+        `The text is capped at ${LEXICON_JSON_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept, \`omittedTerms\` counts the rest and \`note\` says so; export_lexicon (format json) and list_terms (with a query) reach them.`,
       mimeType: 'application/json',
     },
     async (uri) => {
@@ -344,11 +401,9 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       const empty = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE.replace(/^Note: /, '') : undefined;
       const note = [skipped.note, empty].filter((n): n is string => n !== undefined).join(' ');
       const extra = note ? { ...skipped, note } : skipped;
-      const text =
-        Object.keys(extra).length > 0
-          ? `${JSON.stringify({ ...loaded.merged, ...extra }, null, 2)}\n`
-          : // The merged view whole, `scope` and `hits` included (the json export leaves them out).
-            `${JSON.stringify(loaded.merged, null, 2)}\n`;
+      // The merged view, `scope` and `hits` included (the json export leaves
+      // them out), capped at LEXICON_JSON_MAX_CHARS like lexicon://me.
+      const text = lexiconJsonWithin(loaded.merged, extra);
       return {
         contents: [{ uri: uri.href, mimeType: 'application/json', text }],
       };

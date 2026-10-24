@@ -11,7 +11,12 @@ import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 
 /** When set, the next loadLexicon call reads the files, then waits for this before returning. */
-const gate = vi.hoisted(() => ({ hold: undefined as Promise<void> | undefined, loaded: undefined as (() => void) | undefined }));
+const gate = vi.hoisted(() => ({
+  hold: undefined as Promise<void> | undefined,
+  loaded: undefined as (() => void) | undefined,
+  /** The cwd of every loadLexicon call, in order. */
+  loads: [] as Array<string | undefined>,
+}));
 
 vi.mock('../src/core/index.js', async (importOriginal) => {
   const real = await importOriginal<typeof import('../src/core/index.js')>();
@@ -20,6 +25,7 @@ vi.mock('../src/core/index.js', async (importOriginal) => {
     loadLexicon: async (...args: Parameters<typeof real.loadLexicon>) => {
       const hold = gate.hold;
       gate.hold = undefined;
+      gate.loads.push(args[0]?.cwd);
       const result = await real.loadLexicon(...args);
       if (hold) {
         gate.loaded?.();
@@ -143,6 +149,39 @@ describe('lexicon cache', () => {
     // The next request sees the write, not the old lexicon the held load read.
     const fresh = (await (await api('GET', health)).json()) as { terms: number };
     expect(fresh.terms).toBe(2);
+  });
+});
+
+describe('lexicon cache eviction', () => {
+  // Catches: the per-cwd cache evicted the first cwd put in, not the least
+  // recently used, so the server's busiest directory was reloaded every time
+  // 32 other directories had been asked for once.
+  it('evicts the least recently used cwd, not the first one loaded', async () => {
+    const dirs: string[] = [];
+    for (let i = 0; i < 33; i++) {
+      const dir = path.join(home, 'lru', `d${i}`);
+      await fs.mkdir(dir, { recursive: true });
+      dirs.push(dir);
+    }
+    const hot = path.join(home, 'lru', 'hot');
+    await fs.mkdir(hot, { recursive: true });
+    const health = (dir: string): Promise<Response> => api('GET', `/health?cwd=${encodeURIComponent(dir)}`);
+    const loadsOf = (dir: string): number => gate.loads.filter((c) => c === dir).length;
+    // Fresh: a write by the earlier suite cleared what it cached, so the cache starts empty.
+    expect((await health(hot)).status).toBe(200);
+    // 31 others fill the cache to its 32 entries; the hot cwd is used between each.
+    for (const dir of dirs.slice(0, 31)) {
+      expect((await health(dir)).status).toBe(200);
+      expect((await health(hot)).status).toBe(200);
+    }
+    expect(loadsOf(hot)).toBe(1);
+    // A 33rd cwd evicts one entry: the least recently used is dirs[0].
+    expect((await health(dirs[31])).status).toBe(200);
+    expect((await health(hot)).status).toBe(200);
+    expect(loadsOf(hot)).toBe(1);
+    const before = loadsOf(dirs[0]);
+    expect((await health(dirs[0])).status).toBe(200);
+    expect(loadsOf(dirs[0])).toBe(before + 1);
   });
 });
 

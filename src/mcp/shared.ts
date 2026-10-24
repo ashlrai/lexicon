@@ -4,12 +4,12 @@
  * discovery. Split out of server.ts so each `tools/*.ts` module can be read on
  * its own; server.ts keeps the resources, the prompts and the wiring.
  */
-import { realpathSync } from 'node:fs';
-import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
+import { existsSync, realpathSync } from 'node:fs';
+import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'node:path';
 import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { projectWriteTrusted, resolvePaths, skippedProjectNote } from '../core/index.js';
+import { defaultProjectPath, projectWriteTrusted, resolvePaths, skippedProjectNote } from '../core/index.js';
 import type { ImportFormat, LoadOptions, LoadedLexicon, TermSuggestion } from '../core/index.js';
 import type { IO } from '../cli/commands.js';
 import { unreadableLexiconEdit } from '../cli/io.js';
@@ -236,6 +236,23 @@ export function containedPath(ctx: Pick<ToolContext, 'cwd' | 'roots'>, path: str
 }
 
 /**
+ * Whether a tool may write the lexicon file `file`, a project file found or
+ * created for a model-chosen directory: when it is this server's own project
+ * file (the one add_term with scope "project" writes), or when it lies inside
+ * one of `readableRoots`, symlinks resolved (the file's own target too, when it
+ * exists). A `.lexicon.yaml` found by walking up from an allowed directory, or
+ * a new one at its git root, can be above every root.
+ */
+export function writableProjectFile(ctx: Pick<ToolContext, 'cwd' | 'roots'>, file: string, env: NodeJS.ProcessEnv = process.env): boolean {
+  const own = resolvePaths({ cwd: ctx.cwd }).project ?? defaultProjectPath(ctx.cwd);
+  if (realOrResolved(file) === realOrResolved(own)) return true;
+  const roots = readableRoots(ctx, env);
+  const real = existsSync(file) ? realOrResolved(file) : join(realOrResolved(dirname(file)), basename(file));
+  return roots.some((root) => isWithin(real, root));
+}
+
+/**
+ * The store option every MCP write passes:/**
  * The store option every MCP write passes: `{ leaveUntrusted: true }` unless
  * the project file the write would land in is already trusted. A model must
  * not be the one that creates and trusts a project `.lexicon.yaml`, so a new,

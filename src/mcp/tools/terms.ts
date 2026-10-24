@@ -75,6 +75,15 @@ export const MCP_NORMALIZE_BUDGET_MS = 1_000;
  */
 export const MCP_NORMALIZE_MAX_CHARS = 100_000;
 
+/**
+ * Most characters of `text` normalize_transcript accepts at all: longer text
+ * is refused, nothing checked, as `lexicon serve`'s /normalize refuses a body
+ * over its 1 MB limit. Below it, text past MCP_NORMALIZE_MAX_CHARS is
+ * returned unchanged with `incomplete` saying so; with no maximum a pasted
+ * 50 MB file was taken and echoed back whole in `output`.
+ */
+export const MCP_NORMALIZE_INPUT_MAX_CHARS = 1_000_000;
+
 /** How far back from the cap a cut looks for whitespace, so a word is not matched as a fragment. */
 const CUT_LOOKBACK_CHARS = 64;
 
@@ -158,12 +167,19 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'counter. Use the `output` field as the message you act on, and mention the correction only if it changes what you are about to do. ' +
         "WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails (unless the lexicon's settings.skipCode is false), and it never invents a " +
         'term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. ' +
-        `Only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. ` +
+        `Text over ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters is refused, nothing checked. Below that, only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. ` +
         'Returns { output, changed, replacements, summary }, plus a `note` when `text` is empty or only whitespace; when `changed` is false the text was already correct and you should carry on silently ' +
         '(except with dryRun: true, where nothing is applied, so `output` is the input and `changed` is false even when `replacements` lists corrections: read `replacements` for what a real call would fix), ' +
         'unless the result also carries `skippedProject`: then this repo has a project lexicon that is not trusted yet, so tell the user once that ' + cliCommand('trust') + ' would enable it.',
       inputSchema: {
-        text: z.string().describe('The dictated or transcribed text to correct.'),
+        text: z
+          .string()
+          .max(MCP_NORMALIZE_INPUT_MAX_CHARS, {
+            error: `text is longer than ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters, so nothing was checked; call again with it in pieces of at most ${MCP_NORMALIZE_MAX_CHARS} characters (only that many are checked per call)`,
+          })
+          .describe(
+            `The dictated or transcribed text to correct: at most ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters (longer is refused), of which the first ${MCP_NORMALIZE_MAX_CHARS} are checked.`,
+          ),
         dryRun: z
           .boolean()
           .optional()

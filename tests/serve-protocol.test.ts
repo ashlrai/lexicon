@@ -12,7 +12,15 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addTerm } from '../src/core/index.js';
-import { BROKEN_LEXICON_ANONYMOUS, createServer, MAX_BODY_BYTES } from '../src/serve/index.js';
+import {
+  BROKEN_LEXICON_ANONYMOUS,
+  createServer,
+  ensureServeConfig,
+  HEADERS_TIMEOUT_MS,
+  MAX_BODY_BYTES,
+  REQUEST_TIMEOUT_MS,
+  writeServeConfig,
+} from '../src/serve/index.js';
 import type { LexiconHttpServer, ServeStartInfo } from '../src/serve/index.js';
 
 let home: string;
@@ -129,6 +137,99 @@ describe('requests the HTTP parser cannot read', () => {
     const res = await rawExchange(`GET /health HTTP/1.1\r\nHost: 127.0.0.1:${info.port}\r\nX-Big: ${'a'.repeat(64 * 1024)}\r\n\r\n`);
     expect(res.startsWith('HTTP/1.1 431 ')).toBe(true);
     expect(bodyOf(res)).toEqual({ error: expect.stringContaining('request headers are too large') });
+  });
+});
+
+describe('a request that arrives too slowly', () => {
+  /** Opens a connection to `port`, writes `raw` and keeps the socket open; resolves with what the server sent once it closes. */
+  function trickle(port: number, raw: string): Promise<{ out: string; ms: number }> {
+    return new Promise((resolve, reject) => {
+      const started = Date.now();
+      const socket = net.connect(port, '127.0.0.1', () => socket.write(raw));
+      let out = '';
+      socket.setEncoding('utf8');
+      socket.on('data', (d: string) => {
+        out += d;
+      });
+      socket.on('close', () => resolve({ out, ms: Date.now() - started }));
+      socket.on('error', reject);
+    });
+  }
+
+  // Catches: Node's default request timeout is 300 s, so a client that sent
+  // its headers and trickled (or never sent) the body held one of the
+  // concurrency slots for five minutes, and the answer had no { error } body.
+  it('is answered 408 with { error } and frees its slot', async () => {
+    const own = createServer({ port: 0, cwd, globalPath, quiet: true, version: '9.9.9', maxConcurrent: 1, requestTimeoutMs: 300, headersTimeoutMs: 200 });
+    const ownInfo = await own.start();
+    try {
+      const slow = trickle(
+        ownInfo.port,
+        `POST /normalize HTTP/1.1\r\nHost: 127.0.0.1:${ownInfo.port}\r\nAuthorization: Bearer ${ownInfo.token}\r\nContent-Type: application/json\r\nContent-Length: 100\r\n\r\n{"text":`,
+      );
+      const res = await slow;
+      expect(res.out.startsWith('HTTP/1.1 408 ')).toBe(true);
+      expect(bodyOf(res.out)).toEqual({ error: expect.stringContaining('the request did not arrive in time') });
+      expect(res.ms).toBeLessThan(5_000);
+      const next = await fetch(`${ownInfo.url}/health`);
+      expect(next.status).toBe(200);
+    } finally {
+      await own.stop();
+    }
+  });
+
+  it('headers that never finish get 408 too', async () => {
+    const own = createServer({ port: 0, cwd, globalPath, quiet: true, version: '9.9.9', requestTimeoutMs: 400, headersTimeoutMs: 150 });
+    const ownInfo = await own.start();
+    try {
+      const res = await trickle(ownInfo.port, `GET /health HTTP/1.1\r\nHost: 127.0.0.1:${ownInfo.port}\r\n`);
+      expect(res.out.startsWith('HTTP/1.1 408 ')).toBe(true);
+      expect(res.ms).toBeLessThan(5_000);
+    } finally {
+      await own.stop();
+    }
+  });
+
+  it('defaults to timeouts that suit a local API', () => {
+    expect(REQUEST_TIMEOUT_MS).toBeLessThanOrEqual(60_000);
+    expect(HEADERS_TIMEOUT_MS).toBeLessThanOrEqual(REQUEST_TIMEOUT_MS);
+    expect(srv.server.requestTimeout).toBe(REQUEST_TIMEOUT_MS);
+    expect(srv.server.headersTimeout).toBe(HEADERS_TIMEOUT_MS);
+  });
+});
+
+describe('Private Network Access preflight', () => {
+  // Catches: a page in allowedOrigins (a web app the user allowed) was
+  // blocked by Chrome's Private Network Access check: the preflight carried
+  // Access-Control-Request-Private-Network and the answer did not grant it.
+  it('grants Access-Control-Allow-Private-Network to an allowed origin only', async () => {
+    const dir = await fs.mkdtemp(path.join(home, 'pna-'));
+    const gp = path.join(dir, 'lexicon.yaml');
+    const cfg = await ensureServeConfig({ globalPath: gp });
+    await writeServeConfig({ ...cfg, allowedOrigins: ['https://app.example'] }, { globalPath: gp });
+    const own = createServer({ port: 0, cwd, globalPath: gp, quiet: true, version: '9.9.9' });
+    const ownInfo = await own.start();
+    const preflight = (route: string, origin: string, pna = 'true'): Promise<Response> =>
+      fetch(`${ownInfo.url}${route}`, {
+        method: 'OPTIONS',
+        headers: { Origin: origin, 'Access-Control-Request-Method': 'POST', 'Access-Control-Request-Private-Network': pna },
+      });
+    try {
+      const ok = await preflight('/normalize', 'https://app.example');
+      expect(ok.status).toBe(204);
+      expect(ok.headers.get('access-control-allow-origin')).toBe('https://app.example');
+      expect(ok.headers.get('access-control-allow-private-network')).toBe('true');
+      const ext = await preflight('/normalize', 'chrome-extension://abcdef');
+      expect(ext.headers.get('access-control-allow-private-network')).toBe('true');
+      const other = await preflight('/normalize', 'https://evil.example');
+      expect(other.headers.get('access-control-allow-private-network')).toBeNull();
+      const pair = await preflight('/pair', 'https://app.example');
+      expect(pair.headers.get('access-control-allow-private-network')).toBeNull();
+      const notAsked = await preflight('/normalize', 'https://app.example', 'false');
+      expect(notAsked.headers.get('access-control-allow-private-network')).toBeNull();
+    } finally {
+      await own.stop();
+    }
   });
 });
 

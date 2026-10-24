@@ -27,13 +27,18 @@ import {
 } from '../../core/index.js';
 import type { LexiconFile, LoadedLexicon, Term, TermScope, VoiceHistoryEntry } from '../../core/index.js';
 import { errorMessage } from '../../util/errors.js';
-import { HARVEST_ROOTS_ENV, SUGGESTION_KINDS, containedPath, guarded, log, mcpWriteOpts, nonBlank, shellWord, textResult, untrustedWriteFields } from '../shared.js';
+import { HARVEST_ROOTS_ENV, SUGGESTION_KINDS, containedPath, guarded, log, mcpWriteOpts, nonBlank, readableRoots, shellWord, textResult, untrustedWriteFields, writableProjectFile } from '../shared.js';
 import { cliCommand } from '../../util/cli-hint.js';
 import type { ToolRegistrar } from '../shared.js';
 
 /** The most suggestions one apply_suggestion call takes in `suggestions`. */
 const APPLY_SUGGESTIONS_MAX = 100;
 
+/**
+ * A suggestion as suggest_terms returns it (TermSuggestion): every field it
+ * writes is here, and the object is strict, so a misspelt key (`aliass`) is
+ * refused instead of dropped, which applied the suggestion without it.
+ */
 const suggestionSchema = z.object({
   kind: z.enum(SUGGESTION_KINDS),
   canonical: nonBlank(),
@@ -46,7 +51,7 @@ const suggestionSchema = z.object({
   count: z.number().optional(),
   scope: z.enum(TERM_SCOPES).optional(),
   path: z.string().optional(),
-});
+}).strict();
 
 function aliasCount(n: number): string {
   return `${n} alias${n === 1 ? '' : 'es'}`;
@@ -82,7 +87,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         'would add. Call it without `add` first -- that is a read-only preview. ' +
         "WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml. Show the candidate list and get a yes first. " +
         'A file the user already trusted stays trusted; a new, untrusted or changed one is not trusted by the write (`trusted: false`) and applies only after the user reviews it and runs ' + cliCommand('trust') + ': relay `nextStep`. ' +
-        `\`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. ` +
+        `\`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused, and so is \`add: true\` when the .lexicon.yaml it would write (found by walking up from \`path\`, or new at its git root) is outside them and not this server's own project file. ` +
         'WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- ' +
         'candidates come back as names, categories and counts: { root, candidates: [{ canonical, category, source, evidence, count, suggestedAliases }], count }, ' +
         'plus `truncated: true` and a `note` when the scan stopped at its file cap (tell the user, and offer to harvest a subdirectory), ' +
@@ -103,6 +108,18 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
     async ({ path, limit, minCount, add }) =>
       guarded(async () => {
         const root = path ? containedPath(ctx, path, (dir) => `harvest ${shellWord(dir)}`) : ctx.cwd;
+        // The project file add: true writes is found by walking up from
+        // `root` (or created at its git root), which can be above every
+        // allowed root: refuse before reading anything.
+        if (add) {
+          const target = resolvePaths({ cwd: root }).project ?? defaultProjectPath(root);
+          if (!writableProjectFile(ctx, target)) {
+            throw new Error(
+              `add: true would write ${target}, which is outside the directories this server may write (${readableRoots(ctx).join(', ')}), so nothing was read or written. ` +
+                `Call harvest_repo without add for the read-only preview; the user can run ${cliCommand(`harvest ${shellWord(root)} --add`)} themselves.`,
+            );
+          }
+        }
         const report = await harvestReport(root, {
           ...(limit !== undefined ? { limit } : {}),
           ...(minCount !== undefined ? { minCount } : {}),

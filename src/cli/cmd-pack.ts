@@ -41,7 +41,7 @@ import {
 } from '../core/index.js';
 import { findRegistryRecordMismatch, loadLexicon, registryRecordMismatch } from '../core/index.js';
 import type { InstallPackResult, RegistryDeps, RegistryRecordMismatch, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
-import { CliRefusal, PACK_NOT_FOUND_NEXT_STEP, bold, dim, exampleAfterMissingArgument, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, shownCommand, safeMessage, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
+import { CliRefusal, PACK_NOT_FOUND_NEXT_STEP, bold, dim, exampleAfterMissingArgument, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, shownCommand, shownWord, safeMessage, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { createPrompter, isInteractive } from './prompt.js';
@@ -497,10 +497,17 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
   for (const [at, name] of names.entries()) {
     try {
       if (isRegistryRef(name)) {
+        // The ref is checked first, as MCP add_pack does: `../x` was told
+        // community packs need --registry, for a name that can never be one.
+        try {
+          parseRegistryRef(name);
+        } catch (err) {
+          throw new CliRefusal(errorMessage(err), PACK_NOT_FOUND_NEXT_STEP);
+        }
         if (!opts.registry) {
           throw new CliRefusal(
             NEED_REGISTRY,
-            `run: lexicon pack add ${name} --registry <index> (lexicon pack search <query> --registry <index> lists the index's packs)`,
+            `run: lexicon pack add ${shownWord(name.trim())} --registry <index> (lexicon pack search <query> --registry <index> lists the index's packs)`,
           );
         }
         const outcome = await runPackAddRegistry(name, opts, io, deps);

@@ -61824,6 +61824,13 @@ function containedPath(ctx, path28, cliArgs, env = process.env) {
     `${JSON.stringify(path28)} is outside the directories this server may read (${roots.join(", ")}), so nothing was read. The user can run ${cliCommand(cliArgs(real))} on it themselves, open it as a workspace root in their client, or list it in ${HARVEST_ROOTS_ENV} in the MCP server's environment.`
   );
 }
+function writableProjectFile(ctx, file2, env = process.env) {
+  const own2 = resolvePaths({ cwd: ctx.cwd }).project ?? defaultProjectPath(ctx.cwd);
+  if (realOrResolved(file2) === realOrResolved(own2)) return true;
+  const roots = readableRoots(ctx, env);
+  const real = (0, import_node_fs13.existsSync)(file2) ? realOrResolved(file2) : (0, import_node_path13.join)(realOrResolved((0, import_node_path13.dirname)(file2)), (0, import_node_path13.basename)(file2));
+  return roots.some((root) => isWithin(real, root));
+}
 async function mcpWriteOpts(ctx) {
   return await projectWriteTrusted({ cwd: ctx.cwd }) ? {} : { leaveUntrusted: true };
 }
@@ -61857,6 +61864,7 @@ var EXPORT_FORMAT_NAMES = [...EXPORT_FORMATS, ...Object.keys(EXPORT_FORMAT_ALIAS
 var EXPORT_ALIAS_NOTE = Object.entries(EXPORT_FORMAT_ALIASES).map(([alias, format]) => `'${alias}' means '${format}'`).join(", ");
 var MCP_NORMALIZE_BUDGET_MS = 1e3;
 var MCP_NORMALIZE_MAX_CHARS = 1e5;
+var MCP_NORMALIZE_INPUT_MAX_CHARS = 1e6;
 var CUT_LOOKBACK_CHARS = 64;
 function normalizeCut(text, max) {
   if (text.length <= max) return text.length;
@@ -61906,9 +61914,13 @@ var registerTermTools = (server, ctx) => {
     "normalize_transcript",
     {
       title: "Normalize dictated text",
-      description: `Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a real name but not quite ('Ashler', "Cooper Nettie's", 'pie dentic'). One garbled proper noun is reason enough. You do not need the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit counter. Use the \`output\` field as the message you act on, and mention the correction only if it changes what you are about to do. WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails (unless the lexicon's settings.skipCode is false), and it never invents a term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. Only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. Returns { output, changed, replacements, summary }, plus a \`note\` when \`text\` is empty or only whitespace; when \`changed\` is false the text was already correct and you should carry on silently (except with dryRun: true, where nothing is applied, so \`output\` is the input and \`changed\` is false even when \`replacements\` lists corrections: read \`replacements\` for what a real call would fix), unless the result also carries \`skippedProject\`: then this repo has a project lexicon that is not trusted yet, so tell the user once that ` + cliCommand("trust") + " would enable it.",
+      description: `Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a real name but not quite ('Ashler', "Cooper Nettie's", 'pie dentic'). One garbled proper noun is reason enough. You do not need the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit counter. Use the \`output\` field as the message you act on, and mention the correction only if it changes what you are about to do. WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails (unless the lexicon's settings.skipCode is false), and it never invents a term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. Text over ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters is refused, nothing checked. Below that, only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. Returns { output, changed, replacements, summary }, plus a \`note\` when \`text\` is empty or only whitespace; when \`changed\` is false the text was already correct and you should carry on silently (except with dryRun: true, where nothing is applied, so \`output\` is the input and \`changed\` is false even when \`replacements\` lists corrections: read \`replacements\` for what a real call would fix), unless the result also carries \`skippedProject\`: then this repo has a project lexicon that is not trusted yet, so tell the user once that ` + cliCommand("trust") + " would enable it.",
       inputSchema: {
-        text: external_exports.string().describe("The dictated or transcribed text to correct."),
+        text: external_exports.string().max(MCP_NORMALIZE_INPUT_MAX_CHARS, {
+          error: `text is longer than ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters, so nothing was checked; call again with it in pieces of at most ${MCP_NORMALIZE_MAX_CHARS} characters (only that many are checked per call)`
+        }).describe(
+          `The dictated or transcribed text to correct: at most ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters (longer is refused), of which the first ${MCP_NORMALIZE_MAX_CHARS} are checked.`
+        ),
         dryRun: external_exports.boolean().optional().describe("When true, report candidate replacements without applying them: `output` is the input, `changed` is false even when `replacements` is not empty, and no hit is recorded."),
         minConfidence: external_exports.number().min(0).max(1).optional().describe(
           `Override the minimum confidence (0..1) a fuzzy or phonetic match needs. Omitted: the lexicon's settings.minConfidence, else ${DEFAULT_MIN_CONFIDENCE}. An exact alias or canonical match scores 1 and passes any value, except one the text spells with a word break the term does not have ("open ai" for OpenAI), which scores ${INVENTED_BOUNDARY_CONFIDENCE} and is refused above that.`
@@ -62291,7 +62303,7 @@ var suggestionSchema = external_exports.object({
   count: external_exports.number().optional(),
   scope: external_exports.enum(TERM_SCOPES).optional(),
   path: external_exports.string().optional()
-});
+}).strict();
 function aliasCount(n) {
   return `${n} alias${n === 1 ? "" : "es"}`;
 }
@@ -62305,7 +62317,7 @@ var registerHarvestTools = (server, ctx) => {
     "harvest_repo",
     {
       title: "Harvest names from a repository",
-      description: "Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without `add` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml. Show the candidate list and get a yes first. A file the user already trusted stays trusted; a new, untrusted or changed one is not trusted by the write (`trusted: false`) and applies only after the user reviews it and runs " + cliCommand("trust") + `: relay \`nextStep\`. \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts: { root, candidates: [{ canonical, category, source, evidence, count, suggestedAliases }], count }, plus \`truncated: true\` and a \`note\` when the scan stopped at its file cap (tell the user, and offer to harvest a subdirectory), where \`evidence\` names where a name was seen (a file path, "git log", "package.json#name"), never the text around it, and \`suggestedAliases\` is often empty on purpose (an identifier gets none). With \`add: true\` the result adds \`added\`, \`failures\` and \`path\`, and is an error when no candidate could be written.`,
+      description: "Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without `add` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml. Show the candidate list and get a yes first. A file the user already trusted stays trusted; a new, untrusted or changed one is not trusted by the write (`trusted: false`) and applies only after the user reviews it and runs " + cliCommand("trust") + `: relay \`nextStep\`. \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused, and so is \`add: true\` when the .lexicon.yaml it would write (found by walking up from \`path\`, or new at its git root) is outside them and not this server's own project file. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts: { root, candidates: [{ canonical, category, source, evidence, count, suggestedAliases }], count }, plus \`truncated: true\` and a \`note\` when the scan stopped at its file cap (tell the user, and offer to harvest a subdirectory), where \`evidence\` names where a name was seen (a file path, "git log", "package.json#name"), never the text around it, and \`suggestedAliases\` is often empty on purpose (an identifier gets none). With \`add: true\` the result adds \`added\`, \`failures\` and \`path\`, and is an error when no candidate could be written.`,
       inputSchema: {
         path: nonBlank().optional().describe(`Repository root. Omit for the server working directory (a blank one is refused). Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
         limit: external_exports.number().int().positive().max(HARVEST_MAX_LIMIT).optional().describe(`Max candidates to return (default 50, at most ${HARVEST_MAX_LIMIT}).`),
@@ -62315,6 +62327,14 @@ var registerHarvestTools = (server, ctx) => {
     },
     async ({ path: path28, limit, minCount, add }) => guarded(async () => {
       const root = path28 ? containedPath(ctx, path28, (dir) => `harvest ${shellWord2(dir)}`) : ctx.cwd;
+      if (add) {
+        const target = resolvePaths({ cwd: root }).project ?? defaultProjectPath(root);
+        if (!writableProjectFile(ctx, target)) {
+          throw new Error(
+            `add: true would write ${target}, which is outside the directories this server may write (${readableRoots(ctx).join(", ")}), so nothing was read or written. Call harvest_repo without add for the read-only preview; the user can run ${cliCommand(`harvest ${shellWord2(root)} --add`)} themselves.`
+          );
+        }
+      }
       const report2 = await harvestReport(root, {
         ...limit !== void 0 ? { limit } : {},
         ...minCount !== void 0 ? { minCount } : {}
@@ -66793,10 +66813,12 @@ var registerSetupTools = (server, ctx) => {
         ...person !== void 0 ? { person } : {},
         // runSetup takes the CLI's comma-separated form. Omitted means "none" here, never
         // "every detected client": the plan names the detected ones and the model asks.
-        clients: clients !== void 0 && clients.length > 0 ? clients.join(",") : "none",
+        // Duplicates are dropped here, in the order first named, so the
+        // options (and the command the plan echoes) list each client once.
+        clients: clients !== void 0 && clients.length > 0 ? [...new Set(clients)].join(",") : "none",
         // Same for the starter packs: only an explicit list installs any (runSetup with yes
         // and no --packs installs none); omitted leaves the plan's default set for the model to offer.
-        ...packs !== void 0 ? { packs: packs.length > 0 ? packs.join(",") : "none" } : {},
+        ...packs !== void 0 ? { packs: packs.length > 0 ? [...new Set(packs)].join(",") : "none" } : {},
         // The login service is opt-in; runSetup with yes also refuses it unless serve is true.
         serve: serve === true,
         // So is the harvest (a write inside the user's repo). The plan lists the
@@ -67098,8 +67120,8 @@ var registerPackTools = (server, ctx) => {
     },
     async ({ name, scope, registry: registry2, confirm, previewDigest }) => guarded(async () => {
       if (isRegistryRef(name)) {
-        if (!registry2) throw new Error("a community pack ref needs the registry parameter (the index it was listed from)");
         const parsed = parseRegistryRef(name);
+        if (!registry2) throw new Error("a community pack ref needs the registry parameter (the index it was listed from)");
         await assertUserRegistry(registry2, { cwd: ctx.cwd });
         const { index, base } = await loadRegistryIndex(registry2);
         const entry = findRegistryEntry(index, parsed.ref);
@@ -67328,12 +67350,64 @@ var TOOL_REGISTRARS = [
   registerPackTools
 ];
 
+// src/mcp/annotations.ts
+var READ = { readOnlyHint: true, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+var MERGE = { readOnlyHint: false, destructiveHint: false, idempotentHint: true, openWorldHint: false };
+var TOOL_ANNOTATIONS = {
+  // Bumps a per-term hit counter in the lexicon file on a real change, so not
+  // read-only, and a repeat counts again.
+  normalize_transcript: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  add_term: MERGE,
+  // Deletes a term or an alias; a second call finds nothing more to remove.
+  remove_term: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  list_terms: READ,
+  export_lexicon: READ,
+  // Adds an alias, or recases a term's canonical; the same correction again changes nothing.
+  learn_correction: MERGE,
+  suggest_canonical: READ,
+  lexicon_stats: READ,
+  // Read-only preview unless `add: true`, which merges candidates into the project file.
+  harvest_repo: MERGE,
+  suggest_terms: READ,
+  // A 'stale' suggestion removes a term; applying it again is refused, not a no-op.
+  apply_suggestion: { readOnlyHint: false, destructiveHint: true, idempotentHint: false, openWorldHint: false },
+  // 'untrust' deletes the registry entry; 'trust' pins (after the user answers).
+  trust_project: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  lexicon_doctor: READ,
+  // Writes the lexicon entry into a client config (replacing a stale launch of
+  // lexicon's own, never another server).
+  install_client: MERGE,
+  uninstall_client: { readOnlyHint: false, destructiveHint: true, idempotentHint: true, openWorldHint: false },
+  // Seeds terms, installs into clients and packs, may install a login service.
+  setup_lexicon: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: false },
+  // Probes 127.0.0.1 only.
+  serve_status: READ,
+  // With `registry`, fetches a community index over the network.
+  list_packs: { ...READ, openWorldHint: true },
+  // A community pack is downloaded from its registry.
+  add_pack: { ...MERGE, openWorldHint: true },
+  // Reads the user's Contacts, Calendar or GitHub (through gh), then merges
+  // once per preview token: a second apply with the same token is refused.
+  import_vocabulary: { readOnlyHint: false, destructiveHint: false, idempotentHint: false, openWorldHint: true },
+  import_dictionary: MERGE
+};
+function toolAnnotations(name) {
+  const hints = TOOL_ANNOTATIONS[name];
+  if (hints === void 0) throw new Error(`MCP tool ${name} has no entry in TOOL_ANNOTATIONS (src/mcp/annotations.ts)`);
+  return hints;
+}
+
 // src/mcp/server.ts
 function strictInput(config2) {
   if (typeof config2 !== "object" || config2 === null) return config2;
   const shape = config2.inputSchema;
   if (shape === void 0 || shape instanceof external_exports.ZodType) return config2;
   return { ...config2, inputSchema: external_exports.object(shape).strict() };
+}
+function withAnnotations(name, config2) {
+  if (typeof config2 !== "object" || config2 === null) return config2;
+  const own2 = config2.annotations;
+  return { ...config2, annotations: own2 ?? toolAnnotations(name) };
 }
 function strictPromptArgs(name, shape = {}) {
   const declared = Object.keys(shape);
@@ -67366,6 +67440,30 @@ function lexiconForModel(loaded) {
   const full = exportLexicon(loaded.merged, "claude-md");
   const text = full.length <= MODEL_CONTEXT_MAX_CHARS ? full : exportClaudeMdWithin(loaded.merged, MODEL_CONTEXT_MAX_CHARS, moreTermsLine).text;
   return neutralizeMarkup(text);
+}
+var LEXICON_JSON_MAX_CHARS = MODEL_CONTEXT_MAX_CHARS * 4;
+function jsonOmittedNote(omitted, total) {
+  return `${omitted} of ${total} term${total === 1 ? "" : "s"} left out to keep this resource under ${LEXICON_JSON_MAX_CHARS} characters (the most used, then brand, person and product names, are kept). Call export_lexicon with format json for the whole lexicon, or list_terms with a query to look one up.`;
+}
+function lexiconJsonWithin(merged, extra) {
+  const render2 = (terms, more) => `${JSON.stringify({ ...merged, terms, ...extra, ...more }, null, 2)}
+`;
+  const full = render2(merged.terms, {});
+  if (full.length <= LEXICON_JSON_MAX_CHARS) return full;
+  const total = merged.terms.length;
+  const capped = (keep) => {
+    const omitted = total - keep;
+    const note = [extra.note, jsonOmittedNote(omitted, total)].filter((n) => n !== void 0).join(" ");
+    return render2(selectExportTerms(merged, { limit: keep }), { omittedTerms: omitted, note });
+  };
+  let lo = 0;
+  let hi = total - 1;
+  while (lo < hi) {
+    const mid = Math.ceil((lo + hi) / 2);
+    if (capped(mid).length <= LEXICON_JSON_MAX_CHARS) lo = mid;
+    else hi = mid - 1;
+  }
+  return capped(lo);
 }
 var VOICE_CONTEXT_INSTRUCTION = "Apply these canonical spellings to everything I say for the rest of this session. If you see a word that looks like a garbled version of one of them, use the canonical form without asking.";
 var EMPTY_LEXICON_NOTE = `Note: ${noTermsYet({ lower: true, so: "there are no spellings to apply and dictated names are not being corrected" })}. If the user dictates, offer once to set it up (the onboard prompt, or setup_lexicon, which previews before it writes).`;
@@ -67438,7 +67536,7 @@ function createServer2(opts = {}) {
     });
   }
   const registerTool = server.registerTool.bind(server);
-  const gatedRegisterTool = (name, config2, cb) => registerTool(name, strictInput(config2), (async (...args) => {
+  const gatedRegisterTool = (name, config2, cb) => registerTool(name, withAnnotations(name, strictInput(config2)), (async (...args) => {
     if (rootsPending) await rootsPending;
     return cb(...args);
   }));
@@ -67487,7 +67585,7 @@ function createServer2(opts = {}) {
     "lexicon://json",
     {
       title: "Lexicon JSON",
-      description: "The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`. With no terms at all, `note` says so (after the skipped-file sentence, when there is one) and how to set the lexicon up.",
+      description: `The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds \`projectTrust\`, \`skippedProject\` (its path, never its contents) and \`note\`. With no terms at all, \`note\` says so (after the skipped-file sentence, when there is one) and how to set the lexicon up. The text is capped at ${LEXICON_JSON_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept, \`omittedTerms\` counts the rest and \`note\` says so; export_lexicon (format json) and list_terms (with a query) reach them.`,
       mimeType: "application/json"
     },
     async (uri) => {
@@ -67496,12 +67594,7 @@ function createServer2(opts = {}) {
       const empty = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE.replace(/^Note: /, "") : void 0;
       const note = [skipped.note, empty].filter((n) => n !== void 0).join(" ");
       const extra = note ? { ...skipped, note } : skipped;
-      const text = Object.keys(extra).length > 0 ? `${JSON.stringify({ ...loaded.merged, ...extra }, null, 2)}
-` : (
-        // The merged view whole, `scope` and `hits` included (the json export leaves them out).
-        `${JSON.stringify(loaded.merged, null, 2)}
-`
-      );
+      const text = lexiconJsonWithin(loaded.merged, extra);
       return {
         contents: [{ uri: uri.href, mimeType: "application/json", text }]
       };
@@ -67593,6 +67686,7 @@ if (isMainModule()) {
   }
 }
 export {
+  LEXICON_JSON_MAX_CHARS,
   MODEL_CONTEXT_MAX_CHARS,
   ROOTS_TIMEOUT_MS,
   cliFlagOutput,
@@ -67601,5 +67695,6 @@ export {
   dirsFromRoots,
   main,
   strictInput,
-  strictPromptArgs
+  strictPromptArgs,
+  withAnnotations
 };

@@ -21686,9 +21686,10 @@ function formatCorrectionNote(correction) {
   const meant = JSON.stringify(neutralizeForModel(correction.meant).trim());
   return `The user is correcting a spelling: ${heard} should be ${meant}. Call the lexicon learn_correction tool with heard: ${heard}, meant: ${meant}. If ${heard} contains words that are not part of the misspelled name, pass only the name. Then continue with the rest of the message.`;
 }
+var HOOK_CORRECTION_BUDGET_MS = 25;
 var CORRECTION_NOTES_MAX = 5;
 var SENTENCE_BREAK_RE = /(?<=[.!?])\s+/;
-function parseCorrections(text, lexicon) {
+function parseCorrections(text, lexicon, limits = {}) {
   const opts = lexicon ? { lexicon } : {};
   const found = [];
   const seen = /* @__PURE__ */ new Set();
@@ -21708,7 +21709,15 @@ function parseCorrections(text, lexicon) {
     add(whole, prose);
     return found;
   }
-  const perSentence = prose.split(SENTENCE_BREAK_RE).map((sentence) => ({ sentence, c: parseCorrection(sentence, opts) }));
+  const parsed = /* @__PURE__ */ new Map();
+  const perSentence = [];
+  for (const sentence of prose.split(SENTENCE_BREAK_RE)) {
+    if (!parsed.has(sentence)) {
+      if (limits.shouldStop?.()) break;
+      parsed.set(sentence, parseCorrection(sentence, opts));
+    }
+    perSentence.push({ sentence, c: parsed.get(sentence) });
+  }
   const wholeKey = whole ? keyOf(whole) : void 0;
   add(whole, perSentence.find((p) => p.c !== void 0 && keyOf(p.c) === wholeKey)?.sentence ?? prose);
   for (const { sentence, c } of perSentence) add(c, sentence);
@@ -21987,8 +21996,9 @@ async function loadOrExplain(cwd, staleGlobal = false) {
   try {
     return { loaded: await loadLexicon(staleGlobal ? { cwd, parseSkipped: false, staleGlobal: true } : { cwd, parseSkipped: false }) };
   } catch (err) {
-    const message = neutralizeForModel(err instanceof Error ? err.message : String(err));
-    if (!UNPARSEABLE_LEXICON_RE.test(message)) {
+    const raw = neutralizeForModel(err instanceof Error ? err.message : String(err));
+    const message = loadErrorForModel(raw);
+    if (!UNPARSEABLE_LEXICON_RE.test(raw)) {
       return {
         note: `Lexicon is installed but is correcting nothing, because its lexicon could not be read: ${message}
 Call the lexicon_doctor tool, or tell the user to run ` + cliCommand("doctor") + ", which names the file and what is wrong with it."
@@ -21996,9 +22006,14 @@ Call the lexicon_doctor tool, or tell the user to run ` + cliCommand("doctor") +
     }
     return {
       note: `Lexicon is installed but is correcting nothing, because its file does not parse: ${message}
-Tell the user to run ` + cliCommand(unparseableEditCommand(message)) + " and fix the parse error. Setup will not repair this, and lexicon_doctor will show the same thing."
+Tell the user to run ` + cliCommand(unparseableEditCommand(raw)) + " and fix the parse error. Setup will not repair this, and lexicon_doctor will show the same thing."
     };
   }
+}
+var LOAD_ERROR_NOTE_MAX_CHARS = 1500;
+function loadErrorForModel(message) {
+  const shortened = message.replace(/^((?:Failed to parse lexicon YAML|Invalid lexicon) at )(.+?)(: )/, (_m, lead, file, sep) => `${lead}${pathForModel(file)}${sep}`);
+  return sanitizeForDisplayMax(shortened, LOAD_ERROR_NOTE_MAX_CHARS);
 }
 var UNPARSEABLE_LEXICON_RE = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at /;
 function unparseableEditCommand(message) {
@@ -22040,7 +22055,9 @@ async function userPromptSubmit(payload, opts) {
   const head = cut < prompt.length ? prompt.slice(0, cut) : prompt;
   const tail = prompt.slice(head.length);
   const lengthNote = tail ? formatLengthNote(head.length, prompt.length) : "";
-  const corrections = parseCorrections(head, loaded.merged);
+  const correctionsStarted = process.hrtime.bigint();
+  const correctionLimit = BigInt(HOOK_CORRECTION_BUDGET_MS * 1e6);
+  const corrections = parseCorrections(head, loaded.merged, { shouldStop: () => process.hrtime.bigint() - correctionsStarted >= correctionLimit });
   const correctionNote = corrections.length > 0 ? formatCorrectionNotes(corrections) : "";
   if (corrections.length > 0) await queueForReview(corrections, loaded);
   const index = loaded.merged.terms.length > 0 ? await loadMatcherIndex(loaded) : void 0;
@@ -22218,10 +22235,12 @@ export {
   CORRECTION_MIN_SIMILARITY,
   CORRECTION_NOTES_MAX,
   DATA_BLOCK_MIN_ROWS,
+  HOOK_CORRECTION_BUDGET_MS,
   HOOK_LOCK_TIMEOUT_MS,
   HOOK_MATCH_BUDGET_MS,
   HOOK_PROMPT_MAX_CHARS,
   HOOK_STDIN_MAX_BYTES,
+  LOAD_ERROR_NOTE_MAX_CHARS,
   ONBOARD_NOTE,
   ONBOARD_NOTE_FILE,
   ONBOARD_NOTE_INTERVAL_MS,

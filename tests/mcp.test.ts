@@ -1770,6 +1770,23 @@ describe('lexicon MCP server', () => {
       }
     });
 
+    // Catches: duplicate entries in clients or packs reached runSetup as
+    // given (`claude,cursor,claude`), so the options named a client twice.
+    it('setup_lexicon drops duplicate clients and packs, keeping the first order', async () => {
+      const { client, close } = await connect();
+      try {
+        for (const apply of [false, true]) {
+          const result = await client.callTool({ name: 'setup_lexicon', arguments: { apply, clients: ['claude', 'cursor', 'claude', 'cursor'], packs: ['ai', 'developer', 'ai'] } });
+          expect(result.isError).toBe(false);
+          const [opts] = cli.runSetup.mock.calls.at(-1) as [SetupOptions];
+          expect(opts.clients).toBe('claude,cursor');
+          expect(opts.packs).toBe('ai,developer');
+        }
+      } finally {
+        await close();
+      }
+    });
+
     // Catches: the apply result had no step after setup, so an agent never told the
     // user to add a name; the progress it relayed named CLI flags such as --packs.
     it('setup_lexicon relays summary.nextStep after the trust step, and passes forAgent', async () => {

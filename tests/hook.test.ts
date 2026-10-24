@@ -369,6 +369,21 @@ describe('runUserPromptSubmitHook', () => {
       expect(parseCorrections("it's Vercel not versel. It's vercel not Versel.")).toHaveLength(1);
     });
 
+    // Catches: every sentence was parsed for a correction with no bound, so a
+    // 50000-character paste of one sentence repeated took about 300 ms.
+    it('parses each distinct sentence once and stops when the budget says so', async () => {
+      const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+      const names = ['Vercel', 'Supabase', 'Kubernetes', 'Postgres'];
+      const prompt = names.map((n) => `it's ${n} not ${n.toLowerCase()}x.`).join(' ');
+      // Spent from the start: only the whole-text pass, which finds the first.
+      expect(parseCorrections(prompt, undefined, { shouldStop: () => true }).map((c) => c.meant)).toEqual(['Vercel']);
+      let checks = 0;
+      const repeated = `${"it's Vercel not versel. ".repeat(2000)}it's Supabase not super base.`;
+      const found = parseCorrections(repeated, undefined, { shouldStop: () => ((checks += 1), false) });
+      expect(found.map((c) => c.meant)).toEqual(['Vercel', 'Supabase']);
+      expect(checks).toBe(2);
+    });
+
     it('passes the loaded lexicon to parseCorrection, so a name it holds is caught by sound', async () => {
       const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
       expect(parseCorrections("it's Niamh not Neve")).toEqual([]);
@@ -1171,6 +1186,35 @@ describe('bug M: a lexicon that does not parse is reported, not swallowed', () =
       const said = context(await runHook(JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'ping Ashler', cwd: '/fake/repo' })));
       expect(said).toContain(step);
     }
+  });
+});
+
+// Catches: the load error's note quoted the file's full path, so a lexicon
+// under a deep directory put the SessionStart context past its 4000-character
+// cap; and the error itself had no bound.
+describe('a load error note stays within the SessionStart cap', () => {
+  it('names a deep file by its last components and caps a long error', async () => {
+    const { runHook, SESSION_CONTEXT_MAX_CHARS, LOAD_ERROR_NOTE_MAX_CHARS } = await import('../src/hooks/user-prompt-submit.js');
+    const deep = path.join('/fake', ...Array.from({ length: 100 }, (_, i) => `${'d'.repeat(40)}${i}`), 'repo', '.lexicon.yaml');
+    const errors = [
+      new Error(`Failed to parse lexicon YAML at ${deep}: Missing closing "quote at line 3`),
+      new Error(`Invalid lexicon at ${path.join('/fake', 'home', 'lexicon.yaml')}: ${'terms.0.canonical: Required '.repeat(400)}`),
+      new Error(`EACCES: permission denied, open '${deep}'`),
+    ];
+    for (const error of errors) {
+      for (const event of ['SessionStart', 'UserPromptSubmit']) {
+        mocks.loadLexicon.mockRejectedValueOnce(error);
+        const said = context(await runHook(JSON.stringify({ hook_event_name: event, prompt: 'ping Ashler', cwd: '/fake/repo' })));
+        expect(said.length, `${event}: ${error.message.slice(0, 40)}`).toBeLessThanOrEqual(SESSION_CONTEXT_MAX_CHARS);
+        expect(said.length).toBeLessThan(LOAD_ERROR_NOTE_MAX_CHARS + 400);
+        expect(said).toMatch(/lexicon (edit|doctor)/);
+      }
+    }
+    mocks.loadLexicon.mockRejectedValueOnce(errors[0]);
+    const said = context(await runHook(sessionStartPayload()));
+    expect(said).toContain(`at \u2026${path.sep}${'d'.repeat(40)}99${path.sep}repo${path.sep}.lexicon.yaml: Missing closing`);
+    // Still the repo file: the step opens it.
+    expect(said).toContain('`lexicon edit --project`');
   });
 });
 

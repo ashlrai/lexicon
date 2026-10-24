@@ -498,6 +498,14 @@ export function formatCorrectionNote(correction: Correction): string {
   );
 }
 
+/**
+ * How long the UserPromptSubmit hook spends reading a prompt's sentences for
+ * spelling corrections ("it's X not Y") before it stops; the match budget
+ * (HOOK_MATCH_BUDGET_MS) comes on top. A dictated prompt takes well under a
+ * millisecond.
+ */
+export const HOOK_CORRECTION_BUDGET_MS = 25;
+
 /** Most spelling corrections one prompt gets a learn_correction line for; the rest get one closing line. */
 export const CORRECTION_NOTES_MAX = 5;
 
@@ -515,7 +523,7 @@ const SENTENCE_BREAK_RE = /(?<=[.!?])\s+/;
  * `parseCorrection`, so a name it holds is caught when STT wrote it by sound.
  * Exported for tests.
  */
-export function parseCorrections(text: string, lexicon?: CorrectionLexicon): Correction[] {
+export function parseCorrections(text: string, lexicon?: CorrectionLexicon, limits: { shouldStop?: () => boolean } = {}): Correction[] {
   const opts = lexicon ? { lexicon } : {};
   const found: Correction[] = [];
   const seen = new Set<string>();
@@ -541,7 +549,18 @@ export function parseCorrections(text: string, lexicon?: CorrectionLexicon): Cor
     add(whole, prose);
     return found;
   }
-  const perSentence = prose.split(SENTENCE_BREAK_RE).map((sentence) => ({ sentence, c: parseCorrection(sentence, opts) }));
+  // Each distinct sentence is parsed once, and none after `shouldStop` says
+  // the budget is spent: a 50000-character paste of one sentence repeated
+  // parsed every copy, about 300 ms of a hook meant to take under 200.
+  const parsed = new Map<string, Correction | undefined>();
+  const perSentence: Array<{ sentence: string; c: Correction | undefined }> = [];
+  for (const sentence of prose.split(SENTENCE_BREAK_RE)) {
+    if (!parsed.has(sentence)) {
+      if (limits.shouldStop?.()) break;
+      parsed.set(sentence, parseCorrection(sentence, opts));
+    }
+    perSentence.push({ sentence, c: parsed.get(sentence) });
+  }
   const wholeKey = whole ? keyOf(whole) : undefined;
   add(whole, perSentence.find((p) => p.c !== undefined && keyOf(p.c) === wholeKey)?.sentence ?? prose);
   for (const { sentence, c } of perSentence) add(c, sentence);
@@ -1018,10 +1037,11 @@ async function loadOrExplain(cwd: string, staleGlobal = false): Promise<{ loaded
     // reports a skipped file by path.
     return { loaded: await loadLexicon(staleGlobal ? { cwd, parseSkipped: false, staleGlobal: true } : { cwd, parseSkipped: false }) };
   } catch (err) {
-    const message = neutralizeForModel(err instanceof Error ? err.message : String(err));
+    const raw = neutralizeForModel(err instanceof Error ? err.message : String(err));
+    const message = loadErrorForModel(raw);
     // Only a store parse/validation error is a file to fix with `lexicon edit`;
     // anything else (a file that cannot be read) used to be reported as one too.
-    if (!UNPARSEABLE_LEXICON_RE.test(message)) {
+    if (!UNPARSEABLE_LEXICON_RE.test(raw)) {
       return {
         note:
           `Lexicon is installed but is correcting nothing, because its lexicon could not be read: ${message}\n` +
@@ -1031,10 +1051,29 @@ async function loadOrExplain(cwd: string, staleGlobal = false): Promise<{ loaded
     return {
       note:
         `Lexicon is installed but is correcting nothing, because its file does not parse: ${message}\n` +
-        'Tell the user to run ' + cliCommand(unparseableEditCommand(message)) + ' and fix the parse error. Setup will not repair this, ' +
+        'Tell the user to run ' + cliCommand(unparseableEditCommand(raw)) + ' and fix the parse error. Setup will not repair this, ' +
         'and lexicon_doctor will show the same thing.',
     };
   }
+}
+
+/**
+ * Most characters of a load error in the hook's note. The note is the whole
+ * SessionStart context, capped at SESSION_CONTEXT_MAX_CHARS like the table.
+ */
+export const LOAD_ERROR_NOTE_MAX_CHARS = 1500;
+
+/**
+ * A load error as the note quotes it: the file a parse error names through
+ * pathForModel (its last components, as the skipped-project note names a
+ * file), then cut to LOAD_ERROR_NOTE_MAX_CHARS. The full path went in as is,
+ * so a lexicon under a deep directory put a SessionStart context past its
+ * 4000-character cap, and a directory name chosen by whoever published a repo
+ * reached the model whole.
+ */
+function loadErrorForModel(message: string): string {
+  const shortened = message.replace(/^((?:Failed to parse lexicon YAML|Invalid lexicon) at )(.+?)(: )/, (_m, lead: string, file: string, sep: string) => `${lead}${pathForModel(file)}${sep}`);
+  return sanitizeForDisplayMax(shortened, LOAD_ERROR_NOTE_MAX_CHARS);
 }
 
 /** The store's messages for a lexicon file that does not parse or validate (src/cli/io.ts unreadableLexiconEdit reads the same two). */
@@ -1105,7 +1144,12 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const tail = prompt.slice(head.length);
   const lengthNote = tail ? formatLengthNote(head.length, prompt.length) : '';
 
-  const corrections = parseCorrections(head, loaded.merged);
+  // Bounded like the match below: past HOOK_CORRECTION_BUDGET_MS the rest of
+  // the sentences are not read for corrections (their words are matched as
+  // dictation, as before the per-sentence pass existed).
+  const correctionsStarted = process.hrtime.bigint();
+  const correctionLimit = BigInt(HOOK_CORRECTION_BUDGET_MS * 1e6);
+  const corrections = parseCorrections(head, loaded.merged, { shouldStop: () => process.hrtime.bigint() - correctionsStarted >= correctionLimit });
   const correctionNote = corrections.length > 0 ? formatCorrectionNotes(corrections) : '';
   if (corrections.length > 0) await queueForReview(corrections, loaded);
 

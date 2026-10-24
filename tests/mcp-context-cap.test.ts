@@ -13,7 +13,7 @@ import { Client } from '@modelcontextprotocol/sdk/client/index.js';
 import { InMemoryTransport } from '@modelcontextprotocol/sdk/inMemory.js';
 import { stringify } from 'yaml';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { MODEL_CONTEXT_MAX_CHARS, createServer } from '../src/mcp/server.js';
+import { LEXICON_JSON_MAX_CHARS, MODEL_CONTEXT_MAX_CHARS, createServer } from '../src/mcp/server.js';
 
 let home: string;
 const TERMS = 3000;
@@ -100,5 +100,27 @@ describe('lexicon://me and voice-context stay under the model context cap', () =
       expect(exported.content[0].text).toContain('| Term2999 |');
       expect(exported.content[0].text).toContain('Aaa.Long');
     });
+  });
+});
+
+describe('lexicon://json stays under its cap', () => {
+  it('keeps the most used terms that fit, counts the rest and says how to get them', async () => {
+    const text = await withClient(async (client) => {
+      const read = await client.readResource({ uri: 'lexicon://json' });
+      return read.contents.map((c) => ('text' in c ? c.text : '')).join('\n');
+    });
+    expect(text.length).toBeLessThanOrEqual(LEXICON_JSON_MAX_CHARS);
+    const parsed = JSON.parse(text) as { terms: { canonical: string; scope?: string }[]; omittedTerms: number; note: string };
+    const names = parsed.terms.map((t) => t.canonical);
+    expect(names).toContain('Zzz.Used');
+    expect(names).toContain('Aaa.Long');
+    expect(names).not.toContain('Term2999');
+    expect(parsed.terms[0].scope).toBe('global');
+    expect(parsed.omittedTerms).toBe(TERMS + 2 - parsed.terms.length);
+    expect(parsed.omittedTerms).toBeGreaterThan(0);
+    expect(parsed.note).toContain(`${parsed.omittedTerms} of ${TERMS + 2} terms left out`);
+    expect(parsed.note).toContain('export_lexicon');
+    // Nearly full: one more term would not have fitted by much.
+    expect(text.length).toBeGreaterThan(LEXICON_JSON_MAX_CHARS - 2000);
   });
 });

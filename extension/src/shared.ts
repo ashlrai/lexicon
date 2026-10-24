@@ -44,6 +44,8 @@ export const STORAGE_KEYS = {
   recent: 'recent',
   /** Hosts the guard ran on through "Any site", newest first (see `rememberAnySiteHost`), so Options can list them. */
   anySiteHosts: 'anySiteHosts',
+  /** The `navigator.userAgent` of the browser that last refused `matchOriginAsFallback` (see any-site.ts), so a reconcile there leaves the registration alone. */
+  anySiteNoFallback: 'anySiteNoFallback',
 } as const;
 
 export const RECENT_LIMIT = 5;

@@ -3,41 +3,20 @@
  * MV3 service worker (module). Holds the API token, does every fetch, and
  * answers the content script, popup and options page.
  */
-import { BUILTIN_MATCHES } from './adapters.js';
+import { setAnySite as setAnySiteWith } from './any-site.js';
+import type { AnySiteApi } from './any-site.js';
 import { createBackground } from './background-core.js';
 import { chromeStore } from './chrome-store.js';
 import defaultYaml from '../../examples/lexicon.example.yaml';
-import { ANY_SITE_DENIED_MESSAGE } from './shared.js';
 import { prunePairPorts, registerPairPort } from './pair-port.js';
 import type { PairPortApi } from './pair-port.js';
 import type { Request } from './shared.js';
 
-const ANY_SITE_SCRIPT_ID = 'lexicon-any-site';
+/** `chrome.scripting` and `chrome.permissions` as any-site.ts takes them, with storage to remember a refused key in. */
+const anySiteApi: AnySiteApi = { scripting: chrome.scripting, permissions: chrome.permissions, store: chromeStore, browser: navigator.userAgent };
 
-async function setAnySite(enabled: boolean): Promise<void> {
-  const registered = await chrome.scripting.getRegisteredContentScripts({ ids: [ANY_SITE_SCRIPT_ID] });
-  if (!enabled) {
-    if (registered.length) await chrome.scripting.unregisterContentScripts({ ids: [ANY_SITE_SCRIPT_ID] });
-    return;
-  }
-  const granted = await chrome.permissions.contains({ origins: ['<all_urls>'] });
-  if (!granted) throw new Error(ANY_SITE_DENIED_MESSAGE);
-  // A registration from before frames were covered persists across updates: replace it.
-  if (registered.length && registered.every((r) => r.allFrames === true)) return;
-  if (registered.length) await chrome.scripting.unregisterContentScripts({ ids: [ANY_SITE_SCRIPT_ID] });
-  await chrome.scripting.registerContentScripts([
-    {
-      id: ANY_SITE_SCRIPT_ID,
-      matches: ['<all_urls>'],
-      excludeMatches: [...BUILTIN_MATCHES],
-      js: ['content.js'],
-      // Frames too: a composer in a same-origin iframe. content-boot.ts
-      // leaves a cross-origin frame alone unless it is a chat site.
-      allFrames: true,
-      runAt: 'document_idle',
-      persistAcrossSessions: true,
-    },
-  ]);
+function setAnySite(enabled: boolean): Promise<void> {
+  return setAnySiteWith(anySiteApi, enabled);
 }
 
 /** `chrome.scripting` and `chrome.permissions` as pair-port.ts takes them. */
