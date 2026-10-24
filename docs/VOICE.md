@@ -42,7 +42,9 @@ microphone -> ffmpeg (16 kHz mono s16 WAV) -> whisper.cpp (--prompt <canonicals>
 
 Exit codes: `0` ok, `1` error, `2` ffmpeg or whisper-cli missing (with an install
 hint), `3` nothing heard. `--status` exits `0` while a toggle recording is running
-and `1` when idle, so scripts can branch on it. `--toggle`, `--status` and
+and `1` when idle, so scripts can branch on it. A recorded pid counts only while it
+still runs the recorder on that capture (its command line is checked, as the stop
+press does), so a pid the system handed to another program reads as idle. `--toggle`, `--status` and
 `--list-devices` are separate modes: passing two of them exits `1` and names both.
 `--status` and `--list-devices` record nothing, so a recording flag with them
 (`--seconds`, `--device`, `--model`, `--lang`, `--translate`, `--no-prompt`,

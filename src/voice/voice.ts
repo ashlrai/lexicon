@@ -1152,14 +1152,30 @@ async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r
 // ---------------------------------------------------------------------------
 // Status and devices
 
+/**
+ * The pid recording `state`'s capture, or undefined when none is. A live pid
+ * is not enough: once the recorder exits the number can be handed to any
+ * process, so it is asked what it runs (confirmRecorder), as the toggle's
+ * stop does. A pid running something else is not the recorder, unless the
+ * process table shows another pid writing the capture (a command line read
+ * back wrong); a pid that cannot be asked about is taken as ours, as before.
+ */
+async function recordingPid(state: RecordingState | undefined, r: Resolved): Promise<number | undefined> {
+  if (state?.pid === undefined || !r.isAlive(state.pid)) return undefined;
+  if ((await confirmRecorder(state.pid, state.wav, r.describeProcess)) !== false) return state.pid;
+  const writer = await findOrphanRecorder(state.wav, r.listProcesses);
+  return typeof writer === 'number' ? writer : undefined;
+}
+
 /** Print `recording since <time>` (exit 0) or `idle` (exit 1). */
 export async function runVoiceStatus(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps = {}): Promise<number> {
   const r = resolve(opts, io, deps);
   const state = await readState(r.globalPath);
-  const recording = state !== undefined && state.pid !== undefined && r.isAlive(state.pid);
+  const pid = await recordingPid(state, r);
+  const recording = state !== undefined && pid !== undefined;
   if (opts.json) {
     // `ok` follows the exit code, as `serve --status` reports `ok: false, up: false`.
-    io.stdout(`${JSON.stringify(recording && state ? { ok: true, recording: true, since: state.startedAt, pid: state.pid } : { ok: false, recording: false })}\n`);
+    io.stdout(`${JSON.stringify(recording && state ? { ok: true, recording: true, since: state.startedAt, pid } : { ok: false, recording: false })}\n`);
   } else {
     io.stdout(recording && state ? `recording since ${state.startedAt}\n` : 'idle\n');
   }

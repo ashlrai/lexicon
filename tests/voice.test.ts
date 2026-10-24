@@ -591,6 +591,28 @@ describe('lexicon voice --toggle', () => {
     expect(JSON.parse(h.out[0])).toEqual({ ok: true, recording: true, since: '2026-09-19T12:00:00.000Z', pid: 4242 });
   });
 
+  // Catches: --status trusted isAlive alone, so a recorder that exited and
+  // whose pid was handed to another process read as recording forever.
+  it('--status is idle when the recorded pid now runs something else', async () => {
+    const h = await harness();
+    await deadRecorderState(h, wavBytes({ audioBytes: 32_000, finalized: true }));
+    h.alive.add(99999);
+    h.deps.describeProcess = async () => '/usr/sbin/cupsd';
+    h.deps.listProcesses = async () => [];
+    expect(await runVoiceStatus(h.opts, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.out).toEqual(['idle\n']);
+    // A recorder the process table shows writing the capture is still reported, under its own pid.
+    const wav = (await readState(h.globalPath))!.wav;
+    h.deps.listProcesses = async () => [{ pid: 7777, command: `/fake/bin/ffmpeg -f avfoundation -i :default -y ${wav}` }];
+    h.out.length = 0;
+    expect(await runVoiceStatus({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_OK);
+    expect(JSON.parse(h.out[0])).toMatchObject({ ok: true, recording: true, pid: 7777 });
+    // A pid it cannot ask about is taken as the recorder, as before.
+    h.deps.describeProcess = async () => undefined;
+    h.out.length = 0;
+    expect(await runVoiceStatus(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+  });
+
   // Catches: `voice --status --json` was the one object-shaped --json document
   // without `ok`, so idle (exit 1) read as `{ recording: false }` alone.
   it('--status --json leads with ok, false when idle (exit 1)', async () => {
