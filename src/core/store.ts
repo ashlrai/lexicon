@@ -918,6 +918,34 @@ function indexHeadProject(head: string): string | null | undefined {
 const INDEX_CACHE_HEAD_BYTES = 8192;
 
 /**
+ * Why the index cache beside `globalPath` (INDEX_CACHE_FILE_NAME) cannot be
+ * used: `is not a file` (a directory there is never replaced, so every match
+ * builds the index again), `cannot be read (EACCES)`, or `does not start the
+ * way an index cache does` (damaged; it is rebuilt on a match). Undefined
+ * when it is missing or reads as a cache entry of any version (an older
+ * version's entry is simply rebuilt). Reads only the head. For `lexicon doctor`.
+ */
+export async function indexCacheProblem(globalPath: string): Promise<string | undefined> {
+  const cachePath = path.join(path.dirname(globalPath), INDEX_CACHE_FILE_NAME);
+  let handle: fs.FileHandle | undefined;
+  try {
+    const st = await fs.stat(cachePath);
+    if (!st.isFile()) return 'is not a file';
+    handle = await fs.open(cachePath, 'r');
+    const buf = Buffer.alloc(64);
+    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+    if (bytesRead === 0) return undefined;
+    return /^\{"version":\d+,/.test(buf.toString('utf8', 0, bytesRead)) ? undefined : 'does not start the way an index cache does';
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return undefined;
+    return `cannot be read (${code ?? errorMessage(e)})`;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
+}
+
+/**
  * After a write to a lexicon file, rebuild an existing index cache entry for
  * the merge the next prompt will match against, so it reads the entry instead
  * of building the index (about 55 ms for 2000 terms, plus writing it back).
@@ -1362,6 +1390,35 @@ async function readHitsRegistry(opts: StoreOptions, forWrite = false): Promise<H
   const global = isPlainObject(raw) ? raw.global : undefined;
   if (isPlainObject(global)) out.global = validCounts(global);
   return out;
+}
+
+/**
+ * Why `hits.json` cannot be used (`is not valid JSON (...)`, `cannot be read
+ * (EACCES)`, `is not a JSON object`, ...), or undefined when it is missing,
+ * empty or fine. With a problem the reader above takes it as no counts, so
+ * every term reads as never used, and a read error stops new hits being
+ * counted. For `lexicon doctor`.
+ */
+export async function hitsRegistryProblem(opts: StoreOptions = {}): Promise<string | undefined> {
+  let text: string;
+  try {
+    text = await fs.readFile(getHitsPath(opts), 'utf8');
+  } catch (e) {
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return undefined;
+    return `cannot be read (${code ?? errorMessage(e)})`;
+  }
+  if (text.trim() === '') return undefined;
+  let raw: unknown;
+  try {
+    raw = JSON.parse(text);
+  } catch (e) {
+    return `is not valid JSON (${errorMessage(e)})`;
+  }
+  if (!isPlainObject(raw)) return 'is not a JSON object';
+  if (raw.projects !== undefined && !isPlainObject(raw.projects)) return '"projects" is not an object';
+  if (raw.global !== undefined && !isPlainObject(raw.global)) return '"global" is not an object';
+  return undefined;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

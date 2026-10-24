@@ -81,3 +81,60 @@ describe('doctor and claude mcp list', () => {
     expect(registered(await run('plugin:lexicon:lexicon: node /x/plugin/mcp-server.mjs - ✓ Connected\n'))).toBe(true);
   });
 });
+
+describe('doctor and the state files beside the global lexicon', () => {
+  const run = (t: ReturnType<typeof setup>) => runDoctorReport({ cwd: t.repo }, { home: t.home, env: t.env, platform: 'linux', exec: () => '' });
+  const stateWarnings = (report: Awaited<ReturnType<typeof runDoctorReport>>): string[] =>
+    report.checks
+      .filter((c) => c.level === 'warn' && /^(serve\.json|hits\.json|pending corrections queue|index cache) /.test(c.message))
+      .map((c) => c.message);
+
+  it('says nothing of state files that are missing or fine', async () => {
+    const t = setup();
+    expect(stateWarnings(await run(t))).toEqual([]);
+    writeFileSync(path.join(t.cfg, 'serve.json'), JSON.stringify({ port: 41733, token: 'ab'.repeat(16), createdAt: '2026-01-01T00:00:00.000Z' }));
+    writeFileSync(path.join(t.cfg, 'hits.json'), JSON.stringify({ version: 1, projects: {}, global: { 'ashlr.ai': 3 } }));
+    writeFileSync(path.join(t.cfg, 'pending-aliases.yaml'), 'version: 1\npending: []\n');
+    writeFileSync(path.join(t.cfg, 'index-cache.json'), '{"version":1,"key":"x","index":{}}');
+    expect(stateWarnings(await run(t))).toEqual([]);
+  });
+
+  // Catches: runDoctorReport never looked at serve.json, hits.json,
+  // pending-aliases.yaml or the index cache, each of which is read as missing
+  // or empty when broken, so a broken one was never mentioned.
+  it('warns, naming the file and the fix, for each one that exists but cannot be used', async () => {
+    const t = setup();
+    const serve = path.join(t.cfg, 'serve.json');
+    const hits = path.join(t.cfg, 'hits.json');
+    const pending = path.join(t.cfg, 'pending-aliases.yaml');
+    const cache = path.join(t.cfg, 'index-cache.json');
+    writeFileSync(serve, '{ nope');
+    writeFileSync(hits, '{"version":1,');
+    writeFileSync(pending, 'pending: [oops');
+    mkdirSync(cache);
+    const report = await run(t);
+    // Warnings: none of these files stops lexicon correcting.
+    expect(report.checks.some((c) => c.level === 'fail')).toBe(false);
+    const warnings = stateWarnings(report);
+    expect(warnings).toEqual([
+      `serve.json is not valid JSON; fix it, or delete it and lexicon serve makes a new token (the local API and its paired clients need a usable one): ${serve}`,
+      expect.stringMatching(/^hits\.json is not valid JSON \(.*\), so every term reads as never used \(fix it, or move it aside to start the counts over\): /),
+      `pending corrections queue is not valid YAML, so lexicon pending cannot list it and new corrections are not queued (fix it, or move it aside): ${pending}`,
+      `index cache is not a file, so each match builds the index again (delete it; lexicon writes a new one): ${cache}`,
+    ]);
+    expect(warnings[1]?.endsWith(`: ${hits}`)).toBe(true);
+
+    rmSync(hits);
+    mkdirSync(hits);
+    writeFileSync(serve, JSON.stringify({ token: 'short' }));
+    writeFileSync(pending, 'pending:\n  - heard: x\n');
+    rmSync(cache, { recursive: true });
+    writeFileSync(cache, 'garbage');
+    expect(stateWarnings(await run(t))).toEqual([
+      expect.stringContaining('serve.json has no usable token ("token" is not 32 to 128 hex characters'),
+      `hits.json cannot be read (EISDIR), so every term reads as never used and new hits are not counted (fix it, or move it aside to start the counts over): ${hits}`,
+      `pending corrections queue has an entry that is not a pending alias, so lexicon pending cannot list it and new corrections are not queued (fix it, or move it aside): ${pending}`,
+      `index cache does not start the way an index cache does, so the next match builds the index again (delete it; lexicon writes a new one): ${cache}`,
+    ]);
+  });
+});

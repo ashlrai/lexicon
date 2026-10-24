@@ -18,7 +18,22 @@ import { readDoctorConfigJson, readDoctorConfigText } from './doctor-config-read
 import { errorMessage } from '../util/errors.js';
 import { checkPhantomPresence } from './phantom-presence.js';
 import { packageVersion } from '../util/package.js';
-import { getTrustPath, isTrusted, readLexiconFile, resolvePaths, spellingKey, trustRegistryProblem } from '../core/index.js';
+import {
+  INDEX_CACHE_FILE_NAME,
+  PendingFileError,
+  getHitsPath,
+  getTrustPath,
+  hitsRegistryProblem,
+  indexCacheProblem,
+  isTrusted,
+  pendingPathFor,
+  readLexiconFile,
+  readPending,
+  resolvePaths,
+  spellingKey,
+  trustRegistryProblem,
+} from '../core/index.js';
+import { readServeConfigResult } from '../serve/config.js';
 import { configPathFor } from './cmd-install.js';
 import { findGitRoot } from './setup/detect.js';
 import { cliCommand } from '../util/cli-hint.js';
@@ -76,6 +91,44 @@ function declaresTransport(entry: unknown): boolean {
  */
 function claudeListsLexiconServer(out: string): boolean {
   return out.split(/\r?\n/).some((row) => /^(?:plugin:[^:\s]+:)?lexicon:(?:\s|$)/.test(row.trim()));
+}
+
+/**
+ * One warning per state file beside the global lexicon that exists but
+ * cannot be used, naming the file, what it costs and the fix: `serve.json`
+ * (readServeConfigResult), `hits.json` (hitsRegistryProblem),
+ * `pending-aliases.yaml` (readPending) and the index cache
+ * (indexCacheProblem). A missing file is fine for all four.
+ */
+async function stateFileWarnings(globalPath: string, opts: { cwd: string; env: NodeJS.ProcessEnv; home: string }): Promise<string[]> {
+  const out: string[] = [];
+  const serve = await readServeConfigResult(opts);
+  if (serve.status === 'unusable') {
+    out.push(`serve.json ${serve.reason} (the local API and its paired clients need a usable one): ${serve.path}`);
+  }
+  const hits = await hitsRegistryProblem(opts);
+  if (hits !== undefined) {
+    out.push(
+      `hits.json ${hits}, so every term reads as never used${hits.startsWith('cannot be read') ? ' and new hits are not counted' : ''} ` +
+        `(fix it, or move it aside to start the counts over): ${getHitsPath(opts)}`,
+    );
+  }
+  const pendingFile = pendingPathFor(globalPath);
+  try {
+    await readPending(pendingFile);
+  } catch (err) {
+    // PendingFileError names the file itself; a read error does not.
+    const why = err instanceof PendingFileError ? errorMessage(err).replace(`${pendingFile} `, '') : `cannot be read (${(err as { code?: unknown }).code ?? errorMessage(err)})`;
+    out.push(`pending corrections queue ${why}, so lexicon pending cannot list it and new corrections are not queued (fix it, or move it aside): ${pendingFile}`);
+  }
+  const cache = await indexCacheProblem(globalPath);
+  if (cache !== undefined) {
+    out.push(
+      `index cache ${cache}, so ${cache === 'is not a file' || cache.startsWith('cannot be read') ? 'each match builds the index again' : 'the next match builds the index again'} ` +
+        `(delete it; lexicon writes a new one): ${path.join(path.dirname(globalPath), INDEX_CACHE_FILE_NAME)}`,
+    );
+  }
+  return out;
 }
 
 function withoutTomlComment(line: string): string {
@@ -747,6 +800,11 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
         `(fix the JSON in it, or move it aside and trust each project again): ${trustPath}`,
     );
   }
+
+  // The state files beside the global lexicon. Each is read as empty or
+  // missing when it is broken, so without these a broken one was never
+  // mentioned; warnings, since lexicon still corrects without any of them.
+  for (const message of await stateFileWarnings(paths.global, trustOpts)) push('warn', message);
 
   if (paths.project) {
     try {
