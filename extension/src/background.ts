@@ -7,6 +7,7 @@ import { BUILTIN_MATCHES } from './adapters.js';
 import { createBackground } from './background-core.js';
 import { chromeStore } from './chrome-store.js';
 import defaultYaml from '../../examples/lexicon.example.yaml';
+import { ANY_SITE_DENIED_MESSAGE } from './shared.js';
 import type { Request } from './shared.js';
 
 const ANY_SITE_SCRIPT_ID = 'lexicon-any-site';
@@ -18,7 +19,7 @@ async function setAnySite(enabled: boolean): Promise<void> {
     return;
   }
   const granted = await chrome.permissions.contains({ origins: ['<all_urls>'] });
-  if (!granted) throw new Error('The "any site" permission was not granted.');
+  if (!granted) throw new Error(ANY_SITE_DENIED_MESSAGE);
   if (registered.length) return;
   await chrome.scripting.registerContentScripts([
     {

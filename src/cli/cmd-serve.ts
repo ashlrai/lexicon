@@ -602,7 +602,9 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     if (bootstrap.code !== 0) {
       const load = await runAndReport(exec, io, 'launchctl', ['load', plistPath]);
       if (load.code !== 0) {
-        io.stderr('lexicon: could not load the LaunchAgent; the plist is in place, load it manually or log out and in\n');
+        io.stderr(
+          `lexicon: could not load the LaunchAgent; the plist is in place, so load it with: launchctl bootstrap gui/${uid} ${safe(plistPath)} (or log out and in), then check with: lexicon serve --status\n`,
+        );
         return 1;
       }
     }

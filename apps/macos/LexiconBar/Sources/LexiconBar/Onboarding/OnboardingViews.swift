@@ -567,6 +567,10 @@ private struct PacksStep: View {
                         .foregroundStyle(.orange)
                     Text(error).font(.caption).foregroundStyle(.secondary)
                         .fixedSize(horizontal: false, vertical: true)
+                    Text("The packs come from the local API. Check it with `lexicon serve --status`, then try again, or skip this step and add packs later with `lexicon pack add <name>`.")
+                        .font(.caption).foregroundStyle(.secondary)
+                        .fixedSize(horizontal: false, vertical: true)
+                    Button("Try again") { model.loadPacks() }
                 }
                 .frame(maxWidth: .infinity, alignment: .leading)
             } else {

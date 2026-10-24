@@ -2,7 +2,7 @@
 /** Popup: engine status, per-site switch, recent corrections, "learn" mini-form. */
 import { sendToBackground } from './chrome-store.js';
 import { setMessage } from './rich-text.js';
-import { coerceSettings, describeCorrection, hostKey, siteEnabled, statusView, STORAGE_KEYS } from './shared.js';
+import { coerceSettings, describeCorrection, hostKey, siteEnabled, statusFailedView, statusView, STORAGE_KEYS } from './shared.js';
 import type { Failure, LearnReply, StatusReply } from './shared.js';
 
 function $<T extends HTMLElement>(id: string): T {
@@ -71,16 +71,17 @@ async function refresh(): Promise<void> {
   try {
     const status = await sendToBackground<StatusReply | Failure>({ type: 'status' });
     if (status.ok) renderStatus(status);
-    else {
-      ui.mode.textContent = 'Error';
-      ui.mode.className = 'pill warn';
-      setMessage(ui.server, status.error);
-    }
+    else renderStatusFailure(status.error);
   } catch (err) {
-    ui.mode.textContent = 'Error';
-    ui.mode.className = 'pill warn';
-    setMessage(ui.server, err instanceof Error ? err.message : String(err));
+    renderStatusFailure(err instanceof Error ? err.message : String(err));
   }
+}
+
+function renderStatusFailure(error: string): void {
+  const view = statusFailedView(error);
+  ui.mode.textContent = view.mode;
+  ui.mode.className = 'pill warn';
+  setMessage(ui.server, view.line);
 }
 
 async function loadSite(): Promise<void> {

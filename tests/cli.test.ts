@@ -440,7 +440,7 @@ describe('list', () => {
 
     const miss = makeIO();
     await runList({ query: ' zork ' }, miss);
-    expect(miss.out).toContain('no terms match --query "zork" (');
+    expect(miss.out).toContain('No term matches --query "zork"; the lexicon has ');
   });
 
   // Catches: a filter on a lexicon with no terms said `no terms match`, which
@@ -449,12 +449,13 @@ describe('list', () => {
   it('says why the list is empty: no terms at all, or a filter that matched none', async () => {
     const miss = makeIO();
     expect(await runList({ category: 'product', query: 'zork' }, miss)).toBe(0);
-    expect(miss.out).toContain('no terms match --category product --query "zork" (2 terms in all; run lexicon list without them to see them)\n');
+    // The text line is the note --full and MCP list_terms carry, word for word.
+    expect(miss.out).toContain('No term matches --category product --query "zork"; the lexicon has 2 terms in all, which lexicon list without them shows.\n');
     const missFull = makeIO();
     expect(await runList({ category: 'product', full: true }, missFull)).toBe(0);
     expect(JSON.parse(missFull.out)).toMatchObject({
       counts: { matched: 0, total: 2 },
-      note: 'No term matches --category product; 2 terms in all, which lexicon list without it shows.',
+      note: 'No term matches --category product; the lexicon has 2 terms in all, which lexicon list without it shows.',
     });
 
     const empty = { version: 1 as const, terms: [] };
@@ -1199,13 +1200,17 @@ describe('positiveIntOption', () => {
 // commander's positiveIntOption) still used parseInt, so '5abc' became 5.
 describe('handler integer options', () => {
   it('take only a string of digits, as positiveIntOption does', async () => {
-    for (const bad of ['5abc', '1.5', '1e3', '0x10', '-1', 'abc', '']) {
-      await expect(runExport('csv', { limit: bad }, makeIO()), bad).rejects.toThrow('--limit must be a non-negative integer');
+    for (const bad of ['5abc', '1.5', '1e3', '0x10', '-1', 'abc', '', '0', '00']) {
+      await expect(runExport('csv', { limit: bad }, makeIO()), bad).rejects.toThrow('--limit must be a positive integer');
       await expect(runHarvest(os.tmpdir(), { minCount: bad }, makeIO(), { isInteractive: () => false }), bad).rejects.toThrow(
-        '--min-count must be a non-negative integer',
+        '--min-count must be a positive integer',
       );
     }
-    await expect(runExport('csv', { limit: 1.5 }, makeIO())).rejects.toThrow('--limit must be a non-negative integer');
+    await expect(runExport('csv', { limit: 1.5 }, makeIO())).rejects.toThrow('--limit must be a positive integer');
+    // Catches: 0 passed (positiveIntOption refuses it), so a direct csv export
+    // wrote nothing and then blamed the lexicon for having no rows.
+    await expect(runExport('csv', { limit: 0 }, makeIO())).rejects.toThrow('--limit must be a positive integer');
+    await expect(runHarvest(os.tmpdir(), { limit: 0 }, makeIO(), { isInteractive: () => false })).rejects.toThrow('--limit must be a positive integer');
     vi.mocked(core.harvestRepo).mockResolvedValueOnce([]);
     expect(await runHarvest(os.tmpdir(), { limit: ' 5 ', minCount: '2' }, makeIO(), { isInteractive: () => false })).toBe(0);
     expect(vi.mocked(core.harvestRepo)).toHaveBeenLastCalledWith(os.tmpdir(), { limit: 5, minCount: 2 });

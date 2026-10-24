@@ -17,7 +17,7 @@ import type { ContentHandle } from '../extension/src/content-core.js';
 import { applyCorrections, flatten, invertCorrections, readText } from '../extension/src/editable.js';
 import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
-import { coerceSettings, connectionTestLine, countOf, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
+import { ANY_SITE_DENIED_MESSAGE, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 import { setMessage } from '../extension/src/rich-text.js';
@@ -773,7 +773,104 @@ describe('message routing (mock chrome.runtime) and background', () => {
     expect(untrusted).toMatchObject({ ok: false, error: expect.stringContaining('untrusted') });
     expect((untrusted as Failure).error).not.toContain('rejected the token');
     // A body that is not JSON still gives the status.
-    expect(await bg.handle({ type: 'sync' })).toEqual({ ok: false, error: 'API /lexicon returned HTTP 500' });
+    expect(await bg.handle({ type: 'sync' })).toEqual({ ok: false, error: 'API /lexicon returned HTTP 500; run `lexicon serve --status` to check the server' });
+  });
+});
+
+// Catches: background and embedded errors that said what failed and stopped
+// there ("API /lexicon timed out", "server reports not ok", "Embedded lexicon
+// does not parse"), with no word of what to do next.
+describe('extension errors name the next step', () => {
+  function storeWith(settings: Record<string, unknown>): KeyValueStore {
+    const data: Record<string, unknown> = { settings };
+    return {
+      get: async (keys) => Object.fromEntries(keys.filter((k) => k in data).map((k) => [k, data[k]])),
+      set: async (items) => {
+        Object.assign(data, items);
+      },
+    };
+  }
+  const token = 'a'.repeat(64);
+  const json = (body: unknown): Response => new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } });
+
+  it('a timeout and a server reporting not ok name `lexicon serve --status`', async () => {
+    const aborting = vi.fn(async () => {
+      throw Object.assign(new Error('aborted'), { name: 'AbortError' });
+    });
+    const bg = createBackground({ fetch: aborting as unknown as typeof fetch, store: storeWith({ token }), defaultYaml: EXAMPLE_YAML });
+    expect(await bg.handle({ type: 'sync' })).toEqual({ ok: false, error: 'API /lexicon timed out after 1500 ms; run `lexicon serve --status` to check the server' });
+
+    const notOk = vi.fn(async () => json({ ok: false, version: '1', terms: 0 }));
+    const bg2 = createBackground({ fetch: notOk as unknown as typeof fetch, store: storeWith({ token }), defaultYaml: EXAMPLE_YAML });
+    const status = (await bg2.handle({ type: 'status' })) as StatusReply;
+    expect(status.serverError).toBe('server reports not ok; run `lexicon serve --status` to check the server');
+  });
+
+  it('a /normalize reply of another shape says the releases differ and to update one', async () => {
+    const fetchMock = vi.fn(async (url: string) => (url.endsWith('/health') ? json({ ok: true, version: '9.9.9', terms: 1 }) : json({ text: 'x' })));
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: storeWith({ token }), defaultYaml: EXAMPLE_YAML });
+    const reply = (await bg.handle({ type: 'normalize', text: 'ping ashler' })) as NormalizeReply & { fallback?: string };
+    expect(reply).toMatchObject({ ok: true, mode: 'embedded' });
+    expect(reply.fallback).toBe(
+      'API /normalize returned an unexpected shape: the server and this extension are likely different releases; update lexicon or the extension so they match.',
+    );
+  });
+
+  it('an embedded lexicon that does not parse says where to fix it', async () => {
+    const bg = createBackground({ fetch: vi.fn() as unknown as typeof fetch, store: storeWith({ mode: 'embedded', yaml: 'terms: [' }), defaultYaml: EXAMPLE_YAML });
+    const reply = (await bg.handle({ type: 'normalize', text: 'ping ashler' })) as Failure;
+    expect(reply.ok).toBe(false);
+    expect(reply.error.startsWith('Embedded lexicon does not parse (fix the YAML under Options > Embedded lexicon, or press Sync from local API there again): ')).toBe(true);
+  });
+
+  it('learning into the embedded YAML names Options for a broken file and a full one', () => {
+    expect(() => learnIntoYaml('terms: [', 'Ashler', 'Ashlr.AI')).toThrow(/^Embedded YAML does not parse \(fix it under Options > Embedded lexicon\): /);
+    expect(() => learnIntoYaml('version: 1\nterms: 3\n', 'Ashler', 'Ashlr.AI')).toThrow('Embedded YAML: terms is not a list; fix it under Options > Embedded lexicon.');
+    const many = Array.from({ length: 64 }, (_, i) => `a${i}`);
+    expect(() => learnIntoYaml(`version: 1\nterms:\n  - canonical: Quokka\n    aliases: [${many.join(', ')}]\n`, 'Kwokka', 'Quokka')).toThrow(
+      'Quokka already has 64 aliases; remove one under Options > Embedded lexicon first.',
+    );
+    const full = `version: 1\nterms:\n${Array.from({ length: 5000 }, (_, i) => `  - canonical: T${i}\n    aliases: [t${i}x]\n`).join('')}`;
+    expect(() => learnIntoYaml(full, 'Kwokka', 'Quokka')).toThrow(
+      'The embedded lexicon already has 5000 terms; remove one under Options > Embedded lexicon, or pair with the local API (`lexicon serve --pair`), which keeps the lexicon on disk.',
+    );
+  });
+
+  // Catches: the popup pill read a bare "Error" when the status request
+  // failed, naming neither what failed nor what to try.
+  it('the popup pill says what failed and the line how to get it back', () => {
+    expect(statusFailedView('no response')).toEqual({
+      mode: 'Status unavailable',
+      warn: true,
+      line: "could not read the extension status: no response. Close and reopen the popup; if it persists, reload Lexicon on the browser's extensions page.",
+    });
+    const popup = readFileSync(resolve(process.cwd(), 'extension/src/popup.ts'), 'utf8');
+    expect(popup).not.toMatch(/textContent = 'Error'/);
+  });
+
+  // Catches: Options and the /pair page showed a failed request to the
+  // background (the extension reloaded under the page) as a bare
+  // "extension messaging failed", with no way back.
+  it('a failed request to the background says to reload the page, then the extension', () => {
+    expect(extensionRequestFailedLine('extension messaging failed')).toBe(
+      "extension messaging failed. Reload this page; if it persists, reload Lexicon on the browser's extensions page.",
+    );
+    expect(extensionRequestFailedLine('no response. ')).toMatch(/^no response\. Reload/);
+    const options = readFileSync(resolve(process.cwd(), 'extension/src/options.ts'), 'utf8');
+    const catches = options.split('\n').filter((l) => /\.catch\(\(err: unknown\)/.test(l)).length;
+    expect(catches).toBe(3);
+    expect(options.match(/extensionRequestFailedLine\(errorMessage\(err\)\)/g)).toHaveLength(catches);
+  });
+
+  // Catches: "Permission not granted." with no word of how to grant it or
+  // whether the extension still works without it.
+  it('the any-site refusal says how to grant it and what still works', () => {
+    expect(ANY_SITE_DENIED_MESSAGE).toBe('The "any site" permission was not granted: tick the box again and choose Allow. The listed chat sites still work without it.');
+    for (const file of ['extension/src/options.ts', 'extension/src/background.ts']) {
+      const src = readFileSync(resolve(process.cwd(), file), 'utf8');
+      expect(src, file).toContain('ANY_SITE_DENIED_MESSAGE');
+      expect(src, file).not.toMatch(/not granted\./);
+    }
   });
 });
 
@@ -822,7 +919,9 @@ describe('pairing (/pair page content script + background)', () => {
     });
     pairPage();
     await pairFromDocument({ doc: document, send: thrown });
-    expect(document.getElementById('status')!.textContent).toBe('Pairing failed: extension messaging failed');
+    expect(document.getElementById('status')!.textContent).toBe(
+      "Pairing failed: extension messaging failed. Reload this page; if it persists, reload Lexicon on the browser's extensions page.",
+    );
 
     pairPage('');
     const untouched = vi.fn(async (): Promise<PairReply> => ({ ok: true, baseUrl: '', terms: 0, version: '' }));

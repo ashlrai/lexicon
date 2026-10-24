@@ -128,12 +128,12 @@ export function learnIntoYaml(yaml: string, heard: string, meant: string): Learn
   }
 
   let doc = parseDocument(yaml.trim() ? yaml : 'version: 1\nterms: []\n');
-  if (doc.errors.length) throw new Error(`Embedded YAML does not parse: ${doc.errors[0].message}`);
+  if (doc.errors.length) throw new Error(`Embedded YAML does not parse (fix it under Options > Embedded lexicon): ${doc.errors[0].message}`);
   if (!isMap(doc.contents)) doc = parseDocument('version: 1\nterms: []\n');
   if (!doc.has('version')) doc.set('version', 1);
   if (!isSeq(doc.get('terms', true))) doc.set('terms', []);
   const terms = doc.get('terms', true);
-  if (!isSeq(terms)) throw new Error('Embedded YAML: terms is not a list.');
+  if (!isSeq(terms)) throw new Error('Embedded YAML: terms is not a list; fix it under Options > Embedded lexicon.');
 
   for (const item of terms.items) {
     if (!isMap(item)) continue;
@@ -146,14 +146,20 @@ export function learnIntoYaml(yaml: string, heard: string, meant: string): Learn
     if (existing.includes(heardT.toLowerCase())) {
       return { yaml: String(doc), message: `"${heardT}" is already an alias of ${canonical}.` };
     }
-    if (aliases.items.length >= LIMITS.aliases) throw new Error(`${canonical} already has ${LIMITS.aliases} aliases.`);
+    if (aliases.items.length >= LIMITS.aliases) {
+      throw new Error(`${canonical} already has ${LIMITS.aliases} aliases; remove one under Options > Embedded lexicon first.`);
+    }
     aliases.add(heardT);
     const out = String(doc);
     compileOrThrow(out);
     return { yaml: out, message: `Added "${heardT}" as an alias of ${canonical}.` };
   }
 
-  if (terms.items.length >= LIMITS.terms) throw new Error(`The embedded lexicon already has ${LIMITS.terms} terms.`);
+  if (terms.items.length >= LIMITS.terms) {
+    throw new Error(
+      `The embedded lexicon already has ${LIMITS.terms} terms; remove one under Options > Embedded lexicon, or pair with the local API (\`lexicon serve --pair\`), which keeps the lexicon on disk.`,
+    );
+  }
   terms.add(doc.createNode({ canonical: meantT, aliases: [heardT], source: 'learned' }));
   const out = String(doc);
   compileOrThrow(out);

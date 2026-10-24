@@ -73,7 +73,7 @@ final class ChildProcessSupervisor {
     private func launch() {
         guard wanted else { return }
         guard let process = cli.makeChildProcess(arguments) else {
-            state = .failed("lexicon CLI not found")
+            state = .failed("The lexicon CLI was not found. Set its path in Preferences.")
             return
         }
         let errPipe = Pipe()
@@ -123,7 +123,7 @@ final class ChildProcessSupervisor {
         } else {
             wanted = false
             let detail = reason.isEmpty ? "exit code \(proc.terminationStatus)" : reason
-            state = .failed("lexicon \(name) kept exiting (\(detail)). Gave up after \(policy.maxRestarts) restarts.")
+            state = .failed("lexicon \(name) kept exiting (\(detail)). Gave up after \(policy.maxRestarts) restarts. Run `lexicon \(name)` in Terminal to see the error, then switch it on again from the menu.")
         }
     }
 }

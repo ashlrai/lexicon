@@ -84,6 +84,13 @@ class TokenRejectedError extends Error {
 /** A bearer route with no token stored. Pairing is the one-command fix; pasting is the fallback. */
 export const NO_TOKEN_MESSAGE = 'No API token set: run `lexicon serve --pair` to pair this browser, or paste the token `lexicon serve --show` prints into Options.';
 
+/** The step after a reply that says nothing of why the server failed (a bare status, a timeout, `ok: false`). */
+export const SERVE_STATUS_STEP = 'run `lexicon serve --status` to check the server';
+
+/** A `/normalize` reply without `output` and `replacements`: most likely a server from another release. */
+export const NORMALIZE_SHAPE_MESSAGE =
+  'API /normalize returned an unexpected shape: the server and this extension are likely different releases; update lexicon or the extension so they match.';
+
 /** What a request that never reached the server says: where it went and how to start the server. */
 export function unreachableMessage(baseUrl: string): string {
   return `cannot reach lexicon serve at ${baseUrl}; start it with \`lexicon serve\` (or \`lexicon serve --install\` to start it at login)`;
@@ -158,11 +165,11 @@ export function createBackground(deps: BackgroundDeps): Background {
       if (res.status === 401) throw new TokenRejectedError();
       if (!res.ok) {
         const detail = await apiErrorDetail(res, settings.token);
-        throw new Error(detail ? `API ${path}: ${detail}` : `API ${path} returned HTTP ${res.status}`);
+        throw new Error(detail ? `API ${path}: ${detail}` : `API ${path} returned HTTP ${res.status}; ${SERVE_STATUS_STEP}`);
       }
       return (await res.json()) as unknown;
     } catch (err) {
-      if ((err as { name?: string }).name === 'AbortError') throw new Error(`API ${path} timed out`);
+      if ((err as { name?: string }).name === 'AbortError') throw new Error(`API ${path} timed out after ${FETCH_TIMEOUT_MS} ms; ${SERVE_STATUS_STEP}`);
       throw err;
     } finally {
       clearTimeout(timer);
@@ -178,7 +185,7 @@ export function createBackground(deps: BackgroundDeps): Background {
         version: typeof raw.version === 'string' ? raw.version : '?',
         terms: typeof raw.terms === 'number' ? raw.terms : 0,
       };
-      healthCache = { at: now(), health: h.ok ? h : null, error: h.ok ? undefined : 'server reports not ok' };
+      healthCache = { at: now(), health: h.ok ? h : null, error: h.ok ? undefined : `server reports not ok; ${SERVE_STATUS_STEP}` };
     } catch (err) {
       healthCache = { at: now(), health: null, error: errorMessage(err) };
     }
@@ -187,7 +194,8 @@ export function createBackground(deps: BackgroundDeps): Background {
 
   function embeddedNormalize(settings: Settings, text: string, dryRun: boolean, fallback?: string): NormalizeReply {
     const err = embedded.load(settings.yaml);
-    if (err) return { ok: false, error: `Embedded lexicon does not parse: ${err}` };
+    // The step goes first: a YAML error can run over several lines.
+    if (err) return { ok: false, error: `Embedded lexicon does not parse (fix the YAML under Options > Embedded lexicon, or press Sync from local API there again): ${err}` };
     const r = embedded.normalize(text, dryRun);
     return {
       ok: true,
@@ -207,7 +215,7 @@ export function createBackground(deps: BackgroundDeps): Background {
       body: JSON.stringify(dryRun ? { text, dryRun: true } : { text }),
     })) as Partial<ApiNormalize>;
     if (typeof raw.output !== 'string' || !Array.isArray(raw.replacements)) {
-      throw new Error('API /normalize returned an unexpected shape');
+      throw new Error(NORMALIZE_SHAPE_MESSAGE);
     }
     return {
       ok: true,

@@ -1,7 +1,9 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { Lexicon, NormalizeResult } from '../src/core/types.js';
 
-vi.mock('../src/core/index.js', () => {
+vi.mock('../src/core/index.js', async () => {
+  // The shared note wording (core/notes.ts) is used as is.
+  const notes = await vi.importActual<typeof import('../src/core/notes.js')>('../src/core/notes.js');
   const lexicon: Lexicon = { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }] };
   const normalize = (text: string): NormalizeResult => {
     const output = text.replace(/Ashler/g, 'Ashlr.AI');
@@ -17,6 +19,7 @@ vi.mock('../src/core/index.js', () => {
     };
   };
   return {
+    ...notes,
     normalize: vi.fn(normalize),
     diffSummary: vi.fn((r: NormalizeResult) => r.replacements.map((x) => `"${x.original}" -> "${x.replacement}"`).join('\n')),
     loadLexicon: vi.fn(async () => ({ merged: lexicon, global: { path: '/g', scope: 'global', lexicon, exists: true } })),

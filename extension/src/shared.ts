@@ -259,6 +259,34 @@ export function statusView(s: StatusReply): StatusView {
   return { mode: api ? 'Embedded (fallback)' : 'Embedded', warn: api, line: parts.join(' · ') };
 }
 
+/**
+ * A page of the extension (Options, the /pair page) whose request to the
+ * background itself failed, as when the extension was reloaded or updated
+ * under the page: what failed, then how to get it back.
+ */
+export function extensionRequestFailedLine(error: string): string {
+  return `${error.replace(/[.\s]+$/, '')}. Reload this page; if it persists, reload Lexicon on the browser's extensions page.`;
+}
+
+/**
+ * The popup's status when the status request itself failed: the pill says
+ * what failed (a bare "Error" did not) and the line how to get it back.
+ */
+export function statusFailedView(error: string): StatusView {
+  return {
+    mode: 'Status unavailable',
+    warn: true,
+    line: `could not read the extension status: ${error}. Close and reopen the popup; if it persists, reload Lexicon on the browser's extensions page.`,
+  };
+}
+
+/**
+ * What Options says, and the background throws, when the browser did not
+ * grant the optional "any site" permission.
+ */
+export const ANY_SITE_DENIED_MESSAGE =
+  'The "any site" permission was not granted: tick the box again and choose Allow. The listed chat sites still work without it.';
+
 export function describeCorrection(c: Pick<Correction, 'original' | 'replacement'>): string {
   return `${c.original} → ${c.replacement}`;
 }

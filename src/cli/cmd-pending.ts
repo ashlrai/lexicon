@@ -102,9 +102,14 @@ export async function runPendingAccept(ids: readonly string[], opts: PendingOpti
       if (a.error) io.stderr(`lexicon: ${a.entry.id} not accepted: ${safe(a.error)} (it stays pending)\n`);
       else line(io, `accepted ${a.entry.id}: ${safe(a.entry.heard)} -> ${safe(a.result!.term.canonical)} in ${safe(a.result!.file.path)}`);
     }
-    for (const id of res.unknown) io.stderr(`lexicon: no pending alias with id ${safe(id)}\n`);
+    for (const id of res.unknown) io.stderr(`lexicon: ${unknownPendingLine(id)}\n`);
   }
   return failed.length > 0 || res.unknown.length > 0 ? 1 : 0;
+}
+
+/** A selected id the queue does not hold, and how to see the ones it does. */
+function unknownPendingLine(id: string): string {
+  return `no pending alias with id ${safe(id)}; run lexicon pending list to see the ids`;
 }
 
 export async function runPendingReject(ids: readonly string[], opts: PendingOptions, io: IO): Promise<number> {
@@ -119,7 +124,7 @@ export async function runPendingReject(ids: readonly string[], opts: PendingOpti
     line(io, JSON.stringify(jsonOk({ file: res.file, rejected: res.rejected.map((e) => e.id), unknown: res.unknown }), null, 2));
   } else {
     for (const e of res.rejected) line(io, `rejected ${e.id}: ${safe(e.heard)} -> ${safe(e.meant)} (not learned)`);
-    for (const id of res.unknown) io.stderr(`lexicon: no pending alias with id ${safe(id)}\n`);
+    for (const id of res.unknown) io.stderr(`lexicon: ${unknownPendingLine(id)}\n`);
   }
   return res.unknown.length > 0 ? 1 : 0;
 }

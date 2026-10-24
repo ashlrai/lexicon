@@ -82,6 +82,9 @@ import {
   termHolders,
   untrustedAliasHolder,
   untrustedTermHolder,
+  noTermMatchesNote,
+  noTermsYet,
+  onlyUntrustedTerms,
   resolvePaths,
   spellingConflicts,
   suggestAliases,
@@ -177,12 +180,14 @@ function findGitRoot(start: string): string | undefined {
 /**
  * An integer option handed to a handler directly (commander already parsed
  * `--limit` with positiveIntOption). A string takes the same digits-only rule
- * (wholeNumber): parseInt read `5abc` as 5.
+ * (wholeNumber): parseInt read `5abc` as 5. Zero is refused as
+ * positiveIntOption refuses it: a direct `limit: 0` csv export wrote nothing
+ * and then said the lexicon had no rows.
  */
 function parseIntOption(value: string | number | undefined, flag: string): number | undefined {
   if (value === undefined) return undefined;
   const n = typeof value === 'number' ? value : wholeNumber(value);
-  if (n === undefined || !Number.isSafeInteger(n) || n < 0) throw new Error(`${flag} must be a non-negative integer`);
+  if (n === undefined || !Number.isSafeInteger(n) || n <= 0) throw new Error(`${flag} must be a positive integer`);
   return n;
 }
 
@@ -574,8 +579,8 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
 function emptyLexiconRemoveStep(loaded: LoadedLexicon | undefined): string | undefined {
   if (loaded === undefined || loaded.merged.terms.length > 0) return undefined;
   return loaded.skippedProject
-    ? 'the only terms are in the untrusted project lexicon, which is not loaded; review it and run lexicon trust'
-    : 'the lexicon has no terms yet, so there is nothing to remove; run lexicon setup, or add one with: lexicon add <canonical> <alias>';
+    ? `${onlyUntrustedTerms('is not loaded')}; review it and run lexicon trust`
+    : `${noTermsYet({ lower: true, so: 'there is nothing to remove' })}; run lexicon setup, or add one with: lexicon add <canonical> <alias>`;
 }
 
 async function runRemoveAlias(
@@ -680,7 +685,7 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
       ? undefined
       : total === 0
         ? emptyLexiconNote()
-        : `No term matches ${filters.join(' ')}; ${plural(total, 'term')} in all, which lexicon list without ${filters.length === 1 ? 'it' : 'them'} shows.`;
+        : noTermMatchesNote({ filter: filters.join(' '), filters: filters.length, total });
 
   if (opts.full) {
     // The MCP list_terms shape; plain --json keeps the bare array scripts already parse.
@@ -715,7 +720,7 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
       io,
       dim(
         total > 0 && filters.length > 0
-          ? `no terms match ${safe(filters.join(' '))} (${plural(total, 'term')} in all; run lexicon list without ${filters.length === 1 ? 'it' : 'them'} to see them)`
+          ? noTermMatchesNote({ filter: safe(filters.join(' ')), filters: filters.length, total })
           : 'no terms' + empty,
       ),
     );
