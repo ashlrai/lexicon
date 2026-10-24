@@ -7,7 +7,8 @@
  */
 import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
-import { existsSync, promises as fs } from 'node:fs';
+import { existsSync, promises as fs, statSync } from 'node:fs';
+import path from 'node:path';
 import type { Command } from 'commander';
 import {
   ProjectTrustError,
@@ -685,9 +686,86 @@ export interface EditOptions extends InteractiveOptions {
 /** Runs `command args... filePath` attached to the terminal and resolves with its exit code. */
 export type SpawnEditor = (command: string, args: readonly string[], filePath: string) => Promise<number>;
 
+/** What `spawnEditorInherit` runs: the program, its argv and whether Node must pass that argv as written. */
+export interface EditorSpawn {
+  file: string;
+  args: string[];
+  windowsVerbatimArguments: boolean;
+}
+
+/** cmd.exe metacharacters, each escaped with `^` (the qntm.org/cmd scheme, as cross-spawn does it). */
+const CMD_META = /([()\][%!^"`<>&|;, *?])/g;
+
+/** One argument for a cmd.exe command line: quoted for the CRT parser, then every metacharacter `^`-escaped. */
+function cmdQuote(arg: string): string {
+  let quoted = arg.replace(/(\\*)"/g, '$1$1\\"').replace(/(\\*)$/, '$1$1');
+  quoted = `"${quoted}"`;
+  return quoted.replace(CMD_META, '^$1');
+}
+
+/** An env lookup that ignores case, as Windows does (`Path`, `PATHEXT`). */
+function envValue(env: NodeJS.ProcessEnv, name: string): string | undefined {
+  if (env[name] !== undefined) return env[name];
+  const key = Object.keys(env).find((k) => k.toUpperCase() === name);
+  return key === undefined ? undefined : env[key];
+}
+
+/**
+ * The editor's real file on win32: `command` as given when it names an
+ * extension, else the first PATHEXT match, in the directory it names or on
+ * PATH. The current directory is not searched, so a `code.cmd` planted in a
+ * repository is not run in place of the one on PATH.
+ */
+function resolveWindowsCommand(command: string, env: NodeJS.ProcessEnv, isFile: (p: string) => boolean): string | undefined {
+  const exts = (envValue(env, 'PATHEXT') ?? '.COM;.EXE;.BAT;.CMD')
+    .split(';')
+    .map((e) => e.trim())
+    .filter((e) => e.startsWith('.'));
+  const hasExt = path.win32.extname(command) !== '';
+  const candidates = (base: string): string[] => (hasExt ? [base] : exts.map((e) => base + e));
+  const dirs = /[\\/]/.test(command) ? [''] : (envValue(env, 'PATH') ?? '').split(';').filter((d) => d.trim() !== '');
+  for (const dir of dirs) {
+    const base = dir ? path.win32.join(dir.replace(/^"(.*)"$/, '$1'), command) : command;
+    for (const candidate of candidates(base)) if (isFile(candidate)) return candidate;
+  }
+  return undefined;
+}
+
+/**
+ * How to start `command args... filePath` without a shell. On POSIX that is
+ * the command itself. On win32 an editor that resolves (PATHEXT, PATH) to a
+ * `.cmd` or `.bat` shim, as `code`, `subl` and npm-installed editors do,
+ * cannot be spawned directly (ENOENT, or EINVAL since Node's CVE-2024-27980
+ * fix), so it runs through `%ComSpec%` (`cmd.exe /d /s /c "<line>"`) with
+ * every part quoted and its cmd metacharacters escaped, so a file path with
+ * `&`, `%` or spaces reaches the editor as one argument.
+ */
+export function resolveEditorSpawn(
+  command: string,
+  args: readonly string[],
+  filePath: string,
+  platform: NodeJS.Platform = process.platform,
+  env: NodeJS.ProcessEnv = process.env,
+  isFile: (p: string) => boolean = (p) => {
+    try {
+      return statSync(p).isFile();
+    } catch {
+      return false;
+    }
+  },
+): EditorSpawn {
+  const direct: EditorSpawn = { file: command, args: [...args, filePath], windowsVerbatimArguments: false };
+  if (platform !== 'win32') return direct;
+  const resolved = resolveWindowsCommand(command, env, isFile);
+  if (!resolved || !/\.(cmd|bat)$/i.test(resolved)) return direct;
+  const cmdLine = [resolved.replace(CMD_META, '^$1'), ...[...args, filePath].map(cmdQuote)].join(' ');
+  return { file: envValue(env, 'COMSPEC') || 'cmd.exe', args: ['/d', '/s', '/c', `"${cmdLine}"`], windowsVerbatimArguments: true };
+}
+
 export const spawnEditorInherit: SpawnEditor = (command, args, filePath) =>
   new Promise<number>((resolve, reject) => {
-    const child = spawn(command, [...args, filePath], { stdio: 'inherit' });
+    const run = resolveEditorSpawn(command, args, filePath);
+    const child = spawn(run.file, run.args, { stdio: 'inherit', windowsVerbatimArguments: run.windowsVerbatimArguments });
     child.once('error', reject);
     child.once('exit', (code, signal) => resolve(code ?? (signal ? 1 : 0)));
   });

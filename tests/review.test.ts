@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
-import { runHarvestInteractive, runReview, runEdit, editorCommand } from '../src/cli/cmd-review.js';
+import { runHarvestInteractive, runReview, runEdit, editorCommand, resolveEditorSpawn } from '../src/cli/cmd-review.js';
 import type { SpawnEditor } from '../src/cli/cmd-review.js';
 import { runAdd, runHarvest, runRemove } from '../src/cli/commands.js';
 import { PromptClosedError, askKey, splitList } from '../src/cli/prompt.js';
@@ -962,5 +962,41 @@ describe('edit', () => {
     await expect(runEdit({ cwd: tmp, project: true, globalPath }, makeIO(), async () => 0, { EDITOR: 'x' })).rejects.toThrow(
       /no project lexicon found/,
     );
+  });
+});
+
+describe('resolveEditorSpawn', () => {
+  const winFiles = (...files: string[]) => (p: string): boolean => files.map((f) => f.toLowerCase()).includes(p.toLowerCase());
+
+  it('runs the command itself on POSIX, whatever PATH holds', () => {
+    expect(resolveEditorSpawn('code', ['--wait'], '/home/u/lexicon.yaml', 'linux', { PATH: '/usr/bin' }, () => true)).toEqual({
+      file: 'code',
+      args: ['--wait', '/home/u/lexicon.yaml'],
+      windowsVerbatimArguments: false,
+    });
+  });
+
+  // Catches: on win32 `code --wait` (code.cmd on PATH) was spawned without a shell and failed with ENOENT.
+  it('runs a .cmd shim found through PATHEXT on win32 through cmd.exe, the file path quoted and escaped', () => {
+    const env = { Path: 'C:\\Windows;C:\\Program Files\\Microsoft VS Code\\bin', PATHEXT: '.COM;.EXE;.BAT;.CMD', ComSpec: 'C:\\Windows\\system32\\cmd.exe' };
+    const run = resolveEditorSpawn('code', ['--wait'], 'C:\\Users\\A & B\\100%\\lexicon.yaml', 'win32', env, winFiles('C:\\Program Files\\Microsoft VS Code\\bin\\code.CMD'));
+    expect(run.file).toBe('C:\\Windows\\system32\\cmd.exe');
+    expect(run.windowsVerbatimArguments).toBe(true);
+    expect(run.args.slice(0, 3)).toEqual(['/d', '/s', '/c']);
+    expect(run.args[3]).toBe(
+      '"C:\\Program^ Files\\Microsoft^ VS^ Code\\bin\\code.CMD ^"--wait^" ^"C:\\Users\\A^ ^&^ B\\100^%\\lexicon.yaml^""',
+    );
+  });
+
+  it('runs a .exe or an unresolved editor directly on win32, and a .bat named with its path through cmd.exe', () => {
+    const env = { PATH: 'C:\\Tools', PATHEXT: '.EXE;.CMD' };
+    expect(resolveEditorSpawn('notepad', [], 'C:\\l.yaml', 'win32', env, winFiles('C:\\Tools\\notepad.exe'))).toEqual({
+      file: 'notepad',
+      args: ['C:\\l.yaml'],
+      windowsVerbatimArguments: false,
+    });
+    expect(resolveEditorSpawn('nope', [], 'C:\\l.yaml', 'win32', env, () => false).file).toBe('nope');
+    const bat = resolveEditorSpawn('C:\\Ed\\ed.bat', ['-w'], 'C:\\l.yaml', 'win32', env, winFiles('C:\\Ed\\ed.bat'));
+    expect(bat).toEqual({ file: 'cmd.exe', args: ['/d', '/s', '/c', '"C:\\Ed\\ed.bat ^"-w^" ^"C:\\l.yaml^""'], windowsVerbatimArguments: true });
   });
 });
