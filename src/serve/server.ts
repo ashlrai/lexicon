@@ -207,6 +207,8 @@ export interface LexiconResponse {
   projectTrust?: LoadedLexicon['projectTrust'];
   /** Path only; the contents of an untrusted file never leave the disk. */
   skippedProject?: string;
+  /** `lexiconNote`: the `lexicon trust` step for a skipped project file, else how to add terms to an empty lexicon. Only then. */
+  note?: string;
 }
 
 /**
@@ -218,6 +220,8 @@ export interface StatsResponse extends LexiconStats {
   projectTrust?: LoadedLexicon['projectTrust'];
   /** Path only: its terms are not in the counts. */
   skippedProject?: string;
+  /** `statsNote`: the `lexicon trust` step for a skipped project file, else how to add terms to an empty lexicon. Only then. */
+  note?: string;
 }
 
 export interface PacksResponse {
@@ -524,13 +528,43 @@ export const EXPORT_NOTE_HEADER = 'X-Lexicon-Note';
  * The skipped project file's note, in the words `lexicon ... --json` uses
  * (skippedProjectJson), or undefined when no project file was skipped.
  */
-function skippedProjectNote(loaded: Pick<LoadedLexicon, 'projectTrust' | 'skippedProject'>, consequence: string): string | undefined {
+function skippedProjectNote(loaded: Pick<LoadedLexicon, 'projectTrust' | 'skippedProject'>, consequence?: string): string | undefined {
   if (!loaded.skippedProject) return undefined;
   const head =
     loaded.projectTrust === 'changed'
       ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; review it and run `lexicon trust` again.'
       : 'An untrusted project .lexicon.yaml exists and was not loaded; review it and run `lexicon trust` to enable it.';
-  return `${head} ${consequence}`;
+  return consequence ? `${head} ${consequence}` : head;
+}
+
+/**
+ * `GET /lexicon`'s `note`: the skipped project file's `lexicon trust` step,
+ * else, for a lexicon with no terms, how to add some, as `lexicon list
+ * --full` and MCP list_terms say it. Undefined when there is nothing to say.
+ */
+export function lexiconNote(loaded: Pick<LoadedLexicon, 'merged' | 'projectTrust' | 'skippedProject'>): string | undefined {
+  return (
+    skippedProjectNote(loaded) ??
+    (loaded.merged.terms.length === 0 ? 'The lexicon has no terms yet; add one with: lexicon add "Ashlr.AI" Ashler, or run `lexicon setup`.' : undefined)
+  );
+}
+
+/**
+ * `GET /stats`'s `note`: the skipped project file's `lexicon trust` step,
+ * else, for a lexicon with no terms, the note `lexicon stats --json` gives
+ * (emptyStatsNote) and MCP lexicon_stats says in tool terms.
+ */
+export function statsNote(loaded: Pick<LoadedLexicon, 'merged' | 'projectTrust' | 'skippedProject'>): string | undefined {
+  return (
+    skippedProjectNote(loaded, 'Its terms are not in the counts.') ??
+    (loaded.merged.terms.length === 0
+      ? 'The lexicon has no terms yet, so nothing is corrected or counted; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.'
+      : undefined)
+  );
+}
+
+function withNote(note: string | undefined): { note?: string } {
+  return note !== undefined ? { note } : {};
 }
 
 /**
@@ -1035,6 +1069,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       paths: { global: loaded.global.path, ...(loaded.project ? { project: loaded.project.path } : {}) },
       ...(loaded.projectTrust !== undefined ? { projectTrust: loaded.projectTrust } : {}),
       ...(loaded.skippedProject !== undefined ? { skippedProject: loaded.skippedProject.path } : {}),
+      ...withNote(lexiconNote(loaded)),
     };
   }
 
@@ -1044,6 +1079,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       ...computeStats(loaded),
       ...(loaded.projectTrust !== undefined ? { projectTrust: loaded.projectTrust } : {}),
       ...(loaded.skippedProject !== undefined ? { skippedProject: loaded.skippedProject.path } : {}),
+      ...withNote(statsNote(loaded)),
     };
   }
 

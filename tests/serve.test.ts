@@ -2784,6 +2784,37 @@ describe('notes on an empty or partial answer', () => {
     await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 
+  // Catches: GET /lexicon and /stats on an empty lexicon answered zeros with
+  // no step, and with a skipped project file no `lexicon trust` step, where
+  // `lexicon stats --json` and MCP list_terms / lexicon_stats give a `note`.
+  it('GET /lexicon and /stats add a note for an empty lexicon, and the lexicon trust step for a skipped project file', async () => {
+    const lex = (await (await call('GET', at('/lexicon', emptyRepo))).json()) as Record<string, unknown>;
+    expect(lex.note).toBe('The lexicon has no terms yet; add one with: lexicon add "Ashlr.AI" Ashler, or run `lexicon setup`.');
+    expect(lex.lexicon).toEqual({ version: 1, terms: [] });
+    const stats = (await (await call('GET', at('/stats', emptyRepo))).json()) as Record<string, unknown>;
+    expect(stats.note).toBe('The lexicon has no terms yet, so nothing is corrected or counted; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.');
+    expect(stats.termCount).toBe(0);
+
+    const skippedLex = (await (await call('GET', at('/lexicon', untrustedOnly))).json()) as Record<string, unknown>;
+    expect(skippedLex.note).toBe('An untrusted project .lexicon.yaml exists and was not loaded; review it and run `lexicon trust` to enable it.');
+    expect(skippedLex.skippedProject).toBe(path.join(untrustedOnly, '.lexicon.yaml'));
+    const skippedStats = (await (await call('GET', at('/stats', untrustedOnly))).json()) as Record<string, unknown>;
+    expect(skippedStats.note).toBe(
+      'An untrusted project .lexicon.yaml exists and was not loaded; review it and run `lexicon trust` to enable it. Its terms are not in the counts.',
+    );
+
+    // Terms and no skipped file: no note, the shape as before.
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler'] }, { globalPath, cwd: emptyRepo });
+    try {
+      expect(await (await call('GET', at('/lexicon', emptyRepo))).json()).not.toHaveProperty('note');
+      expect(await (await call('GET', at('/stats', emptyRepo))).json()).not.toHaveProperty('note');
+      // A skipped file still gets its step with terms loaded.
+      expect(((await (await call('GET', at('/stats', untrustedOnly))).json()) as { note?: string }).note).toContain('run `lexicon trust`');
+    } finally {
+      await fs.rm(globalPath, { force: true });
+    }
+  });
+
   // Catches: GET /export/:format answered 200 with an empty body and no word
   // of why, where `lexicon export` and MCP export_lexicon say so in a note.
   it('GET /export/:format names why an export is empty in X-Lexicon-Note, the body unchanged', async () => {
