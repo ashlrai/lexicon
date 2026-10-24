@@ -6,6 +6,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Security
 
+- `lexicon review --project` and `lexicon edit --project` re-pin trust only over the bytes they wrote or checked. They re-hashed the file when re-pinning, so a writer that takes no lock (a `git pull`, a hand edit) landing between the write and the re-pin had its terms trusted as the user's edit; such a file now stays untrusted until `lexicon trust`, and `edit` says it was not re-trusted.
 - `lexicon review --project` no longer trusts terms nobody reviewed. A trusted project lexicon rewritten during the review by something that does not re-pin trust (a `git pull`, a hand edit) had its new terms merged into the review's write, which then re-pinned trust over them; such a file is now left as it is, nothing is written, and the review says to run `lexicon trust` first.
 - Credentials no longer reach error text from an upstream.
   - The browser extension's popup errors quoted the server's `{ error }` text, so a server at the configured base URL that quoted the bearer token back showed the token. That text is now redacted.

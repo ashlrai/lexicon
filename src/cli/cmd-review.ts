@@ -19,6 +19,7 @@ import {
   emptyLexicon,
   isTrusted,
   loadLexicon,
+  parsedContentHash,
   readLexiconFile,
   readHitsFor,
   withLexiconLock,
@@ -690,8 +691,10 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
     // The user's own edit must not flip a trusted project file to 'changed'.
     // Then the cached matcher index the hook reads next (a no-op where there
     // is none); writeLexiconFile already refreshed it for a global file.
+    // Pinned to the bytes this write produced, so a lock-less writer (a git
+    // pull, a hand edit) landing since is left 'changed', not blessed.
     if (file.scope === 'project') {
-      await refreshTrust(file.path, store);
+      await refreshTrust(file.path, { ...store, expectedSha256: await parsedContentHash(file) });
       await refreshIndexCache(file, store);
     }
   }
@@ -959,8 +962,11 @@ export async function runEdit(
     return 1;
   }
 
+  /** sha256 of the bytes just checked, the edit the user made: what re-trusting pins. */
+  let checkedSha: string | undefined;
   try {
     const file = await readLexiconFile(target, scope);
+    checkedSha = await parsedContentHash(file);
     line(io, `ok: ${plural(file.lexicon.terms.length, 'term')} in ${safeMessage(target)}`);
   } catch (err) {
     io.stderr(`lexicon: ${safeMessage(errorMessage(err))}\n`);
@@ -971,8 +977,14 @@ export async function runEdit(
   if (scope === 'project') {
     if (trustedBefore) {
       // The user just edited it themselves; that is the approval `lexicon trust` records.
-      await refreshTrust(target, store);
-      line(io, dim(`project lexicon re-trusted (${safeMessage(target)})`));
+      // Only the bytes checked above: a file rewritten since then by
+      // someone else keeps its old pin and reads 'changed'.
+      await refreshTrust(target, { ...store, ...(checkedSha !== undefined ? { expectedSha256: checkedSha } : {}) });
+      if ((await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, store)) === 'trusted') {
+        line(io, dim(`project lexicon re-trusted (${safeMessage(target)})`));
+      } else {
+        io.stderr(`lexicon: ${safeMessage(target)} changed again after the edit was checked, so it was not re-trusted; review it and run: lexicon trust\n`);
+      }
     } else {
       line(io, dim(`project lexicon is not trusted yet; review it and run: lexicon trust`));
     }
