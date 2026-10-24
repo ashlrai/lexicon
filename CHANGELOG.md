@@ -27,6 +27,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- A real name that speech-to-text wrote by sound is a correction again when said in a sentence: "it's Siobhan not Shivon" was refused as a change of meaning because the two spellings neither look nor share a phonetic key. Two one-word names (not all capitals, the heard one not an everyday word) now also count when their sounds match loosely (b, f and v alike, sh and s alike), and, when the lexicon already holds the meant spelling, when they are close ("it's Niamh not Neve" with Niamh a term). The prompt hook and `lexicon learn` pass the lexicon. "it's the API not the UI", "it's Monday not Tuesday" and "it's Postgres not MySQL" are still refused.
 - `lexicon learn --from "spelled Zoë"` on Windows printed `lexicon learn <heard> & 'Zoë'`: the spelling was quoted as a whole PowerShell command, call operator included. It now prints `lexicon learn <heard> 'Zoë'`.
 - Two `lexicon voice` runs downloading the same model at once on Windows could fail the second, finished download with EPERM while the first was renaming its file into place. The rename into place is now retried for about a second on EPERM, EACCES and EBUSY.
 - `lexicon daemon` on Windows no longer reports a working clipboard as hung. Each read and write starts a new `powershell.exe`, and a cold start on a busy machine took over the 5 s limit, so the clipboard was left uncorrected; the PowerShell backend now allows 20 s. The other backends keep 5 s.

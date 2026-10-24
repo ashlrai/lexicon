@@ -28,7 +28,7 @@ import { promises as fs, readSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { codeSpanRanges, collectRanges, diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, pathForModel, phoneticKey, queueCorrections, recordHits, resolvePaths, sanitizeForDisplayMax, similarity } from '../core/index.js';
-import type { Correction, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
+import type { Correction, CorrectionLexicon, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
 import { packageVersion } from '../util/package.js';
 import { cliCommand } from '../util/cli-hint.js';
 
@@ -511,9 +511,12 @@ const SENTENCE_BREAK_RE = /(?<=[.!?])\s+/;
  * line, and its words were normalized like dictation. The whole text is
  * parsed first, as before; then each sentence on its own, so a later
  * sentence's correction is found too. Duplicates (same heard and meant,
- * ignoring case) are dropped. Exported for tests.
+ * ignoring case) are dropped. `lexicon` (the loaded one) is passed to
+ * `parseCorrection`, so a name it holds is caught when STT wrote it by sound.
+ * Exported for tests.
  */
-export function parseCorrections(text: string): Correction[] {
+export function parseCorrections(text: string, lexicon?: CorrectionLexicon): Correction[] {
+  const opts = lexicon ? { lexicon } : {};
   const found: Correction[] = [];
   const seen = new Set<string>();
   const keyOf = (c: Correction): string => `${collapse(c.heard)}\u0000${collapse(c.meant)}`;
@@ -532,13 +535,13 @@ export function parseCorrections(text: string): Correction[] {
   // read as blanks (offsets kept), so it neither matches nor joins the prose.
   // Nor is quoted text: a Markdown blockquote or what a screen "says:".
   const prose = blankQuoted(blankCode(text));
-  const whole = parseCorrection(prose);
+  const whole = parseCorrection(prose, opts);
   // Only a prompt with a second sentence can hold a second correction.
   if (!SENTENCE_BREAK_RE.test(prose)) {
     add(whole, prose);
     return found;
   }
-  const perSentence = prose.split(SENTENCE_BREAK_RE).map((sentence) => ({ sentence, c: parseCorrection(sentence) }));
+  const perSentence = prose.split(SENTENCE_BREAK_RE).map((sentence) => ({ sentence, c: parseCorrection(sentence, opts) }));
   const wholeKey = whole ? keyOf(whole) : undefined;
   add(whole, perSentence.find((p) => p.c !== undefined && keyOf(p.c) === wholeKey)?.sentence ?? prose);
   for (const { sentence, c } of perSentence) add(c, sentence);
@@ -1102,7 +1105,7 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const tail = prompt.slice(head.length);
   const lengthNote = tail ? formatLengthNote(head.length, prompt.length) : '';
 
-  const corrections = parseCorrections(head);
+  const corrections = parseCorrections(head, loaded.merged);
   const correctionNote = corrections.length > 0 ? formatCorrectionNotes(corrections) : '';
   if (corrections.length > 0) await queueForReview(corrections, loaded);
 

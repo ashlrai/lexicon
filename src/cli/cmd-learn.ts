@@ -71,6 +71,17 @@ export function correctionFromArgs(words: readonly string[], from: string | unde
   return parseCorrection(words.join(' '));
 }
 
+/** `parseCorrection` of `source` with the loaded lexicon; undefined when it reads nothing or the lexicon will not load. */
+async function correctionWithLexicon(source: string, cwd: string): Promise<Correction | undefined> {
+  if (parseCorrection(source, { allowUnrelated: true }) === undefined) return undefined;
+  try {
+    const loaded = await loadLexicon({ cwd, parseSkipped: false });
+    return parseCorrection(source, { lexicon: loaded.merged });
+  } catch {
+    return undefined;
+  }
+}
+
 /**
  * A word that reads as a command-line option (`--dry-run`, `-n`, `--scope=project`).
  * `learn` allows unknown options so a bare `->` passes as a word, which also let
@@ -93,7 +104,12 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
     io.stderr(`lexicon: ${nextStep}\n`);
     return 1;
   }
-  const correction = correctionFromArgs(words, opts.from);
+  let correction = correctionFromArgs(words, opts.from);
+  if (!correction && (opts.from !== undefined || (words.length > 0 && words.length !== 2))) {
+    // A name the lexicon already holds, written by sound ("it's Niamh not
+    // Neve" with Niamh a term): parseCorrection takes it with the lexicon.
+    correction = await correctionWithLexicon(opts.from ?? words.join(' '), cwd);
+  }
   if (!correction && opts.from === undefined && words.length === 1 && words[0].trim() !== '') {
     // One word is one spelling, not a sentence that failed to parse: it said
     // `could not find a correction in "Ashler"` and dumped the whole usage.

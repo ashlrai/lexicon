@@ -21280,6 +21280,37 @@ function spellingsAlike(heard, meant) {
   if (ka !== "" && ka === kb) return true;
   return a[0] === b[0] && sim >= MIN_SAME_OPENING_SIMILARITY;
 }
+function looseKey(word) {
+  return phoneticKey(word).replace(/[BFV]/g, "P").replace(/[XJ]/g, "S").replace(/0/g, "T").replace(/[HWY]/g, "");
+}
+function nameWord(token) {
+  return new RegExp("^\\p{L}[\\p{L}'\\u2019]*\\p{L}$", "u").test(token) && token.length >= 3 && new RegExp("\\p{Ll}", "u").test(token);
+}
+var MIN_KNOWN_LOOSE_SIMILARITY = 0.5;
+function namesSoundAlike(heard, meant, lexicon) {
+  const hTokens = heard.split(/\s+/).filter((t) => t.length > 0);
+  const mTokens = meant.split(/\s+/).filter((t) => t.length > 0);
+  const fold = (t) => spellingWords(t).join("");
+  const mFolded = new Set(mTokens.map(fold));
+  const hFolded = new Set(hTokens.map(fold));
+  const hRest = hTokens.filter((t) => !mFolded.has(fold(t)));
+  const mRest = mTokens.filter((t) => !hFolded.has(fold(t)));
+  if (hRest.length !== 1 || mRest.length !== 1) return false;
+  const [h] = hRest;
+  const [m] = mRest;
+  if (!nameWord(h) || !nameWord(m)) return false;
+  if (STOPLIST.has(fold(h))) return false;
+  const kh = looseKey(fold(h));
+  const km = looseKey(fold(m));
+  if (kh === "" || km === "") return false;
+  if (kh === km && !STOPLIST.has(fold(m))) return true;
+  if (!lexicon) return false;
+  const owner = lexicon.terms.find((t) => sameText(t.canonical, meant) || t.aliases.some((a) => sameText(a, meant)));
+  if (!owner) return false;
+  const heardElsewhere = lexicon.terms.some((t) => t !== owner && (sameText(t.canonical, heard) || t.aliases.some((a) => sameText(a, heard))));
+  if (heardElsewhere) return false;
+  return kh[0] === km[0] && similarity(kh, km) >= MIN_KNOWN_LOOSE_SIMILARITY;
+}
 function parseCorrection(text, opts = {}) {
   const input = text.replace(/\s+/g, " ").trim();
   if (!input) return void 0;
@@ -21311,10 +21342,16 @@ function parseCorrection(text, opts = {}) {
     if (heard && allStoplisted(heard) && allStoplisted(meant)) return void 0;
     if (/^not\b/i.test(meant) || /^not\b/i.test(heard)) return void 0;
     if (!new RegExp("\\p{L}", "u").test(meant)) return void 0;
-    if (heard && allBare && !opts.allowUnrelated && !spellingsAlike(heard, meant)) return void 0;
+    if (heard && allBare && !opts.allowUnrelated && !spellingsAlike(heard, meant) && !namesSoundAlike(heard, meant, opts.lexicon)) return void 0;
     return { heard, meant };
   }
   return void 0;
+}
+function foldText(s) {
+  return s.trim().toLowerCase().normalize("NFC");
+}
+function sameText(a, b) {
+  return foldText(a) === foldText(b);
 }
 
 // src/core/pending.ts
@@ -21651,7 +21688,8 @@ function formatCorrectionNote(correction) {
 }
 var CORRECTION_NOTES_MAX = 5;
 var SENTENCE_BREAK_RE = /(?<=[.!?])\s+/;
-function parseCorrections(text) {
+function parseCorrections(text, lexicon) {
+  const opts = lexicon ? { lexicon } : {};
   const found = [];
   const seen = /* @__PURE__ */ new Set();
   const keyOf = (c) => `${collapse2(c.heard)}\0${collapse2(c.meant)}`;
@@ -21665,12 +21703,12 @@ function parseCorrections(text) {
     found.push(c);
   };
   const prose = blankQuoted(blankCode(text));
-  const whole = parseCorrection(prose);
+  const whole = parseCorrection(prose, opts);
   if (!SENTENCE_BREAK_RE.test(prose)) {
     add(whole, prose);
     return found;
   }
-  const perSentence = prose.split(SENTENCE_BREAK_RE).map((sentence) => ({ sentence, c: parseCorrection(sentence) }));
+  const perSentence = prose.split(SENTENCE_BREAK_RE).map((sentence) => ({ sentence, c: parseCorrection(sentence, opts) }));
   const wholeKey = whole ? keyOf(whole) : void 0;
   add(whole, perSentence.find((p) => p.c !== void 0 && keyOf(p.c) === wholeKey)?.sentence ?? prose);
   for (const { sentence, c } of perSentence) add(c, sentence);
@@ -22002,7 +22040,7 @@ async function userPromptSubmit(payload, opts) {
   const head = cut < prompt.length ? prompt.slice(0, cut) : prompt;
   const tail = prompt.slice(head.length);
   const lengthNote = tail ? formatLengthNote(head.length, prompt.length) : "";
-  const corrections = parseCorrections(head);
+  const corrections = parseCorrections(head, loaded.merged);
   const correctionNote = corrections.length > 0 ? formatCorrectionNotes(corrections) : "";
   if (corrections.length > 0) await queueForReview(corrections, loaded);
   const index = loaded.merged.terms.length > 0 ? await loadMatcherIndex(loaded) : void 0;

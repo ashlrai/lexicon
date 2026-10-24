@@ -285,6 +285,68 @@ export function spellingsAlike(heard: string, meant: string): boolean {
   return a[0] === b[0] && sim >= MIN_SAME_OPENING_SIMILARITY;
 }
 
+/**
+ * A phonetic key with sounds STT trades for each other folded together: the
+ * labials B, F and V to P, the sibilants X (sh) and J to S, TH to T, and
+ * H, W and Y dropped. "Siobhan" (SPN) and "Shivon" (XFN) meet as SPN.
+ */
+function looseKey(word: string): string {
+  return phoneticKey(word)
+    .replace(/[BFV]/g, 'P')
+    .replace(/[XJ]/g, 'S')
+    .replace(/0/g, 'T')
+    .replace(/[HWY]/g, '');
+}
+
+/** One spoken word as a name is written: letters only (an apostrophe inside), not all capitals, at least 3 letters. */
+function nameWord(token: string): boolean {
+  return /^\p{L}[\p{L}'\u2019]*\p{L}$/u.test(token) && token.length >= 3 && /\p{Ll}/u.test(token);
+}
+
+/** Lowest similarity of the loose keys at which a dissimilar pair counts when `meant` is a known spelling. */
+const MIN_KNOWN_LOOSE_SIMILARITY = 0.5;
+
+/**
+ * The second chance for a pair `spellingsAlike` rejects: a real name STT
+ * wrote by sound ("it's Siobhan not Shivon", "it's Niamh not Neve"). Only
+ * when, once the words both sides share are set aside, each side is one word
+ * written as a name (letters, not all capitals, so "the API" / "the UI" stays
+ * out) and `heard` is not an everyday word (the stoplist, so "Monday" /
+ * "Tuesday" stays out). Then the pair counts when the loose keys are equal,
+ * or when `lexicon` holds `meant` as a canonical or alias, holds `heard` as
+ * no other term's spelling, and the loose keys open alike and are at least
+ * half alike ("it's Postgres not MySQL" stays out: PSTKRS and MSKL).
+ */
+function namesSoundAlike(heard: string, meant: string, lexicon: CorrectionLexicon | undefined): boolean {
+  const hTokens = heard.split(/\s+/).filter((t) => t.length > 0);
+  const mTokens = meant.split(/\s+/).filter((t) => t.length > 0);
+  const fold = (t: string): string => spellingWords(t).join('');
+  const mFolded = new Set(mTokens.map(fold));
+  const hFolded = new Set(hTokens.map(fold));
+  const hRest = hTokens.filter((t) => !mFolded.has(fold(t)));
+  const mRest = mTokens.filter((t) => !hFolded.has(fold(t)));
+  if (hRest.length !== 1 || mRest.length !== 1) return false;
+  const [h] = hRest;
+  const [m] = mRest;
+  if (!nameWord(h) || !nameWord(m)) return false;
+  if (STOPLIST.has(fold(h))) return false;
+  const kh = looseKey(fold(h));
+  const km = looseKey(fold(m));
+  if (kh === '' || km === '') return false;
+  if (kh === km && !STOPLIST.has(fold(m))) return true;
+  if (!lexicon) return false;
+  const owner = lexicon.terms.find((t) => sameText(t.canonical, meant) || t.aliases.some((a) => sameText(a, meant)));
+  if (!owner) return false;
+  const heardElsewhere = lexicon.terms.some((t) => t !== owner && (sameText(t.canonical, heard) || t.aliases.some((a) => sameText(a, heard))));
+  if (heardElsewhere) return false;
+  return kh[0] === km[0] && similarity(kh, km) >= MIN_KNOWN_LOOSE_SIMILARITY;
+}
+
+/** The part of a lexicon `parseCorrection` reads: which spellings each term holds. */
+export interface CorrectionLexicon {
+  terms: readonly Pick<Term, 'canonical' | 'aliases'>[];
+}
+
 /** Options for `parseCorrection`. */
 export interface ParseCorrectionOptions {
   /**
@@ -293,6 +355,13 @@ export interface ParseCorrectionOptions {
    * uses it to say why "it's the API not the UI" learned nothing.
    */
   allowUnrelated?: boolean;
+  /**
+   * The loaded lexicon. A pair `spellingsAlike` rejects still counts when
+   * `meant` is a spelling this lexicon holds and `heard` is a one-word name
+   * that is not an everyday word and sounds loosely alike ("it's Niamh not
+   * Neve" with Niamh a term). The prompt hook and `lexicon learn` pass it.
+   */
+  lexicon?: CorrectionLexicon;
 }
 
 /**
@@ -343,7 +412,7 @@ export function parseCorrection(text: string, opts: ParseCorrectionOptions = {})
     if (!/\p{L}/u.test(meant)) return undefined;
     // "it's the API not the UI" has the shape of a correction but corrects
     // the meaning: two unquoted sides that neither look nor sound alike.
-    if (heard && allBare && !opts.allowUnrelated && !spellingsAlike(heard, meant)) return undefined;
+    if (heard && allBare && !opts.allowUnrelated && !spellingsAlike(heard, meant) && !namesSoundAlike(heard, meant, opts.lexicon)) return undefined;
     return { heard, meant };
   }
   return undefined;
