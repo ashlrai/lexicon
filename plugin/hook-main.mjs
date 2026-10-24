@@ -10707,7 +10707,7 @@ function isRecursive(inst, stack, resolve2) {
     return PROVEN;
   stack.add(inst);
   let result = NONE;
-  const check = (child) => {
+  const check2 = (child) => {
     if (result !== PROVEN && child?._zod) {
       const answer = isRecursive(child, stack, resolve2);
       if (answer > result)
@@ -10736,32 +10736,32 @@ function isRecursive(inst, stack, resolve2) {
     case "object": {
       const raw = rawShape(def);
       merge2(raw ? shape(raw, true) : ASSUMED);
-      check(def.catchall);
+      check2(def.catchall);
       break;
     }
     case "array":
-      check(def.element);
+      check2(def.element);
       break;
     case "tuple":
       for (const el of def.items)
-        check(el);
-      check(def.rest);
+        check2(el);
+      check2(def.rest);
       break;
     case "record":
     case "map":
-      check(def.keyType);
-      check(def.valueType);
+      check2(def.keyType);
+      check2(def.valueType);
       break;
     case "set":
-      check(def.valueType);
+      check2(def.valueType);
       break;
     case "union":
       for (const el of def.options)
-        check(el);
+        check2(el);
       break;
     case "intersection":
-      check(def.left);
-      check(def.right);
+      check2(def.left);
+      check2(def.right);
       break;
     case "optional":
     case "nullable":
@@ -10772,15 +10772,15 @@ function isRecursive(inst, stack, resolve2) {
     case "nonoptional":
     case "promise":
     case "success":
-      check(def.innerType);
+      check2(def.innerType);
       break;
     case "pipe":
-      check(def.in);
-      check(def.out);
+      check2(def.in);
+      check2(def.out);
       break;
     case "function":
-      check(def.input);
-      check(def.output);
+      check2(def.input);
+      check2(def.output);
       break;
     // `$ZodLazy` caches its inner on the def, so a resolved edge is followed exactly
     case "lazy": {
@@ -10821,10 +10821,10 @@ function isRecursive(inst, stack, resolve2) {
         if (!value || typeof value !== "object")
           continue;
         if (value._zod)
-          check(value);
+          check2(value);
         else if (Array.isArray(value))
           for (const el of value)
-            check(el);
+            check2(el);
       }
     }
   }
@@ -12685,8 +12685,8 @@ var ZodType = /* @__PURE__ */ $constructor("ZodType", (inst, def) => {
     reg.add(this, meta2);
     return this;
   },
-  refine(check, params) {
-    return this.check(refine(check, params));
+  refine(check2, params) {
+    return this.check(refine(check2, params));
   },
   superRefine(refinement, params) {
     return this.check(superRefine(refinement, params));
@@ -13745,7 +13745,87 @@ function emptyLexicon() {
 var import_node_fs5 = __toESM(require_node_fs());
 var import_node_os3 = __toESM(require_node_os());
 var import_node_path5 = __toESM(require_node_path());
+var import_yaml2 = __toESM(require_dist());
+
+// src/core/edit-check.ts
 var import_yaml = __toESM(require_dist());
+var EDIT_CHECK_MAX_CHARS = 32 * 1024;
+function lineStart(text, at) {
+  return text.lastIndexOf("\n", at - 1) + 1;
+}
+function lineNumber(text, at) {
+  let n = 1;
+  for (let i = text.indexOf("\n"); i !== -1 && i < at; i = text.indexOf("\n", i + 1)) n += 1;
+  return n;
+}
+function checkLexiconEdit(before, after) {
+  try {
+    return check(before, after);
+  } catch {
+    return void 0;
+  }
+}
+function check(before, after) {
+  if (before === after) return void 0;
+  let p = 0;
+  const max = Math.min(before.length, after.length);
+  while (p < max && before.charCodeAt(p) === after.charCodeAt(p)) p += 1;
+  let s = 0;
+  while (s < max - p && before.charCodeAt(before.length - 1 - s) === after.charCodeAt(after.length - 1 - s)) s += 1;
+  const changedEnd = Math.max(p, after.length - s);
+  const termsKey = /^terms:[ \t]*(?:#[^\n]*)?$/m.exec(after);
+  if (!termsKey) return void 0;
+  const listStart = termsKey.index + termsKey[0].length + 1;
+  if (p < listStart) return void 0;
+  const firstItem = /^( *)- /m.exec(after.slice(listStart));
+  if (!firstItem) return void 0;
+  const indent = firstItem[1];
+  const itemRe = new RegExp(`^${indent}- `, "gm");
+  const topLevelRe = /^(?:[^\s#-]|---|\.\.\.)/gm;
+  topLevelRe.lastIndex = listStart;
+  const nextTop = topLevelRe.exec(after);
+  const listEnd = nextTop ? nextTop.index : after.length;
+  if (changedEnd > listEnd) return void 0;
+  let regionStart = -1;
+  itemRe.lastIndex = listStart;
+  const editLine = lineStart(after, p);
+  for (let m = itemRe.exec(after); m && m.index <= editLine; m = itemRe.exec(after)) regionStart = m.index;
+  if (regionStart === -1) return void 0;
+  itemRe.lastIndex = Math.max(changedEnd, editLine + 1);
+  const next = itemRe.exec(after);
+  const regionEnd = next && next.index < listEnd ? next.index : listEnd;
+  if (regionEnd - regionStart > EDIT_CHECK_MAX_CHARS) return void 0;
+  const region = after.slice(regionStart, regionEnd);
+  if (/(?:^|[\s[{,])[&*][^\s]|<<\s*:/.test(region)) return void 0;
+  const header = "terms:\n";
+  const firstLine = lineNumber(after, regionStart);
+  const at = (offset) => firstLine + lineNumber(region, Math.max(0, offset - header.length)) - 1;
+  let raw;
+  try {
+    raw = (0, import_yaml.parse)(header + region, { prettyErrors: false });
+  } catch (err) {
+    const pos = err.pos;
+    const offset = Array.isArray(pos) && typeof pos[0] === "number" ? pos[0] : header.length;
+    return `line ${at(offset)}: ${firstSentence(err)}`;
+  }
+  const terms = raw?.terms;
+  if (!Array.isArray(terms)) return void 0;
+  const itemLines = [];
+  const localRe = new RegExp(`^${indent}- `, "gm");
+  for (let m = localRe.exec(region); m; m = localRe.exec(region)) itemLines.push(firstLine + lineNumber(region, m.index) - 1);
+  try {
+    parseLexicon({ version: 1, terms });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    const issue2 = message.split("\n").find((l) => l.trim().startsWith("- ")) ?? message;
+    return issue2.trim().replace(/^- /, "").replace(/^terms\[(\d+)\]\.?/, (m, k) => `the term at line ${itemLines[Number(k)] ?? firstLine}${m.endsWith(".") ? ": " : ""}`);
+  }
+  return void 0;
+}
+function firstSentence(err) {
+  const message = err instanceof Error ? err.message : String(err);
+  return message.split("\n")[0].trim();
+}
 
 // node_modules/double-metaphone/index.js
 var vowels = /[AEIOUY]/;
@@ -17994,11 +18074,11 @@ function emailRanges(text) {
 }
 function codeSpanRanges(text) {
   const out = [];
-  let lineStart2 = 0;
-  while (lineStart2 <= text.length) {
-    let lineEnd2 = text.indexOf("\n", lineStart2);
+  let lineStart3 = 0;
+  while (lineStart3 <= text.length) {
+    let lineEnd2 = text.indexOf("\n", lineStart3);
     if (lineEnd2 === -1) lineEnd2 = text.length;
-    let tick = text.indexOf("`", lineStart2);
+    let tick = text.indexOf("`", lineStart3);
     if (tick !== -1 && tick < lineEnd2) {
       const runs = [];
       while (tick !== -1 && tick < lineEnd2) {
@@ -18030,7 +18110,7 @@ function codeSpanRanges(text) {
         }
       }
     }
-    lineStart2 = lineEnd2 + 1;
+    lineStart3 = lineEnd2 + 1;
   }
   return out;
 }
@@ -18719,7 +18799,7 @@ function wordOccurrences(text, needle) {
   }
   return found;
 }
-function lineStart(text, at) {
+function lineStart2(text, at) {
   const i = text.lastIndexOf("\n", Math.max(at - 1, 0));
   return i === -1 ? 0 : i + 1;
 }
@@ -18728,7 +18808,7 @@ function lineEnd(text, at) {
   return i === -1 ? text.length : i;
 }
 function isOwnLineItem(text, start, end) {
-  return LINE_BULLET.test(text.slice(lineStart(text, start), start)) && LINE_TRAILER.test(text.slice(end, lineEnd(text, end)));
+  return LINE_BULLET.test(text.slice(lineStart2(text, start), start)) && LINE_TRAILER.test(text.slice(end, lineEnd(text, end)));
 }
 function isChainGap(gap, words) {
   if (!CHAIN_PUNCTUATION.test(gap.replace(/[\p{L}\p{N}]+/gu, ""))) return false;
@@ -18755,7 +18835,7 @@ function linkBetween(text, a, b) {
   return "none";
 }
 function leadContrasts(text, blockFrom, first, second) {
-  const leadFrom = Math.max(blockFrom, lineStart(text, first.start));
+  const leadFrom = Math.max(blockFrom, lineStart2(text, first.start));
   const leadWords = wordsOf(text.slice(leadFrom, first.start));
   if (!isSpellingPhrase(leadWords)) return false;
   if (leadWords.some((w) => CHAIN_WORDS.has(w))) return false;
@@ -18797,15 +18877,15 @@ function firstAtOrAfter(sorted, min) {
 var ParagraphIndex = class {
   constructor(text) {
     this.text = text;
-    let lineStart2 = 0;
+    let lineStart3 = 0;
     let prevNewline = -1;
     for (let i = text.indexOf("\n"); i >= 0; i = text.indexOf("\n", i + 1)) {
-      if (isBlankLine(text, lineStart2, i)) {
+      if (isBlankLine(text, lineStart3, i)) {
         if (i > 0) this.blankEnds.push(i);
         if (prevNewline >= 0) this.breaks.push(prevNewline);
       }
       prevNewline = i;
-      lineStart2 = i + 1;
+      lineStart3 = i + 1;
     }
   }
   text;
@@ -19962,7 +20042,7 @@ async function readLexiconText(filePath) {
 function parseLexiconText(text, filePath, scope) {
   let raw;
   try {
-    raw = (0, import_yaml.parse)(text, { prettyErrors: false });
+    raw = (0, import_yaml2.parse)(text, { prettyErrors: false });
   } catch (err) {
     throw new Error(`Failed to parse lexicon YAML at ${filePath}: ${errorMessage(err)}`);
   }
@@ -19995,6 +20075,7 @@ async function readGlobalLexiconMaybeStale(filePath, opts = {}) {
   const cachePath = import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_CACHE_FILE_NAME);
   const key = import_node_path5.default.resolve(filePath);
   let previous;
+  let previousText = "";
   try {
     const cached2 = JSON.parse(await import_node_fs5.promises.readFile(cachePath, "utf8"));
     if (isPlainObject2(cached2) && cached2.version === PARSE_CACHE_VERSION && cached2.path === key && typeof cached2.text === "string" && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(cached2.lexicon)) {
@@ -20002,14 +20083,20 @@ async function readGlobalLexiconMaybeStale(filePath, opts = {}) {
       if (isPlainObject2(lexicon) && Array.isArray(lexicon.terms)) {
         const file2 = { path: filePath, scope: "global", lexicon, exists: true };
         if (cached2.text === read.text) return { file: file2 };
-        if (opts.stale && read.text.length >= STALE_GLOBAL_MIN_BYTES) previous = file2.lexicon;
+        if (opts.stale && read.text.length >= STALE_GLOBAL_MIN_BYTES) {
+          previous = file2.lexicon;
+          previousText = cached2.text;
+        }
       }
     }
   } catch {
   }
   const failure2 = await readParseFailure(import_node_path5.default.dirname(filePath), key, read.text);
   if (failure2 !== void 0) throw new Error(`${failure2.kind === "yaml" ? "Failed to parse lexicon YAML" : "Invalid lexicon"} at ${filePath}: ${failure2.reason}`);
-  if (previous !== void 0) return { file: { path: filePath, scope: "global", lexicon: previous, exists: true }, stale: true };
+  if (previous !== void 0) {
+    const staleProblem = checkLexiconEdit(previousText, read.text);
+    return { file: { path: filePath, scope: "global", lexicon: previous, exists: true }, stale: true, ...staleProblem !== void 0 ? { staleProblem } : {} };
+  }
   let file;
   try {
     file = parseLexiconText(read.text, filePath, "global");
@@ -20318,7 +20405,9 @@ async function loadLexicon(opts = {}) {
   const paths = resolvePaths(opts);
   const read = await readGlobalLexiconMaybeStale(paths.global, opts.staleGlobal ? { stale: true } : {});
   const global = read.file;
-  if (read.stale) return { ...await loadLexiconWith(global, paths, opts), globalStale: true };
+  if (read.stale) {
+    return { ...await loadLexiconWith(global, paths, opts), globalStale: true, ...read.staleProblem !== void 0 ? { globalStaleProblem: read.staleProblem } : {} };
+  }
   return loadLexiconWith(global, paths, opts);
 }
 async function loadLexiconWith(global, paths, opts) {
@@ -20624,7 +20713,7 @@ function exportDeepgram(lexicon, _opts = {}) {
 }
 
 // src/core/exporters/espanso.ts
-var import_yaml2 = __toESM(require_dist());
+var import_yaml3 = __toESM(require_dist());
 var ESPANSO_VAR_RE = /\{\{\s*(\w+)(\.(\w+))?\s*\}\}/;
 function espansoRenders(body) {
   if (ESPANSO_VAR_RE.test(body)) return void 0;
@@ -20646,7 +20735,7 @@ function exportEspanso(lexicon, _opts = {}) {
     }
     matches.push({ trigger: alias, replace, word: true, propagate_case: false });
   }
-  const body = (0, import_yaml2.stringify)({ matches }, { lineWidth: 0 });
+  const body = (0, import_yaml3.stringify)({ matches }, { lineWidth: 0 });
   return leftOut.length > 0 ? `${leftOut.join("\n")}
 ${body}` : body;
 }
@@ -20907,7 +20996,7 @@ function parseCorrection(text) {
 var import_node_crypto = __toESM(require_node_crypto());
 var import_node_fs6 = __toESM(require_node_fs());
 var import_node_path6 = __toESM(require_node_path());
-var import_yaml3 = __toESM(require_dist());
+var import_yaml4 = __toESM(require_dist());
 var PENDING_FILE_NAME = "pending-aliases.yaml";
 var MAX_PENDING = 200;
 var MAX_PENDING_BYTES = 256 * 1024;
@@ -20959,7 +21048,7 @@ async function readPending(file) {
   }
   let doc;
   try {
-    doc = (0, import_yaml3.parse)(text);
+    doc = (0, import_yaml4.parse)(text);
   } catch {
     throw new PendingFileError(`${file} is not valid YAML`);
   }
@@ -20973,7 +21062,7 @@ async function readPending(file) {
   return entries2;
 }
 async function writePending(file, entries2) {
-  await writeFileAtomic(file, HEADER + (0, import_yaml3.stringify)({ version: 1, pending: entries2 }), { mode: 384 });
+  await writeFileAtomic(file, HEADER + (0, import_yaml4.stringify)({ version: 1, pending: entries2 }), { mode: 384 });
 }
 async function queueCorrections(corrections, opts = {}) {
   const file = pendingPath(opts);
@@ -21095,9 +21184,12 @@ async function spawnCacheRefresh(cwd) {
 }
 var STALE_LEXICON_NOTE = "Lexicon note: the lexicon file changed since it was last read, so these corrections used the previous version while the new one is prepared in the background; a term just added or changed applies from the next prompt.";
 var STALE_SESSION_NOTE = "Lexicon note: the lexicon file changed since it was last read, so this list is the previous version while the new one is prepared in the background; a term just added or changed applies from the next prompt.";
+function formatStaleProblemNote(problem) {
+  return `Lexicon note: the last edit to the lexicon file looks broken (${neutralizeForModel(problem)}), so the previous version is in use. Tell the user to run ${cliCommand("edit")} and fix it; the whole file is being checked in the background and the next prompt reports the result.`;
+}
 async function loadForHook(cwd, opts) {
   let attempt = await loadOrExplain(cwd, opts.startRefresh !== void 0);
-  if (!attempt.loaded?.globalStale || !opts.startRefresh) return { attempt, stale: false };
+  if (!attempt.loaded?.globalStale || !opts.startRefresh) return { attempt, stale: false, problemNote: "" };
   const globalPath = attempt.loaded.global.path;
   let claim2 = await claimCacheRefresh(globalPath);
   if (claim2 === "claimed") {
@@ -21112,9 +21204,10 @@ async function loadForHook(cwd, opts) {
   }
   if (claim2 === "unavailable") {
     attempt = await loadOrExplain(cwd);
-    return { attempt, stale: false };
+    return { attempt, stale: false, problemNote: "" };
   }
-  return { attempt, stale: true };
+  const problem = attempt.loaded.globalStaleProblem;
+  return { attempt, stale: true, problemNote: problem !== void 0 ? formatStaleProblemNote(problem) : "" };
 }
 var HOOK_MATCH_BUDGET_MS = 100;
 var HOOK_PROMPT_MAX_CHARS = 5e4;
@@ -21575,8 +21668,8 @@ async function userPromptSubmit(payload, opts) {
   }
   if (typeof prompt !== "string" || prompt.trim() === "") return "";
   const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
-  const { attempt, stale } = await loadForHook(cwd, opts);
-  const staleNote = stale ? STALE_LEXICON_NOTE : "";
+  const { attempt, stale, problemNote } = await loadForHook(cwd, opts);
+  const staleNote = stale && !problemNote ? STALE_LEXICON_NOTE : "";
   if (!attempt.loaded) return emit("UserPromptSubmit", [attempt.note ?? ""]);
   const loaded = attempt.loaded;
   const skippedNote = formatSkippedProjectNote(loaded);
@@ -21600,13 +21693,14 @@ async function userPromptSubmit(payload, opts) {
   if (result && tail) result = { ...result, input: prompt, output: result.output + tail };
   const changed = result?.changed === true;
   if (result && changed) recordHitsInBackground(result, cwd, loaded);
-  if (!changed && !skippedNote && !correctionNote && !budgetNote && !lengthNote) return "";
+  if (!changed && !skippedNote && !correctionNote && !budgetNote && !lengthNote && !problemNote) return "";
   const parts = [];
   if (result && changed) parts.push(formatAdditionalContext(result));
   if (lengthNote) parts.push(lengthNote);
   if (budgetNote) parts.push(budgetNote);
   if (correctionNote) parts.push(correctionNote);
   if (skippedNote) parts.push(skippedNote);
+  if (problemNote) parts.push(problemNote);
   if (staleNote) parts.push(staleNote);
   return emit("UserPromptSubmit", parts);
 }
@@ -21615,10 +21709,10 @@ function formatBudgetNote(budgetMs) {
 }
 async function sessionStart(payload, opts) {
   const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
-  const { attempt, stale } = await loadForHook(cwd, opts);
+  const { attempt, stale, problemNote } = await loadForHook(cwd, opts);
   if (!attempt.loaded) return emit("SessionStart", [attempt.note ?? ""]);
   const loaded = attempt.loaded;
-  const trailer = [formatSkippedProjectNote(loaded), stale ? STALE_SESSION_NOTE : ""].filter((n) => n !== "").join("\n");
+  const trailer = [formatSkippedProjectNote(loaded), problemNote || (stale ? STALE_SESSION_NOTE : "")].filter((n) => n !== "").join("\n");
   if (loaded.merged.terms.length === 0) {
     if (!await shouldEmitOnboardNote(loaded.global.path)) return trailer ? emit("SessionStart", [trailer]) : "";
     return emit("SessionStart", trailer ? [ONBOARD_NOTE, trailer] : [ONBOARD_NOTE]);
@@ -21786,6 +21880,7 @@ export {
   formatCorrectionNotes,
   formatLengthNote,
   formatSkippedProjectNote,
+  formatStaleProblemNote,
   formatStdinOverflow,
   hookFlagOutput,
   main,

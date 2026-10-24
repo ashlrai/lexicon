@@ -5,6 +5,7 @@
 export * from './types.js';
 export * from './schema.js';
 export * from './store.js';
+export * from './edit-check.js';
 export * from './trust.js';
 export * from './matcher.js';
 // The score an exact match with an invented word break gets; normalize_transcript's minConfidence description names it.

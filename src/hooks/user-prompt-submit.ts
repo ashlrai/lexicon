@@ -148,11 +148,28 @@ export const STALE_LEXICON_NOTE =
 export const STALE_SESSION_NOTE =
   'Lexicon note: the lexicon file changed since it was last read, so this list is the previous version while the new one is prepared in the background; a term just added or changed applies from the next prompt.';
 
+/**
+ * One line for a stale load whose edited part does not parse or validate on
+ * its own (`LoadedLexicon.globalStaleProblem`): the edit most likely broke
+ * the file. Said at once, in the same prompt, instead of only from the prompt
+ * after the background refresh; hedged, because only the edited part was
+ * read. `problem` comes from the YAML library and the schema (a line number
+ * and a reason, never the file's text) and goes through neutralizeForModel.
+ */
+export function formatStaleProblemNote(problem: string): string {
+  return (
+    `Lexicon note: the last edit to the lexicon file looks broken (${neutralizeForModel(problem)}), so the previous version is in use. ` +
+    `Tell the user to run ${cliCommand('edit')} and fix it; the whole file is being checked in the background and the next prompt reports the result.`
+  );
+}
+
 /** What loadForHook returns: the load (or the note explaining why there is none) and the notes a stale load adds. */
 interface HookLoad {
   attempt: Awaited<ReturnType<typeof loadOrExplain>>;
   /** True when the global lexicon is the previous version (a background refresh is preparing the new one). */
   stale: boolean;
+  /** formatStaleProblemNote, when the edit looks broken; empty otherwise. */
+  problemNote: string;
 }
 
 /**
@@ -166,7 +183,7 @@ interface HookLoad {
  */
 async function loadForHook(cwd: string, opts: HookOptions): Promise<HookLoad> {
   let attempt = await loadOrExplain(cwd, opts.startRefresh !== undefined);
-  if (!attempt.loaded?.globalStale || !opts.startRefresh) return { attempt, stale: false };
+  if (!attempt.loaded?.globalStale || !opts.startRefresh) return { attempt, stale: false, problemNote: '' };
   const globalPath = attempt.loaded.global.path;
   let claim = await claimCacheRefresh(globalPath);
   if (claim === 'claimed') {
@@ -180,9 +197,10 @@ async function loadForHook(cwd: string, opts: HookOptions): Promise<HookLoad> {
   }
   if (claim === 'unavailable') {
     attempt = await loadOrExplain(cwd);
-    return { attempt, stale: false };
+    return { attempt, stale: false, problemNote: '' };
   }
-  return { attempt, stale: true };
+  const problem = attempt.loaded.globalStaleProblem;
+  return { attempt, stale: true, problemNote: problem !== undefined ? formatStaleProblemNote(problem) : '' };
 }
 
 /**
@@ -1069,8 +1087,9 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   // Default loadLexicon merges the project file only when trusted; an
   // untrusted one shows up as skippedProject and is mentioned by path only.
   // A global file changed since it was cached may be served stale (loadForHook).
-  const { attempt, stale } = await loadForHook(cwd, opts);
-  const staleNote = stale ? STALE_LEXICON_NOTE : '';
+  const { attempt, stale, problemNote } = await loadForHook(cwd, opts);
+  // A broken edit's note says the previous version is in use; the plain stale note would only repeat it.
+  const staleNote = stale && !problemNote ? STALE_LEXICON_NOTE : '';
   if (!attempt.loaded) return emit('UserPromptSubmit', [attempt.note ?? '']);
   const loaded = attempt.loaded;
   const skippedNote = formatSkippedProjectNote(loaded);
@@ -1111,7 +1130,7 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const changed = result?.changed === true;
   if (result && changed) recordHitsInBackground(result, cwd, loaded);
 
-  if (!changed && !skippedNote && !correctionNote && !budgetNote && !lengthNote) return '';
+  if (!changed && !skippedNote && !correctionNote && !budgetNote && !lengthNote && !problemNote) return '';
 
   const parts: string[] = [];
   if (result && changed) parts.push(formatAdditionalContext(result));
@@ -1119,6 +1138,7 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   if (budgetNote) parts.push(budgetNote);
   if (correctionNote) parts.push(correctionNote);
   if (skippedNote) parts.push(skippedNote);
+  if (problemNote) parts.push(problemNote);
   if (staleNote) parts.push(staleNote);
   return emit('UserPromptSubmit', parts);
 }
@@ -1137,12 +1157,12 @@ export function formatBudgetNote(budgetMs: number): string {
 
 async function sessionStart(payload: HookInput, opts: HookOptions): Promise<string> {
   const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
-  const { attempt, stale } = await loadForHook(cwd, opts);
+  const { attempt, stale, problemNote } = await loadForHook(cwd, opts);
   if (!attempt.loaded) return emit('SessionStart', [attempt.note ?? '']);
   const loaded = attempt.loaded;
   // A stale load's note rides with the skipped-project note: both are lines
   // the table gives up room for.
-  const trailer = [formatSkippedProjectNote(loaded), stale ? STALE_SESSION_NOTE : ''].filter((n) => n !== '').join('\n');
+  const trailer = [formatSkippedProjectNote(loaded), problemNote || (stale ? STALE_SESSION_NOTE : '')].filter((n) => n !== '').join('\n');
 
   if (loaded.merged.terms.length === 0) {
     // Nothing to inject; nudge the model to offer onboarding, but not every
