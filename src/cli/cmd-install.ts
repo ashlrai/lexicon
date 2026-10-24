@@ -500,8 +500,29 @@ async function readText(file: string): Promise<{ text: string; existed: boolean 
 }
 
 async function writeText(file: string, text: string): Promise<void> {
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, text, 'utf8');
+  await explainWrite(file, async () => {
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, text, 'utf8');
+  });
+}
+
+/**
+ * Run `write` for `file`; a permission refusal (a read-only file or
+ * directory, one owned by another user, a read-only volume) becomes a
+ * refusal that says nothing was changed and how to go on. It surfaced as
+ * Node's bare `EACCES: permission denied, open '<file>'`.
+ */
+async function explainWrite(file: string, write: () => Promise<void>): Promise<void> {
+  try {
+    await write();
+  } catch (err) {
+    const code = (err as { code?: unknown }).code;
+    if (code !== 'EACCES' && code !== 'EPERM' && code !== 'EROFS') throw err;
+    throw new CliRefusal(
+      `could not write ${safe(file)} (${code}): it is read-only or not yours; nothing was changed`,
+      `make it writable (ls -l ${shellWord(file)} shows who owns it; chmod u+w ${shellWord(file)}) and run this again, or add the entry shown above to it by hand`,
+    );
+  }
 }
 
 /** Apply a JSON target. Returns what happened for the report line. */
@@ -512,7 +533,7 @@ async function applyJson(target: InstallTarget): Promise<InstallOutcome> {
   }
   const { next, changed } = mergeServerIntoJson(read.exists ? read.value : {}, target.key, target.entry);
   if (!changed) return 'unchanged';
-  await writeJsonFile(target.file, next, read.text);
+  await explainWrite(target.file, () => writeJsonFile(target.file, next, read.text));
   return read.exists ? 'updated' : 'created';
 }
 
@@ -915,7 +936,7 @@ export async function runInstallClaude(
     const existed = read.exists;
     const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, hookTimeout, HOOK_EVENTS);
     if (changed) {
-      await writeJsonFile(settingsPath, settings, read.text);
+      await explainWrite(settingsPath, () => writeJsonFile(settingsPath, settings, read.text));
       line(io, green(`   ${existed ? 'updated' : 'created'} ${safe(settingsPath)}: added ${HOOK_EVENTS.join(' + ')} hooks`));
       deps.onWritten?.(settingsPath, existed ? 'updated' : 'created');
     } else {

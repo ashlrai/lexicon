@@ -62841,8 +62841,22 @@ async function readText2(file2) {
   }
 }
 async function writeText(file2, text) {
-  await import_node_fs21.promises.mkdir(import_node_path20.default.dirname(file2), { recursive: true });
-  await import_node_fs21.promises.writeFile(file2, text, "utf8");
+  await explainWrite(file2, async () => {
+    await import_node_fs21.promises.mkdir(import_node_path20.default.dirname(file2), { recursive: true });
+    await import_node_fs21.promises.writeFile(file2, text, "utf8");
+  });
+}
+async function explainWrite(file2, write) {
+  try {
+    await write();
+  } catch (err) {
+    const code = err.code;
+    if (code !== "EACCES" && code !== "EPERM" && code !== "EROFS") throw err;
+    throw new CliRefusal(
+      `could not write ${safe(file2)} (${code}): it is read-only or not yours; nothing was changed`,
+      `make it writable (ls -l ${shellWord2(file2)} shows who owns it; chmod u+w ${shellWord2(file2)}) and run this again, or add the entry shown above to it by hand`
+    );
+  }
 }
 async function applyJson(target) {
   const read = await readJsonFile(target.file);
@@ -62851,7 +62865,7 @@ async function applyJson(target) {
   }
   const { next, changed } = mergeServerIntoJson(read.exists ? read.value : {}, target.key, target.entry);
   if (!changed) return "unchanged";
-  await writeJsonFile(target.file, next, read.text);
+  await explainWrite(target.file, () => writeJsonFile(target.file, next, read.text));
   return read.exists ? "updated" : "created";
 }
 function mergeChanged(first, second) {
@@ -63096,7 +63110,7 @@ async function runInstallClaude(opts, io, deps = {}) {
     const existed = read.exists;
     const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, hookTimeout, HOOK_EVENTS);
     if (changed) {
-      await writeJsonFile(settingsPath, settings, read.text);
+      await explainWrite(settingsPath, () => writeJsonFile(settingsPath, settings, read.text));
       line(io, green(`   ${existed ? "updated" : "created"} ${safe(settingsPath)}: added ${HOOK_EVENTS.join(" + ")} hooks`));
       deps.onWritten?.(settingsPath, existed ? "updated" : "created");
     } else {

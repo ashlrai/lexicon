@@ -2,7 +2,8 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Command } from 'commander';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { CliRefusal } from '../src/cli/io.js';
 import {
   CODEX_TABLE,
   codexBlock,
@@ -237,6 +238,28 @@ describe('lexicon install <json client> --apply', () => {
     await fs.writeFile(file, '{\n\t"theme": "dark",\n\t"mcpServers": {}\n}');
     await run('cursor', { apply: true });
     expect(await fs.readFile(file, 'utf8')).toBe(`{\n\t"theme": "dark",\n\t"mcpServers": {\n\t\t"lexicon": {\n\t\t\t"command": "node",\n\t\t\t"args": [\n\t\t\t\t${JSON.stringify(SERVER)}\n\t\t\t]\n\t\t}\n\t}\n}`);
+  });
+
+  // Catches: a read-only config surfaced as Node's bare
+  // `EACCES: permission denied, open '<file>'`, with no word on what changed
+  // or what to do (tests run as root in CI, so the refusal is simulated).
+  it('a config it may not write is a refusal saying nothing changed and how to go on', async () => {
+    const file = path.join(home, '.cursor', 'mcp.json');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, '{}\n');
+    const denied = Object.assign(new Error(`EACCES: permission denied, open '${file}'`), { code: 'EACCES' });
+    const spy = vi.spyOn(fs, 'writeFile').mockRejectedValue(denied);
+    try {
+      const err = await run('cursor', { apply: true }).catch((e: unknown) => e);
+      expect(err).toBeInstanceOf(CliRefusal);
+      expect((err as CliRefusal).message).toBe(`could not write ${file} (EACCES): it is read-only or not yours; nothing was changed`);
+      expect((err as CliRefusal).nextStep).toMatch(/^make it writable \(ls -l .* chmod u\+w .*\) and run this again, or add the entry shown above to it by hand$/);
+      const toml = await run('codex', { apply: true }).catch((e: unknown) => e);
+      expect((toml as CliRefusal).message).toMatch(/^could not write .*config\.toml \(EACCES\)/);
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await fs.readFile(file, 'utf8')).toBe('{}\n');
   });
 
   it('refuses to overwrite a file that is not valid JSON', async () => {
