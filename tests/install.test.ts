@@ -293,6 +293,35 @@ describe('lexicon install <json client> --apply', () => {
   });
 });
 
+// Catches: the JSON and TOML writers wrote the client config in place, which
+// truncates it first, so a write that failed partway (a full disk) left the
+// user's whole config cut short. They now write a temp file and rename it.
+describe('a config write that fails partway leaves the old file', () => {
+  for (const [client, rel, original] of [
+    ['claude-desktop', 'Library/Application Support/Claude/claude_desktop_config.json', '{\n  "mcpServers": { "other": { "command": "x", "args": [] } },\n  "theme": "dark"\n}\n'],
+    ['codex', '.codex/config.toml', 'model = "o3"\n\n[mcp_servers.other]\ncommand = "x"\n'],
+  ] as const) {
+    it(client, async () => {
+      const file = path.join(home, rel);
+      await fs.mkdir(path.dirname(file), { recursive: true });
+      await fs.writeFile(file, original);
+      const realWrite = fs.writeFile.bind(fs);
+      const spy = vi.spyOn(fs, 'writeFile').mockImplementation(async (target, data, options) => {
+        // Half the bytes reach the disk, then it is full.
+        await realWrite(target, String(data).slice(0, 10), options);
+        throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+      });
+      try {
+        await expect(run(client, { apply: true })).rejects.toThrow('ENOSPC');
+      } finally {
+        spy.mockRestore();
+      }
+      expect(await fs.readFile(file, 'utf8')).toBe(original);
+      expect(await fs.readdir(path.dirname(file))).toEqual([path.basename(file)]);
+    });
+  }
+});
+
 describe('lexicon install codex --apply (TOML)', () => {
   const rel = '.codex/config.toml';
   const block = `[${CODEX_TABLE}]\ncommand = "node"\nargs = [${JSON.stringify(SERVER)}]`;
@@ -372,6 +401,14 @@ describe('platform-specific paths', () => {
     const ctx = { home: 'C:\\Users\\me', cwd: 'C:\\repo', platform: 'win32' as const, env: { APPDATA: 'C:\\AppData' }, project: false };
     expect(configPathFor('claude-desktop', ctx)).toBe(path.join('C:\\AppData', 'Claude', 'claude_desktop_config.json'));
     expect(configPathFor('vscode', ctx)).toBe(path.join('C:\\AppData', 'Code', 'User', 'mcp.json'));
+  });
+
+  // Catches: a blank APPDATA passed `??`, so the path came out relative and
+  // the config was written under the current directory.
+  it('falls back to <home>/AppData/Roaming when APPDATA is blank', () => {
+    const ctx = { home: 'C:\\Users\\me', cwd: 'C:\\repo', platform: 'win32' as const, env: { APPDATA: ' ' }, project: false };
+    expect(configPathFor('claude-desktop', ctx)).toBe(path.join('C:\\Users\\me', 'AppData', 'Roaming', 'Claude', 'claude_desktop_config.json'));
+    expect(configPathFor('vscode', { ...ctx, env: { APPDATA: '' } })).toBe(path.join('C:\\Users\\me', 'AppData', 'Roaming', 'Code', 'User', 'mcp.json'));
   });
 
   it('uses ~/.config on Linux for VS Code and Claude Desktop', () => {
@@ -756,6 +793,26 @@ describe('install claude --scope project writes the repo hooks', () => {
     await expect(fs.access(path.join(home, '.claude', 'settings.json'))).rejects.toThrow();
     expect(io.out).toContain(`merge into ${projectSettings} (project scope: the repo's shared settings, read for this project only):`);
     expect(io.out).toContain(`in ${projectSettings} (this run created the file, so deleting it undoes step 2)`);
+  });
+
+  // Catches: the hooks' settings.json was found through process.env's
+  // CLAUDE_CONFIG_DIR, not the environment the install was given (which
+  // uninstall uses), so the two named different files.
+  it('finds settings.json through the environment it was given, as uninstall does', async () => {
+    const elsewhere = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-install-elsewhere-'));
+    const given = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-install-given-'));
+    vi.stubEnv('CLAUDE_CONFIG_DIR', elsewhere);
+    try {
+      await runInstall('claude', { apply: true, home, cwd }, makeIO(), { cliDir: CLI_DIR, env: { PATH: '' }, exec: () => 'Added' });
+      expect(Object.keys((await readJson(path.join(home, '.claude', 'settings.json'))).hooks as object)).toContain('UserPromptSubmit');
+      await runInstall('claude', { apply: true, cwd }, makeIO(), { cliDir: CLI_DIR, env: { PATH: '', CLAUDE_CONFIG_DIR: given }, exec: () => 'Added' });
+      expect(Object.keys((await readJson(path.join(given, 'settings.json'))).hooks as object)).toContain('UserPromptSubmit');
+      expect(await fs.readdir(elsewhere)).toEqual([]);
+    } finally {
+      vi.unstubAllEnvs();
+      await fs.rm(elsewhere, { recursive: true, force: true });
+      await fs.rm(given, { recursive: true, force: true });
+    }
   });
 
   it('a user-scope install still uses the home settings.json', async () => {

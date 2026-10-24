@@ -6,7 +6,7 @@
  * this tool touched stays diffable against one a human edited.
  */
 import { promises as fs } from 'node:fs';
-import path from 'node:path';
+import { writeFileAtomic } from './atomic.js';
 import { errorMessage, isEnoent } from './errors.js';
 import { editJsonText, parseJsonc } from './jsonc.js';
 
@@ -57,9 +57,11 @@ export async function readJsonFile(file: string): Promise<JsonFileRead> {
  * `mkdir -p` the parent directory and write `value` as formatted JSON. With
  * `original` (the text `readJsonFile` read), only what differs is rewritten
  * (`editJsonText`): every other byte, comments and the file's own
- * indentation included, stays as the user left it.
+ * indentation included, stays as the user left it. Written through a temp
+ * file and a rename (`writeFileAtomic`: a symlink is followed, the mode
+ * kept): an in-place write truncated the file first, so a full disk or a
+ * killed process left a client's whole config cut short or empty.
  */
 export async function writeJsonFile(file: string, value: unknown, original?: string): Promise<void> {
-  await fs.mkdir(path.dirname(file), { recursive: true });
-  await fs.writeFile(file, original === undefined ? formatJson(value) : editJsonText(original, value), 'utf8');
+  await writeFileAtomic(file, original === undefined ? formatJson(value) : editJsonText(original, value));
 }

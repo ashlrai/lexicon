@@ -17,11 +17,12 @@ import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import type { Command } from 'commander';
+import { writeFileAtomic } from '../util/atomic.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord, readJsonFile, writeJsonFile } from '../util/json.js';
 import { homeDir, xdgConfigHome } from '../util/xdg.js';
 import { posixShellWord, powerShellWord } from '../core/index.js';
-import { CliRefusal, bold, dim, green, indent, jsonError, line, red, safe, safeLines, safeMessage, shownCommand, yellow } from './io.js';
+import { CliRefusal, bold, dim, green, indent, jsonError, line, red, safe, safeLines, safeMessage, safePath, shownCommand, yellow } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   HOOK_EVENTS,
@@ -177,9 +178,15 @@ interface PathContext {
   project: boolean;
 }
 
-/** %APPDATA% on Windows, with a sane fallback when the variable is unset. */
+/**
+ * %APPDATA% on Windows, with a sane fallback when the variable is unset or
+ * blank. A blank one (`set APPDATA=`) passed `??`, so the config path came
+ * out relative (`Claude\claude_desktop_config.json`) and was written under
+ * the current directory, where Claude Desktop never looks.
+ */
 function appData(ctx: PathContext): string {
-  return ctx.env.APPDATA ?? path.join(ctx.home, 'AppData', 'Roaming');
+  const value = ctx.env.APPDATA?.trim();
+  return value ? value : path.join(ctx.home, 'AppData', 'Roaming');
 }
 
 /** `$CODEX_HOME` when set, else `~/.codex`. */
@@ -504,10 +511,9 @@ async function readText(file: string): Promise<{ text: string; existed: boolean 
 }
 
 async function writeText(file: string, text: string): Promise<void> {
-  await explainWrite(file, async () => {
-    await fs.mkdir(path.dirname(file), { recursive: true });
-    await fs.writeFile(file, text, 'utf8');
-  });
+  // Through a temp file and a rename, as writeJsonFile does: an in-place
+  // write that failed partway left config.toml cut short.
+  await explainWrite(file, () => writeFileAtomic(file, text));
 }
 
 /**
@@ -523,7 +529,7 @@ export async function explainWrite(file: string, write: () => Promise<void>): Pr
     const code = (err as { code?: unknown }).code;
     if (code !== 'EACCES' && code !== 'EPERM' && code !== 'EROFS') throw err;
     throw new CliRefusal(
-      `could not write ${safe(file)} (${code}): it is read-only or not yours; nothing was changed`,
+      `could not write ${file} (${code}): it is read-only or not yours; nothing was changed`,
       `make it writable (ls -l ${posixShellWord(file)} shows who owns it; chmod u+w ${posixShellWord(file)}) and run this again, or add the entry shown above to it by hand`,
     );
   }
@@ -630,7 +636,7 @@ export function installApplyCommand(client: InstallClient, opts: InstallOptions)
  * run added, or the whole file when this run created it.
  */
 function undoEntry(target: InstallTarget, applied: Applied): string {
-  const file = safe(target.file);
+  const file = safePath(target.file);
   const what =
     target.format === 'toml'
       ? `delete the [${CODEX_TABLE}] table${applied.envTable ? ` and its [${CODEX_TABLE}.env] table` : ''} from ${file}`
@@ -790,7 +796,10 @@ async function installText(
       ...(deps.cliDir ? { cliDir: deps.cliDir } : {}),
       // A project-scope install writes the repo's .claude/settings.json (see
       // claudeSettingsPathFor), whatever the home directory.
-      ...(opts.home && !project ? { settingsPath: path.join(claudeConfigDir(process.env, home), 'settings.json') } : {}),
+      // `env`, the environment this install was given, not process.env, as
+      // uninstall reads it: a CLAUDE_CONFIG_DIR only the process had sent the
+      // hooks to a file the given environment (and uninstall) never names.
+      ...(opts.home && !project ? { settingsPath: path.join(claudeConfigDir(env, home), 'settings.json') } : {}),
       ...(deps.onWritten ? { onWritten: deps.onWritten } : {}),
       ...(deps.exec ? { exec: deps.exec } : {}),
       env,
@@ -805,9 +814,9 @@ async function installText(
   // A preview of an entry the file already holds read as work still to do.
   const installed = !opts.apply && (await alreadyInstalled(target));
   if (installed) {
-    line(io, `   already installed in ${safe(target.file)}: the lexicon entry there matches, nothing to write`);
+    line(io, `   already installed in ${safePath(target.file)}: the lexicon entry there matches, nothing to write`);
   } else {
-    line(io, `   ${opts.apply ? 'merge into' : 'would merge into'} ${safe(target.file)}:`);
+    line(io, `   ${opts.apply ? 'merge into' : 'would merge into'} ${safePath(target.file)}:`);
     line(io, indent(body, '   '));
   }
   if (opts.apply) {
@@ -815,9 +824,9 @@ async function installText(
     const { outcome } = applied;
     deps.onWritten?.(target.file, outcome);
     if (outcome === 'unchanged') {
-      line(io, dim(`   ${safe(target.file)}: lexicon entry already present, nothing changed`));
+      line(io, dim(`   ${safePath(target.file)}: lexicon entry already present, nothing changed`));
     } else {
-      line(io, green(`   ${outcome} ${safe(target.file)}: ${target.format === 'toml' ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
+      line(io, green(`   ${outcome} ${safePath(target.file)}: ${target.format === 'toml' ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
     }
     // The write named its file but not the way back; the rest of the file is
     // the user's, so the undo is the one entry, not the file.
@@ -881,7 +890,7 @@ export interface InstallClaudeDeps {
   exec?: (file: string, args: readonly string[]) => string;
   /** Called once per config file touched under `--apply` (setup uses it for its summary). */
   onWritten?: (file: string, outcome: InstallOutcome) => void;
-  /** Environment whose LEXICON_PATH / LEXICON_CWD are passed to `claude mcp add -e`. Default process.env. */
+  /** Environment whose LEXICON_PATH / LEXICON_CWD are passed to `claude mcp add -e`, and whose CLAUDE_CONFIG_DIR locates the user settings.json. Default process.env. */
   env?: NodeJS.ProcessEnv;
   /** Claude's plugin registry. Default `plugins/installed_plugins.json` beside `settingsPath`. */
   installedPluginsPath?: string;
@@ -921,7 +930,7 @@ export async function runInstallClaude(
   if (scope !== 'user' && scope !== 'project') {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
-  const settingsPath = deps.settingsPath ?? claudeSettingsPathFor(scope, path.resolve(opts.cwd ?? process.cwd()));
+  const settingsPath = deps.settingsPath ?? claudeSettingsPathFor(scope, path.resolve(opts.cwd ?? process.cwd()), deps.env ?? process.env);
   // The plugin already runs the MCP server and both hooks for every session.
   // A user-scope registration on top of it doubled the hook notes on every
   // prompt and added a second `lexicon` server (setup_lexicon from a plugin
@@ -960,7 +969,7 @@ export async function runInstallClaude(
   else if (bundled) line(io, dim('   (self-contained bundle: no node_modules needed at runtime)'));
   if (opts.apply) {
     if (!serverLaunch.viaNpx && !existsSync(serverPath)) {
-      line(io, yellow(`   note: ${safe(serverPath)} does not exist yet (run npm run build first)`));
+      line(io, yellow(`   note: ${safePath(serverPath)} does not exist yet (run npm run build first)`));
     }
     try {
       const out = exec('claude', mcpArgs).trim();
@@ -988,7 +997,7 @@ export async function runInstallClaude(
   const hookCommand = launchCommandLine(hookLaunch);
   const hookTimeout = hookTimeoutFor(hookLaunch);
   line(io, bold(`2. Add the ${HOOK_EVENTS.join(' and ')} hooks`));
-  line(io, `   ${opts.apply ? 'merge into' : 'would merge into'} ${safe(settingsPath)}${scope === 'project' ? ' (project scope: the repo\'s shared settings, read for this project only)' : ''}:`);
+  line(io, `   ${opts.apply ? 'merge into' : 'would merge into'} ${safePath(settingsPath)}${scope === 'project' ? ' (project scope: the repo\'s shared settings, read for this project only)' : ''}:`);
   line(io, indent(JSON.stringify(hookConfigFor(hookCommand, hookTimeout, HOOK_EVENTS), null, 2), '   '));
   if (hookLaunch.viaNpx) {
     line(io, dim(`   (npx re-resolves the package each prompt: ~1s, hence the ${hookTimeout}s timeout.`));
@@ -997,20 +1006,20 @@ export async function runInstallClaude(
   if (opts.apply) {
     const read = await readJsonFile(settingsPath);
     if (read.error !== undefined) {
-      throw new Error(`could not read ${safe(settingsPath)}: ${safeLines(read.error)}`);
+      throw new Error(`could not read ${settingsPath}: ${read.error}`);
     }
     const existed = read.exists;
     const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, hookTimeout, HOOK_EVENTS);
     if (changed) {
       await explainWrite(settingsPath, () => writeJsonFile(settingsPath, settings, read.text));
-      line(io, green(`   ${existed ? 'updated' : 'created'} ${safe(settingsPath)}: added ${HOOK_EVENTS.join(' + ')} hooks`));
+      line(io, green(`   ${existed ? 'updated' : 'created'} ${safePath(settingsPath)}: added ${HOOK_EVENTS.join(' + ')} hooks`));
       deps.onWritten?.(settingsPath, existed ? 'updated' : 'created');
     } else {
-      line(io, dim(`   ${safe(settingsPath)}: hooks already present, nothing changed`));
+      line(io, dim(`   ${safePath(settingsPath)}: hooks already present, nothing changed`));
       deps.onWritten?.(settingsPath, 'unchanged');
     }
     const createdNote = changed && !existed ? ' (this run created the file, so deleting it undoes step 2)' : '';
-    line(io, dim(`   undo: delete the lexicon hook entries under ${HOOK_EVENTS.map((e) => `hooks.${e}`).join(' and ')} in ${safe(settingsPath)}${createdNote}`));
+    line(io, dim(`   undo: delete the lexicon hook entries under ${HOOK_EVENTS.map((e) => `hooks.${e}`).join(' and ')} in ${safePath(settingsPath)}${createdNote}`));
   }
   line(io);
 
@@ -1065,7 +1074,7 @@ function refreshClaudeRegistration(
     line(io, dim('   already registered with claude, nothing changed'));
     return true;
   }
-  const old = safe(`${got.command} ${got.args}`.trim());
+  const old = safePath(`${got.command} ${got.args}`.trim());
   if (got.scope !== undefined && got.scope !== scope) {
     line(io, dim(`   already registered with claude at ${got.scope} scope (${old}), nothing changed at ${scope} scope`));
     return true;
@@ -1088,7 +1097,7 @@ function refreshClaudeRegistration(
     line(io, `   run: claude ${mcpArgs.map((a) => quoteArg(a)).join(' ')}`);
     return false;
   }
-  line(io, green(`   repointed lexicon: ${old} -> ${safe(`${launch.command} ${wanted}`)}`));
+  line(io, green(`   repointed lexicon: ${old} -> ${safePath(`${launch.command} ${wanted}`)}`));
   return true;
 }
 

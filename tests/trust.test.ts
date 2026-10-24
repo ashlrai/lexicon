@@ -332,6 +332,31 @@ describe('lexicon trust / untrust / trust --list (CLI)', () => {
     expect(await listTrusted({ globalPath })).toEqual([]);
   });
 
+  // Catches: every path went through the 200-character display cap, so the
+  // preview, the question and the result named a deep file with an ellipsis
+  // in place of its name.
+  it('names a deep project file whole in the preview, the question, the result and untrust', async () => {
+    const deep = path.join(tmp, ...Array.from({ length: 12 }, (_, i) => `a-rather-long-directory-name-${i}`), '.lexicon.yaml');
+    await fs.mkdir(path.dirname(deep), { recursive: true });
+    await fs.copyFile(projectPath, deep);
+    const io = makeIO();
+    const p = scripted(['y']);
+    expect(await runTrust(deep, { cwd: cwd() }, io, { isInteractive: () => true, createPrompter: () => p })).toBe(0);
+    expect(io.out).toContain(`${deep}: 1 term`);
+    expect(p.asked[0]).toContain(`trust ${deep}?`);
+    expect(io.out).toContain(`trusted ${deep} (sha256`);
+    const list = makeIO();
+    expect(await runTrust(undefined, { cwd: cwd(), list: true }, list)).toBe(0);
+    expect(list.out).toContain(deep);
+    const un = makeIO();
+    expect(await runUntrust(deep, { cwd: cwd() }, un)).toBe(0);
+    expect(un.out).toContain(`untrusted ${deep};`);
+    const missing = makeIO();
+    expect(await runTrust(`${deep}.gone`, { cwd: cwd() }, missing)).toBe(1);
+    expect(missing.err).toContain(`file does not exist: ${deep}.gone\n`);
+    expect(`${io.out}${list.out}${un.out}${missing.err}`).not.toContain('\u2026');
+  });
+
   it('trusts on a yes, and --yes skips the question', async () => {
     const yes = makeIO();
     expect(await runTrust(undefined, { cwd: cwd() }, yes, { isInteractive: () => true, createPrompter: () => scripted(['y']) })).toBe(0);

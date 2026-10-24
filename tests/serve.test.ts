@@ -329,7 +329,11 @@ describe('serve.json', () => {
       expect(unusableServeConfigReason(servePath)).toBe('is not valid JSON; fix it, or delete it and lexicon serve makes a new token');
 
       await fs.writeFile(servePath, JSON.stringify({ ...doc, token: 'short' }));
-      expect(unusableServeConfigReason(servePath)).toBe('has no usable token; lexicon serve replaces it');
+      // Catches: the reason said only "has no usable token", not why, as onTokenReplaced does.
+      expect(unusableServeConfigReason(servePath)).toBe('has no usable token ("token" is not 32 to 128 hex characters (0-9, a-f, A-F)); lexicon serve replaces it');
+      await fs.writeFile(servePath, JSON.stringify({ port: 41733 }));
+      expect(unusableServeConfigReason(servePath)).toBe('has no usable token (it has no "token" key); lexicon serve replaces it');
+      await fs.writeFile(servePath, JSON.stringify({ ...doc, token: 'short' }));
       const fresh = await ensureServeConfig({ globalPath: gp });
       expect(fresh.token).toMatch(/^[0-9a-f]{32}$/);
       expect(fresh.allowedOrigins).toEqual(['https://ok.example']);

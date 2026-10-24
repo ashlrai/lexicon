@@ -227,4 +227,13 @@ final class OnboardingSupportTests: XCTestCase {
         packs.reconcile(with: ["developer", "ai", "voice-tools", "business"])
         XCTAssertEqual(packs.installed, ["developer", "ai", "voice-tools", "business"])
     }
+
+    // MARK: GET /aliases
+
+    // Catches: URLComponents left `+` unencoded and the server read it as a
+    // space, so the suggestions for `C++` were asked for `C`.
+    func testAliasesPathEncodesPlus() {
+        XCTAssertEqual(aliasesRequestPath(canonical: "C++"), "/aliases?canonical=C%2B%2B")
+        XCTAssertEqual(aliasesRequestPath(canonical: "Ashlr AI"), "/aliases?canonical=Ashlr%20AI")
+    }
 }

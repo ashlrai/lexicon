@@ -32,7 +32,7 @@ import {
   parsedContentHash,
 } from '../core/index.js';
 import type { LexiconFile, Term } from '../core/index.js';
-import { jsonError, jsonOk, line, renderTable, resolveCwd, safe, safeLines, unreadableLexiconHint } from './io.js';
+import { jsonError, jsonOk, line, renderTable, resolveCwd, safeMessage, safePath, unreadableLexiconHint } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { PromptClosedError, createPrompter, isInteractive } from './prompt.js';
 import type { Prompter } from './prompt.js';
@@ -78,7 +78,7 @@ function previewAliases(term: Term): string {
 
 function renderPreview(file: LexiconFile, write: (s: string) => void): void {
   const terms = file.lexicon.terms;
-  write(`${safe(file.path)}: ${terms.length} term${terms.length === 1 ? '' : 's'}\n`);
+  write(`${safePath(file.path)}: ${terms.length} term${terms.length === 1 ? '' : 's'}\n`);
   if (terms.length === 0) return;
   const rows = terms.slice(0, PREVIEW_ROWS).map((t) => [t.canonical, previewAliases(t), t.notes ? 'has notes' : '']);
   write(renderTable(rows, ['canonical', 'first alias', '']));
@@ -93,7 +93,10 @@ function printJson(io: IO, payload: unknown): void {
  * A refusal: the stderr line(s) as always, and under --json one
  * `{ ok: false, error, nextStep?, action, path? }` document on stdout too, so
  * a script that parses stdout is not left with nothing, and reads `ok` as it
- * does on every other command. Always exit code 1.
+ * does on every other command. Always exit code 1. The lines go through
+ * `safeMessage` and every path this command prints through `safePath`: the
+ * 200-character display cap cut a deep path off, so the file being trusted
+ * (or the one an error names) could not be read whole.
  */
 function fail(
   io: IO,
@@ -104,8 +107,8 @@ function fail(
   nextStep?: string,
 ): number {
   if (json) printJson(io, { ...jsonError(error, nextStep), action, ...(filePath !== undefined ? { path: filePath } : {}) });
-  io.stderr(`lexicon: ${safeLines(error)}\n`);
-  if (nextStep) io.stderr(`lexicon: ${safeLines(nextStep)}\n`);
+  io.stderr(`lexicon: ${safeMessage(error)}\n`);
+  if (nextStep) io.stderr(`lexicon: ${safeMessage(nextStep)}\n`);
   return 1;
 }
 
@@ -118,7 +121,7 @@ async function confirmTrust(filePath: string, opts: TrustOptions, deps: TrustDep
   const own = deps.createPrompter === undefined;
   const p = deps.createPrompter?.() ?? createPrompter({ input: process.stdin, output: opts.json ? process.stderr : process.stdout });
   try {
-    return await p.confirm(`trust ${safe(filePath)}? its terms will be applied to every prompt in this repo`, false);
+    return await p.confirm(`trust ${safePath(filePath)}? its terms will be applied to every prompt in this repo`, false);
   } catch (err) {
     if (err instanceof PromptClosedError) return false;
     throw err;
@@ -211,9 +214,9 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
     return 0;
   }
   if (entry.alreadyPinned) {
-    io.stdout(`already trusted: ${safe(filePath)} (sha256 ${entry.sha256.slice(0, 12)}, since ${entry.trustedAt}) in ${safe(registry)}; nothing changed\n`);
+    io.stdout(`already trusted: ${safePath(filePath)} (sha256 ${entry.sha256.slice(0, 12)}, since ${entry.trustedAt}) in ${safePath(registry)}; nothing changed\n`);
   } else {
-    io.stdout(`${verb} ${safe(filePath)} (sha256 ${entry.sha256.slice(0, 12)}) in ${safe(registry)}\n`);
+    io.stdout(`${verb} ${safePath(filePath)} (sha256 ${entry.sha256.slice(0, 12)}) in ${safePath(registry)}\n`);
   }
   io.stdout('It will be merged into the lexicon until its content changes; then run `lexicon trust` again.\n');
   return 0;
@@ -236,10 +239,10 @@ export async function runUntrust(target: string | undefined, opts: CommonOptions
     return 0;
   }
   if (!removed) {
-    io.stdout(`${safe(filePath)} was not trusted; nothing to do\n`);
+    io.stdout(`${safePath(filePath)} was not trusted; nothing to do\n`);
     return 0;
   }
-  io.stdout(`untrusted ${safe(filePath)}; it will no longer be merged\n`);
+  io.stdout(`untrusted ${safePath(filePath)}; it will no longer be merged\n`);
   return 0;
 }
 
@@ -250,14 +253,14 @@ async function runTrustList(cwd: string, opts: TrustOptions, io: IO): Promise<nu
     printJson(io, jsonOk({ registry: getTrustPath({ cwd }), trustAll: trustAllEnabled(), trusted: entries }));
     return 0;
   }
-  io.stdout(`registry: ${safe(getTrustPath({ cwd }))}\n`);
+  io.stdout(`registry: ${safePath(getTrustPath({ cwd }))}\n`);
   if (trustAllEnabled()) io.stdout('LEXICON_TRUST_ALL is set: every project lexicon is treated as trusted\n');
   if (entries.length === 0) {
     io.stdout('no trusted project lexicons (run: lexicon trust)\n');
     return 0;
   }
   const rows = entries.map((e) => [e.path, e.status, e.trustedAt]);
-  io.stdout(renderTable(rows, ['path', 'status', 'trusted at']));
+  io.stdout(renderTable(rows, ['path', 'status', 'trusted at'], { pathColumns: [0] }));
   return 0;
 }
 

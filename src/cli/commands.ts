@@ -50,7 +50,7 @@
  *    src/util/ (`errorMessage`, `isRecord`, `findOnPath`, ...). If you find
  *    yourself writing a second copy of one, import it instead.
  */
-import { existsSync, promises as fs } from 'node:fs';
+import { existsSync, promises as fs, statSync } from 'node:fs';
 import path from 'node:path';
 import {
   DEMO_LEXICON,
@@ -968,6 +968,11 @@ export async function runHarvest(
   if (!existsSync(target)) {
     return refuse(io, json, `harvest: path does not exist: ${target}`, 'pass a directory that exists, or leave the path out to harvest the current directory');
   }
+  // A file (package.json, a README) is refused here with the same hint: the
+  // scan's own `not a directory` came with the generic next step.
+  if (!statSync(target).isDirectory()) {
+    return refuse(io, json, `harvest: not a directory: ${target}`, 'pass a directory (the repository root, not a file in it), or leave the path out to harvest the current directory');
+  }
 
   const tty = (deps.isInteractive ?? isInteractive)();
   if (opts.interactive && !tty) {
@@ -1039,7 +1044,7 @@ export async function runHarvest(
       c.suggestedAliases.join(', '),
       c.evidence[0] ?? '',
     ]);
-    io.stdout(renderTable(rows, ['canonical', 'category', 'count', 'suggested aliases', 'evidence']));
+    io.stdout(renderTable(rows, ['canonical', 'category', 'count', 'suggested aliases', 'evidence'], { pathColumns: [4] }));
   }
 
   if (truncatedLine) {
@@ -1068,13 +1073,19 @@ export async function runHarvest(
         else merged += 1;
       }
     } catch (err) {
-      if (!json) throw err;
-      // The one --json document for a write that failed: the error and the
-      // counts (0: the batch writes all or none), never the candidate array.
+      // A trust refusal names its own next step (fail prints it); any other
+      // write failure says, as --json does, that nothing was added. It was
+      // thrown raw in text mode, so a user saw `disk full` with no word of
+      // whether part of the batch was written.
+      if (!json && isProjectTrustError(err)) throw err;
       const message = errorMessage(err);
       const hint = unreadableLexiconHint(message);
-      const where = filePath ? { path: filePath } : {};
-      line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where }, null, 2));
+      if (json) {
+        // The one --json document for a write that failed: the error and the
+        // counts (0: the batch writes all or none), never the candidate array.
+        const where = filePath ? { path: filePath } : {};
+        line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where }, null, 2));
+      }
       io.stderr(`lexicon: ${safeMessage(message)}\n`);
       if (hint) io.stderr(`lexicon: ${hint}\n`);
       io.stderr('lexicon: nothing was added: the candidates are written together, so none of them are in the project lexicon\n');
@@ -1193,7 +1204,9 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
   const dropped = exported.notes.length > 0 ? { dropped: exported.notes } : {};
   // The terms actually exported: the same category filter and cap exportLexicon applies.
   const selected = selectExportTerms(merged, exportOpts, format);
-  const terms = selected.length;
+  // A name-list format reports the names it wrote: the selected count also
+  // held the names its prompt-token window or default cap left out.
+  const terms = exported.names ?? selected.length;
   // An alias-row format writes one row per non-blank alias (aliasPairs), so a
   // term without one writes nothing: "wrote csv export (2 terms)" counted it.
   const aliasRows = EXPORT_ALIAS_ROW_FORMATS.includes(format)

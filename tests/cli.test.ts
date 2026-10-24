@@ -771,6 +771,35 @@ describe('add / remove / path', () => {
     expect(ok.err).toContain('added 1 new term, merged 0');
   });
 
+  // Catches: in text mode a write failure other than a trust refusal was
+  // thrown raw, so `harvest --add` said `disk full` with no word of whether
+  // part of the batch was written, unlike --json.
+  it('harvest --add says nothing was added when the write fails in text mode', async () => {
+    vi.mocked(core.harvestRepo).mockResolvedValueOnce([{ canonical: 'Quokka', category: 'product', count: 2, suggestedAliases: [], evidence: [], source: 'harvest:repo' }]);
+    vi.mocked(core.addTerms).mockRejectedValueOnce(new Error('disk full'));
+    const io = makeIO();
+    const code = await runHarvest(os.tmpdir(), { add: true, yes: true }, io, { isInteractive: () => false }).catch((err: unknown) => fail(io, err));
+    expect(code).toBe(1);
+    expect(io.err).toContain('lexicon: disk full\n');
+    expect(io.err).toContain('nothing was added: the candidates are written together');
+
+    // A trust refusal is still thrown, for fail to print with its own next step.
+    vi.mocked(core.harvestRepo).mockResolvedValueOnce([{ canonical: 'Quokka', category: 'product', count: 2, suggestedAliases: [], evidence: [], source: 'harvest:repo' }]);
+    vi.mocked(core.addTerms).mockRejectedValueOnce(new core.ProjectTrustError('/tmp/proj/.lexicon.yaml', 'untrusted'));
+    await expect(runHarvest(os.tmpdir(), { add: true, yes: true }, makeIO(), { isInteractive: () => false })).rejects.toThrow('untrusted');
+  });
+
+  // Catches: the harvest table cut each cell at 200 characters from the end,
+  // so evidence naming a deep file lost the file name.
+  it('harvest prints a long evidence path whole', async () => {
+    const evidence = `${'packages/very-deep-directory/'.repeat(10)}package.json#dependencies`;
+    vi.mocked(core.harvestRepo).mockResolvedValueOnce([{ canonical: 'Quokka', category: 'product', count: 2, suggestedAliases: [], evidence: [evidence], source: 'harvest:package' }]);
+    const io = makeIO();
+    expect(await runHarvest(os.tmpdir(), {}, io, { isInteractive: () => false })).toBe(0);
+    expect(io.out).toContain(evidence);
+    expect(io.out).not.toContain('\u2026');
+  });
+
   it('add --json and remove --json print parseable JSON on stdout', async () => {
     const added = makeIO();
     expect(await runAdd('Ashlr.AI', ['Ashler'], { json: true }, added)).toBe(0);
@@ -1420,6 +1449,17 @@ describe('renderTable', () => {
     expect(lines[0].indexOf('aliases')).toBe(lines[2].indexOf('Ashler'));
     expect(lines[0].indexOf('category')).toBe(lines[3].indexOf('person'));
     expect(col(lines[0], 3)).toBe(lines[2].indexOf('3'));
+  });
+
+  // Catches: every cell went through the 200-character display cap, which
+  // cuts from the end, so a deep path in the stats files table or harvest
+  // evidence lost its file name to an ellipsis.
+  it('keeps a long path whole in a path column, and still caps the others', () => {
+    const deep = `/home/u/${'very-deep-directory/'.repeat(15)}.lexicon.yaml`;
+    const out = renderTable([['project', deep, `${'x'.repeat(300)}`]], undefined, { pathColumns: [1] });
+    expect(out).toContain(deep);
+    expect(out).toContain(`${'x'.repeat(199)}\u2026`);
+    expect(renderTable([['\x1b[31m', deep]], undefined, { pathColumns: [1] })).not.toContain('\x1b');
   });
 
   it('handles ragged rows and no header', () => {
@@ -2937,6 +2977,35 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
     }
   });
 
+  // Catches: `export whisper-prompt --json` (and `--out`) reported `terms` as
+  // the names selected, though the prompt-token window and the default cap
+  // left most of them out of the line.
+  it('export whisper-prompt and openai --json count the names the line holds', async () => {
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-wp-'));
+    try {
+      const globalPath = path.join(tmp, 'lexicon.yaml');
+      const names = Array.from({ length: 150 }, (_, i) => `Supercalifragilistic Name${String(i).padStart(3, '0')}`);
+      await fs.writeFile(globalPath, `version: 1\nterms:\n${names.map((n) => `  - canonical: ${n}\n    aliases: []\n`).join('')}`);
+      for (const format of ['whisper-prompt', 'openai']) {
+        const printed = lexicon(['export', format, '--json', '--cwd', tmp], globalPath);
+        expect(printed.status).toBe(0);
+        const doc = JSON.parse(printed.stdout) as { terms: number; content: string };
+        const written = doc.content.trim().split(', ').length;
+        expect(written).toBeLessThan(100);
+        expect(doc.terms).toBe(written);
+
+        const out = path.join(tmp, `${format}.txt`);
+        const toFile = lexicon(['export', format, '--out', out, '--json', '--cwd', tmp], globalPath);
+        expect(toFile.status).toBe(0);
+        expect((JSON.parse(toFile.stdout) as { terms: number }).terms).toBe((await fs.readFile(out, 'utf8')).trim().split(', ').length);
+        const human = lexicon(['export', format, '--out', out, '--cwd', tmp], globalPath);
+        expect(human.stdout).toContain(`wrote ${format} export (${written} terms)`);
+      }
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
   // Catches: `--full` implies --json on list and harvest, but a failure under
   // --full alone (a usage error, or a handler that threw) printed only the
   // stderr line, so a script parsing stdout got an empty document.
@@ -2960,6 +3029,18 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
         nextStep: 'pass a directory that exists, or leave the path out to harvest the current directory',
       });
       expect(missing.stderr).toContain('lexicon: pass a directory that exists');
+
+      // Catches: a file named as the root got the scan's bare `not a directory` and the generic next step.
+      const file = path.join(tmp, 'package.json');
+      await fs.writeFile(file, '{}\n');
+      const notDir = lexicon(['harvest', file, '--full', '--cwd', tmp], globalPath);
+      expect(notDir.status).toBe(1);
+      expect(JSON.parse(notDir.stdout)).toEqual({
+        ok: false,
+        error: `harvest: not a directory: ${file}`,
+        nextStep: 'pass a directory (the repository root, not a file in it), or leave the path out to harvest the current directory',
+      });
+      expect(notDir.stderr).toContain('lexicon: pass a directory (the repository root');
 
       // A command without --full keeps an empty stdout for it: there it is just an unknown option.
       const other = lexicon(['stats', '--full', '--cwd', tmp], globalPath);

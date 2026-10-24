@@ -46,9 +46,30 @@ describe('whisper-prompt and openai: the prompt window Whisper reads', () => {
     const kept = text.split(', ').length;
     const counted = notes.map((n) => Number(/^left out (\d+) name/.exec(n)?.[1] ?? 0)).reduce((a, b) => a + b, 0);
     expect(kept + counted).toBe(150);
+    // The names the line holds, for `lexicon export --json`'s `terms`.
+    expect(exportLexiconWithNotes(lex(terms), 'whisper-prompt').names).toBe(kept);
+    expect(exportLexiconWithNotes(lex(terms), 'openai').names).toBe(kept);
     expect(notes.some((n) => n.startsWith('left out 50 names past the 100 a prompt holds by default') && n.includes('"Q100"'))).toBe(true);
     // An explicit --limit is what was asked for: no note for it.
     expect(exportLexiconWithNotes(lex(terms.slice(0, 5)), 'whisper-prompt', { limit: 2 }).notes).toEqual([]);
+  });
+
+  // Catches: names were whitespace-collapsed but not deduped after, so
+  // canonicals that differ only in whitespace were written into the prompt
+  // more than once, spending its tokens on the same name.
+  it('writes a name once when canonicals differ only in whitespace', () => {
+    const { text, notes, names } = exportLexiconWithNotes(
+      lex([
+        { canonical: 'Ashlr AI', aliases: [], hits: 9 },
+        { canonical: 'Ashlr  AI', aliases: [], hits: 5 },
+        { canonical: 'Ashlr\u00a0AI', aliases: [], hits: 1 },
+        { canonical: 'kubectl', aliases: [] },
+      ]),
+      'whisper-prompt',
+    );
+    expect(text).toBe('Ashlr AI, kubectl');
+    expect(names).toBe(2);
+    expect(notes).toEqual(['left out 2 names that read as one already listed once whitespace is collapsed: "Ashlr  AI" and "Ashlr\u00a0AI"']);
   });
 
   it('a short lexicon is written whole, with no note', () => {
@@ -125,6 +146,26 @@ describe('deepgram: keyterm for Nova-3, deduped keywords', () => {
     );
     expect(JSON.parse(text)).toEqual({ keyterm: ['Win 2', 'Win:2'], keywords: ['Win 2:2'] });
     expect(notes).toEqual(['left out 1 name from keywords that read as one already listed once its colon is a space: "Win:2"']);
+  });
+
+  // Catches: keyterm collapsed whitespace but kept every entry, so canonicals
+  // that differ only in whitespace were sent as the same keyterm twice and
+  // each took a place under the 100 cap.
+  it('writes a keyterm once when canonicals differ only in whitespace, and caps the distinct ones', () => {
+    const { text, notes } = exportLexiconWithNotes(
+      lex([
+        { canonical: 'Ashlr AI', aliases: [], hits: 9 },
+        { canonical: 'Ashlr  AI', aliases: [], hits: 5 },
+        { canonical: 'Ashlr\u00a0AI', aliases: [], hits: 1 },
+      ]),
+      'deepgram',
+    );
+    expect((JSON.parse(text) as { keyterm: string[] }).keyterm).toEqual(['Ashlr AI']);
+    expect(notes).toContain('left out 2 names from keyterm that read as one already listed once whitespace is collapsed: "Ashlr  AI" and "Ashlr\u00a0AI"');
+    const many = [{ canonical: 'K 000', aliases: [], hits: 1000 }, { canonical: 'K  000', aliases: [], hits: 999 }, ...Array.from({ length: 100 }, (_, i) => ({ canonical: `K${String(i + 1).padStart(3, '0')}`, aliases: [], hits: 500 - i }))];
+    const capped = (JSON.parse(exportLexiconWithNotes(lex(many), 'deepgram').text) as { keyterm: string[] }).keyterm;
+    expect(new Set(capped).size).toBe(100);
+    expect(capped).toContain('K099');
   });
 
   it('caps keyterm at 100, the most used kept', () => {

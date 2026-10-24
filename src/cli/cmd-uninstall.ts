@@ -18,7 +18,7 @@ import type { Command } from 'commander';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord, readJsonFile, writeJsonFile } from '../util/json.js';
 import { homeDir } from '../util/xdg.js';
-import { CliRefusal, bold, dim, green, jsonError, line, safe, shownCommand, safeLines, safeMessage, yellow } from './io.js';
+import { CliRefusal, bold, dim, green, jsonError, line, safe, safePath, shownCommand, safeLines, safeMessage, yellow } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   HOOK_EVENTS,
@@ -223,11 +223,11 @@ interface Ctx {
 
 function report(ctx: Ctx, change: UninstallChange, detail?: string): void {
   ctx.changes.push(change);
-  const where = safe(change.file);
+  const where = safePath(change.file);
   if (change.outcome === 'removed') {
     line(ctx.io, green(`   ${ctx.dryRun ? 'would remove' : 'removed'} ${change.entry} from ${where}`));
   } else if (change.outcome === 'kept') {
-    line(ctx.io, yellow(`   ${where}: ${change.entry} was not written by lexicon install${detail ? ` (${safe(detail)})` : ''}; left as it is`));
+    line(ctx.io, yellow(`   ${where}: ${change.entry} was not written by lexicon install${detail ? ` (${safePath(detail)})` : ''}; left as it is`));
   } else {
     line(ctx.io, dim(`   ${where}: ${detail ?? `no ${change.entry}`}, nothing to remove`));
   }
@@ -239,7 +239,7 @@ async function uninstallJson(ctx: Ctx, target: InstallTarget): Promise<void> {
   if (!read.exists) return report(ctx, { file: target.file, entry, outcome: 'absent' }, 'does not exist');
   if (read.error !== undefined) {
     throw new CliRefusal(
-      `could not read ${safe(target.file)} (${safeLines(read.error)}); nothing was changed`,
+      `could not read ${target.file} (${read.error}); nothing was changed`,
       `fix the file (or remove the "lexicon" entry under "${target.key}" by hand), then run this again`,
     );
   }
@@ -300,7 +300,7 @@ async function uninstallClaude(ctx: Ctx, scope: 'user' | 'project', settingsPath
         } catch (err) {
           ok = false;
           removedIt = false;
-          line(io, yellow(`   could not remove it (${safe(launch)}): ${safeLines(errorMessage(err))}`));
+          line(io, yellow(`   could not remove it (${safePath(launch)}): ${safeLines(errorMessage(err))}`));
         }
       }
       if (removedIt) report(ctx, { file: where, entry, outcome: 'removed' });
@@ -318,7 +318,7 @@ async function removeClaudeHooks(ctx: Ctx, settingsPath: string): Promise<void> 
   if (!read.exists) return report(ctx, { file: settingsPath, entry, outcome: 'absent' }, 'does not exist');
   if (read.error !== undefined) {
     throw new CliRefusal(
-      `could not read ${safe(settingsPath)} (${safeLines(read.error)}); nothing was changed there`,
+      `could not read ${settingsPath} (${read.error}); nothing was changed there`,
       'fix the file (or remove the lexicon hook entries by hand), then run this again',
     );
   }
