@@ -583,6 +583,21 @@ describe('clipboard backends', () => {
     expect(clipboard).toBe('plain\nLF');
   });
 
+  // Catches: a clipboard with both CRLF and LF line breaks was read as all
+  // LF and written back as all CRLF, changing lines no correction touched.
+  it('powershell: text with mixed line breaks is passed through as it is', async () => {
+    let clipboard = 'meet Ashler\r\nsecond\nthird\r\n';
+    const { exec } = fakeExec(({ stdin }) => {
+      if (stdin === undefined) return clipboard;
+      clipboard = stdin;
+      return '';
+    });
+    const backend = powershellBackend(exec);
+    expect(await backend.read()).toBe('meet Ashler\r\nsecond\nthird\r\n');
+    await backend.write('meet Ashlr.AI\r\nsecond\nthird\r\n');
+    expect(clipboard).toBe('meet Ashlr.AI\r\nsecond\nthird\r\n');
+  });
+
   // Catches: [Console]::OutputEncoding = [Text.Encoding]::UTF8 makes Windows
   // PowerShell 5.1 write a byte order mark ahead of redirected output, so the
   // read began with U+FEFF and the corrected text written back carried it.
@@ -736,6 +751,26 @@ describe('a clipboard too large to correct', () => {
     const ok = await backends.defaultClipboardExec(process.execPath, ['-e', `process.stdout.write('a'.repeat(${backends.MAX_CLIPBOARD_READ_BYTES}))`]);
     expect(ok.length).toBe(backends.MAX_CLIPBOARD_READ_BYTES);
   });
+
+  // Catches: a clipboard tool that never exits (`xclip -o` waiting on a
+  // selection owner that does not answer) left the read unsettled forever:
+  // the watcher stopped polling without a word and the child kept the
+  // process alive past ctrl-C. It is now killed and reported.
+  it('the default exec stops a tool that runs past its timeout, and a read reports it rather than an empty clipboard', async () => {
+    expect(backends.CLIPBOARD_EXEC_TIMEOUT_MS).toBeGreaterThan(0);
+    const started = Date.now();
+    await expect(backends.defaultClipboardExec(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], undefined, 300)).rejects.toMatchObject({
+      name: 'ClipboardTimeoutError',
+      message: expect.stringContaining('did not finish within 300 ms'),
+    });
+    expect(Date.now() - started).toBeLessThan(5_000);
+    // A write that hangs is stopped the same way.
+    await expect(backends.defaultClipboardExec(process.execPath, ['-e', 'setInterval(() => {}, 1000)'], 'text', 300)).rejects.toMatchObject({ name: 'ClipboardTimeoutError' });
+    const { exec } = fakeExec(({ cmd }) => new backends.ClipboardTimeoutError(cmd, 5000));
+    for (const name of ['pbcopy', 'wl', 'xclip', 'xsel', 'powershell'] as const) {
+      await expect(createClipboardBackend(name, exec).read()).rejects.toMatchObject({ name: 'ClipboardTimeoutError' });
+    }
+  }, 20_000);
 
   it('the loop skips a too-large clipboard without reporting an error, then corrects the next copy', async () => {
     let bytes = 17 * 1024 * 1024;

@@ -62900,10 +62900,24 @@ var ClipboardTooLargeError = class extends Error {
   cmd;
   limit;
 };
+var CLIPBOARD_EXEC_TIMEOUT_MS = 5e3;
+var ClipboardTimeoutError = class extends Error {
+  constructor(cmd, timeoutMs) {
+    super(`${cmd} did not finish within ${timeoutMs} ms and was stopped (the app holding the clipboard may not be answering)`);
+    this.cmd = cmd;
+    this.timeoutMs = timeoutMs;
+    this.name = "ClipboardTimeoutError";
+  }
+  cmd;
+  timeoutMs;
+};
+function isClipboardTimeout(err) {
+  return err instanceof Error && err.name === "ClipboardTimeoutError";
+}
 function isClipboardTooLarge(err) {
   return err instanceof Error && err.name === "ClipboardTooLargeError";
 }
-function defaultClipboardExec(cmd, args, stdin) {
+function defaultClipboardExec(cmd, args, stdin, timeoutMs = CLIPBOARD_EXEC_TIMEOUT_MS) {
   const isWrite = stdin !== void 0;
   return new Promise((resolve5, reject) => {
     const child = (0, import_node_child_process4.spawn)(cmd, [...args], {
@@ -62914,9 +62928,14 @@ function defaultClipboardExec(cmd, args, stdin) {
     const errChunks = [];
     let size = 0;
     let settled = false;
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      fail2(new ClipboardTimeoutError(cmd, timeoutMs));
+    }, timeoutMs);
     const fail2 = (e) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       reject(e);
     };
     child.once("error", fail2);
@@ -62933,6 +62952,7 @@ function defaultClipboardExec(cmd, args, stdin) {
     child.once(isWrite ? "exit" : "close", (code) => {
       if (settled) return;
       settled = true;
+      clearTimeout(timer);
       if (code === 0) resolve5(Buffer.concat(out).toString("utf8"));
       else reject(new ExecError(cmd, code, Buffer.concat(errChunks).toString("utf8")));
     });
@@ -62946,7 +62966,7 @@ async function readOrEmpty(exec, cmd, args) {
   try {
     return await exec(cmd, args);
   } catch (e) {
-    if (isEnoent(e) || isClipboardTooLarge(e)) throw e;
+    if (isEnoent(e) || isClipboardTooLarge(e) || isClipboardTimeout(e)) throw e;
     if (e instanceof ExecError && /display|DISPLAY|WAYLAND_DISPLAY|compositor|not allowed|permission/i.test(e.stderr)) throw e;
     return "";
   }
@@ -63003,7 +63023,7 @@ function powershellBackend(exec = defaultClipboardExec, shell = "powershell") {
     description: `${shell} Get-Clipboard -Raw / Set-Clipboard (Windows)`,
     read: async () => {
       const raw = (await readOrEmpty(exec, shell, ["-NoProfile", "-NonInteractive", "-Command", readScript])).replace(/^\uFEFF/, "");
-      crlf = raw.includes("\r\n");
+      crlf = raw.includes("\r\n") && !/(^|[^\r])\n/.test(raw);
       return crlf ? raw.replace(/\r\n/g, "\n") : raw;
     },
     write: async (text) => {
