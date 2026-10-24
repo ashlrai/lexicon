@@ -606,6 +606,19 @@ describe('installPack / uninstallPack', () => {
     const notInstalled = makeIO();
     expect(await runPackRemove('business', { cwd }, notInstalled)).toBe(0);
     expect(notInstalled.out).toContain('business is not installed');
+    // Catches: under --json a pack that was not installed answered ok:true with three empty lists and no word of it.
+    const notInstalledJson = makeIO();
+    expect(await runPackRemove('business', { cwd, json: true }, notInstalledJson)).toBe(0);
+    expect(JSON.parse(notInstalledJson.out)).toMatchObject({
+      ok: true,
+      notInstalled: true,
+      summary: 'business is not installed; nothing was removed',
+      removed: [],
+      files: [],
+    });
+    const notInstalledProject = makeIO();
+    expect(await runPackRemove('business', { cwd, json: true, project: true }, notInstalledProject)).toBe(0);
+    expect(JSON.parse(notInstalledProject.out)).toMatchObject({ notInstalled: true, summary: 'business is not installed in the project lexicon; nothing was removed' });
     const rmJson = makeIO();
     expect(await runPackRemove('ai', { cwd, json: true }, rmJson)).toBe(0);
     expect(JSON.parse(rmJson.out)).toMatchObject({ kept: [], files: [globalPath] });

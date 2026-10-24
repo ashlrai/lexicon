@@ -23,7 +23,7 @@ Over MCP a model is the one asking, so an MCP write never makes a project file t
 
 ## What an untrusted file looks like
 
-Until a project file is trusted, `list`, `normalize` and `doctor` warn on stderr, and the hooks and `lexicon://me` add one line telling the agent the file exists, never its contents. `normalize --include-untrusted` merges it for a one-off. In CI or a throwaway container where the repo is already vetted, set `LEXICON_TRUST_ALL=1`.
+Until a project file is trusted, `list`, `normalize` and `doctor` warn on stderr (and `doctor` fails a check when `trust.json` itself is broken, since every project then reads as untrusted), and the hooks and `lexicon://me` add one line telling the agent the file exists, never its contents. `normalize --include-untrusted` merges it for a one-off. In CI or a throwaway container where the repo is already vetted, set `LEXICON_TRUST_ALL=1`.
 
 ## The rest of the hardening
 

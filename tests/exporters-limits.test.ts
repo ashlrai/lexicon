@@ -72,6 +72,24 @@ describe('whisper-prompt and openai: the prompt window Whisper reads', () => {
     expect(notes).toEqual(['left out 2 names that read as one already listed once whitespace is collapsed: "Ashlr  AI" and "Ashlr\u00a0AI"']);
   });
 
+  // Catches: a canonical holding a comma was joined as is, so `Crosby, Stills & Nash` read as two names in the line.
+  it('quotes a name holding a comma, or starting with a quote, so each name reads as one', () => {
+    for (const format of ['whisper-prompt', 'openai'] as const) {
+      const { text, notes, names } = exportLexiconWithNotes(
+        lex([
+          { canonical: 'Crosby, Stills & Nash', aliases: [] },
+          { canonical: '"Weird" Al', aliases: [] },
+          { canonical: 'kubectl', aliases: [] },
+        ]),
+        format,
+      );
+      // In importance order, as ever; the comma name is one quoted item.
+      expect(text).toBe('"""Weird"" Al", "Crosby, Stills & Nash", kubectl');
+      expect(names).toBe(3);
+      expect(notes).toEqual([]);
+    }
+  });
+
   it('a short lexicon is written whole, with no note', () => {
     const { text, notes } = exportLexiconWithNotes(lex([{ canonical: 'Ashlr.AI', aliases: [] }, { canonical: 'kubectl', aliases: [] }]), 'whisper-prompt');
     expect(text).toBe('Ashlr.AI, kubectl');

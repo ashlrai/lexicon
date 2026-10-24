@@ -200,12 +200,20 @@ export async function runPackRemove(name: string, opts: PackRegistryCliOptions, 
     } else {
       result = await uninstallPack(name, { cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...(opts.project ? { scope: 'project' as const } : {}), ...deps });
     }
-    if (opts.json) {
-      line(io, JSON.stringify(jsonOk(result), null, 2));
+    if (result.files.length === 0) {
+      // No file listed the pack, so nothing was written. Under --json that
+      // was `ok: true` with three empty lists and no word that the pack was
+      // not there; it now says so, as the text and `DELETE /packs/:name` do.
+      if (opts.json) {
+        const summary = `${result.pack.name} is not installed${opts.project ? ' in the project lexicon' : ''}; nothing was removed`;
+        line(io, JSON.stringify(jsonOk({ ...result, notInstalled: true, summary }), null, 2));
+        return 0;
+      }
+      line(io, `${safe(name)} is not installed`);
       return 0;
     }
-    if (result.files.length === 0) {
-      line(io, `${safe(name)} is not installed`);
+    if (opts.json) {
+      line(io, JSON.stringify(jsonOk(result), null, 2));
       return 0;
     }
     line(io, `removed ${result.removed.length} term${result.removed.length === 1 ? '' : 's'} of ${safe(name)} from ${safe(result.files.join(', '))}`);

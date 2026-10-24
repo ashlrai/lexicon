@@ -21,6 +21,8 @@ import {
   learnCorrection,
   loadMatcherIndex,
   noTermMatchesNote,
+  offsetPastEndNote,
+  pageTermList,
   normalizeWithIndex,
   recordHits,
   removeAlias,
@@ -499,38 +501,50 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'WHAT IT WILL NOT DO: it does not include an untrusted project .lexicon.yaml -- if one was skipped the result says so in ' +
         '`note`, and trust_project is how the user reviews it. ' +
         'Returns { terms, counts: { matched, total, global, project }, paths: { global, project? } }, plus `projectTrust`, `skippedProject` and `note` for a skipped file, ' +
-        'or a `note` saying why `terms` is empty (no terms yet, or the filter matched none). A blank `query` filters nothing.',
+        'or a `note` saying why `terms` is empty (no terms yet, the filter matched none, or `offset` is past the last match). A blank `query` filters nothing. ' +
+        'Every matching term comes back unless `offset` or `limit` is given; then `terms` is that page of the matches (in the same order), and ' +
+        '`page: { offset, limit?, returned, nextOffset? }` says where it started and, while more matches remain, the `offset` that gets the next page (`counts.matched` is how many there are in all).',
       inputSchema: {
         query: z.string().optional().describe('Case-insensitive substring matched against canonical and aliases.'),
         category: z.enum(TERM_CATEGORIES).optional(),
+        offset: z.number().int().nonnegative().optional().describe('Matching terms to skip before the page starts (0 when omitted); pass `page.nextOffset` to get the next page.'),
+        limit: z.number().int().positive().optional().describe('Most terms to return. Omitted with `offset` omitted too: every matching term.'),
       },
     },
-    async ({ query, category }) =>
+    async ({ query, category, offset, limit }) =>
       guarded(async () => {
         // Path only for a skipped project file (skippedProjectFields), so it is never parsed.
         const loaded = await load({ parseSkipped: false });
         const needle = query?.trim().toLowerCase();
-        const terms = loaded.merged.terms.filter((t) => {
+        const matched = loaded.merged.terms.filter((t) => {
           if (category && t.category !== category) return false;
           if (!needle) return true;
           if (t.canonical.toLowerCase().includes(needle)) return true;
           return t.aliases.some((a) => a.toLowerCase().includes(needle));
         });
+        // The whole list unless a page was asked for (lexicon list --full pages the same way).
+        const { items: terms, page } = pageTermList(matched, {
+          ...(offset !== undefined ? { offset } : {}),
+          ...(limit !== undefined ? { limit } : {}),
+        });
         return textResult({
           terms,
           counts: {
-            matched: terms.length,
+            matched: matched.length,
             total: loaded.merged.terms.length,
             global: loaded.global.lexicon.terms.length,
             project: loaded.project?.lexicon.terms.length ?? 0,
           },
           paths: filePathsInUse(loaded),
+          ...(page ? { page } : {}),
           ...skippedProjectFields(loaded),
           // Why nothing came back, as `lexicon list` says it: no terms at
-          // all, or a filter that matched none of them.
+          // all, a filter that matched none of them, or a page past the end.
           ...(terms.length > 0 || loaded.skippedProject
             ? {}
-            : loaded.merged.terms.length === 0
+            : matched.length > 0
+              ? { note: offsetPastEndNote(page?.offset ?? 0, matched.length) }
+              : loaded.merged.terms.length === 0
               ? { note: emptyLexiconNote('add_term or setup_lexicon adds some.') }
               : {
                   note: noTermMatchesNote({

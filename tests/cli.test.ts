@@ -495,6 +495,51 @@ describe('list', () => {
     expect(await runList({ category: 'brand', full: true }, hit)).toBe(0);
     expect(JSON.parse(hit.out)).not.toHaveProperty('note');
   });
+
+  // Catches: `lexicon list --full` (and MCP list_terms) had no way to take a
+  // page of a large lexicon; the whole list stays the default.
+  it('pages the matching terms with --offset and --limit, the whole list by default', async () => {
+    const whole = makeIO();
+    await runList({ full: true }, whole);
+    const wholeOut = JSON.parse(whole.out) as { terms: { canonical: string }[]; page?: unknown };
+    expect(wholeOut.terms.map((t) => t.canonical)).toEqual(['Ashlr.AI', 'Mason Wyatt']);
+    expect(wholeOut).not.toHaveProperty('page');
+
+    const first = makeIO();
+    expect(await runList({ full: true, limit: 1 }, first)).toBe(0);
+    expect(JSON.parse(first.out)).toMatchObject({
+      terms: [{ canonical: 'Ashlr.AI' }],
+      counts: { matched: 2, total: 2 },
+      page: { offset: 0, limit: 1, returned: 1, nextOffset: 1 },
+    });
+
+    const second = makeIO();
+    await runList({ full: true, offset: '1', limit: '1' }, second);
+    const secondOut = JSON.parse(second.out) as { terms: { canonical: string }[]; page: Record<string, unknown> };
+    expect(secondOut.terms.map((t) => t.canonical)).toEqual(['Mason Wyatt']);
+    expect(secondOut.page).toEqual({ offset: 1, limit: 1, returned: 1 });
+
+    const past = makeIO();
+    await runList({ full: true, offset: 5 }, past);
+    expect(JSON.parse(past.out)).toMatchObject({
+      terms: [],
+      page: { offset: 5, returned: 0 },
+      note: 'No term at offset 5: only 2 terms matched, at offsets 0 to 1.',
+    });
+
+    const array = makeIO();
+    await runList({ json: true, offset: 1 }, array);
+    expect((JSON.parse(array.out) as { canonical: string }[]).map((t) => t.canonical)).toEqual(['Mason Wyatt']);
+
+    const table = makeIO();
+    await runList({ limit: 1 }, table);
+    expect(table.out).toContain('Ashlr.AI');
+    expect(table.out).not.toContain('Mason Wyatt');
+    expect(table.out).toContain('terms 1 to 1 of 2; the next page is --offset 1');
+
+    await expect(runList({ offset: '-1' }, makeIO())).rejects.toThrow('--offset must be a whole number');
+    await expect(runList({ limit: '0' }, makeIO())).rejects.toThrow('--limit must be a positive integer');
+  });
 });
 
 describe('add / remove / path', () => {
@@ -1713,6 +1758,20 @@ describe('doctor', () => {
     expect(report).toEqual(JSON.parse(JSON.stringify(await runDoctorReport({}, deps))));
   });
 
+  // Catches: the ambiguous-alias warning printed the folded keys, `alias "ashler" belongs to several terms: ashlr.ai, ashlar co`.
+  it('names an alias several terms share, and those terms, as the lexicon spells them', async () => {
+    const shared: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'Ashlr.AI', aliases: ['Ashler'] },
+        { canonical: 'Ashlar Co', aliases: ['ashler'] },
+      ],
+    };
+    vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: shared, exists: true });
+    const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '' }, exec: () => 'no servers', home: doctorHome });
+    expect(report.checks).toContainEqual({ level: 'warn', message: 'alias "Ashler" belongs to several terms: Ashlr.AI, Ashlar Co (ambiguous)' });
+  });
+
   it('warns about an alias its own never list blocks', async () => {
     // Phantom's .lexicon.yaml shipped Locus with alias Locust and never: [locust];
     // never is case-insensitive, so the alias could never fire and doctor said all was well.
@@ -2542,6 +2601,20 @@ describe('doctor: login service', () => {
     const check = await checkLoginService({ platform: 'darwin', env: {}, exec, home: h, uid: 501 });
     expect(check).toEqual({ level: 'ok', message: `login service ai.ashlr.lexicon.serve loaded (${cli} exists)` });
     expect(calls).toEqual([['launchctl', 'print', 'gui/501/ai.ashlr.lexicon.serve']]);
+  });
+
+  // Catches: a unit file that is there but cannot be read was taken as missing: "no login service installed", or "loaded, but not from this install (no service file at <it>)".
+  it('linux: warns that a service file it cannot read was not checked, loaded or not', async () => {
+    const h = await home();
+    const unit = path.join(h, '.config', 'systemd', 'user', 'lexicon-serve.service');
+    await fs.mkdir(unit, { recursive: true });
+    for (const exec of [() => 'active', fail]) {
+      const check = await checkLoginService({ platform: 'linux', env: {}, exec, home: h });
+      expect(check).toEqual({
+        level: 'warn',
+        message: `login service lexicon-serve.service file cannot be read (EISDIR), so the program it runs was not checked (run: lexicon serve --uninstall && lexicon serve --install): ${unit}`,
+      });
+    }
   });
 
   it('darwin: fails with the reinstall hint when the loaded service points at a missing file', async () => {

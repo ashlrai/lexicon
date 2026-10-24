@@ -189,6 +189,16 @@ export async function readTrustRegistry(opts: StoreOptions = {}): Promise<TrustR
   return (await loadTrustRegistry(opts)).registry;
 }
 
+/**
+ * Why `trust.json` cannot be used (`is not valid JSON (...)`, `cannot be read
+ * (EISDIR)`, ...), or undefined when it is missing, empty or fine. While it
+ * has a problem `readTrustRegistry` reads it as empty, so every project
+ * lexicon reads as untrusted, and `trustProject` refuses to write it.
+ */
+export async function trustRegistryProblem(opts: StoreOptions = {}): Promise<string | undefined> {
+  return (await loadTrustRegistry(opts)).problem;
+}
+
 /** The registry for a read-modify-write: throws rather than hand back an empty stand-in for a broken file. */
 async function readTrustRegistryForUpdate(opts: StoreOptions): Promise<TrustRegistry> {
   const { registry, problem } = await loadTrustRegistry(opts);

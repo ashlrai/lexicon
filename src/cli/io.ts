@@ -549,6 +549,15 @@ export function positiveIntOption(flag: string, example: number, max?: number): 
   };
 }
 
+/** Like positiveIntOption, but 0 is allowed (an `--offset` that starts at the first item). */
+export function nonNegativeIntOption(flag: string, example: number): (value: string) => number {
+  return (value: string): number => {
+    const n = wholeNumber(value);
+    if (n === undefined) throw new InvalidArgumentError(`expected a whole number (0 or more), e.g. ${flag} ${example}`);
+    return n;
+  };
+}
+
 /**
  * A string of digits (surrounding spaces aside) as a safe integer, else
  * undefined. The rule positiveIntOption and the handlers' own integer options

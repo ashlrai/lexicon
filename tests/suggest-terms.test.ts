@@ -774,6 +774,32 @@ describe('runSuggest', () => {
     ]);
   });
 
+  // Catches: `suggest --project --json` named the global file as `scope` and
+  // `path` of every new-term suggestion, though applying it with --project
+  // writes the project lexicon.
+  it('--project --json names the project lexicon as the file a new term goes to', async () => {
+    const repo = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-suggest-project-'));
+    try {
+      await fs.mkdir(path.join(repo, '.git'));
+      const targeted = FIXED.map((f) => ({ ...f, scope: 'global' as const, path: '/tmp/mock/lexicon.yaml' }));
+      const io = makeIO();
+      expect(await runSuggest({ json: true, project: true, cwd: repo }, io, mockStore(targeted).deps)).toBe(0);
+      const out = JSON.parse(io.out) as TermSuggestion[];
+      expect(out.map((o) => [o.kind, o.canonical, o.scope, o.path])).toEqual([
+        ['alias', 'Vercel', 'global', '/tmp/mock/lexicon.yaml'],
+        ['term', 'Siobhan Reilly', 'project', path.join(repo, '.lexicon.yaml')],
+        ['alias', 'Ashlr.AI', 'global', '/tmp/mock/lexicon.yaml'],
+        ['never', 'Locus', 'global', '/tmp/mock/lexicon.yaml'],
+        ['stale', 'Zebrafish Labs', 'global', '/tmp/mock/lexicon.yaml'],
+      ]);
+      const plain = makeIO();
+      await runSuggest({ json: true, cwd: repo }, plain, mockStore(targeted).deps);
+      expect((JSON.parse(plain.out) as TermSuggestion[])[1]).toMatchObject({ scope: 'global', path: '/tmp/mock/lexicon.yaml' });
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
+  });
+
   it('--apply walks the suggestions with y/n/a/q and applies each kind through the right store call', async () => {
     const store = mockStore();
     const io = makeIO();

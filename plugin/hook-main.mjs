@@ -21658,6 +21658,14 @@ async function loadForHook(cwd, opts) {
   return { attempt, stale: true, problemNote: problem !== void 0 ? formatStaleProblemNote(problem) : "" };
 }
 var HOOK_MATCH_BUDGET_MS = 100;
+var HOOK_TOTAL_BUDGET_MS = 160;
+var HOOK_MATCH_FLOOR_MS = 20;
+var HOOK_SHORT_PROMPT_CHARS = 2e3;
+function hookMatchBudget(spentMs, promptChars = Number.POSITIVE_INFINITY) {
+  if (promptChars <= HOOK_SHORT_PROMPT_CHARS) return HOOK_MATCH_BUDGET_MS;
+  const left = Number.isFinite(spentMs) ? HOOK_TOTAL_BUDGET_MS - spentMs : HOOK_MATCH_FLOOR_MS;
+  return Math.round(Math.max(HOOK_MATCH_FLOOR_MS, Math.min(HOOK_MATCH_BUDGET_MS, left)));
+}
 var HOOK_PROMPT_MAX_CHARS = 5e4;
 var HOOK_LOCK_TIMEOUT_MS = 50;
 function promptCut(text, max) {
@@ -21993,7 +22001,7 @@ function truncateSessionContext(text, max = SESSION_CONTEXT_MAX_CHARS) {
   if (text.length <= max) return text;
   const lines = text.split("\n");
   const sep = lines.findIndex((l) => /^\|\s*-+\s*\|/.test(l));
-  if (sep === -1) return text.slice(0, Math.max(0, max - 3)) + "...";
+  if (sep === -1) return hardCut(text, max);
   const header = lines.slice(0, sep + 1);
   let end = sep + 1;
   while (end < lines.length && lines[end].startsWith("|")) end += 1;
@@ -22010,7 +22018,14 @@ function truncateSessionContext(text, max = SESSION_CONTEXT_MAX_CHARS) {
   }
   const dropped = rows.length - kept.length;
   const out = [...header, ...kept, moreLine(dropped), ...footer].join("\n");
-  return out.length <= max ? out : out.slice(0, Math.max(0, max - 3)) + "...";
+  return out.length <= max ? out : hardCut(out, max);
+}
+function hardCut(text, max) {
+  if (max < 3) return "...".slice(0, Math.max(0, max));
+  let end = max - 3;
+  const before = text.charCodeAt(end - 1);
+  if (before >= 55296 && before <= 56319) end -= 1;
+  return `${text.slice(0, end)}...`;
 }
 function recordHitsInBackground(result, cwd, loaded) {
   const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
@@ -22150,7 +22165,7 @@ async function userPromptSubmit(payload, opts) {
   const correctionNote = corrections.length > 0 ? formatCorrectionNotes(corrections) : "";
   if (corrections.length > 0) await queueForReview(corrections, loaded);
   const index = loaded.merged.terms.length > 0 ? await loadMatcherIndex(loaded) : void 0;
-  const budget = opts.matchBudgetMs ?? HOOK_MATCH_BUDGET_MS;
+  const budget = opts.matchBudgetMs ?? (opts.elapsedMs ? hookMatchBudget(opts.elapsedMs(), head.length) : HOOK_MATCH_BUDGET_MS);
   const started = process.hrtime.bigint();
   const limit = BigInt(Math.max(0, Math.round(budget * 1e6)));
   let timedOut = false;
@@ -22297,7 +22312,7 @@ async function main(argv = process.argv.slice(2)) {
       process.stderr.write(formatStdinOverflow(read.overflow));
       return;
     }
-    const out = await runHook(decodeStdin(read.bytes), { startRefresh: spawnCacheRefresh });
+    const out = await runHook(decodeStdin(read.bytes), { startRefresh: spawnCacheRefresh, elapsedMs: () => process.uptime() * 1e3 });
     if (out) writeStdout(out);
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
@@ -22328,8 +22343,11 @@ export {
   HOOK_CORRECTION_BUDGET_MS,
   HOOK_LOCK_TIMEOUT_MS,
   HOOK_MATCH_BUDGET_MS,
+  HOOK_MATCH_FLOOR_MS,
   HOOK_PROMPT_MAX_CHARS,
+  HOOK_SHORT_PROMPT_CHARS,
   HOOK_STDIN_MAX_BYTES,
+  HOOK_TOTAL_BUDGET_MS,
   LOAD_ERROR_NOTE_MAX_CHARS,
   ONBOARD_NOTE,
   ONBOARD_NOTE_FILE,
@@ -22355,6 +22373,7 @@ export {
   formatStaleProblemNote,
   formatStdinOverflow,
   hookFlagOutput,
+  hookMatchBudget,
   main,
   onboardNotePath,
   parseCorrections,

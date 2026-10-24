@@ -35,8 +35,15 @@ import { cliCommand } from '../util/cli-hint.js';
 export interface HookOptions {
   /** Overrides the payload's `cwd` when resolving the project lexicon. */
   cwd?: string;
-  /** Overrides HOOK_MATCH_BUDGET_MS. */
+  /** Overrides HOOK_MATCH_BUDGET_MS (and the hookMatchBudget accounting). */
   matchBudgetMs?: number;
+  /**
+   * Milliseconds the hook process has run so far. When given (`main()`
+   * passes the process uptime), the match budget is what is left of
+   * HOOK_TOTAL_BUDGET_MS (see hookMatchBudget); without it the match gets
+   * the whole HOOK_MATCH_BUDGET_MS, counted from the scan start.
+   */
+  elapsedMs?: () => number;
   /**
    * Starts a background refresh of the parse and index caches for `cwd`
    * (`main()` passes `spawnCacheRefresh`, a detached `--refresh-cache`
@@ -211,6 +218,38 @@ async function loadForHook(cwd: string, opts: HookOptions): Promise<HookLoad> {
  * finishes far inside this; a huge paste gets the corrections from its start.
  */
 export const HOOK_MATCH_BUDGET_MS = 100;
+
+/**
+ * How long, from process start, the hook may run before matching must stop:
+ * the 200 ms target less room for the work after the match and the exit.
+ * Node's start, the lexicon load, the correction pass and the index load
+ * come out of it, so a big paste against a big lexicon no longer adds the
+ * whole HOOK_MATCH_BUDGET_MS on top of them (about 300 ms end to end).
+ */
+export const HOOK_TOTAL_BUDGET_MS = 160;
+
+/** The least time matching gets, however long the hook took to get there, so a cold first run still matches the prompt's start. */
+export const HOOK_MATCH_FLOOR_MS = 20;
+
+/**
+ * A prompt this long or shorter (any dictated one) keeps the whole
+ * HOOK_MATCH_BUDGET_MS: it is matched in a few ms, and only a slow start
+ * (a loaded machine) can leave it less than the floor, which then cut a
+ * two-word prompt short with nothing matched.
+ */
+export const HOOK_SHORT_PROMPT_CHARS = 2_000;
+
+/**
+ * The match budget once `spentMs` of the process has gone: what is left of
+ * HOOK_TOTAL_BUDGET_MS, at most HOOK_MATCH_BUDGET_MS and at least
+ * HOOK_MATCH_FLOOR_MS, rounded to a whole millisecond. A prompt of at most
+ * HOOK_SHORT_PROMPT_CHARS (`promptChars`) gets HOOK_MATCH_BUDGET_MS.
+ */
+export function hookMatchBudget(spentMs: number, promptChars: number = Number.POSITIVE_INFINITY): number {
+  if (promptChars <= HOOK_SHORT_PROMPT_CHARS) return HOOK_MATCH_BUDGET_MS;
+  const left = Number.isFinite(spentMs) ? HOOK_TOTAL_BUDGET_MS - spentMs : HOOK_MATCH_FLOOR_MS;
+  return Math.round(Math.max(HOOK_MATCH_FLOOR_MS, Math.min(HOOK_MATCH_BUDGET_MS, left)));
+}
 
 /**
  * Characters of a prompt the UserPromptSubmit hook checks; the rest passes
@@ -886,7 +925,7 @@ export function truncateSessionContext(text: string, max = SESSION_CONTEXT_MAX_C
   if (text.length <= max) return text;
   const lines = text.split('\n');
   const sep = lines.findIndex((l) => /^\|\s*-+\s*\|/.test(l));
-  if (sep === -1) return text.slice(0, Math.max(0, max - 3)) + '...';
+  if (sep === -1) return hardCut(text, max);
 
   const header = lines.slice(0, sep + 1);
   let end = sep + 1;
@@ -908,7 +947,20 @@ export function truncateSessionContext(text: string, max = SESSION_CONTEXT_MAX_C
   const dropped = rows.length - kept.length;
   const out = [...header, ...kept, moreLine(dropped), ...footer].join('\n');
   // Header + footer alone can exceed a tiny cap; the cap is the contract, so hard-cut then.
-  return out.length <= max ? out : out.slice(0, Math.max(0, max - 3)) + '...';
+  return out.length <= max ? out : hardCut(out, max);
+}
+
+/**
+ * `text` cut to `max` characters with `...`, never inside a surrogate pair:
+ * a cut after a high surrogate left half an emoji, not valid UTF-8, which
+ * reached the model context as U+FFFD (or was refused by a strict encoder).
+ */
+function hardCut(text: string, max: number): string {
+  if (max < 3) return '...'.slice(0, Math.max(0, max));
+  let end = max - 3;
+  const before = text.charCodeAt(end - 1);
+  if (before >= 0xd800 && before <= 0xdbff) end -= 1;
+  return `${text.slice(0, end)}...`;
 }
 
 
@@ -1160,10 +1212,10 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
 
   // The compiled index comes from index-cache.json when the lexicon has not
   // changed since a previous prompt built it (see loadMatcherIndex). The
-  // match budget starts after it: it bounds the scan, which grows with the
-  // prompt, not the one-off cost of the index.
+  // match budget starts after it and, in the real hook (`elapsedMs`), is
+  // what the process has left of HOOK_TOTAL_BUDGET_MS (see hookMatchBudget).
   const index = loaded.merged.terms.length > 0 ? await loadMatcherIndex(loaded) : undefined;
-  const budget = opts.matchBudgetMs ?? HOOK_MATCH_BUDGET_MS;
+  const budget = opts.matchBudgetMs ?? (opts.elapsedMs ? hookMatchBudget(opts.elapsedMs(), head.length) : HOOK_MATCH_BUDGET_MS);
   // process.hrtime rather than performance.now: the `performance` global
   // loads node:perf_hooks on first touch, a few ms of a cold hook.
   const started = process.hrtime.bigint();
@@ -1427,7 +1479,7 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
       process.stderr.write(formatStdinOverflow(read.overflow));
       return;
     }
-    const out = await runHook(decodeStdin(read.bytes), { startRefresh: spawnCacheRefresh });
+    const out = await runHook(decodeStdin(read.bytes), { startRefresh: spawnCacheRefresh, elapsedMs: () => process.uptime() * 1000 });
     if (out) writeStdout(out);
   } catch (err) {
     // Silent by design: a broken hook must not break the user's prompt.
