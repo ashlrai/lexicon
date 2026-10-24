@@ -325,7 +325,8 @@ Options:
                     after dictating)
   --paste           with --once: send Cmd+V afterwards (macOS only; needs
                     Accessibility permission)
-  --interval <ms>   poll interval in milliseconds (default: 250)
+  --interval <ms>   poll interval in milliseconds (at least 20; a smaller value
+                    is raised to 20, with a warning) (default: 250)
   --dry-run         report corrections without writing to the clipboard
   --quiet           do not print corrections
   --backend <name>  force a clipboard backend: pbcopy|wl|xclip|xsel|powershell

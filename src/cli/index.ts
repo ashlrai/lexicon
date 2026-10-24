@@ -222,7 +222,7 @@ program
   .description('watch the clipboard (macOS, Linux, Windows) and correct dictated text in place')
   .option('--once', 'correct the clipboard once and exit (for a keyboard shortcut after dictating)')
   .option('--paste', 'with --once: send Cmd+V afterwards (macOS only; needs Accessibility permission)')
-  .option('--interval <ms>', 'poll interval in milliseconds', positiveIntOption('--interval', 250), 250)
+  .option('--interval <ms>', 'poll interval in milliseconds (at least 20; a smaller value is raised to 20, with a warning)', positiveIntOption('--interval', 250), 250)
   .option('--dry-run', 'report corrections without writing to the clipboard')
   .option('--quiet', 'do not print corrections')
   .option('--backend <name>', 'force a clipboard backend: pbcopy|wl|xclip|xsel|powershell', (v: string) => {

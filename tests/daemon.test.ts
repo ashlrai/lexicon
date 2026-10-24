@@ -103,6 +103,17 @@ describe('runClipboardDaemon', () => {
     await h.done;
   });
 
+  // Catches: an --interval under 20 ms was raised to 20 without a word.
+  it('warns on stderr when the interval is raised to the 20 ms minimum', async () => {
+    const err: string[] = [];
+    const controller = new AbortController();
+    const done = runClipboardDaemon({ intervalMs: 5, read: async () => '', write: async () => undefined, signal: controller.signal, quiet: true, err: (s) => err.push(s) });
+    await vi.advanceTimersByTimeAsync(50);
+    controller.abort();
+    await done;
+    expect(err.join('')).toContain('clipboard daemon: --interval 5 is below the 20 ms minimum; polling every 20 ms\n');
+  });
+
   // Catches: with no terms the daemon watched in silence and never said
   // nothing would be corrected.
   it('says once at start when the lexicon has no terms', async () => {

@@ -248,13 +248,21 @@ export function daemonStopExitCode(stop: ClipboardDaemonStop): number {
   return stop === 'SIGINT' ? 130 : stop === 'SIGTERM' ? 143 : 0;
 }
 
+/** The shortest poll interval the watching daemon uses; a smaller `intervalMs` is raised to it, with a warning. */
+export const MIN_DAEMON_INTERVAL_MS = 20;
+
 export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Promise<ClipboardDaemonStop> {
-  const intervalMs = Math.max(20, opts.intervalMs ?? 250);
   const dryRun = opts.dryRun ?? false;
   const quiet = opts.quiet ?? false;
   const cwd = opts.cwd ?? process.cwd();
   const out = opts.out ?? ((s: string) => void process.stdout.write(s));
   const err = opts.err ?? ((s: string) => void process.stderr.write(s));
+  const requestedMs = opts.intervalMs ?? 250;
+  const intervalMs = Math.max(MIN_DAEMON_INTERVAL_MS, requestedMs);
+  // Raised without a word, `--interval 5` looked like it polled every 5 ms.
+  if (requestedMs < MIN_DAEMON_INTERVAL_MS) {
+    err(`clipboard daemon: --interval ${requestedMs} is below the ${MIN_DAEMON_INTERVAL_MS} ms minimum; polling every ${MIN_DAEMON_INTERVAL_MS} ms\n`);
+  }
 
   const clipboard = await resolveClipboard(opts);
   const { read, write } = clipboard;
