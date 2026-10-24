@@ -10,7 +10,7 @@ import { exportLexicon, normalize } from '../core/index.js';
 import type { Lexicon, NormalizeResult } from '../core/index.js';
 import { ensureModel } from './models.js';
 import type { EnsureModelOptions, ResolvedModel } from './models.js';
-import { defaultExec } from './process.js';
+import { defaultExec, installHint } from './process.js';
 import type { VoiceExec } from './process.js';
 
 /**
@@ -99,6 +99,8 @@ export interface TranscribeOptions {
   tmpDir?: string;
   /** Status sink (stderr). */
   log?: (line: string) => void;
+  /** Picks the install hint of a whisper-cli that cannot be started. Default process.platform. */
+  platform?: NodeJS.Platform;
 }
 
 export interface TranscribeResult {
@@ -153,7 +155,8 @@ export async function transcribeFile(wav: string, opts: TranscribeOptions): Prom
   try {
     r = await exec(opts.whisperCli, args);
   } catch (e) {
-    if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new MissingToolError('whisper-cli', 'brew install whisper-cpp');
+    // The hint was `brew install whisper-cpp` on every platform.
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') throw new MissingToolError('whisper-cli', installHint(opts.platform ?? process.platform, { ffmpeg: false, whisper: true }));
     throw e;
   }
   const transcribeMs = Date.now() - t0;

@@ -1570,6 +1570,29 @@ describe('history', () => {
   });
 });
 
+// Catches: a whisper-cli that could not be started at transcription time was
+// reported with "Install it: brew install whisper-cpp" on Linux and Windows too.
+describe('a whisper-cli that cannot be started', () => {
+  for (const [platform, hint] of [
+    ['linux', 'build whisper.cpp'],
+    ['darwin', 'brew install whisper-cpp'],
+  ] as const) {
+    it(`names the ${platform} install step`, async () => {
+      const h = await harness({ platform });
+      const exec = h.deps.exec!;
+      h.deps.exec = async (cmd, args, o) => {
+        if (path.basename(cmd) === 'whisper-cli') throw Object.assign(new Error('spawn whisper-cli ENOENT'), { code: 'ENOENT' });
+        return exec(cmd, args, o);
+      };
+      h.deps.waitForStop = async () => 'enter';
+      expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_MISSING_TOOL);
+      const err = h.err.join('');
+      expect(err).toContain(`whisper-cli not found. Install it: ${hint}`);
+      if (platform !== 'darwin') expect(err).not.toContain('brew');
+    });
+  }
+});
+
 /** The model downloader against a stubbed fetch: no network. */
 describe('model download', () => {
   let dir = '';

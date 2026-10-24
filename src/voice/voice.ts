@@ -493,6 +493,7 @@ function transcribeOptions(r: Resolved, opts: VoiceOptions, deps: VoiceDeps, lex
     exec: r.exec,
     tmpDir: r.tmpDir,
     log: r.log,
+    platform: r.platform,
   };
 }
 
