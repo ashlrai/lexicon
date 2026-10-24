@@ -64,6 +64,7 @@ import {
   runVoice,
   runVoiceListDevices,
   runVoiceStatus,
+  commandLine,
   runVoiceToggle,
 } from '../src/voice/voice.js';
 import type { VoiceDeps, VoiceJsonResult, VoiceOptions } from '../src/voice/voice.js';
@@ -1271,6 +1272,31 @@ describe('lexicon voice (foreground)', () => {
     expect(h.err.join('')).toMatch(/whisper-cli exited 1: whisper: boom \(audio kept at .*\.wav\)/);
     // Catches: a non-zero whisper exit left no next step on stderr.
     expect(h.err.join('')).toMatch(/\n {2}run `\S+ -m \S+ggml-base\.en\.bin -f \S+\.wav` to see whisper's full output; if the model file is damaged, delete /);
+  });
+
+  // Catches: the rerun command was POSIX-quoted on Windows, which neither
+  // PowerShell nor cmd.exe runs as written.
+  it('quotes the whisper rerun command for PowerShell on Windows', async () => {
+    const h = await harness({ platform: 'win32' });
+    h.deps.env = { PATH: h.binDir, LEXICON_FFMPEG_BIN: '/fake/bin/ffmpeg', LEXICON_WHISPER_BIN: '/fake/bin/whisper-cli' };
+    h.deps.waitForStop = async () => 'enter';
+    h.deps.tmpDir = path.join(h.dir, "it's tmp");
+    h.whisperExit = 1;
+    expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_ERROR);
+    const err = h.err.join('');
+    const wav = (await fs.readdir(h.deps.tmpDir)).find((f) => f.endsWith('.wav'))!;
+    const quotedWav = `'${path.join(h.deps.tmpDir, wav).replace(/'/g, "''")}'`;
+    expect(err).toContain(`run in PowerShell \`/fake/bin/whisper-cli -m `);
+    expect(err).toContain(` -f ${quotedWav}\` to see whisper's full output`);
+    expect(err).not.toContain(`'\\''`);
+  });
+
+  it('commandLine quotes for the platform', () => {
+    expect(commandLine(['/usr/bin/whisper-cli', '-f', "/tmp/a b/it's.wav"], 'darwin')).toBe(`/usr/bin/whisper-cli -f '/tmp/a b/it'\\''s.wav'`);
+    expect(commandLine(['C:\\whisper\\whisper-cli.exe', '-m', 'C:\\m\\ggml-base.en.bin'], 'win32')).toBe('C:\\whisper\\whisper-cli.exe -m C:\\m\\ggml-base.en.bin');
+    expect(commandLine(['C:\\Program Files\\whisper\\whisper-cli.exe', '-f', "C:\\Users\\o'neil\\a.wav"], 'win32')).toBe(
+      "& 'C:\\Program Files\\whisper\\whisper-cli.exe' -f 'C:\\Users\\o''neil\\a.wav'",
+    );
   });
 
   it('--copy writes the corrected text to the clipboard', async () => {

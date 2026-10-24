@@ -730,9 +730,27 @@ async function transcribeInterruptibly(wav: string, options: TranscribeOptions, 
   }
 }
 
-/** `arg` as one shell word: bare when it is plainly safe, else single-quoted. */
+/** `arg` as one POSIX shell word: bare when it is plainly safe, else single-quoted. */
 function shellWord(arg: string): string {
   return /^[\w@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+/** `arg` as one PowerShell word: bare when it is plainly safe (backslashes included), else single-quoted, `'` doubled. */
+function powerShellWord(arg: string): string {
+  return /^[\w@+=:,./\\-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, "''")}'`;
+}
+
+/**
+ * The command line `words` as the user's shell reads it. On Windows that is
+ * PowerShell, the default in Windows Terminal: POSIX quoting there printed
+ * `'C:\Program Files\...'`, which PowerShell reads as a string and does not
+ * run, and cmd.exe does not read single quotes at all. A quoted command needs
+ * PowerShell's call operator `& ` in front. Exported for tests.
+ */
+export function commandLine(words: readonly string[], platform: NodeJS.Platform): string {
+  if (platform !== 'win32') return words.map(shellWord).join(' ');
+  const quoted = words.map(powerShellWord);
+  return `${quoted[0] !== words[0] ? '& ' : ''}${quoted.join(' ')}`;
 }
 
 /**
@@ -742,8 +760,9 @@ function shellWord(arg: string): string {
  * (a name like base.en) comes back when its file is removed; a --model path
  * is the user's own, so the step offers another one instead.
  */
-function whisperExitStep(e: WhisperExitError, wav: string, spec: string): string {
-  const rerun = `run \`${shellWord(e.whisperCli)} -m ${shellWord(e.modelPath)} -f ${shellWord(wav)}\` to see whisper's full output`;
+function whisperExitStep(e: WhisperExitError, wav: string, spec: string, platform: NodeJS.Platform): string {
+  const command = commandLine([e.whisperCli, '-m', e.modelPath, '-f', wav], platform);
+  const rerun = `run${platform === 'win32' ? ' in PowerShell' : ''} \`${command}\` to see whisper's full output`;
   if (e instanceof WhisperTimeoutError) {
     return `${rerun} and whether it finishes; a smaller model (--model base.en or tiny.en) transcribes faster`;
   }
@@ -768,7 +787,7 @@ function transcribeFailed(r: Resolved, io: VoiceIO, e: unknown, wav: string, opt
   const step = missing
     ? installSteps(r.platform, { ffmpeg: false, whisper: true }).join(' ')
     : e instanceof WhisperExitError
-      ? whisperExitStep(e, wav, opts.model ?? DEFAULT_MODEL)
+      ? whisperExitStep(e, wav, opts.model ?? DEFAULT_MODEL, r.platform)
       : undefined;
   io.stderr(`lexicon voice: ${message(e)} (audio kept at ${wav})\n${step && !missing ? `  ${step}\n` : ''}`);
   return failed(r, missing ? EXIT_MISSING_TOOL : EXIT_ERROR, `${message(e)} (audio kept at ${wav})`, step);
