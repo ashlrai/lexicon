@@ -764,7 +764,21 @@ export async function runEdit(
       `set ${variable} to an editor on your PATH (e.g. ${variable === '$VISUAL' ? 'VISUAL' : 'EDITOR'}=vi), or edit the file directly: ${target}`,
     );
   }
-  if (code !== 0) io.stderr(`lexicon: ${editor.command} exited with code ${code}; checking the file anyway\n`);
+  if (code !== 0) {
+    // A non-zero exit is how an editor says the edit was abandoned (vim `:cq`,
+    // a killed `code --wait`). Re-trusting the file then would bless whatever
+    // an earlier `:w` in that session left there, which the user just backed
+    // out of, so nothing is checked or re-trusted.
+    io.stderr(
+      `lexicon: ${safe(editor.command)} exited with code ${code}, so the edit is treated as aborted` +
+        `${scope === 'project' && trustedBefore ? ' and the project lexicon was not re-trusted' : ''}\n`,
+    );
+    if (scope === 'project' && trustedBefore && (await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, store)) !== 'trusted') {
+      io.stderr(`lexicon: ${safeMessage(target)} changed anyway, so its terms are not used until you review it and run: lexicon trust\n`);
+    }
+    io.stderr(`lexicon: to edit it again, run: lexicon edit${opts.project ? ' --project' : ''}\n`);
+    return 1;
+  }
 
   try {
     const file = await readLexiconFile(target, scope);

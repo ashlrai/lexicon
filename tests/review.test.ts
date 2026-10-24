@@ -12,7 +12,7 @@ import type { SpawnEditor } from '../src/cli/cmd-review.js';
 import { runAdd, runHarvest, runRemove } from '../src/cli/commands.js';
 import { PromptClosedError, askKey, splitList } from '../src/cli/prompt.js';
 import type { Prompter } from '../src/cli/prompt.js';
-import { addTerm, loadLexicon, recordHits, trustProject, writeLexiconFile } from '../src/core/index.js';
+import { addTerm, isTrusted, loadLexicon, recordHits, trustProject, writeLexiconFile } from '../src/core/index.js';
 import type { HarvestCandidate, Lexicon, Term } from '../src/core/index.js';
 import { makeIO, scripted } from './helpers.js';
 
@@ -835,19 +835,34 @@ describe('edit', () => {
     expect(none.out).not.toContain('\u2026');
   });
 
-  it('passes editor arguments through, notes a non-zero exit, and re-trusts an edited trusted project file', async () => {
+  // Catches: an editor that exited non-zero (vim `:cq` after a `:w`) was only noted, and the file it left was re-trusted.
+  it('treats a non-zero editor exit as aborted and does not re-trust the file', async () => {
+    await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: Seed\n    aliases: [seed]\n', 'utf8');
+    await trustProject(projectPath, { globalPath });
+    const spawnEditor: SpawnEditor = async (_cmd, _args, file) => {
+      await fs.appendFile(file, '  - canonical: Proj\n    aliases: [prodge]\n', 'utf8');
+      return 1;
+    };
+    const io = makeIO();
+    expect(await runEdit({ cwd: repo, project: true, globalPath }, io, spawnEditor, { EDITOR: 'vim' })).toBe(1);
+    expect(io.err).toContain('vim exited with code 1, so the edit is treated as aborted and the project lexicon was not re-trusted');
+    expect(io.err).toContain('changed anyway, so its terms are not used until you review it and run: lexicon trust');
+    expect(io.out).not.toContain('re-trusted');
+    expect(await isTrusted({ path: projectPath, scope: 'project', lexicon: { version: 1, terms: [] }, exists: true }, { cwd: repo, globalPath })).toBe('changed');
+  });
+
+  it('passes editor arguments through and re-trusts an edited trusted project file', async () => {
     await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: Seed\n    aliases: [seed]\n', 'utf8');
     await trustProject(projectPath, { globalPath });
     const calls: { cmd: string; args: readonly string[]; file: string }[] = [];
     const spawnEditor: SpawnEditor = async (cmd, args, file) => {
       calls.push({ cmd, args, file });
       await fs.appendFile(file, '  - canonical: Proj\n    aliases: [prodge]\n', 'utf8');
-      return 3;
+      return 0;
     };
     const io = makeIO();
     expect(await runEdit({ cwd: repo, project: true, globalPath }, io, spawnEditor, { VISUAL: 'code --wait' })).toBe(0);
     expect(calls).toEqual([{ cmd: 'code', args: ['--wait'], file: projectPath }]);
-    expect(io.err).toContain('code exited with code 3');
     expect(io.out).toContain('ok: 2 terms in');
     expect(io.out).toContain('re-trusted');
     // A follow-up project-scope write goes through, so the hash was re-pinned.
