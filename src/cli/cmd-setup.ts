@@ -44,7 +44,7 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Command } from 'commander';
 import { LIMITS, listPacks } from '../core/index.js';
-import { bold, dim, fail, jsonError, safe, safeMessage, shownCommand, tildify } from './io.js';
+import { bold, dim, fail, jsonError, safe, safeMessage, safePath, shownCommand, tildify } from './io.js';
 import { errorMessage } from '../util/errors.js';
 import type { IO } from './io.js';
 import { PromptClosedError, createPrompter, isInteractive, onlyStdoutRedirected } from './prompt.js';
@@ -108,7 +108,7 @@ function printPlan(ctx: Ctx, p: SetupPlan): void {
         : '   this is what the same command without --dry-run does; nothing here is prompted for.',
     ),
   );
-  ctx.say(`   lexicon: ${safe(tildify(p.lexiconPath, ctx.home))}${p.lexiconExists ? '' : dim(' (would be created)')}`);
+  ctx.say(`   lexicon: ${safePath(tildify(p.lexiconPath, ctx.home))}${p.lexiconExists ? '' : dim(' (would be created)')}`);
   ctx.say(`   would seed: ${p.wouldSeed.length > 0 ? safe(p.wouldSeed.join(', ')) : dim('nothing')}`);
   const packs = p.wouldInstallPacks.length > 0 ? p.wouldInstallPacks.join(', ') : dim('none');
   ctx.say(
@@ -141,12 +141,12 @@ function printPlan(ctx: Ctx, p: SetupPlan): void {
   );
   ctx.say(
     p.serveBlocked !== undefined
-      ? `   login service: would not install (${safe(p.serveBlocked)})`
+      ? `   login service: would not install (${safeMessage(p.serveBlocked)})`
       : asks('serve')
         ? `   login service: ${dim('asks')} (default yes) would install a login service that runs the local API`
         : `   login service: ${p.wouldInstallServe ? 'would install' : dim('skipped (--serve installs it)')}`,
   );
-  const exports = p.wouldExport.length > 0 ? safe(p.wouldExport.map((e) => tildify(e.path, ctx.home)).join(', ')) : dim('nothing');
+  const exports = p.wouldExport.length > 0 ? safeMessage(p.wouldExport.map((e) => tildify(e.path, ctx.home)).join(', ')) : dim('nothing');
   ctx.say(
     asks('export')
       ? `   dictation export: ${dim('asks')} which app, and Enter writes ${exports}`
@@ -266,7 +266,7 @@ function printSummary(ctx: Ctx): void {
 /** What this run wrote, one line per kind, for the summary and the stopped card. */
 function printWritten(ctx: Ctx): void {
   const s = ctx.summary;
-  ctx.say(`   lexicon: ${safe(tildify(s.lexiconPath, ctx.home))}`);
+  ctx.say(`   lexicon: ${safePath(tildify(s.lexiconPath, ctx.home))}`);
   ctx.say(`   terms added: ${s.termsAdded.length > 0 ? safe(s.termsAdded.join(', ')) : dim('none')}`);
   ctx.say(`   packs: ${s.packs.length > 0 ? s.packs.map((p) => `${p.name} (${p.added} added)`).join(', ') : dim('none')}`);
   const installed = s.clients.filter((c) => c.status === 'installed').map((c) => c.name);
@@ -275,7 +275,7 @@ function printWritten(ctx: Ctx): void {
     `   clients: ${installed.length > 0 ? installed.join(', ') : dim('none')}${failed.length > 0 ? ` (failed: ${failed.join(', ')})` : ''}`,
   );
   ctx.say(`   local API: ${s.serve}`);
-  ctx.say(`   exports: ${s.exports.length > 0 ? safe(s.exports.map((e) => tildify(e.path, ctx.home)).join(', ')) : dim('none')}`);
+  ctx.say(`   exports: ${s.exports.length > 0 ? safeMessage(s.exports.map((e) => tildify(e.path, ctx.home)).join(', ')) : dim('none')}`);
 }
 
 /**
