@@ -332,11 +332,17 @@ export function createBackground(deps: BackgroundDeps): Background {
   async function syncReq(): Promise<SyncReply | Failure> {
     const settings = await getSettings();
     try {
-      const raw = (await fetchJson(settings, '/lexicon')) as { lexicon?: unknown };
+      const raw = (await fetchJson(settings, '/lexicon')) as { lexicon?: unknown; skippedProject?: unknown; projectTrust?: unknown };
       const lexicon = parseLexicon(raw?.lexicon);
       const yaml = lexiconToYaml(lexicon);
       await saveSettings({ yaml });
-      return { ok: true, terms: lexicon.terms.length, yaml };
+      // GET /lexicon names a repo file it left out (untrusted or changed) by
+      // path only; pass it on so Options can say the sync is missing its terms.
+      const skippedProject =
+        typeof raw?.skippedProject === 'string' && raw.skippedProject
+          ? { path: raw.skippedProject, trust: raw.projectTrust === 'changed' ? ('changed' as const) : ('untrusted' as const) }
+          : undefined;
+      return { ok: true, terms: lexicon.terms.length, yaml, ...(skippedProject ? { skippedProject } : {}) };
     } catch (err) {
       return { ok: false, error: errorMessage(err) };
     }

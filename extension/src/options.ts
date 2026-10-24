@@ -4,7 +4,7 @@ import { ADAPTERS } from './adapters.js';
 import { sendToBackground } from './chrome-store.js';
 import { setMessage } from './rich-text.js';
 import { parseLexicon, parseYaml } from './core.js';
-import { coerceSettings, connectionTestLine, errorMessage, pairUrl, STORAGE_KEYS } from './shared.js';
+import { coerceSettings, connectionTestLine, countOf, errorMessage, pairUrl, syncedLine, STORAGE_KEYS } from './shared.js';
 import type { Failure, Settings, StatusReply, SyncReply } from './shared.js';
 import defaultYaml from '../../examples/lexicon.example.yaml';
 
@@ -47,7 +47,7 @@ function validateYaml(): boolean {
     const lexicon = parseLexicon(parseYaml(ui.yaml.value, { prettyErrors: true }));
     ui.yamlError.hidden = true;
     ui.yamlError.textContent = '';
-    ui.yamlOk.textContent = `${lexicon.terms.length} terms, ${lexicon.terms.reduce((n, t) => n + t.aliases.length, 0)} aliases.`;
+    ui.yamlOk.textContent = `${countOf(lexicon.terms.length, 'term')}, ${countOf(lexicon.terms.reduce((n, t) => n + t.aliases.length, 0), 'alias', 'aliases')}.`;
     return true;
   } catch (err) {
     ui.yamlError.hidden = false;
@@ -182,7 +182,7 @@ ui.sync.addEventListener('click', () => {
       ui.yaml.value = reply.yaml;
       settings.yaml = reply.yaml;
       validateYaml();
-      ui.yamlOk.textContent = `Synced ${reply.terms} terms from the local API.`;
+      setMessage(ui.yamlOk, syncedLine(reply));
     } else {
       ui.yamlOk.textContent = '';
       ui.yamlError.hidden = false;

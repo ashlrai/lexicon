@@ -44,6 +44,7 @@ import {
   loadLexicon,
   loadMatcherIndex,
   normalizeWithIndex,
+  packAlreadyInstalledNote,
   recordHits,
   resolvePaths,
   isProjectTrustError,
@@ -52,6 +53,7 @@ import {
   stripInvisible,
   suggestAliases,
   timeBudgetIncomplete,
+  unchangedTermNote,
   uninstallPack,
 } from '../core/index.js';
 import type {
@@ -79,6 +81,7 @@ import {
   writeServeConfig,
 } from './config.js';
 import type { ServeConfig } from './config.js';
+import { isHeldLockError } from '../util/atomic.js';
 import { errorMessage, isInputError } from '../util/errors.js';
 import { packageVersion } from '../util/package.js';
 
@@ -154,7 +157,13 @@ export interface LearnResponse {
   path: string;
   /** Another term that also claims `heard` (LearnResult.conflict). */
   conflict?: LearnConflict;
-  /** With `conflict` only: `conflictNote([conflict])`, naming the scoped `lexicon remove --alias` command, as `learn --json` gives it. */
+  /** `heard` was already an alias (or a casing of the canonical) of the term, so nothing was written. Only then. */
+  unchanged?: true;
+  /**
+   * With `unchanged`: `learnUnchangedNote`, followed by the conflict note when there is a
+   * `conflict`. With `conflict` alone: `conflictNote([conflict])`, naming the scoped
+   * `lexicon remove --alias` command, as `learn --json` gives it.
+   */
   note?: string;
   /** The untrusted project lexicon that also claims `heard`, path only (LearnResult.untrustedProject). */
   untrustedProject?: { path: string; trust: 'untrusted' | 'changed' };
@@ -166,6 +175,26 @@ export interface AddResponse {
   created: boolean;
   /** Aliases another term also holds, so they may still be corrected to it (MCP add_term `conflicts`). Only when there is one. */
   conflicts?: LearnConflict[];
+  /** The term already had every alias and field given; nothing was written. Only then. */
+  unchanged?: true;
+  /** With `unchanged` only: `unchangedTermNote(canonical)`. */
+  note?: string;
+}
+
+/** POST /packs/:name: the install result, `alreadyInstalled` always set, and one sentence saying what happened. */
+export interface InstallPackResponse extends InstallPackResult {
+  /** True when the reinstall left the file byte for byte as it was. */
+  alreadyInstalled: boolean;
+  /** `installed <name>: N added, M merged into <path>`, or `packAlreadyInstalledNote` for a reinstall that changed nothing. */
+  summary: string;
+}
+
+/** DELETE /packs/:name: the uninstall result and one sentence saying what happened. */
+export interface UninstallPackResponse extends UninstallPackResult {
+  /** No lexicon file in that scope listed the pack, so nothing was written. Only then. */
+  notInstalled?: true;
+  /** `removed N terms of <name> from <files>` (and what was kept), or `<name> is not installed; nothing was removed` (`in the <scope> lexicon` with `?scope=`). */
+  summary: string;
 }
 
 export interface LexiconResponse {
@@ -319,6 +348,38 @@ const ROUTES: readonly string[] = [
   'GET /export/:format',
 ];
 
+/**
+ * What each POST route's body holds, as docs/LOCAL-API.md lists it. Every
+ * body 400 (empty, not JSON, not an object, a missing, mistyped or unknown
+ * field) ends with it, so a first request built by guesswork learns the
+ * real field names from the answer. Without it `{}` to /normalize read only
+ * `text: Invalid input: expected string, received undefined`, and a typo
+ * only `Unrecognized key`.
+ */
+const BODY_SHAPES = {
+  '/normalize': 'POST /normalize takes { text, dryRun?, minConfidence?, cwd? }',
+  '/learn': 'POST /learn takes { heard, meant, scope?, cwd? }',
+  '/add': 'POST /add takes { canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }',
+  '/packs/:name': 'POST /packs/:name takes { scope?, cwd? } or an empty body',
+} as const;
+type BodyRoute = keyof typeof BODY_SHAPES;
+
+/**
+ * The `note` of a POST /learn that wrote nothing: the "Nothing was added:"
+ * lead of POST /add (`unchangedTermNote`) with the reason MCP
+ * learn_correction gives, `heard` already an alias of the term or already
+ * its canonical in another case.
+ */
+function learnUnchangedNote(heard: string, canonical: string): string {
+  const said = heard.trim().replace(/\s+/g, ' ');
+  return said.toLowerCase() === canonical.toLowerCase()
+    ? `Nothing was added: ${JSON.stringify(canonical)} is already the canonical spelling; ${JSON.stringify(said)} is corrected to it.`
+    : `Nothing was added: ${JSON.stringify(said)} was already an alias of ${JSON.stringify(canonical)}.`;
+}
+
+/** Seconds a 503 asks the client to wait (its `Retry-After`) before sending the same request again. */
+const BUSY_RETRY_AFTER_S = 1;
+
 /** `/packs/<name>`; the name is validated again by `loadPack` (PACK_NAME_RE). */
 const PACK_ROUTE_RE = /^\/packs\/([a-z0-9-]+)$/;
 /** `/export/<format>`, any case: resolveExportFormat lowercases, like `lexicon export` and the MCP tool. */
@@ -327,17 +388,47 @@ const EXPORT_ROUTE_RE = /^\/export\/([a-z-]+)$/i;
 /**
  * The status for an error thrown while handling a request. 400 is for what
  * the request got wrong (`HttpError`s raised here, and core's `InputError`:
- * an empty canonical, heard equal to meant, a term the schema rejects);
- * anything else (a lexicon file that does not parse, a lock still held after
- * its timeout, EACCES) is the server's state, so 500, which tells a client to
- * retry or report rather than to change its input.
+ * an empty canonical, heard equal to meant, a term the schema rejects); a
+ * lock another writer still held at its timeout is 503 (retry); anything
+ * else (a lexicon file that does not parse, a lock that cannot be created,
+ * EACCES) is the server's state, so 500, which tells a client to report
+ * rather than to change its input.
  */
 export function errorStatus(err: unknown): number {
   if (err instanceof HttpError) return err.status;
   if (isProjectTrustError(err)) return 403;
   if (err instanceof Error && err.name === 'PackNotFoundError') return 404;
   if (isInputError(err)) return 400;
+  // Another writer (the hook, the MCP server, a CLI command) still held the
+  // file's lock when the wait ran out: the server's state, but a passing one,
+  // so a retry is the fix, not a report. Every other lock failure stays 500.
+  if (isHeldLockError(err)) return 503;
   return 500;
+}
+
+/**
+ * The message of a 503 for a lock another writer still holds (`errorStatus`).
+ * The lock error names the file and its holder, which a caller with the token
+ * may see, as it may a 500's detail; an anonymous one gets the advice only.
+ */
+function heldLockMessage(err: unknown, authed: boolean): string {
+  const retry = `retry after ${BUSY_RETRY_AFTER_S} second (Retry-After)`;
+  return authed
+    ? `another writer is still using the lexicon file: ${errorMessage(err)}; ${retry}`
+    : `another writer is still using the lexicon file; ${retry}`;
+}
+
+/**
+ * The 403 for a project-scope write into a `.lexicon.yaml` that is not
+ * trusted, in HTTP terms. Core's message ends `or write to the global lexicon
+ * instead`, which says nothing about how a request does that: here it is
+ * `"scope": "global"` in a POST body, or `?scope=global` on a DELETE.
+ */
+function projectTrustRefusal(err: Error & { path?: unknown; status?: unknown }, method: string): string {
+  const file = typeof err.path === 'string' ? err.path : 'this repo';
+  const why = err.status === 'changed' ? 'has changed since it was trusted' : 'is untrusted';
+  const global = method === 'DELETE' ? '?scope=global' : '"scope": "global" in the body';
+  return `project lexicon at ${file} ${why}, so nothing was written. Review it and run \`lexicon trust\`, then retry; or retry with ${global} to use the global lexicon instead`;
 }
 
 class HttpError extends Error {
@@ -415,9 +506,9 @@ function issuesMessage(err: z.ZodError): string {
   return err.issues.map((i) => (i.path.length > 0 ? `${i.path.join('.')}: ${i.message}` : i.message)).join('; ');
 }
 
-function parseBody<T>(schema: z.ZodType<T>, raw: unknown): T {
+function parseBody<T>(schema: z.ZodType<T>, raw: unknown, route: BodyRoute): T {
   const result = schema.safeParse(raw);
-  if (!result.success) throw new HttpError(400, `invalid request body: ${issuesMessage(result.error)}`);
+  if (!result.success) throw new HttpError(400, `invalid request body: ${issuesMessage(result.error)} (${BODY_SHAPES[route]})`);
   return result.data;
 }
 
@@ -474,21 +565,25 @@ function readBody(req: http.IncomingMessage, cap: number): Promise<string> {
   });
 }
 
-/** Parse a JSON object body. With `optional`, an empty body reads as `{}` (routes whose fields are all optional). */
-async function readJson(req: http.IncomingMessage, cap: number, optional = false): Promise<unknown> {
+/**
+ * Parse a JSON object body for `route`, whose fields the 400s name. With
+ * `optional`, an empty body reads as `{}` (routes whose fields are all optional).
+ */
+async function readJson(req: http.IncomingMessage, cap: number, route: BodyRoute, optional = false): Promise<unknown> {
   const text = await readBody(req, cap);
+  const takes = BODY_SHAPES[route];
   if (text.trim() === '') {
     if (optional) return {};
-    throw new HttpError(400, 'request body must be a JSON object');
+    throw new HttpError(400, `request body must be a JSON object (${takes})`);
   }
   let parsed: unknown;
   try {
     parsed = JSON.parse(text);
   } catch {
-    throw new HttpError(400, 'request body is not valid JSON');
+    throw new HttpError(400, `request body is not valid JSON (${takes})`);
   }
   if (typeof parsed !== 'object' || parsed === null || Array.isArray(parsed)) {
-    throw new HttpError(400, 'request body must be a JSON object');
+    throw new HttpError(400, `request body must be a JSON object (${takes})`);
   }
   return parsed;
 }
@@ -765,7 +860,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   }
 
   async function handleNormalize(raw: unknown): Promise<NormalizeResponse> {
-    const body = parseBody(NormalizeBody, raw);
+    const body = parseBody(NormalizeBody, raw, '/normalize');
     const cwd = await resolveCwd(body.cwd);
     const entry = await loadEntry(cwd);
     // From index-cache.json when the hook (or an earlier load) already built
@@ -798,25 +893,35 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   }
 
   async function handleLearn(raw: unknown): Promise<LearnResponse> {
-    const body = parseBody(LearnBody, raw);
+    const body = parseBody(LearnBody, raw, '/learn');
     const cwd = await resolveCwd(body.cwd);
     const result = await learnCorrection(
       { heard: body.heard, meant: body.meant },
       { cwd, ...storeOpts, ...(body.scope !== undefined ? { scope: body.scope } : {}) },
     );
     invalidateWritten([result.file]);
+    const unchanged = !result.created && !result.aliasAdded;
+    const notes = [
+      ...(unchanged ? [learnUnchangedNote(body.heard, result.term.canonical)] : []),
+      ...(result.conflict ? [conflictNote([result.conflict])] : []),
+    ];
     return {
       term: result.term,
       created: result.created,
       aliasAdded: result.aliasAdded,
       path: result.file.path,
-      ...(result.conflict ? { conflict: result.conflict, note: conflictNote([result.conflict]) } : {}),
+      // Nothing was written (heard was already an alias, or the canonical in
+      // another case): say so, as POST /add and MCP learn_correction do,
+      // instead of two false flags that read like a failure or a merge.
+      ...(unchanged ? { unchanged: true as const } : {}),
+      ...(unchanged || result.conflict ? { note: notes.join(' ') } : {}),
+      ...(result.conflict ? { conflict: result.conflict } : {}),
       ...(result.untrustedProject ? { untrustedProject: result.untrustedProject } : {}),
     };
   }
 
   async function handleAdd(raw: unknown): Promise<AddResponse> {
-    const body = parseBody(AddBody, raw);
+    const body = parseBody(AddBody, raw, '/add');
     const cwd = await resolveCwd(body.cwd);
     // Generated aliases only when this creates the term (see addTerm's defaultAliases).
     const aliases = body.aliases ?? [];
@@ -845,7 +950,16 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       (loaded) => spellingConflicts(loaded.merged, saved.term.aliases, saved.term.canonical),
       () => [],
     );
-    return { term: saved.term, path: saved.file.path, created: saved.created, ...(conflicts.length > 0 ? { conflicts } : {}) };
+    return {
+      term: saved.term,
+      path: saved.file.path,
+      created: saved.created,
+      // The term already had every alias and field given, so nothing was
+      // written: say so, as `lexicon add --json` and MCP add_term do, instead
+      // of a 200 that reads like a merge.
+      ...(saved.unchanged ? { unchanged: true as const, note: unchangedTermNote(saved.term.canonical) } : {}),
+      ...(conflicts.length > 0 ? { conflicts } : {}),
+    };
   }
 
   async function handleLexicon(cwd: string): Promise<LexiconResponse> {
@@ -886,15 +1000,24 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     };
   }
 
-  async function handleInstallPack(name: string, raw: unknown): Promise<InstallPackResult> {
-    const body = parseBody(PackBody, raw);
+  async function handleInstallPack(name: string, raw: unknown): Promise<InstallPackResponse> {
+    const body = parseBody(PackBody, raw, '/packs/:name');
     const cwd = await resolveCwd(body.cwd);
     const result = await installPack(name, { cwd, ...storeOpts, ...(body.scope !== undefined ? { scope: body.scope } : {}) });
     invalidateWritten([result]);
-    return result;
+    // A reinstall that changed nothing says so, with the pack's counts, in the
+    // words `lexicon pack add` and MCP add_pack use, not "0 added, N merged".
+    const alreadyInstalled = result.alreadyInstalled === true;
+    return {
+      ...result,
+      alreadyInstalled,
+      summary: alreadyInstalled
+        ? packAlreadyInstalledNote(result.pack.name, result)
+        : `installed ${result.pack.name}: ${result.added} added, ${result.merged} merged into ${result.path}`,
+    };
   }
 
-  async function handleUninstallPack(name: string, url: URL): Promise<UninstallPackResult> {
+  async function handleUninstallPack(name: string, url: URL): Promise<UninstallPackResponse> {
     // The query string is this route's body, so it is strict too: a typo such
     // as `?scop=project` was ignored and the pack came out of the default
     // (global) lexicon instead, still 200.
@@ -905,7 +1028,16 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     if (scopeParam !== null && scope === undefined) throw new HttpError(400, `invalid scope "${sanitizeForDisplay(scopeParam)}" (global or project)`);
     const result = await uninstallPack(name, { cwd, ...storeOpts, ...(scope !== undefined ? { scope } : {}) });
     invalidateWritten(scopedFiles(cwd, result.files));
-    return result;
+    // No file listed the pack, so nothing was written: say so, as `lexicon
+    // pack remove` does, instead of a 200 with three empty arrays.
+    if (result.files.length === 0) {
+      return { ...result, notInstalled: true, summary: `${result.pack.name} is not installed${scope !== undefined ? ` in the ${scope} lexicon` : ''}; nothing was removed` };
+    }
+    const kept = result.kept.length > 0 ? `; kept ${result.kept.length} you edited (hits, extra aliases or never-words): ${result.kept.join(', ')}` : '';
+    return {
+      ...result,
+      summary: `removed ${result.removed.length} term${result.removed.length === 1 ? '' : 's'} of ${result.pack.name} from ${result.files.join(', ')}${kept}`,
+    };
   }
 
   /** GET /aliases?canonical=X: the spellings STT is likely to produce, for an onboarding form. */
@@ -939,7 +1071,14 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
    * localhost on the bound port (DNS rebinding arrives with another Host).
    */
   function pairPage(req: http.IncomingMessage): Response {
-    if (!config) throw new HttpError(503, 'server is starting');
+    // Only before start() has read serve.json (an embedder that listens on
+    // `server` itself): nothing is wrong with the request, so say when to
+    // send it again, as the busy 503 does.
+    if (!config) {
+      throw new HttpError(503, `server is starting; retry after ${BUSY_RETRY_AFTER_S} second (Retry-After)`, {
+        'Retry-After': String(BUSY_RETRY_AFTER_S),
+      });
+    }
     if (!isLoopbackAddress(req.socket.remoteAddress)) throw new HttpError(403, 'the pairing page is served on the loopback interface only');
     if (!isPairHost(req.headers.host, boundPort)) {
       throw new HttpError(403, `the pairing page is served for Host 127.0.0.1:${boundPort} or localhost:${boundPort} only`);
@@ -983,20 +1122,25 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     }
 
     if (!config || !tokenMatches(req.headers.authorization, config.token)) {
-      throw new HttpError(401, 'missing or invalid bearer token (see: lexicon serve --show)');
+      // Both ways to get the token: an extension user pairs (`--pair`), any
+      // other client copies it (`--show`). It named only `--show`.
+      throw new HttpError(
+        401,
+        'missing or invalid bearer token (pair the browser extension with: lexicon serve --pair; for any other client, copy the token from: lexicon serve --show)',
+      );
     }
 
     if (pathname === '/normalize') {
       if (method !== 'POST') throw wrongMethod(['POST']);
-      return json(200, await handleNormalize(await readJson(req, MAX_BODY_BYTES)));
+      return json(200, await handleNormalize(await readJson(req, MAX_BODY_BYTES, '/normalize')));
     }
     if (pathname === '/learn') {
       if (method !== 'POST') throw wrongMethod(['POST']);
-      return json(200, await handleLearn(await readJson(req, MAX_BODY_BYTES)));
+      return json(200, await handleLearn(await readJson(req, MAX_BODY_BYTES, '/learn')));
     }
     if (pathname === '/add') {
       if (method !== 'POST') throw wrongMethod(['POST']);
-      return json(200, await handleAdd(await readJson(req, MAX_BODY_BYTES)));
+      return json(200, await handleAdd(await readJson(req, MAX_BODY_BYTES, '/add')));
     }
     if (pathname === '/lexicon') {
       if (method !== 'GET') throw notGet();
@@ -1015,7 +1159,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     }
     const packMatch = PACK_ROUTE_RE.exec(pathname);
     if (packMatch) {
-      if (method === 'POST') return json(200, await handleInstallPack(packMatch[1], await readJson(req, MAX_BODY_BYTES, true)));
+      if (method === 'POST') return json(200, await handleInstallPack(packMatch[1], await readJson(req, MAX_BODY_BYTES, '/packs/:name', true)));
       if (method === 'DELETE') {
         // Options travel in the query string. A body was ignored, so
         // `{ "scope": "project" }` removed the pack from the global lexicon.
@@ -1114,7 +1258,14 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     }
 
     if (inFlight >= maxConcurrent) {
-      send(res, json(503, { error: 'too many concurrent requests' }), { ...cors, 'Retry-After': '1' }, head);
+      // Says what to do next, not only what went wrong: the request was not
+      // run, so the same request is safe to send again after Retry-After.
+      send(
+        res,
+        json(503, { error: `too many concurrent requests (${inFlight} already in flight), so this one was not run; retry it after ${BUSY_RETRY_AFTER_S} second (Retry-After)` }),
+        { ...cors, 'Retry-After': String(BUSY_RETRY_AFTER_S) },
+        head,
+      );
       return;
     }
     inFlight += 1;
@@ -1130,14 +1281,17 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
         // user needs to fix it, so a client holding the token gets it; an
         // anonymous caller (plain /health) gets only a pointer to the log.
         const authed = config !== undefined && tokenMatches(req.headers.authorization, config.token);
-        let message = errorMessage(err);
+        let message = isProjectTrustError(err) ? projectTrustRefusal(err as Error, method) : errorMessage(err);
         if (status === 500) {
           message = authed
             ? `internal error: ${message}`
             : 'internal error (the lexicon serve log has the detail)';
         }
-        if (status === 500) log(`[serve] ${method} ${sanitizeForDisplay(url.pathname)} failed: ${errorMessage(err)}`);
+        const heldLock = isHeldLockError(err);
+        if (heldLock) message = heldLockMessage(err, authed);
+        if (status === 500 || heldLock) log(`[serve] ${method} ${sanitizeForDisplay(url.pathname)} failed: ${errorMessage(err)}`);
         const extra: Record<string, string> = { ...cors, ...(err instanceof HttpError ? err.headers : {}) };
+        if (heldLock) extra['Retry-After'] = String(BUSY_RETRY_AFTER_S);
         if (status === 413) extra['Connection'] = 'close';
         if (status === 401) extra['WWW-Authenticate'] = 'Bearer';
         send(res, json(status, { error: message }), extra, head);

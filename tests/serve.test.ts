@@ -327,7 +327,11 @@ describe('auth', () => {
   it('401 without a token and with a wrong token', async () => {
     const none = await fetch(`${info.url}/stats`);
     expect(none.status).toBe(401);
-    expect(await none.json()).toEqual({ error: expect.stringContaining('bearer token') });
+    // Catches: the 401 named only `lexicon serve --show`, not `--pair`,
+    // which is how a browser extension user gets the token.
+    expect(await none.json()).toEqual({
+      error: 'missing or invalid bearer token (pair the browser extension with: lexicon serve --pair; for any other client, copy the token from: lexicon serve --show)',
+    });
     const wrong = await fetch(`${info.url}/stats`, { headers: { Authorization: `Bearer ${'0'.repeat(32)}` } });
     expect(wrong.status).toBe(401);
     const post = await fetch(`${info.url}/normalize`, {
@@ -498,6 +502,35 @@ describe('POST /learn and POST /add', () => {
     expect(((await check.json()) as NormalizeResult).replacements[0]?.reason).toBe('alias');
   });
 
+  // Catches: POST /learn of a spelling the term already held answered only
+  // created: false and aliasAdded: false, with no word that nothing was
+  // written, while POST /add and MCP learn_correction say so.
+  it('learn of a spelling the term already has says nothing was added', async () => {
+    const first = await api('POST', '/learn', { heard: 'Ashlurr', meant: 'Ashlr.AI' });
+    const firstBody = (await first.json()) as Record<string, unknown>;
+    expect(firstBody).toMatchObject({ aliasAdded: true });
+    expect(firstBody).not.toHaveProperty('unchanged');
+    expect(firstBody).not.toHaveProperty('note');
+    const before = await fs.readFile(env.globalPath, 'utf8');
+    const again = await api('POST', '/learn', { heard: 'Ashlurr', meant: 'Ashlr.AI' });
+    expect(again.status).toBe(200);
+    expect(await again.json()).toMatchObject({
+      created: false,
+      aliasAdded: false,
+      unchanged: true,
+      note: 'Nothing was added: "Ashlurr" was already an alias of "Ashlr.AI".',
+    });
+    // The canonical itself in another case: also nothing to write.
+    const casing = await api('POST', '/learn', { heard: 'ashlr.ai', meant: 'Ashlr.AI' });
+    expect(await casing.json()).toMatchObject({
+      created: false,
+      aliasAdded: false,
+      unchanged: true,
+      note: 'Nothing was added: "Ashlr.AI" is already the canonical spelling; "ashlr.ai" is corrected to it.',
+    });
+    expect(await fs.readFile(env.globalPath, 'utf8')).toBe(before);
+  });
+
   it('add over the schema cap is a 400 naming the field, not an index into the lexicon file', async () => {
     const res = await api('POST', '/add', { canonical: 'Zed', aliases: ['x'.repeat(81)] });
     expect(res.status).toBe(400);
@@ -592,6 +625,31 @@ describe('POST /learn and POST /add', () => {
       const clean = (await (await api('POST', '/learn', { heard: 'zork mid', meant: 'Zorkmid', scope: 'project', cwd: repo })).json()) as Record<string, unknown>;
       expect(clean).not.toHaveProperty('conflict');
       expect(clean).not.toHaveProperty('note');
+    } finally {
+      await fs.rm(repo, { recursive: true, force: true });
+    }
+  });
+
+  // Catches: POST /add of an alias the term already has answered 200 with
+  // created: false and nothing else, though nothing was written, while
+  // `lexicon add --json` and MCP add_term say unchanged.
+  it('add of an alias the term already has says nothing was added', async () => {
+    const repo = path.join(env.home, 'add-unchanged-repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const file = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(file, 'version: 1\nterms: []\n', 'utf8');
+    await trustProject(file, { globalPath: env.globalPath });
+    try {
+      const add = { canonical: 'Quuxly', aliases: ['cooks lee'], scope: 'project', cwd: repo };
+      const first = (await (await api('POST', '/add', add)).json()) as Record<string, unknown>;
+      expect(first).toMatchObject({ created: true });
+      expect(first).not.toHaveProperty('unchanged');
+      expect(first).not.toHaveProperty('note');
+      const before = await fs.readFile(file, 'utf8');
+      const res = await api('POST', '/add', add);
+      expect(res.status).toBe(200);
+      expect(await res.json()).toMatchObject({ created: false, unchanged: true, note: 'Nothing was added: "Quuxly" already has every alias and field given.' });
+      expect(await fs.readFile(file, 'utf8')).toBe(before);
     } finally {
       await fs.rm(repo, { recursive: true, force: true });
     }
@@ -892,6 +950,29 @@ describe('limits and errors', () => {
     expect(list.status).toBe(400);
   });
 
+  // Catches: a body 400 named what was wrong but not the fields the route
+  // takes: `{}` to /normalize read "text: Invalid input: expected string,
+  // received undefined", an empty body only "must be a JSON object", so a
+  // first request built by guesswork had to go read the docs.
+  it('every body 400 names the fields its route takes', async () => {
+    const cases: [string, unknown, string][] = [
+      ['/normalize', {}, 'POST /normalize takes { text, dryRun?, minConfidence?, cwd? }'],
+      ['/normalize', '{"text": ', 'POST /normalize takes { text, dryRun?, minConfidence?, cwd? }'],
+      ['/learn', '[1]', 'POST /learn takes { heard, meant, scope?, cwd? }'],
+      ['/learn', { heard: 'x' }, 'POST /learn takes { heard, meant, scope?, cwd? }'],
+      ['/add', { name: 'Zed' }, 'POST /add takes { canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }'],
+      ['/packs/developer', { scop: 'project' }, 'POST /packs/:name takes { scope?, cwd? } or an empty body'],
+    ];
+    for (const [route, body, takes] of cases) {
+      const res = await api('POST', route, body);
+      expect(res.status, route).toBe(400);
+      expect(((await res.json()) as { error: string }).error, route).toContain(`(${takes})`);
+    }
+    const empty = await fetch(`${info.url}/normalize`, { method: 'POST', headers: { Authorization: `Bearer ${info.token}` } });
+    expect(empty.status).toBe(400);
+    expect(await empty.json()).toEqual({ error: 'request body must be a JSON object (POST /normalize takes { text, dryRun?, minConfidence?, cwd? })' });
+  });
+
   /**
    * Catches: every plain Error mapped to 400. A broken lexicon file or a lock
    * that never frees is the server's problem, not the request's, and a 400
@@ -927,13 +1008,46 @@ describe('limits and errors', () => {
     expect((await api('POST', '/add', { canonical: '   ' })).status).toBe(400);
   });
 
-  it('errorStatus: lock timeouts and fs errors are 500, input errors 400', () => {
-    expect(errorStatus(new FileLockError('/x/lexicon.yaml', '/x/lexicon.yaml.lock', 'still held after 5000ms'))).toBe(500);
+  // Catches: a lock another writer still held at the timeout mapped to 500,
+  // which tells a client to report rather than to retry.
+  it('errorStatus: a lock another writer holds is 503, other lock failures and fs errors 500, input errors 400', () => {
+    expect(errorStatus(new FileLockError('/x/lexicon.yaml', '/x/lexicon.yaml.lock', 'still held after 5000ms', { held: true }))).toBe(503);
+    expect(errorStatus(new FileLockError('/x/lexicon.yaml', '/x/lexicon.yaml.lock', '/x is not a directory'))).toBe(500);
     expect(errorStatus(Object.assign(new Error('EACCES: permission denied'), { code: 'EACCES' }))).toBe(500);
     expect(errorStatus(new Error('Invalid lexicon at /x: bad'))).toBe(500);
     expect(errorStatus(new TypeError('x is undefined'))).toBe(500);
     expect(errorStatus(new InputError('canonical must not be empty'))).toBe(400);
   });
+
+  // Catches: a write that waited out the lock another lexicon process held
+  // answered 500 "internal error", with no Retry-After and no word to retry.
+  it('a write while another writer holds the lexicon lock is a 503 that says to retry', async () => {
+    const dir = await fs.mkdtemp(path.join(env.home, 'locked-'));
+    const globalPath = path.join(dir, 'lexicon.yaml');
+    await fs.writeFile(globalPath, 'version: 1\nterms: []\n', 'utf8');
+    const locked = createServer({ port: 0, cwd: env.cwd, globalPath, quiet: true });
+    const t = await locked.start();
+    // A live pid on this host with a token that is not the server's: what a
+    // second lexicon process mid-write looks like.
+    const lockPath = `${globalPath}.lock`;
+    await fs.writeFile(lockPath, JSON.stringify({ pid: process.pid, host: os.hostname(), token: 'someone-else', at: new Date().toISOString() }));
+    try {
+      const res = await fetch(`${t.url}/add`, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${t.token}`, 'Content-Type': 'application/json' },
+        body: JSON.stringify({ canonical: 'Lockly', aliases: ['lock lee'] }),
+      });
+      expect(res.status).toBe(503);
+      expect(res.headers.get('retry-after')).toBe('1');
+      const { error } = (await res.json()) as { error: string };
+      expect(error).toMatch(/^another writer is still using the lexicon file: could not lock .* for writing: still held after \d+ms by .*; retry after 1 second \(Retry-After\)$/);
+      expect(error).toContain(globalPath);
+      expect(await fs.readFile(globalPath, 'utf8')).toBe('version: 1\nterms: []\n');
+    } finally {
+      await fs.rm(lockPath, { force: true });
+      await locked.stop();
+    }
+  }, 60_000);
 
   it('405 on the wrong method', async () => {
     const res = await api('GET', '/normalize');
@@ -993,6 +1107,37 @@ describe('limits and errors', () => {
     expect(post.headers.allow).toBe('POST');
   });
 
+  // Catches: /pair before start() had read serve.json answered 503 "server
+  // is starting" with no Retry-After and no word to retry.
+  it('503 while the server is starting carries Retry-After and says to retry', async () => {
+    const early = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
+    await new Promise<void>((resolve) => early.server.listen(0, '127.0.0.1', () => resolve()));
+    try {
+      const address = early.server.address() as net.AddressInfo;
+      const res = await new Promise<{ status: number; body: string; headers: http.IncomingHttpHeaders }>((resolve, reject) => {
+        // Host names port 0: start() has not run, so that is the port the server believes it has.
+        const req = http.request({ host: '127.0.0.1', port: address.port, path: '/pair', headers: { Host: '127.0.0.1:0' } }, (r) => {
+          let body = '';
+          r.setEncoding('utf8');
+          r.on('data', (d: string) => {
+            body += d;
+          });
+          r.on('end', () => resolve({ status: r.statusCode ?? 0, body, headers: r.headers }));
+        });
+        req.on('error', reject);
+        req.end();
+      });
+      expect(res.status).toBe(503);
+      expect(res.headers['retry-after']).toBe('1');
+      expect(JSON.parse(res.body)).toEqual({ error: 'server is starting; retry after 1 second (Retry-After)' });
+    } finally {
+      await new Promise<void>((resolve) => {
+        early.server.close(() => resolve());
+        early.server.closeAllConnections();
+      });
+    }
+  });
+
   it('503 once the concurrency cap is reached', async () => {
     const tiny = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true, maxConcurrent: 0 });
     const t = await tiny.start();
@@ -1000,6 +1145,11 @@ describe('limits and errors', () => {
       const res = await fetch(`${t.url}/health`);
       expect(res.status).toBe(503);
       expect(res.headers.get('retry-after')).toBe('1');
+      // Catches: the error said only "too many concurrent requests", with no
+      // word that the request was not run or when to send it again.
+      expect(await res.json()).toEqual({
+        error: 'too many concurrent requests (0 already in flight), so this one was not run; retry it after 1 second (Retry-After)',
+      });
     } finally {
       await tiny.stop();
     }
@@ -1216,7 +1366,12 @@ describe('trust gate', () => {
   it('refuses a project-scope write into an untrusted file with 403', async () => {
     const res = await api('POST', '/add', { canonical: 'Foo', aliases: ['fooo'], scope: 'project', cwd: env.untrustedProject });
     expect(res.status).toBe(403);
-    expect(((await res.json()) as { error: string }).error).toContain('untrusted');
+    // Catches: the 403 ended "or write to the global lexicon instead", which
+    // says nothing about how a request does that.
+    expect(((await res.json()) as { error: string }).error).toBe(
+      `project lexicon at ${path.join(env.untrustedProject, '.lexicon.yaml')} is untrusted, so nothing was written. ` +
+        'Review it and run `lexicon trust`, then retry; or retry with "scope": "global" in the body to use the global lexicon instead',
+    );
   });
 });
 
@@ -2311,6 +2466,30 @@ describe('packs and aliases routes', () => {
     }
   });
 
+  // Catches: LexiconBar's pack card (apps/macos LocalAPI.swift installPack)
+  // read only `added` and `merged`, so a reinstall read "64 terms merged"
+  // though the server said the pack was already installed and nothing was
+  // added. No Swift toolchain runs here, so this pins the keys it reads to
+  // the real response instead.
+  it('the menu bar app reads alreadyInstalled and summary from POST /packs/:name, keys the response has', async () => {
+    const swift = await fs.readFile(path.join(process.cwd(), 'apps/macos/LexiconBar/Sources/LexiconBar/LocalAPI.swift'), 'utf8');
+    const fn = swift.slice(swift.indexOf('func installPack('), swift.indexOf('func uninstallPack('));
+    expect(fn.length).toBeGreaterThan(0);
+    const keys = [...fn.matchAll(/\$0\["([A-Za-z]+)"\]/g)].map((m) => m[1]);
+    expect(keys).toEqual(expect.arrayContaining(['added', 'merged', 'alreadyInstalled', 'summary']));
+    expect(swift).toMatch(/if let serverSummary, !serverSummary\.isEmpty \{ return serverSummary \}/);
+    const res = await api2('POST', '/packs/voice-tools');
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    try {
+      for (const key of keys) expect(body, key).toHaveProperty(key);
+      expect(typeof body.summary).toBe('string');
+      expect(typeof body.alreadyInstalled).toBe('boolean');
+    } finally {
+      expect((await api2('DELETE', '/packs/voice-tools')).status).toBe(200);
+    }
+  });
+
   it('POST /packs/:name installs (idempotent, empty body allowed), GET /packs reflects it, DELETE /packs/:name removes', async () => {
     const first = await api2('POST', '/packs/developer');
     expect(first.status).toBe(200);
@@ -2328,8 +2507,13 @@ describe('packs and aliases routes', () => {
     const health = (await (await fetch(`${info2.url}/health`)).json()) as { terms: number };
     expect(health.terms).toBe(installed.added);
 
-    const again = (await (await api2('POST', '/packs/developer', {})).json()) as { added: number; merged: number };
+    const again = (await (await api2('POST', '/packs/developer', {})).json()) as { added: number; merged: number; alreadyInstalled: boolean; summary: string };
     expect(again).toMatchObject({ added: 0, merged: installed.added });
+    // Catches: a reinstall that changed nothing came back as "0 added, N
+    // merged" with no word that the pack was already there.
+    expect(again.alreadyInstalled).toBe(true);
+    expect(again.summary).toMatch(new RegExp(`^developer is already installed in ${globalPath2.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(\\d+ terms, \\d+ aliases\\); nothing was added$`));
+    expect(installed).toMatchObject({ alreadyInstalled: false, summary: `installed developer: ${installed.added} added, 0 merged into ${globalPath2}` });
 
     // The new terms are live for /normalize right away.
     const norm = await api2('POST', '/normalize', { text: 'deploy to cuban eats on versal with superbase' });
@@ -2344,6 +2528,15 @@ describe('packs and aliases routes', () => {
     expect(body.removed).toHaveLength(installed.added - 3);
     expect(body.files).toEqual([globalPath2]);
     expect(((await (await api2('GET', '/packs')).json()) as { installed: string[] }).installed).toEqual([]);
+
+    // Catches: removing a pack no file lists answered 200 with three empty
+    // arrays and no word that nothing was removed.
+    expect((body as unknown as { summary: string }).summary).toMatch(new RegExp(`^removed ${installed.added - 3} terms of developer from .+; kept 3 you edited \\(hits, extra aliases or never-words\\): `));
+    expect(body).not.toHaveProperty('notInstalled');
+    const absent = await api2('DELETE', '/packs/developer');
+    expect(absent.status).toBe(200);
+    expect(await absent.json()).toMatchObject({ removed: [], files: [], notInstalled: true, summary: 'developer is not installed; nothing was removed' });
+    expect(await (await api2('DELETE', '/packs/developer?scope=global')).json()).toMatchObject({ notInstalled: true, summary: 'developer is not installed in the global lexicon; nothing was removed' });
   });
 
   it('404 for an unknown pack, 405 for GET on a pack, 400 for a bad scope or body', async () => {
@@ -2370,7 +2563,10 @@ describe('packs and aliases routes', () => {
     await fs.appendFile(path.join(repo, '.lexicon.yaml'), '# hand edit\n');
     const refused = await api2('POST', '/packs/ai', { scope: 'project', cwd: repo });
     expect(refused.status).toBe(403);
-    expect((await api2('DELETE', `/packs/voice-tools?cwd=${encodeURIComponent(repo)}`)).status).toBe(403);
+    expect(((await refused.json()) as { error: string }).error).toContain('has changed since it was trusted, so nothing was written.');
+    const removal = await api2('DELETE', `/packs/voice-tools?cwd=${encodeURIComponent(repo)}`);
+    expect(removal.status).toBe(403);
+    expect(((await removal.json()) as { error: string }).error).toContain('or retry with ?scope=global to use the global lexicon instead');
   });
 
   it('GET /aliases?canonical=X returns suggestAliases and 400 without a canonical', async () => {

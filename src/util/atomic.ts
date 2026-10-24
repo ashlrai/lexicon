@@ -321,12 +321,19 @@ export interface FileLockOptions {
 export class FileLockError extends Error {
   readonly path: string;
   readonly lockPath: string;
+  /**
+   * True only when another live writer still held the lock at the timeout:
+   * contention that a retry can get past. False for a lock that cannot be
+   * created at all or an in-process ordering bug, which a retry repeats.
+   */
+  readonly held: boolean;
 
-  constructor(target: string, lockPath: string, detail: string) {
+  constructor(target: string, lockPath: string, detail: string, opts: { held?: boolean } = {}) {
     super(`could not lock ${target} for writing: ${detail} (lock file: ${lockPath})`);
     this.name = 'FileLockError';
     this.path = target;
     this.lockPath = lockPath;
+    this.held = opts.held ?? false;
   }
 }
 
@@ -337,6 +344,15 @@ export class FileLockError extends Error {
  */
 export function isFileLockError(err: unknown): boolean {
   return err instanceof Error && err.name === 'FileLockError';
+}
+
+/**
+ * True for a `FileLockError` whose lock another writer still held at the
+ * timeout (`held`), the one lock failure worth retrying. Duck-typed like
+ * `isFileLockError`.
+ */
+export function isHeldLockError(err: unknown): boolean {
+  return isFileLockError(err) && (err as { held?: unknown }).held === true;
 }
 
 interface LockOwner {
@@ -535,7 +551,7 @@ async function acquire(lockPath: string, target: string, timeoutMs: number, stal
     if (transient === undefined && (await breakIfStale(lockPath, staleMs))) continue;
     if (Date.now() >= deadline) {
       if (transient !== undefined) throw transient;
-      throw new FileLockError(target, lockPath, `still held after ${timeoutMs}ms by ${await describeHolder(lockPath)}`);
+      throw new FileLockError(target, lockPath, `still held after ${timeoutMs}ms by ${await describeHolder(lockPath)}`, { held: true });
     }
     // Backoff with jitter so a dozen waiters do not retry in lockstep.
     await sleep(wait / 2 + Math.random() * wait);

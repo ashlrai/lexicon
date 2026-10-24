@@ -124,6 +124,12 @@ export interface SyncReply {
   ok: true;
   terms: number;
   yaml: string;
+  /**
+   * The repo `.lexicon.yaml` the server left out because it is untrusted or
+   * changed since it was trusted (GET /lexicon `skippedProject`, path only),
+   * so its terms are not in `yaml`. Only then.
+   */
+  skippedProject?: { path: string; trust: 'untrusted' | 'changed' };
 }
 
 export interface PairReply {
@@ -175,6 +181,22 @@ export function hostKey(hostname: string): string {
 
 export function siteEnabled(settings: Pick<Settings, 'sites'>, hostname: string): boolean {
   return settings.sites[hostKey(hostname)] !== false;
+}
+
+/** `1 term`, `2 terms`, `1 alias`, `2 aliases`: a count with its noun in the right number. */
+export function countOf(n: number, noun: string, plural = `${noun}s`): string {
+  return `${n} ${n === 1 ? noun : plural}`;
+}
+
+/** The Options line after a sync from the local API (`SyncReply`). */
+export function syncedLine(reply: SyncReply): string {
+  const line = `Synced ${countOf(reply.terms, 'term')} from the local API.`;
+  const skipped = reply.skippedProject;
+  if (!skipped) return line;
+  // Without this a sync in a repo nobody trusted read as complete, though the
+  // repo's own names were never sent.
+  const why = skipped.trust === 'changed' ? 'has changed since it was trusted' : 'is untrusted';
+  return `${line} The project lexicon ${skipped.path} ${why}, so its terms were left out: review it and run \`lexicon trust\` in that repo, then sync again.`;
 }
 
 /** The one line the toast shows when matching stopped before the end of the text. */

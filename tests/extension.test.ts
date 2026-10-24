@@ -17,7 +17,7 @@ import type { ContentHandle } from '../extension/src/content-core.js';
 import { applyCorrections, flatten, invertCorrections, readText } from '../extension/src/editable.js';
 import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
-import { coerceSettings, connectionTestLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusView, PAIR_META } from '../extension/src/shared.js';
+import { coerceSettings, connectionTestLine, countOf, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 import { setMessage } from '../extension/src/rich-text.js';
@@ -637,10 +637,29 @@ describe('message routing (mock chrome.runtime) and background', () => {
 
     const sync = await bg.handle({ type: 'sync' });
     expect(sync).toMatchObject({ ok: true, terms: 1 });
+    expect(sync).not.toHaveProperty('skippedProject');
     const settings = await bg.getSettings();
     expect(settings.yaml).toContain('Entire.io');
     // The synced YAML works offline afterwards.
     expect(createEmbedded(settings.yaml).normalize('open entire dot io').output).toBe('open Entire.io');
+  });
+
+  // Catches: sync dropped GET /lexicon's skippedProject, so Options could not
+  // say that an untrusted repo lexicon was left out of what it synced.
+  it('sync passes on the project lexicon the server skipped, path and trust only', async () => {
+    const json = (body: unknown): Response => ({ ok: true, status: 200, json: async () => body }) as unknown as Response;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/health')) return json({ ok: true, version: '1', terms: 1 });
+      return json({
+        lexicon: { version: 1, terms: [{ canonical: 'Entire.io', aliases: [] }] },
+        paths: { global: '/g/lexicon.yaml' },
+        projectTrust: 'changed',
+        skippedProject: '/repo/.lexicon.yaml',
+      });
+    });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore({ settings: { token: 'secret-token' } }), defaultYaml: EXAMPLE_YAML });
+    const sync = await bg.handle({ type: 'sync' });
+    expect(sync).toMatchObject({ ok: true, terms: 1, skippedProject: { path: '/repo/.lexicon.yaml', trust: 'changed' } });
   });
 
   it('a rejected token falls back to embedded and says why', async () => {
@@ -1171,6 +1190,28 @@ describe('Options > Test connection result', () => {
     expect(connectionTestLine({ ...base, tokenSet: true, tokenError: 'API rejected the token (401).' })).toBe('Reachable (lexicon 1.2.3), but API rejected the token (401).');
     expect(connectionTestLine({ ...base, server: null, serverError: 'timeout' })).toBe('Unreachable: timeout. Start it with `lexicon serve`.');
     expect(connectionTestLine({ ...base, server: null, serverError: 'start it with `lexicon serve`' })).toBe('Unreachable: start it with `lexicon serve`.');
+  });
+});
+
+describe('Options > Sync from the local API result', () => {
+  // Catches: one synced term read "Synced 1 terms".
+  it('puts the term count in the right number', () => {
+    expect(syncedLine({ ok: true, terms: 1, yaml: '' })).toBe('Synced 1 term from the local API.');
+    expect(syncedLine({ ok: true, terms: 0, yaml: '' })).toBe('Synced 0 terms from the local API.');
+    expect(syncedLine({ ok: true, terms: 3, yaml: '' })).toBe('Synced 3 terms from the local API.');
+    expect(countOf(1, 'alias', 'aliases')).toBe('1 alias');
+    expect(countOf(2, 'alias', 'aliases')).toBe('2 aliases');
+  });
+
+  // Catches: a sync whose server left an untrusted repo lexicon out read
+  // "Synced N terms" and nothing else, as if the repo's names were in it.
+  it('names the skipped project lexicon and `lexicon trust`', () => {
+    expect(syncedLine({ ok: true, terms: 2, yaml: '', skippedProject: { path: '/repo/.lexicon.yaml', trust: 'untrusted' } })).toBe(
+      'Synced 2 terms from the local API. The project lexicon /repo/.lexicon.yaml is untrusted, so its terms were left out: review it and run `lexicon trust` in that repo, then sync again.',
+    );
+    expect(syncedLine({ ok: true, terms: 2, yaml: '', skippedProject: { path: '/repo/.lexicon.yaml', trust: 'changed' } })).toContain(
+      'The project lexicon /repo/.lexicon.yaml has changed since it was trusted, so its terms were left out',
+    );
   });
 });
 

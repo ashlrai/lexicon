@@ -72,32 +72,42 @@ included, and no body. Errors are
 | GET | `/health` | | `{ ok: true, version, terms, projectTrust?, port }` (no auth; `?cwd=` needs the token, 401 without it) |
 | GET | `/pair` | | the extension pairing page, `text/html`; carries the token in `<meta name="lexicon-token">` plus `lexicon-port` and `lexicon-version` (no auth; 403 unless the client is loopback, `Host` is exactly `127.0.0.1:<port>` or `localhost:<port>`, and the request is not a cross-origin fetch; never sent with CORS headers) |
 | POST | `/normalize` | `{ text, dryRun?, minConfidence?, cwd? }` | `NormalizeResult` (`input`, `output`, `replacements[]`, `changed`) plus `summary`. Matching stops after 1 s, so a huge text gets the corrections from its start, and the response then adds `incomplete` (`{ reasons: ['time'], checkedChars?, totalChars, note }`; the unchecked rest is unchanged). Plus `projectTrust?` and `skippedProject?` (path only) as `/stats` gives them, so an unchanged result in a repo whose `.lexicon.yaml` was skipped says why its names were left alone |
-| POST | `/learn` | `{ heard, meant, scope? , cwd? }` | `{ term, created, aliasAdded, path, conflict?, note?, untrustedProject? }` (`conflict`: another term that also holds `heard`, with `note` naming the command that drops the alias from that term's file, `lexicon remove "<canonical>" --alias "<alias>" --global` or `--project`, as `lexicon learn --json` gives it; `untrustedProject`: the untrusted project lexicon also claims it, path only). `heard` or `meant` over 60 characters is a 400 that says to send only the misspelled name as `heard`, not the sentence around it |
-| POST | `/add` | `{ canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }` | `{ term, path, created, conflicts? }` (`conflicts`: `{ canonical, scope, as, spelling }` for each alias another term also holds, so it may still be corrected to that term, as MCP `add_term` reports it) |
+| POST | `/learn` | `{ heard, meant, scope? , cwd? }` | `{ term, created, aliasAdded, path, unchanged?, conflict?, note?, untrustedProject? }` (`unchanged: true` when `heard` was already an alias of the term, or its canonical in another case, and nothing was written, with `note` `Nothing was added: "<heard>" was already an alias of "<canonical>".` or `Nothing was added: "<canonical>" is already the canonical spelling; "<heard>" is corrected to it.`, the reasons MCP `learn_correction` gives, and any conflict note after it; `conflict`: another term that also holds `heard`, with `note` naming the command that drops the alias from that term's file, `lexicon remove "<canonical>" --alias "<alias>" --global` or `--project`, as `lexicon learn --json` gives it; `untrustedProject`: the untrusted project lexicon also claims it, path only). `heard` or `meant` over 60 characters is a 400 that says to send only the misspelled name as `heard`, not the sentence around it |
+| POST | `/add` | `{ canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }` | `{ term, path, created, unchanged?, note?, conflicts? }` (`unchanged: true` and `note`, `Nothing was added: "<canonical>" already has every alias and field given.`, when the term already had everything sent and nothing was written, as `lexicon add --json` and MCP `add_term` say it; `conflicts`: `{ canonical, scope, as, spelling }` for each alias another term also holds, so it may still be corrected to that term, as MCP `add_term` reports it) |
 | GET | `/lexicon` | | `{ lexicon, paths: { global, project? }, projectTrust?, skippedProject? }` |
 | GET | `/stats` | | `LexiconStats`, plus `projectTrust?` and `skippedProject?` (path only) as `/lexicon` gives them: the counts leave a skipped project file out |
 | GET | `/packs` | | `{ packs: [PackInfo & { installed }], installed: string[] }`; `installed` includes community refs (`author/name`) the lexicon files record. Plus `registryMismatch { fileOnly, recordOnly }` when those files and the registry records disagree, and `projectTrust` and `skippedProject` (path only) when a project file was not loaded, as MCP `list_packs` reports them. A registry index is never read: list its community packs with `lexicon pack list --registry <index>` or MCP `list_packs` |
-| POST | `/packs/:name` | `{ scope?, cwd? }` (an empty body is fine) | `{ pack, added, merged, path, scope }`; an unknown pack is 404 |
-| DELETE | `/packs/:name` | | `{ pack, removed, kept, files }`; `?scope=` and `?cwd=`. `kept` names pack terms you have since edited, which are left alone |
+| POST | `/packs/:name` | `{ scope?, cwd? }` (an empty body is fine) | `{ pack, added, merged, path, scope, alreadyInstalled, summary }`; `summary` is `installed <name>: N added, M merged into <path>`, or for a pack already installed there (`alreadyInstalled: true`, nothing written) `<name> is already installed in <path> (N terms, M aliases); nothing was added`, as `lexicon pack add` says it. An unknown pack is 404 |
+| DELETE | `/packs/:name` | | `{ pack, removed, kept, files, summary, notInstalled? }`; `?scope=` and `?cwd=`. `kept` names pack terms you have since edited, which are left alone. `summary` is `removed N terms of <name> from <files>` (and what was kept), or, when no file listed the pack and nothing was written (`notInstalled: true`, still 200), `<name> is not installed; nothing was removed`, as `lexicon pack remove` says it |
 | GET | `/aliases` | `?canonical=X` | `{ canonical, aliases }`: the spellings STT is likely to produce for a name, for an onboarding form. `canonical` loses invisible characters and outer spaces first, as a stored canonical does, and is then at most 80 characters with no control character or newline left inside it (400 otherwise, as for a stored canonical) |
 | GET | `/export/:format` | | the export as text; `Content-Type` per format (see below). `?category=` (repeat it or separate with commas) and `?limit=<n>` filter and cap it like `lexicon export --category` and `--limit`; an unknown format is a 404 whose `error` lists the formats |
 
-Status codes: 400 invalid JSON, a bad or unknown field (bodies are strict: a misspelled key such as `dry_run` is refused, not ignored), an unknown or repeated query parameter on any route but `/pair` (query strings are strict the same way: `/lexicon?cdw=` and `/health?cdw=` are refused, with or without the token; only `/export`'s `category` may repeat), an unknown `category` or a `limit` that is not a positive integer on `/export`, a `cwd` that is empty or not an existing directory, or a body on `DELETE /packs/:name`, 401 missing or wrong token,
+Status codes: 400 invalid JSON, a bad or unknown field (bodies are strict: a misspelled key such as `dry_run` is refused, not ignored), an unknown or repeated query parameter on any route but `/pair` (query strings are strict the same way: `/lexicon?cdw=` and `/health?cdw=` are refused, with or without the token; only `/export`'s `category` may repeat), an unknown `category` or a `limit` that is not a positive integer on `/export`, a `cwd` that is empty or not an existing directory, or a body on `DELETE /packs/:name`, 401 missing or wrong token (the `error` names `lexicon serve --pair` for the browser extension and `lexicon serve --show` for any other client),
 403 a `Host` that does not name this server (any route), a project-scope
-write into an untrusted `.lexicon.yaml`, or `/pair` with a non-loopback client
+write into an untrusted or changed `.lexicon.yaml` (the `error` names the file,
+says nothing was written, and gives both ways on: `lexicon trust` and a retry,
+or a retry with `"scope": "global"` in the body, `?scope=global` on a DELETE), or `/pair` with a non-loopback client
 / a cross-origin `Origin`, 404 unknown route (the `error` lists every route as
 `METHOD /path`) or export format,
 405 wrong method (with an `Allow` header naming the route's methods: `GET, HEAD` on a GET route, `POST`, or `POST, DELETE` on `/packs/:name`), 413 body over 1 MB, 500 a problem on the server's side,
-503 more than 64 requests in flight.
+503 more than 64 requests in flight, a lexicon file another writer still holds the lock on, or `/pair` before the server has finished starting (in each case nothing was written; the `error` says to retry after the `Retry-After` seconds, 1).
 
 400 always means the request itself is wrong: fix the input and do not retry
-as is. 500 means the request was fine and the server could not serve it: the
+as is. A 400 about a POST body (empty, not JSON, not an object, or a field that is
+missing, mistyped or unknown) ends with the fields that route takes, such as
+`(POST /normalize takes { text, dryRun?, minConfidence?, cwd? })`. 500 means the request was fine and the server could not serve it: the
 lexicon file does not parse (`internal error: Failed to parse lexicon YAML at
-<path>: ...`), a lock on it is still held after its timeout, or the file
-cannot be read or written. The message names the cause and the file, so fix
+<path>: ...`), or the file or its lock cannot be read or written. The message names the cause and the file, so fix
 that and retry. An unauthenticated `/health` that hits the same problem gets
 only `internal error (the lexicon serve log has the detail)`; the detail is
 on the server's stderr either way.
+
+A write that waited out a lock another writer (the prompt hook, the MCP
+server, a CLI command) still holds is a 503 with `Retry-After: 1`, not a 500:
+`another writer is still using the lexicon file: could not lock <path> for
+writing: still held after 10000ms by <holder> ...; retry after 1 second
+(Retry-After)`. Nothing was written under that lock, so send the same request
+again.
 
 `/pair` is for `lexicon serve --pair`: the CLI confirms `/health`, opens the
 URL in the default browser, and the extension's content script on that page

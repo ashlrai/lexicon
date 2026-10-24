@@ -34,8 +34,16 @@ final class LocalAPI: @unchecked Sendable {
         let added: Int
         /// Terms that already existed and only gained aliases.
         let merged: Int
-        /// What the card shows: "70 terms added".
+        /// The pack was already installed in that file, so nothing was written (`alreadyInstalled`).
+        var alreadyInstalled: Bool = false
+        /// The server's own sentence for the install (`summary`), when it sent one.
+        var serverSummary: String? = nil
+        /// What the card shows: the server's `summary` when it sent one
+        /// ("developer is already installed in <path> (64 terms, 6 aliases);
+        /// nothing was added"), else "70 terms added" from the counts.
         var summary: String {
+            if let serverSummary, !serverSummary.isEmpty { return serverSummary }
+            if alreadyInstalled { return "already installed; nothing was added" }
             let total = added + merged
             let unit = total == 1 ? "term" : "terms"
             if merged > 0, added > 0 { return "\(added) \(unit) added, \(merged) merged" }
@@ -131,7 +139,9 @@ final class LocalAPI: @unchecked Sendable {
         send("POST", path: "/packs/\(name)", body: [:]) { result in
             completion(result.map {
                 PackInstall(added: ($0["added"] as? NSNumber)?.intValue ?? 0,
-                            merged: ($0["merged"] as? NSNumber)?.intValue ?? 0)
+                            merged: ($0["merged"] as? NSNumber)?.intValue ?? 0,
+                            alreadyInstalled: ($0["alreadyInstalled"] as? Bool) ?? false,
+                            serverSummary: $0["summary"] as? String)
             })
         }
     }
