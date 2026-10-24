@@ -24,6 +24,7 @@ import type { InstallOptions } from '../src/cli/cmd-install.js';
 import { runServeInstall } from '../src/cli/cmd-serve.js';
 import type { ServeDeps } from '../src/cli/cmd-serve.js';
 import { makeIO, quotedForShell, scripted } from './helpers.js';
+import { PromptClosedError } from '../src/cli/prompt.js';
 
 
 
@@ -764,6 +765,33 @@ describe('runSetup --dry-run', () => {
 });
 
 describe('runSetup interactive', () => {
+  // Catches: ctrl-C or ctrl-D at a prompt surfaced as `input closed before
+  // the prompt was answered` and exit 1, with no word of what the steps
+  // before it had already written (a created lexicon, seeded terms).
+  it('a prompt cancelled mid-run stops there and says what was already written', async () => {
+    const answers = scripted([
+      'y', // add "Mason Wyatt" as a person term?
+      'Ashlr.AI', // company
+      '', // phonetic hint
+      'n', // add another term?
+    ]);
+    // The starter pack checklist is where the input closes.
+    const p = { ...answers, choose: async (): Promise<never> => { throw new PromptClosedError(); } };
+    const f = fakes({ isInteractive: () => true, createPrompter: () => p });
+    const { code, summary, io } = await run({}, f);
+    expect(code).toBe(1);
+    expect(summary.stoppedAt).toBe('Starter packs');
+    expect(summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+    expect(io.out).toContain('Stopped at "Starter packs" (the prompt was cancelled); nothing after it ran.');
+    expect(io.out).toContain('terms added: Mason Wyatt, Ashlr.AI');
+    expect(io.out).toContain('Next: run lexicon setup again to finish; every step skips what is already done');
+    expect(io.out).not.toContain('3. Repo harvest');
+    expect(io.out).not.toContain('Done.');
+    expect(f.installed).toEqual([]);
+    expect(f.serveCalls).toBe(0);
+    expect((await readLexiconFile(globalPath, 'global')).lexicon.terms.map((t) => t.canonical)).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+  });
+
   it('walks every prompt: person, company, phonetic, another term, packs, harvest, clients, serve, app', async () => {
     await fs.mkdir(path.join(cwd, '.git'));
     const exportDir = path.join(home, 'Desktop');

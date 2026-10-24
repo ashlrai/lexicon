@@ -46,7 +46,7 @@ import { LIMITS, listPacks } from '../core/index.js';
 import { bold, dim, fail, jsonError, safe, shownCommand, tildify } from './io.js';
 import { errorMessage } from '../util/errors.js';
 import type { IO } from './io.js';
-import { createPrompter, isInteractive } from './prompt.js';
+import { PromptClosedError, createPrompter, isInteractive } from './prompt.js';
 import { SETUP_APPS, SETUP_CLIENTS } from './setup/types.js';
 import type { Ctx, SetupDeps, SetupOptions, SetupPlan, SetupSummary } from './setup/types.js';
 import { defaultSetupExec, isSetupApp, parseClientList, parsePackList, setupHintProblem, setupNameProblem } from './setup/detect.js';
@@ -226,11 +226,30 @@ function printNext(ctx: Ctx): void {
       : `open ${where} and dictate a sentence with ${quoted ?? 'one of your names'} in it`;
 }
 
+/**
+ * The card for a run cancelled at a prompt: what the finished steps wrote,
+ * and that a rerun picks up from there (every step skips what is done).
+ */
+function printStopped(ctx: Ctx): void {
+  ctx.say();
+  ctx.say(bold(`Stopped at "${ctx.summary.stoppedAt ?? ''}" (the prompt was cancelled); nothing after it ran.`));
+  printWritten(ctx);
+  ctx.summary.nextStep = 'run lexicon setup again to finish; every step skips what is already done';
+  ctx.say();
+  ctx.say(`${bold('Next:')} ${ctx.summary.nextStep}`);
+}
+
 /** Step h: the summary card. */
 function printSummary(ctx: Ctx): void {
-  const s = ctx.summary;
   ctx.say();
   ctx.say(bold('Done.'));
+  printWritten(ctx);
+  printNext(ctx);
+}
+
+/** What this run wrote, one line per kind, for the summary and the stopped card. */
+function printWritten(ctx: Ctx): void {
+  const s = ctx.summary;
   ctx.say(`   lexicon: ${safe(tildify(s.lexiconPath, ctx.home))}`);
   ctx.say(`   terms added: ${s.termsAdded.length > 0 ? safe(s.termsAdded.join(', ')) : dim('none')}`);
   ctx.say(`   packs: ${s.packs.length > 0 ? s.packs.map((p) => `${p.name} (${p.added} added)`).join(', ') : dim('none')}`);
@@ -241,13 +260,14 @@ function printSummary(ctx: Ctx): void {
   );
   ctx.say(`   local API: ${s.serve}`);
   ctx.say(`   exports: ${s.exports.length > 0 ? safe(s.exports.map((e) => tildify(e.path, ctx.home)).join(', ')) : dim('none')}`);
-  printNext(ctx);
 }
 
 /**
  * The testable handler behind `lexicon setup`. Returns the exit code and the
  * summary (also printed as JSON under `opts.json`). Exit 1 when any client
- * or the serve install failed; the steps still all run. Under `opts.dryRun`
+ * or the serve install failed; the steps still all run. A prompt cancelled
+ * at a terminal (its input closed) stops the run at that step, with a card
+ * of what the finished steps wrote and `summary.stoppedAt`; exit 1. Under `opts.dryRun`
  * nothing is written, the summary stays empty and `plan` says what a real
  * run with the same options would do (printed as the JSON under `--json`).
  */
@@ -334,26 +354,37 @@ export async function runSetup(
   say(bold(opts.dryRun ? 'lexicon setup (dry run)' : 'lexicon setup'));
   if (!interactive && !opts.yes && !opts.json && !opts.dryRun) say(dim('(no terminal: taking the defaults, as with --yes)'));
   say();
+  const steps: [string, (c: Ctx) => Promise<void>][] = [
+    ['Global lexicon', stepLexicon],
+    ['Starter packs', stepPacks],
+    ['Repo harvest', stepHarvest],
+    ['Agent clients', stepClients],
+    ['Local API', stepServe],
+    ['Dictation app', stepExport],
+    ['Does it work?', stepDemo],
+  ];
   try {
-    await stepLexicon(ctx);
-    say();
-    await stepPacks(ctx);
-    say();
-    await stepHarvest(ctx);
-    say();
-    await stepClients(ctx);
-    say();
-    await stepServe(ctx);
-    say();
-    await stepExport(ctx);
-    say();
-    await stepDemo(ctx);
+    for (const [i, [title, step]] of steps.entries()) {
+      if (i > 0) say();
+      try {
+        await step(ctx);
+      } catch (err) {
+        // ctrl-C or ctrl-D at a prompt closes its input. That surfaced as
+        // `lexicon: input closed before the prompt was answered` and exit 1,
+        // with no word of what the earlier steps had already written.
+        if (!(err instanceof PromptClosedError)) throw err;
+        ctx.summary.stoppedAt = title;
+        break;
+      }
+    }
     if (ctx.plan) printPlan(ctx, ctx.plan);
+    else if (ctx.summary.stoppedAt !== undefined) printStopped(ctx);
     else printSummary(ctx);
   } finally {
     if (ownPrompter) prompter?.close();
   }
-  const failed = ctx.summary.serve === 'failed' || ctx.summary.clients.some((c) => c.status === 'failed');
+  const failed =
+    ctx.summary.stoppedAt !== undefined || ctx.summary.serve === 'failed' || ctx.summary.clients.some((c) => c.status === 'failed');
   // `ok` leads the document so a script reads success the same way it reads
   // the `{ ok: false, error, nextStep }` refusal; false when a client or serve failed (exit 1).
   if (opts.json) io.stdout(`${JSON.stringify({ ok: !failed, ...(ctx.plan ?? ctx.summary) }, null, 2)}\n`);

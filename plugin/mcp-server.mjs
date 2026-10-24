@@ -66037,10 +66037,22 @@ function printNext(ctx) {
   const quoted = name ? JSON.stringify(name) : void 0;
   s.nextStep = ctx.opts.forAgent ? addName ? "Ask the user for a name they dictate (their company, product or a teammate) and add it with add_term; then ask them to dictate a sentence with it in it." : `Ask the user to dictate a sentence with ${quoted ?? "one of their names"} in it${installed.length > 0 ? ` in ${where}` : ""}.` : addName ? `add a name you dictate: lexicon add "Your Co" --suggest (then open ${where} and say it in a sentence)` : `open ${where} and dictate a sentence with ${quoted ?? "one of your names"} in it`;
 }
+function printStopped(ctx) {
+  ctx.say();
+  ctx.say(bold(`Stopped at "${ctx.summary.stoppedAt ?? ""}" (the prompt was cancelled); nothing after it ran.`));
+  printWritten(ctx);
+  ctx.summary.nextStep = "run lexicon setup again to finish; every step skips what is already done";
+  ctx.say();
+  ctx.say(`${bold("Next:")} ${ctx.summary.nextStep}`);
+}
 function printSummary(ctx) {
-  const s = ctx.summary;
   ctx.say();
   ctx.say(bold("Done."));
+  printWritten(ctx);
+  printNext(ctx);
+}
+function printWritten(ctx) {
+  const s = ctx.summary;
   ctx.say(`   lexicon: ${safe(tildify(s.lexiconPath, ctx.home))}`);
   ctx.say(`   terms added: ${s.termsAdded.length > 0 ? safe(s.termsAdded.join(", ")) : dim("none")}`);
   ctx.say(`   packs: ${s.packs.length > 0 ? s.packs.map((p) => `${p.name} (${p.added} added)`).join(", ") : dim("none")}`);
@@ -66051,7 +66063,6 @@ function printSummary(ctx) {
   );
   ctx.say(`   local API: ${s.serve}`);
   ctx.say(`   exports: ${s.exports.length > 0 ? safe(s.exports.map((e) => tildify(e.path, ctx.home)).join(", ")) : dim("none")}`);
-  printNext(ctx);
 }
 async function runSetup(opts, io, deps = {}) {
   const cwd = import_node_path28.default.resolve(opts.cwd ?? process.cwd());
@@ -66123,26 +66134,33 @@ async function runSetup(opts, io, deps = {}) {
   say(bold(opts.dryRun ? "lexicon setup (dry run)" : "lexicon setup"));
   if (!interactive && !opts.yes && !opts.json && !opts.dryRun) say(dim("(no terminal: taking the defaults, as with --yes)"));
   say();
+  const steps = [
+    ["Global lexicon", stepLexicon],
+    ["Starter packs", stepPacks],
+    ["Repo harvest", stepHarvest],
+    ["Agent clients", stepClients],
+    ["Local API", stepServe],
+    ["Dictation app", stepExport],
+    ["Does it work?", stepDemo]
+  ];
   try {
-    await stepLexicon(ctx);
-    say();
-    await stepPacks(ctx);
-    say();
-    await stepHarvest(ctx);
-    say();
-    await stepClients(ctx);
-    say();
-    await stepServe(ctx);
-    say();
-    await stepExport(ctx);
-    say();
-    await stepDemo(ctx);
+    for (const [i, [title, step]] of steps.entries()) {
+      if (i > 0) say();
+      try {
+        await step(ctx);
+      } catch (err) {
+        if (!(err instanceof PromptClosedError)) throw err;
+        ctx.summary.stoppedAt = title;
+        break;
+      }
+    }
     if (ctx.plan) printPlan(ctx, ctx.plan);
+    else if (ctx.summary.stoppedAt !== void 0) printStopped(ctx);
     else printSummary(ctx);
   } finally {
     if (ownPrompter) prompter?.close();
   }
-  const failed = ctx.summary.serve === "failed" || ctx.summary.clients.some((c) => c.status === "failed");
+  const failed = ctx.summary.stoppedAt !== void 0 || ctx.summary.serve === "failed" || ctx.summary.clients.some((c) => c.status === "failed");
   if (opts.json) io.stdout(`${JSON.stringify({ ok: !failed, ...ctx.plan ?? ctx.summary }, null, 2)}
 `);
   return { code: failed ? 1 : 0, summary: ctx.summary, ...ctx.plan ? { plan: ctx.plan } : {} };

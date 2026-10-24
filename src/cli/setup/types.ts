@@ -160,6 +160,12 @@ export interface SetupSummary {
   /** The project lexicon a `harvestUntrusted` harvest wrote without pinning it (it was not trusted before); untrusted until the user runs `lexicon trust`. */
   untrustedProject?: string;
   /**
+   * The step a prompt was cancelled at (ctrl-C or ctrl-D at a terminal), by
+   * its title, when the run stopped there. The steps before it are done and
+   * recorded above; nothing after it ran.
+   */
+  stoppedAt?: string;
+  /**
    * The one thing to do next: the text output's `Next:` line without the
    * label (with `forAgent`, the same step in tool terms). Absent only if the
    * run stopped before the summary.
