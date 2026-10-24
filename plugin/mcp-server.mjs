@@ -66154,7 +66154,7 @@ var SERVE_FILE_MODE = 384;
 var SERVE_FILE_NAME = "serve.json";
 var DEFAULT_PORT = 41733;
 var DEFAULT_HOST = "127.0.0.1";
-var TOKEN_RE3 = /^[0-9a-f]{32,128}$/;
+var TOKEN_RE3 = /^[0-9a-fA-F]{32,128}$/;
 function getServePath(opts = {}) {
   return import_node_path25.default.join(import_node_path25.default.dirname(resolvePaths(opts).global), SERVE_FILE_NAME);
 }
@@ -66222,7 +66222,7 @@ function tokenProblem(raw) {
   const token = raw.token;
   if (token === void 0) return 'it has no "token" key';
   if (typeof token !== "string") return '"token" is not a string';
-  return `"token" is not 32 to 128 hex characters (0-9, a-f)`;
+  return `"token" is not 32 to 128 hex characters (0-9, a-f, A-F)`;
 }
 async function ensureServeConfig(opts = {}, hooks = {}) {
   return withServeConfigLock(async () => {

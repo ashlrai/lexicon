@@ -276,6 +276,36 @@ describe('serve.json', () => {
     }
   });
 
+  // Catches: TOKEN_RE took lower-case hex only, so a token hand-edited to
+  // upper case was "no usable token" and replaced, breaking every client
+  // given it. Upper case is kept; the bearer check stays exact.
+  it('keeps an upper-case hex token and still compares it exactly', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-upper-'));
+    try {
+      const gp = path.join(dir, 'lexicon.yaml');
+      await fs.writeFile(gp, 'version: 1\nterms: []\n');
+      const servePath = getServePath({ globalPath: gp });
+      const token = 'AB12'.repeat(8);
+      await fs.writeFile(servePath, JSON.stringify({ port: 41733, token, createdAt: '2026-01-01T00:00:00.000Z' }), { mode: 0o600 });
+      const notices: string[] = [];
+      expect((await readServeConfig({ globalPath: gp }))?.token).toBe(token);
+      expect((await ensureServeConfig({ globalPath: gp }, { onTokenReplaced: (m) => notices.push(m) })).token).toBe(token);
+      expect(notices).toEqual([]);
+      const server = createServer({ port: 0, globalPath: gp, quiet: true, log: () => {} });
+      const info = await server.start();
+      try {
+        expect(info.token).toBe(token);
+        expect((await fetch(`${info.url}/stats`, { headers: { Authorization: `Bearer ${token}` } })).status).toBe(200);
+        expect((await fetch(`${info.url}/stats`, { headers: { Authorization: `Bearer ${token.toLowerCase()}` } })).status).toBe(401);
+      } finally {
+        await server.stop();
+      }
+      expect(JSON.parse(await fs.readFile(servePath, 'utf8')).token).toBe(token);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   // Catches: a serve.json saved with a byte order mark (Windows Notepad,
   // PowerShell Out-File) or with a typo after a hand edit read as missing, so
   // the next start minted a new token over it: allowedOrigins was dropped and

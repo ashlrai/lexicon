@@ -35,7 +35,7 @@ export const EXTENSION_ORIGIN_PREFIXES: readonly string[] = [
 export interface ServeConfig {
   /** Port the server last listened on (informational; `lexicon serve` without `--port` binds DEFAULT_PORT). */
   port: number;
-  /** 32 hex characters, sent as `Authorization: Bearer <token>`. */
+  /** 32 to 128 hex characters (either case; `generateToken` writes lower case), sent as `Authorization: Bearer <token>`, compared exactly. */
   token: string;
   /** ISO timestamp of token creation. */
   createdAt: string;
@@ -43,7 +43,14 @@ export interface ServeConfig {
   allowedOrigins?: string[];
 }
 
-const TOKEN_RE = /^[0-9a-f]{32,128}$/;
+/**
+ * Either case of hex: a hand-edited token in upper case was "no usable token"
+ * and replaced, breaking every client given it. The bearer check stays exact
+ * and constant-time (`tokenMatches` in server.ts compares the bytes), so
+ * `ABCD...` and `abcd...` are different tokens; the case only stops counting
+ * as malformed.
+ */
+const TOKEN_RE = /^[0-9a-fA-F]{32,128}$/;
 
 /** `<dirname(global lexicon)>/serve.json`; follows LEXICON_PATH and XDG_CONFIG_HOME. */
 export function getServePath(opts: StoreOptions = {}): string {
@@ -188,7 +195,7 @@ function tokenProblem(raw: unknown): string {
   const token = (raw as Record<string, unknown>).token;
   if (token === undefined) return 'it has no "token" key';
   if (typeof token !== 'string') return '"token" is not a string';
-  return `"token" is not 32 to 128 hex characters (0-9, a-f)`;
+  return `"token" is not 32 to 128 hex characters (0-9, a-f, A-F)`;
 }
 
 export async function ensureServeConfig(opts: StoreOptions = {}, hooks: EnsureServeConfigHooks = {}): Promise<ServeConfig> {
