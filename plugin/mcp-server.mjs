@@ -60294,8 +60294,8 @@ async function installLoadedPack(pack, recordAs, opts = {}) {
     const merged = results.length - added;
     const packs = dedupe([...file2.lexicon.settings?.packs ?? [], recordAs]);
     await writePacksSetting(file2, packs, storeOpts2, leaveUntrusted);
-    const alreadyInstalled = before !== void 0 && before === await readTextIfAny(file2.path);
-    return { pack: info(pack), added, merged, path: file2.path, scope, alreadyInstalled };
+    const alreadyInstalled2 = before !== void 0 && before === await readTextIfAny(file2.path);
+    return { pack: info(pack), added, merged, path: file2.path, scope, alreadyInstalled: alreadyInstalled2 };
   });
 }
 async function installPack(name, opts = {}) {
@@ -62872,16 +62872,32 @@ async function applyJson(target) {
 function mergeChanged(first, second) {
   return { next: second.next, changed: first.changed || second.changed };
 }
-async function applyToml(target) {
-  const { text, existed } = await readText2(target.file);
+function planToml(text, target) {
   const { env, ...launch } = target.entry;
   const envTable = `${CODEX_TABLE}.env`;
   const subTable = env !== void 0 && text.split("\n").some((l) => tomlHeaderRe(envTable).test(l));
   const table = upsertTomlTable(text, CODEX_TABLE, codexBlock(subTable ? launch : target.entry));
-  const { next, changed } = subTable && env ? mergeChanged(table, upsertTomlKeys(table.next, envTable, env)) : table;
+  return { ...subTable && env ? mergeChanged(table, upsertTomlKeys(table.next, envTable, env)) : table, subTable };
+}
+async function applyToml(target) {
+  const { text, existed } = await readText2(target.file);
+  const { next, changed, subTable } = planToml(text, target);
   if (!changed) return { outcome: "unchanged", envTable: subTable };
   await writeText(target.file, next);
   return { outcome: existed ? "updated" : "created", envTable: subTable };
+}
+async function alreadyInstalled(target) {
+  try {
+    if (target.format === "toml") {
+      const { text, existed } = await readText2(target.file);
+      return existed && !planToml(text, target).changed;
+    }
+    const read = await readJsonFile(target.file);
+    if (!read.exists || read.error !== void 0) return false;
+    return !mergeServerIntoJson(read.value, target.key, target.entry).changed;
+  } catch {
+    return false;
+  }
 }
 function jsonSnippet(key, entry) {
   return JSON.stringify({ [key]: { lexicon: entry } }, null, 2);
@@ -63015,8 +63031,13 @@ async function installText(client, opts, io, deps) {
   const target = targetFor(name, serverPath, { home, cwd, platform, env, project });
   const body = target.format === "toml" ? codexBlock(target.entry) : jsonSnippet(target.key, target.entry);
   line(io, bold(`1. Add the lexicon MCP server to ${target.label}`));
-  line(io, `   ${opts.apply ? "merge into" : "would merge into"} ${safe(target.file)}:`);
-  line(io, indent(body, "   "));
+  const installed = !opts.apply && await alreadyInstalled(target);
+  if (installed) {
+    line(io, `   already installed in ${safe(target.file)}: the lexicon entry there matches, nothing to write`);
+  } else {
+    line(io, `   ${opts.apply ? "merge into" : "would merge into"} ${safe(target.file)}:`);
+    line(io, indent(body, "   "));
+  }
   if (opts.apply) {
     const applied = target.format === "toml" ? await applyToml(target) : await applyJson(target);
     const { outcome } = applied;
@@ -63034,7 +63055,7 @@ async function installText(client, opts, io, deps) {
   if (reload !== void 0) line(io, opts.apply ? `   then: ${reload}` : dim(`   after --apply: ${reload}`));
   line(io);
   printExportHint(io, 2, name);
-  if (!opts.apply) {
+  if (!opts.apply && !installed) {
     line(io);
     line(io, dim(`to write step 1, run: ${installApplyCommand(name, opts)}`));
   }

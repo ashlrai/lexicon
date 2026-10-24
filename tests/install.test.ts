@@ -686,6 +686,35 @@ describe('a preview names the full command that applies it', () => {
   });
 });
 
+// Catches: a preview printed "would merge into <file>" and the entry, then
+// "to write step 1, run: ... --apply", for a file that already held exactly
+// that entry, so a finished install read as work still to do.
+describe('a preview of an entry already installed says so', () => {
+  it('names the file and drops the snippet and the apply line (JSON and TOML)', async () => {
+    for (const client of ['cursor', 'codex'] as const) {
+      expect((await run(client, { apply: true })).code).toBe(0);
+      const { code, io } = await run(client);
+      expect(code).toBe(0);
+      const file = client === 'cursor' ? path.join(home, '.cursor', 'mcp.json') : path.join(home, '.codex', 'config.toml');
+      expect(io.out).toContain(`already installed in ${file}: the lexicon entry there matches, nothing to write`);
+      expect(io.out).not.toContain('would merge into');
+      expect(io.out).not.toContain('to write step 1, run:');
+    }
+  });
+
+  it('still previews the merge when the entry differs or the file is not valid JSON', async () => {
+    const file = path.join(home, '.cursor', 'mcp.json');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, JSON.stringify({ mcpServers: { lexicon: { command: 'node', args: ['/old/server.js'] } } }));
+    const stale = await run('cursor');
+    expect(stale.io.out).toContain(`would merge into ${file}:`);
+    expect(stale.io.out).toContain('to write step 1, run:');
+    await fs.writeFile(file, '{ not json');
+    const broken = await run('cursor');
+    expect(broken.io.out).toContain(`would merge into ${file}:`);
+  });
+});
+
 describe('claude registration is idempotent', () => {
   it('reports an existing `claude mcp add` entry as unchanged rather than failed', async () => {
     const io = makeIO();

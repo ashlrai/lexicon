@@ -554,8 +554,8 @@ function mergeChanged(first: MergeResult<string>, second: MergeResult<string>): 
   return { next: second.next, changed: first.changed || second.changed };
 }
 
-async function applyToml(target: InstallTarget): Promise<Applied> {
-  const { text, existed } = await readText(target.file);
+/** Codex's config.toml `text` with the lexicon table merged in, and whether the env keys went into a sub-table. */
+function planToml(text: string, target: InstallTarget): MergeResult<string> & { subTable: boolean } {
   const { env, ...launch } = target.entry;
   const envTable = `${CODEX_TABLE}.env`;
   // A user who keeps the server's variables in a `[mcp_servers.lexicon.env]`
@@ -563,10 +563,34 @@ async function applyToml(target: InstallTarget): Promise<Applied> {
   // define the key twice, which TOML rejects.
   const subTable = env !== undefined && text.split('\n').some((l) => tomlHeaderRe(envTable).test(l));
   const table = upsertTomlTable(text, CODEX_TABLE, codexBlock(subTable ? launch : target.entry));
-  const { next, changed } = subTable && env ? mergeChanged(table, upsertTomlKeys(table.next, envTable, env)) : table;
+  return { ...(subTable && env ? mergeChanged(table, upsertTomlKeys(table.next, envTable, env)) : table), subTable };
+}
+
+async function applyToml(target: InstallTarget): Promise<Applied> {
+  const { text, existed } = await readText(target.file);
+  const { next, changed, subTable } = planToml(text, target);
   if (!changed) return { outcome: 'unchanged', envTable: subTable };
   await writeText(target.file, next);
   return { outcome: existed ? 'updated' : 'created', envTable: subTable };
+}
+
+/**
+ * True when `--apply` would leave `target.file` as it is: the lexicon entry
+ * there already matches. False when it would write, or when the file cannot
+ * be read or merged (the apply reports why).
+ */
+async function alreadyInstalled(target: InstallTarget): Promise<boolean> {
+  try {
+    if (target.format === 'toml') {
+      const { text, existed } = await readText(target.file);
+      return existed && !planToml(text, target).changed;
+    }
+    const read = await readJsonFile(target.file);
+    if (!read.exists || read.error !== undefined) return false;
+    return !mergeServerIntoJson(read.value, target.key, target.entry).changed;
+  } catch {
+    return false;
+  }
 }
 
 // ---------------------------------------------------------------------------
@@ -777,8 +801,14 @@ async function installText(
   const body = target.format === 'toml' ? codexBlock(target.entry) : jsonSnippet(target.key, target.entry);
 
   line(io, bold(`1. Add the lexicon MCP server to ${target.label}`));
-  line(io, `   ${opts.apply ? 'merge into' : 'would merge into'} ${safe(target.file)}:`);
-  line(io, indent(body, '   '));
+  // A preview of an entry the file already holds read as work still to do.
+  const installed = !opts.apply && (await alreadyInstalled(target));
+  if (installed) {
+    line(io, `   already installed in ${safe(target.file)}: the lexicon entry there matches, nothing to write`);
+  } else {
+    line(io, `   ${opts.apply ? 'merge into' : 'would merge into'} ${safe(target.file)}:`);
+    line(io, indent(body, '   '));
+  }
   if (opts.apply) {
     const applied = target.format === 'toml' ? await applyToml(target) : await applyJson(target);
     const { outcome } = applied;
@@ -799,7 +829,7 @@ async function installText(
   line(io);
 
   printExportHint(io, 2, name);
-  if (!opts.apply) {
+  if (!opts.apply && !installed) {
     line(io);
     line(io, dim(`to write step 1, run: ${installApplyCommand(name, opts)}`));
   }
