@@ -117,7 +117,9 @@ describe('lexicon stats (CLI)', () => {
     const text = renderStats(computeStats(loadedOf([{ canonical: 'Zoë', aliases: [] }])));
     expect(text).toContain('no hits yet');
     // Catches: the hint named normalize_transcript, an MCP tool a person at a shell cannot call.
-    expect(text).toContain('counted when lexicon normalize, the prompt hook or the MCP server fixes something');
+    // Catches: it then named `lexicon normalize`, which records no hits, so a
+    // user who tried it saw the counts never move.
+    expect(text).toContain('counted when the prompt hook, the MCP server, lexicon voice, the clipboard daemon or lexicon serve fixes something; lexicon normalize does not count');
     expect(text).not.toContain('normalize_transcript');
   });
 

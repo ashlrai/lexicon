@@ -246,7 +246,9 @@ export function renderStats(stats: LexiconStats, note?: string): string {
 
   out.push('top terms');
   if (stats.topTerms.length === 0) {
-    out.push('  (no hits yet. They are counted when lexicon normalize, the prompt hook or the MCP server fixes something)');
+    // `lexicon normalize` is a filter and counts nothing, so naming it sent a
+    // user who tried it to a stats report that never moved.
+    out.push('  (no hits yet. They are counted when the prompt hook, the MCP server, lexicon voice, the clipboard daemon or lexicon serve fixes something; lexicon normalize does not count)');
   } else {
     out.push(
       renderTable(
