@@ -21094,6 +21094,28 @@ async function spawnCacheRefresh(cwd) {
   child.unref();
 }
 var STALE_LEXICON_NOTE = "Lexicon note: the lexicon file changed since it was last read, so these corrections used the previous version while the new one is prepared in the background; a term just added or changed applies from the next prompt.";
+var STALE_SESSION_NOTE = "Lexicon note: the lexicon file changed since it was last read, so this list is the previous version while the new one is prepared in the background; a term just added or changed applies from the next prompt.";
+async function loadForHook(cwd, opts) {
+  let attempt = await loadOrExplain(cwd, opts.startRefresh !== void 0);
+  if (!attempt.loaded?.globalStale || !opts.startRefresh) return { attempt, stale: false };
+  const globalPath = attempt.loaded.global.path;
+  let claim2 = await claimCacheRefresh(globalPath);
+  if (claim2 === "claimed") {
+    try {
+      await opts.startRefresh(cwd);
+    } catch (err) {
+      process.stderr.write(`[lexicon hook] could not start the cache refresh: ${sanitizeForDisplayMax(errorText(err), 200)}
+`);
+      await releaseCacheRefresh(globalPath);
+      claim2 = "unavailable";
+    }
+  }
+  if (claim2 === "unavailable") {
+    attempt = await loadOrExplain(cwd);
+    return { attempt, stale: false };
+  }
+  return { attempt, stale: true };
+}
 var HOOK_MATCH_BUDGET_MS = 100;
 var HOOK_PROMPT_MAX_CHARS = 5e4;
 var HOOK_LOCK_TIMEOUT_MS = 50;
@@ -21553,24 +21575,8 @@ async function userPromptSubmit(payload, opts) {
   }
   if (typeof prompt !== "string" || prompt.trim() === "") return "";
   const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
-  let attempt = await loadOrExplain(cwd, opts.startRefresh !== void 0);
-  let staleNote = "";
-  if (attempt.loaded?.globalStale && opts.startRefresh) {
-    const globalPath = attempt.loaded.global.path;
-    let claim2 = await claimCacheRefresh(globalPath);
-    if (claim2 === "claimed") {
-      try {
-        await opts.startRefresh(cwd);
-      } catch (err) {
-        process.stderr.write(`[lexicon hook] could not start the cache refresh: ${sanitizeForDisplayMax(errorText(err), 200)}
-`);
-        await releaseCacheRefresh(globalPath);
-        claim2 = "unavailable";
-      }
-    }
-    if (claim2 === "unavailable") attempt = await loadOrExplain(cwd);
-    else staleNote = STALE_LEXICON_NOTE;
-  }
+  const { attempt, stale } = await loadForHook(cwd, opts);
+  const staleNote = stale ? STALE_LEXICON_NOTE : "";
   if (!attempt.loaded) return emit("UserPromptSubmit", [attempt.note ?? ""]);
   const loaded = attempt.loaded;
   const skippedNote = formatSkippedProjectNote(loaded);
@@ -21609,17 +21615,17 @@ function formatBudgetNote(budgetMs) {
 }
 async function sessionStart(payload, opts) {
   const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
-  const attempt = await loadOrExplain(cwd);
+  const { attempt, stale } = await loadForHook(cwd, opts);
   if (!attempt.loaded) return emit("SessionStart", [attempt.note ?? ""]);
   const loaded = attempt.loaded;
-  const skippedNote = formatSkippedProjectNote(loaded);
+  const trailer = [formatSkippedProjectNote(loaded), stale ? STALE_SESSION_NOTE : ""].filter((n) => n !== "").join("\n");
   if (loaded.merged.terms.length === 0) {
-    if (!await shouldEmitOnboardNote(loaded.global.path)) return skippedNote ? emit("SessionStart", [skippedNote]) : "";
-    return emit("SessionStart", skippedNote ? [ONBOARD_NOTE, skippedNote] : [ONBOARD_NOTE]);
+    if (!await shouldEmitOnboardNote(loaded.global.path)) return trailer ? emit("SessionStart", [trailer]) : "";
+    return emit("SessionStart", trailer ? [ONBOARD_NOTE, trailer] : [ONBOARD_NOTE]);
   }
-  const room = SESSION_CONTEXT_MAX_CHARS - (skippedNote ? skippedNote.length + 1 : 0);
+  const room = SESSION_CONTEXT_MAX_CHARS - (trailer ? trailer.length + 1 : 0);
   const parts = [truncateSessionContext(neutralizeMarkup(exportLexicon(loaded.merged, "claude-md")).trimEnd(), room)];
-  if (skippedNote) parts.push(skippedNote);
+  if (trailer) parts.push(trailer);
   return emit("SessionStart", parts);
 }
 async function runUserPromptSubmitHook(input, opts = {}) {
@@ -21767,6 +21773,7 @@ export {
   REFRESH_LOCK_STALE_MS,
   SESSION_CONTEXT_MAX_CHARS,
   STALE_LEXICON_NOTE,
+  STALE_SESSION_NOTE,
   capCorrectionList,
   claimCacheRefresh,
   dataBlockSpans,

@@ -43,8 +43,9 @@ export interface HookOptions {
    * process). With it, a UserPromptSubmit whose global lexicon changed since
    * it was cached (and is at least STALE_GLOBAL_MIN_BYTES) is matched against
    * the previous version, with the stale note, instead of parsing and
-   * indexing inside the prompt; without it (the default) the prompt parses as
-   * before. See claimCacheRefresh.
+   * indexing inside the prompt, and a SessionStart lists the previous version
+   * with STALE_SESSION_NOTE; without it (the default) both parse as before.
+   * See claimCacheRefresh.
    */
   startRefresh?: (cwd: string) => Promise<void>;
 }
@@ -139,6 +140,50 @@ export async function spawnCacheRefresh(cwd: string): Promise<void> {
  */
 export const STALE_LEXICON_NOTE =
   'Lexicon note: the lexicon file changed since it was last read, so these corrections used the previous version while the new one is prepared in the background; a term just added or changed applies from the next prompt.';
+
+/**
+ * The SessionStart counterpart of STALE_LEXICON_NOTE: the table above it is
+ * the previous version of a global lexicon that changed since it was cached.
+ */
+export const STALE_SESSION_NOTE =
+  'Lexicon note: the lexicon file changed since it was last read, so this list is the previous version while the new one is prepared in the background; a term just added or changed applies from the next prompt.';
+
+/** What loadForHook returns: the load (or the note explaining why there is none) and the notes a stale load adds. */
+interface HookLoad {
+  attempt: Awaited<ReturnType<typeof loadOrExplain>>;
+  /** True when the global lexicon is the previous version (a background refresh is preparing the new one). */
+  stale: boolean;
+}
+
+/**
+ * Load the lexicon for one hook event. With `opts.startRefresh`, a global
+ * lexicon that changed since it was cached (and is at least
+ * STALE_GLOBAL_MIN_BYTES) is served from the previous parse while a
+ * background refresh parses and indexes the new one, unless no refresh can
+ * run (see claimCacheRefresh), in which case it is parsed here. Both events
+ * use it: SessionStart parsed inline after every hand edit (about 450 ms at
+ * 5000 terms, past the hook's 200 ms budget).
+ */
+async function loadForHook(cwd: string, opts: HookOptions): Promise<HookLoad> {
+  let attempt = await loadOrExplain(cwd, opts.startRefresh !== undefined);
+  if (!attempt.loaded?.globalStale || !opts.startRefresh) return { attempt, stale: false };
+  const globalPath = attempt.loaded.global.path;
+  let claim = await claimCacheRefresh(globalPath);
+  if (claim === 'claimed') {
+    try {
+      await opts.startRefresh(cwd);
+    } catch (err) {
+      process.stderr.write(`[lexicon hook] could not start the cache refresh: ${sanitizeForDisplayMax(errorText(err), 200)}\n`);
+      await releaseCacheRefresh(globalPath);
+      claim = 'unavailable';
+    }
+  }
+  if (claim === 'unavailable') {
+    attempt = await loadOrExplain(cwd);
+    return { attempt, stale: false };
+  }
+  return { attempt, stale: true };
+}
 
 /**
  * How long the UserPromptSubmit hook spends matching before it stops and
@@ -1023,26 +1068,9 @@ async function userPromptSubmit(payload: HookInput, opts: HookOptions): Promise<
   const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
   // Default loadLexicon merges the project file only when trusted; an
   // untrusted one shows up as skippedProject and is mentioned by path only.
-  let attempt = await loadOrExplain(cwd, opts.startRefresh !== undefined);
-  let staleNote = '';
-  if (attempt.loaded?.globalStale && opts.startRefresh) {
-    // The global file changed since it was cached: match against the previous
-    // version and let a background process parse and index the new one,
-    // unless no refresh can run (see claimCacheRefresh).
-    const globalPath = attempt.loaded.global.path;
-    let claim = await claimCacheRefresh(globalPath);
-    if (claim === 'claimed') {
-      try {
-        await opts.startRefresh(cwd);
-      } catch (err) {
-        process.stderr.write(`[lexicon hook] could not start the cache refresh: ${sanitizeForDisplayMax(errorText(err), 200)}\n`);
-        await releaseCacheRefresh(globalPath);
-        claim = 'unavailable';
-      }
-    }
-    if (claim === 'unavailable') attempt = await loadOrExplain(cwd);
-    else staleNote = STALE_LEXICON_NOTE;
-  }
+  // A global file changed since it was cached may be served stale (loadForHook).
+  const { attempt, stale } = await loadForHook(cwd, opts);
+  const staleNote = stale ? STALE_LEXICON_NOTE : '';
   if (!attempt.loaded) return emit('UserPromptSubmit', [attempt.note ?? '']);
   const loaded = attempt.loaded;
   const skippedNote = formatSkippedProjectNote(loaded);
@@ -1109,27 +1137,29 @@ export function formatBudgetNote(budgetMs: number): string {
 
 async function sessionStart(payload: HookInput, opts: HookOptions): Promise<string> {
   const cwd = opts.cwd ?? payloadCwd(payload) ?? process.cwd();
-  const attempt = await loadOrExplain(cwd);
+  const { attempt, stale } = await loadForHook(cwd, opts);
   if (!attempt.loaded) return emit('SessionStart', [attempt.note ?? '']);
   const loaded = attempt.loaded;
-  const skippedNote = formatSkippedProjectNote(loaded);
+  // A stale load's note rides with the skipped-project note: both are lines
+  // the table gives up room for.
+  const trailer = [formatSkippedProjectNote(loaded), stale ? STALE_SESSION_NOTE : ''].filter((n) => n !== '').join('\n');
 
   if (loaded.merged.terms.length === 0) {
     // Nothing to inject; nudge the model to offer onboarding, but not every
     // session. The skipped-project note is not rationed with it: a session
     // with terms always gets it, and an empty global lexicon is exactly when
     // the repo's file is the only vocabulary there is.
-    if (!(await shouldEmitOnboardNote(loaded.global.path))) return skippedNote ? emit('SessionStart', [skippedNote]) : '';
-    return emit('SessionStart', skippedNote ? [ONBOARD_NOTE, skippedNote] : [ONBOARD_NOTE]);
+    if (!(await shouldEmitOnboardNote(loaded.global.path))) return trailer ? emit('SessionStart', [trailer]) : '';
+    return emit('SessionStart', trailer ? [ONBOARD_NOTE, trailer] : [ONBOARD_NOTE]);
   }
 
   // The model-facing variant: `<` and `>` in a canonical or note become
   // lookalikes, so the table cannot close or open a tag around it.
   // The cap covers the whole context: the table gives up room for the
   // skipped-project note (bounded by pathForModel) and the joining newline.
-  const room = SESSION_CONTEXT_MAX_CHARS - (skippedNote ? skippedNote.length + 1 : 0);
+  const room = SESSION_CONTEXT_MAX_CHARS - (trailer ? trailer.length + 1 : 0);
   const parts: string[] = [truncateSessionContext(neutralizeMarkup(exportLexicon(loaded.merged, 'claude-md')).trimEnd(), room)];
-  if (skippedNote) parts.push(skippedNote);
+  if (trailer) parts.push(trailer);
   return emit('SessionStart', parts);
 }
 
