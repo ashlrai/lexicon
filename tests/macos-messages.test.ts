@@ -31,6 +31,8 @@ describe('LexiconBar messages name a next step', () => {
     ['AppDelegate.swift', 'printed no global path, so the lexicon CLI and LexiconBar are likely different releases; choose Run doctor from the menu'],
     ['AppDelegate.swift', 'or `lexicon add <canonical> <alias>` (for example `lexicon add \\"Ashlr.AI\\" Ashler`) to create it'],
     ['AppDelegate.swift', 'Turn LexiconBar on in System Settings > General > Login Items instead.'],
+    ['ChildProcessSupervisor.swift', 'state = .failed("The lexicon CLI was not found. Set its path in Preferences.")'],
+    ['ChildProcessSupervisor.swift', 'restarts. Run `lexicon \\(name)` in Terminal to see the error, then switch it on again from the menu.'],
   ])('%s: %s', (file, text) => {
     expect(source(file)).toContain(text);
   });
