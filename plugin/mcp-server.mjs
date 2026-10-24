@@ -64793,7 +64793,7 @@ async function explainWrite(file2, write) {
     const code = err.code;
     if (code !== "EACCES" && code !== "EPERM" && code !== "EROFS") throw err;
     throw new CliRefusal(
-      `could not write ${safe(file2)} (${code}): it is read-only or not yours; nothing was changed`,
+      `could not write ${file2} (${code}): it is read-only or not yours; nothing was changed`,
       `make it writable (ls -l ${posixShellWord(file2)} shows who owns it; chmod u+w ${posixShellWord(file2)}) and run this again, or add the entry shown above to it by hand`
     );
   }
@@ -64854,7 +64854,7 @@ function installApplyCommand(client, opts) {
   return shownCommand(words);
 }
 function undoEntry(target, applied) {
-  const file2 = safe(target.file);
+  const file2 = safePath(target.file);
   const what = target.format === "toml" ? `delete the [${CODEX_TABLE}] table${applied.envTable ? ` and its [${CODEX_TABLE}.env] table` : ""} from ${file2}` : `delete the "lexicon" entry under "${target.key}" in ${file2}${applied.addedKey && applied.outcome === "updated" ? `, and "${target.key}" itself, which this run added` : ""}`;
   return applied.outcome === "created" ? `${what} (this run created the file, so deleting it undoes this)` : what;
 }
@@ -64976,9 +64976,9 @@ async function installText(client, opts, io, deps) {
   line(io, bold(`1. Add the lexicon MCP server to ${target.label}`));
   const installed = !opts.apply && await alreadyInstalled(target);
   if (installed) {
-    line(io, `   already installed in ${safe(target.file)}: the lexicon entry there matches, nothing to write`);
+    line(io, `   already installed in ${safePath(target.file)}: the lexicon entry there matches, nothing to write`);
   } else {
-    line(io, `   ${opts.apply ? "merge into" : "would merge into"} ${safe(target.file)}:`);
+    line(io, `   ${opts.apply ? "merge into" : "would merge into"} ${safePath(target.file)}:`);
     line(io, indent(body, "   "));
   }
   if (opts.apply) {
@@ -64986,9 +64986,9 @@ async function installText(client, opts, io, deps) {
     const { outcome } = applied;
     deps.onWritten?.(target.file, outcome);
     if (outcome === "unchanged") {
-      line(io, dim(`   ${safe(target.file)}: lexicon entry already present, nothing changed`));
+      line(io, dim(`   ${safePath(target.file)}: lexicon entry already present, nothing changed`));
     } else {
-      line(io, green(`   ${outcome} ${safe(target.file)}: ${target.format === "toml" ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
+      line(io, green(`   ${outcome} ${safePath(target.file)}: ${target.format === "toml" ? `[${CODEX_TABLE}]` : `${target.key}.lexicon`}`));
     }
     line(io, dim(`   undo: ${undoEntry(target, applied)}`));
   }
@@ -65045,7 +65045,7 @@ async function runInstallClaude(opts, io, deps = {}) {
   else if (bundled) line(io, dim("   (self-contained bundle: no node_modules needed at runtime)"));
   if (opts.apply) {
     if (!serverLaunch.viaNpx && !(0, import_node_fs21.existsSync)(serverPath)) {
-      line(io, yellow(`   note: ${safe(serverPath)} does not exist yet (run npm run build first)`));
+      line(io, yellow(`   note: ${safePath(serverPath)} does not exist yet (run npm run build first)`));
     }
     try {
       const out = exec("claude", mcpArgs).trim();
@@ -65067,7 +65067,7 @@ async function runInstallClaude(opts, io, deps = {}) {
   const hookCommand = launchCommandLine(hookLaunch);
   const hookTimeout = hookTimeoutFor(hookLaunch);
   line(io, bold(`2. Add the ${HOOK_EVENTS.join(" and ")} hooks`));
-  line(io, `   ${opts.apply ? "merge into" : "would merge into"} ${safe(settingsPath)}${scope === "project" ? " (project scope: the repo's shared settings, read for this project only)" : ""}:`);
+  line(io, `   ${opts.apply ? "merge into" : "would merge into"} ${safePath(settingsPath)}${scope === "project" ? " (project scope: the repo's shared settings, read for this project only)" : ""}:`);
   line(io, indent(JSON.stringify(hookConfigFor(hookCommand, hookTimeout, HOOK_EVENTS), null, 2), "   "));
   if (hookLaunch.viaNpx) {
     line(io, dim(`   (npx re-resolves the package each prompt: ~1s, hence the ${hookTimeout}s timeout.`));
@@ -65076,20 +65076,20 @@ async function runInstallClaude(opts, io, deps = {}) {
   if (opts.apply) {
     const read = await readJsonFile(settingsPath);
     if (read.error !== void 0) {
-      throw new Error(`could not read ${safe(settingsPath)}: ${safeLines(read.error)}`);
+      throw new Error(`could not read ${settingsPath}: ${read.error}`);
     }
     const existed = read.exists;
     const { settings, changed } = mergeHookIntoSettings(read.value ?? {}, hookCommand, hookTimeout, HOOK_EVENTS);
     if (changed) {
       await explainWrite(settingsPath, () => writeJsonFile(settingsPath, settings, read.text));
-      line(io, green(`   ${existed ? "updated" : "created"} ${safe(settingsPath)}: added ${HOOK_EVENTS.join(" + ")} hooks`));
+      line(io, green(`   ${existed ? "updated" : "created"} ${safePath(settingsPath)}: added ${HOOK_EVENTS.join(" + ")} hooks`));
       deps.onWritten?.(settingsPath, existed ? "updated" : "created");
     } else {
-      line(io, dim(`   ${safe(settingsPath)}: hooks already present, nothing changed`));
+      line(io, dim(`   ${safePath(settingsPath)}: hooks already present, nothing changed`));
       deps.onWritten?.(settingsPath, "unchanged");
     }
     const createdNote = changed && !existed ? " (this run created the file, so deleting it undoes step 2)" : "";
-    line(io, dim(`   undo: delete the lexicon hook entries under ${HOOK_EVENTS.map((e) => `hooks.${e}`).join(" and ")} in ${safe(settingsPath)}${createdNote}`));
+    line(io, dim(`   undo: delete the lexicon hook entries under ${HOOK_EVENTS.map((e) => `hooks.${e}`).join(" and ")} in ${safePath(settingsPath)}${createdNote}`));
   }
   line(io);
   line(io, bold("3. Add to your CLAUDE.md"));
@@ -65124,7 +65124,7 @@ function refreshClaudeRegistration(io, exec, scope, mcpArgs, launch) {
     line(io, dim("   already registered with claude, nothing changed"));
     return true;
   }
-  const old = safe(`${got.command} ${got.args}`.trim());
+  const old = safePath(`${got.command} ${got.args}`.trim());
   if (got.scope !== void 0 && got.scope !== scope) {
     line(io, dim(`   already registered with claude at ${got.scope} scope (${old}), nothing changed at ${scope} scope`));
     return true;
@@ -65147,7 +65147,7 @@ function refreshClaudeRegistration(io, exec, scope, mcpArgs, launch) {
     line(io, `   run: claude ${mcpArgs.map((a) => quoteArg(a)).join(" ")}`);
     return false;
   }
-  line(io, green(`   repointed lexicon: ${old} -> ${safe(`${launch.command} ${wanted}`)}`));
+  line(io, green(`   repointed lexicon: ${old} -> ${safePath(`${launch.command} ${wanted}`)}`));
   return true;
 }
 function quoteArg(s, platform = process.platform) {
@@ -67599,11 +67599,11 @@ function uninstallCommand(client, opts) {
 }
 function report(ctx, change, detail) {
   ctx.changes.push(change);
-  const where = safe(change.file);
+  const where = safePath(change.file);
   if (change.outcome === "removed") {
     line(ctx.io, green(`   ${ctx.dryRun ? "would remove" : "removed"} ${change.entry} from ${where}`));
   } else if (change.outcome === "kept") {
-    line(ctx.io, yellow(`   ${where}: ${change.entry} was not written by lexicon install${detail ? ` (${safe(detail)})` : ""}; left as it is`));
+    line(ctx.io, yellow(`   ${where}: ${change.entry} was not written by lexicon install${detail ? ` (${safePath(detail)})` : ""}; left as it is`));
   } else {
     line(ctx.io, dim(`   ${where}: ${detail ?? `no ${change.entry}`}, nothing to remove`));
   }
@@ -67614,7 +67614,7 @@ async function uninstallJson(ctx, target) {
   if (!read.exists) return report(ctx, { file: target.file, entry, outcome: "absent" }, "does not exist");
   if (read.error !== void 0) {
     throw new CliRefusal(
-      `could not read ${safe(target.file)} (${safeLines(read.error)}); nothing was changed`,
+      `could not read ${target.file} (${read.error}); nothing was changed`,
       `fix the file (or remove the "lexicon" entry under "${target.key}" by hand), then run this again`
     );
   }
@@ -67673,7 +67673,7 @@ async function uninstallClaude(ctx, scope, settingsPath, exec) {
         } catch (err) {
           ok = false;
           removedIt = false;
-          line(io, yellow(`   could not remove it (${safe(launch)}): ${safeLines(errorMessage(err))}`));
+          line(io, yellow(`   could not remove it (${safePath(launch)}): ${safeLines(errorMessage(err))}`));
         }
       }
       if (removedIt) report(ctx, { file: where, entry, outcome: "removed" });
@@ -67690,7 +67690,7 @@ async function removeClaudeHooks(ctx, settingsPath) {
   if (!read.exists) return report(ctx, { file: settingsPath, entry, outcome: "absent" }, "does not exist");
   if (read.error !== void 0) {
     throw new CliRefusal(
-      `could not read ${safe(settingsPath)} (${safeLines(read.error)}); nothing was changed there`,
+      `could not read ${settingsPath} (${read.error}); nothing was changed there`,
       "fix the file (or remove the lexicon hook entries by hand), then run this again"
     );
   }

@@ -44,6 +44,31 @@ async function uninstall(client: string | undefined, extra: Partial<UninstallOpt
   return { code, io };
 }
 
+// Catches: install and uninstall put every path through the 200-character
+// display cap, so a deep home directory's config file (the file written, the
+// undo line, the file to fix) ended in an ellipsis.
+describe('install and uninstall name a deep config path whole', () => {
+  it('cursor and claude', async () => {
+    const deep = path.join(home, ...Array.from({ length: 10 }, (_, i) => `a-rather-long-directory-name-${i}`));
+    const file = path.join(deep, '.cursor', 'mcp.json');
+    const settings = path.join(deep, '.claude', 'settings.json');
+    const io = makeIO();
+    expect(await runInstall('cursor', { home: deep, cwd, apply: true }, io, installDeps)).toBe(0);
+    expect(io.out).toContain(`merge into ${file}:`);
+    expect(io.out).toContain(`created ${file}: mcpServers.lexicon`);
+    expect(io.out).toContain(`undo: delete the "lexicon" entry under "mcpServers" in ${file} (this run created`);
+    const claude = makeIO();
+    expect(await runInstall('claude', { home: deep, cwd, apply: true }, claude, { ...installDeps, exec: () => 'Added' })).toBe(0);
+    expect(claude.out).toContain(`created ${settings}: added`);
+    const un = makeIO();
+    expect(await runUninstall('cursor', { home: deep, cwd }, un, { platform: 'darwin', env: { PATH: '' } })).toBe(0);
+    expect(un.out).toContain(`removed mcpServers.lexicon from ${file}`);
+    await fs.writeFile(file, '{ not json');
+    await expect(runUninstall('cursor', { home: deep, cwd }, makeIO(), { platform: 'darwin', env: { PATH: '' } })).rejects.toThrow(`could not read ${file} (`);
+    expect(`${io.out}${claude.out}${un.out}`).not.toContain('\u2026');
+  });
+});
+
 describe('lexicon uninstall <json client>', () => {
   // Catches: there was no way to take an install back out short of editing
   // each client's config by hand.

@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon install` and `lexicon uninstall` name a deep config file whole: the file merged into or removed from, the `undo:` line, Claude's `settings.json`, the server path and a refusal naming the file to fix (raw under `--json`). These went through the 200-character display cap, so a deep home directory's config path ended in an ellipsis.
 - `lexicon install claude-desktop` and `vscode` on Windows with a blank `%APPDATA%` write to `<home>\AppData\Roaming`. A blank value was used as is, so the config path came out relative and the file was written under the current directory, where the client never looks.
 - `lexicon trust` and `lexicon untrust` name a deep project file whole: in the preview, the `trust <path>?` question, the `trusted`, `already trusted` and `untrusted` lines, the registry line and the refusals. Every path went through the 200-character display cap, so the file being approved could end in an ellipsis where its name was.
 - `lexicon install claude` finds the `settings.json` its hooks go into through the environment it was given, as `lexicon uninstall claude` does. It read `CLAUDE_CONFIG_DIR` from the process environment instead, so a caller passing its own environment (setup, a test, `--home`) had the hooks written to a file uninstall never looked in.
