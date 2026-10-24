@@ -25,6 +25,7 @@ import {
   neutralizeMarkup,
   parsedContentHash,
   trustSummaryForModel,
+  trustRegistryProblem,
 } from '../../core/index.js';
 import type { LexiconFile } from '../../core/index.js';
 import { HARVEST_ROOTS_ENV, containedPath, guarded, nonBlank, shellWord, textResult, trustPreview } from '../shared.js';
@@ -154,6 +155,15 @@ export const registerTrustTools: ToolRegistrar = (server, ctx) => {
         const safePath = filePath === undefined ? undefined : shown(filePath);
 
         if (action === 'status') {
+          // A broken registry reads as empty, so `trusted` was [] and every
+          // file 'untrusted', with trusting it as the fix, which then failed.
+          const problem = await trustRegistryProblem({ cwd: ctx.cwd });
+          if (problem !== undefined) {
+            throw new Error(
+              `the trust registry at ${shown(registry)} ${shown(problem)}, so the trusted project lexicons cannot be listed and every project reads as untrusted until it is fixed. ` +
+                `Ask the user to fix the JSON in that file, or move it aside (then run ${cliCommand('trust')} in each project again). Do not call trust_project with action 'trust' until then: it refuses the broken file.`,
+            );
+          }
           const base = {
             action,
             registry: shown(registry),
@@ -200,6 +210,15 @@ export const registerTrustTools: ToolRegistrar = (server, ctx) => {
               "Call trust_project with action 'status' and no path to see which .lexicon.yaml this server resolves, " +
               'then pass the path of an existing .lexicon.yaml or the repo directory holding it; ' +
               `if the repo has none yet, ask the user to create one with ${cliCommand('init --project')} in that repo.`,
+          );
+        }
+        // trustProject refuses a broken registry; say so before the user is
+        // asked, not after they approved.
+        const registryProblem = await trustRegistryProblem({ cwd: ctx.cwd });
+        if (registryProblem !== undefined) {
+          throw new Error(
+            `the trust registry at ${shown(registry)} ${shown(registryProblem)}; it was left as it is and nothing was trusted. ` +
+              `Ask the user to fix the JSON in that file, or move it aside (then run ${cliCommand('trust')} in each project again), and retry.`,
           );
         }
         const shownSha = (await parsedContentHash(file)) ?? (await hashFile(filePath));

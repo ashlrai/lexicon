@@ -874,6 +874,10 @@ describe('lexicon MCP server', () => {
         const failed = JSON.parse(textOf(await client.callTool({ name: 'uninstall_client', arguments: { client: 'claude', apply: true } }))) as Record<string, unknown>;
         expect(failed).toMatchObject({ ok: false, applied: true });
         expect(failed.nextStep).toMatch(/do not call again with apply: true/);
+        // Catches: the description sent the agent to an `error` field an ok: false result does not carry.
+        expect(failed).not.toHaveProperty('error');
+        expect(tool?.description).not.toContain('`error`');
+        expect(tool?.description).toContain('`output` says which step failed');
         // A refusal before anything was read is a tool error naming the tool, not the CLI flag.
         cli.runUninstall.mockImplementationOnce(async (_c: string, _o: unknown, io: IO) => {
           io.stdout(JSON.stringify({ ok: false, error: 'windsurf has no project-level MCP config; drop --project', nextStep: 'x' }));

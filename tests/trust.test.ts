@@ -254,6 +254,21 @@ describe('a trust.json that does not parse', () => {
     expect(await fs.readFile(registryPath, 'utf8')).toBe(text);
   });
 
+  // Catches: lexicon trust previewed the file and asked "trust ...?" before
+  // finding the registry broken, so a yes was answered with a refusal.
+  it('lexicon trust refuses a broken registry before the preview and the question', async () => {
+    process.env.LEXICON_PATH = globalPath;
+    const text = await writeRegistry('{ "version": 1, "trusted": {');
+    const registryPath = getTrustPath({ globalPath });
+    const io = makeIO();
+    const p = scripted(['y']);
+    expect(await runTrust(undefined, { cwd: path.dirname(projectPath) }, io, { isInteractive: () => true, createPrompter: () => p })).toBe(1);
+    expect(p.asked).toEqual([]);
+    expect(io.out).not.toContain('1 term');
+    expect(io.err).toContain(`the trust registry at ${registryPath} is not valid JSON`);
+    expect(await fs.readFile(registryPath, 'utf8')).toBe(text);
+  });
+
   // Catches: trust --list read a broken registry as empty and said "no trusted
   // project lexicons (run: lexicon trust)", which lexicon trust then refused.
   it('lexicon trust --list names a registry it cannot read and exits 1', async () => {

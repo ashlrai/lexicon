@@ -161,7 +161,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         'SAFETY DEFAULT: apply omitted (or false) is a dry run that writes nothing and returns what would be removed; this tool never removes anything unless apply is true. ' +
         'Show the dry run to the user and call again with apply: true only after they confirm. ' +
         "Returns { client, scope, applied, ok, changes, output, stderr?, next?, nextStep? }: `changes` lists each entry as { file, entry, outcome } with outcome removed (would be removed, in a dry run), absent or kept, the list the CLI uninstall command prints with --json. " +
-        'Check `ok`: false means it did not complete (`error` and `nextStep` say why), so do not report it as removed. ' +
+        'Check `ok`: false means it did not complete (`output` says which step failed, `changes` what was done, and `nextStep` what to do), so do not report it as removed. ' +
         "windsurf and claude-desktop have no project-level config: scope 'project' with them is an error that says to call again without scope. " +
         'The Claude Code plugin is not removed by this tool; when it is installed, `output` names the command that removes it.',
       inputSchema: {

@@ -170,9 +170,15 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
     return fail(io, opts.json, 'trust', filePath, `refusing to trust an invalid lexicon: ${message}`, unreadableLexiconHint(message));
   }
 
+  const registry = getTrustPath({ cwd });
+  // A broken registry is refused by trustProject anyway; say so before the
+  // preview and the question, not after the person has answered yes.
+  const registryProblem = await trustRegistryProblem({ cwd });
+  if (registryProblem !== undefined) {
+    return registryFail(io, opts.json, 'trust', filePath, { path: registry, problem: registryProblem });
+  }
   const shownSha = (await parsedContentHash(file)) ?? (await hashFile(filePath));
   const before = await isTrusted(file, { cwd });
-  const registry = getTrustPath({ cwd });
   // The table is for the person deciding; under --json it goes to stderr, and
   // only when there is a question to answer, so stdout stays one document.
   // A file that already reads trusted gains nothing from a yes (MCP

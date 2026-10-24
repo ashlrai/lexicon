@@ -651,6 +651,12 @@ describe('lexicon learn (CLI)', () => {
       error: '"that should be Ashlr.AI" names the intended spelling (Ashlr.AI) but not what was heard',
       nextStep: 'run: lexicon learn <heard> Ashlr.AI',
     });
+    // Catches: the text-mode `run:` line lacked the `lexicon: ` prefix every other refusal carries.
+    const text = captureIO();
+    expect(await runLearn([], { from: 'that should be Ashlr.AI', cwd: '/fake/repo' }, text.io)).toBe(1);
+    expect(text.err()).toBe(
+      'lexicon: "that should be Ashlr.AI" names the intended spelling (Ashlr.AI) but not what was heard\nlexicon: run: lexicon learn <heard> Ashlr.AI\n',
+    );
   });
 
   // Catches: learn allows unknown options (so a bare `->` is a word), and
