@@ -31,7 +31,7 @@ import { STOPLIST, buildIndex, findReplacements, similarity } from './matcher.js
 import type { AliasEntry, MatcherIndex } from './matcher.js';
 import { sanitizeForDisplay } from './schema.js';
 import { compareText } from './collate.js';
-import { resolvePaths } from './store.js';
+import { resolvePaths, spellingKey } from './store.js';
 import { suggestAliases } from './suggest.js';
 import { readRegularFileTail } from '../util/bounded-read.js';
 import type { LoadedLexicon, Replacement, Term, TermCategory, TermScope } from './types.js';
@@ -933,8 +933,10 @@ export async function suggestTerms(input: SuggestInput): Promise<TermSuggestion[
  * project file wins), a new one goes to the global file, as apply does.
  */
 function withTarget(s: TermSuggestion, loaded: LoadedLexicon): TermSuggestion {
-  const key = s.canonical.trim().toLowerCase();
-  const held = s.kind === 'term' ? undefined : loaded.merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
+  // spellingKey (NFC as well as case), as the store and MCP apply_suggestion
+  // match: a canonical typed with a combining accent is the same term.
+  const key = spellingKey(s.canonical);
+  const held = s.kind === 'term' ? undefined : loaded.merged.terms.find((t) => spellingKey(t.canonical) === key);
   const scope: TermScope = held?.scope === 'project' && loaded.project ? 'project' : 'global';
   return { ...s, scope, path: scope === 'project' && loaded.project ? loaded.project.path : loaded.global.path };
 }

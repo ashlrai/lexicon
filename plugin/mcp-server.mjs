@@ -62649,8 +62649,8 @@ async function suggestTerms(input2) {
   return merged.slice(0, limit).map((s) => withTarget(s, loaded));
 }
 function withTarget(s, loaded) {
-  const key = s.canonical.trim().toLowerCase();
-  const held = s.kind === "term" ? void 0 : loaded.merged.terms.find((t) => t.canonical.trim().toLowerCase() === key);
+  const key = spellingKey(s.canonical);
+  const held = s.kind === "term" ? void 0 : loaded.merged.terms.find((t) => spellingKey(t.canonical) === key);
   const scope = held?.scope === "project" && loaded.project ? "project" : "global";
   return { ...s, scope, path: scope === "project" && loaded.project ? loaded.project.path : loaded.global.path };
 }
