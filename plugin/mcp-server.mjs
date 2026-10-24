@@ -66940,7 +66940,7 @@ async function runServeInstall(opts, io, deps = {}) {
     line(io, `  Arguments: ${envFile ? `--env-file="${safe(envFile)}" ` : ""}"${safe(cliPath)}" serve`);
     io.stdout(envFile ? envReport(serviceEnv) : "");
     const ended = await runAndReport(exec, io, "schtasks", ["/End", "/TN", taskName]);
-    if (ended.code !== 0 && !schtasksNotRunning(ended)) {
+    if (ended.code !== 0 && !await schtasksNothingToEnd(exec, taskName, ended)) {
       io.stderr(
         `lexicon: created the Scheduled Task "${safe(taskName)}" but could not end its running instance (schtasks /End failed, see above), so the old one may still be serving; run \`schtasks /End /TN "${safe(taskName)}"\` then \`schtasks /Run /TN "${safe(taskName)}"\`
 `
@@ -66962,9 +66962,24 @@ async function runServeInstall(opts, io, deps = {}) {
 `);
   return 1;
 }
-function schtasksNotRunning(result) {
+async function schtasksNothingToEnd(exec, taskName, result) {
+  const state = await schtasksTaskState(exec, taskName);
+  if (!state.exists || state.running === false) return true;
   return schtasksNotFound(result) || /not (currently )?running|no running instance/i.test(`${result.stderr}
 ${result.stdout}`);
+}
+var SCHED_S_TASK_RUNNING = "267009";
+async function schtasksTaskState(exec, taskName) {
+  let result;
+  try {
+    result = await exec("schtasks", ["/Query", "/TN", taskName, "/FO", "CSV", "/NH", "/V"]);
+  } catch {
+    return { exists: false };
+  }
+  if (result.code !== 0) return { exists: false };
+  const rows = result.stdout.split(/\r?\n/).map((l) => l.trim()).filter((l) => l.startsWith('"')).map((l) => [...l.matchAll(/"((?:[^"]|"")*)"/g)].map((m) => (m[1] ?? "").replace(/""/g, '"')));
+  if (rows.length === 0) return { exists: true };
+  return { exists: true, running: rows.some((fields) => fields.some((f) => f.trim() === SCHED_S_TASK_RUNNING)) };
 }
 function serveEnvPath(opts) {
   return import_node_path25.default.join(import_node_path25.default.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);

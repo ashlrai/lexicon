@@ -2739,11 +2739,11 @@ describe('lexicon serve (CLI)', () => {
       };
       const idle = await run({ '/End': 'ERROR: The task is not currently running.' });
       expect(idle.code).toBe(0);
-      expect(idle.calls).toEqual(['/Create', '/End', '/Run']);
+      expect(idle.calls).toEqual(['/Create', '/End', '/Query', '/Run']);
 
       const end = await run({ '/End': 'ERROR: Access is denied.' });
       expect(end.code).toBe(1);
-      expect(end.calls).toEqual(['/Create', '/End']);
+      expect(end.calls).toEqual(['/Create', '/End', '/Query']);
       expect(end.err).toContain('could not end its running instance (schtasks /End failed, see above)');
 
       const start = await run({ '/Run': 'ERROR: Access is denied.' });
@@ -3037,7 +3037,8 @@ describe('lexicon serve (CLI)', () => {
     // Catches: every /Delete failure (access denied, the scheduler down) was
     // reported as "was not installed" with exit 0, the task still in place.
     const io3 = memIO();
-    const denied: ServeExec = async () => ({ code: 1, stdout: '', stderr: 'ERROR: Access is denied.' });
+    const denied: ServeExec = async (_cmd, args) =>
+      args[0] === '/Query' ? { code: 0, stdout: '', stderr: '' } : { code: 1, stdout: '', stderr: 'ERROR: Access is denied.' };
     expect(await runServe({ uninstall: true, globalPath: env.globalPath }, io3, {
       platform: 'win32',
       home: 'C:\\Users\\me',
@@ -3045,6 +3046,60 @@ describe('lexicon serve (CLI)', () => {
     })).toBe(1);
     expect(io3.out.join('')).not.toContain('was not installed');
     expect(io3.err.join('')).toContain('lexicon: could not remove the Scheduled Task "Lexicon": ERROR: Access is denied.');
+  });
+
+  // Catches: whether /End had nothing to end and whether /Delete found no
+  // task was read from schtasks' English messages only, so on a localized
+  // Windows (here German) install and uninstall exited 1 for a task that was
+  // not running or not there. schtasks /Query's exit status and the task's
+  // Last Result (267009 while it runs) decide now, in any language.
+  it('--install and --uninstall on Windows read schtasks /Query, not its English messages', async () => {
+    const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-schtasks-'));
+    try {
+      const cli = await fakeCli(home);
+      const row = (lastResult: string) => `"BOX","\\Lexicon","N/A","Bereit","Interaktiv","24.10.2026 09:00:00","${lastResult}","me","C:\\node\\node.exe"\r\n`;
+      const run = async (action: 'install' | 'uninstall', answers: Record<string, { code: number; stdout?: string; stderr?: string }>) => {
+        const io = memIO();
+        const calls: string[] = [];
+        const exec: ServeExec = async (_cmd, args) => {
+          calls.push(args[0] as string);
+          const a = answers[args[0] as string];
+          return a ? { code: a.code, stdout: a.stdout ?? '', stderr: a.stderr ?? '' } : { code: 0, stdout: '', stderr: '' };
+        };
+        const code = await runServe({ [action]: true, globalPath: env.globalPath }, io, {
+          platform: 'win32',
+          home,
+          env: { USERNAME: 'me' },
+          exec,
+          cliPath: cli,
+          nodePath: 'C:\\node\\node.exe',
+        });
+        return { code, calls, out: io.out.join(''), err: io.err.join('') };
+      };
+      const notRunning = { code: 1, stderr: 'FEHLER: Die Aufgabe wird derzeit nicht ausgef\u00fchrt.' };
+      const notFound = { code: 1, stderr: 'FEHLER: Das System kann die angegebene Datei nicht finden.' };
+
+      const idle = await run('install', { '/End': notRunning, '/Query': { code: 0, stdout: row('0') } });
+      expect(idle.code).toBe(0);
+      expect(idle.calls).toEqual(['/Create', '/End', '/Query', '/Run']);
+      // A running task whose /End failed still fails, in any language.
+      const busy = await run('install', { '/End': { code: 1, stderr: 'FEHLER: Zugriff verweigert' }, '/Query': { code: 0, stdout: row('267009') } });
+      expect(busy.code).toBe(1);
+      expect(busy.err).toContain('could not end its running instance');
+
+      const gone = await run('uninstall', { '/End': notFound, '/Delete': notFound, '/Query': notFound });
+      expect(gone.code).toBe(0);
+      expect(gone.out).toContain('Scheduled Task Lexicon was not installed');
+      const stopped = await run('uninstall', { '/End': notRunning, '/Query': { code: 0, stdout: row('0') } });
+      expect(stopped.code).toBe(0);
+      expect(stopped.out).toContain('removed Scheduled Task Lexicon');
+      // The task is there and /Delete failed: reported, exit 1.
+      const kept = await run('uninstall', { '/Delete': { code: 1, stderr: 'FEHLER: Zugriff verweigert' }, '/Query': { code: 0, stdout: row('0') } });
+      expect(kept.code).toBe(1);
+      expect(kept.err).toContain('could not remove the Scheduled Task "Lexicon": FEHLER: Zugriff verweigert');
+    } finally {
+      await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
   });
 
   it('the task XML round-trips its program path and binds the trigger to one user', () => {
