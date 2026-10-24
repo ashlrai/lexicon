@@ -167,6 +167,33 @@ describe('runClipboardDaemon', () => {
     await h.done;
   });
 
+  // Catches: lastSeen was set before the lexicon load, so with a lexicon that would not load the next poll
+  // skipped the text, printed "working again" though nothing worked, and the text was never corrected once fixed.
+  it('retries the text after a lexicon that would not load, and says working again only once it does', async () => {
+    let broken = true;
+    vi.mocked(core.loadLexicon).mockImplementation(async () => {
+      if (broken) throw new Error('Failed to parse lexicon YAML at /g: bad indentation');
+      const lexicon = { version: 1 as const, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }] };
+      return { merged: lexicon, global: { path: '/g', scope: 'global', lexicon, exists: true } };
+    });
+    try {
+      const h = start('meet Ashler');
+      await vi.advanceTimersByTimeAsync(250 * 4);
+      expect(h.write).not.toHaveBeenCalled();
+      expect(h.err).toHaveLength(1);
+      expect(h.err[0]).toContain('bad indentation');
+      broken = false;
+      await vi.advanceTimersByTimeAsync(250);
+      expect(h.write).toHaveBeenCalledWith('meet Ashlr.AI');
+      expect(h.err).toHaveLength(2);
+      expect(h.err[1]).toMatch(/working again/);
+      h.controller.abort();
+      await h.done;
+    } finally {
+      broken = false;
+    }
+  });
+
   it('dryRun never records hits', async () => {
     const h = start('meet Ashler', { dryRun: true });
     await vi.advanceTimersByTimeAsync(0);
