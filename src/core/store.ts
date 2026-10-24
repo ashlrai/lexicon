@@ -1360,65 +1360,95 @@ function emptyHitsRegistry(): HitsRegistry {
 }
 
 /**
- * Read the registry. Missing, unparseable or malformed all yield an empty one:
- * these are counters, and the safe failure mode for a counter is zero.
- * `forWrite` (a read-modify-write under the lock) throws a read error other
- * than a missing file instead: an EIO or EACCES read as empty, and the write
- * that followed replaced every count in the file with the few being added.
+ * The most `hits.json` is read. The prompt hook reads it on every matching
+ * prompt and must finish in 200ms, so a file grown (or replaced) past this is
+ * not read at all. A real one stays far below it: one short key and a count
+ * per term the user has dictated, per project.
  */
-async function readHitsRegistry(opts: StoreOptions, forWrite = false): Promise<HitsRegistry> {
+export const MAX_HITS_BYTES = 2 * 1024 * 1024;
+
+interface HitsRegistryRead {
+  registry: HitsRegistry;
+  /** Set when the file exists but could not be used; `registry` is then empty. */
+  problem?: string;
+}
+
+async function loadHitsRegistry(opts: StoreOptions): Promise<HitsRegistryRead> {
+  const hitsPath = getHitsPath(opts);
+  const tooLarge = (size: number): HitsRegistryRead => ({
+    registry: emptyHitsRegistry(),
+    problem: `is ${size} bytes, over the ${MAX_HITS_BYTES} byte limit`,
+  });
   let text: string;
   try {
-    text = await fs.readFile(getHitsPath(opts), 'utf8');
+    // The size is checked before the read so an oversized file costs one
+    // stat, not a parse, and again on what was read in case it grew.
+    const st = await fs.stat(hitsPath);
+    if (st.isDirectory()) return { registry: emptyHitsRegistry(), problem: 'cannot be read (EISDIR)' };
+    if (!st.isFile()) return { registry: emptyHitsRegistry(), problem: 'is not a regular file' };
+    if (st.size > MAX_HITS_BYTES) return tooLarge(st.size);
+    text = await fs.readFile(hitsPath, 'utf8');
   } catch (e) {
-    if (forWrite && (e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
-    return emptyHitsRegistry();
+    const code = (e as NodeJS.ErrnoException).code;
+    if (code === 'ENOENT') return { registry: emptyHitsRegistry() };
+    return { registry: emptyHitsRegistry(), problem: `cannot be read (${code ?? errorMessage(e)})` };
   }
+  if (Buffer.byteLength(text, 'utf8') > MAX_HITS_BYTES) return tooLarge(Buffer.byteLength(text, 'utf8'));
+  text = text.replace(/^\uFEFF/, '');
+  // An empty file holds no counts, so there is nothing a write could lose.
+  if (text.trim() === '') return { registry: emptyHitsRegistry() };
   let raw: unknown;
   try {
     raw = JSON.parse(text);
-  } catch {
-    return emptyHitsRegistry();
+  } catch (e) {
+    return { registry: emptyHitsRegistry(), problem: `is not valid JSON (${errorMessage(e)})` };
+  }
+  if (!isPlainObject(raw)) return { registry: emptyHitsRegistry(), problem: 'is not a JSON object' };
+  if (raw.projects !== undefined && !isPlainObject(raw.projects)) {
+    return { registry: emptyHitsRegistry(), problem: '"projects" is not an object' };
+  }
+  if (raw.global !== undefined && !isPlainObject(raw.global)) {
+    return { registry: emptyHitsRegistry(), problem: '"global" is not an object' };
   }
   const out = emptyHitsRegistry();
-  const projects = isPlainObject(raw) ? raw.projects : undefined;
-  if (isPlainObject(projects)) {
-    for (const [file, counts] of Object.entries(projects)) {
+  if (isPlainObject(raw.projects)) {
+    for (const [file, counts] of Object.entries(raw.projects)) {
       if (isPlainObject(counts)) out.projects[file] = validCounts(counts);
     }
   }
-  const global = isPlainObject(raw) ? raw.global : undefined;
-  if (isPlainObject(global)) out.global = validCounts(global);
-  return out;
+  if (isPlainObject(raw.global)) out.global = validCounts(raw.global);
+  return { registry: out };
+}
+
+/**
+ * Read the registry. For a read-only caller (the prompt hook, `lexicon
+ * stats`) missing, unreadable, oversized or malformed all yield an empty one:
+ * these are counters, and the safe failure mode for a counter is zero.
+ * `forWrite` (a read-modify-write under the lock) throws instead whenever the
+ * file exists but cannot be used, and the file is left exactly as it is: an
+ * EIO read, or a hand edit that broke the JSON, read as empty, and the write
+ * that followed replaced every count in the file with the few being added.
+ * Every writer is best effort, so the throw only stops counting until the
+ * file is fixed (`lexicon doctor` names the problem).
+ */
+async function readHitsRegistry(opts: StoreOptions, forWrite = false): Promise<HitsRegistry> {
+  const { registry, problem } = await loadHitsRegistry(opts);
+  if (forWrite && problem !== undefined) {
+    throw new Error(`${getHitsPath(opts)} ${problem}; left as it is and no counts were written`);
+  }
+  return registry;
 }
 
 /**
  * Why `hits.json` cannot be used (`is not valid JSON (...)`, `cannot be read
- * (EACCES)`, `is not a JSON object`, ...), or undefined when it is missing,
- * empty or fine. With a problem the reader above takes it as no counts, so
- * every term reads as never used, and a read error stops new hits being
- * counted. For `lexicon doctor`.
+ * (EACCES)`, `is not a JSON object`, `is N bytes, over the ... limit`, ...),
+ * or undefined when it is missing, empty or fine. With a problem the reader
+ * above takes it as no counts, so every term reads as never used, and no new
+ * hits are counted until it is fixed (the file is never overwritten). For
+ * `lexicon doctor`.
  */
 export async function hitsRegistryProblem(opts: StoreOptions = {}): Promise<string | undefined> {
-  let text: string;
-  try {
-    text = await fs.readFile(getHitsPath(opts), 'utf8');
-  } catch (e) {
-    const code = (e as NodeJS.ErrnoException).code;
-    if (code === 'ENOENT') return undefined;
-    return `cannot be read (${code ?? errorMessage(e)})`;
-  }
-  if (text.trim() === '') return undefined;
-  let raw: unknown;
-  try {
-    raw = JSON.parse(text);
-  } catch (e) {
-    return `is not valid JSON (${errorMessage(e)})`;
-  }
-  if (!isPlainObject(raw)) return 'is not a JSON object';
-  if (raw.projects !== undefined && !isPlainObject(raw.projects)) return '"projects" is not an object';
-  if (raw.global !== undefined && !isPlainObject(raw.global)) return '"global" is not an object';
-  return undefined;
+  return (await loadHitsRegistry(opts)).problem;
 }
 
 function isPlainObject(value: unknown): value is Record<string, unknown> {

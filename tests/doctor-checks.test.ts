@@ -118,7 +118,7 @@ describe('doctor and the state files beside the global lexicon', () => {
     const warnings = stateWarnings(report);
     expect(warnings).toEqual([
       `serve.json is not valid JSON; fix it, or delete it and lexicon serve makes a new token (the local API and its paired clients need a usable one): ${serve}`,
-      expect.stringMatching(/^hits\.json is not valid JSON \(.*\), so every term reads as never used \(fix it, or move it aside to start the counts over\): /),
+      expect.stringMatching(/^hits\.json is not valid JSON \(.*\), so every term reads as never used and new hits are not counted \(fix it, or move it aside to start the counts over\): /),
       `pending corrections queue is not valid YAML, so lexicon pending cannot list it and new corrections are not queued (fix it, or move it aside): ${pending}`,
       `index cache is not a file, so each match builds the index again (delete it; lexicon writes a new one): ${cache}`,
     ]);

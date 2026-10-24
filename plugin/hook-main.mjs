@@ -20770,30 +20770,55 @@ async function canonicalPath2(filePath) {
 function emptyHitsRegistry() {
   return { version: 1, projects: {} };
 }
-async function readHitsRegistry(opts, forWrite = false) {
+async function loadHitsRegistry(opts) {
+  const hitsPath = getHitsPath(opts);
+  const tooLarge = (size) => ({
+    registry: emptyHitsRegistry(),
+    problem: `is ${size} bytes, over the ${MAX_HITS_BYTES} byte limit`
+  });
   let text;
   try {
-    text = await import_node_fs5.promises.readFile(getHitsPath(opts), "utf8");
+    const st = await import_node_fs5.promises.stat(hitsPath);
+    if (st.isDirectory()) return { registry: emptyHitsRegistry(), problem: "cannot be read (EISDIR)" };
+    if (!st.isFile()) return { registry: emptyHitsRegistry(), problem: "is not a regular file" };
+    if (st.size > MAX_HITS_BYTES) return tooLarge(st.size);
+    text = await import_node_fs5.promises.readFile(hitsPath, "utf8");
   } catch (e) {
-    if (forWrite && e.code !== "ENOENT") throw e;
-    return emptyHitsRegistry();
+    const code = e.code;
+    if (code === "ENOENT") return { registry: emptyHitsRegistry() };
+    return { registry: emptyHitsRegistry(), problem: `cannot be read (${code ?? errorMessage(e)})` };
   }
+  if (Buffer.byteLength(text, "utf8") > MAX_HITS_BYTES) return tooLarge(Buffer.byteLength(text, "utf8"));
+  text = text.replace(/^\uFEFF/, "");
+  if (text.trim() === "") return { registry: emptyHitsRegistry() };
   let raw;
   try {
     raw = JSON.parse(text);
-  } catch {
-    return emptyHitsRegistry();
+  } catch (e) {
+    return { registry: emptyHitsRegistry(), problem: `is not valid JSON (${errorMessage(e)})` };
+  }
+  if (!isPlainObject2(raw)) return { registry: emptyHitsRegistry(), problem: "is not a JSON object" };
+  if (raw.projects !== void 0 && !isPlainObject2(raw.projects)) {
+    return { registry: emptyHitsRegistry(), problem: '"projects" is not an object' };
+  }
+  if (raw.global !== void 0 && !isPlainObject2(raw.global)) {
+    return { registry: emptyHitsRegistry(), problem: '"global" is not an object' };
   }
   const out = emptyHitsRegistry();
-  const projects = isPlainObject2(raw) ? raw.projects : void 0;
-  if (isPlainObject2(projects)) {
-    for (const [file, counts] of Object.entries(projects)) {
+  if (isPlainObject2(raw.projects)) {
+    for (const [file, counts] of Object.entries(raw.projects)) {
       if (isPlainObject2(counts)) out.projects[file] = validCounts(counts);
     }
   }
-  const global = isPlainObject2(raw) ? raw.global : void 0;
-  if (isPlainObject2(global)) out.global = validCounts(global);
-  return out;
+  if (isPlainObject2(raw.global)) out.global = validCounts(raw.global);
+  return { registry: out };
+}
+async function readHitsRegistry(opts, forWrite = false) {
+  const { registry: registry2, problem } = await loadHitsRegistry(opts);
+  if (forWrite && problem !== void 0) {
+    throw new Error(`${getHitsPath(opts)} ${problem}; left as it is and no counts were written`);
+  }
+  return registry2;
 }
 function isPlainObject2(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -20998,7 +21023,7 @@ function dedupeCaseInsensitive(values) {
   }
   return out;
 }
-var import_node_fs5, import_node_os3, import_node_path4, import_yaml2, PROJECT_FILE_NAME, MAX_LEXICON_BYTES, HEADER_COMMENT, PARSE_CACHE_FILE_NAME, PARSE_CACHE_MIN_BYTES, PARSE_CACHE_VERSION, STALE_GLOBAL_MIN_BYTES, PARSE_FAILURE_FILE_NAME, PARSE_FAILURE_VERSION, CACHE_ENTRIES, PROJECT_PARSE_CACHE_FILE_NAME, PROJECT_PARSE_CACHE_VERSION, INDEX_CACHE_FILE_NAME, INDEX_CACHE_MIN_TERMS, HITS_FILE_NAME;
+var import_node_fs5, import_node_os3, import_node_path4, import_yaml2, PROJECT_FILE_NAME, MAX_LEXICON_BYTES, HEADER_COMMENT, PARSE_CACHE_FILE_NAME, PARSE_CACHE_MIN_BYTES, PARSE_CACHE_VERSION, STALE_GLOBAL_MIN_BYTES, PARSE_FAILURE_FILE_NAME, PARSE_FAILURE_VERSION, CACHE_ENTRIES, PROJECT_PARSE_CACHE_FILE_NAME, PROJECT_PARSE_CACHE_VERSION, INDEX_CACHE_FILE_NAME, INDEX_CACHE_MIN_TERMS, HITS_FILE_NAME, MAX_HITS_BYTES;
 var init_store = __esm({
   "src/core/store.ts"() {
     import_node_fs5 = __toESM(require_node_fs());
@@ -21039,6 +21064,7 @@ var init_store = __esm({
     INDEX_CACHE_FILE_NAME = "index-cache.json";
     INDEX_CACHE_MIN_TERMS = 150;
     HITS_FILE_NAME = "hits.json";
+    MAX_HITS_BYTES = 2 * 1024 * 1024;
   }
 });
 

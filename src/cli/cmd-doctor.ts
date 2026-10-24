@@ -109,7 +109,7 @@ async function stateFileWarnings(globalPath: string, opts: { cwd: string; env: N
   const hits = await hitsRegistryProblem(opts);
   if (hits !== undefined) {
     out.push(
-      `hits.json ${hits}, so every term reads as never used${hits.startsWith('cannot be read') ? ' and new hits are not counted' : ''} ` +
+      `hits.json ${hits}, so every term reads as never used and new hits are not counted ` +
         `(fix it, or move it aside to start the counts over): ${getHitsPath(opts)}`,
     );
   }

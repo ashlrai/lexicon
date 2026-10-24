@@ -54,6 +54,8 @@ import {
   effectiveHits,
   findTerm,
   getHitsPath,
+  hitsRegistryProblem,
+  MAX_HITS_BYTES,
   loadLexicon,
   mergeLexicons,
   readLexiconFile,
@@ -1119,14 +1121,33 @@ describe('recordHits', () => {
     await expect(recordHits([], { cwd: tmp, globalPath: path.join(tmp, 'dir-does-not-exist', 'x.yaml') })).resolves.toBeUndefined();
   });
 
-  it('treats a corrupt sidecar as no counts rather than failing a correction', async () => {
+  // Catches: a hits.json that is not valid JSON read as empty for the write too, so the next recordHits replaced every count in it.
+  it('reads a corrupt sidecar as no counts but never overwrites it', async () => {
     const { nested, projectPath } = await counted();
-    await fs.mkdir(path.dirname(getHitsPath({ globalPath })), { recursive: true });
-    await fs.writeFile(getHitsPath({ globalPath }), '{ not json');
+    const hitsPath = getHitsPath({ globalPath });
+    await fs.mkdir(path.dirname(hitsPath), { recursive: true });
+    const corrupt = '{ "version": 1, "projects": { "x": { "p": 40 } }, oops';
+    await fs.writeFile(hitsPath, corrupt);
     expect(await readProjectHits(projectPath, { globalPath })).toEqual({});
     await expect(loadLexicon({ cwd: nested, globalPath })).resolves.toBeDefined();
+    await expect(recordHits(['p', 'g'], { cwd: nested, globalPath })).resolves.toBeUndefined();
+    expect(await removeTerm('G', { cwd: nested, globalPath })).toBe(true);
+    expect(await fs.readFile(hitsPath, 'utf8')).toBe(corrupt);
+    expect(await hitsRegistryProblem({ globalPath })).toMatch(/^is not valid JSON/);
+  });
+
+  // Catches: hits.json read whatever its size, so a huge one stalled the prompt hook on every matching prompt.
+  it('does not read a hits.json over MAX_HITS_BYTES, and does not overwrite it', async () => {
+    const { nested, projectPath } = await counted();
     await recordHits(['p'], { cwd: nested, globalPath });
-    expect(await readProjectHits(projectPath, { globalPath })).toEqual({ p: 1 });
+    const hitsPath = getHitsPath({ globalPath });
+    const body = JSON.parse(await fs.readFile(hitsPath, 'utf8')) as Record<string, unknown>;
+    const big = JSON.stringify({ ...body, pad: 'x'.repeat(MAX_HITS_BYTES) });
+    await fs.writeFile(hitsPath, big);
+    expect(await readProjectHits(projectPath, { globalPath })).toEqual({});
+    await recordHits(['p'], { cwd: nested, globalPath });
+    expect((await fs.stat(hitsPath)).size).toBe(Buffer.byteLength(big));
+    expect(await hitsRegistryProblem({ globalPath })).toMatch(/over the \d+ byte limit/);
   });
 
   // Catches: any read error, not only a missing file, read as no counts, so the write that followed replaced every count in hits.json with the few being added.
