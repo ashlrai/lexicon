@@ -46,6 +46,9 @@ describe('whisper-prompt and openai: the prompt window Whisper reads', () => {
     const kept = text.split(', ').length;
     const counted = notes.map((n) => Number(/^left out (\d+) name/.exec(n)?.[1] ?? 0)).reduce((a, b) => a + b, 0);
     expect(kept + counted).toBe(150);
+    // The names the line holds, for `lexicon export --json`'s `terms`.
+    expect(exportLexiconWithNotes(lex(terms), 'whisper-prompt').names).toBe(kept);
+    expect(exportLexiconWithNotes(lex(terms), 'openai').names).toBe(kept);
     expect(notes.some((n) => n.startsWith('left out 50 names past the 100 a prompt holds by default') && n.includes('"Q100"'))).toBe(true);
     // An explicit --limit is what was asked for: no note for it.
     expect(exportLexiconWithNotes(lex(terms.slice(0, 5)), 'whisper-prompt', { limit: 2 }).notes).toEqual([]);

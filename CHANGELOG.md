@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon export whisper-prompt` and `openai` with `--json` (with or without `--out`), and the `wrote <format> export (N terms)` line, count the names the prompt line holds. They counted the terms selected, so 150 long names of which the token window kept a few dozen said `terms: 150`. The exporter reports the count as `ExportResult.names`.
 - `lexicon harvest <file>` on a file that exists (a `package.json`, a README) says `harvest: not a directory: <path>` with the next step to pass the repository root instead, under `--json` and `--full` too. The scan's own `not a directory` came with the generic "fix what error names" step.
 - `lexicon harvest --add` whose write fails for a reason other than a trust refusal (a full disk, a permission error) says `nothing was added` and why, as `--json` does, and exits 1. The error was thrown raw in text mode, so the user saw the error with no word of whether part of the batch was written.
 - `lexicon suggest --apply` and `--yes` show every alias of a new term whole. The aliases were joined and then cut at the 200-character display cap, so with several long ones the last was cut mid-alias with an ellipsis and the rest were not shown. Each alias is now made safe on its own.

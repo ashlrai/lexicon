@@ -21526,6 +21526,7 @@ function exportWhisperPrompt(lexicon, opts = {}, sink) {
       `left out ${dropped.length} name${dropped.length === 1 ? "" : "s"} past the ${WHISPER_PROMPT_TOKEN_BUDGET} prompt tokens Whisper reads (an offline estimate): ${quotedNames(dropped)}`
     );
   }
+  if (sink) sink.names = kept.length;
   return kept.join(", ");
 }
 
@@ -21628,7 +21629,7 @@ function exportLexiconWithNotes(lexicon, format, opts = {}) {
   }
   const sink = { notes: [] };
   const text = exporter(applyOptions(lexicon, opts, format), opts, sink);
-  return { text, notes: sink.notes, ...sink.rows !== void 0 ? { rows: sink.rows } : {} };
+  return { text, notes: sink.notes, ...sink.rows !== void 0 ? { rows: sink.rows } : {}, ...sink.names !== void 0 ? { names: sink.names } : {} };
 }
 function applyOptions(lexicon, opts, format) {
   let terms = lexicon.terms;

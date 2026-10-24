@@ -80,5 +80,6 @@ export function exportWhisperPrompt(lexicon: Lexicon, opts: ExportOptions = {}, 
       `left out ${dropped.length} name${dropped.length === 1 ? '' : 's'} past the ${WHISPER_PROMPT_TOKEN_BUDGET} prompt tokens Whisper reads (an offline estimate): ${quotedNames(dropped)}`,
     );
   }
+  if (sink) sink.names = kept.length;
   return kept.join(', ');
 }

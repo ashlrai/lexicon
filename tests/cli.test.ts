@@ -2977,6 +2977,35 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
     }
   });
 
+  // Catches: `export whisper-prompt --json` (and `--out`) reported `terms` as
+  // the names selected, though the prompt-token window and the default cap
+  // left most of them out of the line.
+  it('export whisper-prompt and openai --json count the names the line holds', async () => {
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-wp-'));
+    try {
+      const globalPath = path.join(tmp, 'lexicon.yaml');
+      const names = Array.from({ length: 150 }, (_, i) => `Supercalifragilistic Name${String(i).padStart(3, '0')}`);
+      await fs.writeFile(globalPath, `version: 1\nterms:\n${names.map((n) => `  - canonical: ${n}\n    aliases: []\n`).join('')}`);
+      for (const format of ['whisper-prompt', 'openai']) {
+        const printed = lexicon(['export', format, '--json', '--cwd', tmp], globalPath);
+        expect(printed.status).toBe(0);
+        const doc = JSON.parse(printed.stdout) as { terms: number; content: string };
+        const written = doc.content.trim().split(', ').length;
+        expect(written).toBeLessThan(100);
+        expect(doc.terms).toBe(written);
+
+        const out = path.join(tmp, `${format}.txt`);
+        const toFile = lexicon(['export', format, '--out', out, '--json', '--cwd', tmp], globalPath);
+        expect(toFile.status).toBe(0);
+        expect((JSON.parse(toFile.stdout) as { terms: number }).terms).toBe((await fs.readFile(out, 'utf8')).trim().split(', ').length);
+        const human = lexicon(['export', format, '--out', out, '--cwd', tmp], globalPath);
+        expect(human.stdout).toContain(`wrote ${format} export (${written} terms)`);
+      }
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
   // Catches: `--full` implies --json on list and harvest, but a failure under
   // --full alone (a usage error, or a handler that threw) printed only the
   // stderr line, so a script parsing stdout got an empty document.

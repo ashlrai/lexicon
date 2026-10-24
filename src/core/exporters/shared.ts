@@ -13,6 +13,8 @@ import type { Lexicon, Term, TermCategory } from '../types.js';
 export interface ExportSink {
   notes: string[];
   rows?: number;
+  /** For a one-line name list (`whisper-prompt`, `openai`): the names the line holds, after its caps. */
+  names?: number;
 }
 
 const CATEGORY_ORDER: Record<TermCategory, number> = {

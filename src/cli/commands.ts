@@ -1204,7 +1204,9 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
   const dropped = exported.notes.length > 0 ? { dropped: exported.notes } : {};
   // The terms actually exported: the same category filter and cap exportLexicon applies.
   const selected = selectExportTerms(merged, exportOpts, format);
-  const terms = selected.length;
+  // A name-list format reports the names it wrote: the selected count also
+  // held the names its prompt-token window or default cap left out.
+  const terms = exported.names ?? selected.length;
   // An alias-row format writes one row per non-blank alias (aliasPairs), so a
   // term without one writes nothing: "wrote csv export (2 terms)" counted it.
   const aliasRows = EXPORT_ALIAS_ROW_FORMATS.includes(format)
