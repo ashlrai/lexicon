@@ -26,6 +26,7 @@ import net from 'node:net';
 import path from 'node:path';
 import { z } from 'zod';
 import {
+  EXPORT_ALIAS_ROW_FORMATS,
   EXPORT_FORMATS,
   EXPORT_FORMAT_INFO,
   LIMITS,
@@ -49,6 +50,7 @@ import {
   recordHits,
   resolvePaths,
   isProjectTrustError,
+  selectExportTerms,
   sanitizeForDisplay,
   spellingConflicts,
   stripInvisible,
@@ -509,6 +511,56 @@ function exportQueryOptions(url: URL): { categories?: TermCategory[]; limit?: nu
     if (!Number.isSafeInteger(limit) || limit <= 0) throw new HttpError(400, `limit must be a positive integer, got "${sanitizeForDisplay(limitParam)}"`);
   }
   return { ...(categories.length > 0 ? { categories } : {}), ...(limit !== undefined ? { limit } : {}) };
+}
+
+/**
+ * The response header that carries `GET /export/:format`'s note, so the body
+ * stays exactly the export. Listed in `Access-Control-Expose-Headers` so an
+ * allowed browser origin can read it.
+ */
+export const EXPORT_NOTE_HEADER = 'X-Lexicon-Note';
+
+/**
+ * The skipped project file's note, in the words `lexicon ... --json` uses
+ * (skippedProjectJson), or undefined when no project file was skipped.
+ */
+function skippedProjectNote(loaded: Pick<LoadedLexicon, 'projectTrust' | 'skippedProject'>, consequence: string): string | undefined {
+  if (!loaded.skippedProject) return undefined;
+  const head =
+    loaded.projectTrust === 'changed'
+      ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; review it and run `lexicon trust` again.'
+      : 'An untrusted project .lexicon.yaml exists and was not loaded; review it and run `lexicon trust` to enable it.';
+  return `${head} ${consequence}`;
+}
+
+/**
+ * Why an export is empty or has no rows, and that a skipped project file's
+ * terms are not in it, in the words `lexicon export` prints (emptyExportNote,
+ * skippedProjectJson); MCP export_lexicon says the same in tool terms.
+ * Undefined when there is nothing to say. One line of printable ASCII, so it
+ * fits in a header.
+ */
+export function exportNote(
+  loaded: Pick<LoadedLexicon, 'merged' | 'projectTrust' | 'skippedProject'>,
+  format: ExportFormat,
+  opts: { categories?: TermCategory[]; limit?: number },
+): string | undefined {
+  const notes: string[] = [];
+  if (loaded.merged.terms.length === 0) {
+    notes.push(
+      loaded.skippedProject
+        ? 'The export is empty: the only terms are in the untrusted project lexicon, which was left out; review it and run `lexicon trust`.'
+        : 'The lexicon has no terms yet, so the export is empty; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.',
+    );
+  } else if (selectExportTerms(loaded.merged, opts).length === 0) {
+    notes.push(`No term matched ?category=${(opts.categories ?? []).join(',')}, so the export is empty; lexicon list shows each term's category.`);
+  } else if (EXPORT_ALIAS_ROW_FORMATS.includes(format) && !selectExportTerms(loaded.merged, opts, format).some((t) => t.aliases.some((a) => a.trim() !== ''))) {
+    notes.push(`No exported term has an alias, and ${format} writes one row per alias, so the export has no rows; add one with: lexicon add <canonical> <alias>.`);
+  }
+  const skipped = skippedProjectNote(loaded, 'Its terms are not in the export.');
+  if (skipped && loaded.merged.terms.length > 0) notes.push(skipped);
+  if (notes.length === 0) return undefined;
+  return notes.join(' ').replace(/[^\x20-\x7e]/g, '?');
 }
 
 
@@ -1187,7 +1239,15 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       strictQuery(url, 'GET /export/:format', ['cwd', 'category', 'limit'], ['category']);
       const exportOpts = exportQueryOptions(url);
       const loaded = await load(await resolveCwd(url.searchParams.get('cwd')));
-      return { status: 200, text: exportLexicon(loaded.merged, format, exportOpts), contentType: exportContentType(format) };
+      // An empty export answered 200 with no word of why; the reason rides in
+      // a header so the body stays exactly the export.
+      const note = exportNote(loaded, format, exportOpts);
+      return {
+        status: 200,
+        text: exportLexicon(loaded.merged, format, exportOpts),
+        contentType: exportContentType(format),
+        ...(note !== undefined ? { headers: { [EXPORT_NOTE_HEADER]: note } } : {}),
+      };
     }
     throw new HttpError(404, `no route for ${req.method ?? 'GET'} ${sanitizeForDisplay(pathname)} (routes: ${ROUTES.join(', ')})`);
   }
@@ -1239,6 +1299,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       cors['Access-Control-Allow-Headers'] = 'Authorization, Content-Type';
       cors['Access-Control-Allow-Methods'] = 'GET, POST, DELETE';
       cors['Access-Control-Max-Age'] = '600';
+      cors['Access-Control-Expose-Headers'] = EXPORT_NOTE_HEADER;
       cors['Vary'] = 'Origin';
     }
 

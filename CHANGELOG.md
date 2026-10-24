@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `GET /export/:format` on the local API says why an export is empty in an `X-Lexicon-Note` response header (no terms yet, only an untrusted project lexicon has terms, no term matched `?category=`, or an alias-row format got no term with an alias), and that a skipped project lexicon's terms were left out, naming the next step as `lexicon export` and MCP `export_lexicon` do. It answered 200 with empty text and no reason. The body is unchanged; the header is listed in `Access-Control-Expose-Headers` for an allowed origin.
 - `lexicon remove X --alias y` on a lexicon with no terms says there is nothing to remove and names `lexicon setup` and `lexicon add` (or `lexicon trust` when the only terms are in an untrusted project lexicon), on stderr and as the `--json` `nextStep`, as `lexicon remove X` does. It gave only the generic step.
 - A positive integer flag (`harvest --limit/--min-count`, `export --limit`, `suggest --limit`, `daemon --interval`) refuses a value that is not a whole number in digits, with the same `expected a positive integer, e.g. --limit 50` error. `--limit 5abc` ran as `--limit 5` and `--limit 1.5` as `--limit 1`.
 - `lexicon setup --yes` skips a guessed company name (from the package scope or the git remote org) that the write would refuse, such as one over 80 characters, with a note naming `--company "Your Co"` and `lexicon add`. It seeded the person term and then failed at the company write. The dry-run plan agrees.
