@@ -69,4 +69,17 @@ describe('trust_project with a trust registry it cannot use', () => {
     expect(result.text).not.toContain('"trusted": []');
     expect(await fs.readFile(registryPath, 'utf8')).toBe(BROKEN);
   });
+
+  // Catches: trust put the elicitation question to the user and only then
+  // found the registry broken, so their yes was answered with a refusal.
+  it('trust refuses before asking the user', async () => {
+    const registryPath = getTrustPath({ cwd: repo });
+    const asked: string[] = [];
+    const result = await call({ action: 'trust' }, asked);
+    expect(result.isError).toBe(true);
+    expect(asked).toEqual([]);
+    expect(result.text).toContain(`the trust registry at ${registryPath} is not valid JSON`);
+    expect(result.text).toContain('nothing was trusted');
+    expect(await fs.readFile(registryPath, 'utf8')).toBe(BROKEN);
+  });
 });

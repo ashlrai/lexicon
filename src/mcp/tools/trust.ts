@@ -212,6 +212,15 @@ export const registerTrustTools: ToolRegistrar = (server, ctx) => {
               `if the repo has none yet, ask the user to create one with ${cliCommand('init --project')} in that repo.`,
           );
         }
+        // trustProject refuses a broken registry; say so before the user is
+        // asked, not after they approved.
+        const registryProblem = await trustRegistryProblem({ cwd: ctx.cwd });
+        if (registryProblem !== undefined) {
+          throw new Error(
+            `the trust registry at ${shown(registry)} ${shown(registryProblem)}; it was left as it is and nothing was trusted. ` +
+              `Ask the user to fix the JSON in that file, or move it aside (then run ${cliCommand('trust')} in each project again), and retry.`,
+          );
+        }
         const shownSha = (await parsedContentHash(file)) ?? (await hashFile(filePath));
         const before = await isTrusted(file, { cwd: ctx.cwd });
 

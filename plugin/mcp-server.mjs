@@ -63904,6 +63904,12 @@ var registerTrustTools = (server, ctx) => {
           `file does not exist: ${safePath2}. Call trust_project with action 'status' and no path to see which .lexicon.yaml this server resolves, then pass the path of an existing .lexicon.yaml or the repo directory holding it; if the repo has none yet, ask the user to create one with ${cliCommand("init --project")} in that repo.`
         );
       }
+      const registryProblem = await trustRegistryProblem({ cwd: ctx.cwd });
+      if (registryProblem !== void 0) {
+        throw new Error(
+          `the trust registry at ${shown(registry2)} ${shown(registryProblem)}; it was left as it is and nothing was trusted. Ask the user to fix the JSON in that file, or move it aside (then run ${cliCommand("trust")} in each project again), and retry.`
+        );
+      }
       const shownSha = await parsedContentHash(file2) ?? await hashFile(filePath);
       const before = await isTrusted(file2, { cwd: ctx.cwd });
       if (before !== "trusted") {
