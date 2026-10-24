@@ -422,9 +422,15 @@ async function renameOver(from: string, to: string): Promise<void> {
 export async function defaultDownloader(url: string, dest: string, onProgress: (p: DownloadProgress) => void, signal?: AbortSignal): Promise<void> {
   await fs.mkdir(path.dirname(dest), { recursive: true });
   await sweepStaleParts(dest);
-  const res = await fetch(url, { redirect: 'follow', ...(signal ? { signal } : {}) });
+  // Identity is asked for, but a proxy or CDN may compress anyway. fetch then
+  // decodes the body while Content-Length still counts the encoded bytes, so
+  // comparing the two rejected every such download as cut short. The length
+  // is only checked (and shown as progress) when no encoding was applied; the
+  // ggml magic and the server's sha256 still check the decoded file.
+  const res = await fetch(url, { redirect: 'follow', headers: { 'accept-encoding': 'identity' }, ...(signal ? { signal } : {}) });
   if (!res.ok || !res.body) throw Object.assign(new Error(`download failed: ${res.status} ${res.statusText} (${url})`), { status: res.status });
-  const total = Number(res.headers.get('content-length')) || undefined;
+  const encoding = (res.headers.get('content-encoding') ?? '').trim().toLowerCase();
+  const total = encoding === '' || encoding === 'identity' ? Number(res.headers.get('content-length')) || undefined : undefined;
   const claimed = claimedSha256(res.headers);
   const hash = createHash('sha256');
   let received = 0;

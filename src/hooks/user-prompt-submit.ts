@@ -27,7 +27,7 @@
 import { promises as fs, readSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { codeSpanRanges, collectRanges, diffSummary, exportLexicon, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, pathForModel, phoneticKey, queueCorrections, recordHits, resolvePaths, sanitizeForDisplayMax, similarity } from '../core/index.js';
+import { codeSpanRanges, collectRanges, diffSummary, exportClaudeMdWithin, exportLexicon, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, pathForModel, phoneticKey, queueCorrections, recordHits, resolvePaths, sanitizeForDisplayMax, similarity } from '../core/index.js';
 import type { Correction, CorrectionLexicon, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
 import { packageVersion } from '../util/package.js';
 import { cliCommand } from '../util/cli-hint.js';
@@ -871,6 +871,11 @@ export function dropDataBlockSpans(result: NormalizeResult): NormalizeResult {
   return dropReplacements(result, (r) => overlapsAny(r, spans));
 }
 
+/** The line after the rows a capped SessionStart table kept. */
+function sessionMoreLine(n: number): string {
+  return `... ${n} more term${n === 1 ? '' : 's'}; read the lexicon://me resource for more, or call the list_terms tool to look any term up.`;
+}
+
 /**
  * Keeps a claude-md export under `max` characters by keeping the table rows
  * that fit, in order (a row too long to fit is dropped, later rows still
@@ -889,7 +894,7 @@ export function truncateSessionContext(text: string, max = SESSION_CONTEXT_MAX_C
   const rows = lines.slice(sep + 1, end);
   const footer = lines.slice(end);
 
-  const moreLine = (n: number): string => `... ${n} more term${n === 1 ? '' : 's'}; read the lexicon://me resource for more, or call the list_terms tool to look any term up.`;
+  const moreLine = sessionMoreLine;
   const fixed = header.join('\n').length + footer.join('\n').length + moreLine(rows.length).length + 3; // 3 joining newlines
   let used = fixed;
   const kept: string[] = [];
@@ -1224,8 +1229,14 @@ async function sessionStart(payload: HookInput, opts: HookOptions): Promise<stri
   // lookalikes, so the table cannot close or open a tag around it.
   // The cap covers the whole context: the table gives up room for the
   // skipped-project note (bounded by pathForModel) and the joining newline.
+  // Past the cap the most used rows are kept (exportClaudeMdWithin, as
+  // lexicon://me keeps them). The rows were taken in export order, so a
+  // large lexicon's context held its first terms A to Z (in category order)
+  // and never the names the user dictates most. neutralizeMarkup keeps the
+  // length, so the cap still holds.
   const room = SESSION_CONTEXT_MAX_CHARS - (trailer ? trailer.length + 1 : 0);
-  const parts: string[] = [truncateSessionContext(neutralizeMarkup(exportLexicon(loaded.merged, 'claude-md')).trimEnd(), room)];
+  const table = exportClaudeMdWithin(loaded.merged, room, sessionMoreLine).text;
+  const parts: string[] = [neutralizeMarkup(table).trimEnd()];
   if (trailer) parts.push(trailer);
   return emit('SessionStart', parts);
 }
