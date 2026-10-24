@@ -29,7 +29,7 @@ import {
   parsePulseSources,
   pickDevice,
 } from '../src/voice/devices.js';
-import { HISTORY_MAX_BYTES, HISTORY_MAX_LINES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
+import { HISTORY_MAX_BYTES, HISTORY_MAX_LINES, HISTORY_READ_MAX_BYTES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
 import { GGML_MAGIC, STALE_PART_MS, checkModelHashRecord, defaultDownloader, expandTilde, modelFileName, modelUrl, modelsDir, resolveModel } from '../src/voice/models.js';
 import type { Downloader } from '../src/voice/models.js';
 import { installHint, locateWhisperCli, makeProcessDescribe, makeProcessList } from '../src/voice/process.js';
@@ -1905,11 +1905,11 @@ describe('history', () => {
     await appendHistory(h.globalPath, entry(1));
     const file = historyPath(h.globalPath);
     const before = await fs.readFile(file, 'utf8');
-    const realRead = fs.readFile.bind(fs);
-    const spy = vi.spyOn(fs, 'readFile').mockImplementation((async (p: unknown, ...rest: unknown[]) => {
-      if (p === file) throw Object.assign(new Error('EIO: i/o error, read'), { code: 'EIO' });
-      return (realRead as (...a: unknown[]) => Promise<unknown>)(p, ...rest);
-    }) as typeof fs.readFile);
+    const realOpen = fs.open.bind(fs);
+    const spy = vi.spyOn(fs, 'open').mockImplementation((async (p: unknown, ...rest: unknown[]) => {
+      if (p === file) throw Object.assign(new Error('EIO: i/o error, open'), { code: 'EIO' });
+      return (realOpen as (...a: unknown[]) => Promise<unknown>)(p, ...rest);
+    }) as typeof fs.open);
     try {
       await appendHistory(h.globalPath, entry(2));
     } finally {
@@ -1929,6 +1929,30 @@ describe('history', () => {
     await appendHistory(h.globalPath, entry(1));
     const text = await fs.readFile(historyPath(h.globalPath), 'utf8');
     expect(text).toBe(`${good}\n${JSON.stringify(entry(1))}\n`);
+  });
+
+  // Catches: appendHistory and readHistory read the whole file before the 4 MiB cap applied, so a file grown past it (another program, an older version) was loaded whole on every dictation, and past V8's string limit every append failed.
+  it('reads only the last HISTORY_READ_MAX_BYTES of an oversized file, never all of it', async () => {
+    const h = await harness();
+    await ensureVoiceDir(h.globalPath);
+    const file = historyPath(h.globalPath);
+    const junk = `${'z'.repeat(1024)}\n`.repeat(HISTORY_READ_MAX_BYTES / 1024 + 1024);
+    await fs.writeFile(file, `${JSON.stringify(entry(99))}\n${junk}${JSON.stringify(entry(0))}\n${JSON.stringify(entry(1))}\n`);
+    const realRead = fs.readFile.bind(fs);
+    const whole: unknown[] = [];
+    const spy = vi.spyOn(fs, 'readFile').mockImplementation((async (p: unknown, ...rest: unknown[]) => {
+      if (p === file) whole.push(p);
+      return (realRead as (...a: unknown[]) => Promise<unknown>)(p, ...rest);
+    }) as typeof fs.readFile);
+    try {
+      expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t0', 't1']);
+      await appendHistory(h.globalPath, entry(2));
+      expect(whole).toEqual([]);
+    } finally {
+      spy.mockRestore();
+    }
+    expect((await fs.stat(file)).size).toBeLessThanOrEqual(HISTORY_MAX_BYTES);
+    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t0', 't1', 't2']);
   });
 
   // Catches: only the line count was capped, so long dictations grew the file (read and rewritten on every append) without bound.
