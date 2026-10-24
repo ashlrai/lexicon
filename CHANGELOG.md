@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- MCP `lexicon_stats` and `list_terms` descriptions name their result fields. `lexicon_stats` says `topTerms` holds at most 10 terms with at least one hit, most hits first (it said only "the most-used terms"); `list_terms` names `terms`, `counts`, `paths` and the skipped-file and empty-result notes, and says a blank `query` filters nothing.
 - MCP `add_term` declares in its schema that a blank `canonical` is refused (the `\S` pattern and "must not be blank" in the description), as `remove_term` and `learn_correction` already do; a client that validates sees the rule, and the refusal names the argument. It was refused only by the handler, as `canonical must not be empty`.
 - MCP `normalize_transcript`: the `minConfidence` description names its default (the lexicon's `settings.minConfidence`, else 0.82) and says an exact match the text spells with an extra word break ("open ai" for OpenAI) scores 0.95, so a value above that refuses it. It said exact matches are always 1. The tool description also says the code, path, URL and email protection is off when `settings.skipCode` is false. `docs/LEXICON-FILE.md` had the same "always 1.0" claim.
 - `install.sh`, when it cannot read the Node version, prints how to install Node 20 or newer (the same hint as a missing or old Node) and says to run `node --version` to see what PATH selects. It printed the unreadable output alone.

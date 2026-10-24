@@ -102,3 +102,30 @@ describe('add_term canonical', () => {
     await expect(fs.access(path.join(home, 'lexicon.yaml'))).rejects.toThrow();
   });
 });
+
+describe('list_terms and lexicon_stats name their result fields', () => {
+  // Catches: lexicon_stats said "the most-used terms" with no cap or shape
+  // (topTerms is at most 10, terms with no hits left out), and list_terms
+  // named none of its fields.
+  it('lexicon_stats: topTerms holds at most 10 terms with hits, and the listed keys are the result', async () => {
+    const d = (await tool('lexicon_stats')).description ?? '';
+    expect(d).toContain('`topTerms` holds at most 10 terms with at least one hit, as { canonical, hits }, most hits first.');
+    const terms = Array.from({ length: 12 }, (_, i) => `  - canonical: Term${i}\n    aliases: [alias${i}]\n    hits: ${i}\n`).join('');
+    await fs.writeFile(path.join(home, 'lexicon.yaml'), `version: 1\nterms:\n${terms}`);
+    const stats = (await call('lexicon_stats', {})).json();
+    const top = stats.topTerms as { canonical: string; hits: number }[];
+    expect(top).toHaveLength(10);
+    expect(top[0]).toEqual({ canonical: 'Term11', hits: 11 });
+    expect(top.some((t) => t.hits === 0)).toBe(false);
+    for (const key of Object.keys(stats)) expect(d).toContain(key);
+  });
+
+  it('list_terms: the described keys are the result, and a blank query filters nothing', async () => {
+    const d = (await tool('list_terms')).description ?? '';
+    expect(d).toContain('Returns { terms, counts: { matched, total, global, project }, paths: { global, project? } }');
+    await addTerm({ canonical: 'Hetzner', aliases: ['hetsner'] }, { cwd: repo });
+    const listed = (await call('list_terms', { query: '   ' })).json();
+    expect(Object.keys(listed).sort()).toEqual(['counts', 'paths', 'terms']);
+    expect(listed.counts).toEqual({ matched: 1, total: 1, global: 1, project: 0 });
+  });
+});

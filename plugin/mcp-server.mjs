@@ -61047,7 +61047,7 @@ var registerTermTools = (server, ctx) => {
     "list_terms",
     {
       title: "List lexicon terms",
-      description: "List the user's lexicon terms, global and project merged. Optional case-insensitive substring filter over canonical spellings and aliases, plus a category filter. WHEN TO CALL: to show the user what is already known, to check whether a name is covered before adding it, or to find the exact canonical another tool needs. Read-only and safe to call unprompted; filter rather than listing everything. WHAT IT CHANGES: nothing. WHAT IT WILL NOT DO: it does not include an untrusted project .lexicon.yaml -- if one was skipped the result says so in `note`, and trust_project is how the user reviews it.",
+      description: "List the user's lexicon terms, global and project merged. Optional case-insensitive substring filter over canonical spellings and aliases, plus a category filter. WHEN TO CALL: to show the user what is already known, to check whether a name is covered before adding it, or to find the exact canonical another tool needs. Read-only and safe to call unprompted; filter rather than listing everything. WHAT IT CHANGES: nothing. WHAT IT WILL NOT DO: it does not include an untrusted project .lexicon.yaml -- if one was skipped the result says so in `note`, and trust_project is how the user reviews it. Returns { terms, counts: { matched, total, global, project }, paths: { global, project? } }, plus `projectTrust`, `skippedProject` and `note` for a skipped file, or a `note` saying why `terms` is empty (no terms yet, or the filter matched none). A blank `query` filters nothing.",
       inputSchema: {
         query: external_exports.string().optional().describe("Case-insensitive substring matched against canonical and aliases."),
         category: external_exports.enum(TERM_CATEGORIES).optional()
@@ -61207,7 +61207,7 @@ var registerTermTools = (server, ctx) => {
     "lexicon_stats",
     {
       title: "Lexicon usage statistics",
-      description: "Counts of terms and aliases, total hits, the most-used terms, terms that never fired, and a per-file breakdown of the merged lexicon. `neverHit` lists at most the first 20 terms that never fired; `neverHitCount` is how many there are in all. An untrusted project .lexicon.yaml is not counted; when one was skipped, `skippedProject` and `note` say so (path only). With no terms at all, `note` says so and names setup_lexicon and add_term.",
+      description: `Counts of terms and aliases, total hits, the most-used terms, terms that never fired, and a per-file breakdown of the merged lexicon: { termCount, aliasCount, totalHits, topTerms, neverHit, neverHitCount, byCategory, bySource, files: [{ path, scope, terms }] }. \`topTerms\` holds at most ${TOP_TERMS} terms with at least one hit, as { canonical, hits }, most hits first. \`neverHit\` lists at most the first ${NEVER_HIT_CAP} terms that never fired; \`neverHitCount\` is how many there are in all. An untrusted project .lexicon.yaml is not counted; when one was skipped, \`skippedProject\` and \`note\` say so (path only). With no terms at all, \`note\` says so and names setup_lexicon and add_term.`,
       inputSchema: {}
     },
     async () => guarded(async () => {
