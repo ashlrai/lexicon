@@ -121,10 +121,9 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         'A pack adds dozens of terms (list_packs gives each pack\'s `terms` count), so name the pack and its size and ask before calling this. Remove one later with ' + cliCommand('pack remove <name>') + '. ' +
         'For a community pack, pass name as <author>/<name> with registry pointing at the index: without confirm the tool returns the full term-list preview and writes nothing (show it to the user first); with confirm: true it installs after they approved. A vendored pack installs directly: registry, previewDigest or confirm: false with one is refused and nothing is written. Community installs pin the checksum, so ' + cliCommand('pack update') + ' re-checks it later.',
       inputSchema: {
-        name: z
-          .string()
+        name: nonBlank()
           .describe(
-            'Pack name from list_packs (e.g. developer) or a community ref like example/cardiology. A pack name is 1 to 64 lowercase letters, digits and dashes, starting with a letter or digit; ' +
+            'Pack name from list_packs (e.g. developer) or a community ref like example/cardiology; must not be blank. A pack name is 1 to 64 lowercase letters, digits and dashes, starting with a letter or digit; ' +
               'a community ref is <author>/<name>, the author 1 to 39 of the same characters, optionally followed by @<version> (up to 32 characters). Anything else is refused.',
           ),
         scope: z.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project'."),
@@ -230,7 +229,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
       title: 'Import proper nouns from the user\'s own sources (preview, then apply)',
       description:
         'Guided vocabulary import: harvest candidate terms from where the user\'s proper nouns live (contacts: macOS Contacts names; calendar: macOS Calendar event titles and attendee names; github: the gh CLI\'s username, org members and repo names). ' +
-        'Every source is local-first and opt-in: the preview names exactly what each source reads, unavailable sources say why, and email/Slack are not implemented (reading mail needs new OAuth scopes, which is a conversation, not a default). ' +
+        'Every source is local-first and opt-in: the preview names exactly what each source reads, unavailable sources say why, and email and Slack are not implemented (reading mail needs new OAuth scopes and reading Slack needs a workspace token; each is a conversation, not a default). ' +
         `Ask which sources to read first, then pass explicit sources without apply to preview candidates (at most ${IMPORT_PREVIEW_MAX_CANDIDATES} per preview, across the sources chosen). Show the candidate contents and ids; apply requires the returned previewToken and only approvedCandidateIds. Applying consumes the same snapshot without reading the sources again, once: a token is gone after one apply, after five minutes, or once ${IMPORT_PREVIEWS_KEPT} newer previews were made. ` +
         'Candidates merge like a pack install: an existing term keeps its spelling and only gains aliases; new terms are stamped import:<source> so their origin stays visible. ' +
         'With scope project and a project file that is not trusted yet, the file is written but left untrusted (`trusted: false`): relay `nextStep`.',

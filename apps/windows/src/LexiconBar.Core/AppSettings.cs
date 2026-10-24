@@ -55,7 +55,7 @@ public sealed class AppSettings
 
     public string ToJson() => JsonSerializer.Serialize(this, Json);
 
-    /// <summary>Defaults when the file is missing or unreadable — never an exception at startup.</summary>
+    /// <summary>Defaults when the file is missing or unreadable, never an exception at startup.</summary>
     public static AppSettings FromJson(string? json)
     {
         if (string.IsNullOrWhiteSpace(json)) return new AppSettings();

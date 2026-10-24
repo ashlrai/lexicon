@@ -33,7 +33,7 @@ public sealed record RewriteDecision(RewritePlan? Plan, RewriteRefusal Refusal)
 /// <summary>
 /// The safety checks between "the API changed the burst" and "write it into the
 /// field", and the resulting write plan. Pure, so it is testable without a
-/// Windows box — which matters, because every one of these guards exists
+/// Windows box, which matters, because every one of these guards exists
 /// because its absence once ate a sentence of somebody's writing.
 /// </summary>
 public static class RewritePlanner

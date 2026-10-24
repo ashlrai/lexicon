@@ -7,7 +7,7 @@ namespace LexiconBar.Ui;
 /// Draws the tray icon at runtime instead of shipping a .ico.
 ///
 /// Two reasons. It keeps a binary out of the repo for something that is four
-/// arcs, and — more usefully — it means the icon can be re-rendered at the
+/// arcs, and (more usefully) it means the icon can be re-rendered at the
 /// notification area's actual DPI and recoloured for the "busy" and "error"
 /// states without three more files. The Mac app uses an SF Symbol, which is the
 /// same idea with a system font doing the drawing.

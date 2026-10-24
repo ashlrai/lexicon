@@ -2464,6 +2464,17 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
     }
   }, 30_000);
 
+  // Catches: `harvest --min-count` help said only "minimum occurrences", so a
+  // user raising it expected the directory name, git authors, package names and
+  // dot-TLD brands to drop out too; they are proposed at any count.
+  it('harvest --help says --min-count applies only to names found in file text', () => {
+    const help = lexicon(['harvest', '--help'], path.join(os.tmpdir(), 'lexicon-unused.yaml'));
+    expect(help.status).toBe(0);
+    const flat = help.stdout.replace(/\s+/g, ' ');
+    expect(flat).toContain('minimum occurrences for a name found only in file text (default 2)');
+    expect(flat).toContain('the directory name, git authors, package names and dot-TLD brands (Ashlr.AI) are proposed at any count');
+  }, 30_000);
+
   // Catches: `voice --json` promises `code` on every failure, but a commander
   // usage error (`--seconds abc`) printed { ok, error, nextStep } without it;
   // and `voice --status --toggle` answered the status and dropped the toggle.

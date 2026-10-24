@@ -247,7 +247,7 @@ public class BurstDetectorTests
         Assert.Equal("Meeting notes. ", d.LastStable);
 
         // Then the user pauses and dictates. The burst is the dictated span
-        // only — the typed prefix is already the baseline.
+        // only; the typed prefix is already the baseline.
         string text = "Meeting notes. ";
         now += 2;
         foreach (string word in new[] { "ping ", "ashler ", "about ", "the ", "rollout" })

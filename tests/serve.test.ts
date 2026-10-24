@@ -342,6 +342,23 @@ describe('auth', () => {
     });
     expect(post.status).toBe(401);
   });
+
+  // Pins what docs/LOCAL-API.md and SECURITY.md now say: an OPTIONS preflight
+  // needs no token (204, no body, on any path) and every 401 carries
+  // `WWW-Authenticate: Bearer`. The docs listed only /health and /pair as the
+  // routes without a token and never named the header.
+  it('OPTIONS needs no token and a 401 carries WWW-Authenticate: Bearer', async () => {
+    for (const route of ['/normalize', '/stats', '/nope']) {
+      const pre = await fetch(`${info.url}${route}`, { method: 'OPTIONS' });
+      expect(pre.status, route).toBe(204);
+      expect(await pre.text(), route).toBe('');
+    }
+    for (const route of ['/stats', `/health?cwd=${encodeURIComponent(env.cwd)}`]) {
+      const res = await fetch(`${info.url}${route}`);
+      expect(res.status, route).toBe(401);
+      expect(res.headers.get('www-authenticate'), route).toBe('Bearer');
+    }
+  });
 });
 
 /**
@@ -782,6 +799,29 @@ describe('GET /lexicon, /export/:format, /stats', () => {
     // The parameters each route does take still work.
     expect((await api('GET', `/stats?cwd=${encodeURIComponent(env.cwd)}`)).status).toBe(200);
     expect((await api('GET', '/aliases?canonical=Vercel')).status).toBe(200);
+  });
+
+  // Catches: the POST routes never looked at the query string, so
+  // `POST /packs/developer?scope=project` installed into the global lexicon and
+  // answered 200, and `POST /normalize?cwd=...` corrected against the server's
+  // own directory, while the docs said query strings are strict on every route.
+  it('POST routes refuse a query parameter and write nothing', async () => {
+    const before = await fs.readFile(env.globalPath, 'utf8');
+    const cases: [string, unknown, string][] = [
+      ['/normalize?cwd=/tmp', { text: 'ping ashler' }, 'POST /normalize takes { text, dryRun?, minConfidence?, cwd? }'],
+      ['/learn?scope=project', { heard: 'Ashlur', meant: 'Ashlr.AI' }, 'POST /learn takes { heard, meant, scope?, cwd? }'],
+      ['/add?dryRun=1', { canonical: 'Querystringco' }, 'POST /add takes { canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }'],
+      ['/packs/developer?scope=project', {}, 'POST /packs/:name takes { scope?, cwd? } or an empty body'],
+    ];
+    for (const [route, body, shape] of cases) {
+      const res = await api('POST', route, body);
+      expect(res.status, route).toBe(400);
+      const key = new URL(route, 'http://x').searchParams.keys().next().value;
+      expect(((await res.json()) as { error: string }).error, route).toBe(
+        `unknown query parameter "${key}" (a POST takes its options in the JSON body, not the query string: ${shape})`,
+      );
+    }
+    expect(await fs.readFile(env.globalPath, 'utf8')).toBe(before);
   });
 
   it('/stats returns LexiconStats', async () => {
@@ -2895,5 +2935,68 @@ describe('notes on an empty or partial answer', () => {
     const cors = await call('GET', at('/export/text', untrustedOnly), undefined, { Origin: 'chrome-extension://abc' });
     expect(cors.headers.get('access-control-expose-headers')).toBe(EXPORT_NOTE_HEADER);
     await fs.rm(globalPath, { force: true });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Behaviour docs/LOCAL-API.md states, on a server of its own
+// ---------------------------------------------------------------------------
+
+describe('documented route behaviour', () => {
+  let dir: string;
+  let globalPath: string;
+  let repo: string;
+  let own: LexiconHttpServer;
+  let started: ServeStartInfo;
+  const call = async (method: string, route: string, body?: unknown): Promise<Response> =>
+    fetch(`${started.url}${route}`, {
+      method,
+      headers: { Authorization: `Bearer ${started.token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}) },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+
+  beforeAll(async () => {
+    dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-documented-')));
+    globalPath = path.join(dir, 'config', 'lexicon.yaml');
+    repo = path.join(dir, 'repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    await fs.writeFile(path.join(repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Repoword\n    aliases: [repo word]\n', 'utf8');
+    own = createServer({ port: 0, cwd: dir, globalPath, quiet: true, reloadMs: 0 });
+    started = await own.start();
+  });
+
+  afterAll(async () => {
+    await own.stop();
+    await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  });
+
+  // Catches: docs/LOCAL-API.md never said what /add does with no aliases, and
+  // docs/CONTRACT.md said only "omitted": `aliases: []` generates them too,
+  // unlike MCP add_term, where an explicit [] means none.
+  it('POST /add with aliases omitted or [] gives a new term the suggested spellings, and an existing one none', async () => {
+    for (const [canonical, body] of [['Zorblatt', {}], ['Quuxly', { aliases: [] }]] as const) {
+      const res = await call('POST', '/add', { canonical, ...body });
+      expect(res.status, canonical).toBe(200);
+      const json = (await res.json()) as { created: boolean; term: { aliases: string[] } };
+      expect(json.created, canonical).toBe(true);
+      expect(json.term.aliases, canonical).toEqual(suggestAliases(canonical));
+      expect(json.term.aliases.length, canonical).toBeGreaterThan(0);
+    }
+    const again = (await (await call('POST', '/add', { canonical: 'Zorblatt', category: 'product' })).json()) as { created: boolean; term: { aliases: string[] } };
+    expect(again.created).toBe(false);
+    expect(again.term.aliases).toEqual(suggestAliases('Zorblatt'));
+  });
+
+  // Catches: docs/LOCAL-API.md said /packs carries projectTrust only "when a
+  // project file was not loaded"; it is there whenever a project file exists.
+  it('GET /packs carries projectTrust for a trusted project file too, and skippedProject only for a skipped one', async () => {
+    const at = `/packs?cwd=${encodeURIComponent(repo)}`;
+    const untrusted = (await (await call('GET', at)).json()) as Record<string, unknown>;
+    expect(untrusted.projectTrust).toBe('untrusted');
+    expect(untrusted.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
+    await trustProject(path.join(repo, '.lexicon.yaml'), { globalPath });
+    const trusted = (await (await call('GET', at)).json()) as Record<string, unknown>;
+    expect(trusted.projectTrust).toBe('trusted');
+    expect(trusted).not.toHaveProperty('skippedProject');
   });
 });

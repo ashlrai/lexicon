@@ -177,6 +177,18 @@ describe('import_dictionary and import_vocabulary', () => {
     expect(report.terms).toMatchObject([{ canonical: 'Hetzner', aliases: ['head sner'] }]);
   });
 
+  // Catches: "email/Slack are not implemented (reading mail needs new OAuth
+  // scopes ...)" read as both needing OAuth, while the Slack source itself says
+  // it needs a workspace token.
+  it('import_vocabulary: email needs OAuth scopes and Slack a workspace token, as the sources say', async () => {
+    const d = (await tool('import_vocabulary')).description ?? '';
+    expect(d).toContain('email and Slack are not implemented (reading mail needs new OAuth scopes and reading Slack needs a workspace token');
+    const listed = (await call('import_vocabulary', {})).json() as { sources?: { id: string; reads?: string; description?: string }[] };
+    const text = JSON.stringify(listed);
+    expect(text).toContain('workspace token');
+    expect(text).toContain('OAuth scopes');
+  });
+
   // Catches: the preview cap, the single use and the 20-preview window were in
   // no description, so an agent holding an old token got "preview is missing".
   it('import_vocabulary: a token is used once and is dropped once 20 newer previews were made', async () => {

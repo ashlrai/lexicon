@@ -2,7 +2,7 @@ namespace LexiconBar;
 
 /// <summary>
 /// Remembers the last rewrite so the bubble's Undo (and Ctrl+Alt+Z) can put the
-/// original text back — but only while the same field still holds exactly the
+/// original text back, but only while the same field still holds exactly the
 /// corrected text. The moment the user edits on, the offer goes away rather
 /// than firing at a stale offset.
 /// </summary>

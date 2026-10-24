@@ -545,6 +545,18 @@ describe('blank required strings', () => {
     await expect(fs.stat(path.join(home, 'lexicon.yaml'))).rejects.toThrow();
   });
 
+  // Catches: add_pack's name was a plain string, so "" and "  " passed the
+  // schema and the handler answered "unknown pack" without naming the argument.
+  it('are refused for add_pack name at the schema, naming the argument', async () => {
+    for (const name of ['', '  ']) {
+      const res = await call('add_pack', { name });
+      expect(res.isError).toBe(true);
+      expect(res.text).toMatch(/at name/);
+      expect(res.text).not.toContain('unknown pack');
+    }
+    await expect(fs.stat(path.join(home, 'lexicon.yaml'))).rejects.toThrow();
+  });
+
   // import_dictionary with blank content answered a success with 0 terms, so an
   // agent that lost the file's text on the way reported an import that read nothing.
   it('are refused for import_dictionary content and path', async () => {

@@ -14,7 +14,7 @@ namespace LexiconBar.Interop;
 /// <item>Input goes to whatever has keyboard focus *now*, not to a handle. The
 ///   caller must confirm the target process is still in the foreground.</item>
 /// <item>UIPI blocks a non-elevated process from sending input to an elevated
-///   window, silently — SendInput returns the count it accepted and the
+///   window, silently: SendInput returns the count it accepted and the
 ///   keystrokes go nowhere. The write is verified by re-reading the field, so
 ///   this shows up as "not reflected" rather than as corruption.</item>
 /// <item>The non-interleaving guarantee is per call. One call keeps its events
@@ -55,7 +55,7 @@ internal static class Keyboard
     /// how many UTF-16 units of it Windows accepted: <c>text.Length</c> when all
     /// of it went, 0 when none did, and a count in between when the call was cut
     /// short. Surrogate pairs are two units and two events, which is what
-    /// Windows expects — an emoji is two UTF-16 units and two INPUT records.
+    /// Windows expects: an emoji is two UTF-16 units and two INPUT records.
     ///
     /// The caller checks <see cref="Fits"/> first. A longer string returns 0
     /// rather than being split across calls.

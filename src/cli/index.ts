@@ -161,7 +161,7 @@ program
   .description('scan a repository for names worth adding to the lexicon')
   .argument('[path]', 'repository root (default: cwd)')
   .option('--limit <n>', 'max candidates', positiveIntOption('--limit', 50))
-  .option('--min-count <n>', 'minimum occurrences', positiveIntOption('--min-count', 2))
+  .option('--min-count <n>', 'minimum occurrences for a name found only in file text (default 2); the directory name, git authors, package names and dot-TLD brands (Ashlr.AI) are proposed at any count', positiveIntOption('--min-count', 2))
   .option('--add', 'add candidates (with suggested aliases) to the project lexicon; on a terminal this walks them one by one')
   .option('-i, --interactive', 'walk candidates one by one: y add, n skip, e edit aliases, c category, a add all, q quit')
   .option('--yes', 'with --add: add every candidate without prompting')

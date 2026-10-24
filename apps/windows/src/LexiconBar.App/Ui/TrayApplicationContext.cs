@@ -14,10 +14,10 @@ namespace LexiconBar.Ui;
 /// </summary>
 internal sealed class TrayApplicationContext : ApplicationContext
 {
-    /// <summary>CLSID_CUIAutomation8 — the threading-aware client, Windows 8 and later.</summary>
+    /// <summary>CLSID_CUIAutomation8: the threading-aware client, Windows 8 and later.</summary>
     private static readonly Guid ClsidCUIAutomation8 = new("e22ad333-b25f-460c-83d0-0581107395c9");
 
-    /// <summary>CLSID_CUIAutomation — the original, as a fallback.</summary>
+    /// <summary>CLSID_CUIAutomation: the original, as a fallback.</summary>
     private static readonly Guid ClsidCUIAutomation = new("ff48dba4-60ef-4201-aa87-54103eef594e");
 
     private readonly string _settingsPath;

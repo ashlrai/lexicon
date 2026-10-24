@@ -11,7 +11,7 @@ namespace LexiconBar.FixEverywhere;
 /// <item>Cross-process UIA calls block. Making them on the UI thread freezes
 ///   the tray menu whenever the app being watched is busy.</item>
 /// <item>Microsoft's guidance is explicit that a UIA client must not call back
-///   into UI Automation from inside an event handler — the handler runs on a
+///   into UI Automation from inside an event handler: the handler runs on a
 ///   UIA-owned thread and re-entering can deadlock. So handlers here do nothing
 ///   but post work to this queue.</item>
 /// <item>This thread is MTA. A UIA client on an STA thread needs a running

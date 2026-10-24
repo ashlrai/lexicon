@@ -501,6 +501,19 @@ function strictQuery(url: URL, route: string, allowed: readonly string[], repeat
 }
 
 /**
+ * The query string of a POST route, which takes none: its options are body
+ * fields. Checked after the body is read, so the client sees the 400. A query
+ * parameter used to be dropped, so `POST /packs/developer?scope=project`
+ * installed into the global lexicon and answered 200, and `POST
+ * /normalize?cwd=...` corrected against the server's own directory.
+ */
+function noQuery(url: URL, route: BodyRoute): void {
+  const first = url.searchParams.keys().next();
+  if (first.done) return;
+  throw new HttpError(400, `unknown query parameter "${sanitizeForDisplay(first.value)}" (a POST takes its options in the JSON body, not the query string: ${BODY_SHAPES[route]})`);
+}
+
+/**
  * `?category=` (repeated or comma-separated) and `?limit=` of `GET
  * /export/:format`, the CLI's `--category` and `--limit`. An unknown category
  * or a limit that is not a positive integer is a 400.
@@ -1205,15 +1218,21 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
 
     if (pathname === '/normalize') {
       if (method !== 'POST') throw wrongMethod(['POST']);
-      return json(200, await handleNormalize(await readJson(req, MAX_BODY_BYTES, '/normalize')));
+      const raw = await readJson(req, MAX_BODY_BYTES, '/normalize');
+      noQuery(url, '/normalize');
+      return json(200, await handleNormalize(raw));
     }
     if (pathname === '/learn') {
       if (method !== 'POST') throw wrongMethod(['POST']);
-      return json(200, await handleLearn(await readJson(req, MAX_BODY_BYTES, '/learn')));
+      const raw = await readJson(req, MAX_BODY_BYTES, '/learn');
+      noQuery(url, '/learn');
+      return json(200, await handleLearn(raw));
     }
     if (pathname === '/add') {
       if (method !== 'POST') throw wrongMethod(['POST']);
-      return json(200, await handleAdd(await readJson(req, MAX_BODY_BYTES, '/add')));
+      const raw = await readJson(req, MAX_BODY_BYTES, '/add');
+      noQuery(url, '/add');
+      return json(200, await handleAdd(raw));
     }
     if (pathname === '/lexicon') {
       if (method !== 'GET') throw notGet();
@@ -1232,7 +1251,11 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     }
     const packMatch = PACK_ROUTE_RE.exec(pathname);
     if (packMatch) {
-      if (method === 'POST') return json(200, await handleInstallPack(packMatch[1], await readJson(req, MAX_BODY_BYTES, '/packs/:name', true)));
+      if (method === 'POST') {
+        const raw = await readJson(req, MAX_BODY_BYTES, '/packs/:name', true);
+        noQuery(url, '/packs/:name');
+        return json(200, await handleInstallPack(packMatch[1], raw));
+      }
       if (method === 'DELETE') {
         // Options travel in the query string. A body was ignored, so
         // `{ "scope": "project" }` removed the pack from the global lexicon.

@@ -169,7 +169,7 @@ public sealed class NormalizeClient : IDisposable
     }
 
     /// <summary>
-    /// <c>POST /add {canonical, never:[original]}</c> — the bubble's Never button.
+    /// <c>POST /add {canonical, never:[original]}</c>: the bubble's Never button.
     /// </summary>
     public Task<bool> NeverAsync(string canonical, string original, CancellationToken cancellation = default) =>
         PostAsync("add", new Dictionary<string, object>
@@ -179,7 +179,7 @@ public sealed class NormalizeClient : IDisposable
         }, cancellation);
 
     /// <summary>
-    /// <c>POST /learn {heard, meant}</c> — the bubble's Add button.
+    /// <c>POST /learn {heard, meant}</c>: the bubble's Add button.
     /// </summary>
     public Task<bool> LearnAsync(string heard, string meant, CancellationToken cancellation = default) =>
         PostAsync("learn", new Dictionary<string, object>

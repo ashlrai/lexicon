@@ -27,7 +27,7 @@ public abstract record SettleOutcome
     /// Dictation is still streaming in: word-sized insertions have been
     /// arriving and the field has not been quiet long enough to call the
     /// phrase finished. Nothing has been decided and the baseline has not
-    /// moved — ask again shortly.
+    /// moved; ask again shortly.
     /// </summary>
     public sealed record Coalescing : SettleOutcome
     {
@@ -64,8 +64,8 @@ public abstract record SettleOutcome
 /// </list>
 ///
 /// A direct port of <c>BurstDetector.swift</c>. The four rules that look
-/// over-engineered — chunk size rather than rate, coalescing a streamed run,
-/// anchoring the window to the caret, and refusing a stale snapshot — each
+/// over-engineered (chunk size rather than rate, coalescing a streamed run,
+/// anchoring the window to the caret, and refusing a stale snapshot) each
 /// came from a real text-corruption bug on macOS. Do not simplify them.
 /// </summary>
 public sealed class BurstDetector
@@ -180,14 +180,14 @@ public sealed class BurstDetector
         // Streamed dictation (Windows Voice Access, Wispr Flow, an app's own
         // microphone button) does not arrive as one insertion. It arrives a
         // word at a time, and the gaps between spoken words are routinely
-        // longer than SettleMs — so deciding at SettleMs chops the phrase into
+        // longer than SettleMs, so deciding at SettleMs chops the phrase into
         // single words, each of which is "too short" and is dropped. The whole
         // sentence then goes uncorrected, which looks exactly like the feature
         // not working.
         //
         // So: once a run has produced at least one word-sized insertion, keep
-        // it pending until the field has been quiet for RunQuietMs — longer
-        // than a pause between words, shorter than the end of a sentence —
+        // it pending until the field has been quiet for RunQuietMs (longer
+        // than a pause between words, shorter than the end of a sentence)
         // rather than deciding at the first gap. LastStable does not move, so
         // the words accumulate into one burst and are corrected together.
         //
@@ -198,8 +198,8 @@ public sealed class BurstDetector
         // nothing to wait for, so it fires at SettleMs as before.
         //
         // Only a verdict that more speech could actually change is worth
-        // waiting on. Everything else — multi-paragraph, field too long,
-        // key-by-key typing, an insertion point we cannot locate — is refused
+        // waiting on. Everything else (multi-paragraph, field too long,
+        // key-by-key typing, an insertion point we cannot locate) is refused
         // now, because silence will not make it true.
         bool canGrow = verdict switch
         {

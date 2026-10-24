@@ -2,7 +2,7 @@ namespace LexiconBar;
 
 /// <summary>
 /// Finding the <c>lexicon</c> CLI, which the tray needs only for "Open lexicon
-/// file" and "Run doctor" — everything on the hot path goes through the local
+/// file" and "Run doctor"; everything on the hot path goes through the local
 /// HTTP API instead.
 ///
 /// npm on Windows installs a <c>lexicon.cmd</c> shim rather than an executable,
