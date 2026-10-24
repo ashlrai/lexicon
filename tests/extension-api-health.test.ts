@@ -9,7 +9,7 @@ import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBackground } from '../extension/src/background-core.js';
 import type { KeyValueStore } from '../extension/src/background-core.js';
-import { FETCH_TIMEOUT_MS, LEXICON_TIMEOUT_MS, TOKEN_BACKOFF_MS, WRITE_TIMEOUT_MS, connectionTestLine, statusView } from '../extension/src/shared.js';
+import { FETCH_TIMEOUT_MS, LEXICON_TIMEOUT_MS, TOKEN_BACKOFF_MS, WRITE_TIMEOUT_MS, coerceSettings, connectionTestLine, statusView } from '../extension/src/shared.js';
 import type { NormalizeReply, StatusReply } from '../extension/src/shared.js';
 
 const EXAMPLE_YAML = readFileSync(resolve(process.cwd(), 'examples/lexicon.example.yaml'), 'utf8');
@@ -225,5 +225,25 @@ describe('extension status in the Embedded mode', () => {
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect(probed.server).toEqual({ ok: true, version: '9.9.9', terms: 3 });
     expect(probed.activeMode).toBe('embedded');
+  });
+});
+
+describe('extension stored token', () => {
+  // Catches: coerceSettings kept the spaces and newline around a stored token
+  // (an older Options, a saveSettings patch), which went into the bearer
+  // header and read as a rejected token.
+  it('trims the stored token before it is used', async () => {
+    expect(coerceSettings({ token: `  ${TOKEN}\n` }, '').token).toBe(TOKEN);
+    expect(coerceSettings({ token: ' \t ' }, '').token).toBe('');
+    const auth: string[] = [];
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      if (url.endsWith('/health')) return json(HEALTH);
+      auth.push((init.headers as Record<string, string>).Authorization);
+      return json(normalized('hi'));
+    });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore({ settings: { token: `${TOKEN}\r\n` } }), defaultYaml: EXAMPLE_YAML });
+    expect(((await bg.handle({ type: 'normalize', text: 'hi' })) as NormalizeReply & { ok: true }).mode).toBe('api');
+    expect(auth).toEqual([`Bearer ${TOKEN}`]);
+    expect((await bg.saveSettings({ token: ` ${TOKEN} ` })).token).toBe(TOKEN);
   });
 });

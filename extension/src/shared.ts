@@ -206,7 +206,8 @@ export function coerceSettings(raw: unknown, defaultYaml: string): Settings {
   const r = raw as Partial<Record<keyof Settings, unknown>>;
   return {
     baseUrl: typeof r.baseUrl === 'string' && r.baseUrl.trim() ? r.baseUrl.trim().replace(/\/+$/, '') : d.baseUrl,
-    token: typeof r.token === 'string' ? r.token : d.token,
+    // A token pasted with the newline or spaces around it was sent as is and rejected.
+    token: typeof r.token === 'string' ? r.token.trim() : d.token,
     mode: r.mode === 'embedded' ? 'embedded' : 'api',
     live: r.live === true,
     yaml: typeof r.yaml === 'string' ? r.yaml : d.yaml,
