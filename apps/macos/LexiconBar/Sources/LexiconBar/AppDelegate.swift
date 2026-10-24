@@ -670,7 +670,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         fixClipboardHotKeyID = hotKeys.register(settings.fixClipboardHotKey) { [weak self] in self?.fixClipboardNow() }
         undoFixHotKeyID = hotKeys.register(settings.undoFixHotKey) { [weak self] in self?.undoLastFix() }
         if pushToTalkHotKeyID == nil {
-            lastError = "Could not register \(settings.pushToTalkHotKey.displayString); another app may own it."
+            lastError = "Could not register \(settings.pushToTalkHotKey.displayString); another app may own it. Pick another shortcut in Preferences > Hotkeys."
         }
     }
 
@@ -692,7 +692,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard let self else { return }
             if result.launchError != nil || result.timedOut {
                 self.voiceState = .idle
-                self.reportError(result.timedOut ? "Voice call timed out after \(Int(LexiconCLI.voiceTimeout)) s." : result.failureDescription)
+                self.reportError(result.timedOut ? "Voice call timed out after \(Int(LexiconCLI.voiceTimeout)) s. Run `lexicon voice --seconds 3 --model \(self.settings.model)` in Terminal to see where it stops (the first run downloads the model), or pick base.en, the faster Whisper model, in Preferences." : result.failureDescription)
                 self.syncVoiceStatus()
                 return
             }
@@ -723,7 +723,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                         self.showAccessibilityHintIfNeeded()
                     }
                 } else {
-                    self.reportError("Unexpected voice output: \(text.prefix(200))")
+                    self.reportError("Unexpected voice output, so the lexicon CLI and LexiconBar are likely different releases; update lexicon (npm i -g @ashlr/lexicon) or LexiconBar. Output: \(text.prefix(200))")
                 }
                 self.syncVoiceStatus()
             }
@@ -867,7 +867,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             guard result.succeeded else { self.reportError(result.failureDescription); return }
             let paths = LexiconPaths.parse(stdout: result.stdout)
             guard let global = paths.global else {
-                self.reportError("`lexicon path` printed no global path:\n\(result.stdout)")
+                self.reportError("`lexicon path` printed no global path, so the lexicon CLI and LexiconBar are likely different releases; choose Run doctor from the menu, or update lexicon (npm i -g @ashlr/lexicon). Output:\n\(result.stdout)")
                 return
             }
             let url = URL(fileURLWithPath: global)
@@ -878,7 +878,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
             } else {
                 let alert = NSAlert()
                 alert.messageText = "No lexicon file yet"
-                alert.informativeText = "Expected at \(global). Run `lexicon init` to create it, or `lexicon add <term>` to create it with a first term."
+                alert.informativeText = "Expected at \(global). Run `lexicon init` to create it, or `lexicon add <canonical> <alias>` (for example `lexicon add \"Ashlr.AI\" Ashler`) to create it with a first term."
                 NSApp.activate(ignoringOtherApps: true)
                 alert.runModal()
             }
@@ -925,7 +925,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
                 try service.register()
             }
         } catch {
-            reportError("Start at login: \(error.localizedDescription)")
+            reportError("Start at login: \(error.localizedDescription). Turn LexiconBar on in System Settings > General > Login Items instead.")
         }
     }
 
