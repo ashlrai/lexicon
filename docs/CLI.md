@@ -541,7 +541,7 @@ Options:
                          1)
   --list-devices         print the audio input devices ffmpeg can see
   --seconds <n>          stop recording after n seconds instead of waiting for
-                         Enter
+                         Enter (with --toggle, at most 600)
   --device <name|index>  input device (default: the system default microphone)
   --model <name|path>    whisper model: a name like base.en or small.en
                          (auto-downloaded) or a ggml file (default: "base.en")

@@ -1169,6 +1169,17 @@ async function recoverDeadRecorder(
  * next press starts cleanly.
  */
 async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r: Resolved): Promise<number | 'lost'> {
+  // A detached capture is spawned with `-t MAX_TOGGLE_SECONDS` at most. A longer
+  // --seconds was cut to that without a word, so a user who asked for fifteen
+  // minutes lost everything said after ten. Refused before anything records.
+  if (opts.seconds !== undefined && opts.seconds > MAX_TOGGLE_SECONDS) {
+    return refuseWith(
+      r,
+      io,
+      `--toggle records at most ${MAX_TOGGLE_SECONDS} seconds; --seconds ${opts.seconds} is longer`,
+      `use --seconds ${MAX_TOGGLE_SECONDS} or less with --toggle, or run \`lexicon voice --seconds ${opts.seconds}\` without --toggle`,
+    );
+  }
   const tools = await requireTools(r, io, deps, { ffmpeg: true, whisper: true });
   if (!tools) return EXIT_MISSING_TOOL;
   const noModel = refuseMissingModelPath(opts, io, r, deps);

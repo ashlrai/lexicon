@@ -397,6 +397,23 @@ describe('lexicon voice --toggle', () => {
     expect(stateFilePath(h.globalPath)).toBe(path.join(h.dir, 'voice', 'recording.json'));
   });
 
+  it('refuses --seconds over the toggle limit before recording, rather than cutting it short silently', async () => {
+    const h = await harness();
+    h.opts.seconds = 900;
+    const code = await runVoiceToggle(h.opts, h.io, h.deps);
+    expect(code).toBe(EXIT_ERROR);
+    expect(h.err.join('')).toContain('--toggle records at most 600 seconds; --seconds 900 is longer');
+    expect(h.spawnCalls).toEqual([]);
+    expect(await readState(h.globalPath)).toBeUndefined();
+  });
+
+  it('records with --seconds at the toggle limit', async () => {
+    const h = await harness();
+    h.opts.seconds = 600;
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.spawnCalls[0].args).toEqual(expect.arrayContaining(['-t', '600']));
+  });
+
   it('stops the recorder on the second call, transcribes, normalizes and clears the state file', async () => {
     const h = await harness();
     await runVoiceToggle(h.opts, h.io, h.deps);
