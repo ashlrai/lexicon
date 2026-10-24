@@ -62291,7 +62291,7 @@ var suggestionSchema = external_exports.object({
   count: external_exports.number().optional(),
   scope: external_exports.enum(TERM_SCOPES).optional(),
   path: external_exports.string().optional()
-});
+}).strict();
 function aliasCount(n) {
   return `${n} alias${n === 1 ? "" : "es"}`;
 }

@@ -34,6 +34,11 @@ import type { ToolRegistrar } from '../shared.js';
 /** The most suggestions one apply_suggestion call takes in `suggestions`. */
 const APPLY_SUGGESTIONS_MAX = 100;
 
+/**
+ * A suggestion as suggest_terms returns it (TermSuggestion): every field it
+ * writes is here, and the object is strict, so a misspelt key (`aliass`) is
+ * refused instead of dropped, which applied the suggestion without it.
+ */
 const suggestionSchema = z.object({
   kind: z.enum(SUGGESTION_KINDS),
   canonical: nonBlank(),
@@ -46,7 +51,7 @@ const suggestionSchema = z.object({
   count: z.number().optional(),
   scope: z.enum(TERM_SCOPES).optional(),
   path: z.string().optional(),
-});
+}).strict();
 
 function aliasCount(n: number): string {
   return `${n} alias${n === 1 ? '' : 'es'}`;

@@ -1679,6 +1679,32 @@ describe('harvest_repo and suggest_terms on a model-chosen path', () => {
     expect(after.status).toBe('changed');
   });
 
+  // Catches: apply_suggestion's suggestion schema was not strict, so a
+  // misspelt key (`aliass` for `aliases`) was dropped and the suggestion was
+  // applied without it, reported as saved.
+  it('apply_suggestion takes a suggest_terms suggestion back whole and refuses a misspelt key', async () => {
+    const sug = await call('suggest_terms', { cwd: 'app' });
+    expect(sug.isError, sug.text).toBe(false);
+    const suggestions = JSON.parse(sug.text) as Array<Record<string, unknown>>;
+    const term = suggestions.find((s) => s.kind === 'term' && s.category !== undefined && Array.isArray(s.aliases));
+    expect(term, sug.text).toBeDefined();
+    // Every field the round trip carries, as suggest_terms returned it.
+    for (const key of ['kind', 'canonical', 'reason', 'confidence', 'evidence', 'count', 'aliases', 'category', 'scope', 'path']) expect(term).toHaveProperty(key);
+
+    const misspelt = { ...term, aliass: ['made up'] };
+    for (const args of [{ suggestion: misspelt }, { suggestions: [misspelt] }]) {
+      const bad = await call('apply_suggestion', args);
+      expect(bad.isError, bad.text).toBe(true);
+      expect(bad.text).toContain('aliass');
+    }
+    const listed = JSON.parse((await call('list_terms', {})).text) as { terms: unknown[] };
+    expect(listed.terms).toEqual([]);
+
+    const ok = await call('apply_suggestion', { suggestion: term });
+    expect(ok.isError, ok.text).toBe(false);
+    expect(JSON.parse(ok.text)).toMatchObject({ path: process.env.LEXICON_PATH });
+  });
+
   // Catches: `path` was resolved and read wherever it pointed (a probe read /etc).
   it('refuses a path outside the server directory, its git root and the allowed roots', async () => {
     const res = await call('harvest_repo', { path: path.join(outside, 'other'), add: true });

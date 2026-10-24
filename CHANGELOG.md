@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- MCP `apply_suggestion` refuses a suggestion with a key `suggest_terms` does not write. The suggestion object was not strict, so a misspelt key (`aliass` for `aliases`) was dropped and the suggestion applied without it, reported as saved. Every field `suggest_terms` returns is still taken back as is.
 - MCP `lexicon://json` is capped at 64000 characters, as `lexicon://me` is capped at 16000. A 3000-term lexicon was about 1 MB of JSON in one read. Past the cap the most used terms (then brand, person and product names) are kept, `omittedTerms` counts the rest, and `note` says to call `export_lexicon` with format json for the whole lexicon or `list_terms` with a query.
 - MCP `add_pack` with a name that has a slash but is no `<author>/<name>` ref (`../../etc`, `Acme/Pack`) says the ref is invalid and what a ref looks like. It answered that a community ref needs the `registry` parameter, so an agent went looking for a registry for a name that can never be a pack.
 - `lexicon serve` answers Chrome's Private Network Access preflight: a page listed in `serve.json`'s `allowedOrigins` was blocked from the loopback API because the preflight asked with `Access-Control-Request-Private-Network: true` and the answer did not grant it. `Access-Control-Allow-Private-Network: true` is now sent with the CORS headers, so only to an allowed origin and never on `/pair`.
