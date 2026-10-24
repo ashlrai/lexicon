@@ -89,6 +89,7 @@ import {
   ensureServeConfig,
   getServePath,
   isOriginAllowed,
+  serveUrl,
   writeServeConfig,
 } from './config.js';
 import type { ServeConfig } from './config.js';
@@ -763,6 +764,16 @@ export function isLoopbackAddress(address: string | undefined): boolean {
   return v4.startsWith('127.');
 }
 
+/**
+ * What `lexicon serve --pair` and the pairing page say on a port other than
+ * DEFAULT_PORT: the extension's manifest runs its pairing script on that port
+ * only, so another port is paired from the extension's Options, which asks
+ * the browser for access to it.
+ */
+export function pairPortNote(port: number): string {
+  return `the extension pairs itself on port ${DEFAULT_PORT} only; for port ${port}, open its Options, set Base URL to ${serveUrl(port)} and click "pair in this browser" there, then allow access to that port`;
+}
+
 export interface PairPageInput {
   token: string;
   port: number;
@@ -825,6 +836,12 @@ export function pairPageHtml(input: PairPageInput): string {
     '<li>Firefox: <code>about:debugging#/runtime/this-firefox</code>, <strong>Load Temporary Add-on...</strong>, pick <code>extension/dist-firefox/manifest.json</code>.</li>',
     '<li>Come back here, or run <code>lexicon serve --pair</code> again.</li>',
     '</ol>',
+    // No URL on this page (it makes no request and names none): the address bar has it.
+    ...(input.port === DEFAULT_PORT
+      ? []
+      : [
+          `<p id="other-port">Installed already? The extension pairs itself on port ${DEFAULT_PORT} only. For port ${port}, open its Options, set Base URL to this page's address without <code>/pair</code> and click <strong>pair in this browser</strong> there, then allow access to that port.</p>`,
+        ]),
     '<p class="muted">Manual fallback: <code>lexicon serve --show</code> prints the token to paste into the extension\'s Options page.</p>',
     '</div>',
     `<p class="muted">lexicon serve ${version} on port ${port}</p>`,

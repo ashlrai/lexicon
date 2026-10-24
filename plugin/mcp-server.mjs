@@ -47763,6 +47763,7 @@ function formatPath(path27) {
   }
   return out;
 }
+var MAX_LISTED_ISSUES = 20;
 function parseLexicon(raw) {
   if (raw === null || raw === void 0) {
     return emptyLexicon();
@@ -47772,9 +47773,10 @@ function parseLexicon(raw) {
   }
   const result = schemas().lexicon.safeParse(raw);
   if (!result.success) {
-    const lines = result.error.issues.map(
-      (issue2) => `  - ${formatPath(issue2.path)}: ${issue2.message}`
-    );
+    const { issues } = result.error;
+    const lines = issues.slice(0, MAX_LISTED_ISSUES).map((issue2) => `  - ${formatPath(issue2.path)}: ${issue2.message}`);
+    const rest = issues.length - MAX_LISTED_ISSUES;
+    if (rest > 0) lines.push(`  - ... and ${rest} more problem${rest === 1 ? "" : "s"} like these`);
     throw new Error(`Invalid lexicon:
 ${lines.join("\n")}`);
   }
@@ -65686,12 +65688,15 @@ function createServer2(opts = {}) {
     "lexicon://json",
     {
       title: "Lexicon JSON",
-      description: "The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`. With no terms at all, `note` says so and how to set the lexicon up.",
+      description: "The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`. With no terms at all, `note` says so (after the skipped-file sentence, when there is one) and how to set the lexicon up.",
       mimeType: "application/json"
     },
     async (uri) => {
       const loaded = await loadForContext();
-      const extra = loaded.skippedProject || loaded.merged.terms.length > 0 ? skippedProjectFields(loaded) : { note: EMPTY_LEXICON_NOTE.replace(/^Note: /, "") };
+      const skipped = skippedProjectFields(loaded);
+      const empty = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE.replace(/^Note: /, "") : void 0;
+      const note = [skipped.note, empty].filter((n) => n !== void 0).join(" ");
+      const extra = note ? { ...skipped, note } : skipped;
       const text = Object.keys(extra).length > 0 ? `${JSON.stringify({ ...loaded.merged, ...extra }, null, 2)}
 ` : exportLexicon(loaded.merged, "json");
       return {

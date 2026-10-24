@@ -10,6 +10,8 @@
 import type { MatchReason, NormalizeIncomplete } from '../../src/core/types.js';
 
 export const DEFAULT_BASE_URL = 'http://127.0.0.1:41733';
+/** The port `lexicon serve` binds by default; the manifest grants it and runs `pair.js` on it. */
+export const DEFAULT_PORT = '41733';
 /** Path of the server's pairing page; `lexicon serve --pair` opens it, `pair.ts` runs on it. */
 export const PAIR_PATH = '/pair';
 /** `<meta name>` attributes on the pairing page (mirrors PAIR_META in src/serve/server.ts). */
@@ -48,6 +50,12 @@ export const PRECHECK_DEBOUNCE_MS = 250;
 export const TOAST_MS = 3000;
 export const HEALTH_TTL_MS = 10_000;
 export const FETCH_TIMEOUT_MS = 1500;
+/**
+ * The largest request body `lexicon serve` reads (MAX_BODY_BYTES in
+ * src/serve/server.ts); a longer one is a 413. The background checks text whose
+ * /normalize body would be larger with the embedded lexicon instead of posting it.
+ */
+export const API_MAX_BODY_BYTES = 1024 * 1024;
 
 export interface Correction {
   start: number;
@@ -76,7 +84,9 @@ export type Request =
   | { type: 'sync' }
   | { type: 'anySite'; enabled: boolean }
   /** From pair.ts on the /pair page: store `token` for `baseUrl` after the server accepts it. */
-  | { type: 'pair'; baseUrl: string; token: string };
+  | { type: 'pair'; baseUrl: string; token: string }
+  /** From Options, after the user allowed the port: run `pair.js` on that port's /pair page (or stop, for the default port). */
+  | { type: 'pairPort'; baseUrl: string };
 
 export interface NormalizeOk {
   ok: true;
@@ -140,7 +150,13 @@ export interface PairReply {
   version: string;
 }
 
-export type Reply = NormalizeReply | StatusReply | LearnReply | SyncReply | PairReply | Failure | { ok: true };
+export interface PairPortReply {
+  ok: true;
+  /** The host permissions the pairing page on that port uses; absent for the default port, which the manifest covers. */
+  origins?: string[];
+}
+
+export type Reply = NormalizeReply | StatusReply | LearnReply | SyncReply | PairReply | PairPortReply | Failure | { ok: true };
 
 // ---------------------------------------------------------------------------
 // Helpers
@@ -316,3 +332,27 @@ export function pairableBaseUrl(raw: string): string | undefined {
   if (url.username || url.password || url.search || url.hash || (url.pathname !== '/' && url.pathname !== '')) return undefined;
   return `http://${url.hostname}:${url.port}`;
 }
+
+/**
+ * The host permissions pairing with `baseUrl` needs beyond the manifest's:
+ * both loopback origins of its port (`lexicon serve --pair` opens
+ * 127.0.0.1, Options opens the host typed), or undefined for the default
+ * port, which the manifest grants, and for a URL pairing refuses. Requested
+ * from the optional `<all_urls>` grant, so the manifest asks for nothing new.
+ */
+export function pairPortOrigins(baseUrl: string): string[] | undefined {
+  const origin = pairableBaseUrl(baseUrl);
+  if (!origin) return undefined;
+  const port = new URL(origin).port;
+  if (port === DEFAULT_PORT) return undefined;
+  return PAIR_HOSTS.map((host) => `http://${host}:${port}/*`);
+}
+
+/** The `/pair` page match patterns for those origins (what the manifest lists for the default port). */
+export function pairScriptMatches(origins: readonly string[]): string[] {
+  return origins.map((o) => `${o.replace(/\/\*$/, '')}${PAIR_PATH}*`);
+}
+
+/** What Options says, and the background throws, when the browser did not grant access to the server's port. */
+export const PAIR_PORT_DENIED_MESSAGE =
+  'Access to that port was not granted, so the pairing page cannot reach the extension: click "pair in this browser" again and choose Allow, or paste the token `lexicon serve --show` prints.';

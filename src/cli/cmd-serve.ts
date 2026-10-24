@@ -11,7 +11,7 @@ import os from 'node:os';
 import { homeDir } from '../util/xdg.js';
 import path from 'node:path';
 import { Command, InvalidArgumentError } from 'commander';
-import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, ensureServeConfig, getServePath, readServeConfig, isLexiconHealth, isLoopbackHost, probeHealth, serveUrl, FOREIGN_HEALTH_ERROR, SERVE_STATUS_HINTS } from '../serve/index.js';
+import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, pairPortNote, ensureServeConfig, getServePath, readServeConfig, isLexiconHealth, isLoopbackHost, probeHealth, serveUrl, FOREIGN_HEALTH_ERROR, SERVE_STATUS_HINTS } from '../serve/index.js';
 import { isRecord } from '../util/json.js';
 import { resolveCliEntry } from './cli-entry.js';
 import { lexiconServerEnv } from './cmd-install.js';
@@ -282,17 +282,21 @@ export async function runServePair(opts: ServeOptions, io: IO, deps: ServeDeps =
     if (!opened) openError = (result.stderr || result.stdout).trim() || `${opener.cmd} exited with ${result.code ?? 'an error'}`;
   }
 
+  // The extension's pairing script runs on DEFAULT_PORT only (its manifest);
+  // another port is paired from its Options.
+  const note = port === DEFAULT_PORT ? undefined : pairPortNote(port);
   if (opts.json) {
-    line(io, JSON.stringify({ ok: opened, up: true, url, opened, ...(opened ? {} : { error: openError }) }, null, 2));
+    line(io, JSON.stringify({ ok: opened, up: true, url, opened, ...(opened ? {} : { error: openError }), ...(note ? { note } : {}) }, null, 2));
     return opened ? 0 : 1;
   }
   if (opened) {
     line(io, `opening ${url} in your browser`);
-    line(io, 'the Lexicon extension pairs itself on that page; if nothing happens, open the URL by hand');
+    line(io, note ?? 'the Lexicon extension pairs itself on that page; if nothing happens, open the URL by hand');
     return 0;
   }
   io.stderr(`lexicon: could not open a browser (${safeLines(openError)})\n`);
   line(io, `open this URL in the browser that has the Lexicon extension: ${url}`);
+  if (note) line(io, note);
   return 1;
 }
 

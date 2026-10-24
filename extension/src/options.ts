@@ -4,8 +4,8 @@ import { ADAPTERS } from './adapters.js';
 import { sendToBackground } from './chrome-store.js';
 import { setMessage } from './rich-text.js';
 import { parseLexicon, parseYaml } from './core.js';
-import { ANY_SITE_DENIED_MESSAGE, coerceSettings, connectionTestLine, countOf, errorMessage, extensionRequestFailedLine, pairUrl, syncedLine, STORAGE_KEYS } from './shared.js';
-import type { Failure, Settings, StatusReply, SyncReply } from './shared.js';
+import { ANY_SITE_DENIED_MESSAGE, coerceSettings, connectionTestLine, countOf, errorMessage, extensionRequestFailedLine, pairPortOrigins, pairUrl, PAIR_PORT_DENIED_MESSAGE, syncedLine, STORAGE_KEYS } from './shared.js';
+import type { Failure, PairPortReply, Settings, StatusReply, SyncReply } from './shared.js';
 import defaultYaml from '../../examples/lexicon.example.yaml';
 
 function $<T extends HTMLElement>(id: string): T {
@@ -144,6 +144,30 @@ async function save(): Promise<void> {
 }
 
 ui.save.addEventListener('click', () => void save());
+
+// The manifest runs the pairing script on port 41733 only. For a `lexicon
+// serve --port` other than that, ask for the port's loopback origins (inside
+// this click, as the browser requires), have the worker run the script there,
+// then open the page.
+ui.pairLink.addEventListener('click', (ev) => {
+  const baseUrl = ui.baseUrl.value.trim() || settings.baseUrl;
+  const origins = pairPortOrigins(baseUrl);
+  if (!origins) return;
+  ev.preventDefault();
+  const url = ui.pairLink.href;
+  const fail = (message: string): void => {
+    ui.pairState.className = 'pair-state warn';
+    setMessage(ui.pairState, message);
+  };
+  void (async () => {
+    const granted = await chrome.permissions.request({ origins });
+    if (!granted) return fail(PAIR_PORT_DENIED_MESSAGE);
+    // The pairing itself stores this base URL with the token.
+    const reply = await sendToBackground<PairPortReply | Failure>({ type: 'pairPort', baseUrl });
+    if (!reply.ok) return fail(reply.error);
+    await chrome.tabs.create({ url });
+  })().catch((err: unknown) => fail(extensionRequestFailedLine(errorMessage(err))));
+});
 ui.yaml.addEventListener('input', () => void validateYaml());
 ui.baseUrl.addEventListener('input', () => renderPairState());
 ui.toggleToken.addEventListener('click', () => {

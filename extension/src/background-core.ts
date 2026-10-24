@@ -7,11 +7,13 @@ import { createEmbedded, learnIntoYaml, lexiconToYaml } from './embedded.js';
 import { conflictNote, parseLexicon, redactSecrets } from './core.js';
 import type { NormalizeIncomplete } from './core.js';
 import {
+  API_MAX_BODY_BYTES,
   coerceSettings,
   errorMessage,
   FETCH_TIMEOUT_MS,
   HEALTH_TTL_MS,
   pairableBaseUrl,
+  pairPortOrigins,
   RECENT_LIMIT,
   STORAGE_KEYS,
   TOKEN_RE,
@@ -22,6 +24,7 @@ import type {
   LearnReply,
   Mode,
   NormalizeReply,
+  PairPortReply,
   PairReply,
   Reply,
   Request,
@@ -43,6 +46,12 @@ export interface BackgroundDeps {
   now?: () => number;
   /** Called when the "any site" toggle changes; registers/unregisters the dynamic content script. */
   setAnySite?: (enabled: boolean) => Promise<void>;
+  /**
+   * Runs `pair.js` on the /pair page of a non-default port (`origins` from
+   * `pairPortOrigins`, already granted), or stops it (undefined). Throws
+   * `PAIR_PORT_DENIED_MESSAGE` when the origins are not granted.
+   */
+  setPairPort?: (origins: string[] | undefined) => Promise<void>;
 }
 
 export interface Background {
@@ -100,6 +109,15 @@ export const SERVE_STATUS_STEP = 'run `lexicon serve --status` to check the serv
 /** A `/normalize` reply without `output` and `replacements`: most likely a server from another release. */
 export const NORMALIZE_SHAPE_MESSAGE =
   'API /normalize returned an unexpected shape: the server and this extension are likely different releases; update lexicon or the extension so they match.';
+
+/**
+ * The `fallback` of a normalize whose /normalize body (`bytes`, UTF-8) is over
+ * the server's request limit: the server would answer 413 to every such
+ * check, so the embedded lexicon checks it and nothing is posted.
+ */
+export function tooLargeForApiMessage(bytes: number): string {
+  return `the text is ${bytes} bytes as a request, over the 1 MB lexicon serve accepts, so the embedded lexicon checked it`;
+}
 
 /** What a request that never reached the server says: where it went and how to start the server. */
 export function unreachableMessage(baseUrl: string): string {
@@ -220,11 +238,8 @@ export function createBackground(deps: BackgroundDeps): Background {
     };
   }
 
-  async function apiNormalize(settings: Settings, text: string, dryRun: boolean): Promise<NormalizeReply> {
-    const raw = (await fetchJson(settings, '/normalize', {
-      method: 'POST',
-      body: JSON.stringify(dryRun ? { text, dryRun: true } : { text }),
-    })) as Partial<ApiNormalize>;
+  async function apiNormalize(settings: Settings, body: string, text: string): Promise<NormalizeReply> {
+    const raw = (await fetchJson(settings, '/normalize', { method: 'POST', body })) as Partial<ApiNormalize>;
     if (typeof raw.output !== 'string' || !Array.isArray(raw.replacements)) {
       throw new Error(NORMALIZE_SHAPE_MESSAGE);
     }
@@ -247,11 +262,16 @@ export function createBackground(deps: BackgroundDeps): Background {
       reply = embeddedNormalize(settings, text, dryRun);
     } else {
       const h = await health(settings);
+      const body = JSON.stringify(dryRun ? { text, dryRun: true } : { text });
+      const bytes = new TextEncoder().encode(body).length;
       if (!h.health) {
         reply = embeddedNormalize(settings, text, dryRun, h.error ?? 'local API unreachable');
+      } else if (bytes > API_MAX_BODY_BYTES) {
+        // A known 413: the server is fine, so the health cache stays.
+        reply = embeddedNormalize(settings, text, dryRun, tooLargeForApiMessage(bytes));
       } else {
         try {
-          reply = await apiNormalize(settings, text, dryRun);
+          reply = await apiNormalize(settings, body, text);
         } catch (err) {
           healthCache = null;
           reply = embeddedNormalize(settings, text, dryRun, errorMessage(err));
@@ -391,6 +411,17 @@ export function createBackground(deps: BackgroundDeps): Background {
     return { ok: true, baseUrl, terms: h.health?.terms ?? terms, version: h.health?.version ?? '?' };
   }
 
+  async function pairPortReq(rawBaseUrl: string): Promise<PairPortReply | Failure> {
+    if (!pairableBaseUrl(String(rawBaseUrl ?? ''))) return { ok: false, error: 'Pairing works only with a lexicon serve on 127.0.0.1 or localhost, with its port in the URL.' };
+    const origins = pairPortOrigins(rawBaseUrl);
+    try {
+      await deps.setPairPort?.(origins);
+    } catch (err) {
+      return { ok: false, error: errorMessage(err) };
+    }
+    return origins ? { ok: true, origins } : { ok: true };
+  }
+
   async function handle(req: Request): Promise<Reply> {
     if (!req || typeof req !== 'object' || typeof (req as { type?: unknown }).type !== 'string') {
       return { ok: false, error: 'bad request' };
@@ -406,6 +437,8 @@ export function createBackground(deps: BackgroundDeps): Background {
         return syncReq();
       case 'pair':
         return pairReq(req.baseUrl, req.token);
+      case 'pairPort':
+        return pairPortReq(req.baseUrl);
       case 'anySite': {
         try {
           await deps.setAnySite?.(req.enabled === true);

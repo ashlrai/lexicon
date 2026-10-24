@@ -295,7 +295,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     {
       title: 'Lexicon JSON',
       description:
-        'The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`. With no terms at all, `note` says so and how to set the lexicon up.',
+        'The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`. With no terms at all, `note` says so (after the skipped-file sentence, when there is one) and how to set the lexicon up.',
       mimeType: 'application/json',
     },
     async (uri) => {
@@ -306,10 +306,12 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       // With no terms (and no skipped file to name), the `note` lexicon://me
       // carries, so an empty `terms` does not read as a loaded lexicon that
       // simply has nothing to correct.
-      const extra =
-        loaded.skippedProject || loaded.merged.terms.length > 0
-          ? skippedProjectFields(loaded)
-          : { note: EMPTY_LEXICON_NOTE.replace(/^Note: /, '') };
+      // Both when both apply: a skipped project file and no terms at all
+      // (lexicon://me and voice-context say both too).
+      const skipped = skippedProjectFields(loaded);
+      const empty = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE.replace(/^Note: /, '') : undefined;
+      const note = [skipped.note, empty].filter((n): n is string => n !== undefined).join(' ');
+      const extra = note ? { ...skipped, note } : skipped;
       const text =
         Object.keys(extra).length > 0
           ? `${JSON.stringify({ ...loaded.merged, ...extra }, null, 2)}\n`

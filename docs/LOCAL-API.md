@@ -117,7 +117,10 @@ reads the token and stores it (see `docs/EXTENSION.md`). The page is plain
 HTML with inline CSS, no script and no external request, sent with
 `Cache-Control: no-store`, `X-Frame-Options: DENY`, `Content-Security-Policy:
 default-src 'none'; style-src 'unsafe-inline'` and `Referrer-Policy:
-no-referrer`. Nothing else consumes it.
+no-referrer`. Nothing else consumes it. The extension runs on port 41733's
+page out of the box; for a server on another `--port`, pair from its Options
+(`docs/EXTENSION.md`, "A server on another port"), which `--pair` and the
+page both say.
 
 `cwd` picks which project `.lexicon.yaml` is considered (body field on POST,
 `?cwd=` on GET). It defaults to the directory the server was started in. An

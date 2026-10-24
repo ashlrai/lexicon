@@ -44,7 +44,7 @@ What is in `dist`:
 | `core.js` | `extension/src/core.ts` | the browser-safe slice of `src/core` (schema, matcher, normalize, suggest) plus `yaml`; one ESM chunk shared by the worker and the options page |
 | `background.js` | `extension/src/background.ts` | module service worker; holds the token, does every fetch |
 | `content.js` | `extension/src/content.ts` | classic script injected into the chat sites; never sees the token |
-| `pair.js` | `extension/src/pair.ts` | classic script that runs only on `http://127.0.0.1:41733/pair` (and `localhost`); reads the token the server put in the page and hands it to the worker |
+| `pair.js` | `extension/src/pair.ts` | classic script that runs only on `http://127.0.0.1:41733/pair` (and `localhost`), or on another port's `/pair` once Options was granted that port; reads the token the server put in the page and hands it to the worker |
 | `popup.js`, `popup.html` | `extension/src/popup.ts` | toolbar popup |
 | `options.js`, `options.html` | `extension/src/options.ts` | options page |
 | `ui.css` | `extension/static/ui.css` | popup + options styling |
@@ -82,6 +82,10 @@ lexicon serve --pair     # opens http://127.0.0.1:41733/pair in your default bro
 `--pair` checks that serve is configured (it never creates `serve.json`; run `lexicon serve --install` or `lexicon serve` first) and that the server answers `/health`, then opens the pairing page with `open` (macOS), `xdg-open` (Linux) or `start` (Windows). The page says "Pairing Lexicon..." and carries the bearer token in a `<meta name="lexicon-token">` tag. The extension's `pair.js` content script, which runs only on that page, reads the token and asks the background worker to pair; the worker proves the token against `GET /stats` (a bearer route; `/health` needs no token so it proves nothing), stores the base URL and token, switches the mode to **Local API**, and the page changes to "Paired with lexicon serve (N terms)". If no extension answers within 3 seconds the page shows install instructions instead. Open the popup afterwards: it reads "Local API" with the server version and term count.
 
 If the browser that opened is not the one with the extension, copy the URL into the right one, or click **pair in this browser** on the extension's Options page, which links to the same `/pair` URL. Options shows "Paired with http://127.0.0.1:41733 (token stored)" once a token is in place, and **pair again** if the token was rotated (delete `serve.json` and restart the server to rotate it).
+
+### A server on another port
+
+The manifest grants the extension port 41733 only, and `pair.js` runs on that port's `/pair` page only, so `lexicon serve --port 5000 --pair` opens a page nothing answers (it then says how to pair, and so does `--pair` itself). Pair it from Options instead: set **Base URL** to `http://127.0.0.1:5000` and click **pair in this browser**. The browser asks once for access to `http://127.0.0.1:5000` and `http://localhost:5000` (taken from the optional permission, so the manifest asks for nothing more up front); the extension then runs `pair.js` on that port's `/pair` page and opens it, and pairing goes on as above. Refuse the prompt and Options says how to retry; the `lexicon serve --show` token pasted below still works. Removing that access in the browser stops the script on that port.
 
 Manual fallback, for a browser profile the CLI cannot open: `lexicon serve --show` prints the token; paste it into **Options > Local API > Token** and click **Test connection**.
 
@@ -124,7 +128,7 @@ With **Local API** selected, the extension falls back to the embedded lexicon wh
 
 "Verified" means the built `content.js` was injected into the live page on that date with a fake `chrome.runtime` bridge (replies recorded from the real local API), `ping ashler about cooper netties` was typed, Enter was dispatched, and the composer read `ping Ashlr.AI about Kubernetes` with the toast shown; the re-dispatched Enter was swallowed by the harness so nothing was sent. "Assumed" rows sit behind a login wall and are taken from public DOM reports. These apps change their markup without notice; the table lives in `extension/src/adapters.ts` and every entry has a broad fallback. When a site stops working, fix that one row.
 
-Each site has an on/off switch in the popup (for the current tab) and in Options (all of them). **Any site** in Options asks for the optional `<all_urls>` permission and registers the content script everywhere else, using the focused text box as the composer. A one-line field that holds an identifier is never a composer: one whose `autocomplete` names a username, email, one-time code, password, phone, URL or card field, and any text field in a form with a password field, so a login form's username is never rewritten.
+Each site has an on/off switch in the popup (for the current tab) and in Options (all of them). **Any site** in Options asks for the optional `<all_urls>` permission and registers the content script everywhere else, using the focused text box as the composer. A one-line field that holds an identifier is never a composer: one whose `autocomplete` names a username, email, one-time code, password, phone, URL or card field, and any text field in a form with a password field, so a login form's username is never rewritten. Code is never a composer either: the editable of a code editor (CodeMirror, Monaco, Ace), a contenteditable `<pre>` or `<code>`, and, on any site, a rich text box that holds a code block or code editor or has the caret in inline code, so Enter in an editor never rewrites code.
 
 ## Popup
 

@@ -8,7 +8,8 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ADAPTERS, GENERIC, adapterFor, composerFromTarget, findComposer, findSendButton } from '../extension/src/adapters.js';
-import { createBackground } from '../extension/src/background-core.js';
+import { createBackground, tooLargeForApiMessage } from '../extension/src/background-core.js';
+import { MAX_BODY_BYTES as SERVER_MAX_BODY_BYTES } from '../src/serve/server.js';
 import { conflictNote } from '../src/core/index.js';
 import type { KeyValueStore } from '../extension/src/background-core.js';
 import { sendToBackground } from '../extension/src/chrome-store.js';
@@ -17,7 +18,7 @@ import type { ContentHandle } from '../extension/src/content-core.js';
 import { applyCorrections, flatten, invertCorrections, readText } from '../extension/src/editable.js';
 import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
-import { ANY_SITE_DENIED_MESSAGE, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
+import { ANY_SITE_DENIED_MESSAGE, API_MAX_BODY_BYTES, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 import { setMessage } from '../extension/src/rich-text.js';
@@ -941,7 +942,7 @@ describe('extension errors name the next step', () => {
     expect(extensionRequestFailedLine('no response. ')).toMatch(/^no response\. Reload/);
     const options = readFileSync(resolve(process.cwd(), 'extension/src/options.ts'), 'utf8');
     const catches = options.split('\n').filter((l) => /\.catch\(\(err: unknown\)/.test(l)).length;
-    expect(catches).toBe(3);
+    expect(catches).toBe(4);
     expect(options.match(/extensionRequestFailedLine\(errorMessage\(err\)\)/g)).toHaveLength(catches);
   });
 
@@ -1471,5 +1472,176 @@ describe('popup and options messages render commands as <code>', () => {
         expect(line, `${file}: ${line.trim()}`).not.toMatch(/`lexicon[^`$]*`|\.error\b|\.message\b|errorMessage\(|tokenError|parts\.join/);
       }
     }
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('background: text too large for the server request limit', () => {
+  function storeWith(settings: Record<string, unknown>): KeyValueStore {
+    const data: Record<string, unknown> = { settings };
+    return {
+      get: async (keys) => Object.fromEntries(keys.filter((k) => k in data).map((k) => [k, data[k]])),
+      set: async (items) => {
+        Object.assign(data, items);
+      },
+    };
+  }
+  const json = (body: unknown, status = 200): Response => ({ ok: status < 400, status, json: async () => body }) as unknown as Response;
+
+  // Catches: every debounced keystroke in a composer holding more than the
+  // server's 1 MB body limit POSTed the whole text to /normalize, got a 413,
+  // dropped the health cache and fell back, so each check cost two requests
+  // that could never succeed.
+  it('checks text over API_MAX_BODY_BYTES with the embedded lexicon without posting it, and says why', async () => {
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/health')) return json({ ok: true, version: '1', terms: 1 });
+      if (url.endsWith('/normalize')) return json({ error: 'request body exceeds 1048576 bytes' }, 413);
+      return json({ error: 'nope' }, 404);
+    });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: storeWith({ token: 'a'.repeat(64) }), defaultYaml: EXAMPLE_YAML });
+    const big = 'ping ashler ' + 'x'.repeat(API_MAX_BODY_BYTES);
+    for (const dryRun of [true, false, true]) {
+      const reply = (await bg.handle({ type: 'normalize', text: big, dryRun })) as NormalizeReply;
+      expect(reply).toMatchObject({ ok: true, mode: 'embedded' });
+      expect(reply.ok && reply.replacements[0]).toMatchObject({ original: 'ashler', replacement: 'Ashlr.AI' });
+      expect(reply.ok && reply.fallback).toBe(tooLargeForApiMessage(big.length + '{"text":""}'.length + (dryRun ? ',"dryRun":true'.length : 0)));
+    }
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/normalize'))).toHaveLength(0);
+    // One /health for all three: the size skip never discarded the cache.
+    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/health'))).toHaveLength(1);
+    // Multi-byte text is measured in UTF-8 bytes, as the server counts it.
+    const wide = 'é'.repeat(API_MAX_BODY_BYTES / 2);
+    expect((await bg.handle({ type: 'normalize', text: wide })) as NormalizeReply).toMatchObject({ ok: true, mode: 'embedded', fallback: expect.stringContaining('1 MB') });
+  });
+
+  it('a server that is down is still reported as down for large text, and text under the limit still goes to the API', async () => {
+    const down = vi.fn(async () => {
+      throw new TypeError('Failed to fetch');
+    });
+    const bg = createBackground({ fetch: down as unknown as typeof fetch, store: storeWith({ token: 'a'.repeat(64) }), defaultYaml: EXAMPLE_YAML });
+    const reply = (await bg.handle({ type: 'normalize', text: 'x'.repeat(API_MAX_BODY_BYTES + 1) })) as NormalizeReply;
+    expect(reply.ok && reply.fallback).toContain('cannot reach lexicon serve');
+
+    const up = vi.fn(async (url: string) =>
+      url.endsWith('/health') ? json({ ok: true, version: '1', terms: 1 }) : json({ input: 'hi', output: 'hi', changed: false, replacements: [] }),
+    );
+    const bg2 = createBackground({ fetch: up as unknown as typeof fetch, store: storeWith({ token: 'a'.repeat(64) }), defaultYaml: EXAMPLE_YAML });
+    expect(await bg2.handle({ type: 'normalize', text: 'x'.repeat(API_MAX_BODY_BYTES - 100) })).toMatchObject({ ok: true, mode: 'api' });
+  });
+
+  it('the limit mirrors the server', () => {
+    expect(API_MAX_BODY_BYTES).toBe(SERVER_MAX_BODY_BYTES);
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('adapters: code editors are never composers', () => {
+  // Catches: with "any site" on, the focused contenteditable or textarea of a
+  // code editor (CodeMirror, Monaco, Ace, a contenteditable <pre>, a
+  // ProseMirror code block) was taken as the composer, so Enter rewrote code:
+  // `const ashler = 1` became `const Ashlr.AI = 1`.
+  const editors: Record<string, string> = {
+    'CodeMirror 6': '<div class="cm-editor"><div class="cm-scroller"><div id="e" class="cm-content" contenteditable="true"><div class="cm-line">ping ashler</div></div></div></div>',
+    'CodeMirror 5': '<div class="CodeMirror"><div><textarea id="e"></textarea></div></div>',
+    'Monaco textarea': '<div class="monaco-editor"><div class="overflow-guard"><textarea id="e" class="inputarea"></textarea></div></div>',
+    'Monaco EditContext': '<div class="monaco-editor"><div id="e" class="native-edit-context" contenteditable="true">ping ashler</div></div>',
+    Ace: '<div class="ace_editor"><textarea id="e" class="ace_text-input"></textarea></div>',
+    'contenteditable pre': '<pre id="e" contenteditable="true">ping ashler</pre>',
+    'ProseMirror with a code block': '<div id="e" class="ProseMirror" contenteditable="true"><p>ping ashler</p><pre><code>const ashler = 1</code></pre></div>',
+  };
+
+  for (const [name, html] of Object.entries(editors)) {
+    it(`${name}: not a composer on a generic site, and Enter passes through untouched`, async () => {
+      document.body.innerHTML = html;
+      const e = document.getElementById('e') as HTMLElement;
+      if (e.tagName === 'TEXTAREA') (e as HTMLTextAreaElement).value = 'ping ashler';
+      e.focus();
+      expect(findComposer(document, GENERIC)).toBeNull();
+      expect(composerFromTarget(e, GENERIC)).toBeNull();
+      const send = vi.fn(fakeSend);
+      handle = installContent({ doc: document, hostname: 'example.org', send, settings: { enabled: true, live: true }, liveDebounceMs: 1, precheckDebounceMs: 1 });
+      e.dispatchEvent(new Event('input', { bubbles: true }));
+      const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+      e.dispatchEvent(ev);
+      expect(ev.defaultPrevented).toBe(false);
+      await wait(10);
+      await handle.idle();
+      expect(send).not.toHaveBeenCalled();
+      expect(readText(e)).toContain('ashler');
+    });
+  }
+
+  it('a code editor inside a larger contenteditable page is not taken through its parent', () => {
+    document.body.innerHTML =
+      '<div id="page" contenteditable="true"><p>notes</p><div class="cm-editor"><div id="e" class="cm-content" contenteditable="true">x</div></div></div>';
+    expect(composerFromTarget(document.getElementById('e'), GENERIC)).toBeNull();
+    expect(composerFromTarget(document.querySelector('#page p'), GENERIC)).toBeNull();
+  });
+
+  it('inline code with the caret in it is skipped; plain rich text and textareas still are composers', () => {
+    document.body.innerHTML = '<div id="r" contenteditable="true"><p>ping <code id="c">ashler</code> now</p></div><textarea id="t"></textarea>';
+    const r = document.getElementById('r') as HTMLElement;
+    r.focus();
+    const sel = document.getSelection()!;
+    sel.collapse(document.getElementById('c')!.firstChild, 2);
+    expect(findComposer(document, GENERIC)).toBeNull();
+    sel.collapse(r.querySelector('p')!.lastChild, 1);
+    expect(findComposer(document, GENERIC)).toBe(r);
+    (document.getElementById('t') as HTMLElement).focus();
+    expect(findComposer(document, GENERIC)?.id).toBe('t');
+  });
+});
+
+// ---------------------------------------------------------------------------
+
+describe('pairing with lexicon serve on another --port', () => {
+  const manifest = JSON.parse(readFileSync(resolve(process.cwd(), 'extension/manifest.json'), 'utf8')) as {
+    host_permissions: string[];
+    optional_host_permissions: string[];
+    content_scripts: { matches: string[]; js: string[] }[];
+  };
+
+  // Catches: the manifest covers port 41733 only, so `lexicon serve --port
+  // 5000 --pair` opened a page no content script ran on, and nothing said how
+  // to pair with it.
+  it('a non-default loopback port needs exactly its two loopback origins, the default port none', () => {
+    expect(pairPortOrigins('http://127.0.0.1:41733')).toBeUndefined();
+    expect(pairPortOrigins('http://localhost:41733/')).toBeUndefined();
+    expect(pairPortOrigins('http://127.0.0.1:5000')).toEqual(['http://127.0.0.1:5000/*', 'http://localhost:5000/*']);
+    expect(pairPortOrigins('http://localhost:5000')).toEqual(['http://127.0.0.1:5000/*', 'http://localhost:5000/*']);
+    for (const bad of ['http://evil.example:5000', 'https://127.0.0.1:5000', 'http://127.0.0.1', 'http://127.0.0.1:5000/x', 'not a url']) {
+      expect(pairPortOrigins(bad), bad).toBeUndefined();
+    }
+    expect(pairScriptMatches(['http://127.0.0.1:5000/*', 'http://localhost:5000/*'])).toEqual(['http://127.0.0.1:5000/pair*', 'http://localhost:5000/pair*']);
+  });
+
+  it('the manifest keeps its fixed permissions to the default port; other ports come from the optional grant', () => {
+    expect(manifest.host_permissions.filter((p) => p.startsWith('http://'))).toEqual(['http://127.0.0.1:41733/*', 'http://localhost:41733/*']);
+    // permissions.request may only ask for what optional_host_permissions covers.
+    expect(manifest.optional_host_permissions).toEqual(['<all_urls>']);
+    const pair = manifest.content_scripts.find((c) => c.js.includes('pair.js'))!;
+    expect(pair.matches).toEqual(pairScriptMatches(['http://127.0.0.1:41733/*', 'http://localhost:41733/*']));
+  });
+
+  it('the background registers the /pair script for the port, clears it for the default port, and names a refused permission', async () => {
+    const data: Record<string, unknown> = {};
+    const store: KeyValueStore = {
+      get: async (keys) => Object.fromEntries(keys.filter((k) => k in data).map((k) => [k, data[k]])),
+      set: async (items) => {
+        Object.assign(data, items);
+      },
+    };
+    const setPairPort = vi.fn(async (_origins: string[] | undefined) => undefined);
+    const bg = createBackground({ fetch: vi.fn() as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML, setPairPort });
+    expect(await bg.handle({ type: 'pairPort', baseUrl: 'http://127.0.0.1:5000' })).toEqual({ ok: true, origins: ['http://127.0.0.1:5000/*', 'http://localhost:5000/*'] });
+    expect(setPairPort).toHaveBeenLastCalledWith(['http://127.0.0.1:5000/*', 'http://localhost:5000/*']);
+    expect(await bg.handle({ type: 'pairPort', baseUrl: 'http://127.0.0.1:41733' })).toEqual({ ok: true });
+    expect(setPairPort).toHaveBeenLastCalledWith(undefined);
+    expect(await bg.handle({ type: 'pairPort', baseUrl: 'http://evil.example:5000' })).toMatchObject({ ok: false, error: expect.stringContaining('127.0.0.1 or localhost') });
+    setPairPort.mockRejectedValueOnce(new Error(PAIR_PORT_DENIED_MESSAGE));
+    expect(await bg.handle({ type: 'pairPort', baseUrl: 'http://127.0.0.1:5000' })).toEqual({ ok: false, error: PAIR_PORT_DENIED_MESSAGE });
+    expect(PAIR_PORT_DENIED_MESSAGE).toContain('Allow');
   });
 });

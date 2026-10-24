@@ -941,6 +941,17 @@ describe('tool and resource descriptions agree with what the code does', () => {
       expect(parsed.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
       expect(parsed.projectTrust).toBe('untrusted');
       expect(parsed.note).toMatch(/lexicon trust/);
+      // Catches: with the global file empty too, the note named the skipped
+      // file only, so `terms: []` read as a loaded lexicon with nothing to
+      // correct, while lexicon://me and voice-context say there are no terms.
+      expect(parsed.note).toContain('the lexicon has no terms yet, so there are no spellings to apply');
+      const me = ((await client.readResource({ uri: 'lexicon://me' })).contents[0] as { text: string }).text;
+      expect(me).toContain('no terms yet');
+      expect(me).toContain('lexicon trust');
+      await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler'] }, { cwd: repo, scope: 'global' });
+      const withTerms = JSON.parse(((await client.readResource({ uri: 'lexicon://json' })).contents[0] as { text: string }).text) as { note?: string };
+      expect(withTerms.note).toMatch(/lexicon trust/);
+      expect(withTerms.note).not.toContain('no terms yet');
       await fs.rm(path.join(repo, '.lexicon.yaml'));
       const plain = JSON.parse(((await client.readResource({ uri: 'lexicon://json' })).contents[0] as { text: string }).text) as Record<string, unknown>;
       expect(plain).not.toHaveProperty('skippedProject');
@@ -1218,6 +1229,42 @@ describe('a lexicon file that does not parse', () => {
       }
       // The onboard prompt reads no lexicon and still works.
       expect((await client.getPrompt({ name: 'onboard' })).messages.length).toBe(1);
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  // Catches: a schema-invalid file with 5000 bad entries made every tool,
+  // resource and prompt answer with a 359 KB error (lexicon_doctor 730 KB).
+  it('a file with thousands of problems gives a bounded error that still names the file and the fix', async () => {
+    const globalPath = process.env.LEXICON_PATH as string;
+    await fs.writeFile(globalPath, 'version: 1\nterms:\n' + Array.from({ length: 5000 }, (_, i) => `  - canonical: T${i}\n    aliases: nope\n`).join(''), 'utf8');
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    const textOf = (r: ToolResult): string => (r.content ?? []).map((c) => c.text ?? '').join('\n');
+    try {
+      const messages: string[] = [];
+      for (const [name, args] of [['normalize_transcript', { text: 'ping ashler' }], ['learn_correction', { heard: 'ashler', meant: 'Ashlr.AI' }], ['add_term', { canonical: 'Zork', aliases: ['zorc'] }], ['list_terms', {}]] as const) {
+        const r = (await client.callTool({ name, arguments: args })) as ToolResult;
+        expect(r.isError, name).toBe(true);
+        messages.push(textOf(r));
+      }
+      messages.push(await client.readResource({ uri: 'lexicon://me' }).then(() => 'resolved', (e: unknown) => (e as Error).message));
+      messages.push(await client.getPrompt({ name: 'voice-context' }).then(() => 'resolved', (e: unknown) => (e as Error).message));
+      for (const message of messages) {
+        expect(message.length).toBeLessThan(3000);
+        expect(message).toContain(`Invalid lexicon at ${globalPath}`);
+        expect(message).toContain('more problems like these');
+        expect(message).toContain('`lexicon edit`');
+      }
+      const doctor = textOf((await client.callTool({ name: 'lexicon_doctor', arguments: {} })) as ToolResult);
+      expect(doctor.length).toBeLessThan(12_000);
+      // The file is untouched.
+      expect(await fs.readFile(globalPath, 'utf8')).toContain('T4999');
     } finally {
       await client.close();
       await server.close();
