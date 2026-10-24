@@ -3137,7 +3137,7 @@ var require_utils = __commonJS({
   "node_modules/fast-uri/lib/utils.js"(exports, module) {
     "use strict";
     var isUUID = RegExp.prototype.test.bind(/^[\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12}$/iu);
-    var isIPv4 = RegExp.prototype.test.bind(/^(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)$/u);
+    var isIPv42 = RegExp.prototype.test.bind(/^(?:(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)\.){3}(?:25[0-5]|2[0-4]\d|1\d{2}|[1-9]\d|\d)$/u);
     var isPort = RegExp.prototype.test.bind(/^\d*$/u);
     var isHexPair = RegExp.prototype.test.bind(/^[\da-f]{2}$/iu);
     var isUnreserved = RegExp.prototype.test.bind(/^[\da-z\-._~]$/iu);
@@ -3238,7 +3238,7 @@ var require_utils = __commonJS({
         const part = parts[i];
         if (part === "") return void 0;
         if (part.indexOf(".") !== -1) {
-          if (i !== parts.length - 1 || compression !== -1 && right.length === 0 || !isIPv4(part)) return void 0;
+          if (i !== parts.length - 1 || compression !== -1 && right.length === 0 || !isIPv42(part)) return void 0;
           hextetCount += 2;
           continue;
         }
@@ -3589,7 +3589,7 @@ var require_utils = __commonJS({
       }
       if (component.host !== void 0) {
         let host = component.host;
-        if (!isIPv4(host)) {
+        if (!isIPv42(host)) {
           let ipV6res = normalizeIPv6(host);
           if (ipV6res.isIPV6 !== true && ipV6res.isIPVFuture !== true) {
             host = normalizePercentEncoding(host, true);
@@ -3626,7 +3626,7 @@ var require_utils = __commonJS({
       encodeFragment,
       escapePreservingEscapes,
       removeDotSegments,
-      isIPv4,
+      isIPv4: isIPv42,
       isUUID,
       normalizeIPv6,
       stringArrayToHexStripped
@@ -3849,7 +3849,7 @@ var require_schemes = __commonJS({
 var require_fast_uri = __commonJS({
   "node_modules/fast-uri/index.js"(exports, module) {
     "use strict";
-    var { normalizeIPv6, removeDotSegments, recomposeAuthority, normalizePercentEncoding, normalizePathEncoding, serializePathEncoding, normalizeQueryFragmentEncoding, encodeQuery, encodeFragment, reescapeHostDelimiters, isIPv4, nonSimpleDomain } = require_utils();
+    var { normalizeIPv6, removeDotSegments, recomposeAuthority, normalizePercentEncoding, normalizePathEncoding, serializePathEncoding, normalizeQueryFragmentEncoding, encodeQuery, encodeFragment, reescapeHostDelimiters, isIPv4: isIPv42, nonSimpleDomain } = require_utils();
     var { SCHEMES, getSchemeHandler } = require_schemes();
     var VALID_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*$/u;
     var MALFORMED_SCHEME_ERROR = "URI scheme is malformed.";
@@ -3894,7 +3894,7 @@ var require_fast_uri = __commonJS({
       const resolved2 = resolveComponent(baseParsed, relativeParsed, schemelessOptions, true);
       const resolvedSchemeHandler = getSchemeHandler(options && options.scheme || resolved2.scheme);
       const resolvedHost = resolved2.host;
-      const resolvedHostIsIP = resolvedHost !== void 0 && resolvedHost !== "" && (isIPv4(resolvedHost) || normalizeIPv6(resolvedHost).isIPV6);
+      const resolvedHostIsIP = resolvedHost !== void 0 && resolvedHost !== "" && (isIPv42(resolvedHost) || normalizeIPv6(resolvedHost).isIPV6);
       canonicalizeHost(resolved2, options || {}, resolvedSchemeHandler, resolvedHostIsIP);
       const encodedASCIIHost = resolvedHost && resolvedHost.indexOf("%") !== -1 && !new RegExp("\\P{ASCII}", "u").test(resolvedHost);
       if (resolved2.error && !encodedASCIIHost) {
@@ -4145,7 +4145,7 @@ var require_fast_uri = __commonJS({
           malformedAuthorityOrPort = true;
         }
         if (parsed.host) {
-          const ipv4result = isIPv4(parsed.host);
+          const ipv4result = isIPv42(parsed.host);
           if (ipv4result === false) {
             const bracketedIPLiteral = isIPLiteral(parsed.host);
             const hasIPLiteralBracket = parsed.host.indexOf("[") !== -1 || parsed.host.indexOf("]") !== -1;
@@ -18192,6 +18192,13 @@ var require_promises = __commonJS({
 var require_node_readline = __commonJS({
   "builtin-cjs:node:readline"(exports, module) {
     module.exports = __require("node:readline");
+  }
+});
+
+// builtin-cjs:node:net
+var require_node_net = __commonJS({
+  "builtin-cjs:node:net"(exports, module) {
+    module.exports = __require("node:net");
   }
 });
 
@@ -64293,6 +64300,7 @@ var import_node_path26 = __toESM(require_node_path());
 
 // src/serve/config.ts
 var import_node_crypto3 = __toESM(require_node_crypto());
+var import_node_net = __toESM(require_node_net());
 var import_node_fs25 = __toESM(require_node_fs());
 var import_node_path25 = __toESM(require_node_path());
 var SERVE_FILE_MODE = 384;

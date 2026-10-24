@@ -8,6 +8,7 @@
  * three browser-extension schemes are always allowed. `*` is never honoured.
  */
 import { randomBytes } from 'node:crypto';
+import { isIPv4, isIPv6 } from 'node:net';
 import { promises as fs, readFileSync } from 'node:fs';
 import path from 'node:path';
 import { resolvePaths } from '../core/index.js';
@@ -217,9 +218,23 @@ export function serveUrl(port: number, host: string = DEFAULT_HOST): string {
   return `http://${h}:${port}`;
 }
 
+/**
+ * True when binding `host` keeps the API on this machine: `localhost`, an
+ * IPv4 address in 127.0.0.0/8, or IPv6 loopback in any spelling (`::1`,
+ * `0:0:0:0:0:0:0:1`, `::ffff:127.0.0.1`, bracketed or not). A hostname that
+ * only starts with `127.` (`127.example.com`) is a name that can resolve
+ * anywhere, so it is not; it counted as loopback and the network-exposure
+ * warning was skipped for it.
+ */
 export function isLoopbackHost(host: string): boolean {
-  const h = host.trim().toLowerCase();
-  return h === 'localhost' || h === '::1' || h === '[::1]' || h.startsWith('127.');
+  let h = host.trim().toLowerCase();
+  if (h.startsWith('[') && h.endsWith(']')) h = h.slice(1, -1);
+  if (h === 'localhost') return true;
+  if (isIPv4(h)) return h.startsWith('127.');
+  if (!isIPv6(h)) return false;
+  // The URL parser writes an IPv6 address in its one compressed form.
+  const canonical = new URL(`http://[${h}]`).hostname;
+  return canonical === '[::1]' || /^\[::ffff:7f[0-9a-f]{2}:[0-9a-f]{1,4}\]$/.test(canonical);
 }
 
 /** What `probeHealth` saw at `<url>/health`. */

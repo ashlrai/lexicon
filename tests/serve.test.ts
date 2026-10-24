@@ -40,6 +40,7 @@ import {
   errorStatus,
   getServePath,
   isLoopbackAddress,
+  isLoopbackHost,
   isAllowedHost,
   isOriginAllowed,
   isPairHost,
@@ -2056,6 +2057,18 @@ describe('lexicon serve (CLI)', () => {
     const doc = JSON.parse(io.out.join('')) as Record<string, unknown>;
     expect(Object.keys(doc)[0]).toBe('ok');
     expect(doc).toMatchObject({ ok: true, url: seen!.url, port: seen!.port, token: seen!.token });
+  });
+
+  // Catches: any host starting with "127." counted as loopback, so
+  // `--host 127.example.com` (a name that can resolve anywhere) skipped the
+  // network-exposure warning, while `0:0:0:0:0:0:0:1` drew it.
+  it('isLoopbackHost takes loopback addresses in any spelling and no hostname but localhost', () => {
+    for (const h of ['localhost', 'LOCALHOST', '127.0.0.1', '127.1.2.3', '::1', '[::1]', '0:0:0:0:0:0:0:1', '::ffff:127.0.0.1', ' 127.0.0.1 ']) {
+      expect(isLoopbackHost(h), h).toBe(true);
+    }
+    for (const h of ['127.example.com', '127.0.0.1.nip.io', '0.0.0.0', '::', '192.168.1.2', '::ffff:10.0.0.1', 'example.com', '']) {
+      expect(isLoopbackHost(h), h).toBe(false);
+    }
   });
 
   it('warns in red-or-plain when --host is not loopback, and reports a busy port', async () => {
