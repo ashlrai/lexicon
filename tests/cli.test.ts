@@ -1037,6 +1037,17 @@ describe('export', () => {
     const asJson = makeIO();
     expect(await runExport('csv', { json: true }, asJson)).toBe(0);
     expect(JSON.parse(asJson.out)).toMatchObject({ ok: true, note });
+    // Catches: with --limit an alias-row format counts only terms that have
+    // an alias, so none were exported and the note was dropped (0 terms, no
+    // category), while MCP export_lexicon and the local API say "no rows".
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedBare);
+    const limited = makeIO();
+    expect(await runExport('csv', { limit: 5 }, limited)).toBe(0);
+    expect(limited.err).toBe(`lexicon: ${note.charAt(0).toLowerCase()}${note.slice(1)}\n`);
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedBare);
+    const limitedJson = makeIO();
+    expect(await runExport('csv', { json: true, limit: 5 }, limitedJson)).toBe(0);
+    expect(JSON.parse(limitedJson.out)).toMatchObject({ ok: true, terms: 0, rows: 0, note });
     // A format that writes every term (json, claude-md) is not empty.
     vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedBare);
     const whole = makeIO();

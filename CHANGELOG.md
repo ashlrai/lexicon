@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon export csv --limit 5` (or wispr, superwhisper, macos, espanso) on a lexicon whose terms all lack an alias says the export has no rows and names `lexicon add`, on stderr and as the `--json` `note`, as MCP `export_lexicon` and `GET /export/:format` do. `--limit` counts only terms with an alias for these formats, so 0 terms were exported and nothing was said.
 - The MCP `lexicon://json` resource adds a `note` when the lexicon has no terms, the sentence `lexicon://me` ends with (no spellings to apply yet; offer the onboard prompt or `setup_lexicon`). It was a bare `{ version: 1, terms: [] }`. The JSON stays valid and the lexicon keys are unchanged; a lexicon with terms reads exactly as before.
 - `POST /normalize` on the local API adds a `hint` when the lexicon has no terms, naming `lexicon setup` (or `lexicon trust` when only an untrusted project lexicon has terms). An unchanged result read like text that needed no correction. The field is additive and absent otherwise.
 - `GET /lexicon` and `GET /stats` on the local API add a `note` for a lexicon with no terms (naming `lexicon setup` and `lexicon add` or `lexicon learn`), and the `lexicon trust` step when a project lexicon was skipped, as `lexicon stats --json`, `lexicon list --full` and MCP `list_terms` / `lexicon_stats` do. They answered empty terms and zero counts with no step. The field is additive and absent otherwise.

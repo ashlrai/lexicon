@@ -1084,24 +1084,27 @@ export function emptyExportNote(
   exported: number,
   aliasRows?: { format: ExportFormat; terms: readonly Pick<Term, 'aliases'>[] },
 ): string | undefined {
-  if (exported > 0) {
-    if (
-      aliasRows !== undefined &&
-      EXPORT_ALIAS_ROW_FORMATS.includes(aliasRows.format) &&
-      !aliasRows.terms.some((t) => t.aliases.some((a) => a.trim() !== ''))
-    ) {
-      return `No exported term has an alias, and ${aliasRows.format} writes one row per alias, so the export has no rows; add one with: lexicon add <canonical> <alias>.`;
-    }
-    return undefined;
-  }
+  const noRows =
+    aliasRows !== undefined &&
+    EXPORT_ALIAS_ROW_FORMATS.includes(aliasRows.format) &&
+    !aliasRows.terms.some((t) => t.aliases.some((a) => a.trim() !== ''));
+  const noRowsNote = (format: ExportFormat): string =>
+    `No exported term has an alias, and ${format} writes one row per alias, so the export has no rows; add one with: lexicon add <canonical> <alias>.`;
+  if (exported > 0) return noRows && aliasRows ? noRowsNote(aliasRows.format) : undefined;
   if (loaded.merged.terms.length === 0) {
     return loaded.skippedProject
       ? 'The export is empty: the only terms are in the untrusted project lexicon, which was left out; review it and run `lexicon trust`.'
       : 'The lexicon has no terms yet, so the export is empty; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.';
   }
-  if (categories !== undefined && categories.length > 0) {
+  const filtered = categories !== undefined && categories.length > 0;
+  const matched = filtered ? loaded.merged.terms.filter((t) => t.category !== undefined && categories.includes(t.category)).length : loaded.merged.terms.length;
+  if (filtered && matched === 0) {
     return `No term matched --category ${categories.join(' ')}, so the export is empty; lexicon list shows each term's category.`;
   }
+  // Terms matched but none was exported: an alias-row format with --limit
+  // counts only terms that have an alias, so a lexicon whose terms all lack
+  // one exports none. MCP export_lexicon and the local API say "no rows" here.
+  if (noRows && aliasRows) return noRowsNote(aliasRows.format);
   return undefined;
 }
 
