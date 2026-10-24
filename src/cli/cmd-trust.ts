@@ -257,7 +257,7 @@ async function runTrustList(cwd: string, opts: TrustOptions, io: IO): Promise<nu
     return 0;
   }
   const rows = entries.map((e) => [e.path, e.status, e.trustedAt]);
-  io.stdout(renderTable(rows, ['path', 'status', 'trusted at']));
+  io.stdout(renderTable(rows, ['path', 'status', 'trusted at'], { pathColumns: [0] }));
   return 0;
 }
 

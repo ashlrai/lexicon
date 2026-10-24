@@ -187,12 +187,20 @@ export function ensureNewline(s: string): string {
  * trimmed so the output is diff-friendly. Ends with a newline. Every cell is
  * passed through `safe` (escape sequences, control and invisible characters
  * dropped, 200-char cap) before it is measured, so a hostile alias can neither
- * recolour the terminal nor misalign the column it sits in.
+ * recolour the terminal nor misalign the column it sits in. A cell in one of
+ * `opts.pathColumns` (0-based) is a file path: it is sanitized the same way
+ * but capped at ERROR_LINE_MAX_CHARS (PATH_MAX) instead of 200, since the cap
+ * cut from the end and took the file name off a deep path.
  */
-export function renderTable(rows: readonly (readonly string[])[], header?: readonly string[]): string {
-  const all: (readonly string[])[] = header
-    ? [header.map(safe), ...rows.map((r) => r.map(safe))]
-    : rows.map((r) => r.map(safe));
+export function renderTable(
+  rows: readonly (readonly string[])[],
+  header?: readonly string[],
+  opts: { pathColumns?: readonly number[] } = {},
+): string {
+  const pathColumns = new Set(opts.pathColumns ?? []);
+  const cell = (r: readonly string[]): string[] =>
+    r.map((c, i) => (pathColumns.has(i) ? sanitizeForDisplayMax(c, ERROR_LINE_MAX_CHARS) : safe(c)));
+  const all: (readonly string[])[] = header ? [header.map(safe), ...rows.map(cell)] : rows.map(cell);
   if (all.length === 0) return '';
   const cols = Math.max(...all.map((r) => r.length));
   const widths: number[] = new Array<number>(cols).fill(0);

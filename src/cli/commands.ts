@@ -1039,7 +1039,7 @@ export async function runHarvest(
       c.suggestedAliases.join(', '),
       c.evidence[0] ?? '',
     ]);
-    io.stdout(renderTable(rows, ['canonical', 'category', 'count', 'suggested aliases', 'evidence']));
+    io.stdout(renderTable(rows, ['canonical', 'category', 'count', 'suggested aliases', 'evidence'], { pathColumns: [4] }));
   }
 
   if (truncatedLine) {

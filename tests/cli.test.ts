@@ -771,6 +771,17 @@ describe('add / remove / path', () => {
     expect(ok.err).toContain('added 1 new term, merged 0');
   });
 
+  // Catches: the harvest table cut each cell at 200 characters from the end,
+  // so evidence naming a deep file lost the file name.
+  it('harvest prints a long evidence path whole', async () => {
+    const evidence = `${'packages/very-deep-directory/'.repeat(10)}package.json#dependencies`;
+    vi.mocked(core.harvestRepo).mockResolvedValueOnce([{ canonical: 'Quokka', category: 'product', count: 2, suggestedAliases: [], evidence: [evidence], source: 'harvest:package' }]);
+    const io = makeIO();
+    expect(await runHarvest(os.tmpdir(), {}, io, { isInteractive: () => false })).toBe(0);
+    expect(io.out).toContain(evidence);
+    expect(io.out).not.toContain('\u2026');
+  });
+
   it('add --json and remove --json print parseable JSON on stdout', async () => {
     const added = makeIO();
     expect(await runAdd('Ashlr.AI', ['Ashler'], { json: true }, added)).toBe(0);
@@ -1420,6 +1431,17 @@ describe('renderTable', () => {
     expect(lines[0].indexOf('aliases')).toBe(lines[2].indexOf('Ashler'));
     expect(lines[0].indexOf('category')).toBe(lines[3].indexOf('person'));
     expect(col(lines[0], 3)).toBe(lines[2].indexOf('3'));
+  });
+
+  // Catches: every cell went through the 200-character display cap, which
+  // cuts from the end, so a deep path in the stats files table or harvest
+  // evidence lost its file name to an ellipsis.
+  it('keeps a long path whole in a path column, and still caps the others', () => {
+    const deep = `/home/u/${'very-deep-directory/'.repeat(15)}.lexicon.yaml`;
+    const out = renderTable([['project', deep, `${'x'.repeat(300)}`]], undefined, { pathColumns: [1] });
+    expect(out).toContain(deep);
+    expect(out).toContain(`${'x'.repeat(199)}\u2026`);
+    expect(renderTable([['\x1b[31m', deep]], undefined, { pathColumns: [1] })).not.toContain('\x1b');
   });
 
   it('handles ragged rows and no header', () => {

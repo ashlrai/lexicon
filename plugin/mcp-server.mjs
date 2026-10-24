@@ -62602,14 +62602,16 @@ function tildify(p, home) {
   const rel = import_node_path11.default.relative(home, p);
   return rel && !rel.startsWith("..") && !import_node_path11.default.isAbsolute(rel) ? `~/${rel.split(import_node_path11.default.sep).join("/")}` : p;
 }
-function renderTable(rows, header) {
-  const all = header ? [header.map(safe), ...rows.map((r) => r.map(safe))] : rows.map((r) => r.map(safe));
+function renderTable(rows, header, opts = {}) {
+  const pathColumns = new Set(opts.pathColumns ?? []);
+  const cell = (r) => r.map((c, i) => pathColumns.has(i) ? sanitizeForDisplayMax(c, ERROR_LINE_MAX_CHARS) : safe(c));
+  const all = header ? [header.map(safe), ...rows.map(cell)] : rows.map(cell);
   if (all.length === 0) return "";
   const cols = Math.max(...all.map((r) => r.length));
   const widths = new Array(cols).fill(0);
   for (const row of all) {
-    row.forEach((cell, i) => {
-      widths[i] = Math.max(widths[i], cell.length);
+    row.forEach((cell2, i) => {
+      widths[i] = Math.max(widths[i], cell2.length);
     });
   }
   const fmt = (row) => widths.map((w, i) => (row[i] ?? "").padEnd(w)).join("  ").trimEnd();

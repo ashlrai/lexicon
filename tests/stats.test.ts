@@ -104,6 +104,15 @@ describe('lexicon stats (CLI)', () => {
     expect(text).not.toContain('\u2026');
   });
 
+  // Catches: the files table cut each cell at 200 characters from the end, so
+  // a deep project path lost its `.lexicon.yaml` to an ellipsis.
+  it('prints a deep lexicon file path whole in the files table', () => {
+    const deep = `/home/u/${'very-deep-directory/'.repeat(15)}.lexicon.yaml`;
+    const loaded = loadedOf(sample);
+    const text = renderStats(computeStats({ ...loaded, project: { ...loaded.project!, path: deep } }));
+    expect(text).toContain(deep);
+  });
+
   it('says so when no hits were recorded', () => {
     const text = renderStats(computeStats(loadedOf([{ canonical: 'Zoë', aliases: [] }])));
     expect(text).toContain('no hits yet');

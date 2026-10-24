@@ -267,7 +267,7 @@ export function renderStats(stats: LexiconStats, note?: string): string {
 
   out.push('files');
   out.push(
-    renderTable(stats.files.map((f) => [f.scope, f.path, `${f.terms} term${f.terms === 1 ? '' : 's'}`])).trimEnd(),
+    renderTable(stats.files.map((f) => [f.scope, f.path, `${f.terms} term${f.terms === 1 ? '' : 's'}`]), undefined, { pathColumns: [1] }).trimEnd(),
   );
   return `${out.join('\n')}\n`;
 }
