@@ -6,7 +6,7 @@
  * `lexicon_doctor` tool returns it verbatim); `runDoctor` renders it.
  */
 import { existsSync, promises as fs } from 'node:fs';
-import os from 'node:os';
+import { homeDir } from '../util/xdg.js';
 import path from 'node:path';
 import { detectClipboardBackend } from '../daemon/clipboard-backends.js';
 import { DEFAULT_MODEL, resolveModel } from '../voice/models.js';
@@ -580,7 +580,7 @@ export interface DoctorReportOptions extends CommonOptions {
 export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDeps = {}): Promise<DoctorReport> {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
-  const home = deps.home ?? os.homedir();
+  const home = deps.home ?? homeDir();
   const exec = deps.exec ?? defaultExec;
   const cwd = resolveCwd(opts);
   const checks: DoctorCheck[] = [];

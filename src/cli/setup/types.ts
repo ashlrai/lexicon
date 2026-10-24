@@ -246,7 +246,7 @@ export type SetupExec = (file: string, args: readonly string[]) => string;
 export interface SetupDeps {
   platform?: NodeJS.Platform;
   env?: NodeJS.ProcessEnv;
-  /** Home directory used for detection and forwarded to the installers. Default os.homedir(). */
+  /** Home directory used for detection and forwarded to the installers. Default homeDir() (src/util/xdg.ts). */
   home?: string;
   /** Filesystem probe for detection. Default existsSync. */
   exists?: (p: string) => boolean;
@@ -309,7 +309,7 @@ export interface Ctx {
   exec: SetupExec;
   /** Undefined when running with defaults (--yes or no terminal). */
   prompter?: Prompter;
-  /** True when --home or deps.home overrides os.homedir(); forwarded to the installers. */
+  /** True when --home or deps.home overrides the home default; forwarded to the installers. */
   homeOverridden: boolean;
   /** The company term seeded in step 1, for the summary card. */
   company?: string;
