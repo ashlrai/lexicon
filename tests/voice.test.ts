@@ -30,6 +30,7 @@ import {
   pickDevice,
 } from '../src/voice/devices.js';
 import { HISTORY_MAX_BYTES, HISTORY_MAX_LINES, HISTORY_READ_MAX_BYTES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
+import { VOICE_HISTORY_READ_MAX_BYTES, loadVoiceHistory } from '../src/core/suggestTerms.js';
 import { GGML_MAGIC, STALE_PART_MS, checkModelHashRecord, defaultDownloader, expandTilde, modelFileName, modelUrl, modelsDir, resolveModel } from '../src/voice/models.js';
 import type { Downloader } from '../src/voice/models.js';
 import { installHint, locateWhisperCli, makeProcessDescribe, makeProcessList } from '../src/voice/process.js';
@@ -849,6 +850,11 @@ describe('lexicon voice --toggle start race', () => {
     expect(await readState(h.globalPath)).toEqual({ wav: 'a.wav', startedAt: 't' });
     await fs.writeFile(stateFilePath(h.globalPath), JSON.stringify({ pid: 'nope', wav: 'a.wav', startedAt: 't' }));
     expect(await readState(h.globalPath)).toBeUndefined();
+    // Catches: any number was taken as the recorder's pid, so a damaged file's -1 or 0 reached process.kill on the stop press (every process of the user, or the process group).
+    for (const pid of [-1, 0, 1.5, 2 ** 60]) {
+      await fs.writeFile(stateFilePath(h.globalPath), JSON.stringify({ pid, wav: 'a.wav', startedAt: 't' }));
+      expect(await readState(h.globalPath)).toBeUndefined();
+    }
     const now = Date.parse('2026-09-19T12:00:00.000Z');
     expect(isStaleProvisional({ wav: 'a', startedAt: '2026-09-19T12:00:00.000Z' }, now + PROVISIONAL_TTL_MS)).toBe(false);
     expect(isStaleProvisional({ wav: 'a', startedAt: '2026-09-19T12:00:00.000Z' }, now + PROVISIONAL_TTL_MS + 1)).toBe(true);
@@ -1966,6 +1972,25 @@ describe('history', () => {
     expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t3', 't4', 't5']);
     await appendHistory(h.globalPath, entry(9, 'y'.repeat(HISTORY_MAX_BYTES)));
     expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t9']);
+  });
+
+  // Catches: lexicon suggest read the newest 8 MiB and the writer kept a newest entry of up to 16 MiB, so an entry between the two was cut and suggest saw no history.
+  it('keeps a newest entry over HISTORY_MAX_BYTES readable by lexicon suggest too', async () => {
+    const h = await harness();
+    expect(HISTORY_READ_MAX_BYTES).toBe(VOICE_HISTORY_READ_MAX_BYTES);
+    await appendHistory(h.globalPath, entry(0));
+    await appendHistory(h.globalPath, entry(1, 'y'.repeat(10 * 1024 * 1024)));
+    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t1']);
+    expect((await loadVoiceHistory(h.globalPath)).map((e) => e.at)).toEqual(['t1']);
+  });
+
+  // Catches: an entry larger than any reader looks at was written, and the byte cap dropped every older entry to make room, leaving a history nobody could read.
+  it('does not write an entry larger than HISTORY_READ_MAX_BYTES, keeping the older history', async () => {
+    const h = await harness();
+    await appendHistory(h.globalPath, entry(0));
+    const before = await fs.readFile(historyPath(h.globalPath), 'utf8');
+    await appendHistory(h.globalPath, entry(1, 'y'.repeat(HISTORY_READ_MAX_BYTES)));
+    expect(await fs.readFile(historyPath(h.globalPath), 'utf8')).toBe(before);
   });
 });
 

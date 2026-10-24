@@ -616,6 +616,8 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   const notReviewed = subject.length - stoppedAt - editedInProgress;
 
   let mergedElsewhere = 0;
+  /** Set when the project file was rewritten during the review into something not trusted; nothing is written. */
+  let untrustedOnDisk: string | undefined;
   if (changed) {
     // The lock goes here and not around the session. A review is interactive
     // and can sit open for minutes, so holding the file for its duration would
@@ -628,18 +630,31 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
     try {
       await withLexiconLock(file.path, async () => {
         if (digestAtStart !== undefined && (await fileDigest(file.path)) !== digestAtStart) {
+          let disk: LexiconFile;
           try {
-            const disk = await readLexiconFile(file.path, file.scope);
-            const merged = reconcileReview(file.lexicon.terms, snapshot, disk.lexicon.terms, editedTerms, deleted);
-            // The session never touches settings, so the on-disk ones win too.
-            file.lexicon = { ...disk.lexicon, terms: merged.terms };
-            mergedElsewhere = merged.changes;
+            disk = await readLexiconFile(file.path, file.scope);
           } catch (err) {
             io.stderr(
               `lexicon: ${safeMessage(file.path)} changed during review but could not be re-read (${safeMessage(errorMessage(err))}); writing the reviewed version\n`,
             );
             file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
+            await writeLexiconFile(file);
+            return;
           }
+          // A project file rewritten by something that does not re-pin trust
+          // (a git pull, a hand edit) holds terms nobody reviewed. Merged, they
+          // were written back and trusted by the refreshTrust below.
+          if (file.scope === 'project') {
+            const status = await isTrusted(disk, store);
+            if (status !== 'trusted') {
+              untrustedOnDisk = status;
+              return;
+            }
+          }
+          const merged = reconcileReview(file.lexicon.terms, snapshot, disk.lexicon.terms, editedTerms, deleted);
+          // The session never touches settings, so the on-disk ones win too.
+          file.lexicon = { ...disk.lexicon, terms: merged.terms };
+          mergedElsewhere = merged.changes;
         } else {
           file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
         }
@@ -651,6 +666,14 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
       io.stderr(
         `lexicon: could not write ${safeMessage(file.path)} (${safeMessage(errorMessage(err))}); nothing was written, ` +
           `so this review's ${plural(deleted.size, 'removal')} and ${plural(edited, 'edit')} were not saved\n`,
+      );
+      return 1;
+    }
+    if (untrustedOnDisk !== undefined) {
+      io.stderr(
+        `lexicon: ${safeMessage(file.path)} changed during review and is not trusted (${untrustedOnDisk}), so nothing was written and ` +
+          `this review's ${plural(deleted.size, 'removal')} and ${plural(edited, 'edit')} were not saved; ` +
+          'run lexicon trust to look at the new version, then lexicon review --project again\n',
       );
       return 1;
     }

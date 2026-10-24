@@ -83,3 +83,50 @@ export async function readBoundedRegularFile(filePath: string, maxBytes: number)
     await handle.close();
   }
 }
+
+/**
+ * The last `maxBytes` of the regular file at `filePath` as text, from the
+ * first line that starts inside them (a line the bound cuts is dropped), or
+ * undefined when nothing is there. Bounded so a file grown past what its
+ * writer keeps is never loaded whole. Anything other than a regular file
+ * (checked before a non-blocking open, so a FIFO cannot block it, and again
+ * on the descriptor) rejects with an `EINVAL` error, and any other read error
+ * rejects as it is. The voice history writer (src/voice/history.ts) and its
+ * reader in `lexicon suggest` (src/core/suggestTerms.ts) share it, with one
+ * bound, so both see the same newest entries.
+ */
+export async function readRegularFileTail(filePath: string, maxBytes: number): Promise<string | undefined> {
+  let handle: fs.FileHandle;
+  try {
+    if (!(await fs.stat(filePath)).isFile()) throw notRegular(filePath);
+    handle = await fs.open(filePath, OPEN_FLAGS);
+  } catch (e) {
+    if ((e as NodeJS.ErrnoException).code === 'ENOENT') return undefined;
+    throw e;
+  }
+  try {
+    const st = await handle.stat();
+    if (!st.isFile()) throw notRegular(filePath);
+    const length = Math.min(st.size, maxBytes);
+    const start = st.size - length;
+    const buf = Buffer.alloc(length);
+    let got = 0;
+    while (got < length) {
+      const { bytesRead } = await handle.read(buf, got, length - got, start + got);
+      if (bytesRead === 0) break;
+      got += bytesRead;
+    }
+    let bytes = buf.subarray(0, got);
+    if (start > 0) {
+      const nl = bytes.indexOf(0x0a);
+      bytes = nl === -1 ? Buffer.alloc(0) : bytes.subarray(nl + 1);
+    }
+    return bytes.toString('utf8');
+  } finally {
+    await handle.close().catch(() => undefined);
+  }
+}
+
+function notRegular(filePath: string): Error {
+  return Object.assign(new Error(`${filePath} is not a regular file`), { code: 'EINVAL' });
+}
