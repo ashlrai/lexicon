@@ -45,7 +45,7 @@ import type {
   RemoveOptions,
 } from './commands.js';
 import type { InstallOptions } from './cmd-install.js';
-import { CliRefusal, argvRequestsJson, cwdOptionProblem, exampleAfterMissingArgument, fail, jsonFlagsOf, line, optsRequestJson, positiveIntOption, refuse, unknownCommandHint, usageErrorJson } from './io.js';
+import { CliRefusal, argvRequestsJson, cwdOptionProblem, exampleAfterMissingArgument, fail, jsonFlagsOf, line, optsRequestJson, nonNegativeIntOption, positiveIntOption, refuse, unknownCommandHint, usageErrorJson } from './io.js';
 
 
 interface DaemonCliOptions {
@@ -140,9 +140,11 @@ program
   .alias('ls')
   .description('list terms from the merged global + project lexicon')
   .option('--json', 'print terms as JSON (a bare array)')
-  .option('--full', 'print { ok: true, terms, counts, paths } as JSON, ok and then the object MCP list_terms returns, plus projectTrust, skippedProject and note when an untrusted project lexicon was left out, or note alone when nothing matched (implies --json)')
+  .option('--full', 'print { ok: true, terms, counts, paths } as JSON, ok and then the object MCP list_terms returns, plus projectTrust, skippedProject and note when an untrusted project lexicon was left out, or note alone when nothing matched, and page { offset, limit?, returned, nextOffset? } with --offset or --limit (nextOffset is the next page\'s --offset, while matches remain) (implies --json)')
   .option('--category <category>', 'only this category')
   .option('--query <text>', 'only terms whose canonical or aliases contain this text')
+  .option('--offset <n>', 'skip this many matching terms first (default 0)', nonNegativeIntOption('--offset', 50))
+  .option('--limit <n>', 'print at most this many matching terms (default: every one)', positiveIntOption('--limit', 50))
   .action(async (opts: ListOptions) => done(await runList(withGlobals(opts), io)));
 
 program

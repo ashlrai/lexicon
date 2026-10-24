@@ -85,6 +85,8 @@ import {
   untrustedAliasHolder,
   untrustedTermHolder,
   noTermMatchesNote,
+  offsetPastEndNote,
+  pageTermList,
   noTermsYet,
   onlyUntrustedTerms,
   resolvePaths,
@@ -196,6 +198,14 @@ function parseIntOption(value: string | number | undefined, flag: string, max?: 
   const n = typeof value === 'number' ? value : wholeNumber(value);
   if (n === undefined || !Number.isSafeInteger(n) || n <= 0) throw new Error(`${flag} must be a positive integer`);
   if (max !== undefined && n > max) throw new Error(`${flag} must be at most ${max}`);
+  return n;
+}
+
+/** An `--offset`: like parseIntOption, but 0 (the first term) is allowed. */
+function parseOffsetOption(value: string | number | undefined, flag: string): number | undefined {
+  if (value === undefined) return undefined;
+  const n = typeof value === 'number' ? value : wholeNumber(value);
+  if (n === undefined || !Number.isSafeInteger(n) || n < 0) throw new Error(`${flag} must be a whole number (0 or more)`);
   return n;
 }
 
@@ -691,11 +701,18 @@ export interface ListOptions extends CommonOptions {
   full?: boolean;
   category?: string;
   query?: string;
+  /** Matching terms to skip first, as MCP list_terms `offset` (0 when omitted). */
+  offset?: number | string;
+  /** Most terms to print, as MCP list_terms `limit` (every one when omitted). */
+  limit?: number | string;
 }
 
 export async function runList(opts: ListOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
   // A skipped project file is named by path only, so it is never parsed.
+  // Checked before the lexicon is read, as the other integer options are.
+  const offset = parseOffsetOption(opts.offset, '--offset');
+  const limit = parseIntOption(opts.limit, '--limit');
   const loaded = await loadLexicon({ cwd, parseSkipped: false });
   warnSkippedProject(loaded, io);
   let terms = loaded.merged.terms;
@@ -717,15 +734,24 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
     ...(query ? [`--query ${JSON.stringify(query)}`] : []),
   ];
   const total = loaded.merged.terms.length;
+  const matched = terms.length;
+  // The whole list unless a page was asked for, as MCP list_terms pages it.
+  const { items: pageItems, page } = pageTermList(terms, {
+    ...(offset !== undefined ? { offset } : {}),
+    ...(limit !== undefined ? { limit } : {}),
+  });
+  terms = pageItems;
   // Why the list is empty, as MCP list_terms says it in `note`: "no terms
   // match" for a lexicon that had none at all sent a first user to fix the
   // filter, and a filter that missed named no way to see what is there.
   const emptyNote =
     terms.length > 0 || loaded.skippedProject
       ? undefined
-      : total === 0
-        ? emptyLexiconNote()
-        : noTermMatchesNote({ filter: filters.join(' '), filters: filters.length, total });
+      : matched > 0
+        ? offsetPastEndNote(page?.offset ?? 0, matched)
+        : total === 0
+          ? emptyLexiconNote()
+          : noTermMatchesNote({ filter: filters.join(' '), filters: filters.length, total });
 
   if (opts.full) {
     // The MCP list_terms shape; plain --json keeps the bare array scripts already parse.
@@ -733,12 +759,13 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
     const payload = {
       terms,
       counts: {
-        matched: terms.length,
+        matched,
         total: loaded.merged.terms.length,
         global: loaded.global.lexicon.terms.length,
         project: loaded.project?.lexicon.terms.length ?? 0,
       },
       paths: { global: loaded.global.path, ...(loaded.project ? { project: loaded.project.path } : {}) },
+      ...(page ? { page } : {}),
       ...skipped,
       ...(emptyNote ? { note: emptyNote } : {}),
     };
@@ -750,7 +777,9 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
     return 0;
   }
 
-  if (terms.length === 0) {
+  if (terms.length === 0 && matched > 0) {
+    line(io, dim(offsetPastEndNote(page?.offset ?? 0, matched)));
+  } else if (terms.length === 0) {
     // With every term in a project file that was skipped, adding a global
     // term is not what is missing: trusting the file is.
     const empty = loaded.skippedProject
@@ -772,6 +801,11 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
       String(t.hits ?? 0),
     ]);
     io.stdout(renderTable(rows, ['canonical', 'aliases', 'category', 'hits']));
+    if (page) {
+      const first = page.offset + 1;
+      const more = page.nextOffset !== undefined ? `; the next page is --offset ${page.nextOffset}` : '';
+      line(io, dim(`terms ${first} to ${page.offset + page.returned} of ${matched}${more}`));
+    }
   }
   line(io);
   line(io, `global: ${safe(loaded.global.path)}`);

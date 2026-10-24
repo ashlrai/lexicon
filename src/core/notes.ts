@@ -100,6 +100,56 @@ export function noTermMatchesNote(context: { filter: string; filters: number; to
 }
 
 /**
+ * The paging a term list was asked for (`lexicon list --offset/--limit`, MCP
+ * list_terms `offset`/`limit`). Both omitted: the whole list, as before.
+ */
+export interface TermPageRequest {
+  /** Matching terms to skip first (0 when omitted). */
+  offset?: number;
+  /** Most terms to return (every one from `offset` on when omitted). */
+  limit?: number;
+}
+
+/**
+ * The `page` a paged term list reports: where it started, the limit asked
+ * for, how many terms it holds, and `nextOffset` (the `offset` of the next
+ * page) only while matching terms remain past it.
+ */
+export interface TermPage {
+  offset: number;
+  limit?: number;
+  returned: number;
+  nextOffset?: number;
+}
+
+/**
+ * One page of `items` (the terms a filter matched). `page` is undefined when
+ * neither `offset` nor `limit` was given, so an unpaged list keeps its shape.
+ */
+export function pageTermList<T>(items: readonly T[], request: TermPageRequest = {}): { items: T[]; page?: TermPage } {
+  if (request.offset === undefined && request.limit === undefined) return { items: [...items] };
+  const offset = request.offset ?? 0;
+  const end = request.limit === undefined ? items.length : Math.min(items.length, offset + request.limit);
+  const slice = items.slice(offset, end);
+  const page: TermPage = {
+    offset,
+    ...(request.limit !== undefined ? { limit: request.limit } : {}),
+    returned: slice.length,
+    ...(end < items.length && slice.length > 0 ? { nextOffset: end } : {}),
+  };
+  return { items: slice, page };
+}
+
+/**
+ * The note for a paged term list whose `offset` is at or past the last of
+ * the `matched` terms (there are some, the page just starts after them).
+ */
+export function offsetPastEndNote(offset: number, matched: number): string {
+  const held = matched === 1 ? '1 term matched, at offset 0' : `${matched} terms matched, at offsets 0 to ${matched - 1}`;
+  return `No term at offset ${offset}: only ${held}.`;
+}
+
+/**
  * The note for statistics of a lexicon with no terms (`lexicon stats`, MCP
  * lexicon_stats, `GET /stats`), ending in `step`. Undefined when there are
  * terms, and when a skipped project file holds them (skippedProjectNote names

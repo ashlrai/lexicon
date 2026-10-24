@@ -259,7 +259,6 @@ export function writableProjectFile(ctx: Pick<ToolContext, 'cwd' | 'roots'>, fil
 }
 
 /**
- * The store option every MCP write passes:/**
  * The store option every MCP write passes: `{ leaveUntrusted: true }` unless
  * the project file the write would land in is already trusted. A model must
  * not be the one that creates and trusts a project `.lexicon.yaml`, so a new,

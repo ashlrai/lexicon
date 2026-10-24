@@ -82,46 +82,86 @@ function parseServeJson(text: string): unknown {
 }
 
 /**
+ * What reading serve.json found: a usable `config`, a `missing` file (one
+ * lexicon serve creates), or an `unusable` one (unreadable, a directory,
+ * empty, not valid JSON, or without a usable token). `reason` is the
+ * "serve is not configured: <path> <reason>" ending, with the fix.
+ */
+export type ServeConfigRead =
+  | { status: 'ok'; path: string; config: ServeConfig }
+  | { status: 'missing'; path: string; reason: string }
+  | { status: 'unusable'; path: string; reason: string };
+
+const MISSING_REASON = 'does not exist; lexicon serve creates it';
+
+function readErrorResult(file: string, err: unknown): ServeConfigRead {
+  // Only a missing file is one lexicon serve creates: a serve.json that is
+  // a directory or unreadable (EISDIR, EACCES) was reported as missing too,
+  // and lexicon serve then failed on it instead of creating anything.
+  const code = (err as { code?: unknown }).code;
+  if (code === 'ENOENT') return { status: 'missing', path: file, reason: MISSING_REASON };
+  return {
+    status: 'unusable',
+    path: file,
+    reason: `could not be read (${typeof code === 'string' ? code : errorMessage(err)}); make it a readable file, or remove it so lexicon serve makes a new token`,
+  };
+}
+
+function textResult(file: string, text: string): ServeConfigRead {
+  if (text.replace(/^\uFEFF/, '').trim() === '') return { status: 'unusable', path: file, reason: 'is empty; lexicon serve replaces it' };
+  let raw: unknown;
+  try {
+    raw = parseServeJson(text);
+  } catch {
+    return { status: 'unusable', path: file, reason: 'is not valid JSON; fix it, or delete it and lexicon serve makes a new token' };
+  }
+  const config = parseServeConfig(raw);
+  if (config) return { status: 'ok', path: file, config };
+  // Why, as onTokenReplaced says it: "has no usable token" alone left the
+  // user to guess between a missing key, a number and a bad hex string.
+  return { status: 'unusable', path: file, reason: `has no usable token (${tokenProblem(raw)}); lexicon serve replaces it` };
+}
+
+/**
  * Why `readServeConfig` found no usable config at `file`, for the
  * "serve is not configured: <file> <why>" lines of `--status` and `--pair`.
+ * Reads the file again; `readServeConfigResult` gives the config and the
+ * reason from one read.
  */
 export function unusableServeConfigReason(file: string): string {
   let text: string;
   try {
     text = readFileSync(file, 'utf8');
   } catch (err) {
-    // Only a missing file is one lexicon serve creates: a serve.json that is
-    // a directory or unreadable (EISDIR, EACCES) was reported as missing too,
-    // and lexicon serve then failed on it instead of creating anything.
-    const code = (err as { code?: unknown }).code;
-    if (code === 'ENOENT') return 'does not exist; lexicon serve creates it';
-    return `could not be read (${typeof code === 'string' ? code : errorMessage(err)}); make it a readable file, or remove it so lexicon serve makes a new token`;
+    return (readErrorResult(file, err) as { reason: string }).reason;
   }
-  if (text.replace(/^\uFEFF/, '').trim() === '') return 'is empty; lexicon serve replaces it';
-  let raw: unknown;
-  try {
-    raw = parseServeJson(text);
-  } catch {
-    return 'is not valid JSON; fix it, or delete it and lexicon serve makes a new token';
-  }
-  // Why, as onTokenReplaced says it: "has no usable token" alone left the
-  // user to guess between a missing key, a number and a bad hex string.
-  return `has no usable token (${tokenProblem(raw)}); lexicon serve replaces it`;
+  const read = textResult(file, text);
+  // A file that became usable since the caller read it: say why it was not.
+  return read.status === 'ok' ? 'has no usable token; lexicon serve replaces it' : read.reason;
 }
 
-/** The stored config, or undefined when the file is missing or unusable (a bad token is never reused). */
-export async function readServeConfig(opts: StoreOptions = {}): Promise<ServeConfig | undefined> {
+/**
+ * serve.json read once, telling a missing file from a broken one: `ok` with
+ * the config, `missing`, or `unusable` with the reason and its fix.
+ */
+export async function readServeConfigResult(opts: StoreOptions = {}): Promise<ServeConfigRead> {
+  const file = getServePath(opts);
   let text: string;
   try {
-    text = await fs.readFile(getServePath(opts), 'utf8');
-  } catch {
-    return undefined;
+    text = await fs.readFile(file, 'utf8');
+  } catch (err) {
+    return readErrorResult(file, err);
   }
-  try {
-    return parseServeConfig(parseServeJson(text));
-  } catch {
-    return undefined;
-  }
+  return textResult(file, text);
+}
+
+/**
+ * The stored config, or undefined when the file is missing or unusable (a bad
+ * token is never reused). `readServeConfigResult` says which of the two.
+ */
+export async function readServeConfig(opts: StoreOptions = {}): Promise<ServeConfig | undefined> {
+  const read = await readServeConfigResult(opts);
+  return read.status === 'ok' ? read.config : undefined;
 }
 
 /**

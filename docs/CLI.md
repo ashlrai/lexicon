@@ -162,9 +162,15 @@ Options:
                          and then the object MCP list_terms returns, plus
                          projectTrust, skippedProject and note when an untrusted
                          project lexicon was left out, or note alone when
-                         nothing matched (implies --json)
+                         nothing matched, and page { offset, limit?, returned,
+                         nextOffset? } with --offset or --limit (nextOffset is
+                         the next page's --offset, while matches remain)
+                         (implies --json)
   --category <category>  only this category
   --query <text>         only terms whose canonical or aliases contain this text
+  --offset <n>           skip this many matching terms first (default 0)
+  --limit <n>            print at most this many matching terms (default: every
+                         one)
   -h, --help             display help for command
 ```
 

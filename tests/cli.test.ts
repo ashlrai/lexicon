@@ -495,6 +495,51 @@ describe('list', () => {
     expect(await runList({ category: 'brand', full: true }, hit)).toBe(0);
     expect(JSON.parse(hit.out)).not.toHaveProperty('note');
   });
+
+  // Catches: `lexicon list --full` (and MCP list_terms) had no way to take a
+  // page of a large lexicon; the whole list stays the default.
+  it('pages the matching terms with --offset and --limit, the whole list by default', async () => {
+    const whole = makeIO();
+    await runList({ full: true }, whole);
+    const wholeOut = JSON.parse(whole.out) as { terms: { canonical: string }[]; page?: unknown };
+    expect(wholeOut.terms.map((t) => t.canonical)).toEqual(['Ashlr.AI', 'Mason Wyatt']);
+    expect(wholeOut).not.toHaveProperty('page');
+
+    const first = makeIO();
+    expect(await runList({ full: true, limit: 1 }, first)).toBe(0);
+    expect(JSON.parse(first.out)).toMatchObject({
+      terms: [{ canonical: 'Ashlr.AI' }],
+      counts: { matched: 2, total: 2 },
+      page: { offset: 0, limit: 1, returned: 1, nextOffset: 1 },
+    });
+
+    const second = makeIO();
+    await runList({ full: true, offset: '1', limit: '1' }, second);
+    const secondOut = JSON.parse(second.out) as { terms: { canonical: string }[]; page: Record<string, unknown> };
+    expect(secondOut.terms.map((t) => t.canonical)).toEqual(['Mason Wyatt']);
+    expect(secondOut.page).toEqual({ offset: 1, limit: 1, returned: 1 });
+
+    const past = makeIO();
+    await runList({ full: true, offset: 5 }, past);
+    expect(JSON.parse(past.out)).toMatchObject({
+      terms: [],
+      page: { offset: 5, returned: 0 },
+      note: 'No term at offset 5: only 2 terms matched, at offsets 0 to 1.',
+    });
+
+    const array = makeIO();
+    await runList({ json: true, offset: 1 }, array);
+    expect((JSON.parse(array.out) as { canonical: string }[]).map((t) => t.canonical)).toEqual(['Mason Wyatt']);
+
+    const table = makeIO();
+    await runList({ limit: 1 }, table);
+    expect(table.out).toContain('Ashlr.AI');
+    expect(table.out).not.toContain('Mason Wyatt');
+    expect(table.out).toContain('terms 1 to 1 of 2; the next page is --offset 1');
+
+    await expect(runList({ offset: '-1' }, makeIO())).rejects.toThrow('--offset must be a whole number');
+    await expect(runList({ limit: '0' }, makeIO())).rejects.toThrow('--limit must be a positive integer');
+  });
 });
 
 describe('add / remove / path', () => {

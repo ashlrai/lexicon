@@ -462,6 +462,38 @@ describe('lexicon MCP server', () => {
     }
   });
 
+  // Catches: list_terms returned every term with no way to take a page of a
+  // large lexicon; omitted, offset and limit still return the whole list.
+  it('list_terms pages the matches with offset and limit, and returns them all by default', async () => {
+    const { client, close } = await connect();
+    try {
+      const parse = async (args: Record<string, unknown>) =>
+        JSON.parse(textOf(await client.callTool({ name: 'list_terms', arguments: args }))) as {
+          terms: Term[];
+          counts: { matched: number };
+          page?: Record<string, unknown>;
+          note?: string;
+        };
+      const whole = await parse({});
+      expect(whole.terms.map((t) => t.canonical)).toEqual(['Ashlr.AI', 'Kubernetes']);
+      expect(whole).not.toHaveProperty('page');
+      const first = await parse({ limit: 1 });
+      expect(first.terms.map((t) => t.canonical)).toEqual(['Ashlr.AI']);
+      expect(first.counts.matched).toBe(2);
+      expect(first.page).toEqual({ offset: 0, limit: 1, returned: 1, nextOffset: 1 });
+      const next = await parse({ offset: 1, limit: 1 });
+      expect(next.terms.map((t) => t.canonical)).toEqual(['Kubernetes']);
+      expect(next.page).toEqual({ offset: 1, limit: 1, returned: 1 });
+      const past = await parse({ offset: 2 });
+      expect(past.terms).toEqual([]);
+      expect(past.note).toBe('No term at offset 2: only 2 terms matched, at offsets 0 to 1.');
+      const bad = await client.callTool({ name: 'list_terms', arguments: { offset: -1 } });
+      expect(bad.isError).toBe(true);
+    } finally {
+      await close();
+    }
+  });
+
   it('list_terms filters case-insensitively over canonical and aliases', async () => {
     const { client, close } = await connect();
     try {

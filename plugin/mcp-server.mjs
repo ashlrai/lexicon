@@ -292,10 +292,10 @@ function mergeDefs(...defs) {
 function cloneDef(schema) {
   return mergeDefs(schema._zod.def);
 }
-function getElementAtPath(obj, path27) {
-  if (!path27)
+function getElementAtPath(obj, path28) {
+  if (!path28)
     return obj;
-  return path27.reduce((acc, key) => acc?.[key], obj);
+  return path28.reduce((acc, key) => acc?.[key], obj);
 }
 function promiseAllObject(promisesObj) {
   const keys = Object.keys(promisesObj);
@@ -554,11 +554,11 @@ function explicitlyAborted(x, startIndex = 0) {
   }
   return false;
 }
-function prefixIssues(path27, issues) {
+function prefixIssues(path28, issues) {
   return issues.map((iss) => {
     var _a3;
     (_a3 = iss).path ?? (_a3.path = []);
-    iss.path.unshift(path27);
+    iss.path.unshift(path28);
     return iss;
   });
 }
@@ -1091,16 +1091,16 @@ function flattenError(error62, mapper = (issue2) => issue2.message) {
 }
 function formatError(error62, mapper = (issue2) => issue2.message) {
   const fieldErrors = { _errors: [] };
-  const processError = (error63, path27 = []) => {
+  const processError = (error63, path28 = []) => {
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path27, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path28, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path27, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path28, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path27, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path28, ...issue2.path]);
       } else {
-        const fullpath = [...path27, ...issue2.path];
+        const fullpath = [...path28, ...issue2.path];
         if (fullpath.length === 0) {
           fieldErrors._errors.push(mapper(issue2));
         } else {
@@ -1139,17 +1139,17 @@ function formatError(error62, mapper = (issue2) => issue2.message) {
 }
 function treeifyError(error62, mapper = (issue2) => issue2.message) {
   const result = { errors: [] };
-  const processError = (error63, path27 = []) => {
+  const processError = (error63, path28 = []) => {
     var _a3;
     for (const issue2 of error63.issues) {
       if (issue2.code === "invalid_union" && issue2.errors.length) {
-        issue2.errors.map((issues) => processError({ issues }, [...path27, ...issue2.path]));
+        issue2.errors.map((issues) => processError({ issues }, [...path28, ...issue2.path]));
       } else if (issue2.code === "invalid_key") {
-        processError({ issues: issue2.issues }, [...path27, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path28, ...issue2.path]);
       } else if (issue2.code === "invalid_element") {
-        processError({ issues: issue2.issues }, [...path27, ...issue2.path]);
+        processError({ issues: issue2.issues }, [...path28, ...issue2.path]);
       } else {
-        const fullpath = [...path27, ...issue2.path];
+        const fullpath = [...path28, ...issue2.path];
         if (fullpath.length === 0) {
           result.errors.push(mapper(issue2));
           continue;
@@ -1188,8 +1188,8 @@ function treeifyError(error62, mapper = (issue2) => issue2.message) {
 }
 function toDotPath(_path) {
   const segs = [];
-  const path27 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
-  for (const seg of path27) {
+  const path28 = _path.map((seg) => typeof seg === "object" ? seg.key : seg);
+  for (const seg of path28) {
     if (typeof seg === "number")
       segs.push(`[${seg}]`);
     else if (typeof seg === "symbol")
@@ -1371,18 +1371,18 @@ var init_parse = __esm({
       return result.issues.length === 0;
     };
     _encode = (_Err) => {
-      const parse3 = _parse(_Err);
+      const parse4 = _parse(_Err);
       const fn = (schema, value, _ctx, _params) => {
         const ctx = _ctx ? { ..._ctx, direction: "backward" } : { direction: "backward" };
-        return parse3(schema, value, ctx, finalizeParams(fn, _params));
+        return parse4(schema, value, ctx, finalizeParams(fn, _params));
       };
       return fn;
     };
     encode = /* @__PURE__ */ _encode($ZodRealError);
     _decode = (_Err) => {
-      const parse3 = _parse(_Err);
+      const parse4 = _parse(_Err);
       const fn = (schema, value, _ctx, _params) => {
-        return parse3(schema, value, _ctx, finalizeParams(fn, _params));
+        return parse4(schema, value, _ctx, finalizeParams(fn, _params));
       };
       return fn;
     };
@@ -2307,7 +2307,7 @@ function capSize(inst, size) {
   if (!caps.length)
     return;
   const cap = Math.min(...caps.map((c) => c[0]));
-  const parse3 = inst._zod.parse;
+  const parse4 = inst._zod.parse;
   inst._zod.parse = (payload, ctx) => {
     const n = size(payload.value);
     if (n > cap && !ctx?.skipChecks && ctx?.direction !== "backward") {
@@ -2321,7 +2321,7 @@ function capSize(inst, size) {
         }
       }
     }
-    return parse3(payload, ctx);
+    return parse4(payload, ctx);
   };
 }
 function handleArrayResult(result, final, index) {
@@ -19221,13 +19221,13 @@ function resolveRef(ref, ctx) {
   if (!ref.startsWith("#")) {
     throw new Error("External $ref is not supported, only local refs (#/...) are allowed");
   }
-  const path27 = ref.slice(1).split("/").filter(Boolean);
-  if (path27.length === 0) {
+  const path28 = ref.slice(1).split("/").filter(Boolean);
+  if (path28.length === 0) {
     return ctx.rootSchema;
   }
   const defsKey = ctx.version === "draft-2020-12" ? "$defs" : "definitions";
-  if (path27[0] === defsKey) {
-    const key = path27[1] === void 0 ? void 0 : decodeJSONPointerSegment(path27[1]);
+  if (path28[0] === defsKey) {
+    const key = path28[1] === void 0 ? void 0 : decodeJSONPointerSegment(path28[1]);
     if (!key || !ctx.defs[key]) {
       throw new Error(`Reference not found: ${ref}`);
     }
@@ -20606,10 +20606,10 @@ var require_code = __commonJS({
     function interpolate(x) {
       return typeof x == "number" || typeof x == "boolean" || x === null ? x : safeStringify(Array.isArray(x) ? x.join(",") : x);
     }
-    function stringify(x) {
+    function stringify2(x) {
       return new _Code(safeStringify(x));
     }
-    exports.stringify = stringify;
+    exports.stringify = stringify2;
     function safeStringify(x) {
       return JSON.stringify(x).replace(/\u2028/g, "\\u2028").replace(/\u2029/g, "\\u2029");
     }
@@ -23707,8 +23707,8 @@ var require_utils = __commonJS({
       }
       return ind;
     }
-    function removeDotSegments(path27) {
-      let input2 = path27;
+    function removeDotSegments(path28) {
+      let input2 = path28;
       const output2 = [];
       let nextSlash = -1;
       let len = 0;
@@ -24117,8 +24117,8 @@ var require_schemes = __commonJS({
       }
       if (wsComponent.resourceName) {
         const queryIndex = wsComponent.resourceName.indexOf("?");
-        const path27 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
-        wsComponent.path = path27 && path27 !== "/" ? path27 : void 0;
+        const path28 = queryIndex === -1 ? wsComponent.resourceName : wsComponent.resourceName.slice(0, queryIndex);
+        wsComponent.path = path28 && path28 !== "/" ? path28 : void 0;
         wsComponent.query = queryIndex === -1 ? void 0 : wsComponent.resourceName.slice(queryIndex + 1);
         wsComponent.resourceName = void 0;
       }
@@ -24282,7 +24282,7 @@ var require_fast_uri = __commonJS({
         normalizeString(uri, options);
       } else if (typeof uri === "object") {
         uri = /** @type {T} */
-        parse3(serialize(uri, options), options);
+        parse4(serialize(uri, options), options);
       }
       return uri;
     }
@@ -24322,8 +24322,8 @@ var require_fast_uri = __commonJS({
     function resolveComponent(base, relative2, options, skipNormalization) {
       const target = {};
       if (!skipNormalization) {
-        base = parse3(serialize(base, options), options);
-        relative2 = parse3(serialize(relative2, options), options);
+        base = parse4(serialize(base, options), options);
+        relative2 = parse4(serialize(relative2, options), options);
       }
       options = options || {};
       if (!options.tolerant && relative2.scheme) {
@@ -24622,7 +24622,7 @@ var require_fast_uri = __commonJS({
       }
       return { parsed, malformedAuthorityOrPort, malformedPercentEncoding, malformedSchemeSpecific, malformedHost, malformedScheme };
     }
-    function parse3(uri, opts) {
+    function parse4(uri, opts) {
       return parseWithStatus(uri, opts).parsed;
     }
     function normalizeString(uri, opts) {
@@ -24659,7 +24659,7 @@ var require_fast_uri = __commonJS({
       resolveComponent,
       equal,
       serialize,
-      parse: parse3
+      parse: parse4
     };
     module.exports = fastUri;
     module.exports.default = fastUri;
@@ -27631,12 +27631,12 @@ var require_dist = __commonJS({
         throw new Error(`Unknown format "${name}"`);
       return f;
     };
-    function addFormats(ajv, list, fs22, exportName) {
+    function addFormats(ajv, list, fs23, exportName) {
       var _a3;
       var _b;
       (_a3 = (_b = ajv.opts.code).formats) !== null && _a3 !== void 0 ? _a3 : _b.formats = (0, codegen_1._)`require("ajv-formats/dist/formats").${exportName}`;
       for (const f of list)
-        ajv.addFormat(f, fs22[f]);
+        ajv.addFormat(f, fs23[f]);
     }
     module.exports = exports = formatsPlugin;
     Object.defineProperty(exports, "__esModule", { value: true });
@@ -27838,10 +27838,10 @@ function schemas() {
   built = { category, scope, source, term, settings, lexicon: buildLexicon(term, settings) };
   return built;
 }
-function formatPath(path27) {
-  if (path27.length === 0) return "(root)";
+function formatPath(path28) {
+  if (path28.length === 0) return "(root)";
   let out = "";
-  for (const seg of path27) {
+  for (const seg of path28) {
     if (typeof seg === "number") out += `[${seg}]`;
     else out += out.length === 0 ? String(seg) : `.${String(seg)}`;
   }
@@ -27988,17 +27988,17 @@ var require_visit = __commonJS({
     visit2.BREAK = BREAK;
     visit2.SKIP = SKIP;
     visit2.REMOVE = REMOVE;
-    function visit_(key, node2, visitor, path27) {
-      const ctrl = callVisitor(key, node2, visitor, path27);
+    function visit_(key, node2, visitor, path28) {
+      const ctrl = callVisitor(key, node2, visitor, path28);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path27, ctrl);
-        return visit_(key, ctrl, visitor, path27);
+        replaceNode(key, path28, ctrl);
+        return visit_(key, ctrl, visitor, path28);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path27 = Object.freeze(path27.concat(node2));
+          path28 = Object.freeze(path28.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = visit_(i, node2.items[i], visitor, path27);
+            const ci = visit_(i, node2.items[i], visitor, path28);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -28009,13 +28009,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path27 = Object.freeze(path27.concat(node2));
-          const ck = visit_("key", node2.key, visitor, path27);
+          path28 = Object.freeze(path28.concat(node2));
+          const ck = visit_("key", node2.key, visitor, path28);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = visit_("value", node2.value, visitor, path27);
+          const cv = visit_("value", node2.value, visitor, path28);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -28036,17 +28036,17 @@ var require_visit = __commonJS({
     visitAsync.BREAK = BREAK;
     visitAsync.SKIP = SKIP;
     visitAsync.REMOVE = REMOVE;
-    async function visitAsync_(key, node2, visitor, path27) {
-      const ctrl = await callVisitor(key, node2, visitor, path27);
+    async function visitAsync_(key, node2, visitor, path28) {
+      const ctrl = await callVisitor(key, node2, visitor, path28);
       if (identity.isNode(ctrl) || identity.isPair(ctrl)) {
-        replaceNode(key, path27, ctrl);
-        return visitAsync_(key, ctrl, visitor, path27);
+        replaceNode(key, path28, ctrl);
+        return visitAsync_(key, ctrl, visitor, path28);
       }
       if (typeof ctrl !== "symbol") {
         if (identity.isCollection(node2)) {
-          path27 = Object.freeze(path27.concat(node2));
+          path28 = Object.freeze(path28.concat(node2));
           for (let i = 0; i < node2.items.length; ++i) {
-            const ci = await visitAsync_(i, node2.items[i], visitor, path27);
+            const ci = await visitAsync_(i, node2.items[i], visitor, path28);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -28057,13 +28057,13 @@ var require_visit = __commonJS({
             }
           }
         } else if (identity.isPair(node2)) {
-          path27 = Object.freeze(path27.concat(node2));
-          const ck = await visitAsync_("key", node2.key, visitor, path27);
+          path28 = Object.freeze(path28.concat(node2));
+          const ck = await visitAsync_("key", node2.key, visitor, path28);
           if (ck === BREAK)
             return BREAK;
           else if (ck === REMOVE)
             node2.key = null;
-          const cv = await visitAsync_("value", node2.value, visitor, path27);
+          const cv = await visitAsync_("value", node2.value, visitor, path28);
           if (cv === BREAK)
             return BREAK;
           else if (cv === REMOVE)
@@ -28090,23 +28090,23 @@ var require_visit = __commonJS({
       }
       return visitor;
     }
-    function callVisitor(key, node2, visitor, path27) {
+    function callVisitor(key, node2, visitor, path28) {
       if (typeof visitor === "function")
-        return visitor(key, node2, path27);
+        return visitor(key, node2, path28);
       if (identity.isMap(node2))
-        return visitor.Map?.(key, node2, path27);
+        return visitor.Map?.(key, node2, path28);
       if (identity.isSeq(node2))
-        return visitor.Seq?.(key, node2, path27);
+        return visitor.Seq?.(key, node2, path28);
       if (identity.isPair(node2))
-        return visitor.Pair?.(key, node2, path27);
+        return visitor.Pair?.(key, node2, path28);
       if (identity.isScalar(node2))
-        return visitor.Scalar?.(key, node2, path27);
+        return visitor.Scalar?.(key, node2, path28);
       if (identity.isAlias(node2))
-        return visitor.Alias?.(key, node2, path27);
+        return visitor.Alias?.(key, node2, path28);
       return void 0;
     }
-    function replaceNode(key, path27, node2) {
-      const parent = path27[path27.length - 1];
+    function replaceNode(key, path28, node2) {
+      const parent = path28[path28.length - 1];
       if (identity.isCollection(parent)) {
         parent.items[key] = node2;
       } else if (identity.isPair(parent)) {
@@ -28718,10 +28718,10 @@ var require_Collection = __commonJS({
     var createNode = require_createNode();
     var identity = require_identity();
     var Node = require_Node();
-    function collectionFromPath(schema, path27, value) {
+    function collectionFromPath(schema, path28, value) {
       let v = value;
-      for (let i = path27.length - 1; i >= 0; --i) {
-        const k = path27[i];
+      for (let i = path28.length - 1; i >= 0; --i) {
+        const k = path28[i];
         if (typeof k === "number" && Number.isInteger(k) && k >= 0) {
           const a = [];
           a[k] = v;
@@ -28740,7 +28740,7 @@ var require_Collection = __commonJS({
         sourceObjects: /* @__PURE__ */ new Map()
       });
     }
-    var isEmptyPath = (path27) => path27 == null || typeof path27 === "object" && !!path27[Symbol.iterator]().next().done;
+    var isEmptyPath = (path28) => path28 == null || typeof path28 === "object" && !!path28[Symbol.iterator]().next().done;
     var Collection = class extends Node.NodeBase {
       constructor(type, schema) {
         super(type);
@@ -28770,11 +28770,11 @@ var require_Collection = __commonJS({
        * be a Pair instance or a `{ key, value }` object, which may not have a key
        * that already exists in the map.
        */
-      addIn(path27, value) {
-        if (isEmptyPath(path27))
+      addIn(path28, value) {
+        if (isEmptyPath(path28))
           this.add(value);
         else {
-          const [key, ...rest] = path27;
+          const [key, ...rest] = path28;
           const node2 = this.get(key, true);
           if (identity.isCollection(node2))
             node2.addIn(rest, value);
@@ -28788,8 +28788,8 @@ var require_Collection = __commonJS({
        * Removes a value from the collection.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path27) {
-        const [key, ...rest] = path27;
+      deleteIn(path28) {
+        const [key, ...rest] = path28;
         if (rest.length === 0)
           return this.delete(key);
         const node2 = this.get(key, true);
@@ -28803,8 +28803,8 @@ var require_Collection = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path27, keepScalar) {
-        const [key, ...rest] = path27;
+      getIn(path28, keepScalar) {
+        const [key, ...rest] = path28;
         const node2 = this.get(key, true);
         if (rest.length === 0)
           return !keepScalar && identity.isScalar(node2) ? node2.value : node2;
@@ -28822,8 +28822,8 @@ var require_Collection = __commonJS({
       /**
        * Checks if the collection includes a value with the key `key`.
        */
-      hasIn(path27) {
-        const [key, ...rest] = path27;
+      hasIn(path28) {
+        const [key, ...rest] = path28;
         if (rest.length === 0)
           return this.has(key);
         const node2 = this.get(key, true);
@@ -28833,8 +28833,8 @@ var require_Collection = __commonJS({
        * Sets a value in this collection. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path27, value) {
-        const [key, ...rest] = path27;
+      setIn(path28, value) {
+        const [key, ...rest] = path28;
         if (rest.length === 0) {
           this.set(key, value);
         } else {
@@ -29381,7 +29381,7 @@ var require_stringify = __commonJS({
         props.push(doc.directives.tagString(tag));
       return props.join(" ");
     }
-    function stringify(item, ctx, onComment, onChompKeep) {
+    function stringify2(item, ctx, onComment, onChompKeep) {
       if (identity.isPair(item))
         return item.toString(ctx, onComment, onChompKeep);
       if (identity.isAlias(item)) {
@@ -29410,7 +29410,7 @@ var require_stringify = __commonJS({
 ${ctx.indent}${str}`;
     }
     exports.createStringifyContext = createStringifyContext;
-    exports.stringify = stringify;
+    exports.stringify = stringify2;
   }
 });
 
@@ -29420,7 +29420,7 @@ var require_stringifyPair = __commonJS({
     "use strict";
     var identity = require_identity();
     var Scalar = require_Scalar();
-    var stringify = require_stringify();
+    var stringify2 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyPair({ key, value }, ctx, onComment, onChompKeep) {
       const { allNullValues, doc, indent: indent2, indentStep, options: { commentString, indentSeq, simpleKeys } } = ctx;
@@ -29442,7 +29442,7 @@ var require_stringifyPair = __commonJS({
       });
       let keyCommentDone = false;
       let chompKeep = false;
-      let str = stringify.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
+      let str = stringify2.stringify(key, ctx, () => keyCommentDone = true, () => chompKeep = true);
       if (!explicitKey && !ctx.inFlow && str.length > 1024) {
         if (simpleKeys)
           throw new Error("With simple keys, single line scalar must not span more than 1024 characters");
@@ -29494,7 +29494,7 @@ ${indent2}:`;
         ctx.indent = ctx.indent.substring(2);
       }
       let valueCommentDone = false;
-      const valueStr = stringify.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
+      const valueStr = stringify2.stringify(value, ctx, () => valueCommentDone = true, () => chompKeep = true);
       let ws = " ";
       if (keyComment || vsb || vcb) {
         ws = vsb ? "\n" : "";
@@ -29635,7 +29635,7 @@ var require_addPairToJSMap = __commonJS({
     "use strict";
     var log2 = require_log();
     var merge2 = require_merge();
-    var stringify = require_stringify();
+    var stringify2 = require_stringify();
     var identity = require_identity();
     var toJS = require_toJS();
     function addPairToJSMap(ctx, map2, { key, value }) {
@@ -29671,7 +29671,7 @@ var require_addPairToJSMap = __commonJS({
       if (typeof jsKey !== "object")
         return String(jsKey);
       if (identity.isNode(key) && ctx?.doc) {
-        const strCtx = stringify.createStringifyContext(ctx.doc, {});
+        const strCtx = stringify2.createStringifyContext(ctx.doc, {});
         strCtx.anchors = /* @__PURE__ */ new Set();
         for (const node2 of ctx.anchors.keys())
           strCtx.anchors.add(node2.anchor);
@@ -29738,12 +29738,12 @@ var require_stringifyCollection = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyCollection.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify = require_stringify();
+    var stringify2 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyCollection(collection, ctx, options) {
       const flow = ctx.inFlow ?? collection.flow;
-      const stringify2 = flow ? stringifyFlowCollection : stringifyBlockCollection;
-      return stringify2(collection, ctx, options);
+      const stringify3 = flow ? stringifyFlowCollection : stringifyBlockCollection;
+      return stringify3(collection, ctx, options);
     }
     function stringifyBlockCollection({ comment, items }, ctx, { blockItemPrefix, flowChars, itemIndent, onChompKeep, onComment }) {
       const { indent: indent2, options: { commentString } } = ctx;
@@ -29768,7 +29768,7 @@ var require_stringifyCollection = __commonJS({
           }
         }
         chompKeep = false;
-        let str2 = stringify.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
+        let str2 = stringify2.stringify(item, itemCtx, () => comment2 = null, () => chompKeep = true);
         if (comment2)
           str2 += stringifyComment.lineComment(str2, itemIndent, commentString(comment2));
         if (chompKeep && comment2)
@@ -29835,7 +29835,7 @@ ${indent2}${line2}` : "\n";
         }
         if (comment)
           reqNewline = true;
-        let str = stringify.stringify(item, itemCtx, () => comment = null);
+        let str = stringify2.stringify(item, itemCtx, () => comment = null);
         reqNewline || (reqNewline = lines.length > linesAtValue || str.includes("\n"));
         if (i < items.length - 1) {
           str += ",";
@@ -31196,7 +31196,7 @@ var require_stringifyDocument = __commonJS({
   "node_modules/yaml/dist/stringify/stringifyDocument.js"(exports) {
     "use strict";
     var identity = require_identity();
-    var stringify = require_stringify();
+    var stringify2 = require_stringify();
     var stringifyComment = require_stringifyComment();
     function stringifyDocument(doc, options) {
       const lines = [];
@@ -31211,7 +31211,7 @@ var require_stringifyDocument = __commonJS({
       }
       if (hasDirectives)
         lines.push("---");
-      const ctx = stringify.createStringifyContext(doc, options);
+      const ctx = stringify2.createStringifyContext(doc, options);
       const { commentString } = ctx.options;
       if (doc.commentBefore) {
         if (lines.length !== 1)
@@ -31233,7 +31233,7 @@ var require_stringifyDocument = __commonJS({
           contentComment = doc.contents.comment;
         }
         const onChompKeep = contentComment ? void 0 : () => chompKeep = true;
-        let body = stringify.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
+        let body = stringify2.stringify(doc.contents, ctx, () => contentComment = null, onChompKeep);
         if (contentComment)
           body += stringifyComment.lineComment(body, "", commentString(contentComment));
         if ((body[0] === "|" || body[0] === ">") && lines[lines.length - 1] === "---") {
@@ -31241,7 +31241,7 @@ var require_stringifyDocument = __commonJS({
         } else
           lines.push(body);
       } else {
-        lines.push(stringify.stringify(doc.contents, ctx));
+        lines.push(stringify2.stringify(doc.contents, ctx));
       }
       if (doc.directives?.docEnd) {
         if (doc.comment) {
@@ -31349,9 +31349,9 @@ var require_Document = __commonJS({
           this.contents.add(value);
       }
       /** Adds a value to the document. */
-      addIn(path27, value) {
+      addIn(path28, value) {
         if (assertCollection(this.contents))
-          this.contents.addIn(path27, value);
+          this.contents.addIn(path28, value);
       }
       /**
        * Create a new `Alias` node, ensuring that the target `node` has the required anchor.
@@ -31426,14 +31426,14 @@ var require_Document = __commonJS({
        * Removes a value from the document.
        * @returns `true` if the item was found and removed.
        */
-      deleteIn(path27) {
-        if (Collection.isEmptyPath(path27)) {
+      deleteIn(path28) {
+        if (Collection.isEmptyPath(path28)) {
           if (this.contents == null)
             return false;
           this.contents = null;
           return true;
         }
-        return assertCollection(this.contents) ? this.contents.deleteIn(path27) : false;
+        return assertCollection(this.contents) ? this.contents.deleteIn(path28) : false;
       }
       /**
        * Returns item at `key`, or `undefined` if not found. By default unwraps
@@ -31448,10 +31448,10 @@ var require_Document = __commonJS({
        * scalar values from their surrounding node; to disable set `keepScalar` to
        * `true` (collections are always returned intact).
        */
-      getIn(path27, keepScalar) {
-        if (Collection.isEmptyPath(path27))
+      getIn(path28, keepScalar) {
+        if (Collection.isEmptyPath(path28))
           return !keepScalar && identity.isScalar(this.contents) ? this.contents.value : this.contents;
-        return identity.isCollection(this.contents) ? this.contents.getIn(path27, keepScalar) : void 0;
+        return identity.isCollection(this.contents) ? this.contents.getIn(path28, keepScalar) : void 0;
       }
       /**
        * Checks if the document includes a value with the key `key`.
@@ -31462,10 +31462,10 @@ var require_Document = __commonJS({
       /**
        * Checks if the document includes a value at `path`.
        */
-      hasIn(path27) {
-        if (Collection.isEmptyPath(path27))
+      hasIn(path28) {
+        if (Collection.isEmptyPath(path28))
           return this.contents !== void 0;
-        return identity.isCollection(this.contents) ? this.contents.hasIn(path27) : false;
+        return identity.isCollection(this.contents) ? this.contents.hasIn(path28) : false;
       }
       /**
        * Sets a value in this document. For `!!set`, `value` needs to be a
@@ -31482,13 +31482,13 @@ var require_Document = __commonJS({
        * Sets a value in this document. For `!!set`, `value` needs to be a
        * boolean to add/remove the item from the set.
        */
-      setIn(path27, value) {
-        if (Collection.isEmptyPath(path27)) {
+      setIn(path28, value) {
+        if (Collection.isEmptyPath(path28)) {
           this.contents = value;
         } else if (this.contents == null) {
-          this.contents = Collection.collectionFromPath(this.schema, Array.from(path27), value);
+          this.contents = Collection.collectionFromPath(this.schema, Array.from(path28), value);
         } else if (assertCollection(this.contents)) {
-          this.contents.setIn(path27, value);
+          this.contents.setIn(path28, value);
         }
       }
       /**
@@ -33377,7 +33377,7 @@ var require_cst_scalar = __commonJS({
 var require_cst_stringify = __commonJS({
   "node_modules/yaml/dist/parse/cst-stringify.js"(exports) {
     "use strict";
-    var stringify = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
+    var stringify2 = (cst) => "type" in cst ? stringifyToken(cst) : stringifyItem(cst);
     function stringifyToken(token) {
       switch (token.type) {
         case "block-scalar": {
@@ -33430,7 +33430,7 @@ var require_cst_stringify = __commonJS({
         res += stringifyToken(value);
       return res;
     }
-    exports.stringify = stringify;
+    exports.stringify = stringify2;
   }
 });
 
@@ -33449,9 +33449,9 @@ var require_cst_visit = __commonJS({
     visit2.BREAK = BREAK;
     visit2.SKIP = SKIP;
     visit2.REMOVE = REMOVE;
-    visit2.itemAtPath = (cst, path27) => {
+    visit2.itemAtPath = (cst, path28) => {
       let item = cst;
-      for (const [field, index] of path27) {
+      for (const [field, index] of path28) {
         const tok = item?.[field];
         if (tok && "items" in tok) {
           item = tok.items[index];
@@ -33460,23 +33460,23 @@ var require_cst_visit = __commonJS({
       }
       return item;
     };
-    visit2.parentCollection = (cst, path27) => {
-      const parent = visit2.itemAtPath(cst, path27.slice(0, -1));
-      const field = path27[path27.length - 1][0];
+    visit2.parentCollection = (cst, path28) => {
+      const parent = visit2.itemAtPath(cst, path28.slice(0, -1));
+      const field = path28[path28.length - 1][0];
       const coll = parent?.[field];
       if (coll && "items" in coll)
         return coll;
       throw new Error("Parent collection not found");
     };
-    function _visit(path27, item, visitor) {
-      let ctrl = visitor(item, path27);
+    function _visit(path28, item, visitor) {
+      let ctrl = visitor(item, path28);
       if (typeof ctrl === "symbol")
         return ctrl;
       for (const field of ["key", "value"]) {
         const token = item[field];
         if (token && "items" in token) {
           for (let i = 0; i < token.items.length; ++i) {
-            const ci = _visit(Object.freeze(path27.concat([[field, i]])), token.items[i], visitor);
+            const ci = _visit(Object.freeze(path28.concat([[field, i]])), token.items[i], visitor);
             if (typeof ci === "number")
               i = ci - 1;
             else if (ci === BREAK)
@@ -33487,10 +33487,10 @@ var require_cst_visit = __commonJS({
             }
           }
           if (typeof ctrl === "function" && field === "key")
-            ctrl = ctrl(item, path27);
+            ctrl = ctrl(item, path28);
         }
       }
-      return typeof ctrl === "function" ? ctrl(item, path27) : ctrl;
+      return typeof ctrl === "function" ? ctrl(item, path28) : ctrl;
     }
     exports.visit = visit2;
   }
@@ -34792,14 +34792,14 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs22 = this.flowScalar(this.type);
+              const fs23 = this.flowScalar(this.type);
               if (atNextItem || it.value) {
-                map2.items.push({ start, key: fs22, sep: [] });
+                map2.items.push({ start, key: fs23, sep: [] });
                 this.onKeyLine = true;
               } else if (it.sep) {
-                this.stack.push(fs22);
+                this.stack.push(fs23);
               } else {
-                Object.assign(it, { key: fs22, sep: [] });
+                Object.assign(it, { key: fs23, sep: [] });
                 this.onKeyLine = true;
               }
               return;
@@ -34927,13 +34927,13 @@ var require_parser = __commonJS({
             case "scalar":
             case "single-quoted-scalar":
             case "double-quoted-scalar": {
-              const fs22 = this.flowScalar(this.type);
+              const fs23 = this.flowScalar(this.type);
               if (!it || it.value)
-                fc.items.push({ start: [], key: fs22, sep: [] });
+                fc.items.push({ start: [], key: fs23, sep: [] });
               else if (it.sep)
-                this.stack.push(fs22);
+                this.stack.push(fs23);
               else
-                Object.assign(it, { key: fs22, sep: [] });
+                Object.assign(it, { key: fs23, sep: [] });
               return;
             }
             case "flow-map-end":
@@ -35141,7 +35141,7 @@ var require_public_api = __commonJS({
       }
       return doc;
     }
-    function parse3(src, reviver, options) {
+    function parse4(src, reviver, options) {
       let _reviver = void 0;
       if (typeof reviver === "function") {
         _reviver = reviver;
@@ -35160,7 +35160,7 @@ var require_public_api = __commonJS({
       }
       return doc.toJS(Object.assign({ reviver: _reviver }, options));
     }
-    function stringify(value, replacer, options) {
+    function stringify2(value, replacer, options) {
       let _replacer = null;
       if (typeof replacer === "function" || Array.isArray(replacer)) {
         _replacer = replacer;
@@ -35182,10 +35182,10 @@ var require_public_api = __commonJS({
         return value.toString(options);
       return new Document.Document(value, _replacer, options).toString(options);
     }
-    exports.parse = parse3;
+    exports.parse = parse4;
     exports.parseAllDocuments = parseAllDocuments;
     exports.parseDocument = parseDocument3;
-    exports.stringify = stringify;
+    exports.stringify = stringify2;
   }
 });
 
@@ -41690,8 +41690,8 @@ var require_node_crypto = __commonJS({
 
 // src/core/parsed-hash.ts
 async function sha256OfBytes(bytes) {
-  const { createHash: createHash5 } = await Promise.resolve().then(() => __toESM(require_node_crypto()));
-  return createHash5("sha256").update(bytes).digest("hex");
+  const { createHash: createHash6 } = await Promise.resolve().then(() => __toESM(require_node_crypto()));
+  return createHash6("sha256").update(bytes).digest("hex");
 }
 function rememberParsedBytes(file2, bytes) {
   entries.set(file2, { bytes });
@@ -42099,8 +42099,8 @@ async function canonicalPath(filePath) {
 async function hashFile(filePath) {
   try {
     const { bytes } = await readBoundedRegularFile(filePath, MAX_LEXICON_BYTES);
-    const { createHash: createHash5 } = await Promise.resolve().then(() => __toESM(require_node_crypto()));
-    return createHash5("sha256").update(bytes).digest("hex");
+    const { createHash: createHash6 } = await Promise.resolve().then(() => __toESM(require_node_crypto()));
+    return createHash6("sha256").update(bytes).digest("hex");
   } catch {
     return void 0;
   }
@@ -42738,6 +42738,25 @@ function indexHeadProject(head) {
     return void 0;
   }
 }
+async function indexCacheProblem(globalPath) {
+  const cachePath = import_node_path4.default.join(import_node_path4.default.dirname(globalPath), INDEX_CACHE_FILE_NAME);
+  let handle;
+  try {
+    const st = await import_node_fs5.promises.stat(cachePath);
+    if (!st.isFile()) return "is not a file";
+    handle = await import_node_fs5.promises.open(cachePath, "r");
+    const buf = Buffer.alloc(64);
+    const { bytesRead } = await handle.read(buf, 0, buf.length, 0);
+    if (bytesRead === 0) return void 0;
+    return /^\{"version":\d+,/.test(buf.toString("utf8", 0, bytesRead)) ? void 0 : "does not start the way an index cache does";
+  } catch (e) {
+    const code = e.code;
+    if (code === "ENOENT") return void 0;
+    return `cannot be read (${code ?? errorMessage(e)})`;
+  } finally {
+    await handle?.close().catch(() => void 0);
+  }
+}
 async function refreshIndexCache(written, opts = {}) {
   try {
     const globalPath = written.scope === "global" ? written.path : resolvePaths(opts).global;
@@ -42957,6 +42976,27 @@ async function readHitsRegistry(opts, forWrite = false) {
   const global = isPlainObject3(raw) ? raw.global : void 0;
   if (isPlainObject3(global)) out.global = validCounts(global);
   return out;
+}
+async function hitsRegistryProblem(opts = {}) {
+  let text;
+  try {
+    text = await import_node_fs5.promises.readFile(getHitsPath(opts), "utf8");
+  } catch (e) {
+    const code = e.code;
+    if (code === "ENOENT") return void 0;
+    return `cannot be read (${code ?? errorMessage(e)})`;
+  }
+  if (text.trim() === "") return void 0;
+  let raw;
+  try {
+    raw = JSON.parse(text);
+  } catch (e) {
+    return `is not valid JSON (${errorMessage(e)})`;
+  }
+  if (!isPlainObject3(raw)) return "is not a JSON object";
+  if (raw.projects !== void 0 && !isPlainObject3(raw.projects)) return '"projects" is not an object';
+  if (raw.global !== void 0 && !isPlainObject3(raw.global)) return '"global" is not an object';
+  return void 0;
 }
 function isPlainObject3(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -45751,28 +45791,28 @@ function packAlreadyInstalledNote(name, result, show = (s) => s) {
   return `${show(name)} is already installed in ${show(result.path)} (${terms} term${terms === 1 ? "" : "s"}, ${aliases} ${aliases === 1 ? "alias" : "aliases"}); nothing was added`;
 }
 function findPackageRoot(from = import.meta.url) {
-  let dir = from.startsWith("file:") ? import_node_path8.default.dirname((0, import_node_url.fileURLToPath)(from)) : import_node_path8.default.resolve(from);
+  let dir = from.startsWith("file:") ? import_node_path9.default.dirname((0, import_node_url.fileURLToPath)(from)) : import_node_path9.default.resolve(from);
   for (; ; ) {
     try {
-      const parsed = JSON.parse((0, import_node_fs9.readFileSync)(import_node_path8.default.join(dir, "package.json"), "utf8"));
+      const parsed = JSON.parse((0, import_node_fs10.readFileSync)(import_node_path9.default.join(dir, "package.json"), "utf8"));
       if (isRecord(parsed) && parsed.name === PACKAGE_NAME) return dir;
     } catch {
     }
-    const parent = import_node_path8.default.dirname(dir);
+    const parent = import_node_path9.default.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
 }
 function packsDir(opts = {}) {
-  if (opts.dir) return import_node_path8.default.resolve(opts.dir);
+  if (opts.dir) return import_node_path9.default.resolve(opts.dir);
   const root = findPackageRoot();
   if (!root) throw new Error(`could not locate the ${PACKAGE_NAME} package root (no package.json above ${(0, import_node_url.fileURLToPath)(import.meta.url)})`);
-  return import_node_path8.default.join(root, PACKS_DIR_NAME);
+  return import_node_path9.default.join(root, PACKS_DIR_NAME);
 }
 async function packNames(dir) {
   let entries2;
   try {
-    entries2 = await import_node_fs9.promises.readdir(dir);
+    entries2 = await import_node_fs10.promises.readdir(dir);
   } catch (err) {
     if (isEnoent(err)) return [];
     throw err;
@@ -45815,11 +45855,11 @@ ${lines.join("\n")}`);
   };
 }
 async function loadPackFile(file2, expectedName) {
-  const name = expectedName ?? import_node_path8.default.basename(file2, ".yaml");
+  const name = expectedName ?? import_node_path9.default.basename(file2, ".yaml");
   if (!PACK_NAME_RE.test(name)) throw new PackNotFoundError(name, []);
   let text;
   try {
-    text = await import_node_fs9.promises.readFile(file2, "utf8");
+    text = await import_node_fs10.promises.readFile(file2, "utf8");
   } catch (err) {
     if (isEnoent(err)) throw new PackNotFoundError(name, []);
     throw err;
@@ -45829,7 +45869,7 @@ async function loadPackFile(file2, expectedName) {
 function parsePackText(text, file2, expectedName) {
   let raw;
   try {
-    raw = (0, import_yaml7.parse)(text, { prettyErrors: false });
+    raw = (0, import_yaml8.parse)(text, { prettyErrors: false });
   } catch (err) {
     throw new Error(`Invalid pack at ${file2}: ${errorMessage(err)}`);
   }
@@ -45838,7 +45878,7 @@ function parsePackText(text, file2, expectedName) {
 async function loadPack(name, opts = {}) {
   const dir = packsDir(opts);
   if (!PACK_NAME_RE.test(name)) throw new PackNotFoundError(name, await packNames(dir));
-  const file2 = import_node_path8.default.join(dir, `${name}.yaml`);
+  const file2 = import_node_path9.default.join(dir, `${name}.yaml`);
   try {
     return await loadPackFile(file2, name);
   } catch (err) {
@@ -45884,7 +45924,7 @@ async function writePacksSetting(file2, packs, opts, leaveUntrusted = false) {
 }
 async function readTextIfAny(file2) {
   try {
-    return await import_node_fs9.promises.readFile(file2, "utf8");
+    return await import_node_fs10.promises.readFile(file2, "utf8");
   } catch (err) {
     if (isEnoent(err)) return void 0;
     throw err;
@@ -45915,13 +45955,13 @@ async function installLoadedPack(pack, recordAs, opts = {}) {
 async function installPack(name, opts = {}) {
   return installLoadedPack(await loadPack(name, opts), name, opts);
 }
-var import_node_fs9, import_node_path8, import_node_url, import_yaml7, PACKS_DIR_NAME, PACK_NAME_RE, DEFAULT_PACKS, PackNotFoundError, PACKAGE_NAME, PackFileSchema;
+var import_node_fs10, import_node_path9, import_node_url, import_yaml8, PACKS_DIR_NAME, PACK_NAME_RE, DEFAULT_PACKS, PackNotFoundError, PACKAGE_NAME, PackFileSchema;
 var init_packs = __esm({
   "src/core/packs.ts"() {
-    import_node_fs9 = __toESM(require_node_fs());
-    import_node_path8 = __toESM(require_node_path());
+    import_node_fs10 = __toESM(require_node_fs());
+    import_node_path9 = __toESM(require_node_path());
     import_node_url = __toESM(require_node_url());
-    import_yaml7 = __toESM(require_dist2());
+    import_yaml8 = __toESM(require_dist2());
     init_zod();
     init_schema();
     init_store();
@@ -46109,7 +46149,7 @@ function resolvedDeps(deps) {
 function parseIndexYaml(text, source) {
   let raw;
   try {
-    raw = (0, import_yaml8.parse)(text, { prettyErrors: false });
+    raw = (0, import_yaml9.parse)(text, { prettyErrors: false });
   } catch (err) {
     throw new Error(`invalid registry index at ${sourceLabel(source)}: ${errorMessage(err)}`);
   }
@@ -46139,7 +46179,7 @@ async function loadRegistryIndex(source, deps = {}) {
     return { index: parseIndexYaml(text2, trimmed), base };
   }
   const file2 = trimmed.startsWith("file://") ? trimmed.slice("file://".length) : trimmed;
-  const abs = import_node_path9.default.resolve(file2);
+  const abs = import_node_path10.default.resolve(file2);
   let text;
   try {
     text = (await readLocalRegistryFile(abs, "index")).toString("utf8");
@@ -46147,12 +46187,12 @@ async function loadRegistryIndex(source, deps = {}) {
     if (isEnoent(err)) throw new Error(`registry index not found: ${abs}`);
     throw err;
   }
-  return { index: parseIndexYaml(text, abs), base: import_node_path9.default.dirname(abs) + import_node_path9.default.sep };
+  return { index: parseIndexYaml(text, abs), base: import_node_path10.default.dirname(abs) + import_node_path10.default.sep };
 }
 function resolvePackUrl(entry, base) {
   if (/^https?:\/\//i.test(entry.url)) return entry.url;
   if (/^https?:\/\//i.test(base)) {
-    if (import_node_path9.default.isAbsolute(entry.url) || import_node_path9.default.win32.isAbsolute(entry.url) || /^[a-z][a-z0-9+.-]*:/i.test(entry.url)) {
+    if (import_node_path10.default.isAbsolute(entry.url) || import_node_path10.default.win32.isAbsolute(entry.url) || /^[a-z][a-z0-9+.-]*:/i.test(entry.url)) {
       throw new Error(
         `registry entry ${entry.ref} names a local file or a non-http URL; a remote index may only name https:// URLs or paths relative to itself (refusing to install)`
       );
@@ -46160,11 +46200,11 @@ function resolvePackUrl(entry, base) {
     return base + entry.url.replace(/^\.\//, "");
   }
   if (entry.url.startsWith("file://")) return entry.url.slice("file://".length);
-  if (import_node_path9.default.isAbsolute(entry.url)) return entry.url;
-  return import_node_path9.default.resolve(base, entry.url);
+  if (import_node_path10.default.isAbsolute(entry.url)) return entry.url;
+  return import_node_path10.default.resolve(base, entry.url);
 }
 function sha256Hex(data) {
-  return (0, import_node_crypto2.createHash)("sha256").update(data).digest("hex");
+  return (0, import_node_crypto3.createHash)("sha256").update(data).digest("hex");
 }
 function verifyPackChecksum(data, expected, ref) {
   const actual = sha256Hex(data);
@@ -46197,29 +46237,29 @@ function registryIdentity(opts) {
   const paths = resolvePaths(opts);
   const file2 = opts.scope === "project" ? paths.project ?? defaultProjectPath(opts.cwd) : paths.global;
   try {
-    return import_node_fs10.realpathSync.native(file2);
+    return import_node_fs11.realpathSync.native(file2);
   } catch {
     try {
-      return import_node_path9.default.join(import_node_fs10.realpathSync.native(import_node_path9.default.dirname(file2)), import_node_path9.default.basename(file2));
+      return import_node_path10.default.join(import_node_fs11.realpathSync.native(import_node_path10.default.dirname(file2)), import_node_path10.default.basename(file2));
     } catch {
-      return import_node_path9.default.resolve(file2);
+      return import_node_path10.default.resolve(file2);
     }
   }
 }
 function registryDir(opts = {}) {
-  const base = import_node_path9.default.join(import_node_path9.default.dirname(resolvePaths(opts).global), "registry");
-  return opts.scope === "project" ? import_node_path9.default.join(base, "projects", sha256Hex(registryIdentity(opts))) : base;
+  const base = import_node_path10.default.join(import_node_path10.default.dirname(resolvePaths(opts).global), "registry");
+  return opts.scope === "project" ? import_node_path10.default.join(base, "projects", sha256Hex(registryIdentity(opts))) : base;
 }
 function stateFile(opts = {}) {
-  return import_node_path9.default.join(registryDir(opts), "registry.json");
+  return import_node_path10.default.join(registryDir(opts), "registry.json");
 }
 function cachedPackPath(ref, opts = {}) {
   const { author, name } = parseRegistryRef(ref);
-  return import_node_path9.default.join(registryDir(opts), "packs", author, `${name}.yaml`);
+  return import_node_path10.default.join(registryDir(opts), "packs", author, `${name}.yaml`);
 }
 async function readRegistryState(opts = {}) {
   try {
-    const raw = await import_node_fs10.promises.readFile(stateFile(opts), "utf8");
+    const raw = await import_node_fs11.promises.readFile(stateFile(opts), "utf8");
     const parsed = JSON.parse(raw);
     if (typeof parsed === "object" && parsed !== null && !Array.isArray(parsed)) {
       const identity = parsed;
@@ -46242,7 +46282,7 @@ async function readRegistryState(opts = {}) {
   }
 }
 async function writeRegistryState(state, opts = {}) {
-  await import_node_fs10.promises.mkdir(registryDir(opts), { recursive: true });
+  await import_node_fs11.promises.mkdir(registryDir(opts), { recursive: true });
   await writeFileAtomic(stateFile(opts), `${JSON.stringify({ ...state, scope: opts.scope ?? "global", target: registryIdentity(opts) }, null, 2)}
 `, { mode: 384 });
 }
@@ -46260,7 +46300,7 @@ function canonicalRegistrySource(source) {
     }
   }
   const file2 = s.startsWith("file://") ? s.slice("file://".length) : s;
-  return import_node_path9.default.isAbsolute(file2) ? import_node_path9.default.resolve(file2) : void 0;
+  return import_node_path10.default.isAbsolute(file2) ? import_node_path10.default.resolve(file2) : void 0;
 }
 async function userRegistrySources(opts = {}) {
   const out = /* @__PURE__ */ new Set();
@@ -46328,11 +46368,11 @@ async function downloadPack(entry, base, deps = {}) {
 function recordedRegistrySource(source) {
   const s = source.trim();
   if (/^https?:\/\//i.test(s)) return s;
-  return import_node_path9.default.resolve(s.startsWith("file://") ? s.slice("file://".length) : s);
+  return import_node_path10.default.resolve(s.startsWith("file://") ? s.slice("file://".length) : s);
 }
 async function writeCache(ref, bytes, opts) {
   const dest = cachedPackPath(ref, opts);
-  await import_node_fs10.promises.mkdir(import_node_path9.default.dirname(dest), { recursive: true });
+  await import_node_fs11.promises.mkdir(import_node_path10.default.dirname(dest), { recursive: true });
   await writeFileAtomic(dest, bytes.toString("utf8"), { mode: 384 });
   return dest;
 }
@@ -46348,7 +46388,7 @@ function validatedPack(bytes, entry) {
 }
 async function snapshot(file2) {
   try {
-    return await import_node_fs10.promises.readFile(file2);
+    return await import_node_fs11.promises.readFile(file2);
   } catch (err) {
     if (isEnoent(err)) return void 0;
     throw err;
@@ -46381,7 +46421,7 @@ async function commitPack(pack, bytes, entry, indexSource, opts, expectedInstall
     } catch (err) {
       try {
         for (let i = files.length - 1; i >= 0; i--) {
-          if (before[i] === void 0) await import_node_fs10.promises.rm(files[i], { force: true });
+          if (before[i] === void 0) await import_node_fs11.promises.rm(files[i], { force: true });
           else await writeFileAtomic(files[i], before[i].toString("utf8"));
         }
         if (opts.scope === "project" && !opts.leaveUntrusted) await restoreTrustEntry(target, pinBefore, opts);
@@ -46425,13 +46465,13 @@ function validateCommunityPack(pack) {
   }
   return { errors, warnings };
 }
-var import_node_crypto2, import_node_fs10, import_node_path9, import_yaml8, REGISTRY_REF_RE, RegistryIndexEntrySchema, RegistryIndexSchema, MAX_REGISTRY_FILE_BYTES, REGISTRY_FETCH_TIMEOUT_MS, RegistryPackStateSchema, REGISTRIES_ENV;
+var import_node_crypto3, import_node_fs11, import_node_path10, import_yaml9, REGISTRY_REF_RE, RegistryIndexEntrySchema, RegistryIndexSchema, MAX_REGISTRY_FILE_BYTES, REGISTRY_FETCH_TIMEOUT_MS, RegistryPackStateSchema, REGISTRIES_ENV;
 var init_registry = __esm({
   "src/core/registry.ts"() {
-    import_node_crypto2 = __toESM(require_node_crypto());
-    import_node_fs10 = __toESM(require_node_fs());
-    import_node_path9 = __toESM(require_node_path());
-    import_yaml8 = __toESM(require_dist2());
+    import_node_crypto3 = __toESM(require_node_crypto());
+    import_node_fs11 = __toESM(require_node_fs());
+    import_node_path10 = __toESM(require_node_path());
+    import_yaml9 = __toESM(require_dist2());
     init_zod();
     init_harvest();
     init_collate();
@@ -47646,8 +47686,8 @@ var require_command = __commonJS({
   "node_modules/commander/lib/command.js"(exports) {
     var EventEmitter = require_node_events().EventEmitter;
     var childProcess = require_node_child_process();
-    var path27 = require_node_path();
-    var fs22 = require_node_fs();
+    var path28 = require_node_path();
+    var fs23 = require_node_fs();
     var process3 = require_node_process();
     var { Argument: Argument2, humanReadableArgName } = require_argument();
     var { CommanderError: CommanderError2 } = require_error();
@@ -48641,7 +48681,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @param {string} subcommandName
        */
       _checkForMissingExecutable(executableFile, executableDir, subcommandName) {
-        if (fs22.existsSync(executableFile)) return;
+        if (fs23.existsSync(executableFile)) return;
         const executableDirMessage = executableDir ? `searched for local subcommand relative to directory '${executableDir}'` : "no directory for search for local subcommand, use .executableDir() to supply a custom directory";
         const executableMissing = `'${executableFile}' does not exist
  - if '${subcommandName}' is not meant to be an executable command, remove description parameter from '.command()' and use '.description()' instead
@@ -48659,11 +48699,11 @@ Expecting one of '${allowedValues.join("', '")}'`);
         let launchWithNode = false;
         const sourceExt = [".js", ".ts", ".tsx", ".mjs", ".cjs"];
         function findFile(baseDir, baseName) {
-          const localBin = path27.resolve(baseDir, baseName);
-          if (fs22.existsSync(localBin)) return localBin;
-          if (sourceExt.includes(path27.extname(baseName))) return void 0;
+          const localBin = path28.resolve(baseDir, baseName);
+          if (fs23.existsSync(localBin)) return localBin;
+          if (sourceExt.includes(path28.extname(baseName))) return void 0;
           const foundExt = sourceExt.find(
-            (ext) => fs22.existsSync(`${localBin}${ext}`)
+            (ext) => fs23.existsSync(`${localBin}${ext}`)
           );
           if (foundExt) return `${localBin}${foundExt}`;
           return void 0;
@@ -48675,21 +48715,21 @@ Expecting one of '${allowedValues.join("', '")}'`);
         if (this._scriptPath) {
           let resolvedScriptPath;
           try {
-            resolvedScriptPath = fs22.realpathSync(this._scriptPath);
+            resolvedScriptPath = fs23.realpathSync(this._scriptPath);
           } catch {
             resolvedScriptPath = this._scriptPath;
           }
-          executableDir = path27.resolve(
-            path27.dirname(resolvedScriptPath),
+          executableDir = path28.resolve(
+            path28.dirname(resolvedScriptPath),
             executableDir
           );
         }
         if (executableDir) {
           let localFile = findFile(executableDir, executableFile);
           if (!localFile && !subcommand._executableFile && this._scriptPath) {
-            const legacyName = path27.basename(
+            const legacyName = path28.basename(
               this._scriptPath,
-              path27.extname(this._scriptPath)
+              path28.extname(this._scriptPath)
             );
             if (legacyName !== this._name) {
               localFile = findFile(
@@ -48700,7 +48740,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
           }
           executableFile = localFile || executableFile;
         }
-        launchWithNode = sourceExt.includes(path27.extname(executableFile));
+        launchWithNode = sourceExt.includes(path28.extname(executableFile));
         let proc;
         if (process3.platform !== "win32") {
           if (launchWithNode) {
@@ -49615,7 +49655,7 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @return {Command}
        */
       nameFromFilename(filename) {
-        this._name = path27.basename(filename, path27.extname(filename));
+        this._name = path28.basename(filename, path28.extname(filename));
         return this;
       }
       /**
@@ -49629,9 +49669,9 @@ Expecting one of '${allowedValues.join("', '")}'`);
        * @param {string} [path]
        * @return {(string|null|Command)}
        */
-      executableDir(path28) {
-        if (path28 === void 0) return this._executableDir;
-        this._executableDir = path28;
+      executableDir(path29) {
+        if (path29 === void 0) return this._executableDir;
+        this._executableDir = path29;
         return this;
       }
       /**
@@ -49923,13 +49963,6 @@ var require_promises = __commonJS({
   }
 });
 
-// builtin-cjs:node:readline
-var require_node_readline = __commonJS({
-  "builtin-cjs:node:readline"(exports, module) {
-    module.exports = __require("node:readline");
-  }
-});
-
 // builtin-cjs:node:net
 var require_node_net = __commonJS({
   "builtin-cjs:node:net"(exports, module) {
@@ -49937,9 +49970,16 @@ var require_node_net = __commonJS({
   }
 });
 
+// builtin-cjs:node:readline
+var require_node_readline = __commonJS({
+  "builtin-cjs:node:readline"(exports, module) {
+    module.exports = __require("node:readline");
+  }
+});
+
 // src/mcp/server.ts
-var import_node_fs31 = __toESM(require_node_fs(), 1);
-var import_node_path31 = __toESM(require_node_path(), 1);
+var import_node_fs32 = __toESM(require_node_fs(), 1);
+var import_node_path32 = __toESM(require_node_path(), 1);
 var import_node_url4 = __toESM(require_node_url(), 1);
 init_zod();
 
@@ -50317,8 +50357,8 @@ function getErrorMap2() {
 
 // node_modules/zod/v3/helpers/parseUtil.js
 var makeIssue = (params) => {
-  const { data, path: path27, errorMaps, issueData } = params;
-  const fullPath = [...path27, ...issueData.path || []];
+  const { data, path: path28, errorMaps, issueData } = params;
+  const fullPath = [...path28, ...issueData.path || []];
   const fullIssue = {
     ...issueData,
     path: fullPath
@@ -50433,11 +50473,11 @@ var errorUtil;
 
 // node_modules/zod/v3/types.js
 var ParseInputLazyPath = class {
-  constructor(parent, value, path27, key) {
+  constructor(parent, value, path28, key) {
     this._cachedPath = [];
     this.parent = parent;
     this.data = value;
-    this._path = path27;
+    this._path = path28;
     this._key = key;
   }
   get path() {
@@ -54000,11 +54040,11 @@ function normalizeObjectSchema(schema) {
   }
   return void 0;
 }
-function getDotPath(path27) {
-  if (path27.length === 0) {
+function getDotPath(path28) {
+  if (path28.length === 0) {
     return "object root";
   }
-  return path27.reduce((acc, seg, index) => {
+  return path28.reduce((acc, seg, index) => {
     if (index === 0) {
       return String(seg);
     }
@@ -60114,7 +60154,7 @@ async function applyImportCandidates(candidates, opts = {}) {
   const scope = opts.scope ?? "global";
   let added = 0;
   let merged = 0;
-  let path27;
+  let path28;
   for (const c of candidates) {
     const term = {
       canonical: c.canonical,
@@ -60123,11 +60163,11 @@ async function applyImportCandidates(candidates, opts = {}) {
       source: c.source
     };
     const result = await addTerm(term, { ...opts, scope });
-    path27 ??= result.file.path;
+    path28 ??= result.file.path;
     if (result.created) added += 1;
     else merged += 1;
   }
-  return { added, merged, skipped: 0, ...path27 !== void 0 ? { path: path27 } : {} };
+  return { added, merged, skipped: 0, ...path28 !== void 0 ? { path: path28 } : {} };
 }
 
 // src/core/import-preview.ts
@@ -61817,6 +61857,49 @@ function suggestCanonicalFor(heard, lexicon) {
   return scored.slice(0, MAX_SUGGESTIONS);
 }
 
+// src/core/pending.ts
+var import_node_crypto2 = __toESM(require_node_crypto());
+var import_node_fs8 = __toESM(require_node_fs());
+var import_node_path7 = __toESM(require_node_path());
+var import_yaml7 = __toESM(require_dist2());
+var PENDING_FILE_NAME = "pending-aliases.yaml";
+var MAX_PENDING_BYTES = 256 * 1024;
+var PendingFileError = class extends Error {
+};
+function pendingPathFor(globalLexiconPath2) {
+  return import_node_path7.default.join(import_node_path7.default.dirname(globalLexiconPath2), PENDING_FILE_NAME);
+}
+function isEntry(v) {
+  if (!v || typeof v !== "object") return false;
+  const e = v;
+  return typeof e.id === "string" && typeof e.heard === "string" && typeof e.meant === "string" && typeof e.source === "string" && typeof e.count === "number" && typeof e.firstSeen === "string" && typeof e.lastSeen === "string";
+}
+async function readPending(file2) {
+  let text;
+  try {
+    const stat = await import_node_fs8.promises.stat(file2);
+    if (stat.size > MAX_PENDING_BYTES) throw new PendingFileError(`${file2} is larger than ${MAX_PENDING_BYTES} bytes`);
+    text = await import_node_fs8.promises.readFile(file2, "utf8");
+  } catch (err) {
+    if (err.code === "ENOENT") return [];
+    throw err;
+  }
+  let doc;
+  try {
+    doc = (0, import_yaml7.parse)(text);
+  } catch {
+    throw new PendingFileError(`${file2} is not valid YAML`);
+  }
+  if (doc === null || doc === void 0) return [];
+  const list = doc.pending;
+  if (typeof doc !== "object" || list !== void 0 && !Array.isArray(list)) {
+    throw new PendingFileError(`${file2} does not hold a pending list`);
+  }
+  const entries2 = list ?? [];
+  if (!entries2.every(isEntry)) throw new PendingFileError(`${file2} has an entry that is not a pending alias`);
+  return entries2;
+}
+
 // src/core/stats.ts
 init_collate();
 var TOP_TERMS = 10;
@@ -61877,6 +61960,23 @@ function noTermMatchesNote(context) {
   const terms = `${context.total} term${context.total === 1 ? "" : "s"}`;
   return `No term matches ${context.filter}; the lexicon has ${terms} in all, which ${lister.name} without ${context.filters === 1 ? "it" : "them"} ${lister.verb}.`;
 }
+function pageTermList(items, request = {}) {
+  if (request.offset === void 0 && request.limit === void 0) return { items: [...items] };
+  const offset = request.offset ?? 0;
+  const end = request.limit === void 0 ? items.length : Math.min(items.length, offset + request.limit);
+  const slice = items.slice(offset, end);
+  const page = {
+    offset,
+    ...request.limit !== void 0 ? { limit: request.limit } : {},
+    returned: slice.length,
+    ...end < items.length && slice.length > 0 ? { nextOffset: end } : {}
+  };
+  return { items: slice, page };
+}
+function offsetPastEndNote(offset, matched) {
+  const held = matched === 1 ? "1 term matched, at offset 0" : `${matched} terms matched, at offsets 0 to ${matched - 1}`;
+  return `No term at offset ${offset}: only ${held}.`;
+}
 function emptyStatsNote(loaded, step = `${FIRST_TERM_STEP}.`) {
   if (loaded.merged.terms.length > 0 || loaded.skippedProject) return void 0;
   return `${noTermsYet({ so: "nothing is corrected or counted" })}; ${step}`;
@@ -61912,8 +62012,8 @@ function emptyExportNote(reason, context) {
 }
 
 // src/core/suggestTerms.ts
-var import_node_fs8 = __toESM(require_node_fs());
-var import_node_path7 = __toESM(require_node_path());
+var import_node_fs9 = __toESM(require_node_fs());
+var import_node_path8 = __toESM(require_node_path());
 init_double_metaphone();
 var import_fastest_levenshtein3 = __toESM(require_mod());
 init_harvest();
@@ -61952,7 +62052,7 @@ can could may might must shall should will would
 not no yes there here now when where why how`.split(/\s+/).filter((w) => w.length > 0)
 );
 function voiceHistoryPath(globalPath) {
-  return import_node_path7.default.join(import_node_path7.default.dirname(globalPath), "voice", "history.jsonl");
+  return import_node_path8.default.join(import_node_path8.default.dirname(globalPath), "voice", "history.jsonl");
 }
 async function loadVoiceHistory(globalPath) {
   const resolved2 = globalPath ?? resolvePaths().global;
@@ -61975,8 +62075,8 @@ async function loadVoiceHistory(globalPath) {
 async function readHistoryTail(file2, max) {
   let handle;
   try {
-    if (!(await import_node_fs8.promises.stat(file2)).isFile()) return void 0;
-    handle = await import_node_fs8.promises.open(file2, import_node_fs8.constants.O_RDONLY | (import_node_fs8.constants.O_NONBLOCK ?? 0));
+    if (!(await import_node_fs9.promises.stat(file2)).isFile()) return void 0;
+    handle = await import_node_fs9.promises.open(file2, import_node_fs9.constants.O_RDONLY | (import_node_fs9.constants.O_NONBLOCK ?? 0));
     const st = await handle.stat();
     if (!st.isFile()) return void 0;
     const length = Math.min(st.size, max);
@@ -62486,7 +62586,7 @@ async function suggestTerms(input2) {
   }
   if (input2.cwd) {
     const candidates = await harvestRepo(input2.cwd, { limit: HARVEST_LIMIT, minCount: HARVEST_MIN_COUNT });
-    const repoName = import_node_path7.default.basename(import_node_path7.default.resolve(input2.cwd)) || input2.cwd;
+    const repoName = import_node_path8.default.basename(import_node_path8.default.resolve(input2.cwd)) || input2.cwd;
     for (const c of candidates) {
       if (cat.known.has(fold(c.canonical)) || cat.known.has(collapse2(c.canonical))) continue;
       suggestions.push({
@@ -62629,12 +62729,12 @@ function demonstrate(lexicon, prefer = []) {
 }
 
 // src/mcp/shared.ts
-var import_node_fs13 = __toESM(require_node_fs());
-var import_node_path12 = __toESM(require_node_path());
+var import_node_fs14 = __toESM(require_node_fs());
+var import_node_path13 = __toESM(require_node_path());
 init_zod();
 
 // src/cli/io.ts
-var import_node_fs11 = __toESM(require_node_fs());
+var import_node_fs12 = __toESM(require_node_fs());
 
 // node_modules/commander/esm.mjs
 var import_index2 = __toESM(require_commander(), 1);
@@ -62654,14 +62754,14 @@ var {
 } = import_index2.default;
 
 // src/cli/io.ts
-var import_node_path10 = __toESM(require_node_path());
+var import_node_path11 = __toESM(require_node_path());
 init_errors3();
 function line(io, s = "") {
   io.stdout(`${s}
 `);
 }
 function resolveCwd(opts) {
-  return import_node_path10.default.resolve(opts.cwd ?? process.cwd());
+  return import_node_path11.default.resolve(opts.cwd ?? process.cwd());
 }
 function styler(output2 = process.stdout, env = process.env) {
   const on = () => Boolean(output2?.isTTY) && !env.NO_COLOR;
@@ -62690,8 +62790,8 @@ function indent(s, prefix) {
   return s.split("\n").map((l) => prefix + l).join("\n");
 }
 function tildify(p, home) {
-  const rel = import_node_path10.default.relative(home, p);
-  return rel && !rel.startsWith("..") && !import_node_path10.default.isAbsolute(rel) ? `~/${rel.split(import_node_path10.default.sep).join("/")}` : p;
+  const rel = import_node_path11.default.relative(home, p);
+  return rel && !rel.startsWith("..") && !import_node_path11.default.isAbsolute(rel) ? `~/${rel.split(import_node_path11.default.sep).join("/")}` : p;
 }
 function renderTable(rows, header, opts = {}) {
   const pathColumns = new Set(opts.pathColumns ?? []);
@@ -62761,36 +62861,36 @@ function unreadableLexiconHint(message) {
 function unreadableLexiconEdit(message) {
   const m = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at (.+?): /.exec(message);
   if (!m) return void 0;
-  return import_node_path10.default.basename(m[1] ?? "") === ".lexicon.yaml" ? "lexicon edit --project" : "lexicon edit";
+  return import_node_path11.default.basename(m[1] ?? "") === ".lexicon.yaml" ? "lexicon edit --project" : "lexicon edit";
 }
 
 // src/mcp/shared.ts
 init_errors3();
 
 // src/util/package.ts
-var import_node_fs12 = __toESM(require_node_fs());
-var import_node_path11 = __toESM(require_node_path());
+var import_node_fs13 = __toESM(require_node_fs());
+var import_node_path12 = __toESM(require_node_path());
 var import_node_url2 = __toESM(require_node_url());
 init_json();
 var PACKAGE_NAME2 = "@ashlr/lexicon";
 var UNKNOWN_VERSION = "0.0.0";
 function findPackageRoot2(from) {
-  let dir = from.startsWith("file:") ? import_node_path11.default.dirname((0, import_node_url2.fileURLToPath)(from)) : import_node_path11.default.resolve(from);
+  let dir = from.startsWith("file:") ? import_node_path12.default.dirname((0, import_node_url2.fileURLToPath)(from)) : import_node_path12.default.resolve(from);
   for (; ; ) {
-    if (readPackageJson(import_node_path11.default.join(dir, "package.json"))) return dir;
-    const parent = import_node_path11.default.dirname(dir);
+    if (readPackageJson(import_node_path12.default.join(dir, "package.json"))) return dir;
+    const parent = import_node_path12.default.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
 }
 function packageVersion(moduleUrl) {
   const root = findPackageRoot2(moduleUrl);
-  const pkg = root ? readPackageJson(import_node_path11.default.join(root, "package.json")) : void 0;
+  const pkg = root ? readPackageJson(import_node_path12.default.join(root, "package.json")) : void 0;
   return pkg?.version ?? UNKNOWN_VERSION;
 }
 function readPackageJson(file2) {
   try {
-    const parsed = JSON.parse((0, import_node_fs12.readFileSync)(file2, "utf8"));
+    const parsed = JSON.parse((0, import_node_fs13.readFileSync)(file2, "utf8"));
     if (isRecord(parsed) && parsed.name === PACKAGE_NAME2 && typeof parsed.version === "string") {
       return { version: parsed.version };
     }
@@ -62843,7 +62943,7 @@ function readPackageVersion() {
 }
 function cliDirForInstall() {
   const pkg = findPackage();
-  return pkg ? (0, import_node_path12.join)(pkg.root, "dist", "cli") : void 0;
+  return pkg ? (0, import_node_path13.join)(pkg.root, "dist", "cli") : void 0;
 }
 function textResult(payload) {
   const text = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
@@ -62867,18 +62967,18 @@ Nothing was read or changed. Ask the user to fix that file by running ${cliComma
 var HARVEST_ROOTS_ENV = "LEXICON_HARVEST_ROOTS";
 function realOrResolved(dir) {
   try {
-    return (0, import_node_fs13.realpathSync)(dir);
+    return (0, import_node_fs14.realpathSync)(dir);
   } catch {
-    return (0, import_node_path12.resolve)(dir);
+    return (0, import_node_path13.resolve)(dir);
   }
 }
 function readableRoots(ctx, env = process.env) {
   const dirs = [ctx.cwd, ...ctx.roots];
   const project = resolvePaths({ cwd: ctx.cwd }).project;
-  if (project) dirs.push((0, import_node_path12.dirname)(project));
-  for (const raw of (env[HARVEST_ROOTS_ENV] ?? "").split(import_node_path12.delimiter)) {
+  if (project) dirs.push((0, import_node_path13.dirname)(project));
+  for (const raw of (env[HARVEST_ROOTS_ENV] ?? "").split(import_node_path13.delimiter)) {
     const dir = raw.trim();
-    if (dir && (0, import_node_path12.isAbsolute)(dir)) dirs.push(dir);
+    if (dir && (0, import_node_path13.isAbsolute)(dir)) dirs.push(dir);
   }
   return [...new Set(dirs.map(realOrResolved))];
 }
@@ -62886,37 +62986,37 @@ function shellWord2(dir) {
   return /^[\w@%+=:,./-]+$/.test(dir) ? dir : `'${dir.replace(/'/g, `'\\''`)}'`;
 }
 function isWithin(child, parent) {
-  const rel = (0, import_node_path12.relative)(parent, child);
-  return rel === "" || !(0, import_node_path12.isAbsolute)(rel) && rel !== ".." && !rel.startsWith(`..${import_node_path12.sep}`);
+  const rel = (0, import_node_path13.relative)(parent, child);
+  return rel === "" || !(0, import_node_path13.isAbsolute)(rel) && rel !== ".." && !rel.startsWith(`..${import_node_path13.sep}`);
 }
-function containedPath(ctx, path27, cliArgs, env = process.env) {
-  const requested = (0, import_node_path12.resolve)(ctx.cwd, path27);
+function containedPath(ctx, path28, cliArgs, env = process.env) {
+  const requested = (0, import_node_path13.resolve)(ctx.cwd, path28);
   let real;
   try {
-    real = (0, import_node_fs13.realpathSync)(requested);
+    real = (0, import_node_fs14.realpathSync)(requested);
   } catch {
-    throw new Error(`${JSON.stringify(path27)} does not exist (resolved from ${ctx.cwd}); nothing was read.`);
+    throw new Error(`${JSON.stringify(path28)} does not exist (resolved from ${ctx.cwd}); nothing was read.`);
   }
   const roots = readableRoots(ctx, env);
   if (roots.some((root) => isWithin(real, root))) return real;
   throw new Error(
-    `${JSON.stringify(path27)} is outside the directories this server may read (${roots.join(", ")}), so nothing was read. The user can run ${cliCommand(cliArgs(real))} on it themselves, open it as a workspace root in their client, or list it in ${HARVEST_ROOTS_ENV} in the MCP server's environment.`
+    `${JSON.stringify(path28)} is outside the directories this server may read (${roots.join(", ")}), so nothing was read. The user can run ${cliCommand(cliArgs(real))} on it themselves, open it as a workspace root in their client, or list it in ${HARVEST_ROOTS_ENV} in the MCP server's environment.`
   );
 }
 function writableProjectFile(ctx, file2, env = process.env) {
   const own2 = resolvePaths({ cwd: ctx.cwd }).project ?? defaultProjectPath(ctx.cwd);
   if (realOrResolved(file2) === realOrResolved(own2)) return true;
   const roots = readableRoots(ctx, env);
-  const real = (0, import_node_fs13.existsSync)(file2) ? realOrResolved(file2) : (0, import_node_path12.join)(realOrResolved((0, import_node_path12.dirname)(file2)), (0, import_node_path12.basename)(file2));
+  const real = (0, import_node_fs14.existsSync)(file2) ? realOrResolved(file2) : (0, import_node_path13.join)(realOrResolved((0, import_node_path13.dirname)(file2)), (0, import_node_path13.basename)(file2));
   return roots.some((root) => isWithin(real, root));
 }
 async function mcpWriteOpts(ctx) {
   return await projectWriteTrusted({ cwd: ctx.cwd }) ? {} : { leaveUntrusted: true };
 }
-function untrustedWriteFields(path27, what, plural3 = false) {
+function untrustedWriteFields(path28, what, plural3 = false) {
   return {
     trusted: false,
-    nextStep: `${what} ${plural3 ? "were" : "was"} written to ${path27}, which is not trusted, so ${plural3 ? "they do" : "it does"} not apply yet. Ask the user to review the file and run ${cliCommand("trust")} in a terminal in that repo (it previews the file first), or call trust_project with action "trust", which asks them directly.`
+    nextStep: `${what} ${plural3 ? "were" : "was"} written to ${path28}, which is not trusted, so ${plural3 ? "they do" : "it does"} not apply yet. Ask the user to review the file and run ${cliCommand("trust")} in a terminal in that repo (it previews the file first), or call trust_project with action "trust", which asks them directly.`
   };
 }
 async function guarded(fn) {
@@ -63206,34 +63306,41 @@ var registerTermTools = (server, ctx) => {
     "list_terms",
     {
       title: "List lexicon terms",
-      description: "List the user's lexicon terms, global and project merged. Optional case-insensitive substring filter over canonical spellings and aliases, plus a category filter. WHEN TO CALL: to show the user what is already known, to check whether a name is covered before adding it, or to find the exact canonical another tool needs. Read-only and safe to call unprompted; filter rather than listing everything. WHAT IT CHANGES: nothing. WHAT IT WILL NOT DO: it does not include an untrusted project .lexicon.yaml -- if one was skipped the result says so in `note`, and trust_project is how the user reviews it. Returns { terms, counts: { matched, total, global, project }, paths: { global, project? } }, plus `projectTrust`, `skippedProject` and `note` for a skipped file, or a `note` saying why `terms` is empty (no terms yet, or the filter matched none). A blank `query` filters nothing.",
+      description: "List the user's lexicon terms, global and project merged. Optional case-insensitive substring filter over canonical spellings and aliases, plus a category filter. WHEN TO CALL: to show the user what is already known, to check whether a name is covered before adding it, or to find the exact canonical another tool needs. Read-only and safe to call unprompted; filter rather than listing everything. WHAT IT CHANGES: nothing. WHAT IT WILL NOT DO: it does not include an untrusted project .lexicon.yaml -- if one was skipped the result says so in `note`, and trust_project is how the user reviews it. Returns { terms, counts: { matched, total, global, project }, paths: { global, project? } }, plus `projectTrust`, `skippedProject` and `note` for a skipped file, or a `note` saying why `terms` is empty (no terms yet, the filter matched none, or `offset` is past the last match). A blank `query` filters nothing. Every matching term comes back unless `offset` or `limit` is given; then `terms` is that page of the matches (in the same order), and `page: { offset, limit?, returned, nextOffset? }` says where it started and, while more matches remain, the `offset` that gets the next page (`counts.matched` is how many there are in all).",
       inputSchema: {
         query: external_exports.string().optional().describe("Case-insensitive substring matched against canonical and aliases."),
-        category: external_exports.enum(TERM_CATEGORIES).optional()
+        category: external_exports.enum(TERM_CATEGORIES).optional(),
+        offset: external_exports.number().int().nonnegative().optional().describe("Matching terms to skip before the page starts (0 when omitted); pass `page.nextOffset` to get the next page."),
+        limit: external_exports.number().int().positive().optional().describe("Most terms to return. Omitted with `offset` omitted too: every matching term.")
       }
     },
-    async ({ query, category }) => guarded(async () => {
+    async ({ query, category, offset, limit }) => guarded(async () => {
       const loaded = await load({ parseSkipped: false });
       const needle = query?.trim().toLowerCase();
-      const terms = loaded.merged.terms.filter((t) => {
+      const matched = loaded.merged.terms.filter((t) => {
         if (category && t.category !== category) return false;
         if (!needle) return true;
         if (t.canonical.toLowerCase().includes(needle)) return true;
         return t.aliases.some((a) => a.toLowerCase().includes(needle));
       });
+      const { items: terms, page } = pageTermList(matched, {
+        ...offset !== void 0 ? { offset } : {},
+        ...limit !== void 0 ? { limit } : {}
+      });
       return textResult({
         terms,
         counts: {
-          matched: terms.length,
+          matched: matched.length,
           total: loaded.merged.terms.length,
           global: loaded.global.lexicon.terms.length,
           project: loaded.project?.lexicon.terms.length ?? 0
         },
         paths: filePathsInUse(loaded),
+        ...page ? { page } : {},
         ...skippedProjectFields(loaded),
         // Why nothing came back, as `lexicon list` says it: no terms at
-        // all, or a filter that matched none of them.
-        ...terms.length > 0 || loaded.skippedProject ? {} : loaded.merged.terms.length === 0 ? { note: emptyLexiconNote("add_term or setup_lexicon adds some.") } : {
+        // all, a filter that matched none of them, or a page past the end.
+        ...terms.length > 0 || loaded.skippedProject ? {} : matched.length > 0 ? { note: offsetPastEndNote(page?.offset ?? 0, matched.length) } : loaded.merged.terms.length === 0 ? { note: emptyLexiconNote("add_term or setup_lexicon adds some.") } : {
           note: noTermMatchesNote({
             filter: `the ${[...category ? ["category"] : [], ...needle ? ["query"] : []].join(" and ")} given`,
             filters: category && needle ? 2 : 1,
@@ -63380,7 +63487,7 @@ var registerTermTools = (server, ctx) => {
 };
 
 // src/mcp/tools/harvest.ts
-var import_node_path13 = __toESM(require_node_path());
+var import_node_path14 = __toESM(require_node_path());
 init_zod();
 init_errors3();
 var APPLY_SUGGESTIONS_MAX = 100;
@@ -63418,8 +63525,8 @@ var registerHarvestTools = (server, ctx) => {
         add: external_exports.boolean().optional().describe("When true, add every candidate to the project lexicon. A file that is not trusted yet is left untrusted for the user to review.")
       }
     },
-    async ({ path: path27, limit, minCount, add }) => guarded(async () => {
-      const root = path27 ? containedPath(ctx, path27, (dir) => `harvest ${shellWord2(dir)}`) : ctx.cwd;
+    async ({ path: path28, limit, minCount, add }) => guarded(async () => {
+      const root = path28 ? containedPath(ctx, path28, (dir) => `harvest ${shellWord2(dir)}`) : ctx.cwd;
       if (add) {
         const target = resolvePaths({ cwd: root }).project ?? defaultProjectPath(root);
         if (!writableProjectFile(ctx, target)) {
@@ -63558,9 +63665,9 @@ var registerHarvestTools = (server, ctx) => {
     }
     if (target === "project" && suggestion.path !== void 0) {
       const here = resolvePaths({ cwd: ctx.cwd }).project ?? defaultProjectPath(ctx.cwd);
-      if ((0, import_node_path13.resolve)(suggestion.path) !== (0, import_node_path13.resolve)(here)) {
+      if ((0, import_node_path14.resolve)(suggestion.path) !== (0, import_node_path14.resolve)(here)) {
         throw new Error(
-          `this suggestion is for the project lexicon ${suggestion.path}, but this server writes the project lexicon at ${here}; nothing was written. The user can apply it in that repo with ${cliCommand(`suggest --cwd ${shellWord2((0, import_node_path13.dirname)(suggestion.path))} --apply`)}, or call apply_suggestion with scope "global" if they want it in the global lexicon instead.`
+          `this suggestion is for the project lexicon ${suggestion.path}, but this server writes the project lexicon at ${here}; nothing was written. The user can apply it in that repo with ${cliCommand(`suggest --cwd ${shellWord2((0, import_node_path14.dirname)(suggestion.path))} --apply`)}, or call apply_suggestion with scope "global" if they want it in the global lexicon instead.`
         );
       }
     }
@@ -63670,24 +63777,24 @@ var registerHarvestTools = (server, ctx) => {
 // src/mcp/tools/trust.ts
 init_zod();
 init_errors3();
-var import_node_fs14 = __toESM(require_node_fs());
-var import_node_path14 = __toESM(require_node_path());
-function explicitLexiconPath(ctx, path27) {
+var import_node_fs15 = __toESM(require_node_fs());
+var import_node_path15 = __toESM(require_node_path());
+function explicitLexiconPath(ctx, path28) {
   const hint = (target) => `trust ${shellWord2(target)}`;
-  const requested = (0, import_node_path14.resolve)(ctx.cwd, path27);
-  if (!(0, import_node_fs14.existsSync)(requested)) {
-    if (!(0, import_node_fs14.existsSync)((0, import_node_path14.dirname)(requested))) return containedPath(ctx, path27, hint);
-    return (0, import_node_path14.join)(containedPath(ctx, (0, import_node_path14.dirname)(requested), hint), (0, import_node_path14.basename)(requested));
+  const requested = (0, import_node_path15.resolve)(ctx.cwd, path28);
+  if (!(0, import_node_fs15.existsSync)(requested)) {
+    if (!(0, import_node_fs15.existsSync)((0, import_node_path15.dirname)(requested))) return containedPath(ctx, path28, hint);
+    return (0, import_node_path15.join)(containedPath(ctx, (0, import_node_path15.dirname)(requested), hint), (0, import_node_path15.basename)(requested));
   }
   const real = containedPath(ctx, requested, hint);
-  if (!(0, import_node_fs14.statSync)(real).isDirectory()) return real;
-  const inside = (0, import_node_path14.join)(real, PROJECT_FILE_NAME);
-  return (0, import_node_fs14.existsSync)(inside) ? containedPath(ctx, inside, hint) : inside;
+  if (!(0, import_node_fs15.statSync)(real).isDirectory()) return real;
+  const inside = (0, import_node_path15.join)(real, PROJECT_FILE_NAME);
+  return (0, import_node_fs15.existsSync)(inside) ? containedPath(ctx, inside, hint) : inside;
 }
-function untrustTarget(cwd, path27) {
-  const resolved2 = (0, import_node_path14.resolve)(cwd, path27);
+function untrustTarget(cwd, path28) {
+  const resolved2 = (0, import_node_path15.resolve)(cwd, path28);
   try {
-    if ((0, import_node_fs14.statSync)(resolved2).isDirectory()) return (0, import_node_path14.join)(resolved2, PROJECT_FILE_NAME);
+    if ((0, import_node_fs15.statSync)(resolved2).isDirectory()) return (0, import_node_path15.join)(resolved2, PROJECT_FILE_NAME);
   } catch {
   }
   return resolved2;
@@ -63725,8 +63832,8 @@ var registerTrustTools = (server, ctx) => {
         )
       }
     },
-    async ({ action, path: path27 }) => guarded(async () => {
-      const filePath = path27 ? action === "untrust" ? untrustTarget(ctx.cwd, path27) : explicitLexiconPath(ctx, path27) : resolvePaths({ cwd: ctx.cwd }).project;
+    async ({ action, path: path28 }) => guarded(async () => {
+      const filePath = path28 ? action === "untrust" ? untrustTarget(ctx.cwd, path28) : explicitLexiconPath(ctx, path28) : resolvePaths({ cwd: ctx.cwd }).project;
       const registry2 = getTrustPath({ cwd: ctx.cwd });
       const shown = (text) => neutralizeMarkup(sanitizeForDisplay(text));
       const safePath2 = filePath === void 0 ? void 0 : shown(filePath);
@@ -63824,24 +63931,24 @@ init_json();
 init_errors3();
 
 // src/cli/commands.ts
-var import_node_fs24 = __toESM(require_node_fs());
-var import_node_path23 = __toESM(require_node_path());
+var import_node_fs26 = __toESM(require_node_fs());
+var import_node_path25 = __toESM(require_node_path());
 
 // src/cli/claude-settings.ts
-var import_node_fs17 = __toESM(require_node_fs());
+var import_node_fs18 = __toESM(require_node_fs());
 var import_node_child_process3 = __toESM(require_node_child_process());
 init_xdg();
-var import_node_path17 = __toESM(require_node_path());
+var import_node_path18 = __toESM(require_node_path());
 var import_node_url3 = __toESM(require_node_url());
 init_json();
 
 // src/cli/cli-entry.ts
-var import_node_fs16 = __toESM(require_node_fs());
-var import_node_path16 = __toESM(require_node_path());
+var import_node_fs17 = __toESM(require_node_fs());
+var import_node_path17 = __toESM(require_node_path());
 
 // src/util/which.ts
-var import_node_fs15 = __toESM(require_node_fs());
-var import_node_path15 = __toESM(require_node_path());
+var import_node_fs16 = __toESM(require_node_fs());
+var import_node_path16 = __toESM(require_node_path());
 var DEFAULT_PATHEXT = ".COM;.EXE;.BAT;.CMD";
 var WELL_KNOWN_BIN_DIRS = ["/opt/homebrew/bin", "/usr/local/bin", "/usr/bin"];
 function pathDirs(env, win) {
@@ -63850,14 +63957,14 @@ function pathDirs(env, win) {
 }
 function candidateNames(bin, env, win) {
   if (!win) return [bin];
-  const p = import_node_path15.default.win32;
+  const p = import_node_path16.default.win32;
   if (p.extname(bin) !== "") return [bin];
   const exts = (env.PATHEXT ?? DEFAULT_PATHEXT).split(";").filter(Boolean);
   return [.../* @__PURE__ */ new Set([...exts.map((ext) => bin + ext), ...exts.map((ext) => bin + ext.toLowerCase()), bin])];
 }
 async function accessible(candidate, win) {
   try {
-    await import_node_fs15.promises.access(candidate, win ? import_node_fs15.constants.F_OK : import_node_fs15.constants.X_OK);
+    await import_node_fs16.promises.access(candidate, win ? import_node_fs16.constants.F_OK : import_node_fs16.constants.X_OK);
     return true;
   } catch {
     return false;
@@ -63867,7 +63974,7 @@ async function findOnPath(bin, opts = {}) {
   const platform = opts.platform ?? process.platform;
   const env = opts.env ?? process.env;
   const win = platform === "win32";
-  const p = win ? import_node_path15.default.win32 : import_node_path15.default.posix;
+  const p = win ? import_node_path16.default.win32 : import_node_path16.default.posix;
   const exists = opts.exists ?? ((candidate) => accessible(candidate, win));
   const names = candidateNames(bin, env, win);
   for (const dir of pathDirs(env, win)) {
@@ -63882,12 +63989,12 @@ function findOnPathSync(bin, opts = {}) {
   const platform = opts.platform ?? process.platform;
   const env = opts.env ?? process.env;
   const win = platform === "win32";
-  const p = win ? import_node_path15.default.win32 : import_node_path15.default.posix;
+  const p = win ? import_node_path16.default.win32 : import_node_path16.default.posix;
   const names = candidateNames(bin, env, win);
   for (const dir of pathDirs(env, win)) {
     for (const name of names) {
       const candidate = p.join(dir, name);
-      if ((0, import_node_fs15.existsSync)(candidate)) return candidate;
+      if ((0, import_node_fs16.existsSync)(candidate)) return candidate;
     }
   }
   return void 0;
@@ -63901,11 +64008,11 @@ function locateToolSync(names, env = process.env, platform = process.platform) {
     if (onPath) return onPath;
   }
   const win = platform === "win32";
-  const p = win ? import_node_path15.default.win32 : import_node_path15.default.posix;
+  const p = win ? import_node_path16.default.win32 : import_node_path16.default.posix;
   for (const dir of extraDirsFor({}, platform)) {
     for (const name of names) {
       const candidate = p.join(dir, win ? `${name}.exe` : name);
-      if ((0, import_node_fs15.existsSync)(candidate)) return candidate;
+      if ((0, import_node_fs16.existsSync)(candidate)) return candidate;
     }
   }
   return void 0;
@@ -63914,18 +64021,18 @@ function locateToolSync(names, env = process.env, platform = process.platform) {
 // src/cli/cli-entry.ts
 var CLI_ENV_VAR = "LEXICON_CLI";
 function resolveCliEntry(opts = {}) {
-  if (opts.cliPath !== void 0 && opts.cliPath !== "") return import_node_path16.default.resolve(opts.cliPath);
+  if (opts.cliPath !== void 0 && opts.cliPath !== "") return import_node_path17.default.resolve(opts.cliPath);
   const env = opts.env ?? process.env;
   const override = env[CLI_ENV_VAR];
-  if (override !== void 0 && override.trim() !== "") return import_node_path16.default.resolve(override.trim());
+  if (override !== void 0 && override.trim() !== "") return import_node_path17.default.resolve(override.trim());
   const root = findPackageRoot2(opts.moduleUrl ?? import.meta.url);
-  const built2 = root ? import_node_path16.default.join(root, "dist", "cli", "index.js") : void 0;
-  if (built2 && (0, import_node_fs16.existsSync)(built2)) return built2;
+  const built2 = root ? import_node_path17.default.join(root, "dist", "cli", "index.js") : void 0;
+  if (built2 && (0, import_node_fs17.existsSync)(built2)) return built2;
   const onPath = findOnPathSync("lexicon", { env });
   if (onPath) {
     let real = onPath;
     try {
-      real = (0, import_node_fs16.realpathSync)(onPath);
+      real = (0, import_node_fs17.realpathSync)(onPath);
     } catch {
     }
     if (/\.(?:[cm]?js)$/i.test(real)) return real;
@@ -63942,7 +64049,7 @@ function resolveCliEntry(opts = {}) {
 var HOOK_EVENTS = ["UserPromptSubmit", "SessionStart"];
 function claudeConfigDir(env = process.env, home) {
   const override = env.CLAUDE_CONFIG_DIR?.trim();
-  return override ? override : import_node_path17.default.join(home === void 0 ? homeDir() : usableHome(home), ".claude");
+  return override ? override : import_node_path18.default.join(home === void 0 ? homeDir() : usableHome(home), ".claude");
 }
 var LEXICON_HOOK_COMMAND = /user-prompt-submit\.js|plugin[\\/]hook\.mjs|lexicon/i;
 function findInstalledLexiconPlugin(settings, installedPlugins) {
@@ -64043,10 +64150,10 @@ function parseClaudeMcpGet(out) {
 }
 function claudeUserConfigPath(env = process.env, home) {
   const override = env.CLAUDE_CONFIG_DIR?.trim();
-  return override ? import_node_path17.default.join(override, ".claude.json") : import_node_path17.default.join(home === void 0 ? homeDir() : usableHome(home), ".claude.json");
+  return override ? import_node_path18.default.join(override, ".claude.json") : import_node_path18.default.join(home === void 0 ? homeDir() : usableHome(home), ".claude.json");
 }
 function claudeRegistrationFile(scope, files) {
-  return scope === "user" ? files.userConfig : import_node_path17.default.join(files.cwd, ".mcp.json");
+  return scope === "user" ? files.userConfig : import_node_path18.default.join(files.cwd, ".mcp.json");
 }
 async function readClaudeRegistrationAt(scope, files) {
   const read = await readJsonFile(claudeRegistrationFile(scope, files));
@@ -64108,16 +64215,16 @@ function mergeHookIntoSettings(settings, command, timeout = 5, events = ["UserPr
 }
 function resolveIntegrationPaths(cliDir) {
   const pkgRoot = cliDir === void 0 ? findPackageRoot2(import.meta.url) : void 0;
-  const dir = cliDir ?? (pkgRoot ? import_node_path17.default.join(pkgRoot, "dist", "cli") : import_node_path17.default.dirname((0, import_node_url3.fileURLToPath)(import.meta.url)));
-  const root = import_node_path17.default.resolve(dir, "..", "..");
-  const bundledServer = import_node_path17.default.join(root, "plugin", "mcp-server.mjs");
-  const bundledHook = import_node_path17.default.join(root, "plugin", "hook.mjs");
-  if ((0, import_node_fs17.existsSync)(bundledServer) && (0, import_node_fs17.existsSync)(bundledHook)) {
+  const dir = cliDir ?? (pkgRoot ? import_node_path18.default.join(pkgRoot, "dist", "cli") : import_node_path18.default.dirname((0, import_node_url3.fileURLToPath)(import.meta.url)));
+  const root = import_node_path18.default.resolve(dir, "..", "..");
+  const bundledServer = import_node_path18.default.join(root, "plugin", "mcp-server.mjs");
+  const bundledHook = import_node_path18.default.join(root, "plugin", "hook.mjs");
+  if ((0, import_node_fs18.existsSync)(bundledServer) && (0, import_node_fs18.existsSync)(bundledHook)) {
     return { server: bundledServer, hook: bundledHook, bundled: true };
   }
   return {
-    server: import_node_path17.default.resolve(dir, "../mcp/server.js"),
-    hook: import_node_path17.default.resolve(dir, "../hooks/user-prompt-submit.js"),
+    server: import_node_path18.default.resolve(dir, "../mcp/server.js"),
+    hook: import_node_path18.default.resolve(dir, "../hooks/user-prompt-submit.js"),
     bundled: false
   };
 }
@@ -64137,7 +64244,7 @@ function hookTimeoutFor(launch) {
 }
 function launchCommandLine(launch, platform = process.platform) {
   const win = platform === "win32";
-  const p = win ? import_node_path17.default.win32 : import_node_path17.default.posix;
+  const p = win ? import_node_path18.default.win32 : import_node_path18.default.posix;
   const quote = (s) => {
     if (win) return /[\s"]/.test(s) || p.isAbsolute(s) ? `"${s.replace(/"/g, "")}"` : s;
     return /[\s"'$`\\]/.test(s) || p.isAbsolute(s) ? `"${s.replace(/(["\\$`])/g, "\\$1")}"` : s;
@@ -64156,9 +64263,9 @@ function defaultExec(file2, args, opts = {}) {
 }
 
 // src/cli/cmd-doctor.ts
-var import_node_fs23 = __toESM(require_node_fs());
+var import_node_fs25 = __toESM(require_node_fs());
 init_xdg();
-var import_node_path22 = __toESM(require_node_path());
+var import_node_path24 = __toESM(require_node_path());
 
 // src/daemon/clipboard-backends.ts
 var import_node_child_process4 = __toESM(require_node_child_process());
@@ -64402,10 +64509,10 @@ async function detectClipboardBackend(platform = process.platform, env = process
 }
 
 // src/voice/models.ts
-var import_node_crypto3 = __toESM(require_node_crypto());
-var import_node_fs18 = __toESM(require_node_fs());
+var import_node_crypto4 = __toESM(require_node_crypto());
+var import_node_fs19 = __toESM(require_node_fs());
 init_xdg();
-var import_node_path18 = __toESM(require_node_path());
+var import_node_path19 = __toESM(require_node_path());
 var import_node_stream = __toESM(require_node_stream());
 var import_promises = __toESM(require_promises());
 var DEFAULT_MODEL = "base.en";
@@ -64413,7 +64520,7 @@ var MODEL_BASE_URL = "https://huggingface.co/ggerganov/whisper.cpp/resolve/main"
 var REPO_MODELS_DIR = repoModelsDir();
 function repoModelsDir() {
   const root = findPackageRoot2(import.meta.url);
-  return root ? import_node_path18.default.join(root, "bench", "audio", "models") : void 0;
+  return root ? import_node_path19.default.join(root, "bench", "audio", "models") : void 0;
 }
 function modelFileName(name) {
   return `ggml-${name}.bin`;
@@ -64423,9 +64530,9 @@ function modelUrl(name) {
 }
 function modelsDir(globalPath, env = process.env) {
   const raw = env.LEXICON_WHISPER_MODELS;
-  if (!raw) return import_node_path18.default.join(import_node_path18.default.dirname(globalPath), "models");
+  if (!raw) return import_node_path19.default.join(import_node_path19.default.dirname(globalPath), "models");
   const dir = expandTilde(raw);
-  if (!import_node_path18.default.isAbsolute(dir)) {
+  if (!import_node_path19.default.isAbsolute(dir)) {
     throw new Error(
       `LEXICON_WHISPER_MODELS must be an absolute path or start with ~/ (it is ${JSON.stringify(raw)}); a relative one would mean a different directory in every working directory`
     );
@@ -64436,8 +64543,8 @@ function expandTilde(spec, homeArg) {
   if (spec !== "~" && !spec.startsWith("~/") && !(process.platform === "win32" && spec.startsWith("~\\"))) return spec;
   const home = homeArg === void 0 ? homeDir() : usableHome(homeArg);
   if (spec === "~") return home;
-  if (spec.startsWith("~/")) return import_node_path18.default.join(home, spec.slice(2));
-  if (process.platform === "win32" && spec.startsWith("~\\")) return import_node_path18.default.join(home, spec.slice(2));
+  if (spec.startsWith("~/")) return import_node_path19.default.join(home, spec.slice(2));
+  if (process.platform === "win32" && spec.startsWith("~\\")) return import_node_path19.default.join(home, spec.slice(2));
   return spec;
 }
 function isModelPath(value) {
@@ -64446,7 +64553,7 @@ function isModelPath(value) {
 function inspectModelFile(p) {
   let size;
   try {
-    const st = (0, import_node_fs18.statSync)(p);
+    const st = (0, import_node_fs19.statSync)(p);
     if (!st.isFile()) return "missing";
     size = st.size;
   } catch {
@@ -64456,11 +64563,11 @@ function inspectModelFile(p) {
   const head = Buffer.alloc(GGML_MAGIC.length);
   let read = 0;
   try {
-    const fd = (0, import_node_fs18.openSync)(p, "r");
+    const fd = (0, import_node_fs19.openSync)(p, "r");
     try {
-      read = (0, import_node_fs18.readSync)(fd, head, 0, head.length, 0);
+      read = (0, import_node_fs19.readSync)(fd, head, 0, head.length, 0);
     } finally {
-      (0, import_node_fs18.closeSync)(fd);
+      (0, import_node_fs19.closeSync)(fd);
     }
   } catch (e) {
     return `it cannot be read (${e instanceof Error ? e.message : String(e)})`;
@@ -64474,33 +64581,33 @@ function modelHashPath(modelPath) {
   return `${modelPath}${MODEL_HASH_SUFFIX}`;
 }
 function sha256OfFile(p) {
-  const hash2 = (0, import_node_crypto3.createHash)("sha256");
+  const hash2 = (0, import_node_crypto4.createHash)("sha256");
   const buf = Buffer.alloc(1024 * 1024);
-  const fd = (0, import_node_fs18.openSync)(p, "r");
+  const fd = (0, import_node_fs19.openSync)(p, "r");
   try {
     for (; ; ) {
-      const n = (0, import_node_fs18.readSync)(fd, buf, 0, buf.length, null);
+      const n = (0, import_node_fs19.readSync)(fd, buf, 0, buf.length, null);
       if (n === 0) break;
       hash2.update(buf.subarray(0, n));
     }
   } finally {
-    (0, import_node_fs18.closeSync)(fd);
+    (0, import_node_fs19.closeSync)(fd);
   }
   return hash2.digest("hex");
 }
 function writeModelHashRecord(modelPath, sha256, ino) {
   try {
-    const st = (0, import_node_fs18.statSync)(modelPath);
+    const st = (0, import_node_fs19.statSync)(modelPath);
     if (ino !== void 0 && st.ino !== ino) return;
     const record2 = { version: MODEL_HASH_VERSION, sha256, size: st.size, mtimeMs: st.mtimeMs };
-    (0, import_node_fs18.writeFileSync)(modelHashPath(modelPath), `${JSON.stringify(record2)}
+    (0, import_node_fs19.writeFileSync)(modelHashPath(modelPath), `${JSON.stringify(record2)}
 `, { mode: 420 });
   } catch {
   }
 }
 function readModelHashRecord(modelPath) {
   try {
-    const raw = JSON.parse((0, import_node_fs18.readFileSync)(modelHashPath(modelPath), "utf8"));
+    const raw = JSON.parse((0, import_node_fs19.readFileSync)(modelHashPath(modelPath), "utf8"));
     const r = raw;
     if (r && r.version === MODEL_HASH_VERSION && typeof r.sha256 === "string" && /^[0-9a-f]{64}$/.test(r.sha256) && typeof r.size === "number" && typeof r.mtimeMs === "number") {
       return r;
@@ -64515,7 +64622,7 @@ function checkModelHashRecord(modelPath) {
   if (!record2) return void 0;
   let st;
   try {
-    st = (0, import_node_fs18.statSync)(modelPath);
+    st = (0, import_node_fs19.statSync)(modelPath);
   } catch {
     return void 0;
   }
@@ -64540,18 +64647,18 @@ function resolveModel(spec, opts) {
   const inspect = opts.inspect ?? (exists ? (p) => exists(p) ? void 0 : "missing" : inspectAndVerify);
   const flagged = (problem) => problem.startsWith(MODEL_CHANGED_PREFIX) ? { problem, modified: true } : { problem };
   if (isModelPath(spec)) {
-    const abs = import_node_path18.default.resolve(expandTilde(spec));
-    const base = import_node_path18.default.basename(abs);
+    const abs = import_node_path19.default.resolve(expandTilde(spec));
+    const base = import_node_path19.default.basename(abs);
     const name = base.replace(/^ggml-/, "").replace(/\.bin$/, "");
     const found = inspect(abs);
     return { name, path: abs, present: found === void 0, ...found !== void 0 && found !== "missing" ? flagged(found) : {} };
   }
   const file2 = modelFileName(spec);
-  const primary = import_node_path18.default.join(modelsDir(opts.globalPath, opts.env), file2);
+  const primary = import_node_path19.default.join(modelsDir(opts.globalPath, opts.env), file2);
   const atPrimary = inspect(primary);
   if (atPrimary === void 0) return { name: spec, path: primary, present: true, url: modelUrl(spec) };
   for (const dir of opts.fallbackDirs ?? (REPO_MODELS_DIR ? [REPO_MODELS_DIR] : [])) {
-    const candidate = import_node_path18.default.join(dir, file2);
+    const candidate = import_node_path19.default.join(dir, file2);
     if (inspect(candidate) === void 0) return { name: spec, path: candidate, present: true, foundIn: dir, url: modelUrl(spec) };
   }
   return { name: spec, path: primary, present: false, url: modelUrl(spec), ...atPrimary !== "missing" ? flagged(atPrimary) : {} };
@@ -64561,7 +64668,7 @@ var STALE_PART_MS = 10 * 60 * 1e3;
 
 // src/voice/process.ts
 var import_node_child_process5 = __toESM(require_node_child_process());
-var import_node_fs19 = __toESM(require_node_fs());
+var import_node_fs20 = __toESM(require_node_fs());
 var MAX_OUTPUT = 16 * 1024 * 1024;
 var WHISPER_BIN_NAMES = ["whisper-cli", "whisper-cpp"];
 var INSTALL_HINTS = {
@@ -64594,7 +64701,7 @@ init_json();
 init_jsonc();
 
 // src/cli/doctor-config-read.ts
-var import_node_fs20 = __toESM(require_node_fs());
+var import_node_fs21 = __toESM(require_node_fs());
 init_errors3();
 init_jsonc();
 var DOCTOR_CONFIG_MAX_BYTES = 1024 * 1024;
@@ -64603,13 +64710,13 @@ async function readDoctorConfigText(file2) {
   let inspected = false;
   let handle;
   try {
-    const before = await import_node_fs20.promises.lstat(file2, { bigint: true });
+    const before = await import_node_fs21.promises.lstat(file2, { bigint: true });
     inspected = true;
     if (!before.isFile() || before.isSymbolicLink()) return { status: "unconfirmed", reason: "nonregular" };
     if (before.size > BigInt(DOCTOR_CONFIG_MAX_BYTES)) return { status: "unconfirmed", reason: "too-large" };
-    const noFollow = typeof import_node_fs20.constants.O_NOFOLLOW === "number" ? import_node_fs20.constants.O_NOFOLLOW : 0;
-    const nonBlock = typeof import_node_fs20.constants.O_NONBLOCK === "number" ? import_node_fs20.constants.O_NONBLOCK : 0;
-    handle = await import_node_fs20.promises.open(file2, import_node_fs20.constants.O_RDONLY | noFollow | nonBlock);
+    const noFollow = typeof import_node_fs21.constants.O_NOFOLLOW === "number" ? import_node_fs21.constants.O_NOFOLLOW : 0;
+    const nonBlock = typeof import_node_fs21.constants.O_NONBLOCK === "number" ? import_node_fs21.constants.O_NONBLOCK : 0;
+    handle = await import_node_fs21.promises.open(file2, import_node_fs21.constants.O_RDONLY | noFollow | nonBlock);
     try {
       const opened = await handle.stat({ bigint: true });
       if (!opened.isFile() || !same2(before, opened)) return { status: "unconfirmed", reason: "changed" };
@@ -64621,7 +64728,7 @@ async function readDoctorConfigText(file2) {
         if (bytesRead === 0) break;
         offset += bytesRead;
       }
-      if (offset !== size || !same2(opened, await handle.stat({ bigint: true })) || !same2(opened, await import_node_fs20.promises.lstat(file2, { bigint: true }))) return { status: "unconfirmed", reason: "changed" };
+      if (offset !== size || !same2(opened, await handle.stat({ bigint: true })) || !same2(opened, await import_node_fs21.promises.lstat(file2, { bigint: true }))) return { status: "unconfirmed", reason: "changed" };
       try {
         return { status: "read", text: new TextDecoder("utf-8", { fatal: true, ignoreBOM: true }).decode(bytes.subarray(0, size)) };
       } catch {
@@ -64672,9 +64779,202 @@ function checkPhantomPresence(probe) {
   return { level: "info", message: `phantom (optional, report-only): ${cliText}${session}` };
 }
 
+// src/serve/config.ts
+var import_node_crypto5 = __toESM(require_node_crypto());
+var import_node_net = __toESM(require_node_net());
+var import_node_fs22 = __toESM(require_node_fs());
+var import_node_path20 = __toESM(require_node_path());
+init_redact();
+init_atomic();
+init_json();
+init_errors3();
+var SERVE_FILE_MODE = 384;
+var SERVE_FILE_NAME = "serve.json";
+var DEFAULT_PORT = 41733;
+var DEFAULT_HOST = "127.0.0.1";
+var TOKEN_RE3 = /^[0-9a-fA-F]{32,128}$/;
+function getServePath(opts = {}) {
+  return import_node_path20.default.join(import_node_path20.default.dirname(resolvePaths(opts).global), SERVE_FILE_NAME);
+}
+function parseServeConfig(raw) {
+  if (typeof raw !== "object" || raw === null) return void 0;
+  const { port, token, createdAt, allowedOrigins } = raw;
+  if (typeof token !== "string" || !TOKEN_RE3.test(token)) return void 0;
+  const config2 = {
+    port: typeof port === "number" && Number.isInteger(port) && port >= 0 && port <= 65535 ? port : DEFAULT_PORT,
+    token,
+    createdAt: typeof createdAt === "string" ? createdAt : (/* @__PURE__ */ new Date()).toISOString()
+  };
+  if (Array.isArray(allowedOrigins)) {
+    const origins = allowedOrigins.filter((o) => typeof o === "string" && o !== "*" && o.length > 0);
+    if (origins.length > 0) config2.allowedOrigins = origins;
+  }
+  return config2;
+}
+function parseServeJson(text) {
+  return JSON.parse(text.replace(/^\uFEFF/, ""));
+}
+var MISSING_REASON = "does not exist; lexicon serve creates it";
+function readErrorResult(file2, err) {
+  const code = err.code;
+  if (code === "ENOENT") return { status: "missing", path: file2, reason: MISSING_REASON };
+  return {
+    status: "unusable",
+    path: file2,
+    reason: `could not be read (${typeof code === "string" ? code : errorMessage(err)}); make it a readable file, or remove it so lexicon serve makes a new token`
+  };
+}
+function textResult2(file2, text) {
+  if (text.replace(/^\uFEFF/, "").trim() === "") return { status: "unusable", path: file2, reason: "is empty; lexicon serve replaces it" };
+  let raw;
+  try {
+    raw = parseServeJson(text);
+  } catch {
+    return { status: "unusable", path: file2, reason: "is not valid JSON; fix it, or delete it and lexicon serve makes a new token" };
+  }
+  const config2 = parseServeConfig(raw);
+  if (config2) return { status: "ok", path: file2, config: config2 };
+  return { status: "unusable", path: file2, reason: `has no usable token (${tokenProblem(raw)}); lexicon serve replaces it` };
+}
+function unusableServeConfigReason(file2) {
+  let text;
+  try {
+    text = (0, import_node_fs22.readFileSync)(file2, "utf8");
+  } catch (err) {
+    return readErrorResult(file2, err).reason;
+  }
+  const read = textResult2(file2, text);
+  return read.status === "ok" ? "has no usable token; lexicon serve replaces it" : read.reason;
+}
+async function readServeConfigResult(opts = {}) {
+  const file2 = getServePath(opts);
+  let text;
+  try {
+    text = await import_node_fs22.promises.readFile(file2, "utf8");
+  } catch (err) {
+    return readErrorResult(file2, err);
+  }
+  return textResult2(file2, text);
+}
+async function readServeConfig(opts = {}) {
+  const read = await readServeConfigResult(opts);
+  return read.status === "ok" ? read.config : void 0;
+}
+function withServeConfigLock(fn, opts = {}) {
+  return withFileLock(getServePath(opts), fn);
+}
+async function writeServeConfig(config2, opts = {}) {
+  const target = getServePath(opts);
+  await withServeConfigLock(() => writeFileAtomic(target, formatJson(config2), { mode: SERVE_FILE_MODE }), opts);
+  return target;
+}
+async function keepOwnerOnly(file2) {
+  if (process.platform === "win32") return;
+  let mode;
+  try {
+    mode = (await import_node_fs22.promises.stat(file2)).mode & 511;
+  } catch {
+    return;
+  }
+  if ((mode & 63) === 0) return;
+  try {
+    await import_node_fs22.promises.chmod(file2, SERVE_FILE_MODE);
+  } catch (err) {
+    throw new Error(
+      `${file2} holds the local API token and is readable by other users (mode ${mode.toString(8)}), and it could not be made private: ${err instanceof Error ? err.message : String(err)}; run: chmod 600 ${file2}`
+    );
+  }
+}
+function generateToken() {
+  return (0, import_node_crypto5.randomBytes)(16).toString("hex");
+}
+function tokenProblem(raw) {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return "it is not a JSON object";
+  const token = raw.token;
+  if (token === void 0) return 'it has no "token" key';
+  if (typeof token !== "string") return '"token" is not a string';
+  return `"token" is not 32 to 128 hex characters (0-9, a-f, A-F)`;
+}
+async function ensureServeConfig(opts = {}, hooks = {}) {
+  return withServeConfigLock(async () => {
+    const file2 = getServePath(opts);
+    let raw;
+    let text;
+    try {
+      text = await import_node_fs22.promises.readFile(file2, "utf8");
+    } catch (err) {
+      if (err.code !== "ENOENT") throw err;
+    }
+    if (text !== void 0 && text.replace(/^\uFEFF/, "").trim() !== "") {
+      try {
+        raw = parseServeJson(text);
+      } catch (err) {
+        throw new Error(
+          `${file2} is not valid JSON (${err instanceof Error ? err.message : String(err)}); fix it, or delete it to have lexicon serve make a new token (paired clients then need the new one: lexicon serve --pair or --show)`
+        );
+      }
+      const existing = parseServeConfig(raw);
+      if (existing) {
+        await keepOwnerOnly(file2);
+        return existing;
+      }
+    }
+    const origins = parseServeConfig({ ...typeof raw === "object" && raw !== null ? raw : {}, token: "0".repeat(32) })?.allowedOrigins;
+    const config2 = {
+      port: DEFAULT_PORT,
+      token: generateToken(),
+      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
+      ...origins ? { allowedOrigins: origins } : {}
+    };
+    await writeServeConfig(config2, opts);
+    if (raw !== void 0) {
+      hooks.onTokenReplaced?.(
+        `${file2} had no usable token (${tokenProblem(raw)}), so a new token was written there; clients paired with the old one are refused until they get it: lexicon serve --pair (browser extension) or lexicon serve --show (copy it)`
+      );
+    }
+    return config2;
+  }, opts);
+}
+function serveUrl(port, host = DEFAULT_HOST) {
+  const h = host.includes(":") ? `[${host}]` : host;
+  return `http://${h}:${port}`;
+}
+function isLexiconHealth(body) {
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return false;
+  const b = body;
+  return b.ok === true && typeof b.version === "string" && b.version.length > 0 && Number.isInteger(b.terms) && b.terms >= 0;
+}
+var SERVE_STATUS_HINTS = {
+  failing: "The server is running but cannot serve the lexicon; fix what `error` names (often a lexicon file that does not parse) and check again. Starting another server will not help.",
+  down: "Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login.",
+  foreign: "Something other than lexicon serve answers on this port. Stop that program, or run the local API on another port: lexicon serve --port <n>."
+};
+var FOREIGN_HEALTH_ERROR = "something else answers on that port: its /health response is not lexicon serve's";
+async function probeHealth(baseUrl, opts = {}) {
+  const doFetch = opts.fetch ?? fetch;
+  let res;
+  try {
+    res = await doFetch(`${baseUrl}/health`, {
+      signal: AbortSignal.timeout(opts.timeoutMs ?? 1500),
+      ...opts.token ? { headers: { Authorization: `Bearer ${opts.token}` } } : {}
+    });
+  } catch (err) {
+    return { state: "down", error: redactSecrets(err instanceof Error ? err.message : String(err), [opts.token, baseUrl]) };
+  }
+  let body;
+  try {
+    body = await res.json();
+  } catch {
+    body = void 0;
+  }
+  if (res.ok) return { state: "up", body };
+  const given = typeof body === "object" && body !== null ? body.error : void 0;
+  return { state: "failing", status: res.status, error: typeof given === "string" ? redactSecrets(given, [opts.token]) : `HTTP ${res.status}` };
+}
+
 // src/cli/cmd-install.ts
-var import_node_fs21 = __toESM(require_node_fs());
-var import_node_path19 = __toESM(require_node_path());
+var import_node_fs23 = __toESM(require_node_fs());
+var import_node_path21 = __toESM(require_node_path());
 init_atomic();
 init_errors3();
 init_json();
@@ -64694,7 +64994,7 @@ function lexiconServerEnv(env, cwd, names = PASSTHROUGH_ENV) {
   const out = {};
   for (const name of names) {
     const value = env[name]?.trim();
-    if (value) out[name] = import_node_path19.default.resolve(cwd, value);
+    if (value) out[name] = import_node_path21.default.resolve(cwd, value);
   }
   return Object.keys(out).length > 0 ? out : void 0;
 }
@@ -64706,41 +65006,41 @@ function resolveServerPath(cliDir) {
 }
 function appData(ctx) {
   const value = ctx.env.APPDATA?.trim();
-  return value ? value : import_node_path19.default.join(ctx.home, "AppData", "Roaming");
+  return value ? value : import_node_path21.default.join(ctx.home, "AppData", "Roaming");
 }
 function codexHome(ctx) {
   const override = ctx.env.CODEX_HOME?.trim();
-  return override ? override : import_node_path19.default.join(ctx.home, ".codex");
+  return override ? override : import_node_path21.default.join(ctx.home, ".codex");
 }
 function geminiHome(ctx) {
   const override = ctx.env.GEMINI_CLI_HOME?.trim();
-  return import_node_path19.default.join(override ? override : ctx.home, ".gemini");
+  return import_node_path21.default.join(override ? override : ctx.home, ".gemini");
 }
 function configPathFor(client, ctx) {
   const { home, cwd, platform, project } = ctx;
   switch (client) {
     case "codex":
-      return project ? import_node_path19.default.join(cwd, ".codex", "config.toml") : import_node_path19.default.join(codexHome(ctx), "config.toml");
+      return project ? import_node_path21.default.join(cwd, ".codex", "config.toml") : import_node_path21.default.join(codexHome(ctx), "config.toml");
     case "cursor":
-      return project ? import_node_path19.default.join(cwd, ".cursor", "mcp.json") : import_node_path19.default.join(home, ".cursor", "mcp.json");
+      return project ? import_node_path21.default.join(cwd, ".cursor", "mcp.json") : import_node_path21.default.join(home, ".cursor", "mcp.json");
     case "windsurf":
       if (project) throw new Error("windsurf has no project-level MCP config; drop --project");
-      return import_node_path19.default.join(home, ".codeium", "windsurf", "mcp_config.json");
+      return import_node_path21.default.join(home, ".codeium", "windsurf", "mcp_config.json");
     case "gemini":
-      return project ? import_node_path19.default.join(cwd, ".gemini", "settings.json") : import_node_path19.default.join(geminiHome(ctx), "settings.json");
+      return project ? import_node_path21.default.join(cwd, ".gemini", "settings.json") : import_node_path21.default.join(geminiHome(ctx), "settings.json");
     case "claude-desktop": {
       if (project) throw new Error("claude-desktop has no project-level MCP config; drop --project");
       if (platform === "darwin") {
-        return import_node_path19.default.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
+        return import_node_path21.default.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
       }
-      if (platform === "win32") return import_node_path19.default.join(appData(ctx), "Claude", "claude_desktop_config.json");
-      return import_node_path19.default.join(xdgConfigHome(ctx.env, home), "Claude", "claude_desktop_config.json");
+      if (platform === "win32") return import_node_path21.default.join(appData(ctx), "Claude", "claude_desktop_config.json");
+      return import_node_path21.default.join(xdgConfigHome(ctx.env, home), "Claude", "claude_desktop_config.json");
     }
     case "vscode": {
-      if (project) return import_node_path19.default.join(cwd, ".vscode", "mcp.json");
-      if (platform === "darwin") return import_node_path19.default.join(home, "Library", "Application Support", "Code", "User", "mcp.json");
-      if (platform === "win32") return import_node_path19.default.join(appData(ctx), "Code", "User", "mcp.json");
-      return import_node_path19.default.join(home, ".config", "Code", "User", "mcp.json");
+      if (project) return import_node_path21.default.join(cwd, ".vscode", "mcp.json");
+      if (platform === "darwin") return import_node_path21.default.join(home, "Library", "Application Support", "Code", "User", "mcp.json");
+      if (platform === "win32") return import_node_path21.default.join(appData(ctx), "Code", "User", "mcp.json");
+      return import_node_path21.default.join(home, ".config", "Code", "User", "mcp.json");
     }
   }
 }
@@ -65007,7 +65307,7 @@ ${block}
 }
 async function readText2(file2) {
   try {
-    return { text: await import_node_fs21.promises.readFile(file2, "utf8"), existed: true };
+    return { text: await import_node_fs23.promises.readFile(file2, "utf8"), existed: true };
   } catch (err) {
     if (isEnoent(err)) return { text: "", existed: false };
     throw new Error(`could not read ${file2}: ${errorMessage(err)}`);
@@ -65082,7 +65382,7 @@ function jsonSnippet(key, entry) {
 }
 function installApplyCommand(client, opts) {
   const words = ["lexicon"];
-  if (opts.cwd !== void 0 && import_node_path19.default.resolve(opts.cwd) !== process.cwd()) words.push("--cwd", opts.cwd);
+  if (opts.cwd !== void 0 && import_node_path21.default.resolve(opts.cwd) !== process.cwd()) words.push("--cwd", opts.cwd);
   words.push("install", client);
   if (opts.scope !== void 0) words.push("--scope", opts.scope);
   else if (opts.project) words.push("--project");
@@ -65166,8 +65466,8 @@ lexicon: ${safeMessage(nextStep)}
 async function installText(client, opts, io, deps) {
   const platform = deps.platform ?? process.platform;
   const env = deps.env ?? process.env;
-  const home = opts.home ? import_node_path19.default.resolve(opts.home) : homeDir();
-  const cwd = import_node_path19.default.resolve(opts.cwd ?? process.cwd());
+  const home = opts.home ? import_node_path21.default.resolve(opts.home) : homeDir();
+  const cwd = import_node_path21.default.resolve(opts.cwd ?? process.cwd());
   const serverPath = resolveServerPath(deps.cliDir);
   const scope = opts.scope ?? (opts.project ? "project" : "user");
   if (scope !== "user" && scope !== "project") {
@@ -65201,7 +65501,7 @@ async function installText(client, opts, io, deps) {
       // `env`, the environment this install was given, not process.env, as
       // uninstall reads it: a CLAUDE_CONFIG_DIR only the process had sent the
       // hooks to a file the given environment (and uninstall) never names.
-      ...opts.home && !project ? { settingsPath: import_node_path19.default.join(claudeConfigDir(env, home), "settings.json") } : {},
+      ...opts.home && !project ? { settingsPath: import_node_path21.default.join(claudeConfigDir(env, home), "settings.json") } : {},
       ...opts.home ? { claudeUserConfig: claudeUserConfigPath(env, home) } : {},
       ...deps.onWritten ? { onWritten: deps.onWritten } : {},
       ...deps.exec ? { exec: deps.exec } : {},
@@ -65248,7 +65548,7 @@ async function installedLexiconPlugin(settingsPath, installedPluginsPath) {
   return findInstalledLexiconPlugin(settings.error === void 0 ? settings.value : void 0, installed.error === void 0 ? installed.value : void 0);
 }
 function claudeSettingsPathFor(scope, cwd, env = process.env) {
-  return scope === "project" ? import_node_path19.default.join(cwd, ".claude", "settings.json") : import_node_path19.default.join(claudeConfigDir(env), "settings.json");
+  return scope === "project" ? import_node_path21.default.join(cwd, ".claude", "settings.json") : import_node_path21.default.join(claudeConfigDir(env), "settings.json");
 }
 var CLAUDE_MD_SNIPPET = "Read the `lexicon://me` resource before interpreting dictated text.";
 async function runInstallClaude(opts, io, deps = {}) {
@@ -65256,11 +65556,11 @@ async function runInstallClaude(opts, io, deps = {}) {
   if (scope !== "user" && scope !== "project") {
     throw new Error(`--scope must be "user" or "project" (got "${scope}")`);
   }
-  const settingsPath = deps.settingsPath ?? claudeSettingsPathFor(scope, import_node_path19.default.resolve(opts.cwd ?? process.cwd()), deps.env ?? process.env);
+  const settingsPath = deps.settingsPath ?? claudeSettingsPathFor(scope, import_node_path21.default.resolve(opts.cwd ?? process.cwd()), deps.env ?? process.env);
   if (scope === "user") {
     const pluginId = await installedLexiconPlugin(
       settingsPath,
-      deps.installedPluginsPath ?? import_node_path19.default.join(import_node_path19.default.dirname(settingsPath), "plugins", "installed_plugins.json")
+      deps.installedPluginsPath ?? import_node_path21.default.join(import_node_path21.default.dirname(settingsPath), "plugins", "installed_plugins.json")
     );
     if (pluginId) {
       line(
@@ -65272,11 +65572,11 @@ async function runInstallClaude(opts, io, deps = {}) {
   }
   if (opts.apply) await readHookSettings(settingsPath);
   const { server: serverPath, hook: hookPath, bundled } = resolveIntegrationPaths(deps.cliDir);
-  const claudeCwd = import_node_path19.default.resolve(opts.cwd ?? process.cwd());
+  const claudeCwd = import_node_path21.default.resolve(opts.cwd ?? process.cwd());
   const exec = deps.exec ?? ((file2, args) => defaultExec(file2, args, { cwd: claudeCwd }));
   let failed = false;
   const serverLaunch = launchFor(serverPath, "mcp");
-  const serverEnv = lexiconServerEnv(deps.env ?? process.env, import_node_path19.default.resolve(opts.cwd ?? process.cwd()));
+  const serverEnv = lexiconServerEnv(deps.env ?? process.env, import_node_path21.default.resolve(opts.cwd ?? process.cwd()));
   const envArgs = Object.entries(serverEnv ?? {}).flatMap(([k, v]) => ["-e", `${k}=${v}`]);
   const mcpArgs = ["mcp", "add", ...envArgs, "--scope", scope, "lexicon", "--", serverLaunch.command, ...serverLaunch.args];
   line(io, bold("1. Register the MCP server"));
@@ -65284,7 +65584,7 @@ async function runInstallClaude(opts, io, deps = {}) {
   if (serverLaunch.viaNpx) line(io, dim("   (run from an npx or Claude Code plugin cache, so the config calls npx rather than a path that may be deleted)"));
   else if (bundled) line(io, dim("   (self-contained bundle: no node_modules needed at runtime)"));
   if (opts.apply) {
-    if (!serverLaunch.viaNpx && !(0, import_node_fs21.existsSync)(serverPath)) {
+    if (!serverLaunch.viaNpx && !(0, import_node_fs23.existsSync)(serverPath)) {
       line(io, yellow(`   note: ${safePath(serverPath)} does not exist yet (run npm run build first)`));
     }
     try {
@@ -65294,7 +65594,7 @@ async function runInstallClaude(opts, io, deps = {}) {
     } catch (err) {
       const message = errorMessage(err);
       if (/already exists/i.test(message)) {
-        const files = { userConfig: deps.claudeUserConfig ?? claudeUserConfigPath(deps.env ?? process.env), cwd: import_node_path19.default.resolve(opts.cwd ?? process.cwd()) };
+        const files = { userConfig: deps.claudeUserConfig ?? claudeUserConfigPath(deps.env ?? process.env), cwd: import_node_path21.default.resolve(opts.cwd ?? process.cwd()) };
         if (!await refreshClaudeRegistration(io, exec, scope, mcpArgs, serverLaunch, files)) failed = true;
         line(io, dim(`   undo: claude mcp remove --scope ${scope} lexicon`));
       } else {
@@ -65423,9 +65723,9 @@ function quoteArg(s, platform = process.platform) {
 
 // src/cli/setup/detect.ts
 var import_node_child_process6 = __toESM(require_node_child_process());
-var import_node_fs22 = __toESM(require_node_fs());
+var import_node_fs24 = __toESM(require_node_fs());
 init_xdg();
-var import_node_path20 = __toESM(require_node_path());
+var import_node_path22 = __toESM(require_node_path());
 
 // src/cli/setup/types.ts
 var SETUP_CLIENTS = INSTALL_CLIENTS.filter((c) => c !== "generic");
@@ -65501,10 +65801,10 @@ function parsePackList(value, available) {
   return out;
 }
 function findGitRoot2(start, exists) {
-  let dir = import_node_path20.default.resolve(start);
+  let dir = import_node_path22.default.resolve(start);
   for (; ; ) {
-    if (exists(import_node_path20.default.join(dir, ".git"))) return dir;
-    const parent = import_node_path20.default.dirname(dir);
+    if (exists(import_node_path22.default.join(dir, ".git"))) return dir;
+    const parent = import_node_path22.default.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
@@ -65520,7 +65820,7 @@ function suggestCompany(packageName, remoteUrl) {
 }
 async function readPackageName(cwd) {
   try {
-    const raw = await import_node_fs22.promises.readFile(import_node_path20.default.join(cwd, "package.json"), "utf8");
+    const raw = await import_node_fs24.promises.readFile(import_node_path22.default.join(cwd, "package.json"), "utf8");
     const pkg = JSON.parse(raw);
     return typeof pkg.name === "string" ? pkg.name : void 0;
   } catch {
@@ -65553,7 +65853,7 @@ var CLI_NAMES = {
 function configDirFor(client, ctx) {
   if (client === "claude") return claudeConfigDir(ctx.env, ctx.home);
   const file2 = configPathFor(client, { home: ctx.home, cwd: ctx.cwd, platform: ctx.platform, env: ctx.env, project: false });
-  return client === "vscode" ? import_node_path20.default.dirname(import_node_path20.default.dirname(file2)) : import_node_path20.default.dirname(file2);
+  return client === "vscode" ? import_node_path22.default.dirname(import_node_path22.default.dirname(file2)) : import_node_path22.default.dirname(file2);
 }
 async function detectClients(deps = {}, cwd = process.cwd()) {
   const ctx = {
@@ -65561,7 +65861,7 @@ async function detectClients(deps = {}, cwd = process.cwd()) {
     cwd,
     platform: deps.platform ?? process.platform,
     env: deps.env ?? process.env,
-    exists: deps.exists ?? import_node_fs22.existsSync
+    exists: deps.exists ?? import_node_fs24.existsSync
   };
   const out = [];
   for (const name of SETUP_CLIENTS) {
@@ -65569,7 +65869,7 @@ async function detectClients(deps = {}, cwd = process.cwd()) {
     const dir = configDirFor(name, ctx);
     if (ctx.exists(dir)) evidence = dir;
     if (!evidence && ctx.platform === "darwin" && APP_BUNDLES[name]) {
-      const bundle = import_node_path20.default.join("/Applications", APP_BUNDLES[name]);
+      const bundle = import_node_path22.default.join("/Applications", APP_BUNDLES[name]);
       if (ctx.exists(bundle)) evidence = bundle;
     }
     if (!evidence && CLI_NAMES[name]) {
@@ -65586,7 +65886,7 @@ async function detectClients(deps = {}, cwd = process.cwd()) {
 }
 
 // src/cli/serve-paths.ts
-var import_node_path21 = __toESM(require_node_path());
+var import_node_path23 = __toESM(require_node_path());
 init_xdg();
 var LAUNCH_AGENT_LABEL = "ai.ashlr.lexicon.serve";
 var SYSTEMD_UNIT_NAME = "lexicon-serve.service";
@@ -65601,13 +65901,13 @@ function scheduledTaskName(env = process.env) {
   return override && /^[A-Za-z0-9._-]+$/.test(override) ? override : SCHEDULED_TASK_NAME;
 }
 function launchAgentPath(home, env = process.env) {
-  return import_node_path21.default.join(usableHome(home), "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
+  return import_node_path23.default.join(usableHome(home), "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
 }
 function launchAgentLogPath(home) {
-  return import_node_path21.default.join(usableHome(home), "Library", "Logs", "lexicon", "serve.log");
+  return import_node_path23.default.join(usableHome(home), "Library", "Logs", "lexicon", "serve.log");
 }
 function systemdUnitPath(home, env) {
-  return import_node_path21.default.join(xdgConfigHome(env, home), "systemd", "user", SYSTEMD_UNIT_NAME);
+  return import_node_path23.default.join(xdgConfigHome(env, home), "systemd", "user", SYSTEMD_UNIT_NAME);
 }
 function programPathFromPlist(plist) {
   const block = plist.match(/<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/);
@@ -65709,6 +66009,36 @@ function declaresTransport(entry) {
   }
   return typeof entry.url === "string" && entry.url.trim() !== "" && entry.args === void 0 && (entry.type === void 0 || entry.type === "http" || entry.type === "sse");
 }
+function claudeListsLexiconServer(out) {
+  return out.split(/\r?\n/).some((row) => /^(?:plugin:[^:\s]+:)?lexicon:(?:\s|$)/.test(row.trim()));
+}
+async function stateFileWarnings(globalPath, opts) {
+  const out = [];
+  const serve = await readServeConfigResult(opts);
+  if (serve.status === "unusable") {
+    out.push(`serve.json ${serve.reason} (the local API and its paired clients need a usable one): ${serve.path}`);
+  }
+  const hits = await hitsRegistryProblem(opts);
+  if (hits !== void 0) {
+    out.push(
+      `hits.json ${hits}, so every term reads as never used${hits.startsWith("cannot be read") ? " and new hits are not counted" : ""} (fix it, or move it aside to start the counts over): ${getHitsPath(opts)}`
+    );
+  }
+  const pendingFile = pendingPathFor(globalPath);
+  try {
+    await readPending(pendingFile);
+  } catch (err) {
+    const why = err instanceof PendingFileError ? errorMessage(err).replace(`${pendingFile} `, "") : `cannot be read (${err.code ?? errorMessage(err)})`;
+    out.push(`pending corrections queue ${why}, so lexicon pending cannot list it and new corrections are not queued (fix it, or move it aside): ${pendingFile}`);
+  }
+  const cache = await indexCacheProblem(globalPath);
+  if (cache !== void 0) {
+    out.push(
+      `index cache ${cache}, so ${cache === "is not a file" || cache.startsWith("cannot be read") ? "each match builds the index again" : "the next match builds the index again"} (delete it; lexicon writes a new one): ${import_node_path24.default.join(import_node_path24.default.dirname(globalPath), INDEX_CACHE_FILE_NAME)}`
+    );
+  }
+  return out;
+}
 function withoutTomlComment(line2) {
   let quote;
   for (let i = 0; i < line2.length; i++) {
@@ -65797,10 +66127,10 @@ function parsesAsJson(text) {
   }
 }
 function projectSettingsCandidates(cwd) {
-  const dirs = [import_node_path22.default.resolve(cwd)];
-  const root = findGitRoot2(cwd, import_node_fs23.existsSync);
-  if (root !== void 0 && import_node_path22.default.resolve(root) !== dirs[0]) dirs.push(import_node_path22.default.resolve(root));
-  return dirs.flatMap((dir) => [import_node_path22.default.join(dir, ".claude", "settings.json"), import_node_path22.default.join(dir, ".claude", "settings.local.json")]);
+  const dirs = [import_node_path24.default.resolve(cwd)];
+  const root = findGitRoot2(cwd, import_node_fs25.existsSync);
+  if (root !== void 0 && import_node_path24.default.resolve(root) !== dirs[0]) dirs.push(import_node_path24.default.resolve(root));
+  return dirs.flatMap((dir) => [import_node_path24.default.join(dir, ".claude", "settings.json"), import_node_path24.default.join(dir, ".claude", "settings.local.json")]);
 }
 var SERVE_REINSTALL_HINT = "run: lexicon serve --uninstall && lexicon serve --install";
 async function checkLoginService(probe) {
@@ -65841,7 +66171,7 @@ async function checkLoginService(probe) {
     if (!loaded) {
       return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
     }
-    if (program2 !== void 0 && !(0, import_node_fs23.existsSync)(program2)) {
+    if (program2 !== void 0 && !(0, import_node_fs25.existsSync)(program2)) {
       return { level: "fail", message: `${name} points at a missing file: ${program2} (${SERVE_REINSTALL_HINT})` };
     }
     return { level: "ok", message: `${name} is registered and runs at logon` };
@@ -65851,7 +66181,7 @@ async function checkLoginService(probe) {
   let fileExists = false;
   let unreadable;
   try {
-    const text = await import_node_fs23.promises.readFile(file2, "utf8");
+    const text = await import_node_fs25.promises.readFile(file2, "utf8");
     fileExists = true;
     program2 = platform === "darwin" ? programPathFromPlist(text) : programPathFromUnit(text);
   } catch (err) {
@@ -65868,7 +66198,7 @@ async function checkLoginService(probe) {
   if (!loaded && !fileExists) {
     return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
   }
-  if (program2 !== void 0 && !(0, import_node_fs23.existsSync)(program2)) {
+  if (program2 !== void 0 && !(0, import_node_fs25.existsSync)(program2)) {
     return { level: "fail", message: `${name} points at a missing file: ${program2} (${SERVE_REINSTALL_HINT})` };
   }
   if (!loaded) {
@@ -66039,6 +66369,7 @@ async function runDoctorReport(opts, deps = {}) {
       `trust registry ${trustProblem}, so every project lexicon reads as untrusted and trusting one fails (fix the JSON in it, or move it aside and trust each project again): ${trustPath}`
     );
   }
+  for (const message of await stateFileWarnings(paths.global, trustOpts)) push2("warn", message);
   if (paths.project) {
     try {
       const p = await readLexiconFile(paths.project, "project");
@@ -66090,6 +66421,7 @@ async function runDoctorReport(opts, deps = {}) {
     }
   }
   const aliasOwners = /* @__PURE__ */ new Map();
+  let aliasCanonicalConflicts = 0;
   const fold2 = (w) => w.trim().replace(/\s+/g, " ").toLowerCase();
   for (const { term } of allTerms) {
     const never2 = new Set((term.never ?? []).map(fold2));
@@ -66101,6 +66433,7 @@ async function runDoctorReport(opts, deps = {}) {
       }
       const other = canonicalOwners.get(key);
       if (other && !other.some((o) => o.term === term) && key !== spellingKey(term.canonical)) {
+        aliasCanonicalConflicts++;
         push2("fail", `alias "${alias}" of "${term.canonical}" equals the canonical of "${other[0].term.canonical}" (conflict)`);
       }
       if (COMMON_WORDS.has(key)) {
@@ -66118,14 +66451,14 @@ async function runDoctorReport(opts, deps = {}) {
       push2("warn", `alias "${alias}" belongs to several terms: ${[...distinct.values()].join(", ")} (ambiguous)`);
     }
   }
-  if (allTerms.length > 0 && !checks.some((c) => c.level === "fail" && c.message.includes("conflict"))) {
+  if (allTerms.length > 0 && aliasCanonicalConflicts === 0) {
     push2("ok", "no alias/canonical conflicts");
   }
-  const settingsPath = deps.settingsPath ?? import_node_path22.default.join(claudeConfigDir(env, home), "settings.json");
-  const projectSettingsPath = deps.projectSettingsPath ?? import_node_path22.default.join(cwd, ".claude", "settings.json");
+  const settingsPath = deps.settingsPath ?? import_node_path24.default.join(claudeConfigDir(env, home), "settings.json");
+  const projectSettingsPath = deps.projectSettingsPath ?? import_node_path24.default.join(cwd, ".claude", "settings.json");
   const projectSettingsFiles = deps.projectSettingsPath !== void 0 ? [projectSettingsPath] : projectSettingsCandidates(cwd);
-  const projectFiles = projectSettingsFiles.filter((file2) => import_node_path22.default.resolve(file2) !== import_node_path22.default.resolve(settingsPath)).map((file2) => ({ file: file2, scope: file2.endsWith("settings.local.json") ? "local" : "project" }));
-  const installedPluginsPath = deps.installedPluginsPath ?? import_node_path22.default.join(claudeConfigDir(env, home), "plugins", "installed_plugins.json");
+  const projectFiles = projectSettingsFiles.filter((file2) => import_node_path24.default.resolve(file2) !== import_node_path24.default.resolve(settingsPath)).map((file2) => ({ file: file2, scope: file2.endsWith("settings.local.json") ? "local" : "project" }));
+  const installedPluginsPath = deps.installedPluginsPath ?? import_node_path24.default.join(claudeConfigDir(env, home), "plugins", "installed_plugins.json");
   const settings = await readDoctorConfigJson(settingsPath);
   const projectReads = await Promise.all(projectFiles.map(async (f) => ({ ...f, read: await readDoctorConfigJson(f.file) })));
   const installed = await readDoctorConfigJson(installedPluginsPath);
@@ -66195,7 +66528,7 @@ async function runDoctorReport(opts, deps = {}) {
     push2("ok", `claude CLI found: ${claudeBin}`);
     try {
       const out = exec("claude", ["mcp", "list"]);
-      if (/lexicon/i.test(out)) {
+      if (claudeListsLexiconServer(out)) {
         wired = true;
         push2("ok", "lexicon MCP server is registered with claude");
       } else if (pluginId) push2("warn", `lexicon MCP server not listed by "claude mcp list"; the ${pluginId} plugin provides it when enabled`);
@@ -66214,11 +66547,11 @@ async function runDoctorReport(opts, deps = {}) {
     push2("warn", `no clipboard backend found (${errorMessage(err)})`);
   }
   const whisperOverride = env.LEXICON_WHISPER_BIN;
-  const whisperCli = whisperOverride ? (0, import_node_fs23.existsSync)(whisperOverride) ? whisperOverride : void 0 : locateToolSync(WHISPER_BIN_NAMES, env, platform);
+  const whisperCli = whisperOverride ? (0, import_node_fs25.existsSync)(whisperOverride) ? whisperOverride : void 0 : locateToolSync(WHISPER_BIN_NAMES, env, platform);
   if (whisperCli) push2("ok", `whisper-cli found: ${whisperCli}`);
   else push2("warn", `whisper-cli not found (needed by lexicon voice; ${installHint(platform, { ffmpeg: false, whisper: true })})`);
   const ffmpegOverride = env.LEXICON_FFMPEG_BIN;
-  const ffmpegBin = ffmpegOverride ? (0, import_node_fs23.existsSync)(ffmpegOverride) ? ffmpegOverride : void 0 : locateToolSync(["ffmpeg"], env, platform);
+  const ffmpegBin = ffmpegOverride ? (0, import_node_fs25.existsSync)(ffmpegOverride) ? ffmpegOverride : void 0 : locateToolSync(["ffmpeg"], env, platform);
   if (ffmpegBin) push2("ok", `ffmpeg found: ${ffmpegBin}`);
   else push2("warn", `ffmpeg not found (needed by lexicon voice; ${installHint(platform, { ffmpeg: true, whisper: false })})`);
   let model;
@@ -66412,10 +66745,10 @@ function createPrompter(io = {}) {
 // src/cli/commands.ts
 var PROJECT_FILE_NAME2 = ".lexicon.yaml";
 function findGitRoot3(start) {
-  let dir = import_node_path23.default.resolve(start);
+  let dir = import_node_path25.default.resolve(start);
   for (; ; ) {
-    if ((0, import_node_fs24.existsSync)(import_node_path23.default.join(dir, ".git"))) return dir;
-    const parent = import_node_path23.default.dirname(dir);
+    if ((0, import_node_fs26.existsSync)(import_node_path25.default.join(dir, ".git"))) return dir;
+    const parent = import_node_path25.default.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
@@ -66436,7 +66769,7 @@ async function runInit(opts, io) {
   const cwd = resolveCwd(opts);
   const paths = resolvePaths({ cwd });
   const scope = opts.project ? "project" : "global";
-  const target = opts.project ? paths.project ?? import_node_path23.default.join(findGitRoot3(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
+  const target = opts.project ? paths.project ?? import_node_path25.default.join(findGitRoot3(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
   const created = await createLexiconFile(target, scope);
   if (created && scope === "project") await trustProject(target, { cwd });
   const trust = scope === "project" ? await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) : void 0;
@@ -66464,214 +66797,34 @@ async function runInit(opts, io) {
 }
 async function createLexiconFile(target, scope) {
   return withLexiconLock(target, async () => {
-    if ((0, import_node_fs24.existsSync)(target)) return false;
+    if ((0, import_node_fs26.existsSync)(target)) return false;
     const lexicon = emptyLexicon();
     lexicon.settings = { minConfidence: 0.82, phonetic: true, fuzzy: true, skipCode: true };
     const file2 = { path: target, scope, lexicon, exists: false };
     await writeLexiconFile(file2);
-    await import_node_fs24.promises.appendFile(target, EXAMPLE_TERM_COMMENT, "utf8");
+    await import_node_fs26.promises.appendFile(target, EXAMPLE_TERM_COMMENT, "utf8");
     return true;
   });
 }
 
 // src/cli/cmd-setup.ts
 init_xdg();
-var import_node_path27 = __toESM(require_node_path());
-var import_node_fs28 = __toESM(require_node_fs());
+var import_node_path28 = __toESM(require_node_path());
+var import_node_fs29 = __toESM(require_node_fs());
 init_errors3();
 
 // src/cli/setup/steps.ts
-var import_node_fs27 = __toESM(require_node_fs());
-var import_node_path26 = __toESM(require_node_path());
+var import_node_fs28 = __toESM(require_node_fs());
+var import_node_path27 = __toESM(require_node_path());
 init_errors3();
 init_atomic();
 
 // src/cli/cmd-serve.ts
 var import_node_child_process7 = __toESM(require_node_child_process());
-var import_node_fs26 = __toESM(require_node_fs());
+var import_node_fs27 = __toESM(require_node_fs());
 var import_node_os5 = __toESM(require_node_os());
 init_xdg();
-var import_node_path25 = __toESM(require_node_path());
-
-// src/serve/config.ts
-var import_node_crypto4 = __toESM(require_node_crypto());
-var import_node_net = __toESM(require_node_net());
-var import_node_fs25 = __toESM(require_node_fs());
-var import_node_path24 = __toESM(require_node_path());
-init_redact();
-init_atomic();
-init_json();
-init_errors3();
-var SERVE_FILE_MODE = 384;
-var SERVE_FILE_NAME = "serve.json";
-var DEFAULT_PORT = 41733;
-var DEFAULT_HOST = "127.0.0.1";
-var TOKEN_RE3 = /^[0-9a-fA-F]{32,128}$/;
-function getServePath(opts = {}) {
-  return import_node_path24.default.join(import_node_path24.default.dirname(resolvePaths(opts).global), SERVE_FILE_NAME);
-}
-function parseServeConfig(raw) {
-  if (typeof raw !== "object" || raw === null) return void 0;
-  const { port, token, createdAt, allowedOrigins } = raw;
-  if (typeof token !== "string" || !TOKEN_RE3.test(token)) return void 0;
-  const config2 = {
-    port: typeof port === "number" && Number.isInteger(port) && port >= 0 && port <= 65535 ? port : DEFAULT_PORT,
-    token,
-    createdAt: typeof createdAt === "string" ? createdAt : (/* @__PURE__ */ new Date()).toISOString()
-  };
-  if (Array.isArray(allowedOrigins)) {
-    const origins = allowedOrigins.filter((o) => typeof o === "string" && o !== "*" && o.length > 0);
-    if (origins.length > 0) config2.allowedOrigins = origins;
-  }
-  return config2;
-}
-function parseServeJson(text) {
-  return JSON.parse(text.replace(/^\uFEFF/, ""));
-}
-function unusableServeConfigReason(file2) {
-  let text;
-  try {
-    text = (0, import_node_fs25.readFileSync)(file2, "utf8");
-  } catch (err) {
-    const code = err.code;
-    if (code === "ENOENT") return "does not exist; lexicon serve creates it";
-    return `could not be read (${typeof code === "string" ? code : errorMessage(err)}); make it a readable file, or remove it so lexicon serve makes a new token`;
-  }
-  if (text.replace(/^\uFEFF/, "").trim() === "") return "is empty; lexicon serve replaces it";
-  let raw;
-  try {
-    raw = parseServeJson(text);
-  } catch {
-    return "is not valid JSON; fix it, or delete it and lexicon serve makes a new token";
-  }
-  return `has no usable token (${tokenProblem(raw)}); lexicon serve replaces it`;
-}
-async function readServeConfig(opts = {}) {
-  let text;
-  try {
-    text = await import_node_fs25.promises.readFile(getServePath(opts), "utf8");
-  } catch {
-    return void 0;
-  }
-  try {
-    return parseServeConfig(parseServeJson(text));
-  } catch {
-    return void 0;
-  }
-}
-function withServeConfigLock(fn, opts = {}) {
-  return withFileLock(getServePath(opts), fn);
-}
-async function writeServeConfig(config2, opts = {}) {
-  const target = getServePath(opts);
-  await withServeConfigLock(() => writeFileAtomic(target, formatJson(config2), { mode: SERVE_FILE_MODE }), opts);
-  return target;
-}
-async function keepOwnerOnly(file2) {
-  if (process.platform === "win32") return;
-  let mode;
-  try {
-    mode = (await import_node_fs25.promises.stat(file2)).mode & 511;
-  } catch {
-    return;
-  }
-  if ((mode & 63) === 0) return;
-  try {
-    await import_node_fs25.promises.chmod(file2, SERVE_FILE_MODE);
-  } catch (err) {
-    throw new Error(
-      `${file2} holds the local API token and is readable by other users (mode ${mode.toString(8)}), and it could not be made private: ${err instanceof Error ? err.message : String(err)}; run: chmod 600 ${file2}`
-    );
-  }
-}
-function generateToken() {
-  return (0, import_node_crypto4.randomBytes)(16).toString("hex");
-}
-function tokenProblem(raw) {
-  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return "it is not a JSON object";
-  const token = raw.token;
-  if (token === void 0) return 'it has no "token" key';
-  if (typeof token !== "string") return '"token" is not a string';
-  return `"token" is not 32 to 128 hex characters (0-9, a-f, A-F)`;
-}
-async function ensureServeConfig(opts = {}, hooks = {}) {
-  return withServeConfigLock(async () => {
-    const file2 = getServePath(opts);
-    let raw;
-    let text;
-    try {
-      text = await import_node_fs25.promises.readFile(file2, "utf8");
-    } catch (err) {
-      if (err.code !== "ENOENT") throw err;
-    }
-    if (text !== void 0 && text.replace(/^\uFEFF/, "").trim() !== "") {
-      try {
-        raw = parseServeJson(text);
-      } catch (err) {
-        throw new Error(
-          `${file2} is not valid JSON (${err instanceof Error ? err.message : String(err)}); fix it, or delete it to have lexicon serve make a new token (paired clients then need the new one: lexicon serve --pair or --show)`
-        );
-      }
-      const existing = parseServeConfig(raw);
-      if (existing) {
-        await keepOwnerOnly(file2);
-        return existing;
-      }
-    }
-    const origins = parseServeConfig({ ...typeof raw === "object" && raw !== null ? raw : {}, token: "0".repeat(32) })?.allowedOrigins;
-    const config2 = {
-      port: DEFAULT_PORT,
-      token: generateToken(),
-      createdAt: (/* @__PURE__ */ new Date()).toISOString(),
-      ...origins ? { allowedOrigins: origins } : {}
-    };
-    await writeServeConfig(config2, opts);
-    if (raw !== void 0) {
-      hooks.onTokenReplaced?.(
-        `${file2} had no usable token (${tokenProblem(raw)}), so a new token was written there; clients paired with the old one are refused until they get it: lexicon serve --pair (browser extension) or lexicon serve --show (copy it)`
-      );
-    }
-    return config2;
-  }, opts);
-}
-function serveUrl(port, host = DEFAULT_HOST) {
-  const h = host.includes(":") ? `[${host}]` : host;
-  return `http://${h}:${port}`;
-}
-function isLexiconHealth(body) {
-  if (typeof body !== "object" || body === null || Array.isArray(body)) return false;
-  const b = body;
-  return b.ok === true && typeof b.version === "string" && b.version.length > 0 && Number.isInteger(b.terms) && b.terms >= 0;
-}
-var SERVE_STATUS_HINTS = {
-  failing: "The server is running but cannot serve the lexicon; fix what `error` names (often a lexicon file that does not parse) and check again. Starting another server will not help.",
-  down: "Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login.",
-  foreign: "Something other than lexicon serve answers on this port. Stop that program, or run the local API on another port: lexicon serve --port <n>."
-};
-var FOREIGN_HEALTH_ERROR = "something else answers on that port: its /health response is not lexicon serve's";
-async function probeHealth(baseUrl, opts = {}) {
-  const doFetch = opts.fetch ?? fetch;
-  let res;
-  try {
-    res = await doFetch(`${baseUrl}/health`, {
-      signal: AbortSignal.timeout(opts.timeoutMs ?? 1500),
-      ...opts.token ? { headers: { Authorization: `Bearer ${opts.token}` } } : {}
-    });
-  } catch (err) {
-    return { state: "down", error: redactSecrets(err instanceof Error ? err.message : String(err), [opts.token, baseUrl]) };
-  }
-  let body;
-  try {
-    body = await res.json();
-  } catch {
-    body = void 0;
-  }
-  if (res.ok) return { state: "up", body };
-  const given = typeof body === "object" && body !== null ? body.error : void 0;
-  return { state: "failing", status: res.status, error: typeof given === "string" ? redactSecrets(given, [opts.token]) : `HTTP ${res.status}` };
-}
-
-// src/cli/cmd-serve.ts
+var import_node_path26 = __toESM(require_node_path());
 init_errors3();
 init_atomic();
 var SERVICE_SERVE_ARGS = ["serve", "--quiet"];
@@ -66703,7 +66856,7 @@ var defaultServeExec = (cmd, args) => new Promise((resolve5) => {
 function xmlEscape2(s) {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
-function stableNodePath(execPath, exists = import_node_fs26.existsSync) {
+function stableNodePath(execPath, exists = import_node_fs27.existsSync) {
   const m = /^(.*)\/Cellar\/(node(?:@\d+)?)\/[^/]+\/bin\/node$/.exec(execPath);
   if (!m) return execPath;
   const stable = `${m[1]}/opt/${m[2]}/bin/node`;
@@ -66876,7 +67029,7 @@ async function cliEntryBlocker(cliPath, platform) {
   }
   if (platform === "darwin" || platform === "linux" || platform === "win32") {
     try {
-      await import_node_fs26.promises.access(cliPath);
+      await import_node_fs27.promises.access(cliPath);
     } catch {
       return { volatile: false, reason: `${safe(cliPath)} does not exist (run npm run build, or set LEXICON_CLI to the built dist/cli/index.js)` };
     }
@@ -66912,13 +67065,13 @@ async function runServeInstall(opts, io, deps = {}) {
   }
   await ensureServeConfig(storeOpts(opts), { onTokenReplaced: (message) => io.stderr(`lexicon: warning: ${safeMessage(message)}
 `) });
-  const serviceEnv = lexiconServerEnv(env, import_node_path25.default.resolve(opts.cwd ?? process.cwd()), SERVE_PASSTHROUGH_ENV);
+  const serviceEnv = lexiconServerEnv(env, import_node_path26.default.resolve(opts.cwd ?? process.cwd()), SERVE_PASSTHROUGH_ENV);
   if (platform === "darwin") {
     const label = serveLabel(env);
     const plistPath = launchAgentPath(home, env);
     const logPath = launchAgentLogPath(home);
-    await import_node_fs26.promises.mkdir(import_node_path25.default.dirname(plistPath), { recursive: true });
-    await import_node_fs26.promises.mkdir(import_node_path25.default.dirname(logPath), { recursive: true });
+    await import_node_fs27.promises.mkdir(import_node_path26.default.dirname(plistPath), { recursive: true });
+    await import_node_fs27.promises.mkdir(import_node_path26.default.dirname(logPath), { recursive: true });
     await writeServiceFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv));
     line(io, `wrote ${safe(plistPath)}`);
     line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} ${SERVICE_SERVE_ARGS.join(" ")}`);
@@ -66953,7 +67106,7 @@ async function runServeInstall(opts, io, deps = {}) {
   }
   if (platform === "linux") {
     const unitPath = systemdUnitPath(home, env);
-    await import_node_fs26.promises.mkdir(import_node_path25.default.dirname(unitPath), { recursive: true });
+    await import_node_fs27.promises.mkdir(import_node_path26.default.dirname(unitPath), { recursive: true });
     await writeServiceFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv));
     line(io, `wrote ${safe(unitPath)}`);
     line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} ${SERVICE_SERVE_ARGS.join(" ")}`);
@@ -66993,8 +67146,8 @@ async function runServeInstall(opts, io, deps = {}) {
       }
     }
     const xml = scheduledTaskXml(nodePath, cliPath, taskUserId(env), envFile);
-    const xmlPath = import_node_path25.default.join(await import_node_fs26.promises.mkdtemp(import_node_path25.default.join(import_node_os5.default.tmpdir(), "lexicon-task-")), "lexicon-serve.xml");
-    await import_node_fs26.promises.writeFile(xmlPath, Buffer.from(`\uFEFF${xml}`, "utf16le"));
+    const xmlPath = import_node_path26.default.join(await import_node_fs27.promises.mkdtemp(import_node_path26.default.join(import_node_os5.default.tmpdir(), "lexicon-task-")), "lexicon-serve.xml");
+    await import_node_fs27.promises.writeFile(xmlPath, Buffer.from(`\uFEFF${xml}`, "utf16le"));
     try {
       const created = await runAndReport(exec, io, "schtasks", ["/Create", "/TN", taskName, "/XML", xmlPath, "/F"]);
       if (created.code !== 0) {
@@ -67005,7 +67158,7 @@ async function runServeInstall(opts, io, deps = {}) {
         return 1;
       }
     } finally {
-      await import_node_fs26.promises.rm(import_node_path25.default.dirname(xmlPath), { recursive: true, force: true });
+      await import_node_fs27.promises.rm(import_node_path26.default.dirname(xmlPath), { recursive: true, force: true });
     }
     line(io, `created Scheduled Task ${safe(taskName)} (trigger: at logon)`);
     line(io, `  Command:   ${safe(nodePath)}`);
@@ -67054,7 +67207,7 @@ async function schtasksTaskState(exec, taskName) {
   return { exists: true, running: rows.some((fields) => fields.some((f) => f.trim() === SCHED_S_TASK_RUNNING)) };
 }
 function serveEnvPath(opts) {
-  return import_node_path25.default.join(import_node_path25.default.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
+  return import_node_path26.default.join(import_node_path26.default.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
 }
 function schtasksNotFound(result) {
   return /cannot find|does not exist/i.test(`${result.stderr}
@@ -67362,7 +67515,7 @@ async function stepHarvest(ctx) {
   }
   if (ctx.plan) {
     ctx.plan.wouldHarvest = candidates.map((c) => c.canonical);
-    const file3 = safePath(import_node_path26.default.join(tildify(root, ctx.home), ".lexicon.yaml"));
+    const file3 = safePath(import_node_path27.default.join(tildify(root, ctx.home), ".lexicon.yaml"));
     const found = `${candidates.length} name${candidates.length === 1 ? "" : "s"} in ${safePath(tildify(root, ctx.home))}: ${safe(ctx.plan.wouldHarvest.join(", "))}`;
     if (ctx.opts.harvest === true) {
       ctx.say(`   would add to ${file3}: ${found}`);
@@ -67378,7 +67531,7 @@ async function stepHarvest(ctx) {
     ctx.say(`   found ${plural2(candidates.length, "name")} in ${safePath(tildify(root, ctx.home))}:`);
     const rows = candidates.map((c) => [c.canonical, c.category, String(c.count), c.suggestedAliases.slice(0, 3).join(", ")]);
     ctx.say(renderTable(rows, ["canonical", "category", "count", "suggested aliases"]).replace(/\n$/, ""));
-    if (!await ctx.prompter.confirm(`   add them to the project lexicon (${safePath(import_node_path26.default.join(tildify(root, ctx.home), ".lexicon.yaml"))})?`, false)) {
+    if (!await ctx.prompter.confirm(`   add them to the project lexicon (${safePath(import_node_path27.default.join(tildify(root, ctx.home), ".lexicon.yaml"))})?`, false)) {
       ctx.say(dim("   skipped; add them later with: lexicon harvest --add, or one by one with: lexicon harvest --interactive"));
       return;
     }
@@ -67490,7 +67643,7 @@ async function stepClients(ctx) {
 function serveDepsFor(ctx) {
   const serveDeps = { platform: ctx.platform, env: ctx.env };
   if (ctx.homeOverridden) serveDeps.home = ctx.home;
-  if (ctx.deps.cliDir) serveDeps.cliPath = import_node_path26.default.join(ctx.deps.cliDir, "index.js");
+  if (ctx.deps.cliDir) serveDeps.cliPath = import_node_path27.default.join(ctx.deps.cliDir, "index.js");
   return serveDeps;
 }
 async function stepServe(ctx) {
@@ -67560,14 +67713,14 @@ async function stepServe(ctx) {
 }
 async function readIfThere(file2) {
   try {
-    return await import_node_fs27.promises.readFile(file2, "utf8");
+    return await import_node_fs28.promises.readFile(file2, "utf8");
   } catch {
     return void 0;
   }
 }
 async function freeExportPath(dir, format, ext, text) {
   for (let n = 2; n < 100; n += 1) {
-    const candidate = import_node_path26.default.join(dir, `lexicon-${format}-${n}.${ext}`);
+    const candidate = import_node_path27.default.join(dir, `lexicon-${format}-${n}.${ext}`);
     const current = await readIfThere(candidate);
     if (current === void 0 || text !== void 0 && current === text) return candidate;
   }
@@ -67595,10 +67748,10 @@ async function stepExport(ctx) {
     return;
   }
   const format = app;
-  const desktop = import_node_path26.default.join(ctx.home, "Desktop");
-  const dir = ctx.opts.exportDir ?? (ctx.exists(desktop) ? desktop : import_node_path26.default.dirname(ctx.summary.lexiconPath));
+  const desktop = import_node_path27.default.join(ctx.home, "Desktop");
+  const dir = ctx.opts.exportDir ?? (ctx.exists(desktop) ? desktop : import_node_path27.default.dirname(ctx.summary.lexiconPath));
   const ext = EXPORT_FORMAT_INFO[format].ext;
-  const file2 = import_node_path26.default.join(dir, `lexicon-${format}.${ext}`);
+  const file2 = import_node_path27.default.join(dir, `lexicon-${format}.${ext}`);
   const existing = await readIfThere(file2);
   if (ctx.plan) {
     const alt = existing !== void 0 ? await freeExportPath(dir, format, ext, void 0) : void 0;
@@ -67700,7 +67853,7 @@ function printPlan(ctx, p) {
 }
 function setupApplyCommand(opts) {
   const words = ["lexicon"];
-  if (opts.cwd !== void 0 && import_node_path27.default.resolve(opts.cwd) !== process.cwd()) words.push("--cwd", opts.cwd);
+  if (opts.cwd !== void 0 && import_node_path28.default.resolve(opts.cwd) !== process.cwd()) words.push("--cwd", opts.cwd);
   words.push("setup");
   if (opts.yes) words.push("--yes");
   if (opts.clients !== void 0) words.push("--clients", opts.clients);
@@ -67774,8 +67927,8 @@ function printWritten(ctx) {
   ctx.say(`   exports: ${s.exports.length > 0 ? safeMessage(s.exports.map((e) => tildify(e.path, ctx.home)).join(", ")) : dim("none")}`);
 }
 async function runSetup(opts, io, deps = {}) {
-  const cwd = import_node_path27.default.resolve(opts.cwd ?? process.cwd());
-  const home = opts.home ? import_node_path27.default.resolve(opts.home) : deps.home ?? homeDir();
+  const cwd = import_node_path28.default.resolve(opts.cwd ?? process.cwd());
+  const home = opts.home ? import_node_path28.default.resolve(opts.home) : deps.home ?? homeDir();
   if (opts.clients !== void 0) parseClientList(opts.clients);
   for (const [flag, value] of [["--company", opts.company], ["--person", opts.person]]) {
     const problem = value === void 0 ? void 0 : setupNameProblem(value);
@@ -67814,7 +67967,7 @@ async function runSetup(opts, io, deps = {}) {
     home,
     platform: deps.platform ?? process.platform,
     env: deps.env ?? process.env,
-    exists: deps.exists ?? import_node_fs28.existsSync,
+    exists: deps.exists ?? import_node_fs29.existsSync,
     exec: deps.exec ?? defaultSetupExec,
     seeded: [],
     packCanonicals: [],
@@ -67892,8 +68045,8 @@ async function runSetup(opts, io, deps = {}) {
 }
 
 // src/cli/cmd-uninstall.ts
-var import_node_fs29 = __toESM(require_node_fs());
-var import_node_path28 = __toESM(require_node_path());
+var import_node_fs30 = __toESM(require_node_fs());
+var import_node_path29 = __toESM(require_node_path());
 init_errors3();
 init_json();
 init_xdg();
@@ -67988,7 +68141,7 @@ function removeHooksFromSettings(settings, events = HOOK_EVENTS) {
 }
 function uninstallCommand(client, opts) {
   const words = ["lexicon"];
-  if (opts.cwd !== void 0 && import_node_path28.default.resolve(opts.cwd) !== process.cwd()) words.push("--cwd", opts.cwd);
+  if (opts.cwd !== void 0 && import_node_path29.default.resolve(opts.cwd) !== process.cwd()) words.push("--cwd", opts.cwd);
   words.push("uninstall", client);
   if (opts.scope !== void 0) words.push("--scope", opts.scope);
   else if (opts.project) words.push("--project");
@@ -68026,7 +68179,7 @@ async function uninstallToml(ctx, target) {
   const entry = `[${CODEX_TABLE}]`;
   let text;
   try {
-    text = await import_node_fs29.promises.readFile(target.file, "utf8");
+    text = await import_node_fs30.promises.readFile(target.file, "utf8");
   } catch (err) {
     if (isEnoent(err)) return report(ctx, { file: target.file, entry, outcome: "absent" }, "does not exist");
     throw new Error(`could not read ${target.file}: ${errorMessage(err)}`);
@@ -68169,12 +68322,12 @@ async function uninstallText(client, opts, io, deps, changes) {
   }
   const project = scope === "project";
   const env = deps.env ?? process.env;
-  const home = opts.home ? import_node_path28.default.resolve(opts.home) : homeDir();
-  const cwd = import_node_path28.default.resolve(opts.cwd ?? process.cwd());
+  const home = opts.home ? import_node_path29.default.resolve(opts.home) : homeDir();
+  const cwd = import_node_path29.default.resolve(opts.cwd ?? process.cwd());
   const ctx = { io, dryRun: opts.dryRun === true, changes };
   let ok = true;
   if (name === "claude") {
-    const settingsPath = deps.settingsPath ?? (opts.home && !project ? import_node_path28.default.join(claudeConfigDir(env, home), "settings.json") : claudeSettingsPathFor(scope, cwd, env));
+    const settingsPath = deps.settingsPath ?? (opts.home && !project ? import_node_path29.default.join(claudeConfigDir(env, home), "settings.json") : claudeSettingsPathFor(scope, cwd, env));
     const exec = deps.exec ?? ((file2, args) => defaultExec(file2, args, { cwd }));
     ok = await uninstallClaude(ctx, scope, settingsPath, exec, {
       userConfig: deps.claudeUserConfig ?? claudeUserConfigPath(env, home),
@@ -68182,7 +68335,7 @@ async function uninstallText(client, opts, io, deps, changes) {
     });
     if (!project) {
       const settings = await readJsonFile(settingsPath);
-      const installed = await readJsonFile(import_node_path28.default.join(import_node_path28.default.dirname(settingsPath), "plugins", "installed_plugins.json"));
+      const installed = await readJsonFile(import_node_path29.default.join(import_node_path29.default.dirname(settingsPath), "plugins", "installed_plugins.json"));
       const pluginId = findInstalledLexiconPlugin(settings.error === void 0 ? settings.value : void 0, installed.error === void 0 ? installed.value : void 0);
       if (pluginId) line(io, dim(`   note: the lexicon Claude Code plugin (${safe(pluginId)}) is installed and still runs lexicon; to remove it: claude plugin uninstall ${safe(pluginId)}`));
     }
@@ -68210,7 +68363,7 @@ async function uninstallText(client, opts, io, deps, changes) {
 }
 
 // src/mcp/tools/setup.ts
-var import_node_path29 = __toESM(require_node_path());
+var import_node_path30 = __toESM(require_node_path());
 async function serveTarget() {
   const config2 = await readServeConfig();
   const port = config2 !== void 0 && config2.port > 0 ? config2.port : DEFAULT_PORT;
@@ -68439,7 +68592,7 @@ var registerSetupTools = (server, ctx) => {
         });
       }
       const cliDir = cliDirForInstall();
-      const blocked = await serveInstallBlocker(cliDir !== void 0 ? { cliPath: (0, import_node_path29.join)(cliDir, "index.js") } : {});
+      const blocked = await serveInstallBlocker(cliDir !== void 0 ? { cliPath: (0, import_node_path30.join)(cliDir, "index.js") } : {});
       return textResult({
         up: false,
         url: url2,
@@ -68453,12 +68606,12 @@ var registerSetupTools = (server, ctx) => {
 
 // src/mcp/tools/packs.ts
 init_zod();
-var import_node_crypto5 = __toESM(require_node_crypto());
+var import_node_crypto6 = __toESM(require_node_crypto());
 init_json();
 
 // src/cli/cmd-import.ts
-var import_node_fs30 = __toESM(require_node_fs());
-var import_node_path30 = __toESM(require_node_path());
+var import_node_fs31 = __toESM(require_node_fs());
+var import_node_path31 = __toESM(require_node_path());
 var SOURCES2 = TERM_SOURCES;
 var CATEGORIES = ["brand", "person", "product", "acronym", "identifier", "place", "other"];
 function parseSource(value) {
@@ -68503,12 +68656,12 @@ async function readStdinBytes(maxBytes) {
 }
 async function readInputBytes(file2, cwd) {
   if (file2 === "-") return { bytes: await readStdinBytes(MAX_IMPORT_BYTES) };
-  const resolved2 = import_node_path30.default.resolve(cwd, file2);
+  const resolved2 = import_node_path31.default.resolve(cwd, file2);
   try {
-    const stat = await import_node_fs30.promises.stat(resolved2);
+    const stat = await import_node_fs31.promises.stat(resolved2);
     if (stat.isDirectory()) throw new Error(`expected a file, got a directory: ${resolved2}`);
     if (stat.size > MAX_IMPORT_BYTES) throw tooLarge(resolved2, stat.size);
-    return { bytes: await import_node_fs30.promises.readFile(resolved2), path: resolved2 };
+    return { bytes: await import_node_fs31.promises.readFile(resolved2), path: resolved2 };
   } catch (err) {
     const code = err.code;
     if (code === "ENOENT") throw new Error(`file not found: ${resolved2}`);
@@ -68531,7 +68684,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   }
   const source = parseSource(opts.source);
   const category = parseCategory2(opts.category);
-  const cwd = import_node_path30.default.resolve(opts.cwd ?? process.cwd());
+  const cwd = import_node_path31.default.resolve(opts.cwd ?? process.cwd());
   const scope = opts.project ? "project" : "global";
   const dryRun = opts.dryRun ?? false;
   const content = await readInput(file2, cwd);
@@ -68539,7 +68692,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   if (bytes > MAX_IMPORT_BYTES) throw tooLarge(file2 === "-" ? "stdin" : file2, bytes);
   const result = importLexicon(content, format, {
     ...source ? { source } : {},
-    ...file2 !== "-" ? { filename: import_node_path30.default.basename(file2) } : {}
+    ...file2 !== "-" ? { filename: import_node_path31.default.basename(file2) } : {}
   });
   if (category) {
     for (const term of result.terms) term.category ??= category;
@@ -68555,7 +68708,7 @@ async function runImport(file2, opts, io, readInput = defaultReadInput) {
   if (dryRun) {
     const paths = resolvePaths({ cwd });
     const target = scope === "project" ? paths.project : paths.global;
-    const blind = opts.leaveUntrusted === true && scope === "project" && target !== void 0 && (0, import_node_fs30.existsSync)(target);
+    const blind = opts.leaveUntrusted === true && scope === "project" && target !== void 0 && (0, import_node_fs31.existsSync)(target);
     const existing = target && !blind ? (await readLexiconFile(target, scope)).lexicon : void 0;
     if (target) report2.path = target;
     if (blind) report2.untrustedTarget = true;
@@ -68699,13 +68852,13 @@ var registerPackTools = (server, ctx) => {
           checksum: entry.checksum,
           terms: pack.lexicon.terms.map((t) => ({ ...t }))
         };
-        const digest = (0, import_node_crypto5.createHash)("sha256").update(JSON.stringify({
+        const digest = (0, import_node_crypto6.createHash)("sha256").update(JSON.stringify({
           name,
           registry: registry2,
           destination: destination(scope),
           entry,
           preview,
-          bytes: (0, import_node_crypto5.createHash)("sha256").update(bytes).digest("hex")
+          bytes: (0, import_node_crypto6.createHash)("sha256").update(bytes).digest("hex")
         })).digest("hex");
         if (confirm !== true) {
           return textResult({
@@ -68839,7 +68992,7 @@ var registerPackTools = (server, ctx) => {
       const chosen = wanted.filter((id) => availability.some((s) => s.id === id && s.implemented && s.available));
       const candidates = chosen.length === 0 ? [] : await harvestImportSources(chosen, {}, { limit: IMPORT_PREVIEW_MAX_CANDIDATES });
       while (imports.size >= IMPORT_PREVIEWS_KEPT) imports.delete(imports.keys().next().value);
-      const token = (0, import_node_crypto5.randomUUID)();
+      const token = (0, import_node_crypto6.randomUUID)();
       imports.set(token, { at: Date.now(), sources: [...new Set(wanted)].sort(), destination: destination(scope), candidates: structuredClone(candidates) });
       return textResult({
         sources: availability,
@@ -68868,13 +69021,13 @@ var registerPackTools = (server, ctx) => {
         dryRun: external_exports.boolean().optional().describe("Report what would be added without writing.")
       }
     },
-    async ({ path: path27, content, format, scope, dryRun }) => guarded(async () => {
-      if (path27 === void 0 && content === void 0) {
+    async ({ path: path28, content, format, scope, dryRun }) => guarded(async () => {
+      if (path28 === void 0 && content === void 0) {
         throw new Error(
           "pass path or content: path is a dictionary file in this workspace, content the dictionary text itself (format defaults to auto); nothing was imported"
         );
       }
-      const file2 = content === void 0 && path27 !== void 0 ? containedPath(ctx, path27, (f) => `import ${shellWord2(f)}`) : path27 ?? "-";
+      const file2 = content === void 0 && path28 !== void 0 ? containedPath(ctx, path28, (f) => `import ${shellWord2(f)}`) : path28 ?? "-";
       const io = bufferIO();
       const writeOpts = scope === "project" ? await mcpWriteOpts(ctx) : {};
       const code = await runImport(
@@ -68988,7 +69141,7 @@ function dirsFromRoots(roots) {
     if (typeof root?.uri !== "string" || !root.uri.startsWith("file:")) continue;
     try {
       const dir = (0, import_node_url4.fileURLToPath)(root.uri);
-      if ((0, import_node_fs31.statSync)(dir).isDirectory()) dirs.push(dir);
+      if ((0, import_node_fs32.statSync)(dir).isDirectory()) dirs.push(dir);
     } catch {
     }
   }
@@ -68996,7 +69149,7 @@ function dirsFromRoots(roots) {
 }
 var MODEL_CONTEXT_MAX_CHARS = 16e3;
 function moreTermsLine(omitted) {
-  return `... ${omitted} more term${omitted === 1 ? "" : "s"} left out to keep this short (the most used, then brand, person and product names, are kept). Call list_terms with a query (it matches canonical spellings and aliases) to look one up, or export_lexicon with format claude-md for the whole table.`;
+  return `... ${omitted} more term${omitted === 1 ? "" : "s"} left out to keep this short (the most used, then brand, person and product names, are kept). Call list_terms with a query (it matches canonical spellings and aliases) to look one up, or with offset and limit to page through every term, or export_lexicon with format claude-md for the whole table.`;
 }
 function lexiconForModel(loaded) {
   const full = exportLexicon(loaded.merged, "claude-md");
@@ -69005,7 +69158,7 @@ function lexiconForModel(loaded) {
 }
 var LEXICON_JSON_MAX_CHARS = MODEL_CONTEXT_MAX_CHARS * 4;
 function jsonOmittedNote(omitted, total) {
-  return `${omitted} of ${total} term${total === 1 ? "" : "s"} left out to keep this resource under ${LEXICON_JSON_MAX_CHARS} characters (the most used, then brand, person and product names, are kept). Call export_lexicon with format json for the whole lexicon, or list_terms with a query to look one up.`;
+  return `${omitted} of ${total} term${total === 1 ? "" : "s"} left out to keep this resource under ${LEXICON_JSON_MAX_CHARS} characters (the most used, then brand, person and product names, are kept). Call export_lexicon with format json for the whole lexicon, list_terms with a query to look one up, or list_terms with offset and limit to page through every term.`;
 }
 function lexiconJsonWithin(merged, extra) {
   const render2 = (terms, more) => `${JSON.stringify({ ...merged, terms, ...extra, ...more }, null, 2)}
@@ -69131,7 +69284,7 @@ function createServer2(opts = {}) {
     "lexicon://me",
     {
       title: "Personal voice lexicon",
-      description: `Canonical spellings of names the user dictates and how STT mishears them, as markdown (the claude-md export of the global lexicon plus the project .lexicon.yaml when it is trusted). Read this before interpreting dictated input. An untrusted (or changed) project file is left out and named by path in a closing note, never quoted; with no terms at all, a closing note says so and how to set the lexicon up. The table is capped at ${MODEL_CONTEXT_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept and a line says how many were left out; list_terms (with a query) and export_lexicon (format claude-md) reach the rest.`,
+      description: `Canonical spellings of names the user dictates and how STT mishears them, as markdown (the claude-md export of the global lexicon plus the project .lexicon.yaml when it is trusted). Read this before interpreting dictated input. An untrusted (or changed) project file is left out and named by path in a closing note, never quoted; with no terms at all, a closing note says so and how to set the lexicon up. The table is capped at ${MODEL_CONTEXT_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept and a line says how many were left out; list_terms (with a query, or offset and limit to page) and export_lexicon (format claude-md) reach the rest.`,
       mimeType: "text/markdown"
     },
     async (uri) => {
@@ -69147,7 +69300,7 @@ function createServer2(opts = {}) {
     "lexicon://json",
     {
       title: "Lexicon JSON",
-      description: `The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds \`projectTrust\`, \`skippedProject\` (its path, never its contents) and \`note\`. With no terms at all, \`note\` says so (after the skipped-file sentence, when there is one) and how to set the lexicon up. The text is capped at ${LEXICON_JSON_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept, \`omittedTerms\` counts the rest and \`note\` says so; export_lexicon (format json) and list_terms (with a query) reach them.`,
+      description: `The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds \`projectTrust\`, \`skippedProject\` (its path, never its contents) and \`note\`. With no terms at all, \`note\` says so (after the skipped-file sentence, when there is one) and how to set the lexicon up. The text is capped at ${LEXICON_JSON_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept, \`omittedTerms\` counts the rest and \`note\` says so; export_lexicon (format json) and list_terms (with a query, or offset and limit to page) reach them.`,
       mimeType: "application/json"
     },
     async (uri) => {
@@ -69223,7 +69376,7 @@ function isMainModule() {
   const entry = process.argv[1];
   if (!entry) return false;
   try {
-    return (0, import_node_fs31.realpathSync)((0, import_node_path31.resolve)(entry)) === (0, import_node_fs31.realpathSync)((0, import_node_url4.fileURLToPath)(import.meta.url));
+    return (0, import_node_fs32.realpathSync)((0, import_node_path32.resolve)(entry)) === (0, import_node_fs32.realpathSync)((0, import_node_url4.fileURLToPath)(import.meta.url));
   } catch {
     return false;
   }

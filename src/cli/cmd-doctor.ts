@@ -18,7 +18,22 @@ import { readDoctorConfigJson, readDoctorConfigText } from './doctor-config-read
 import { errorMessage } from '../util/errors.js';
 import { checkPhantomPresence } from './phantom-presence.js';
 import { packageVersion } from '../util/package.js';
-import { getTrustPath, isTrusted, readLexiconFile, resolvePaths, spellingKey, trustRegistryProblem } from '../core/index.js';
+import {
+  INDEX_CACHE_FILE_NAME,
+  PendingFileError,
+  getHitsPath,
+  getTrustPath,
+  hitsRegistryProblem,
+  indexCacheProblem,
+  isTrusted,
+  pendingPathFor,
+  readLexiconFile,
+  readPending,
+  resolvePaths,
+  spellingKey,
+  trustRegistryProblem,
+} from '../core/index.js';
+import { readServeConfigResult } from '../serve/config.js';
 import { configPathFor } from './cmd-install.js';
 import { findGitRoot } from './setup/detect.js';
 import { cliCommand } from '../util/cli-hint.js';
@@ -66,6 +81,54 @@ function declaresTransport(entry: unknown): boolean {
   }
   return typeof entry.url === 'string' && entry.url.trim() !== '' && entry.args === undefined
     && (entry.type === undefined || entry.type === 'http' || entry.type === 'sse');
+}
+
+/**
+ * Whether `claude mcp list` output names a server called exactly `lexicon`
+ * (`lexicon: <command> - <status>`), or a plugin's (`plugin:<plugin>:lexicon:
+ * ...`). Any mention of the word passed before, so a `lexicon-foo` server, or
+ * a path holding "lexicon" in another server's command, read as registered.
+ */
+function claudeListsLexiconServer(out: string): boolean {
+  return out.split(/\r?\n/).some((row) => /^(?:plugin:[^:\s]+:)?lexicon:(?:\s|$)/.test(row.trim()));
+}
+
+/**
+ * One warning per state file beside the global lexicon that exists but
+ * cannot be used, naming the file, what it costs and the fix: `serve.json`
+ * (readServeConfigResult), `hits.json` (hitsRegistryProblem),
+ * `pending-aliases.yaml` (readPending) and the index cache
+ * (indexCacheProblem). A missing file is fine for all four.
+ */
+async function stateFileWarnings(globalPath: string, opts: { cwd: string; env: NodeJS.ProcessEnv; home: string }): Promise<string[]> {
+  const out: string[] = [];
+  const serve = await readServeConfigResult(opts);
+  if (serve.status === 'unusable') {
+    out.push(`serve.json ${serve.reason} (the local API and its paired clients need a usable one): ${serve.path}`);
+  }
+  const hits = await hitsRegistryProblem(opts);
+  if (hits !== undefined) {
+    out.push(
+      `hits.json ${hits}, so every term reads as never used${hits.startsWith('cannot be read') ? ' and new hits are not counted' : ''} ` +
+        `(fix it, or move it aside to start the counts over): ${getHitsPath(opts)}`,
+    );
+  }
+  const pendingFile = pendingPathFor(globalPath);
+  try {
+    await readPending(pendingFile);
+  } catch (err) {
+    // PendingFileError names the file itself; a read error does not.
+    const why = err instanceof PendingFileError ? errorMessage(err).replace(`${pendingFile} `, '') : `cannot be read (${(err as { code?: unknown }).code ?? errorMessage(err)})`;
+    out.push(`pending corrections queue ${why}, so lexicon pending cannot list it and new corrections are not queued (fix it, or move it aside): ${pendingFile}`);
+  }
+  const cache = await indexCacheProblem(globalPath);
+  if (cache !== undefined) {
+    out.push(
+      `index cache ${cache}, so ${cache === 'is not a file' || cache.startsWith('cannot be read') ? 'each match builds the index again' : 'the next match builds the index again'} ` +
+        `(delete it; lexicon writes a new one): ${path.join(path.dirname(globalPath), INDEX_CACHE_FILE_NAME)}`,
+    );
+  }
+  return out;
 }
 
 function withoutTomlComment(line: string): string {
@@ -738,6 +801,11 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
     );
   }
 
+  // The state files beside the global lexicon. Each is read as empty or
+  // missing when it is broken, so without these a broken one was never
+  // mentioned; warnings, since lexicon still corrects without any of them.
+  for (const message of await stateFileWarnings(paths.global, trustOpts)) push('warn', message);
+
   if (paths.project) {
     try {
       const p = await readLexiconFile(paths.project, 'project');
@@ -796,6 +864,10 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
   }
 
   const aliasOwners = new Map<string, { alias: string; terms: Term[] }>();
+  // Counted where each conflict is found: the ok line below was suppressed by
+  // any failing check whose text held "conflict", such as a term of that name
+  // defined twice or a parse error quoting the word.
+  let aliasCanonicalConflicts = 0;
   const fold = (w: string): string => w.trim().replace(/\s+/g, ' ').toLowerCase();
   for (const { term } of allTerms) {
     // The matcher compares never-words case-insensitively, so an alias that is
@@ -809,6 +881,7 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
       }
       const other = canonicalOwners.get(key);
       if (other && !other.some((o) => o.term === term) && key !== spellingKey(term.canonical)) {
+        aliasCanonicalConflicts++;
         push('fail', `alias "${alias}" of "${term.canonical}" equals the canonical of "${other[0].term.canonical}" (conflict)`);
       }
       if (COMMON_WORDS.has(key)) {
@@ -828,7 +901,7 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
       push('warn', `alias "${alias}" belongs to several terms: ${[...distinct.values()].join(', ')} (ambiguous)`);
     }
   }
-  if (allTerms.length > 0 && !checks.some((c) => c.level === 'fail' && c.message.includes('conflict'))) {
+  if (allTerms.length > 0 && aliasCanonicalConflicts === 0) {
     push('ok', 'no alias/canonical conflicts');
   }
 
@@ -922,7 +995,7 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
     push('ok', `claude CLI found: ${claudeBin}`);
     try {
       const out = exec('claude', ['mcp', 'list']);
-      if (/lexicon/i.test(out)) {
+      if (claudeListsLexiconServer(out)) {
         wired = true;
         push('ok', 'lexicon MCP server is registered with claude');
       } else if (pluginId) push('warn', `lexicon MCP server not listed by "claude mcp list"; the ${pluginId} plugin provides it when enabled`);
