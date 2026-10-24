@@ -121,3 +121,39 @@ describe('deepgram: keyterm for Nova-3, deduped keywords', () => {
     expect(notes).toEqual(['left out 1 name from keyterm past the 100 kept (the most used; a conservative cap for Nova-3 keyterms): "K100"']);
   });
 });
+
+describe('csv and wispr: spreadsheet formulas', () => {
+  const risky = lex([
+    { canonical: '=HYPERLINK("http://x","y")', aliases: ['hyperlink'] },
+    { canonical: 'Ashlr.AI', aliases: ['+cmd', 'Ashler', '@sum', '-x'], category: 'brand', phonetic: '=1+1' },
+  ]);
+
+  // Catches: a name starting with = + - @ was written as is, so opening the
+  // CSV in a spreadsheet ran it as a formula.
+  it('csv writes formula cells as text with a leading quote, and counts them', () => {
+    const { text, notes } = exportLexiconWithNotes(risky, 'csv');
+    const rows = text.trimEnd().split('\n');
+    expect(rows[1]).toBe(`"'=HYPERLINK(""http://x"",""y"")",hyperlink,,`);
+    expect(rows[2]).toBe(`Ashlr.AI,"'+cmd",brand,"'=1+1"`);
+    expect(rows).toContain(`Ashlr.AI,Ashler,brand,"'=1+1"`);
+    for (const row of rows.slice(1)) for (const cell of row.split(',')) expect(cell).not.toMatch(/^[=+\-@\t\r]/);
+    expect(text.startsWith('﻿')).toBe(false);
+    expect(text.includes('\r\n')).toBe(false);
+    expect(notes).toHaveLength(1);
+    expect(notes[0]).toContain("wrote 5 values a spreadsheet would run as a formula with a leading '");
+  });
+
+  it('wispr leaves out pairs a spreadsheet would run, and keeps the rest as written', () => {
+    const { text, notes, rows } = exportLexiconWithNotes(risky, 'wispr');
+    expect(text).toBe('word,replacement\nAshler,Ashlr.AI\n');
+    // `lexicon export --json` reports the rows written, not the aliases.
+    expect(rows).toBe(1);
+    expect(notes).toEqual([
+      'left out 4 pairs a spreadsheet would run as a formula (a cell starting with = + - @, a tab or a carriage return): "hyperlink -> =HYPERLINK(\\"http://x\\",\\"y\\")", "+cmd -> Ashlr.AI", "@sum -> Ashlr.AI" and "-x -> Ashlr.AI"',
+    ]);
+  });
+
+  it('a lexicon with no such cells has no note', () => {
+    expect(exportLexiconWithNotes(lex([{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }]), 'csv').notes).toEqual([]);
+  });
+});

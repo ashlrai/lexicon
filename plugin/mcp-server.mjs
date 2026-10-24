@@ -58478,6 +58478,12 @@ function csvField(value) {
   if (/[",\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
   return value;
 }
+function isFormulaCell(value) {
+  return /^[=+\-@\t\r]/.test(value);
+}
+function csvTextField(value) {
+  return isFormulaCell(value) ? `"'${value.replace(/"/g, '""')}"` : csvField(value);
+}
 function xmlEscape(value) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
@@ -58498,7 +58504,7 @@ function quotedNames(names, max = 10) {
 // src/core/exporters/assemblyai.ts
 var ASSEMBLYAI_WORD_BOOST_MAX = 1e3;
 var ASSEMBLYAI_PHRASE_MAX_WORDS = 6;
-function exportAssemblyai(lexicon, _opts = {}, notes) {
+function exportAssemblyai(lexicon, _opts = {}, sink) {
   const tooLong = [];
   const overCap = [];
   const word_boost = [];
@@ -58508,22 +58514,22 @@ function exportAssemblyai(lexicon, _opts = {}, notes) {
     else word_boost.push(canonical);
   }
   if (tooLong.length > 0) {
-    notes?.push(`left out ${tooLong.length} phrase${tooLong.length === 1 ? "" : "s"} over AssemblyAI's ${ASSEMBLYAI_PHRASE_MAX_WORDS} words per phrase: ${quotedNames(tooLong)}`);
+    sink?.notes.push(`left out ${tooLong.length} phrase${tooLong.length === 1 ? "" : "s"} over AssemblyAI's ${ASSEMBLYAI_PHRASE_MAX_WORDS} words per phrase: ${quotedNames(tooLong)}`);
   }
   if (overCap.length > 0) {
-    notes?.push(`left out ${overCap.length} phrase${overCap.length === 1 ? "" : "s"} past AssemblyAI's ${ASSEMBLYAI_WORD_BOOST_MAX} word_boost entries (the most used kept): ${quotedNames(overCap)}`);
+    sink?.notes.push(`left out ${overCap.length} phrase${overCap.length === 1 ? "" : "s"} past AssemblyAI's ${ASSEMBLYAI_WORD_BOOST_MAX} word_boost entries (the most used kept): ${quotedNames(overCap)}`);
   }
   return JSON.stringify({ word_boost, boost_param: "high" }, null, 2) + "\n";
 }
 
 // src/core/exporters/azure.ts
 var AZURE_PHRASES_MAX = 500;
-function exportAzure(lexicon, _opts = {}, notes) {
+function exportAzure(lexicon, _opts = {}, sink) {
   const all = canonicalList(sortByImportance(lexicon.terms)).map((c) => c.canonical);
   const phraseList = all.slice(0, AZURE_PHRASES_MAX);
   const dropped = all.slice(AZURE_PHRASES_MAX);
   if (dropped.length > 0) {
-    notes?.push(`left out ${dropped.length} phrase${dropped.length === 1 ? "" : "s"} past the ${AZURE_PHRASES_MAX} kept (the most used; the phrase list size Azure documents): ${quotedNames(dropped)}`);
+    sink?.notes.push(`left out ${dropped.length} phrase${dropped.length === 1 ? "" : "s"} past the ${AZURE_PHRASES_MAX} kept (the most used; the phrase list size Azure documents): ${quotedNames(dropped)}`);
   }
   return JSON.stringify({ phraseList }, null, 2) + "\n";
 }
@@ -58578,19 +58584,26 @@ function noteFor(term) {
 }
 
 // src/core/exporters/csv.ts
-function exportCsv(lexicon, _opts = {}) {
+function exportCsv(lexicon, _opts = {}, sink) {
   const lines = ["canonical,alias,category,phonetic"];
+  const guarded2 = /* @__PURE__ */ new Set();
   for (const { alias, canonical, term } of aliasPairs(lexicon)) {
-    lines.push(
-      [canonical, alias, term.category ?? "", term.phonetic ?? ""].map(csvField).join(",")
+    const cells = [canonical, alias, term.category ?? "", term.phonetic ?? ""];
+    for (const c of cells) if (isFormulaCell(c)) guarded2.add(c);
+    lines.push(cells.map(csvTextField).join(","));
+  }
+  if (guarded2.size > 0) {
+    sink?.notes.push(
+      `wrote ${guarded2.size} value${guarded2.size === 1 ? "" : "s"} a spreadsheet would run as a formula with a leading ' so it shows as text (lexicon import keeps the '): ${quotedNames([...guarded2])}`
     );
   }
+  if (sink) sink.rows = lines.length - 1;
   return lines.join("\n") + "\n";
 }
 
 // src/core/exporters/deepgram.ts
 var DEEPGRAM_KEYTERM_MAX = 100;
-function exportDeepgram(lexicon, _opts = {}, notes) {
+function exportDeepgram(lexicon, _opts = {}, sink) {
   const ordered = canonicalList(sortByImportance(lexicon.terms));
   const keyterm = ordered.slice(0, DEEPGRAM_KEYTERM_MAX).map((c) => c.canonical.replace(/\s+/g, " ").trim()).filter((k) => k !== "");
   const overCap = ordered.slice(DEEPGRAM_KEYTERM_MAX).map((c) => c.canonical);
@@ -58608,10 +58621,10 @@ function exportDeepgram(lexicon, _opts = {}, notes) {
     keywords.push(`${keyword}:${isProperNounCategory(term.category) ? 2 : 1}`);
   }
   if (overCap.length > 0) {
-    notes?.push(`left out ${overCap.length} name${overCap.length === 1 ? "" : "s"} from keyterm past the ${DEEPGRAM_KEYTERM_MAX} kept (the most used; a conservative cap for Nova-3 keyterms): ${quotedNames(overCap)}`);
+    sink?.notes.push(`left out ${overCap.length} name${overCap.length === 1 ? "" : "s"} from keyterm past the ${DEEPGRAM_KEYTERM_MAX} kept (the most used; a conservative cap for Nova-3 keyterms): ${quotedNames(overCap)}`);
   }
   if (collided.length > 0) {
-    notes?.push(`left out ${collided.length} name${collided.length === 1 ? "" : "s"} from keywords that read as one already listed once its colon is a space: ${quotedNames(collided)}`);
+    sink?.notes.push(`left out ${collided.length} name${collided.length === 1 ? "" : "s"} from keywords that read as one already listed once its colon is a space: ${quotedNames(collided)}`);
   }
   return JSON.stringify({ keyterm, keywords }, null, 2) + "\n";
 }
@@ -58647,7 +58660,7 @@ ${body}` : body;
 // src/core/exporters/google.ts
 var GOOGLE_PHRASE_MAX_CHARS = 100;
 var GOOGLE_PHRASES_MAX = 1e3;
-function exportGoogle(lexicon, _opts = {}, notes) {
+function exportGoogle(lexicon, _opts = {}, sink) {
   const tooLong = [];
   const overCap = [];
   const phrases = [];
@@ -58663,10 +58676,10 @@ function exportGoogle(lexicon, _opts = {}, notes) {
     phrases.push({ value: canonical, boost: isProperNounCategory(term.category) ? 20 : 10 });
   }
   if (tooLong.length > 0) {
-    notes?.push(`left out ${tooLong.length} phrase${tooLong.length === 1 ? "" : "s"} over Google's ${GOOGLE_PHRASE_MAX_CHARS} characters per phrase: ${quotedNames(tooLong)}`);
+    sink?.notes.push(`left out ${tooLong.length} phrase${tooLong.length === 1 ? "" : "s"} over Google's ${GOOGLE_PHRASE_MAX_CHARS} characters per phrase: ${quotedNames(tooLong)}`);
   }
   if (overCap.length > 0) {
-    notes?.push(`left out ${overCap.length} phrase${overCap.length === 1 ? "" : "s"} past the ${GOOGLE_PHRASES_MAX} kept (the most used; a conservative cap under Google's phrase limit): ${quotedNames(overCap)}`);
+    sink?.notes.push(`left out ${overCap.length} phrase${overCap.length === 1 ? "" : "s"} past the ${GOOGLE_PHRASES_MAX} kept (the most used; a conservative cap under Google's phrase limit): ${quotedNames(overCap)}`);
   }
   return JSON.stringify({ adaptation: { phraseSets: [{ phrases }] } }, null, 2) + "\n";
 }
@@ -58720,7 +58733,7 @@ function estimateWhisperTokens(text) {
   }
   return tokens;
 }
-function exportWhisperPrompt(lexicon, opts = {}, notes) {
+function exportWhisperPrompt(lexicon, opts = {}, sink) {
   const limit = opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT;
   const names = canonicalList(sortByImportance(lexicon.terms)).slice(0, Math.max(0, limit)).map((c) => c.canonical.replace(/\s+/g, " ").trim());
   const kept = [];
@@ -58736,7 +58749,7 @@ function exportWhisperPrompt(lexicon, opts = {}, notes) {
     }
   }
   if (dropped.length > 0) {
-    notes?.push(
+    sink?.notes.push(
       `left out ${dropped.length} name${dropped.length === 1 ? "" : "s"} past the ${WHISPER_PROMPT_TOKEN_BUDGET} prompt tokens Whisper reads (an offline estimate): ${quotedNames(dropped)}`
     );
   }
@@ -58744,16 +58757,17 @@ function exportWhisperPrompt(lexicon, opts = {}, notes) {
 }
 
 // src/core/exporters/openai.ts
-function exportOpenai(lexicon, opts = {}, notes) {
-  return exportWhisperPrompt(lexicon, opts, notes);
+function exportOpenai(lexicon, opts = {}, sink) {
+  return exportWhisperPrompt(lexicon, opts, sink);
 }
 
 // src/core/exporters/superwhisper.ts
-function exportSuperwhisper(lexicon, _opts = {}) {
+function exportSuperwhisper(lexicon, _opts = {}, sink) {
   const entries2 = aliasPairs(lexicon).map(({ alias, canonical }) => ({
     original: alias,
     replacement: canonical
   }));
+  if (sink) sink.rows = entries2.length;
   return JSON.stringify(entries2, null, 2) + "\n";
 }
 
@@ -58785,11 +58799,22 @@ function exportText(lexicon, _opts = {}) {
 }
 
 // src/core/exporters/wispr.ts
-function exportWispr(lexicon, _opts = {}) {
+function exportWispr(lexicon, _opts = {}, sink) {
   const lines = ["word,replacement"];
+  const leftOut = [];
   for (const { alias, canonical } of aliasPairs(lexicon)) {
+    if (isFormulaCell(alias) || isFormulaCell(canonical)) {
+      leftOut.push(`${alias} -> ${canonical}`);
+      continue;
+    }
     lines.push(`${csvField(alias)},${csvField(canonical)}`);
   }
+  if (leftOut.length > 0) {
+    sink?.notes.push(
+      `left out ${leftOut.length} pair${leftOut.length === 1 ? "" : "s"} a spreadsheet would run as a formula (a cell starting with = + - @, a tab or a carriage return): ${quotedNames(leftOut)}`
+    );
+  }
+  if (sink) sink.rows = lines.length - 1;
   return lines.join("\n") + "\n";
 }
 
@@ -58854,9 +58879,9 @@ function exportLexiconWithNotes(lexicon, format, opts = {}) {
   if (!exporter) {
     throw new Error(`Unknown export format "${format}". Known: ${EXPORT_FORMATS.join(", ")}`);
   }
-  const notes = [];
-  const text = exporter(applyOptions(lexicon, opts, format), opts, notes);
-  return { text, notes };
+  const sink = { notes: [] };
+  const text = exporter(applyOptions(lexicon, opts, format), opts, sink);
+  return { text, notes: sink.notes, ...sink.rows !== void 0 ? { rows: sink.rows } : {} };
 }
 function selectExportTerms(lexicon, opts = {}, format) {
   return applyOptions(lexicon, opts, format).terms;

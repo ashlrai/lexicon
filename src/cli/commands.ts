@@ -1151,7 +1151,8 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
     ? // One row per distinct alias in NFC, as aliasPairs writes them.
       selected.map((t) => new Set(t.aliases.map((a) => a.trim().normalize('NFC')).filter((a) => a !== '')).size)
     : undefined;
-  const rows = aliasRows?.reduce((sum, n) => sum + n, 0);
+  // The rows the exporter wrote: fewer than the aliases when it left some out (a formula cell, a shared trigger).
+  const rows = aliasRows !== undefined ? (exported.rows ?? aliasRows.reduce((sum, n) => sum + n, 0)) : undefined;
   const bytes = Buffer.byteLength(text, 'utf8');
   // An empty export read as a complete one: no word on stderr or under --json,
   // where MCP export_lexicon says why in a note. stderr only, as above.

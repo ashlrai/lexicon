@@ -20,6 +20,7 @@ import { exportMacos } from './macos.js';
 import { exportMarkdown } from './markdown.js';
 import { exportOpenai } from './openai.js';
 import { sortByImportance } from './shared.js';
+import type { ExportSink } from './shared.js';
 import { exportSuperwhisper } from './superwhisper.js';
 import { exportText } from './text.js';
 import { exportWhisperPrompt } from './whisperPrompt.js';
@@ -87,16 +88,22 @@ export function resolveExportFormat(value: string): ExportFormat | undefined {
 /**
  * One exporter: the export text of `lexicon`. A format with a limit of its
  * own (a vendor's list size, a per-phrase length, a prompt window) leaves out
- * what does not fit and pushes one sentence per kind of drop onto `notes`,
- * naming what was left out; the text itself stays exactly what the target
- * reads.
+ * what does not fit and pushes one sentence per kind of drop onto
+ * `sink.notes`, naming what was left out; an alias-row format sets
+ * `sink.rows`. The text itself stays exactly what the target reads.
  */
-export type Exporter = (lexicon: Lexicon, opts: ExportOptions, notes?: string[]) => string;
+export type Exporter = (lexicon: Lexicon, opts: ExportOptions, sink?: ExportSink) => string;
+export type { ExportSink } from './shared.js';
 
-/** What `exportLexiconWithNotes` returns: the export, and a sentence for each kind of entry the format left out. */
+/**
+ * What `exportLexiconWithNotes` returns: the export, a sentence for each
+ * kind of entry the format left out, and for an alias-row format
+ * (EXPORT_ALIAS_ROW_FORMATS) the rows it wrote.
+ */
 export interface ExportResult {
   text: string;
   notes: string[];
+  rows?: number;
 }
 
 const EXPORTERS: Record<ExportFormat, Exporter> = {
@@ -151,9 +158,9 @@ export function exportLexiconWithNotes(lexicon: Lexicon, format: ExportFormat, o
   if (!exporter) {
     throw new Error(`Unknown export format "${format}". Known: ${EXPORT_FORMATS.join(', ')}`);
   }
-  const notes: string[] = [];
-  const text = exporter(applyOptions(lexicon, opts, format), opts, notes);
-  return { text, notes };
+  const sink: ExportSink = { notes: [] };
+  const text = exporter(applyOptions(lexicon, opts, format), opts, sink);
+  return { text, notes: sink.notes, ...(sink.rows !== undefined ? { rows: sink.rows } : {}) };
 }
 
 /**

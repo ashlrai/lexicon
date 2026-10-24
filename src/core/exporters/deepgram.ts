@@ -21,10 +21,11 @@
  */
 import type { ExportOptions, Lexicon } from '../types.js';
 import { canonicalList, isProperNounCategory, quotedNames, sortByImportance } from './shared.js';
+import type { ExportSink } from './shared.js';
 
 export const DEEPGRAM_KEYTERM_MAX = 100;
 
-export function exportDeepgram(lexicon: Lexicon, _opts: ExportOptions = {}, notes?: string[]): string {
+export function exportDeepgram(lexicon: Lexicon, _opts: ExportOptions = {}, sink?: ExportSink): string {
   const ordered = canonicalList(sortByImportance(lexicon.terms));
   const keyterm = ordered.slice(0, DEEPGRAM_KEYTERM_MAX).map((c) => c.canonical.replace(/\s+/g, ' ').trim()).filter((k) => k !== '');
   const overCap = ordered.slice(DEEPGRAM_KEYTERM_MAX).map((c) => c.canonical);
@@ -42,10 +43,10 @@ export function exportDeepgram(lexicon: Lexicon, _opts: ExportOptions = {}, note
     keywords.push(`${keyword}:${isProperNounCategory(term.category) ? 2 : 1}`);
   }
   if (overCap.length > 0) {
-    notes?.push(`left out ${overCap.length} name${overCap.length === 1 ? '' : 's'} from keyterm past the ${DEEPGRAM_KEYTERM_MAX} kept (the most used; a conservative cap for Nova-3 keyterms): ${quotedNames(overCap)}`);
+    sink?.notes.push(`left out ${overCap.length} name${overCap.length === 1 ? '' : 's'} from keyterm past the ${DEEPGRAM_KEYTERM_MAX} kept (the most used; a conservative cap for Nova-3 keyterms): ${quotedNames(overCap)}`);
   }
   if (collided.length > 0) {
-    notes?.push(`left out ${collided.length} name${collided.length === 1 ? '' : 's'} from keywords that read as one already listed once its colon is a space: ${quotedNames(collided)}`);
+    sink?.notes.push(`left out ${collided.length} name${collided.length === 1 ? '' : 's'} from keywords that read as one already listed once its colon is a space: ${quotedNames(collided)}`);
   }
   return JSON.stringify({ keyterm, keywords }, null, 2) + '\n';
 }

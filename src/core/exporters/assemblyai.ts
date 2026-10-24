@@ -13,11 +13,12 @@
  */
 import type { ExportOptions, Lexicon } from '../types.js';
 import { canonicalList, quotedNames, sortByImportance } from './shared.js';
+import type { ExportSink } from './shared.js';
 
 export const ASSEMBLYAI_WORD_BOOST_MAX = 1000;
 export const ASSEMBLYAI_PHRASE_MAX_WORDS = 6;
 
-export function exportAssemblyai(lexicon: Lexicon, _opts: ExportOptions = {}, notes?: string[]): string {
+export function exportAssemblyai(lexicon: Lexicon, _opts: ExportOptions = {}, sink?: ExportSink): string {
   const tooLong: string[] = [];
   const overCap: string[] = [];
   const word_boost: string[] = [];
@@ -27,10 +28,10 @@ export function exportAssemblyai(lexicon: Lexicon, _opts: ExportOptions = {}, no
     else word_boost.push(canonical);
   }
   if (tooLong.length > 0) {
-    notes?.push(`left out ${tooLong.length} phrase${tooLong.length === 1 ? '' : 's'} over AssemblyAI's ${ASSEMBLYAI_PHRASE_MAX_WORDS} words per phrase: ${quotedNames(tooLong)}`);
+    sink?.notes.push(`left out ${tooLong.length} phrase${tooLong.length === 1 ? '' : 's'} over AssemblyAI's ${ASSEMBLYAI_PHRASE_MAX_WORDS} words per phrase: ${quotedNames(tooLong)}`);
   }
   if (overCap.length > 0) {
-    notes?.push(`left out ${overCap.length} phrase${overCap.length === 1 ? '' : 's'} past AssemblyAI's ${ASSEMBLYAI_WORD_BOOST_MAX} word_boost entries (the most used kept): ${quotedNames(overCap)}`);
+    sink?.notes.push(`left out ${overCap.length} phrase${overCap.length === 1 ? '' : 's'} past AssemblyAI's ${ASSEMBLYAI_WORD_BOOST_MAX} word_boost entries (the most used kept): ${quotedNames(overCap)}`);
   }
   return JSON.stringify({ word_boost, boost_param: 'high' }, null, 2) + '\n';
 }

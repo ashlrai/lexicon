@@ -4,6 +4,16 @@
  */
 import type { Lexicon, Term, TermCategory } from '../types.js';
 
+/**
+ * Where an exporter reports what the text does not say: `notes`, one
+ * sentence per kind of entry it left out (naming them), and, for a format
+ * that writes one row per alias, `rows`, the rows it wrote.
+ */
+export interface ExportSink {
+  notes: string[];
+  rows?: number;
+}
+
 const CATEGORY_ORDER: Record<TermCategory, number> = {
   brand: 0,
   person: 1,
@@ -105,6 +115,26 @@ export function canonicalList(terms: readonly Term[]): { term: Term; canonical: 
 export function csvField(value: string): string {
   if (/[",\r\n]/.test(value)) return `"${value.replace(/"/g, '""')}"`;
   return value;
+}
+
+/**
+ * A cell a spreadsheet would run as a formula when the CSV is opened in it
+ * (Excel, LibreOffice Calc, Google Sheets): one starting with `=`, `+`, `-`
+ * or `@`, or with a tab or carriage return, which some importers strip
+ * before reading the rest (OWASP's CSV injection list).
+ */
+export function isFormulaCell(value: string): boolean {
+  return /^[=+\-@\t\r]/.test(value);
+}
+
+/**
+ * `csvField`, with a formula cell (isFormulaCell) written as text: a leading
+ * `'` and quoted, the escape spreadsheets document, so `=HYPERLINK(...)` is
+ * shown rather than run. For a CSV meant for spreadsheets; a tool that reads
+ * the cell itself keeps the `'`.
+ */
+export function csvTextField(value: string): string {
+  return isFormulaCell(value) ? `"'${value.replace(/"/g, '""')}"` : csvField(value);
 }
 
 export function xmlEscape(value: string): string {

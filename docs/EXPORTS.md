@@ -12,7 +12,7 @@ lexicon export <format> --out <file>
 
 | Format | What you get | Where it goes |
 |---|---|---|
-| `wispr` | CSV `word,replacement` | Wispr Flow > Dictionary > Import |
+| `wispr` | CSV `word,replacement` (LF line ends, no byte order mark) | Wispr Flow > Dictionary > Import. A pair with a cell a spreadsheet would run as a formula (starting with `=`, `+`, `-`, `@`, a tab or a carriage return) is left out and named on stderr: Wispr Flow reads each cell as the word itself, so the spreadsheet escape would be typed into transcripts. Add such a name in Wispr Flow by hand |
 | `superwhisper` | Replacements JSON | Superwhisper replacements |
 | `macos` | Text Replacement `.plist` | Drag into System Settings > Keyboard > Text Replacements |
 | `espanso` | espanso match YAML. A `{{` in a name is escaped as `\{\{`, so espanso types it instead of reading a variable; a name holding a literal `\{\{` or `\}\}` (which espanso always unescapes) is left out, named in a `# left out` comment at the top | `~/.config/espanso/match/lexicon.yml` |
@@ -25,7 +25,7 @@ lexicon export <format> --out <file>
 | `claude-md` | Markdown table under `## Voice lexicon` | `CLAUDE.md`, `AGENTS.md`, any system prompt. Also what `lexicon://me` and the `SessionStart` hook emit |
 | `markdown` | `- **Canonical** (category): aliases` bullets | READMEs, wikis |
 | `text` | `Canonical: alias1, alias2` per line | Anything human-edited; `lexicon import` reads it back |
-| `csv` | Generic `canonical,alias` | Anything else |
+| `csv` | Generic `canonical,alias,category,phonetic` (LF line ends, no byte order mark, so a script reads the first header as `canonical`) | Anything else, spreadsheets included: a cell a spreadsheet would run as a formula (starting with `=`, `+`, `-`, `@`, a tab or a carriage return) is written as text with a leading `'`, and stderr says how many. `lexicon import` keeps that `'` as part of the name. To see accents in Excel, open it with Data > From Text/CSV and pick UTF-8 |
 | `json` | Raw lexicon JSON | Scripts, backups |
 
 `lexicon export` with no format lists them. `--category brand person` limits the export to those categories. `--limit N` caps term count. `--out` replaces the file in one step (a temp file and a rename, so an interrupted export never leaves half a file), creates missing directories, and refuses a directory or the lexicon file the export is read from. Names are written in Unicode NFC (the form typed and transcribed text uses) by every format but `json`, `text`, `markdown` and `claude-md`, which keep the file's own text; an alias written in two forms is one row, and a name in two forms is boosted once. The order is the same on every machine: names sort A to Z by a fixed English collation, not the system locale, so one lexicon always exports byte for byte the same and `--limit` keeps the same terms.

@@ -21,6 +21,7 @@
  */
 import type { ExportOptions, Lexicon } from '../types.js';
 import { canonicalList, quotedNames, sortByImportance } from './shared.js';
+import type { ExportSink } from './shared.js';
 
 export const WHISPER_PROMPT_DEFAULT_LIMIT = 100;
 
@@ -48,7 +49,7 @@ export function estimateWhisperTokens(text: string): number {
   return tokens;
 }
 
-export function exportWhisperPrompt(lexicon: Lexicon, opts: ExportOptions = {}, notes?: string[]): string {
+export function exportWhisperPrompt(lexicon: Lexicon, opts: ExportOptions = {}, sink?: ExportSink): string {
   const limit = opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT;
   const names = canonicalList(sortByImportance(lexicon.terms))
     .slice(0, Math.max(0, limit))
@@ -67,7 +68,7 @@ export function exportWhisperPrompt(lexicon: Lexicon, opts: ExportOptions = {}, 
     }
   }
   if (dropped.length > 0) {
-    notes?.push(
+    sink?.notes.push(
       `left out ${dropped.length} name${dropped.length === 1 ? '' : 's'} past the ${WHISPER_PROMPT_TOKEN_BUDGET} prompt tokens Whisper reads (an offline estimate): ${quotedNames(dropped)}`,
     );
   }
