@@ -53644,6 +53644,13 @@ function deserializeIndex(data, lexicon) {
 var import_node_fs4 = __toESM(require_node_fs());
 var import_node_path3 = __toESM(require_node_path());
 
+// src/core/collate.ts
+var collator;
+function compareText(a, b) {
+  collator ??= new Intl.Collator("en");
+  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+}
+
 // src/util/atomic.ts
 var import_node_fs = __toESM(require_node_fs());
 var import_node_async_hooks = __toESM(require_node_async_hooks());
@@ -54586,7 +54593,7 @@ async function listTrusted(opts = {}) {
     const status = sha === void 0 ? "missing" : sha === entry.sha256 ? "trusted" : "changed";
     out.push({ path: filePath, ...entry, status });
   }
-  return out.sort((a, b) => a.path.localeCompare(b.path));
+  return out.sort((a, b) => compareText(a.path, b.path));
 }
 var TRUST_PREVIEW_ROWS = 25;
 function trustPreview(file2) {
@@ -55759,13 +55766,6 @@ function normalizeWithIndex(text, index, opts = {}) {
 function diffSummary(result) {
   if (result.replacements.length === 0) return "No changes.";
   return result.replacements.map((r) => `"${r.original}" -> "${r.replacement}" (${r.reason}, ${r.confidence.toFixed(2)})`).join("\n");
-}
-
-// src/core/collate.ts
-var collator;
-function compareText(a, b) {
-  collator ??= new Intl.Collator("en");
-  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
 }
 
 // src/core/harvest.ts
@@ -61143,7 +61143,7 @@ ${lines.join("\n")}`);
     seen.add(ref);
     packs.push({ ref, ...e });
   }
-  packs.sort((a, b) => a.ref.localeCompare(b.ref));
+  packs.sort((a, b) => compareText(a.ref, b.ref));
   return { packs };
 }
 async function loadRegistryIndex(source, deps = {}) {

@@ -4,7 +4,7 @@
  * Handlers are exported for tests; registerLearnCommands() only wires commander.
  */
 import type { Command } from 'commander';
-import { CORRECTION_EXAMPLES, computeStats, conflictNote, emptyStatsNote, learnCorrection, learnUnchangedNote, loadLexicon, parseCorrection } from '../core/index.js';
+import { CORRECTION_EXAMPLES, compareText, computeStats, conflictNote, emptyStatsNote, learnCorrection, learnUnchangedNote, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, LoadedLexicon, TermScope } from '../core/index.js';
 import { conflictLine, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, shownCommand, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
@@ -202,11 +202,11 @@ export function renderStats(stats: LexiconStats, note?: string): string {
   out.push(`terms: ${stats.termCount}   aliases: ${stats.aliasCount}   hits: ${stats.totalHits}`);
   if (note) out.push(safe(note));
   const categories = Object.entries(stats.byCategory)
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .sort((a, b) => b[1] - a[1] || compareText(a[0], b[0]))
     .map(([k, v]) => `${k} ${v}`)
     .join(', ');
   const sources = Object.entries(stats.bySource)
-    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .sort((a, b) => b[1] - a[1] || compareText(a[0], b[0]))
     .map(([k, v]) => `${k} ${v}`)
     .join(', ');
   if (categories) out.push(`by category: ${categories}`);

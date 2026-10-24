@@ -19546,6 +19546,13 @@ function deserializeIndex(data, lexicon) {
 var import_node_fs4 = __toESM(require_node_fs());
 var import_node_path3 = __toESM(require_node_path());
 
+// src/core/collate.ts
+var collator;
+function compareText(a, b) {
+  collator ??= new Intl.Collator("en");
+  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
+}
+
 // src/util/atomic.ts
 var import_node_fs = __toESM(require_node_fs());
 var import_node_async_hooks = __toESM(require_node_async_hooks());
@@ -20697,13 +20704,6 @@ function normalizeWithIndex(text, index, opts = {}) {
 function diffSummary(result) {
   if (result.replacements.length === 0) return "No changes.";
   return result.replacements.map((r) => `"${r.original}" -> "${r.replacement}" (${r.reason}, ${r.confidence.toFixed(2)})`).join("\n");
-}
-
-// src/core/collate.ts
-var collator;
-function compareText(a, b) {
-  collator ??= new Intl.Collator("en");
-  return collator.compare(a, b) || (a < b ? -1 : a > b ? 1 : 0);
 }
 
 // src/core/exporters/shared.ts

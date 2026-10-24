@@ -32,6 +32,7 @@ import path from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import * as z from 'zod';
 import { HARVEST_STOPLIST } from './harvest.js';
+import { compareText } from './collate.js';
 import { PACK_NAME_RE, installLoadedPack, parsePackText, uninstallLoadedPack } from './packs.js';
 import type { InstallPackResult, Pack, UninstallPackResult } from './packs.js';
 import { defaultProjectPath, MAX_LEXICON_BYTES, resolvePaths, resolveScopeWritePath, withLexiconLock } from './store.js';
@@ -274,7 +275,7 @@ function parseIndexYaml(text: string, source: string): RegistryIndex {
     seen.add(ref);
     packs.push({ ref, ...e });
   }
-  packs.sort((a, b) => a.ref.localeCompare(b.ref));
+  packs.sort((a, b) => compareText(a.ref, b.ref));
   return { packs };
 }
 
@@ -365,7 +366,7 @@ export function searchRegistryIndex(index: RegistryIndex, query: string): Regist
     else if (entry.description.toLowerCase().includes(q)) rank = 3;
     if (rank >= 0) scored.push({ entry, rank });
   }
-  scored.sort((a, b) => a.rank - b.rank || a.entry.ref.localeCompare(b.entry.ref));
+  scored.sort((a, b) => a.rank - b.rank || compareText(a.entry.ref, b.entry.ref));
   return scored.map((s) => s.entry);
 }
 
