@@ -1361,6 +1361,36 @@ describe('lexicon voice --json failures', () => {
     expect(onlyDocument(h)).toMatchObject({ ok: false, code: EXIT_ERROR, nextStep: expect.stringContaining('--list-devices') });
   });
 
+  // Catches: these next steps reached only the --json document; a terminal user saw the error alone.
+  it('without --json the next step is printed on stderr too', async () => {
+    const broken = await harness();
+    await fs.writeFile(broken.globalPath, 'version: 1\nterms: [\n');
+    expect(await runVoice(broken.opts, broken.io, broken.deps)).toBe(EXIT_ERROR);
+    expect(broken.err.join('')).toContain('\n  fix the lexicon file (`lexicon doctor` names the problem), then run `lexicon voice` again\n');
+
+    const spawnFails = await harness();
+    spawnFails.deps.spawn = () => {
+      throw new Error('spawn ENOENT');
+    };
+    expect(await runVoiceToggle(spawnFails.opts, spawnFails.io, spawnFails.deps)).toBe(EXIT_ERROR);
+    expect(spawnFails.err.join('')).toMatch(/lexicon voice: spawn ENOENT\n {2}check ffmpeg \(`\S+ -version`\) and the input device \(`lexicon voice --list-devices`\), then try again\n/);
+
+    const listFails = await harness();
+    listFails.deps.exec = async () => {
+      throw new Error('boom');
+    };
+    expect(await runVoiceListDevices({ ...listFails.opts, json: true }, listFails.io, listFails.deps)).toBe(EXIT_ERROR);
+    expect(listFails.err.join('')).toMatch(/lexicon voice: could not list devices: boom\n {2}check ffmpeg with `\S+ -version`, or skip the list and pass the device by name: lexicon voice --device <name>\n/);
+    expect(onlyDocument(listFails)).toMatchObject({ ok: false, error: 'could not list devices: boom', nextStep: expect.stringContaining('--device <name>') });
+
+    // A dshow error that already names --list-devices is not followed by the same step again.
+    const dshow = await harness({ platform: 'win32' });
+    dshow.deps.env = { PATH: dshow.binDir, LEXICON_FFMPEG_BIN: '/fake/bin/ffmpeg', LEXICON_WHISPER_BIN: '/fake/bin/whisper-cli' };
+    dshow.deps.exec = async () => ({ code: 1, stdout: '', stderr: '' });
+    expect(await runVoice(dshow.opts, dshow.io, dshow.deps)).toBe(EXIT_ERROR);
+    expect(dshow.err.join('').match(/--list-devices/g)).toHaveLength(1);
+  });
+
   it('without --json stdout stays empty on a failure', async () => {
     const h = await harness({ missing: ['whisper-cli', 'whisper-cpp'] });
     expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_MISSING_TOOL);

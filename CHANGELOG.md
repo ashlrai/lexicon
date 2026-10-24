@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon voice` prints the next step on stderr, not only in the `--json` document, when the lexicon file cannot be loaded (`lexicon doctor`), the input device cannot be resolved (`lexicon voice --list-devices`) or ffmpeg cannot be started. `lexicon voice --list-devices`, when the listing fails, now names one too: check ffmpeg, or pass `--device <name>`.
 - LexiconBar menu items read "lexicon CLI not found; set its path in Preferences..." and "Needs Accessibility permission; open System Settings", without the en-dash. A test now refuses an en or em dash in any LexiconBar string literal.
 - LexiconBar, when the local API cannot be reached, says to check it with `lexicon serve --status` and start it with `lexicon serve`, then gives the cause; when the API answers with a body LexiconBar does not understand, it says the two are likely different releases and to update one and restart `lexicon serve`. It said only "Local API unreachable: <cause>" and "Local API returned an unexpected body."
 - `lexicon pack validate` on a path that does not exist says to check the path (a relative one resolves against the current directory) and, since it takes a pack file rather than a pack name, to run `lexicon pack list` to see the packs. It said only `file not found: <path>`; under `--json` the `nextStep` was the generic one.
