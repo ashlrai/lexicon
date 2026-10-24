@@ -17,6 +17,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Documentation
 
+- `lexicon voice --help` gives the JSON that `--status --json` prints: `{ ok: true, recording: true, since, pid }` while a toggle recording runs, `{ ok: false, recording: false }` when idle. The `--json` text described only the result and failure shapes.
 - `lexicon learn --help` says where a correction goes without `--project`: to the file that already holds the meant term, else the global lexicon. It said `--project` wrote to the project lexicon "instead of the global one", though a term already in the project lexicon gets its alias there either way.
 - `lexicon voice --toggle` says which press reads which flag, in `--help` and docs/VOICE.md: the start press records with its `--device` and `--seconds`, the stop press transcribes and delivers with its own `--model`, `--lang`, `--translate`, `--no-prompt`, `--no-history`, `--copy` and `--paste`, so a hotkey should pass the same flags to both. A `--paste` given only to the start press was dropped without a word.
 - docs/EXTENSION.md: the Firefox notes now say to allow `127.0.0.1` and `localhost` in the add-on's permissions panel as well as the chat sites; pairing, Test connection and Sync need them.

@@ -69,7 +69,7 @@ export function registerVoiceCommands(program: Command, io: IO): void {
     .option('--no-history', 'do not append to voice/history.jsonl')
     .option('--copy', 'also put the corrected text on the clipboard')
     .option('--paste', 'copy and paste into the frontmost app (macOS; needs Accessibility permission)')
-    .option('--json', 'print { ok: true, raw, output, replacements, summary, model, seconds, ms } as JSON (with --toggle, a press that starts prints {"status":"recording"}); every failure prints { ok: false, error, nextStep?, code } with code the exit code (over the result when there is text, e.g. nothing heard or a failed --paste)')
+    .option('--json', 'print { ok: true, raw, output, replacements, summary, model, seconds, ms } as JSON (with --toggle, a press that starts prints {"status":"recording"}; with --status, { ok: true, recording: true, since, pid } while recording or { ok: false, recording: false } when idle); every failure prints { ok: false, error, nextStep?, code } with code the exit code (over the result when there is text, e.g. nothing heard or a failed --paste)')
     .option('--quiet', 'no status lines on stderr')
     .action(async (opts: VoiceCliOptions, cmd: Command) => {
       // One mode per call: `--status --toggle` answered the status and dropped
