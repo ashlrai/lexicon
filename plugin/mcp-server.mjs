@@ -59780,6 +59780,7 @@ var AUTO_APPLY_CONFIDENCE = 0.8;
 var MAX_EVIDENCE2 = 5;
 var EVIDENCE_MAX_CHARS = 120;
 var MAX_HISTORY_LINES = 1e3;
+var VOICE_HISTORY_READ_MAX_BYTES = 8 * 1024 * 1024;
 var MAX_WINDOW2 = 3;
 var NEAR_MIN_SCORE = 0.7;
 var KEY_MATCH_SCORE = 0.85;
@@ -59806,12 +59807,8 @@ function voiceHistoryPath(globalPath) {
 }
 async function loadVoiceHistory(globalPath) {
   const resolved2 = globalPath ?? resolvePaths().global;
-  let text;
-  try {
-    text = await import_node_fs8.promises.readFile(voiceHistoryPath(resolved2), "utf8");
-  } catch {
-    return [];
-  }
+  const text = await readHistoryTail(voiceHistoryPath(resolved2), VOICE_HISTORY_READ_MAX_BYTES);
+  if (text === void 0) return [];
   const out = [];
   for (const line2 of text.split("\n")) {
     if (!line2.trim()) continue;
@@ -59825,6 +59822,34 @@ async function loadVoiceHistory(globalPath) {
     if (entry) out.push(entry);
   }
   return out.length > MAX_HISTORY_LINES ? out.slice(out.length - MAX_HISTORY_LINES) : out;
+}
+async function readHistoryTail(file2, max) {
+  let handle;
+  try {
+    if (!(await import_node_fs8.promises.stat(file2)).isFile()) return void 0;
+    handle = await import_node_fs8.promises.open(file2, import_node_fs8.constants.O_RDONLY | (import_node_fs8.constants.O_NONBLOCK ?? 0));
+    const st = await handle.stat();
+    if (!st.isFile()) return void 0;
+    const length = Math.min(st.size, max);
+    const start = st.size - length;
+    const buf = Buffer.alloc(length);
+    let got = 0;
+    while (got < length) {
+      const { bytesRead } = await handle.read(buf, got, length - got, start + got);
+      if (bytesRead === 0) break;
+      got += bytesRead;
+    }
+    let bytes = buf.subarray(0, got);
+    if (start > 0) {
+      const nl = bytes.indexOf(10);
+      bytes = nl === -1 ? Buffer.alloc(0) : bytes.subarray(nl + 1);
+    }
+    return bytes.toString("utf8");
+  } catch {
+    return void 0;
+  } finally {
+    await handle?.close().catch(() => void 0);
+  }
 }
 function toHistoryEntry(value) {
   if (typeof value !== "object" || value === null) return void 0;

@@ -23,7 +23,7 @@
  * a window resembling some alias or that differ from their output, and
  * every per-window computation is cached by window text.
  */
-import { promises as fs } from 'node:fs';
+import { constants as fsConstants, promises as fs } from 'node:fs';
 import path from 'node:path';
 import { doubleMetaphone } from 'double-metaphone';
 import { distance } from 'fastest-levenshtein';
@@ -101,6 +101,14 @@ const MAX_EVIDENCE = 5;
 const EVIDENCE_MAX_CHARS = 120;
 /** Lines kept from the history file (newest). Mirrors voice/history.ts HISTORY_MAX_LINES. */
 const MAX_HISTORY_LINES = 1000;
+/**
+ * Most bytes of the history file loadVoiceHistory reads: the newest 8 MiB,
+ * twice the 4 MiB voice/history.ts HISTORY_MAX_BYTES keeps the file to, so
+ * a file Lexicon wrote is always read whole. The read had no bound: a file
+ * another program grew (or a link to a device) was read entirely into memory
+ * by every `lexicon suggest` and MCP `suggest_terms`.
+ */
+export const VOICE_HISTORY_READ_MAX_BYTES = 8 * 1024 * 1024;
 /** Longest token window compared against aliases. */
 const MAX_WINDOW = 3;
 /** A window this similar to an alias (edit similarity, or phonetic key plus a looser similarity) is "near" it. */
@@ -154,12 +162,8 @@ export function voiceHistoryPath(globalPath: string): string {
  */
 export async function loadVoiceHistory(globalPath?: string): Promise<VoiceHistoryEntry[]> {
   const resolved = globalPath ?? resolvePaths().global;
-  let text: string;
-  try {
-    text = await fs.readFile(voiceHistoryPath(resolved), 'utf8');
-  } catch {
-    return [];
-  }
+  const text = await readHistoryTail(voiceHistoryPath(resolved), VOICE_HISTORY_READ_MAX_BYTES);
+  if (text === undefined) return [];
   const out: VoiceHistoryEntry[] = [];
   for (const line of text.split('\n')) {
     if (!line.trim()) continue;
@@ -173,6 +177,41 @@ export async function loadVoiceHistory(globalPath?: string): Promise<VoiceHistor
     if (entry) out.push(entry);
   }
   return out.length > MAX_HISTORY_LINES ? out.slice(out.length - MAX_HISTORY_LINES) : out;
+}
+
+/**
+ * The last `max` bytes of the regular file at `file` as text, from the first
+ * line that starts inside them (a line cut by the bound is dropped), or
+ * undefined when it is missing, not a regular file or unreadable.
+ */
+async function readHistoryTail(file: string, max: number): Promise<string | undefined> {
+  let handle: fs.FileHandle | undefined;
+  try {
+    // Checked before the open (a FIFO would block it) and again on the descriptor.
+    if (!(await fs.stat(file)).isFile()) return undefined;
+    handle = await fs.open(file, fsConstants.O_RDONLY | (fsConstants.O_NONBLOCK ?? 0));
+    const st = await handle.stat();
+    if (!st.isFile()) return undefined;
+    const length = Math.min(st.size, max);
+    const start = st.size - length;
+    const buf = Buffer.alloc(length);
+    let got = 0;
+    while (got < length) {
+      const { bytesRead } = await handle.read(buf, got, length - got, start + got);
+      if (bytesRead === 0) break;
+      got += bytesRead;
+    }
+    let bytes = buf.subarray(0, got);
+    if (start > 0) {
+      const nl = bytes.indexOf(0x0a);
+      bytes = nl === -1 ? Buffer.alloc(0) : bytes.subarray(nl + 1);
+    }
+    return bytes.toString('utf8');
+  } catch {
+    return undefined;
+  } finally {
+    await handle?.close().catch(() => undefined);
+  }
 }
 
 function toHistoryEntry(value: unknown): VoiceHistoryEntry | undefined {
