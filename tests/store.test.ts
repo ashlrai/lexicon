@@ -58,6 +58,7 @@ import {
   mergeLexicons,
   readLexiconFile,
   PARSE_CACHE_FILE_NAME,
+  PARSE_FAILURE_FILE_NAME,
   PARSE_CACHE_MIN_BYTES,
   PARSE_CACHE_VERSION,
   PROJECT_PARSE_CACHE_FILE_NAME,
@@ -1135,6 +1136,82 @@ describe('writeLexiconFile pins a project file\'s hits', () => {
     await writeLexiconFile({ path: globalPath, scope: 'global', lexicon: loaded.merged, exists: true });
     expect(findTerm((await readLexiconFile(globalPath, 'global')).lexicon, 'G')?.hits).toBe(42);
     expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'G')?.hits).toBe(43);
+  });
+});
+
+// Catches: a global lexicon that failed validation was parsed again on every
+// prompt (about 400 ms at 5000 terms) to reach the same error.
+describe('global parse failure cache', () => {
+  const failurePath = (): string => path.join(path.dirname(globalPath), PARSE_FAILURE_FILE_NAME);
+  const PAD = `${'# padding\n'.repeat(Math.ceil(PARSE_CACHE_MIN_BYTES / 10))}`;
+  let parses = 0;
+  /** The validator refuses a term named Broken; counts every call. */
+  const refuseBroken = (raw: unknown): unknown => {
+    parses += 1;
+    const terms = ((raw ?? {}) as { terms?: Array<{ canonical?: string }> }).terms ?? [];
+    if (terms.some((t) => t.canonical === 'Broken')) throw new Error('terms[0].canonical: Broken is refused');
+    return { version: 1, terms };
+  };
+
+  beforeEach(async () => {
+    parses = 0;
+    schemaOverride.parseLexicon = refuseBroken;
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+  });
+
+  it('throws the same error for the same bytes without validating again, and parses again once they change', async () => {
+    await fs.writeFile(globalPath, `${PAD}version: 1\nterms:\n  - canonical: Broken\n    aliases: []\n`);
+    await fs.chmod(globalPath, 0o600);
+    const expected = `Invalid lexicon at ${globalPath}: terms[0].canonical: Broken is refused`;
+    await expect(loadLexicon({ cwd: tmp, globalPath })).rejects.toThrow(expected);
+    expect(parses).toBe(1);
+    if (process.platform !== 'win32') expect((await fs.stat(failurePath())).mode & 0o777).toBe(0o600);
+    for (let i = 0; i < 3; i += 1) await expect(loadLexicon({ cwd: tmp, globalPath })).rejects.toThrow(expected);
+    expect(parses).toBe(1);
+
+    // Another invalid text parses again and replaces the entry.
+    await fs.writeFile(globalPath, `${PAD}version: 1\nterms:\n  - canonical: Broken\n    aliases: [x]\n`);
+    await expect(loadLexicon({ cwd: tmp, globalPath })).rejects.toThrow(expected);
+    expect(parses).toBe(2);
+
+    // The fix parses, loads, and deletes the entry.
+    await fs.writeFile(globalPath, `${PAD}version: 1\nterms:\n  - canonical: Fixed\n    aliases: []\n`);
+    expect(findTerm((await loadLexicon({ cwd: tmp, globalPath })).merged, 'Fixed')).toBeDefined();
+    await expect(fs.stat(failurePath())).rejects.toThrow();
+  });
+
+  it('caches a YAML syntax error too, with the current path in the message', async () => {
+    await fs.writeFile(globalPath, `${PAD}version: 1\nterms: [\n`);
+    const first = (await loadLexicon({ cwd: tmp, globalPath }).then(
+      () => new Error('loaded'),
+      (err: unknown) => err as Error,
+    ));
+    expect(first.message).toMatch(new RegExp(`^Failed to parse lexicon YAML at ${globalPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: `));
+    const entry = JSON.parse(await fs.readFile(failurePath(), 'utf8')) as { kind: string; reason: string; text: string };
+    expect(entry.kind).toBe('yaml');
+    expect(entry.text).toBe(await fs.readFile(globalPath, 'utf8'));
+    // Proof the entry is what answers: doctor its reason.
+    await fs.writeFile(failurePath(), JSON.stringify({ ...entry, reason: 'doctored reason' }));
+    await expect(loadLexicon({ cwd: tmp, globalPath })).rejects.toThrow(`Failed to parse lexicon YAML at ${globalPath}: doctored reason`);
+  });
+
+  it('ignores an entry for other bytes, another path, or a damaged file', async () => {
+    const text = `${PAD}version: 1\nterms:\n  - canonical: Broken\n    aliases: []\n`;
+    await fs.writeFile(globalPath, text);
+    await expect(loadLexicon({ cwd: tmp, globalPath })).rejects.toThrow('Broken is refused');
+    const entry = JSON.parse(await fs.readFile(failurePath(), 'utf8')) as Record<string, unknown>;
+    for (const bad of [JSON.stringify({ ...entry, path: '/elsewhere/lexicon.yaml', reason: 'x' }), JSON.stringify({ ...entry, kind: 'other', reason: 'x' }), '{not json']) {
+      await fs.writeFile(failurePath(), bad);
+      const before = parses;
+      await expect(loadLexicon({ cwd: tmp, globalPath })).rejects.toThrow('Broken is refused');
+      expect(parses).toBe(before + 1);
+    }
+  });
+
+  it('leaves a small file uncached', async () => {
+    await fs.writeFile(globalPath, 'version: 1\nterms:\n  - canonical: Broken\n    aliases: []\n');
+    await expect(loadLexicon({ cwd: tmp, globalPath })).rejects.toThrow('Broken is refused');
+    await expect(fs.stat(failurePath())).rejects.toThrow();
   });
 });
 

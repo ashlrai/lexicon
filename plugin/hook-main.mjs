@@ -19997,9 +19997,49 @@ async function readGlobalLexiconCached(filePath, opts = {}) {
     }
   } catch {
   }
-  const file = parseLexiconText(read.text, filePath, "global");
-  if (opts.writeBack !== false) await writeParseCache(filePath, read.text, file.lexicon, read.mode);
+  const failure2 = await readParseFailure(import_node_path5.default.dirname(filePath), key, read.text);
+  if (failure2 !== void 0) throw new Error(`${failure2.kind === "yaml" ? "Failed to parse lexicon YAML" : "Invalid lexicon"} at ${filePath}: ${failure2.reason}`);
+  let file;
+  try {
+    file = parseLexiconText(read.text, filePath, "global");
+  } catch (err) {
+    if (opts.writeBack !== false) await writeParseFailure(filePath, read.text, err, read.mode);
+    throw err;
+  }
+  if (opts.writeBack !== false) {
+    await writeParseCache(filePath, read.text, file.lexicon, read.mode);
+    await import_node_fs5.promises.unlink(import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_FAILURE_FILE_NAME)).catch(() => void 0);
+  }
   return file;
+}
+var PARSE_FAILURE_FILE_NAME = "parse-failure.json";
+var PARSE_FAILURE_VERSION = 1;
+async function readParseFailure(dir, key, text) {
+  if (text.length < PARSE_CACHE_MIN_BYTES) return void 0;
+  try {
+    const cached2 = JSON.parse(await import_node_fs5.promises.readFile(import_node_path5.default.join(dir, PARSE_FAILURE_FILE_NAME), "utf8"));
+    if (isPlainObject2(cached2) && cached2.version === PARSE_FAILURE_VERSION && cached2.path === key && cached2.text === text && (cached2.kind === "yaml" || cached2.kind === "schema") && typeof cached2.reason === "string") {
+      return { kind: cached2.kind, reason: cached2.reason };
+    }
+  } catch {
+  }
+  return void 0;
+}
+async function writeParseFailure(filePath, text, err, mode) {
+  if (text.length < PARSE_CACHE_MIN_BYTES) return;
+  const message = errorMessage(err);
+  const yaml = `Failed to parse lexicon YAML at ${filePath}: `;
+  const schema = `Invalid lexicon at ${filePath}: `;
+  const failure2 = message.startsWith(yaml) ? { kind: "yaml", reason: message.slice(yaml.length) } : message.startsWith(schema) ? { kind: "schema", reason: message.slice(schema.length) } : void 0;
+  if (failure2 === void 0) return;
+  try {
+    await writeFileAtomic(
+      import_node_path5.default.join(import_node_path5.default.dirname(filePath), PARSE_FAILURE_FILE_NAME),
+      JSON.stringify({ version: PARSE_FAILURE_VERSION, path: import_node_path5.default.resolve(filePath), text, ...failure2 }),
+      { mode }
+    );
+  } catch {
+  }
 }
 async function writeParseCache(filePath, text, lexicon, mode) {
   if (text.length < PARSE_CACHE_MIN_BYTES) return;

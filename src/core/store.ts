@@ -315,9 +315,93 @@ async function readGlobalLexiconCached(filePath: string, opts: { writeBack?: boo
   } catch {
     // missing, unreadable or stale: parse for real below
   }
-  const file = parseLexiconText(read.text, filePath, 'global');
-  if (opts.writeBack !== false) await writeParseCache(filePath, read.text, file.lexicon, read.mode);
+  // The same bytes failed last time: say so again without the parse.
+  const failure = await readParseFailure(path.dirname(filePath), key, read.text);
+  if (failure !== undefined) throw new Error(`${failure.kind === 'yaml' ? 'Failed to parse lexicon YAML' : 'Invalid lexicon'} at ${filePath}: ${failure.reason}`);
+  let file: LexiconFile;
+  try {
+    file = parseLexiconText(read.text, filePath, 'global');
+  } catch (err) {
+    if (opts.writeBack !== false) await writeParseFailure(filePath, read.text, err, read.mode);
+    throw err;
+  }
+  if (opts.writeBack !== false) {
+    await writeParseCache(filePath, read.text, file.lexicon, read.mode);
+    await fs.unlink(path.join(path.dirname(filePath), PARSE_FAILURE_FILE_NAME)).catch(() => undefined);
+  }
   return file;
+}
+
+/**
+ * The global lexicon text that last failed to parse or validate, kept beside
+ * it (`parse-failure.json`) with the reason, so the next read of exactly
+ * those bytes throws the same error without parsing again.
+ *
+ * A global file that does not parse is reported on every prompt (the hook's
+ * "is correcting nothing" note) until the user fixes it, and each prompt
+ * parsed it again: a 5000-term file that failed validation cost about 400 ms
+ * of YAML parse and schema check per prompt, twice the hook's budget, to
+ * reach the same answer. Like the parse cache, reuse is decided by the
+ * content: an entry is a hit only when its `text` is the file's text,
+ * character for character, so any edit (the fix included) parses for real;
+ * a success deletes the entry. It is written only for a file of at least
+ * PARSE_CACHE_MIN_BYTES, with the lexicon's own permission bits, and holds
+ * the reason only (the error message without its path, which is the current
+ * path when it is thrown again).
+ */
+export const PARSE_FAILURE_FILE_NAME = 'parse-failure.json';
+
+/** Entry format of PARSE_FAILURE_FILE_NAME. */
+export const PARSE_FAILURE_VERSION = 1;
+
+/** The two store errors a lexicon text can fail with: `kind` picks the message prefix. */
+interface ParseFailure {
+  kind: 'yaml' | 'schema';
+  reason: string;
+}
+
+/** The cached failure for exactly `text` of the global file `key` (an absolute path) in `dir`, else undefined. Never throws. */
+async function readParseFailure(dir: string, key: string, text: string): Promise<ParseFailure | undefined> {
+  if (text.length < PARSE_CACHE_MIN_BYTES) return undefined;
+  try {
+    const cached: unknown = JSON.parse(await fs.readFile(path.join(dir, PARSE_FAILURE_FILE_NAME), 'utf8'));
+    if (
+      isPlainObject(cached) &&
+      cached.version === PARSE_FAILURE_VERSION &&
+      cached.path === key &&
+      cached.text === text &&
+      (cached.kind === 'yaml' || cached.kind === 'schema') &&
+      typeof cached.reason === 'string'
+    ) {
+      return { kind: cached.kind, reason: cached.reason };
+    }
+  } catch {
+    // missing, unreadable or foreign: parse for real
+  }
+  return undefined;
+}
+
+/** Record `err` (a parseLexiconText error) as the failure of `text`. Best effort, never throws. */
+async function writeParseFailure(filePath: string, text: string, err: unknown, mode: number): Promise<void> {
+  if (text.length < PARSE_CACHE_MIN_BYTES) return;
+  const message = errorMessage(err);
+  const yaml = `Failed to parse lexicon YAML at ${filePath}: `;
+  const schema = `Invalid lexicon at ${filePath}: `;
+  const failure: ParseFailure | undefined = message.startsWith(yaml)
+    ? { kind: 'yaml', reason: message.slice(yaml.length) }
+    : message.startsWith(schema)
+      ? { kind: 'schema', reason: message.slice(schema.length) }
+      : undefined;
+  if (failure === undefined) return;
+  try {
+    await writeFileAtomic(
+      path.join(path.dirname(filePath), PARSE_FAILURE_FILE_NAME),
+      JSON.stringify({ version: PARSE_FAILURE_VERSION, path: path.resolve(filePath), text, ...failure }),
+      { mode },
+    );
+  } catch {
+    // a cache, not state: the next read parses again
+  }
 }
 
 /**

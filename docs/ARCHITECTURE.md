@@ -23,6 +23,7 @@ src/
                             addTerm / removeTerm / recordHits, the project-write trust gate,
                             per-user hit counts (hits.json), the parsed-YAML caches (parse-cache.json,
                             and project-parse-cache.json for the last trusted project file),
+                            the last global parse failure (parse-failure.json),
                             the compiled matcher index cache (index-cache.json, loadMatcherIndex)
     trust.ts                trust registry (trust.json): isTrusted, trustProject, refreshTrust, listTrusted
     matcher.ts              the public face: buildIndex(), findReplacements(), phoneticKey(), similarity()
