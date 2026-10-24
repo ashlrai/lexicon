@@ -20556,6 +20556,7 @@ function exportJson(lexicon, _opts = {}) {
 }
 
 // src/core/exporters/macos.ts
+var NOT_XML_RE = /[\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 function exportMacos(lexicon, _opts = {}) {
   const lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -20564,6 +20565,7 @@ function exportMacos(lexicon, _opts = {}) {
     "<array>"
   ];
   for (const { alias, canonical } of aliasPairs(lexicon)) {
+    if (NOT_XML_RE.test(alias) || NOT_XML_RE.test(canonical)) continue;
     lines.push("	<dict>");
     lines.push("		<key>phrase</key>");
     lines.push(`		<string>${xmlEscape(canonical)}</string>`);
