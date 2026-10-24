@@ -31,7 +31,7 @@ vi.mock('../src/core/index.js', async (importOriginal) => {
 });
 
 import { addTerm } from '../src/core/index.js';
-import { createServer, requestUrl } from '../src/serve/server.js';
+import { canonicalFile, createServer, requestUrl } from '../src/serve/server.js';
 import type { LexiconHttpServer, ServeStartInfo } from '../src/serve/server.js';
 
 let home: string;
@@ -143,5 +143,33 @@ describe('lexicon cache', () => {
     // The next request sees the write, not the old lexicon the held load read.
     const fresh = (await (await api('GET', health)).json()) as { terms: number };
     expect(fresh.terms).toBe(2);
+  });
+});
+
+describe('canonicalFile', () => {
+  const missing = (): string => {
+    throw new Error('ENOENT');
+  };
+
+  it('treats paths differing only in case as one file on win32', () => {
+    expect(canonicalFile('C:\\Users\\Me\\repo\\.lexicon.yaml', 'win32', missing)).toBe(
+      canonicalFile('c:\\users\\me\\REPO\\.Lexicon.yaml', 'win32', missing),
+    );
+    expect(canonicalFile('C:\\Users\\Me\\repo\\..\\repo\\.lexicon.yaml', 'win32', missing)).toBe('c:\\users\\me\\repo\\.lexicon.yaml');
+  });
+
+  it('treats paths differing in case or Unicode normalisation as one file on darwin', () => {
+    const nfc = '/Users/Me/Caf\u00e9/.lexicon.yaml';
+    const nfd = '/users/me/CAFE\u0301/.lexicon.yaml';
+    expect(canonicalFile(nfc, 'darwin', missing)).toBe(canonicalFile(nfd, 'darwin', missing));
+  });
+
+  it('keeps case on linux, where it names another file', () => {
+    expect(canonicalFile('/home/me/A.yaml', 'linux', missing)).not.toBe(canonicalFile('/home/me/a.yaml', 'linux', missing));
+  });
+
+  it('folds the realpath result, so a symlinked spelling still matches', () => {
+    const real = (p: string): string => (p.toLowerCase().includes('link') ? 'C:\\Real\\Lexicon.yaml' : p);
+    expect(canonicalFile('C:\\Link\\lexicon.yaml', 'win32', real)).toBe(canonicalFile('c:\\REAL\\lexicon.yaml', 'win32', missing));
   });
 });

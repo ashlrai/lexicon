@@ -690,14 +690,31 @@ async function readJson(req: http.IncomingMessage, cap: number, route: BodyRoute
   return parsed;
 }
 
-/** A file's path with symlinks resolved when it exists, so two spellings of one file compare equal. */
-function canonicalFile(filePath: string): string {
-  const resolved = path.resolve(filePath);
+/**
+ * A file's path with symlinks resolved when it exists, so two spellings of
+ * one file compare equal. On win32 (NTFS) and darwin (APFS and HFS+ by
+ * default) the filesystem ignores case, so `C:\Users\Me\.lexicon.yaml` and
+ * `c:\users\me\.lexicon.yaml` are one file: the key is case-folded there
+ * (and NFC-normalised on darwin, which also ignores Unicode normalisation),
+ * or a write through one spelling left a load cached under the other. A
+ * case-sensitive APFS volume can only over-match, which drops a cached load
+ * that was still good: a reload, never a stale answer.
+ */
+export function canonicalFile(
+  filePath: string,
+  platform: NodeJS.Platform = process.platform,
+  realpath: (p: string) => string = realpathSync,
+): string {
+  const resolved = platform === 'win32' ? path.win32.resolve(filePath) : path.resolve(filePath);
+  let real: string;
   try {
-    return realpathSync(resolved);
+    real = realpath(resolved);
   } catch {
-    return resolved;
+    real = resolved;
   }
+  if (platform === 'win32') return real.toLowerCase();
+  if (platform === 'darwin') return real.normalize('NFC').toLowerCase();
+  return real;
 }
 
 /**
