@@ -20784,8 +20784,14 @@ function exportAssemblyai(lexicon, _opts = {}) {
 }
 
 // src/core/exporters/azure.ts
-function exportAzure(lexicon, _opts = {}) {
-  const phraseList = canonicalList(sortByImportance(lexicon.terms)).map((c) => c.canonical);
+var AZURE_PHRASES_MAX = 500;
+function exportAzure(lexicon, _opts = {}, notes) {
+  const all = canonicalList(sortByImportance(lexicon.terms)).map((c) => c.canonical);
+  const phraseList = all.slice(0, AZURE_PHRASES_MAX);
+  const dropped = all.slice(AZURE_PHRASES_MAX);
+  if (dropped.length > 0) {
+    notes?.push(`left out ${dropped.length} phrase${dropped.length === 1 ? "" : "s"} past the ${AZURE_PHRASES_MAX} kept (the most used; the phrase list size Azure documents): ${quotedNames(dropped)}`);
+  }
   return JSON.stringify({ phraseList }, null, 2) + "\n";
 }
 
@@ -20870,11 +20876,29 @@ ${body}` : body;
 }
 
 // src/core/exporters/google.ts
-function exportGoogle(lexicon, _opts = {}) {
-  const phrases = canonicalList(sortByImportance(lexicon.terms)).map(({ term, canonical }) => ({
-    value: canonical,
-    boost: isProperNounCategory(term.category) ? 20 : 10
-  }));
+var GOOGLE_PHRASE_MAX_CHARS = 100;
+var GOOGLE_PHRASES_MAX = 1e3;
+function exportGoogle(lexicon, _opts = {}, notes) {
+  const tooLong = [];
+  const overCap = [];
+  const phrases = [];
+  for (const { term, canonical } of canonicalList(sortByImportance(lexicon.terms))) {
+    if ([...canonical].length > GOOGLE_PHRASE_MAX_CHARS) {
+      tooLong.push(canonical);
+      continue;
+    }
+    if (phrases.length >= GOOGLE_PHRASES_MAX) {
+      overCap.push(canonical);
+      continue;
+    }
+    phrases.push({ value: canonical, boost: isProperNounCategory(term.category) ? 20 : 10 });
+  }
+  if (tooLong.length > 0) {
+    notes?.push(`left out ${tooLong.length} phrase${tooLong.length === 1 ? "" : "s"} over Google's ${GOOGLE_PHRASE_MAX_CHARS} characters per phrase: ${quotedNames(tooLong)}`);
+  }
+  if (overCap.length > 0) {
+    notes?.push(`left out ${overCap.length} phrase${overCap.length === 1 ? "" : "s"} past the ${GOOGLE_PHRASES_MAX} kept (the most used; a conservative cap under Google's phrase limit): ${quotedNames(overCap)}`);
+  }
   return JSON.stringify({ adaptation: { phraseSets: [{ phrases }] } }, null, 2) + "\n";
 }
 

@@ -20,8 +20,8 @@ lexicon export <format> --out <file>
 | `openai` | One line of canonicals | OpenAI transcription `prompt` field (same as `whisper-prompt`, with the same 224-token window; OpenAI documents it for `whisper-1`, and the newer models' own limit is not confirmed here, so the smaller window is kept) |
 | `deepgram` | Keyword boost JSON (`keyword:boost`) | Deepgram `keywords` parameter. The format has no escape for a colon, so one in a name becomes a space (`Win:2` is written `Win 2:1`) |
 | `assemblyai` | `word_boost` JSON | AssemblyAI `word_boost` / `boost_param`. At most 1,000 entries, the API's limit: a larger lexicon keeps its most used names |
-| `azure` | `phraseList` JSON | Azure Speech `PhraseListGrammar` |
-| `google` | Adaptation `phraseSets` JSON | Google Speech-to-Text model adaptation (boost 20 for brand/person/product, 10 otherwise) |
+| `azure` | `phraseList` JSON | Azure Speech `PhraseListGrammar`. At most 500 phrases, the most used kept: the size Azure documents for a phrase list, not confirmed offline |
+| `google` | Adaptation `phraseSets` JSON | Google Speech-to-Text model adaptation (boost 20 for brand/person/product, 10 otherwise). A phrase over 100 characters (Google's per-phrase limit) is left out, and the set stops at 1,000 phrases, the most used kept, a conservative cap under the per-request phrase limit Google documents (limits not confirmed offline) |
 | `claude-md` | Markdown table under `## Voice lexicon` | `CLAUDE.md`, `AGENTS.md`, any system prompt. Also what `lexicon://me` and the `SessionStart` hook emit |
 | `markdown` | `- **Canonical** (category): aliases` bullets | READMEs, wikis |
 | `text` | `Canonical: alias1, alias2` per line | Anything human-edited; `lexicon import` reads it back |
