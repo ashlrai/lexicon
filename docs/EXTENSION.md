@@ -156,7 +156,7 @@ Each site has an on/off switch in the popup (for the current tab) and in Options
 
 - `extension/dist-firefox` swaps `background.service_worker` for `background.scripts` (with `type: module`) and adds `browser_specific_settings.gecko.id`, which Firefox needs for MV3 add-ons. Everything else is identical.
 - Firefox loads it as a temporary add-on only (no signing). It is removed when Firefox exits; reload it from `about:debugging`.
-- Firefox MV3 does not grant host permissions at install time. After loading, open the extension's permissions panel (`about:addons` > Lexicon > Permissions) and allow the chat sites, or accept the prompt the first time you open one.
+- Firefox MV3 does not grant host permissions at install time. After loading, open the extension's permissions panel (`about:addons` > Lexicon > Permissions) and allow the chat sites, or accept the prompt the first time you open one. Allow `127.0.0.1` and `localhost` there too: without them pairing from the `/pair` page, Test connection and Sync fail and corrections use the embedded lexicon.
 - `chrome.*` calls are used throughout; Firefox exposes the same namespace with promise support for MV3.
 
 ## Development

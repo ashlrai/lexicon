@@ -1,3 +1,4 @@
+import { createHash } from 'node:crypto';
 import { spawn, spawnSync } from 'node:child_process';
 import { mkdirSync, promises as fs, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
@@ -29,7 +30,7 @@ import {
   pickDevice,
 } from '../src/voice/devices.js';
 import { HISTORY_MAX_BYTES, HISTORY_MAX_LINES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
-import { GGML_MAGIC, STALE_PART_MS, defaultDownloader, expandTilde, modelFileName, modelUrl, resolveModel } from '../src/voice/models.js';
+import { GGML_MAGIC, STALE_PART_MS, checkModelHashRecord, defaultDownloader, expandTilde, modelFileName, modelUrl, modelsDir, resolveModel } from '../src/voice/models.js';
 import type { Downloader } from '../src/voice/models.js';
 import { installHint, locateWhisperCli, makeProcessDescribe, makeProcessList } from '../src/voice/process.js';
 import type { ChildHandle, ExecResult, SpawnOptions, VoiceExec, VoiceSpawn } from '../src/voice/process.js';
@@ -55,7 +56,7 @@ import {
   findOrphanRecorder,
   recorderFingerprint,
 } from '../src/voice/recorder.js';
-import { cleanTranscript, parseWhisperOutput, whisperArgs } from '../src/voice/transcribe.js';
+import { WHISPER_TIMEOUT_BASE_MS, WHISPER_TIMEOUT_PER_AUDIO_SECOND_MS, cleanTranscript, parseWhisperOutput, whisperArgs, whisperTimeoutMs } from '../src/voice/transcribe.js';
 import {
   EXIT_ERROR,
   EXIT_MISSING_TOOL,
@@ -64,6 +65,7 @@ import {
   runVoice,
   runVoiceListDevices,
   runVoiceStatus,
+  commandLine,
   runVoiceToggle,
 } from '../src/voice/voice.js';
 import type { VoiceDeps, VoiceJsonResult, VoiceOptions } from '../src/voice/voice.js';
@@ -189,7 +191,7 @@ async function makeHarness(overrides: { platform?: NodeJS.Platform; missing?: st
   const missing = new Set(overrides.missing ?? []);
   const modelsDir = path.join(dir, 'models');
   await fs.mkdir(modelsDir, { recursive: true });
-  await fs.writeFile(path.join(modelsDir, 'ggml-base.en.bin'), 'fake model');
+  await fs.writeFile(path.join(modelsDir, 'ggml-base.en.bin'), Buffer.concat([GGML_MAGIC, Buffer.from('fake model')]));
 
   const h: Harness = {
     dir,
@@ -591,6 +593,28 @@ describe('lexicon voice --toggle', () => {
     expect(JSON.parse(h.out[0])).toEqual({ ok: true, recording: true, since: '2026-09-19T12:00:00.000Z', pid: 4242 });
   });
 
+  // Catches: --status trusted isAlive alone, so a recorder that exited and
+  // whose pid was handed to another process read as recording forever.
+  it('--status is idle when the recorded pid now runs something else', async () => {
+    const h = await harness();
+    await deadRecorderState(h, wavBytes({ audioBytes: 32_000, finalized: true }));
+    h.alive.add(99999);
+    h.deps.describeProcess = async () => '/usr/sbin/cupsd';
+    h.deps.listProcesses = async () => [];
+    expect(await runVoiceStatus(h.opts, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.out).toEqual(['idle\n']);
+    // A recorder the process table shows writing the capture is still reported, under its own pid.
+    const wav = (await readState(h.globalPath))!.wav;
+    h.deps.listProcesses = async () => [{ pid: 7777, command: `/fake/bin/ffmpeg -f avfoundation -i :default -y ${wav}` }];
+    h.out.length = 0;
+    expect(await runVoiceStatus({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_OK);
+    expect(JSON.parse(h.out[0])).toMatchObject({ ok: true, recording: true, pid: 7777 });
+    // A pid it cannot ask about is taken as the recorder, as before.
+    h.deps.describeProcess = async () => undefined;
+    h.out.length = 0;
+    expect(await runVoiceStatus(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+  });
+
   // Catches: `voice --status --json` was the one object-shaped --json document
   // without `ok`, so idle (exit 1) read as `{ recording: false }` alone.
   it('--status --json leads with ok, false when idle (exit 1)', async () => {
@@ -897,6 +921,72 @@ describe('lexicon voice (foreground)', () => {
     expect(await fs.readdir(path.join(h.dir, 'tmp'))).toEqual([]);
   });
 
+  // Catches: Ctrl-C while whisper ran killed the process with no handler, so
+  // the capture stayed in the temp directory and nothing said where.
+  it('Ctrl-C during transcription stops whisper and names the kept capture', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    const exec = h.deps.exec!;
+    let whisperSignal: AbortSignal | undefined;
+    let whisperStarted: () => void = () => undefined;
+    const started = new Promise<void>((r) => (whisperStarted = r));
+    h.deps.exec = async (cmd, args, opts) => {
+      if (path.basename(cmd) !== 'whisper-cli') return exec(cmd, args, opts);
+      whisperSignal = opts?.signal;
+      whisperStarted();
+      // whisper-cli runs until it is stopped
+      return new Promise<ExecResult>((resolve) => opts?.signal?.addEventListener('abort', () => resolve({ code: null, stdout: '', stderr: '' })));
+    };
+    let listening: AbortSignal | undefined;
+    h.deps.waitForTranscribeInterrupt = async (signal) => {
+      listening = signal;
+      await started;
+      return 'sigint';
+    };
+    const run = runVoice({ ...h.opts, json: true }, h.io, h.deps);
+    const code = await Promise.race([run, new Promise<'hung'>((r) => setTimeout(() => r('hung'), 3000))]);
+    expect(code).toBe(EXIT_ERROR);
+    expect(whisperSignal?.aborted).toBe(true);
+    expect(listening?.aborted).toBe(true);
+    const [wav] = await fs.readdir(path.join(h.dir, 'tmp'));
+    const kept = path.join(h.dir, 'tmp', wav);
+    expect(wav).toMatch(/^lexicon-voice-.*\.wav$/);
+    expect(h.err.join('')).toContain(`lexicon voice: interrupted while transcribing; the recording is kept at ${kept}\n`);
+    expect(JSON.parse(h.out[0])).toMatchObject({ ok: false, code: EXIT_ERROR, error: `interrupted while transcribing (audio kept at ${kept})` });
+  });
+
+  // Catches: whisper-cli ran with no timeout, so a hung one held the run forever.
+  it('stops a whisper-cli that runs past a timeout proportional to the audio, with a clear error', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    const exec = h.deps.exec!;
+    let timeoutMs: number | undefined;
+    let wavSize = 0;
+    h.deps.exec = async (cmd, args, opts) => {
+      if (path.basename(cmd) !== 'whisper-cli') return exec(cmd, args, opts);
+      timeoutMs = opts?.timeoutMs;
+      wavSize = (await fs.stat(args[args.indexOf('-f') + 1])).size;
+      return { code: null, stdout: '', stderr: '', timedOut: true };
+    };
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(timeoutMs).toBe(whisperTimeoutMs((wavSize - 44) / 32_000));
+    expect(timeoutMs).toBe(WHISPER_TIMEOUT_BASE_MS + Math.ceil(((wavSize - 44) / 32_000) * WHISPER_TIMEOUT_PER_AUDIO_SECOND_MS));
+    const doc = JSON.parse(h.out[0]) as { error: string; nextStep: string };
+    expect(doc.error).toMatch(/^whisper-cli did not finish within 120 s on 0 s of audio, so it was stopped \(audio kept at .*\.wav\)$/);
+    expect(doc.nextStep).toContain('a smaller model (--model base.en or tiny.en) transcribes faster');
+    expect(h.err.join('')).toContain('whisper-cli did not finish within 120 s');
+    expect(whisperTimeoutMs(600)).toBe(120_000 + 6_000_000);
+    expect(whisperTimeoutMs(Number.NaN)).toBe(120_000);
+  });
+
+  it('the transcription interrupt listener is released after an ordinary run', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    const before = process.listenerCount('SIGINT');
+    expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(process.listenerCount('SIGINT')).toBe(before);
+  });
+
   it('--seconds: the interrupt listener is released when the recording ends on its own', async () => {
     const h = await harness();
     let listening: AbortSignal | undefined;
@@ -1185,6 +1275,31 @@ describe('lexicon voice (foreground)', () => {
     expect(h.err.join('')).toMatch(/\n {2}run `\S+ -m \S+ggml-base\.en\.bin -f \S+\.wav` to see whisper's full output; if the model file is damaged, delete /);
   });
 
+  // Catches: the rerun command was POSIX-quoted on Windows, which neither
+  // PowerShell nor cmd.exe runs as written.
+  it('quotes the whisper rerun command for PowerShell on Windows', async () => {
+    const h = await harness({ platform: 'win32' });
+    h.deps.env = { PATH: h.binDir, LEXICON_FFMPEG_BIN: '/fake/bin/ffmpeg', LEXICON_WHISPER_BIN: '/fake/bin/whisper-cli' };
+    h.deps.waitForStop = async () => 'enter';
+    h.deps.tmpDir = path.join(h.dir, "it's tmp");
+    h.whisperExit = 1;
+    expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_ERROR);
+    const err = h.err.join('');
+    const wav = (await fs.readdir(h.deps.tmpDir)).find((f) => f.endsWith('.wav'))!;
+    const quotedWav = `'${path.join(h.deps.tmpDir, wav).replace(/'/g, "''")}'`;
+    expect(err).toContain(`run in PowerShell \`/fake/bin/whisper-cli -m `);
+    expect(err).toContain(` -f ${quotedWav}\` to see whisper's full output`);
+    expect(err).not.toContain(`'\\''`);
+  });
+
+  it('commandLine quotes for the platform', () => {
+    expect(commandLine(['/usr/bin/whisper-cli', '-f', "/tmp/a b/it's.wav"], 'darwin')).toBe(`/usr/bin/whisper-cli -f '/tmp/a b/it'\\''s.wav'`);
+    expect(commandLine(['C:\\whisper\\whisper-cli.exe', '-m', 'C:\\m\\ggml-base.en.bin'], 'win32')).toBe('C:\\whisper\\whisper-cli.exe -m C:\\m\\ggml-base.en.bin');
+    expect(commandLine(['C:\\Program Files\\whisper\\whisper-cli.exe', '-f', "C:\\Users\\o'neil\\a.wav"], 'win32')).toBe(
+      "& 'C:\\Program Files\\whisper\\whisper-cli.exe' -f 'C:\\Users\\o''neil\\a.wav'",
+    );
+  });
+
   it('--copy writes the corrected text to the clipboard', async () => {
     const h = await harness();
     h.deps.waitForStop = async () => 'enter';
@@ -1259,11 +1374,46 @@ describe('lexicon voice (foreground)', () => {
     const h = await harness();
     const alt = path.join(h.dir, 'alt-models');
     await fs.mkdir(alt);
-    await fs.writeFile(path.join(alt, 'ggml-base.en.bin'), 'x');
+    await fs.writeFile(path.join(alt, 'ggml-base.en.bin'), Buffer.concat([GGML_MAGIC, Buffer.from('x')]));
     h.deps.env = { PATH: h.binDir, LEXICON_WHISPER_MODELS: alt };
     h.deps.waitForStop = async () => 'enter';
     await runVoice(h.opts, h.io, h.deps);
     expect(whisperCall(h)!.args).toEqual(expect.arrayContaining(['-m', path.join(alt, 'ggml-base.en.bin')]));
+  });
+
+  // Catches: LEXICON_WHISPER_MODELS was used as is: `~/models` named a
+  // directory called `~` under the cwd, and `models` a different directory in
+  // every working directory.
+  it('LEXICON_WHISPER_MODELS expands ~/ and refuses a relative directory before recording', async () => {
+    expect(modelsDir(path.join('/cfg', 'lexicon.yaml'), { LEXICON_WHISPER_MODELS: '~/lexicon-models' })).toBe(path.join(os.homedir(), 'lexicon-models'));
+    expect(() => modelsDir(path.join('/cfg', 'lexicon.yaml'), { LEXICON_WHISPER_MODELS: 'models' })).toThrow(
+      'LEXICON_WHISPER_MODELS must be an absolute path or start with ~/ (it is "models")',
+    );
+    const h = await harness();
+    h.deps.env = { PATH: h.binDir, LEXICON_WHISPER_MODELS: 'models' };
+    h.deps.waitForStop = async () => 'enter';
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.spawnCalls).toHaveLength(0);
+    expect(JSON.parse(h.out[0])).toMatchObject({ ok: false, nextStep: expect.stringContaining('set LEXICON_WHISPER_MODELS to an absolute directory') });
+  });
+
+  it('a downloaded model that changed on disk is refused before recording, not downloaded over', async () => {
+    const h = await harness();
+    const model = path.join(h.dir, 'models', 'ggml-base.en.bin');
+    await fs.writeFile(`${model}.sha256.json`, JSON.stringify({ version: 1, sha256: '0'.repeat(64), size: 1, mtimeMs: 0 }));
+    h.deps.waitForStop = async () => 'enter';
+    let downloads = 0;
+    h.deps.download = async () => {
+      downloads += 1;
+    };
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.spawnCalls).toHaveLength(0);
+    expect(downloads).toBe(0);
+    expect(JSON.parse(h.out[0])).toMatchObject({
+      ok: false,
+      error: expect.stringContaining(`whisper model ${model} is not usable: it changed since Lexicon downloaded it`),
+      nextStep: `delete ${model} to download it again, or delete ${model}.sha256.json to keep using it`,
+    });
   });
 
   it('--list-devices prints the avfoundation audio devices', async () => {
@@ -1626,7 +1776,7 @@ describe('model download', () => {
     stubFetch(body, body.length);
     await defaultDownloader('https://example.invalid/ggml-tiny.bin', dest, () => undefined);
     expect((await fs.readFile(dest)).equals(body)).toBe(true);
-    expect(await fs.readdir(path.dirname(dest))).toEqual(['ggml-tiny.bin']);
+    expect((await fs.readdir(path.dirname(dest))).sort()).toEqual(['ggml-tiny.bin', 'ggml-tiny.bin.sha256.json']);
   });
 
   // Catches: a download that ended early was renamed into place as the model.
@@ -1660,7 +1810,7 @@ describe('model download', () => {
     const body = model(100);
     stubFetch(body, body.length);
     await defaultDownloader('https://example.invalid/m', dest, () => undefined);
-    expect((await fs.readdir(dir)).sort()).toEqual(['ggml-base.bin.9-x-y.part', 'ggml-tiny.bin', 'ggml-tiny.bin.2-live-xyz.part']);
+    expect((await fs.readdir(dir)).sort()).toEqual(['ggml-base.bin.9-x-y.part', 'ggml-tiny.bin', 'ggml-tiny.bin.2-live-xyz.part', 'ggml-tiny.bin.sha256.json']);
   });
 
   // Catches: two downloads of one model shared `<dest>.part`, interleaving their bytes.
@@ -1688,7 +1838,11 @@ describe('model download', () => {
     ]);
     const got = await fs.readFile(dest);
     expect(got.equals(a) || got.equals(b)).toBe(true);
-    expect(await fs.readdir(dir)).toEqual(['ggml-tiny.bin']);
+    expect((await fs.readdir(dir)).sort()).toEqual(['ggml-tiny.bin', 'ggml-tiny.bin.sha256.json']);
+    // The record describes the file that won, whichever it was.
+    expect(checkModelHashRecord(dest)).toBeUndefined();
+    const record = JSON.parse(await fs.readFile(`${dest}.sha256.json`, 'utf8')) as { sha256: string };
+    expect(record.sha256).toBe(createHash('sha256').update(got).digest('hex'));
   });
 });
 

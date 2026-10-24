@@ -24,7 +24,10 @@ microphone -> ffmpeg (16 kHz mono s16 WAV) -> whisper.cpp (--prompt <canonicals>
    your merged lexicon, comma-separated, capped at 100). Whisper biases toward
    spellings it sees in the prompt; on the audio benchmark that alone lifts
    `base.en` term recall from 42% to 67% (see below). Bracketed tags like
-   `[BLANK_AUDIO]` and noise annotations like `(applause)` are stripped.
+   `[BLANK_AUDIO]` and noise annotations like `(applause)` are stripped. whisper-cli
+   gets 2 minutes plus 10 seconds per second of audio; past that it is stopped and the
+   capture is kept. Ctrl-C while it runs stops it and keeps the capture as well; both
+   name the file.
 3. **Correct.** `normalize()` applies the lexicon (alias, phonetic, fuzzy) to what
    Whisper wrote. Matched terms get a `hits` bump like every other entry point.
    With no terms in the lexicon yet, stderr says `nothing was corrected` and how
@@ -42,7 +45,9 @@ microphone -> ffmpeg (16 kHz mono s16 WAV) -> whisper.cpp (--prompt <canonicals>
 
 Exit codes: `0` ok, `1` error, `2` ffmpeg or whisper-cli missing (with an install
 hint), `3` nothing heard. `--status` exits `0` while a toggle recording is running
-and `1` when idle, so scripts can branch on it. `--toggle`, `--status` and
+and `1` when idle, so scripts can branch on it. A recorded pid counts only while it
+still runs the recorder on that capture (its command line is checked, as the stop
+press does), so a pid the system handed to another program reads as idle. `--toggle`, `--status` and
 `--list-devices` are separate modes: passing two of them exits `1` and names both.
 `--status` and `--list-devices` record nothing, so a recording flag with them
 (`--seconds`, `--device`, `--model`, `--lang`, `--translate`, `--no-prompt`,
@@ -65,11 +70,25 @@ checkout; `LEXICON_FFMPEG_BIN` does the same for ffmpeg.
 ### First-run model download
 
 `--model` defaults to `base.en`. A model name maps to `ggml-<name>.bin` under
-`~/.config/lexicon/models/` (override with `LEXICON_WHISPER_MODELS`); a repo checkout
+`~/.config/lexicon/models/` (override with `LEXICON_WHISPER_MODELS`, an absolute directory
+or one starting with `~/`; a relative value is refused, since it would name a different
+directory in every working directory); a repo checkout
 also looks in `bench/audio/models/` so the benchmark's download is reused. A missing
 named model is fetched from
 `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-<name>.bin` with a
-progress line on stderr (`base.en` is 148 MB, `small.en` 488 MB). `--model /path/to/ggml-x.bin`
+progress line on stderr (`base.en` is 148 MB, `small.en` 488 MB). A model file that is
+already there is used only when it starts with the ggml magic bytes: an empty file or a
+saved error page is downloaded again (a named model) or refused before recording (a
+`--model` path), and `lexicon doctor` warns about it.
+
+Lexicon ships no table of known-good model hashes: none it could check offline, and the
+files on Hugging Face can be replaced. Instead each download is checked against the
+sha256 Hugging Face sends for the file (`X-Linked-Etag`) when it sends one, and its
+sha256 is recorded beside it (`ggml-<name>.bin.sha256.json`). A later run hashes the
+model again only when its size or modification time moved; a model whose bytes changed
+is refused with both ways out (delete it to download it again, or delete the record to
+keep it as it is) and is never downloaded over, since it may be one you put there. A
+model Lexicon did not download (a `--model` path, the benchmark's copy) is not checked. `--model /path/to/ggml-x.bin`
 uses a file directly and never downloads; a path that does not exist exits `1`
 before anything is recorded.
 

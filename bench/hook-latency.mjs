@@ -27,6 +27,13 @@
  * times the first prompt after it: the prompt that pays for whatever that
  * write left stale. The add's own wall time is printed too. The CLI is
  * dist/cli/index.js when built, else src/cli/index.ts through tsx.
+ *
+ * `--after-hand-edit` adds the "after a hand edit" mode: each of the N runs
+ * appends one term to the global YAML directly, as an editor would, then
+ * times the first SessionStart after it and, after a second edit, the first
+ * UserPromptSubmit. A hook that serves the previous version while a detached
+ * `--refresh-cache` process parses the new one is waited for (its lock file
+ * gone) before the next edit, so no refresh outlives the bench.
  */
 import { spawnSync } from 'node:child_process';
 import { existsSync, mkdirSync, mkdtempSync, rmSync, writeFileSync } from 'node:fs';
@@ -51,6 +58,7 @@ if (ALTERNATE && (PROJECT_TERMS === 0 || UNTRUSTED)) throw new Error('--alternat
 const afterWriteAt = args.indexOf('--after-write');
 const AFTER_WRITE = afterWriteAt === -1 ? undefined : args[afterWriteAt + 1] === 'project' ? 'project' : 'global';
 if (AFTER_WRITE === 'project' && PROJECT_TERMS === 0) throw new Error('--after-write project needs --project-terms N');
+const AFTER_HAND_EDIT = args.includes('--after-hand-edit');
 const DIST_CLI = resolve(root, 'dist/cli/index.js');
 const CLI = existsSync(DIST_CLI) ? [DIST_CLI] : ['--import', 'tsx', resolve(root, 'src/cli/index.ts')];
 
@@ -78,6 +86,13 @@ function lexiconYaml(n, seed = 42, prefix = '') {
     lines.push(`  - canonical: ${cap}`, `    aliases: [${word(2)}${i}, ${word(3)} ${word(1)}]`);
   }
   return `${lines.join('\n')}\n`;
+}
+
+/** Waits (up to 10 s) for a background cache refresh to release its lock beside `lexPath`. */
+function waitForRefresh(lexPath) {
+  const lock = join(dirname(lexPath), 'index-refresh.lock');
+  const until = Date.now() + 10_000;
+  while (existsSync(lock) && Date.now() < until) spawnSync(process.execPath, ['-e', 'setTimeout(() => {}, 20)']);
 }
 
 function time(stdin, env) {
@@ -135,6 +150,21 @@ try {
       afterWrite.push(r.ms);
     }
   }
+  const handSession = [];
+  const handPrompt = [];
+  if (AFTER_HAND_EDIT) {
+    const { appendFileSync } = await import('node:fs');
+    for (let i = 0; i < RUNS; i++) {
+      appendFileSync(lexPath, `  - canonical: Handword${i}a\n    aliases: [hand word ${i} a]\n`);
+      handSession.push(time(session, env).ms);
+      waitForRefresh(lexPath);
+      appendFileSync(lexPath, `  - canonical: Handword${i}b\n    aliases: [hand word ${i} b]\n`);
+      const r = time(prompt, env);
+      if (!r.stdout.includes('Ashlr.AI')) throw new Error(`hook did not correct the prompt after a hand edit: ${r.stdout}`);
+      handPrompt.push(r.ms);
+      waitForRefresh(lexPath);
+    }
+  }
   process.stdout.write(
     `hook ${relative(root, HOOK)}, ${TERMS} terms${PROJECT_TERMS > 0 ? ` + ${PROJECT_TERMS} in ${UNTRUSTED ? 'an untrusted' : 'a trusted'} project lexicon` : ''}${ALTERNATE ? ', alternating between two repos' : ''}, ${RUNS} runs\n` +
       `  UserPromptSubmit cold  ${cold.ms.toFixed(1)} ms\n` +
@@ -144,6 +174,11 @@ try {
         ? `  after a CLI write (lexicon add${AFTER_WRITE === 'project' ? ' --project' : ''})\n` +
           `    first prompt         ${stats(afterWrite)}\n` +
           `    the add itself       ${stats(writes)}\n`
+        : '') +
+      (AFTER_HAND_EDIT
+        ? '  after a hand edit of the global YAML\n' +
+          `    first SessionStart   ${stats(handSession)}\n` +
+          `    first prompt         ${stats(handPrompt)}\n`
         : ''),
   );
 } finally {

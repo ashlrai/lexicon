@@ -4,7 +4,7 @@
  * spawn ffmpeg or whisper-cli.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, openSync } from 'node:fs';
+import { closeSync, existsSync, openSync } from 'node:fs';
 import { locateTool } from '../util/which.js';
 import type { LocateOptions } from '../util/which.js';
 
@@ -13,6 +13,8 @@ export interface ExecResult {
   code: number | null;
   stdout: string;
   stderr: string;
+  /** True when ExecOptions.timeoutMs ran out and the child was killed (code is then null). */
+  timedOut?: boolean;
 }
 
 export interface ExecOptions {
@@ -20,6 +22,11 @@ export interface ExecOptions {
   stdin?: string;
   /** Kill the child after this many milliseconds (resolves with code null). */
   timeoutMs?: number;
+  /**
+   * Stop the child (SIGTERM) when this aborts, resolving with code null: the
+   * caller was interrupted (Ctrl-C) and the result is no longer wanted.
+   */
+  signal?: AbortSignal;
 }
 
 /**
@@ -65,11 +72,12 @@ export function defaultExec(cmd: string, args: readonly string[], opts: ExecOpti
     let size = 0;
     let settled = false;
     let timer: NodeJS.Timeout | undefined;
+    let timedOut = false;
     const finish = (code: number | null): void => {
       if (settled) return;
       settled = true;
       if (timer) clearTimeout(timer);
-      resolve({ code, stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8') });
+      resolve({ code, stdout: Buffer.concat(out).toString('utf8'), stderr: Buffer.concat(err).toString('utf8'), ...(timedOut ? { timedOut: true } : {}) });
     };
     child.once('error', (e) => {
       if (settled) return;
@@ -90,7 +98,17 @@ export function defaultExec(cmd: string, args: readonly string[], opts: ExecOpti
     });
     child.once('close', (code) => finish(code));
     if (opts.timeoutMs !== undefined) {
-      timer = setTimeout(() => child.kill('SIGKILL'), opts.timeoutMs);
+      timer = setTimeout(() => {
+        timedOut = true;
+        child.kill('SIGKILL');
+      }, opts.timeoutMs);
+    }
+    if (opts.signal) {
+      const stop = (): void => {
+        if (!settled) child.kill('SIGTERM');
+      };
+      if (opts.signal.aborted) stop();
+      else opts.signal.addEventListener('abort', stop, { once: true });
     }
     if (opts.stdin !== undefined && child.stdin) {
       child.stdin.once('error', () => undefined);
@@ -110,11 +128,25 @@ export function defaultSpawn(cmd: string, args: readonly string[], opts: SpawnOp
       stderrFd = 'ignore';
     }
   }
-  const child = spawn(cmd, [...args], {
-    detached: opts.detached,
-    stdio: ['ignore', 'ignore', opts.detached ? stderrFd : 'pipe'],
-    windowsHide: true,
-  });
+  let child: ReturnType<typeof spawn>;
+  try {
+    child = spawn(cmd, [...args], {
+      detached: opts.detached,
+      stdio: ['ignore', 'ignore', opts.detached ? stderrFd : 'pipe'],
+      windowsHide: true,
+    });
+  } finally {
+    // The child has its own copy of the descriptor now. The parent's was never
+    // closed, so a process that started recorders (the menu bar app's
+    // long-lived host, a test run) leaked one open log file per start.
+    if (typeof stderrFd === 'number') {
+      try {
+        closeSync(stderrFd);
+      } catch {
+        // already closed
+      }
+    }
+  }
   const exited = new Promise<number | null>((resolve) => {
     let done = false;
     const settle = (code: number | null): void => {

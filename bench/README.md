@@ -140,6 +140,7 @@ npm run bench:hook -- --after-write          # the first prompt after each lexic
 npm run bench:hook -- --project-terms 200 --after-write project  # with a trusted repo lexicon, after add --project
 npm run bench:hook -- --project-terms 200 --untrusted  # with a repo lexicon nobody trusted
 npm run bench:hook -- --project-terms 200 --alternate  # switching between two trusted repos on every prompt
+npm run bench:hook -- --terms 5000 --after-hand-edit  # the first SessionStart and prompt after editing the YAML by hand
 ```
 
 Spawns a fresh `node` per run, as Claude Code does, against a lexicon in a temp
@@ -158,3 +159,7 @@ between the two.
 needs `--project-terms`) and the add's own wall time: a first prompt slower
 than the warm ones means the write left a cache stale for the hook to rebuild.
 The CLI is `dist/cli/index.js` when built, else `src/cli/index.ts` through tsx.
+`--after-hand-edit` appends a term to the global YAML directly, as an editor
+would, and times the first SessionStart after it, then appends another and
+times the first prompt; each run waits for the hook's background
+`--refresh-cache` process to release its lock before the next edit.

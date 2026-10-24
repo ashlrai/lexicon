@@ -137,6 +137,13 @@ export interface LoadedLexicon {
    * changed since. Absent otherwise.
    */
   globalStale?: true;
+  /**
+   * With `globalStale`: why the part of the global file the edit changed does
+   * not parse or validate on its own (`line 812: ...`, see checkLexiconEdit),
+   * so the edit most likely broke the file. Absent when that part is fine or
+   * could not be checked cheaply; the full parse in the background decides.
+   */
+  globalStaleProblem?: string;
 }
 
 export type MatchReason = 'alias' | 'phonetic' | 'fuzzy';

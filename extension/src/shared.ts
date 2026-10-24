@@ -117,6 +117,8 @@ export interface StatusReply {
   tokenSet: boolean;
   /** Set when the server is up but answered 401 to the stored token. */
   tokenError?: string;
+  /** Set when the server is up and took the token, but a bearer route failed for another reason (so corrections fall back). */
+  apiError?: string;
   embeddedTerms: number;
   embeddedError?: string;
   recent: Correction[];
@@ -190,6 +192,47 @@ export function coerceSettings(raw: unknown, defaultYaml: string): Settings {
   };
 }
 
+/** The stored settings object as it is (fields kept as stored, defaults not filled in), or `{}`. */
+function storedObject(raw: unknown): Record<string, unknown> {
+  return raw && typeof raw === 'object' && !Array.isArray(raw) ? { ...(raw as Record<string, unknown>) } : {};
+}
+
+/**
+ * What the popup stores when its per-site switch changes: the stored object
+ * with only `sites` changed. It stored `coerceSettings(stored, '')`, which on
+ * a fresh install (nothing stored yet) wrote an empty `yaml`, so the first
+ * site switch emptied the embedded lexicon; a field left out is still filled
+ * with its default when read.
+ */
+export function withSiteSwitch(stored: unknown, hostname: string, enabled: boolean): Record<string, unknown> {
+  const next = storedObject(stored);
+  const sites = next.sites && typeof next.sites === 'object' ? { ...(next.sites as Record<string, boolean>) } : {};
+  sites[hostKey(hostname)] = enabled;
+  return { ...next, sites };
+}
+
+/**
+ * What Options stores before Test connection and Sync: the settings as
+ * stored now with only the connection fields from the form. Both saved the
+ * whole form, so a word the popup's Learn had just added to the embedded
+ * YAML, or a site it had just paused, was overwritten with what the Options
+ * page loaded. An empty base URL keeps the stored one.
+ */
+export function withConnection(stored: unknown, form: { baseUrl?: string; token: string; mode: Mode }): Record<string, unknown> {
+  const next = storedObject(stored);
+  return { ...next, ...(form.baseUrl ? { baseUrl: form.baseUrl } : {}), token: form.token, mode: form.mode };
+}
+
+/**
+ * The Options YAML box after the stored YAML changed elsewhere (a Learn in
+ * the popup, a sync): the new YAML when the box still shows what the page
+ * last loaded, else the box as it is (the user's unsaved edit wins, and Save
+ * writes it).
+ */
+export function yamlBoxAfterChange(box: string, loaded: string, stored: string): string {
+  return box === loaded ? stored : box;
+}
+
 /** `www.perplexity.ai` and `perplexity.ai` share one switch. */
 export function hostKey(hostname: string): string {
   return hostname.toLowerCase().replace(/^www\./, '');
@@ -231,6 +274,7 @@ export function incompleteNotice(inc: NormalizeIncomplete): string {
  */
 export function connectionTestLine(s: StatusReply): string {
   if (s.server && s.tokenError) return `Reachable (lexicon ${s.server.version}), but ${s.tokenError}`;
+  if (s.server && s.apiError) return `Reachable (lexicon ${s.server.version}), but ${s.apiError.replace(/[.\s]+$/, '')}. Corrections use the embedded lexicon until that is fixed.`;
   if (s.server && !s.tokenSet) {
     return `Server is up, not paired: lexicon ${s.server.version}, ${countOf(s.server.terms, 'term')}. Corrections use the embedded lexicon until you run \`lexicon serve --pair\`.`;
   }
@@ -261,6 +305,7 @@ export function statusView(s: StatusReply): StatusView {
   const api = s.configuredMode === 'api';
   const parts: string[] = [`${countOf(s.embeddedTerms, 'embedded term')}`];
   if (api && s.tokenError) parts.push(s.tokenError);
+  else if (api && s.apiError) parts.push(`server: ${s.apiError}`);
   else if (api && !s.server) parts.push(s.serverError ? `server: ${s.serverError}` : 'server unreachable; start it with `lexicon serve`');
   if (api && !s.tokenSet) {
     parts.push(

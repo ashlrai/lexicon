@@ -854,8 +854,23 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
   const ffmpegBin = ffmpegOverride ? (existsSync(ffmpegOverride) ? ffmpegOverride : undefined) : locateToolSync(['ffmpeg'], env, platform);
   if (ffmpegBin) push('ok', `ffmpeg found: ${ffmpegBin}`);
   else push('warn', `ffmpeg not found (needed by lexicon voice; ${installHint(platform, { ffmpeg: true, whisper: false })})`);
-  const model = resolveModel(DEFAULT_MODEL, { globalPath: paths.global, env });
-  push('info', model.present ? `whisper model ${DEFAULT_MODEL} present: ${model.path}` : `whisper model ${DEFAULT_MODEL} absent (lexicon voice downloads it to ${model.path} on first run)`);
+  let model: ReturnType<typeof resolveModel> | undefined;
+  try {
+    model = resolveModel(DEFAULT_MODEL, { globalPath: paths.global, env });
+  } catch (e) {
+    // LEXICON_WHISPER_MODELS that is not absolute
+    push('warn', `${e instanceof Error ? e.message : String(e)} (lexicon voice refuses to run with it)`);
+  }
+  if (model) {
+    push(
+      model.problem !== undefined ? 'warn' : 'info',
+      model.present
+        ? `whisper model ${DEFAULT_MODEL} present: ${model.path}`
+        : model.problem !== undefined
+          ? `whisper model ${DEFAULT_MODEL} at ${model.path} is not usable: ${model.problem}${model.modified ? '' : ' (lexicon voice downloads it again on its next run)'}`
+          : `whisper model ${DEFAULT_MODEL} absent (lexicon voice downloads it to ${model.path} on first run)`,
+    );
+  }
   if (platform === 'darwin') {
     push('info', 'lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)');
   }

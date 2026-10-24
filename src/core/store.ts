@@ -23,6 +23,7 @@ import path from 'node:path';
 import { isMap, isScalar, isSeq, parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml';
 import type { Document, YAMLMap } from 'yaml';
 import { emptyLexicon, parseLexicon, stripInvisible } from './schema.js';
+import { checkLexiconEdit } from './edit-check.js';
 import { buildIndex } from './matcher.js';
 import type { MatcherIndex } from './matcher.js';
 import { INDEX_FORMAT_VERSION, deserializeIndex, indexKey, serializeIndex } from './matcher/serialize.js';
@@ -79,7 +80,9 @@ export interface LoadOptions extends StoreOptions {
    * 150 ms more to index, past the hook's 200 ms budget, so the hook serves
    * the previous version for that prompt and refreshes the caches in the
    * background. Bytes recorded as a parse failure still throw, and nothing is
-   * written: the caller is expected to load again without it.
+   * written: the caller is expected to load again without it. The list items
+   * the edit touched are parsed and validated on their own (checkLexiconEdit,
+   * a few milliseconds); a problem there is `globalStaleProblem` on the result.
    */
   staleGlobal?: boolean;
 }
@@ -312,13 +315,17 @@ async function readGlobalLexiconCached(filePath: string, opts: { writeBack?: boo
  * `stale: true` on the result then says so. Bytes cached as a failure
  * (see PARSE_FAILURE_FILE_NAME) still throw.
  */
-async function readGlobalLexiconMaybeStale(filePath: string, opts: { writeBack?: boolean; stale?: boolean } = {}): Promise<{ file: LexiconFile; stale?: true }> {
+async function readGlobalLexiconMaybeStale(
+  filePath: string,
+  opts: { writeBack?: boolean; stale?: boolean } = {},
+): Promise<{ file: LexiconFile; stale?: true; staleProblem?: string }> {
   const read = await readLexiconText(filePath);
   if (read === undefined) return { file: { path: filePath, scope: 'global', lexicon: emptyLexicon(), exists: false } };
   if (read.text.length < PARSE_CACHE_MIN_BYTES) return { file: parseLexiconText(read.text, filePath, 'global') };
   const cachePath = path.join(path.dirname(filePath), PARSE_CACHE_FILE_NAME);
   const key = path.resolve(filePath);
   let previous: Lexicon | undefined;
+  let previousText = '';
   try {
     const cached: unknown = JSON.parse(await fs.readFile(cachePath, 'utf8'));
     if (
@@ -333,7 +340,10 @@ async function readGlobalLexiconMaybeStale(filePath: string, opts: { writeBack?:
       if (isPlainObject(lexicon) && Array.isArray(lexicon.terms)) {
         const file: LexiconFile = { path: filePath, scope: 'global', lexicon: lexicon as unknown as Lexicon, exists: true };
         if (cached.text === read.text) return { file };
-        if (opts.stale && read.text.length >= STALE_GLOBAL_MIN_BYTES) previous = file.lexicon;
+        if (opts.stale && read.text.length >= STALE_GLOBAL_MIN_BYTES) {
+          previous = file.lexicon;
+          previousText = cached.text;
+        }
       }
     }
   } catch {
@@ -342,7 +352,12 @@ async function readGlobalLexiconMaybeStale(filePath: string, opts: { writeBack?:
   // The same bytes failed last time: say so again without the parse.
   const failure = await readParseFailure(path.dirname(filePath), key, read.text);
   if (failure !== undefined) throw new Error(`${failure.kind === 'yaml' ? 'Failed to parse lexicon YAML' : 'Invalid lexicon'} at ${filePath}: ${failure.reason}`);
-  if (previous !== undefined) return { file: { path: filePath, scope: 'global', lexicon: previous, exists: true }, stale: true };
+  if (previous !== undefined) {
+    // A few milliseconds on the list items the edit touched, so a broken edit
+    // is named now rather than from the prompt after the background refresh.
+    const staleProblem = checkLexiconEdit(previousText, read.text);
+    return { file: { path: filePath, scope: 'global', lexicon: previous, exists: true }, stale: true, ...(staleProblem !== undefined ? { staleProblem } : {}) };
+  }
   let file: LexiconFile;
   try {
     file = parseLexiconText(read.text, filePath, 'global');
@@ -1454,7 +1469,9 @@ export async function loadLexicon(opts: LoadOptions = {}): Promise<LoadedLexicon
   const paths = resolvePaths(opts);
   const read = await readGlobalLexiconMaybeStale(paths.global, opts.staleGlobal ? { stale: true } : {});
   const global = read.file;
-  if (read.stale) return { ...(await loadLexiconWith(global, paths, opts)), globalStale: true };
+  if (read.stale) {
+    return { ...(await loadLexiconWith(global, paths, opts)), globalStale: true, ...(read.staleProblem !== undefined ? { globalStaleProblem: read.staleProblem } : {}) };
+  }
   return loadLexiconWith(global, paths, opts);
 }
 

@@ -15,6 +15,7 @@ import {
   REFRESH_LOCK_FILE,
   REFRESH_LOCK_STALE_MS,
   STALE_LEXICON_NOTE,
+  STALE_SESSION_NOTE,
   claimCacheRefresh,
   refreshHookCaches,
   runHook,
@@ -48,6 +49,7 @@ function bigLexicon(): Lexicon {
 
 const lockPath = (): string => path.join(path.dirname(globalPath), REFRESH_LOCK_FILE);
 const payload = (prompt: string): string => JSON.stringify({ hook_event_name: 'UserPromptSubmit', cwd, prompt });
+const session = (): string => JSON.stringify({ hook_event_name: 'SessionStart', source: 'startup', cwd });
 const context = (out: string): string => (out ? (JSON.parse(out) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext : '');
 
 /** Hand edit: a new term appended to the YAML, as an editor would. */
@@ -137,14 +139,67 @@ describe('a changed large global lexicon is served stale while a background refr
     await expect(fs.stat(lockPath())).rejects.toThrow();
   });
 
-  it('reports an edit that broke the file once the refresh has recorded the failure', async () => {
+  // Catches: the first prompt after an edit that broke the file said only that the previous version was in use.
+  it('says at once that an edit looks broken, and reports the failure once the refresh has recorded it', async () => {
     await appendTerm('  - canonical: ""\n');
+    const lines = (await fs.readFile(globalPath, 'utf8')).split('\n').length - 1;
     const startRefresh = vi.fn(async () => undefined);
-    expect(context(await runHook(payload('ask Ashler'), { startRefresh }))).toContain(STALE_LEXICON_NOTE);
+    const first = context(await runHook(payload('ask Ashler'), { startRefresh }));
+    expect(first).toContain('"Ashler" -> "Ashlr.AI"');
+    expect(first).toContain(`the last edit to the lexicon file looks broken (the term at line ${lines}: canonical: must not be empty)`);
+    expect(first).toContain('lexicon edit');
+    expect(first).not.toContain(STALE_LEXICON_NOTE);
+    expect(startRefresh).toHaveBeenCalledTimes(1);
+    // SessionStart in the same state says the same, in place of its stale note.
+    const sessionCtx = context(await runHook(session(), { startRefresh }));
+    expect(sessionCtx).toContain('looks broken (the term at line');
+    expect(sessionCtx).not.toContain(STALE_SESSION_NOTE);
+    expect(sessionCtx.length).toBeLessThanOrEqual(4000);
     await refreshHookCaches(cwd);
     const ctx = context(await runHook(payload('ask Ashler'), { startRefresh }));
     expect(ctx).toContain('Lexicon is installed but is correcting nothing');
     expect(startRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  // Catches: SessionStart parsed the changed file inline (about 450 ms at 5000 terms) while UserPromptSubmit was served stale.
+  it('SessionStart after a hand edit lists the previous version with its note and starts one refresh', async () => {
+    await appendTerm('  - canonical: Qwertyon\n    aliases: [kwertyon]\n');
+    const startRefresh = vi.fn(async () => undefined);
+    const ctx = context(await runHook(session(), { startRefresh }));
+    expect(ctx).toContain('Ashlr.AI');
+    expect(ctx).not.toContain('Qwertyon');
+    expect(ctx).toContain(STALE_SESSION_NOTE);
+    expect(ctx.length).toBeLessThanOrEqual(4000);
+    expect(startRefresh).toHaveBeenCalledTimes(1);
+    expect(startRefresh).toHaveBeenCalledWith(cwd);
+    // A prompt while that refresh runs does not start a second one.
+    expect(context(await runHook(payload('ask Ashler'), { startRefresh }))).toContain(STALE_LEXICON_NOTE);
+    expect(startRefresh).toHaveBeenCalledTimes(1);
+    await refreshHookCaches(cwd);
+    const after = context(await runHook(session(), { startRefresh }));
+    expect(after).not.toContain(STALE_SESSION_NOTE);
+    expect(startRefresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('SessionStart without a refresher parses at once, as before', async () => {
+    await appendTerm('  - canonical: Aaaqwertyon\n    aliases: [kwertyon]\n');
+    const ctx = context(await runHook(session()));
+    expect(ctx).toContain('Aaaqwertyon');
+    expect(ctx).not.toContain(STALE_SESSION_NOTE);
+  });
+
+  it('a broken YAML edit is named by line, even on a prompt that needs no correction', async () => {
+    await appendTerm('  - canonical: Qwertyon\n    aliases: [kwertyon, kwerty\n');
+    const startRefresh = vi.fn(async () => undefined);
+    const ctx = context(await runHook(payload('nothing to fix here'), { startRefresh }));
+    expect(ctx).toMatch(/looks broken \(line \d+: [^)]*\]/);
+  });
+
+  it('a valid edit gets the plain stale note, no broken-edit line', async () => {
+    await appendTerm('  - canonical: Qwertyon\n    aliases: [kwertyon]\n');
+    const ctx = context(await runHook(payload('ask Ashler'), { startRefresh: vi.fn(async () => undefined) }));
+    expect(ctx).toContain(STALE_LEXICON_NOTE);
+    expect(ctx).not.toContain('looks broken');
   });
 
   it('never serves a small lexicon stale', async () => {

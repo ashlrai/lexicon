@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ADAPTERS, GENERIC, adapterFor, composerFromTarget, findComposer, findSendButton } from '../extension/src/adapters.js';
-import { createBackground, tooLargeForApiMessage } from '../extension/src/background-core.js';
+import { LEXICON_SHAPE_MESSAGE, createBackground, tooLargeForApiMessage } from '../extension/src/background-core.js';
 import { MAX_BODY_BYTES as SERVER_MAX_BODY_BYTES } from '../src/serve/server.js';
 import { conflictNote } from '../src/core/index.js';
 import type { KeyValueStore } from '../extension/src/background-core.js';
@@ -20,7 +20,7 @@ import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
 import { prunePairPorts, registerPairPort } from '../extension/src/pair-port.js';
 import type { PairPortApi } from '../extension/src/pair-port.js';
-import { ANY_SITE_DENIED_MESSAGE, API_MAX_BODY_BYTES, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
+import { ANY_SITE_DENIED_MESSAGE, API_MAX_BODY_BYTES, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches, coerceSettings, connectionTestLine, countOf, extensionRequestFailedLine, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META, withConnection, withSiteSwitch, yamlBoxAfterChange } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 import { setMessage } from '../extension/src/rich-text.js';
@@ -669,6 +669,7 @@ describe('message routing (mock chrome.runtime) and background', () => {
       }
       if (url.endsWith('/learn')) return json({ term: { canonical: 'Ashlr.AI', aliases: ['Ashlur'] }, created: false, aliasAdded: true, path: '/tmp/lexicon.yaml' });
       if (url.endsWith('/lexicon')) return json({ lexicon: { version: 1, terms: [{ canonical: 'Entire.io', aliases: ['entire dot io'] }] } });
+      if (url.endsWith('/stats')) return json({ termCount: 3 });
       return json({ error: 'nope' }, 404);
     });
     const store = memoryStore({ settings: { token: 'secret-token' } });
@@ -723,6 +724,19 @@ describe('message routing (mock chrome.runtime) and background', () => {
     expect(sync).toMatchObject({ ok: true, terms: 1, skippedProject: { path: '/repo/.lexicon.yaml', trust: 'changed' } });
   });
 
+  // Catches: a 200 GET /lexicon without a `lexicon` object (another program
+  // on the port, a proxy page) parsed as an empty lexicon and Sync wiped the
+  // embedded YAML.
+  it('sync leaves the embedded lexicon alone when GET /lexicon carries no lexicon', async () => {
+    for (const body of [{}, { lexicon: null }, { lexicon: { version: 1 } }, null, { lexicon: 'terms: []' }]) {
+      const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => body }) as unknown as Response);
+      const store = memoryStore({ settings: { token: 'secret-token', yaml: EXAMPLE_YAML } });
+      const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
+      expect(await bg.handle({ type: 'sync' })).toEqual({ ok: false, error: LEXICON_SHAPE_MESSAGE });
+      expect((await bg.getSettings()).yaml).toBe(EXAMPLE_YAML);
+    }
+  });
+
   it('a rejected token falls back to embedded and says why', async () => {
     const fetchMock = vi.fn(async (url: string) => {
       if (url.endsWith('/health')) return { ok: true, status: 200, json: async () => ({ ok: true, version: '1', terms: 1 }) } as unknown as Response;
@@ -765,6 +779,29 @@ describe('message routing (mock chrome.runtime) and background', () => {
     const good = (await bg.handle({ type: 'status' })) as StatusReply;
     expect(good.activeMode).toBe('api');
     expect(good.tokenError).toBeUndefined();
+  });
+
+  // Catches: a bearer route failing for a reason other than 401 (another
+  // program answering /health with ok, a lexicon that does not parse) was
+  // ignored, so status said Local API and Test connection said Connected
+  // while every /normalize fell back to the embedded lexicon.
+  it('status reports a /stats failure other than 401 instead of Connected', async () => {
+    const json = (body: unknown, status = 200): Response => ({ ok: status < 400, status, json: async () => body }) as unknown as Response;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/health')) return json({ ok: true, version: '9.9.9', terms: 3 });
+      return json({ error: 'nope' }, 404);
+    });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore({ settings: { token: 'a'.repeat(32) } }), defaultYaml: EXAMPLE_YAML });
+    const status = (await bg.handle({ type: 'status' })) as StatusReply;
+    expect(status.server).toEqual({ ok: true, version: '9.9.9', terms: 3 });
+    expect(status.activeMode).toBe('embedded');
+    expect(status.tokenError).toBeUndefined();
+    expect(status.apiError).toMatch(/nope/);
+    const line = connectionTestLine(status);
+    expect(line.startsWith('Connected')).toBe(false);
+    expect(line).toMatch(/^Reachable \(lexicon 9\.9\.9\), but .*nope.*\. Corrections use the embedded lexicon until that is fixed\.$/);
+    expect(statusView(status).line).toMatch(/server: .*nope/);
+    expect(statusView(status).warn).toBe(true);
   });
 
   // Catches: a token pasted with a character no header can carry (a smart
@@ -1561,6 +1598,45 @@ describe('Options > Sync from the local API result', () => {
     expect(syncedLine({ ok: true, terms: 2, yaml: '', skippedProject: { path: '/repo/.lexicon.yaml', trust: 'changed' } })).toContain(
       'The project lexicon /repo/.lexicon.yaml has changed since it was trusted, so its terms were left out',
     );
+  });
+});
+
+describe('popup and Options write only what they change', () => {
+  // Catches: the popup stored coerceSettings(stored, ''), so the first site
+  // switch on a fresh install saved an empty YAML and the embedded lexicon
+  // corrected nothing.
+  it('the popup site switch keeps every stored field and leaves the YAML to its default when none is stored', () => {
+    const fresh = withSiteSwitch(undefined, 'www.Perplexity.ai', false);
+    expect(fresh).toEqual({ sites: { 'perplexity.ai': false } });
+    expect(coerceSettings(fresh, EXAMPLE_YAML).yaml).toBe(EXAMPLE_YAML);
+    const stored = { token: 'a'.repeat(32), yaml: 'version: 1\nterms: []\n', sites: { 'claude.ai': false }, anySite: true };
+    expect(withSiteSwitch(stored, 'chatgpt.com', false)).toEqual({ ...stored, sites: { 'claude.ai': false, 'chatgpt.com': false } });
+    expect(stored.sites).toEqual({ 'claude.ai': false });
+  });
+
+  // Catches: Test connection and Sync saved the whole Options form, so a word
+  // the popup had just learned into the embedded YAML (or a site it paused)
+  // was overwritten with what Options had loaded.
+  it('Test connection and Sync store only the connection fields over what is stored now', () => {
+    const stored = { baseUrl: 'http://127.0.0.1:41733', token: '', mode: 'api', yaml: 'learned: yes', sites: { 'grok.com': false } };
+    expect(withConnection(stored, { baseUrl: 'http://localhost:41800', token: 'b'.repeat(32), mode: 'api' })).toEqual({
+      ...stored,
+      baseUrl: 'http://localhost:41800',
+      token: 'b'.repeat(32),
+    });
+    expect(withConnection(stored, { token: '', mode: 'embedded' })).toMatchObject({ baseUrl: 'http://127.0.0.1:41733', mode: 'embedded', yaml: 'learned: yes' });
+    expect(withConnection(undefined, { token: 't', mode: 'api' })).toEqual({ token: 't', mode: 'api' });
+    const options = readFileSync(resolve(process.cwd(), 'extension/src/options.ts'), 'utf8');
+    const handler = (id: string): string => options.slice(options.indexOf(`ui.${id}.addEventListener('click'`), options.indexOf('});', options.indexOf(`ui.${id}.addEventListener('click'`)));
+    for (const id of ['test', 'sync']) {
+      expect(handler(id)).toContain('await saveConnection();');
+      expect(handler(id)).not.toMatch(/await save\(\)/);
+    }
+  });
+
+  it('the Options YAML box follows a YAML changed elsewhere unless it holds an unsaved edit', () => {
+    expect(yamlBoxAfterChange('a', 'a', 'b')).toBe('b');
+    expect(yamlBoxAfterChange('edited', 'a', 'b')).toBe('edited');
   });
 });
 

@@ -4,6 +4,7 @@
  * performance budget, and `lexicon suggest` (runSuggest) against mocked
  * collaborators.
  */
+import { spawnSync } from 'node:child_process';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -34,6 +35,7 @@ import {
   ProjectTrustError,
   STALE_AFTER_DAYS,
   loadVoiceHistory,
+  VOICE_HISTORY_READ_MAX_BYTES,
   normalize,
   suggestTerms,
   voiceHistoryPath,
@@ -445,6 +447,34 @@ describe('loadVoiceHistory', () => {
     expect(entries).toHaveLength(2);
     expect(entries[0]).toMatchObject({ raw: 'one', output: 'One', model: 'base.en', ms: { record: 1, transcribe: 2, normalize: 3 } });
     expect(entries[1]).toEqual({ at: 'y', raw: 'two', output: 'two' });
+  });
+
+  // Catches: the whole file was read into memory, however large it was.
+  it('reads only the newest VOICE_HISTORY_READ_MAX_BYTES, dropping the line the bound cuts', async () => {
+    const globalPath = path.join(dir, 'huge', 'lexicon.yaml');
+    const file = voiceHistoryPath(globalPath);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const oldest = JSON.stringify({ at: 'a', raw: 'oldest', output: 'oldest' });
+    const newest = JSON.stringify({ at: 'b', raw: 'newest', output: 'newest' });
+    await fs.writeFile(file, `${oldest}\n${'x'.repeat(VOICE_HISTORY_READ_MAX_BYTES + 1024)}\n${newest}\n`);
+    const entries = await loadVoiceHistory(globalPath);
+    expect(entries.map((e) => e.raw)).toEqual(['newest']);
+  });
+
+  it('returns [] for a history path that is not a regular file (a FIFO would block the read)', async () => {
+    const globalPath = path.join(dir, 'fifo', 'lexicon.yaml');
+    const file = voiceHistoryPath(globalPath);
+    await fs.mkdir(file, { recursive: true });
+    expect(await loadVoiceHistory(globalPath)).toEqual([]);
+  });
+
+  const mkfifo = process.platform !== 'win32' && spawnSync('mkfifo', ['--help'], { stdio: 'ignore' }).error === undefined;
+  it.skipIf(!mkfifo)('returns [] at once for a FIFO at the history path instead of blocking on it', async () => {
+    const globalPath = path.join(dir, 'fifo2', 'lexicon.yaml');
+    const file = voiceHistoryPath(globalPath);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    expect(spawnSync('mkfifo', [file]).status).toBe(0);
+    expect(await loadVoiceHistory(globalPath)).toEqual([]);
   });
 
   it('returns [] when the file is missing', async () => {

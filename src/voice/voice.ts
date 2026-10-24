@@ -37,7 +37,7 @@ import { ExecError, detectClipboardBackend } from '../daemon/clipboard-backends.
 import type { ClipboardExec } from '../daemon/clipboard-backends.js';
 import { formatDeviceList, listAudioDevices } from './devices.js';
 import { appendHistory } from './history.js';
-import { DEFAULT_MODEL, isModelPath, resolveModel } from './models.js';
+import { DEFAULT_MODEL, isModelPath, modelsDir, resolveModel } from './models.js';
 import type { Downloader } from './models.js';
 import {
   defaultExec,
@@ -75,8 +75,8 @@ import {
   findOrphanRecorder,
 } from './recorder.js';
 import type { RecordingState, WavCheck } from './recorder.js';
-import { MissingToolError, WhisperExitError, transcribeFile } from './transcribe.js';
-import type { TranscribeResult } from './transcribe.js';
+import { MissingToolError, TranscribeInterruptedError, WhisperExitError, WhisperTimeoutError, transcribeFile } from './transcribe.js';
+import type { TranscribeOptions, TranscribeResult } from './transcribe.js';
 
 export const EXIT_OK = 0;
 export const EXIT_ERROR = 1;
@@ -133,6 +133,12 @@ export interface VoiceDeps {
    * aborts.
    */
   waitForInterrupt?: (signal: AbortSignal) => Promise<'sigint'>;
+  /**
+   * Resolves on Ctrl-C while a capture is being transcribed (a model
+   * download, then whisper-cli); stops listening once `signal` aborts.
+   * Default: SIGINT, as waitForInterrupt.
+   */
+  waitForTranscribeInterrupt?: (signal: AbortSignal) => Promise<'sigint'>;
   /** Clipboard writer; default: the detected platform backend. */
   clipboardWrite?: (text: string) => Promise<void>;
   /** Paste keystroke; default: osascript Cmd+V. */
@@ -582,12 +588,29 @@ const DEVICE_HINT = 'run `lexicon voice --list-devices` and pass one of them wit
  * into a recording that could not be transcribed. A model name is not checked
  * here: a missing one is downloaded at transcription time.
  */
-function refuseMissingModelPath(opts: VoiceOptions, io: VoiceIO, r: Resolved): number | undefined {
+function refuseMissingModelPath(opts: VoiceOptions, io: VoiceIO, r: Resolved, deps: VoiceDeps): number | undefined {
   const spec = opts.model ?? DEFAULT_MODEL;
-  if (!isModelPath(spec)) return undefined;
+  if (!isModelPath(spec)) {
+    // A named model lives in the models directory: a LEXICON_WHISPER_MODELS
+    // that cannot be used is said before anything is recorded.
+    let named;
+    try {
+      modelsDir(r.globalPath, r.env);
+      named = resolveModel(spec, { globalPath: r.globalPath, env: r.env, ...(deps.modelFallbackDirs ? { fallbackDirs: deps.modelFallbackDirs } : {}) });
+    } catch (e) {
+      return refuseWith(r, io, message(e), 'set LEXICON_WHISPER_MODELS to an absolute directory (or ~/...), or unset it to use the default');
+    }
+    // A downloaded model that changed on disk is not downloaded over (it may be the user's own).
+    if (named.modified && named.problem !== undefined) {
+      const error = `whisper model ${named.path} is not usable: ${named.problem}`;
+      io.stderr(`lexicon voice: ${error}\n`);
+      return failed(r, EXIT_ERROR, error, `delete ${named.path} to download it again, or delete ${named.path}.sha256.json to keep using it`);
+    }
+    return undefined;
+  }
   const model = resolveModel(spec, { globalPath: r.globalPath, env: r.env });
   if (model.present) return undefined;
-  const error = `whisper model not found: ${model.path}`;
+  const error = model.problem !== undefined ? `whisper model ${model.path} is not usable: ${model.problem}` : `whisper model not found: ${model.path}`;
   const nextStep = 'pass an existing ggml model file, or a model name like base.en to download it, with --model';
   io.stderr(`lexicon voice: ${error}\n  ${nextStep}\n`);
   return failed(r, EXIT_ERROR, error, nextStep);
@@ -693,7 +716,7 @@ async function transcribeCapture(
   }
   try {
     r.log('transcribing ...');
-    const result = await transcribeFile(wav, transcribeOptions(r, opts, deps, loaded.merged, tools.whisperCli));
+    const result = await transcribeInterruptibly(wav, transcribeOptions(r, opts, deps, loaded.merged, tools.whisperCli), deps);
     await keepOrRemoveTranscribed(result, wav, io, timing.keepBecause);
     return await deliver(result, recordMs, seconds, opts, io, deps, r, loaded);
   } catch (e) {
@@ -701,9 +724,50 @@ async function transcribeCapture(
   }
 }
 
-/** `arg` as one shell word: bare when it is plainly safe, else single-quoted. */
+/**
+ * transcribeFile, stopped by Ctrl-C. Without a handler the process simply
+ * died on SIGINT, whisper with it, and the capture (a temp file in the
+ * foreground mode) was left with nothing saying it was there. The interrupt
+ * now stops the model download or whisper-cli and the run ends with
+ * TranscribeInterruptedError, which transcribeFailed reports with the path
+ * of the kept audio.
+ */
+async function transcribeInterruptibly(wav: string, options: TranscribeOptions, deps: VoiceDeps): Promise<TranscribeResult> {
+  const interrupted = new AbortController();
+  const listening = new AbortController();
+  const wait = deps.waitForTranscribeInterrupt ?? defaultWaitForInterrupt;
+  void wait(listening.signal).then(
+    () => interrupted.abort(),
+    () => undefined,
+  );
+  try {
+    return await transcribeFile(wav, { ...options, signal: interrupted.signal });
+  } finally {
+    listening.abort();
+  }
+}
+
+/** `arg` as one POSIX shell word: bare when it is plainly safe, else single-quoted. */
 function shellWord(arg: string): string {
   return /^[\w@%+=:,./-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, `'\\''`)}'`;
+}
+
+/** `arg` as one PowerShell word: bare when it is plainly safe (backslashes included), else single-quoted, `'` doubled. */
+function powerShellWord(arg: string): string {
+  return /^[\w@+=:,./\\-]+$/.test(arg) ? arg : `'${arg.replace(/'/g, "''")}'`;
+}
+
+/**
+ * The command line `words` as the user's shell reads it. On Windows that is
+ * PowerShell, the default in Windows Terminal: POSIX quoting there printed
+ * `'C:\Program Files\...'`, which PowerShell reads as a string and does not
+ * run, and cmd.exe does not read single quotes at all. A quoted command needs
+ * PowerShell's call operator `& ` in front. Exported for tests.
+ */
+export function commandLine(words: readonly string[], platform: NodeJS.Platform): string {
+  if (platform !== 'win32') return words.map(shellWord).join(' ');
+  const quoted = words.map(powerShellWord);
+  return `${quoted[0] !== words[0] ? '& ' : ''}${quoted.join(' ')}`;
 }
 
 /**
@@ -713,8 +777,12 @@ function shellWord(arg: string): string {
  * (a name like base.en) comes back when its file is removed; a --model path
  * is the user's own, so the step offers another one instead.
  */
-function whisperExitStep(e: WhisperExitError, wav: string, spec: string): string {
-  const rerun = `run \`${shellWord(e.whisperCli)} -m ${shellWord(e.modelPath)} -f ${shellWord(wav)}\` to see whisper's full output`;
+function whisperExitStep(e: WhisperExitError, wav: string, spec: string, platform: NodeJS.Platform): string {
+  const command = commandLine([e.whisperCli, '-m', e.modelPath, '-f', wav], platform);
+  const rerun = `run${platform === 'win32' ? ' in PowerShell' : ''} \`${command}\` to see whisper's full output`;
+  if (e instanceof WhisperTimeoutError) {
+    return `${rerun} and whether it finishes; a smaller model (--model base.en or tiny.en) transcribes faster`;
+  }
   const model = isModelPath(spec)
     ? 'check that the model file is a whole ggml model, or pass another with --model <name|path>'
     : `if the model file is damaged, delete ${e.modelPath} so the next \`lexicon voice\` downloads it again, or pass another with --model <name|path>`;
@@ -727,11 +795,16 @@ function whisperExitStep(e: WhisperExitError, wav: string, spec: string): string
  * step, on stderr and in --json (a download failure already names its own).
  */
 function transcribeFailed(r: Resolved, io: VoiceIO, e: unknown, wav: string, opts: Pick<VoiceOptions, 'model'>): number {
+  if (e instanceof TranscribeInterruptedError) {
+    const step = `run lexicon voice again to record anew; the interrupted capture stays at ${wav} until you delete it`;
+    io.stderr(`lexicon voice: ${e.message}; the recording is kept at ${wav}\n`);
+    return failed(r, EXIT_ERROR, `${e.message} (audio kept at ${wav})`, step);
+  }
   const missing = e instanceof MissingToolError;
   const step = missing
     ? installSteps(r.platform, { ffmpeg: false, whisper: true }).join(' ')
     : e instanceof WhisperExitError
-      ? whisperExitStep(e, wav, opts.model ?? DEFAULT_MODEL)
+      ? whisperExitStep(e, wav, opts.model ?? DEFAULT_MODEL, r.platform)
       : undefined;
   io.stderr(`lexicon voice: ${message(e)} (audio kept at ${wav})\n${step && !missing ? `  ${step}\n` : ''}`);
   return failed(r, missing ? EXIT_MISSING_TOOL : EXIT_ERROR, `${message(e)} (audio kept at ${wav})`, step);
@@ -748,7 +821,7 @@ export async function runVoice(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps 
 async function recordForeground(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r: Resolved): Promise<number> {
   const tools = await requireTools(r, io, deps, { ffmpeg: true, whisper: true });
   if (!tools) return EXIT_MISSING_TOOL;
-  const noModel = refuseMissingModelPath(opts, io, r);
+  const noModel = refuseMissingModelPath(opts, io, r, deps);
   if (noModel !== undefined) return noModel;
 
   let loaded: LoadedLexicon;
@@ -826,7 +899,7 @@ async function recordForeground(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps
 
   try {
     r.log('transcribing ...');
-    const result = await transcribeFile(wav, transcribeOptions(r, opts, deps, loaded.merged, tools.whisperCli));
+    const result = await transcribeInterruptibly(wav, transcribeOptions(r, opts, deps, loaded.merged, tools.whisperCli), deps);
     await keepOrRemoveTranscribed(result, wav, io);
     return await deliver(result, recordMs, recordMs / 1000, opts, io, deps, r, loaded);
   } catch (e) {
@@ -1103,7 +1176,7 @@ async function recoverDeadRecorder(
 async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r: Resolved): Promise<number | 'lost'> {
   const tools = await requireTools(r, io, deps, { ffmpeg: true, whisper: true });
   if (!tools) return EXIT_MISSING_TOOL;
-  const noModel = refuseMissingModelPath(opts, io, r);
+  const noModel = refuseMissingModelPath(opts, io, r, deps);
   if (noModel !== undefined) return noModel;
 
   let input;
@@ -1152,14 +1225,30 @@ async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r
 // ---------------------------------------------------------------------------
 // Status and devices
 
+/**
+ * The pid recording `state`'s capture, or undefined when none is. A live pid
+ * is not enough: once the recorder exits the number can be handed to any
+ * process, so it is asked what it runs (confirmRecorder), as the toggle's
+ * stop does. A pid running something else is not the recorder, unless the
+ * process table shows another pid writing the capture (a command line read
+ * back wrong); a pid that cannot be asked about is taken as ours, as before.
+ */
+async function recordingPid(state: RecordingState | undefined, r: Resolved): Promise<number | undefined> {
+  if (state?.pid === undefined || !r.isAlive(state.pid)) return undefined;
+  if ((await confirmRecorder(state.pid, state.wav, r.describeProcess)) !== false) return state.pid;
+  const writer = await findOrphanRecorder(state.wav, r.listProcesses);
+  return typeof writer === 'number' ? writer : undefined;
+}
+
 /** Print `recording since <time>` (exit 0) or `idle` (exit 1). */
 export async function runVoiceStatus(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps = {}): Promise<number> {
   const r = resolve(opts, io, deps);
   const state = await readState(r.globalPath);
-  const recording = state !== undefined && state.pid !== undefined && r.isAlive(state.pid);
+  const pid = await recordingPid(state, r);
+  const recording = state !== undefined && pid !== undefined;
   if (opts.json) {
     // `ok` follows the exit code, as `serve --status` reports `ok: false, up: false`.
-    io.stdout(`${JSON.stringify(recording && state ? { ok: true, recording: true, since: state.startedAt, pid: state.pid } : { ok: false, recording: false })}\n`);
+    io.stdout(`${JSON.stringify(recording && state ? { ok: true, recording: true, since: state.startedAt, pid } : { ok: false, recording: false })}\n`);
   } else {
     io.stdout(recording && state ? `recording since ${state.startedAt}\n` : 'idle\n');
   }
