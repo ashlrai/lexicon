@@ -1,7 +1,8 @@
 /**
  * Local HTTP API at the protocol level: what a client gets for a body it
- * announces as too large before sending it (`Expect: 100-continue`), and for
- * a request the HTTP parser cannot read. An in-process `createServer()` on
+ * announces as too large before sending it (`Expect: 100-continue`), for
+ * a request the HTTP parser cannot read, and from plain /health while the
+ * lexicon file does not parse. An in-process `createServer()` on
  * port 0 against a throwaway HOME/LEXICON_PATH.
  */
 import { promises as fs } from 'node:fs';
@@ -11,18 +12,20 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
 import { addTerm } from '../src/core/index.js';
-import { createServer, MAX_BODY_BYTES } from '../src/serve/index.js';
+import { BROKEN_LEXICON_ANONYMOUS, createServer, MAX_BODY_BYTES } from '../src/serve/index.js';
 import type { LexiconHttpServer, ServeStartInfo } from '../src/serve/index.js';
 
 let home: string;
+let globalPath: string;
+let cwd: string;
 let srv: LexiconHttpServer;
 let info: ServeStartInfo;
 const saved: Record<string, string | undefined> = {};
 
 beforeAll(async () => {
   home = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-protocol-')));
-  const globalPath = path.join(home, '.config', 'lexicon', 'lexicon.yaml');
-  const cwd = path.join(home, 'work');
+  globalPath = path.join(home, '.config', 'lexicon', 'lexicon.yaml');
+  cwd = path.join(home, 'work');
   await fs.mkdir(cwd, { recursive: true });
   for (const k of ['HOME', 'USERPROFILE', 'XDG_CONFIG_HOME', 'LEXICON_PATH']) saved[k] = process.env[k];
   process.env.HOME = home;
@@ -126,5 +129,30 @@ describe('requests the HTTP parser cannot read', () => {
     const res = await rawExchange(`GET /health HTTP/1.1\r\nHost: 127.0.0.1:${info.port}\r\nX-Big: ${'a'.repeat(64 * 1024)}\r\n\r\n`);
     expect(res.startsWith('HTTP/1.1 431 ')).toBe(true);
     expect(bodyOf(res)).toEqual({ error: expect.stringContaining('request headers are too large') });
+  });
+});
+
+describe('a lexicon file that does not parse', () => {
+  // Catches: plain /health (the browser extension's status check, sent
+  // without the token) answered only `internal error (the lexicon serve log
+  // has the detail)`, with no hint that the fix was an edit to the lexicon.
+  it('plain /health says so without the path; with the token the 500 names the file', async () => {
+    const own = createServer({ port: 0, cwd, globalPath, quiet: true, version: '9.9.9', reloadMs: 0 });
+    const ownInfo = await own.start();
+    const good = await fs.readFile(globalPath, 'utf8');
+    try {
+      await fs.writeFile(globalPath, 'version: 1\nterms: [\n', 'utf8');
+      const anon = await fetch(`${ownInfo.url}/health`);
+      expect(anon.status).toBe(500);
+      const anonBody = (await anon.json()) as { error: string };
+      expect(anonBody.error).toBe(`internal error: ${BROKEN_LEXICON_ANONYMOUS}`);
+      expect(anonBody.error).not.toContain(globalPath);
+      const authed = await fetch(`${ownInfo.url}/health?cwd=${encodeURIComponent(cwd)}`, { headers: { Authorization: `Bearer ${ownInfo.token}` } });
+      expect(authed.status).toBe(500);
+      expect(((await authed.json()) as { error: string }).error).toContain(`Failed to parse lexicon YAML at ${globalPath}`);
+    } finally {
+      await fs.writeFile(globalPath, good, 'utf8');
+      await own.stop();
+    }
   });
 });

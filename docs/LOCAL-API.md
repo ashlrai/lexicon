@@ -107,8 +107,9 @@ missing, mistyped or unknown) ends with the fields that route takes, such as
 lexicon file does not parse (`internal error: Failed to parse lexicon YAML at
 <path>: ...`), or the file or its lock cannot be read or written. The message names the cause and the file, so fix
 that and retry. An unauthenticated `/health` that hits the same problem gets
-only `internal error (the lexicon serve log has the detail)`; the detail is
-on the server's stderr either way.
+only `internal error (the lexicon serve log has the detail)`, or, for a lexicon
+file that does not parse, ``internal error: a lexicon file does not parse; run `lexicon serve --status` (or `lexicon doctor`) for the file and the line, then fix it``
+(no path); the detail is on the server's stderr either way.
 
 A write that waited out a lock another writer (the prompt hook, the MCP
 server, a CLI command) still holds is a 503 with `Retry-After: 1`, not a 500:

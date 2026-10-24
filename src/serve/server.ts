@@ -464,6 +464,21 @@ function projectTrustRefusal(err: Error & { path?: unknown; status?: unknown }, 
   return `project lexicon at ${file} ${why}, so nothing was written. Review it and run \`lexicon trust\`, then retry; or retry with ${global} to use the global lexicon instead`;
 }
 
+/**
+ * The 500 detail a caller without the token gets when a lexicon file does not
+ * parse: what is wrong and where to read the file and line, without the path.
+ * It said only `internal error (the lexicon serve log has the detail)`, so
+ * the browser extension's status line, which asks plain /health, gave no hint
+ * that the fix was an edit to the lexicon.
+ */
+export const BROKEN_LEXICON_ANONYMOUS = 'a lexicon file does not parse; run `lexicon serve --status` (or `lexicon doctor`) for the file and the line, then fix it';
+
+/** True for store.ts's error for a lexicon file that does not parse or validate. */
+function brokenLexicon(err: unknown): boolean {
+  const message = err instanceof Error ? err.message : '';
+  return message.startsWith('Failed to parse lexicon YAML at ') || message.startsWith('Invalid lexicon at ');
+}
+
 class HttpError extends Error {
   constructor(
     readonly status: number,
@@ -1532,7 +1547,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
         if (status === 500) {
           message = authed
             ? `internal error: ${message}`
-            : 'internal error (the lexicon serve log has the detail)';
+            : brokenLexicon(err)
+              ? `internal error: ${BROKEN_LEXICON_ANONYMOUS}`
+              : 'internal error (the lexicon serve log has the detail)';
         }
         const heldLock = isHeldLockError(err);
         if (heldLock) message = heldLockMessage(err, authed);
