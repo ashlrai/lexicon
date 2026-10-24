@@ -15,10 +15,11 @@ import type { VoiceExec } from './process.js';
 
 /**
  * Whisper output -> one line. Bracketed tags (`[BLANK_AUDIO]`, `[MUSIC]`,
- * `[inaudible]`) are always dropped. Parenthesised or starred tags are dropped
- * only when they look like a noise annotation (one to three plain words, e.g.
- * `(applause)`, `(soft music)`, `*laughs*`), so a dictated parenthetical
- * survives. Whitespace is collapsed and trimmed.
+ * `[inaudible]`) are always dropped, and so is any starred run of one to three
+ * plain words (`*laughs*`, `*door slams*`), the way whisper writes its sound
+ * effects, whatever the words are. Parenthesised tags are dropped
+ * only when they look like a noise annotation (`(applause)`, `(soft music)`),
+ * so a dictated parenthetical survives. Whitespace is collapsed and trimmed.
  */
 export function cleanTranscript(text: string): string {
   return text

@@ -774,6 +774,16 @@ describe('runSuggest', () => {
     ]);
   });
 
+  // Catches: scopeFor matched canonicals by trim and lowercase only, so a suggestion naming a project term in another
+  // Unicode form (Cafe plus U+0301 for Café, as MCP apply_suggestion and the store already treat as one term) went to the global file.
+  it('--yes writes an alias to the project term it names in any Unicode form', async () => {
+    const lexicon = makeLexicon([{ canonical: 'Caf\u00e9', aliases: [], hits: 0, createdAt: OLD, scope: 'project' }]);
+    const nfd: TermSuggestion = { kind: 'alias', canonical: 'Cafe\u0301', alias: 'kafay', reason: 'r', confidence: 0.9, evidence: [], count: 3 };
+    const store = mockStore([nfd], lexicon);
+    expect(await runSuggest({ yes: true }, makeIO(), store.deps)).toBe(0);
+    expect(store.added.map((a) => a.scope)).toEqual(['project']);
+  });
+
   // Catches: `suggest --project --json` named the global file as `scope` and
   // `path` of every new-term suggestion, though applying it with --project
   // writes the project lexicon.

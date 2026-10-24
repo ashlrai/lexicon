@@ -17,6 +17,7 @@ import {
   removeTerm,
   suggestAliases,
   suggestTerms,
+  spellingKey,
   termHolders,
   SUGGEST_MAX_LIMIT,
 } from '../core/index.js';
@@ -87,7 +88,8 @@ export function renderSuggestions(suggestions: readonly TermSuggestion[]): strin
 /** The file a suggestion writes to: the term's own file, or the project file for new terms with --project. */
 function scopeFor(s: TermSuggestion, loaded: LoadedLexicon, opts: SuggestCliOptions): TermScope {
   if (s.kind === 'term') return opts.project ? 'project' : 'global';
-  const existing = loaded.merged.terms.find((t) => t.canonical.trim().toLowerCase() === s.canonical.trim().toLowerCase());
+  const key = spellingKey(s.canonical);
+  const existing = loaded.merged.terms.find((t) => spellingKey(t.canonical) === key);
   return existing?.scope ?? 'global';
 }
 
