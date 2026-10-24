@@ -1190,6 +1190,22 @@ describe('lexicon voice (foreground)', () => {
     expect(whisperCall(h)!.args).toEqual(expect.arrayContaining(['-m', path.join(h.dir, 'models', 'ggml-small.en.bin')]));
   });
 
+  // Catches: a failed download reported only "fetch failed", with no way forward.
+  it('a failed model download names the network, the file to save by hand and --model', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    h.deps.download = async () => {
+      throw new Error('fetch failed');
+    };
+    expect(await runVoice({ ...h.opts, model: 'small.en' }, h.io, h.deps)).toBe(EXIT_ERROR);
+    const dest = path.join(h.dir, 'models', 'ggml-small.en.bin');
+    expect(h.err.join('')).toContain(
+      `lexicon voice: could not download whisper model small.en: fetch failed; check the network and try again, ` +
+        `or save https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin as ${dest} yourself, ` +
+        'or pass --model <file> with a ggml model you have (audio kept at ',
+    );
+  });
+
   it('LEXICON_WHISPER_MODELS overrides the models directory', async () => {
     const h = await harness();
     const alt = path.join(h.dir, 'alt-models');
