@@ -88,3 +88,17 @@ describe('normalize_transcript minConfidence', () => {
     expect((await call('normalize_transcript', { text: 'run `hetsner` now' })).json().output).toBe('run `Hetzner` now');
   });
 });
+
+describe('add_term canonical', () => {
+  // Catches: the schema took "   " (min 1 only) and the handler refused it as
+  // "canonical must not be empty", so a validating client never saw the rule.
+  it('declares that a blank canonical is refused, and refuses it by name', async () => {
+    const prop = (await tool('add_term')).inputSchema.properties?.canonical;
+    expect(prop?.description).toContain('must not be blank');
+    expect(prop?.pattern).toBe('\\S');
+    const res = await call('add_term', { canonical: '   ' });
+    expect(res.isError).toBe(true);
+    expect(res.blocks.join('\n')).toContain('must not be blank at canonical');
+    await expect(fs.access(path.join(home, 'lexicon.yaml'))).rejects.toThrow();
+  });
+});

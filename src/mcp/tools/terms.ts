@@ -251,12 +251,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term. ' +
         'A field over the lexicon caps given on each argument is an error naming that field, and nothing is written.',
       inputSchema: {
-        canonical: z
-          .string()
-          .min(1)
-          .describe(
-            `The correct spelling, exactly as the user wants it written. At most ${LIMITS.word} characters once surrounding whitespace is trimmed (the lexicon file schema's cap, also enforced by the CLI); a longer one is refused and nothing is written.`,
-          ),
+        canonical: nonBlank().describe(
+          `The correct spelling, exactly as the user wants it written; must not be blank. At most ${LIMITS.word} characters once surrounding whitespace is trimmed (the lexicon file schema's cap, also enforced by the CLI); a longer one is refused and nothing is written.`,
+        ),
         aliases: z
           .array(z.string())
           .optional()
