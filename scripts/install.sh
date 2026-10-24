@@ -38,7 +38,9 @@ fi
 NODE_VERSION="$(node --version 2>/dev/null | sed 's/^v//')"
 NODE_MAJOR="${NODE_VERSION%%.*}"
 case "$NODE_MAJOR" in
-  ''|*[!0-9]*) fail "could not read the Node version from: $(node --version 2>&1)" ;;
+  ''|*[!0-9]*)
+    node_hint
+    fail "could not read the Node version from: $(node --version 2>&1) (run \`node --version\` to see what PATH selects)" ;;
 esac
 if [ "$NODE_MAJOR" -lt "$MIN_NODE" ]; then
   node_hint

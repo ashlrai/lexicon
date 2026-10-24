@@ -123,6 +123,21 @@ export class MissingToolError extends Error {
   }
 }
 
+/**
+ * whisper-cli ran but exited non-zero without writing its JSON. Carries the
+ * binary and model it ran with, so the caller can name a command to rerun.
+ */
+export class WhisperExitError extends Error {
+  constructor(
+    message: string,
+    readonly whisperCli: string,
+    readonly modelPath: string,
+  ) {
+    super(message);
+    this.name = 'WhisperExitError';
+  }
+}
+
 /** Run whisper-cli on `wav` and normalize the transcript with the lexicon. */
 export async function transcribeFile(wav: string, opts: TranscribeOptions): Promise<TranscribeResult> {
   const exec = opts.exec ?? defaultExec;
@@ -152,7 +167,7 @@ export async function transcribeFile(wav: string, opts: TranscribeOptions): Prom
   await fs.rm(jsonPath, { force: true }).catch(() => undefined);
   if (r.code !== 0 && json === undefined) {
     const tail = r.stderr.trim().split('\n').slice(-5).join('\n');
-    throw new Error(`whisper-cli exited ${r.code ?? 'null'}${tail ? `: ${tail}` : ''}`);
+    throw new WhisperExitError(`whisper-cli exited ${r.code ?? 'null'}${tail ? `: ${tail}` : ''}`, opts.whisperCli, model.path);
   }
   const raw = cleanTranscript(parseWhisperOutput(json, r.stdout));
 

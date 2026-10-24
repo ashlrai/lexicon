@@ -89,13 +89,24 @@ function enableCompileCache() {
 }
 enableCompileCache();
 var target = new URL("./hook-main.mjs", import.meta.url).href;
+var BUNDLE_NEXT_STEP = "update the plugin with `claude plugin update lexicon@ashlrai` (restart Claude Code after), or for an npm install run `npm install -g @ashlr/lexicon` then `lexicon install claude --apply`";
+var hook;
 try {
-  const hook = await import(target);
-  await hook.main();
+  hook = await import(target);
 } catch (err) {
   process.stderr.write(`lexicon hook: ${err instanceof Error ? err.message : String(err)}
+  ${BUNDLE_NEXT_STEP}
 `);
   process.exitCode = 0;
+}
+if (hook) {
+  try {
+    await hook.main();
+  } catch (err) {
+    process.stderr.write(`lexicon hook: ${err instanceof Error ? err.message : String(err)}
+`);
+    process.exitCode = 0;
+  }
 }
 export {
   COMPILE_CACHE_DIR_NAME

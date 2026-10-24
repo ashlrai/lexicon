@@ -49,7 +49,7 @@ enum LexiconBarMain {
     /// process*, which for anything started from a shell is the terminal. A
     /// `--status` run therefore used to inherit the terminal's grant and
     /// print "Accessibility: trusted" while the GUI-launched app was being
-    /// denied — the opposite of the truth, to the one person most likely to
+    /// denied, the opposite of the truth, to the one person most likely to
     /// be reading it. So a terminal-launched run now reports `axTrusted` as
     /// null and keeps the inherited value as `axTrustedRaw`, and the answer
     /// that matters comes from the state file the running app writes

@@ -7,6 +7,8 @@ export * from './schema.js';
 export * from './store.js';
 export * from './trust.js';
 export * from './matcher.js';
+// The score an exact match with an invented word break gets; normalize_transcript's minConfidence description names it.
+export { INVENTED_BOUNDARY_CONFIDENCE } from './matcher/tuning.js';
 export * from './normalize.js';
 export * from './harvest.js';
 export * from './import-sources.js';

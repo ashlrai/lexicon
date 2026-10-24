@@ -372,3 +372,42 @@ describe('hook.mjs flags (plugin bundle)', () => {
     expect(r.stdout).toMatch(/^Usage: .*UserPromptSubmit and SessionStart/);
   });
 });
+
+describe('hook.mjs without a loadable bundle', () => {
+  let dir: string;
+  beforeEach(() => {
+    dir = mkdtempSync(path.join(os.tmpdir(), 'lexicon-hook-stub-'));
+  });
+  afterEach(() => {
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  function runStub(): { status: number | null; stderr: string } {
+    copyFileSync(path.join(REPO_ROOT, 'plugin', 'hook.mjs'), path.join(dir, 'hook.mjs'));
+    const r = spawnSync(process.execPath, [path.join(dir, 'hook.mjs')], {
+      cwd: dir,
+      input: '{}',
+      encoding: 'utf8',
+      timeout: 10_000,
+      env: { PATH: process.env.PATH ?? '', HOME: dir, LEXICON_PATH: path.join(dir, 'lexicon.yaml'), NODE_DISABLE_COMPILE_CACHE: '1' },
+    });
+    return { status: r.status, stderr: r.stderr };
+  }
+
+  // Catches: a missing or broken hook-main.mjs printed only the import error,
+  // with no way forward.
+  it('a missing bundle exits 0 and names the update command', () => {
+    const r = runStub();
+    expect(r.status).toBe(0);
+    expect(r.stderr).toMatch(/^lexicon hook: .*hook-main\.mjs/);
+    expect(r.stderr).toContain('claude plugin update lexicon@ashlrai');
+    expect(r.stderr).toContain('npm install -g @ashlr/lexicon` then `lexicon install claude --apply`');
+  });
+
+  it('a bundle that fails to load exits 0 and names the update command', () => {
+    writeFileSync(path.join(dir, 'hook-main.mjs'), 'export const main = ;\n');
+    const r = runStub();
+    expect(r.status).toBe(0);
+    expect(r.stderr).toContain('claude plugin update lexicon@ashlrai');
+  });
+});

@@ -81,7 +81,8 @@ export interface Term {
 export interface LexiconSettings {
   /**
    * Minimum confidence (0..1) a fuzzy/phonetic candidate needs before it is applied.
-   * Exact alias matches always have confidence 1. Default 0.82.
+   * Exact alias matches have confidence 1, except one the text spells with a
+   * word break the term lacks (INVENTED_BOUNDARY_CONFIDENCE, 0.95). Default 0.82.
    */
   minConfidence?: number;
   /** Enable phonetic (double metaphone) matching. Default true. */

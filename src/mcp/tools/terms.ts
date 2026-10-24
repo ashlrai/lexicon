@@ -37,6 +37,10 @@ import {
   untrustedTermHolder,
   isProjectTrustError,
   LIMITS,
+  NEVER_HIT_CAP,
+  TOP_TERMS,
+  DEFAULT_MIN_CONFIDENCE,
+  INVENTED_BOUNDARY_CONFIDENCE,
 } from '../../core/index.js';
 import type { NormalizeIncomplete, NormalizeResult, Term, TermScope } from '../../core/index.js';
 import { filePathsInUse, guarded, log, mcpWriteOpts, nonBlank, skippedProjectFields, textResult, untrustedWriteFields } from '../shared.js';
@@ -147,7 +151,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. ' +
         'WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit ' +
         'counter. Use the `output` field as the message you act on, and mention the correction only if it changes what you are about to do. ' +
-        'WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a ' +
+        "WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails (unless the lexicon's settings.skipCode is false), and it never invents a " +
         'term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. ' +
         `Only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. ` +
         'Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently ' +
@@ -164,7 +168,10 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           .min(0)
           .max(1)
           .optional()
-          .describe('Override the minimum confidence (0..1) a fuzzy/phonetic match needs. Exact alias matches are always 1.'),
+          .describe(
+            `Override the minimum confidence (0..1) a fuzzy or phonetic match needs. Omitted: the lexicon's settings.minConfidence, else ${DEFAULT_MIN_CONFIDENCE}. ` +
+              `An exact alias or canonical match scores 1 and passes any value, except one the text spells with a word break the term does not have ("open ai" for OpenAI), which scores ${INVENTED_BOUNDARY_CONFIDENCE} and is refused above that.`,
+          ),
       },
     },
     async ({ text, dryRun, minConfidence }) =>
@@ -246,12 +253,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term. ' +
         'A field over the lexicon caps given on each argument is an error naming that field, and nothing is written.',
       inputSchema: {
-        canonical: z
-          .string()
-          .min(1)
-          .describe(
-            `The correct spelling, exactly as the user wants it written. At most ${LIMITS.word} characters once surrounding whitespace is trimmed (the lexicon file schema's cap, also enforced by the CLI); a longer one is refused and nothing is written.`,
-          ),
+        canonical: nonBlank().describe(
+          `The correct spelling, exactly as the user wants it written; must not be blank. At most ${LIMITS.word} characters once surrounding whitespace is trimmed (the lexicon file schema's cap, also enforced by the CLI); a longer one is refused and nothing is written.`,
+        ),
         aliases: z
           .array(z.string())
           .optional()
@@ -459,7 +463,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'exact canonical another tool needs. Read-only and safe to call unprompted; filter rather than listing everything. ' +
         'WHAT IT CHANGES: nothing. ' +
         'WHAT IT WILL NOT DO: it does not include an untrusted project .lexicon.yaml -- if one was skipped the result says so in ' +
-        '`note`, and trust_project is how the user reviews it.',
+        '`note`, and trust_project is how the user reviews it. ' +
+        'Returns { terms, counts: { matched, total, global, project }, paths: { global, project? } }, plus `projectTrust`, `skippedProject` and `note` for a skipped file, ' +
+        'or a `note` saying why `terms` is empty (no terms yet, or the filter matched none). A blank `query` filters nothing.',
       inputSchema: {
         query: z.string().optional().describe('Case-insensitive substring matched against canonical and aliases.'),
         category: z.enum(TERM_CATEGORIES).optional(),
@@ -716,8 +722,10 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
     {
       title: 'Lexicon usage statistics',
       description:
-        'Counts of terms and aliases, total hits, the most-used terms, terms that never fired, and a per-file breakdown of the merged lexicon. ' +
-        '`neverHit` lists at most the first 20 terms that never fired; `neverHitCount` is how many there are in all. ' +
+        'Counts of terms and aliases, total hits, the most-used terms, terms that never fired, and a per-file breakdown of the merged lexicon: ' +
+        '{ termCount, aliasCount, totalHits, topTerms, neverHit, neverHitCount, byCategory, bySource, files: [{ path, scope, terms }] }. ' +
+        `\`topTerms\` holds at most ${TOP_TERMS} terms with at least one hit, as { canonical, hits }, most hits first. ` +
+        `\`neverHit\` lists at most the first ${NEVER_HIT_CAP} terms that never fired; \`neverHitCount\` is how many there are in all. ` +
         'An untrusted project .lexicon.yaml is not counted; when one was skipped, `skippedProject` and `note` say so (path only). With no terms at all, `note` says so and names setup_lexicon and add_term.',
       inputSchema: {},
     },

@@ -383,7 +383,9 @@ describe('add_term errors', () => {
   it('do not leak the internal function name', async () => {
     const res = await call('add_term', { canonical: '   ' });
     expect(res.isError).toBe(true);
-    expect(res.text).toBe('canonical must not be empty');
+    // Refused by the schema now (nonBlank), before the handler runs.
+    expect(res.text).toContain('must not be blank at canonical');
+    expect(res.text).not.toMatch(/addTerm|validateTerm/);
   });
 
   it('name the field that is over the schema cap, not an index into the lexicon file', async () => {

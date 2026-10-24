@@ -274,7 +274,8 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     {
       title: 'Personal voice lexicon',
       description:
-        'Canonical spellings of names the user dictates and how STT mishears them. Read this before interpreting dictated input.',
+        'Canonical spellings of names the user dictates and how STT mishears them, as markdown (the claude-md export of the global lexicon plus the project .lexicon.yaml when it is trusted). Read this before interpreting dictated input. ' +
+        'An untrusted (or changed) project file is left out and named by path in a closing note, never quoted; with no terms at all, a closing note says so and how to set the lexicon up.',
       mimeType: 'text/markdown',
     },
     async (uri) => {
@@ -329,7 +330,8 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     {
       title: 'Voice context',
       description:
-        "Load the user's canonical spellings into the conversation so dictated input is interpreted correctly for the rest of the session.",
+        "Load the user's canonical spellings into the conversation so dictated input is interpreted correctly for the rest of the session: the lexicon://me text and an instruction to apply it. " +
+        'Takes no arguments. With no terms it says there is nothing to apply and how to set the lexicon up instead; an untrusted project file is left out and named by path.',
     },
     async () => {
       const loaded = await loadForContext();
@@ -354,7 +356,8 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     {
       title: 'Set up the voice lexicon',
       description:
-        'Walk a new user through onboarding: collect the names STT gets wrong, register the server in their clients with setup_lexicon, add the names, and give them a test sentence.',
+        'Walk a new user through onboarding: collect the names STT gets wrong, register the server in their clients with setup_lexicon, add the names, offer the starter packs, and give them a test sentence run through normalize_transcript. ' +
+        'Takes no arguments; it reads nothing and returns the script for the model to follow, which installs nothing without the user saying yes.',
     },
     async () => ({
       messages: [{ role: 'user', content: { type: 'text', text: ONBOARD_PROMPT } }],

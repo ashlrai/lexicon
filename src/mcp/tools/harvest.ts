@@ -80,11 +80,18 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         'A file the user already trusted stays trusted; a new, untrusted or changed one is not trusted by the write (`trusted: false`) and applies only after the user reviews it and runs ' + cliCommand('trust') + ': relay `nextStep`. ' +
         `\`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. ` +
         'WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- ' +
-        'candidates come back as names, categories and counts.',
+        'candidates come back as names, categories and counts: { root, candidates: [{ canonical, category, source, evidence, count, suggestedAliases }], count }, ' +
+        'where `evidence` names where a name was seen (a file path, "git log", "package.json#name"), never the text around it, and `suggestedAliases` is often empty on purpose (an identifier gets none). ' +
+        'With `add: true` the result adds `added`, `failures` and `path`, and is an error when no candidate could be written.',
       inputSchema: {
         path: z.string().optional().describe(`Repository root. Defaults to the server working directory. Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
         limit: z.number().int().positive().optional().describe('Max candidates to return (default 50).'),
-        minCount: z.number().int().positive().optional().describe('Minimum occurrences for a candidate (default 2).'),
+        minCount: z
+          .number()
+          .int()
+          .positive()
+          .optional()
+          .describe('Minimum occurrences for a name found only in file text (default 2). The directory name, git authors, package names and dot-TLD brands (Ashlr.AI) are proposed at any count.'),
         add: z.boolean().optional().describe('When true, add every candidate to the project lexicon. A file that is not trusted yet is left untrusted for the user to review.'),
       },
     },
@@ -165,7 +172,8 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         "Propose new aliases, terms and never-words from the user's voice history, usage and repo. " +
         'Call weekly or when the user asks how to improve corrections; present them and apply accepted ones with apply_suggestion (or add_term). ' +
         "Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), or 'stale' (a term that never fires), plus reason, confidence and evidence, " +
-        "and `scope` and `path`: the lexicon file applying it would write (where the term lives, or the global file for a new term). Name that file when you present a suggestion.",
+        "and `scope` and `path`: the lexicon file applying it would write (where the term lives, or the global file for a new term). Name that file when you present a suggestion. " +
+        'The result is a bare JSON array, best first. An empty array comes with a second text block saying why (no voice history yet, or nothing new in it) and what produces suggestions: relay it.',
       inputSchema: {
         cwd: z.string().optional().describe(`Repository to scan for evidence. Defaults to the server working directory. Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
         limit: z.number().int().positive().optional().describe(`Max suggestions to return (default ${SUGGEST_DEFAULT_LIMIT}).`),

@@ -58,7 +58,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         'ready being false does not always mean "not set up yet": a lexicon file that exists but does not parse also reports ready false, ' +
         'and setup_lexicon will not repair it. Always relay `nextStep` as written instead of assuming setup is the fix; for an unreadable ' +
         'lexicon it names the file and the command that opens it. ' +
-        'Also returns `ok` (no failing checks, which is weaker than `ready`: a lexicon with no terms fails nothing), ' +
+        'Also returns `ok` (no failing checks, which is weaker than `ready`: a lexicon with no terms fails nothing), `error` (only when ok is false: the first failing check), ' +
         "`checks: [{ level: 'ok'|'warn'|'fail'|'info', message }]`, `paths` and `versions`. Read `checks` only when the user asks for " +
         'detail or you need to diagnose something `nextStep` does not cover; warns are usually optional extras, not problems.',
       inputSchema: {},
@@ -141,7 +141,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         "One-shot onboarding: seed the lexicon with the user's company and name, register the MCP server and hooks in their agent clients, optionally harvest the repo and install the local API as a login service. " +
         'Ask the user for their company/product spelling, their own name, and which agent clients they use (claude, claude-desktop, codex, cursor, windsurf, gemini, vscode), then call this. ' +
         'Preview by default. Call once without apply to get the plan, show it to the user, then call again with apply: true, clients: [...] and serve: true only if the user agreed to each. ' +
-        'The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, packsOnOffer, packsToInstall, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, serveBlocked?, wouldExport } and is computed without writing anything; serveBlocked (with serve: true) says why the login service would be refused and how to fix it, so relay it instead of offering the service. ' +
+        'The plan is { plan: true, lexiconPath, lexiconExists, wouldSeed, wouldInstallPacks, packsOnOffer, packsToInstall, alreadyInstalledPacks?, wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe, serveBlocked?, wouldExport, demo?, interactive, wouldAsk, next } and is computed without writing anything; demo { heard, corrected, terms, usedExample } is the before and after a real run would end on, worth showing; interactive is false and wouldAsk empty here, since this tool never prompts; serveBlocked (with serve: true) says why the login service would be refused and how to fix it, so relay it instead of offering the service. ' +
         'It writes the global lexicon and each named client\'s config. It does not install clients that are not listed (omitted = none; detectedClients in the plan tells you what to offer), ' +
         'does not install starter packs unless packs: [...] names them (packsOnOffer, the same list as wouldInstallPacks, is the default set to offer, not what will be installed; packsToInstall is what this call would install, empty until packs names some; list_packs describes each), ' +
         'does not harvest the repo unless harvest: true (wouldHarvest in the plan is what to offer; harvest_repo previews the same names), and does not install the local API unless serve: true; offer those separately. ' +
@@ -245,7 +245,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
       title: 'Local API status',
       description:
         'Check whether the local lexicon API (the CLI serve command, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). ' +
-        'Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); { up: false, error } when nothing answers, or when something other than lexicon serve answers on the port. Every up: false result carries `hint`, the next step. Call when a non-MCP surface is not correcting text.',
+        'Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); { up: false, error } when nothing answers, or when something other than lexicon serve answers on the port. Every result carries `url`, the /health address probed, and every up: false result carries `hint`, the next step. Call when a non-MCP surface is not correcting text.',
       inputSchema: {},
     },
     async () =>

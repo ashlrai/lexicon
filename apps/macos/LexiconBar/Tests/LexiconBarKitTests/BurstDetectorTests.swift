@@ -185,7 +185,7 @@ final class BurstDetectorTests: XCTestCase {
         XCTAssertEqual(d.lastStable, "Meeting notes. ")
 
         // Then the user pauses and dictates. The burst is the dictated span
-        // only — the typed prefix is already the baseline.
+        // only; the typed prefix is already the baseline.
         var text = "Meeting notes. "
         now += 2
         for word in ["ping ", "ashler ", "about ", "the ", "rollout"] {

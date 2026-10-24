@@ -197,6 +197,16 @@ describe.skipIf(process.platform === 'win32')('POSIX install script version and 
     expect(result.stderr).not.toContain('unexpected setup');
   });
 
+  // Catches: an unreadable `node --version` stopped with no next step.
+  it('names how to install Node when its version cannot be read', () => {
+    const result = run({ TEST_NODE_VERSION: 'garbage' });
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain('could not read the Node version from: garbage');
+    expect(result.stderr).toContain('Install Node 20 or newer first:');
+    expect(result.stderr).toContain('nvm install --lts');
+    expect(result.calls).toBe('');
+  });
+
   it('reports a failed version probe before claiming success', () => {
     const result = run({ TEST_VERSION_CODE: '1' });
     expect(result.status).toBe(1);

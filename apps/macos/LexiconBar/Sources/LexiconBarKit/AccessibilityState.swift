@@ -25,7 +25,7 @@ import Foundation
 /// `running` is false in the record written on the way out, so a quit app
 /// reads as gone immediately instead of waiting out `staleAfter`.
 public struct AccessibilityState: Equatable, Sendable, Codable {
-    /// `AXIsProcessTrusted()` as seen by the GUI-launched app — the answer
+    /// `AXIsProcessTrusted()` as seen by the GUI-launched app: the answer
     /// that actually governs Fix everywhere.
     public var axTrusted: Bool
     /// The app's pid, so a stale file can be told apart from a live one by hand.
@@ -155,7 +155,7 @@ public enum AccessibilityStateStore {
 /// Decides when the running app should rewrite the state file.
 ///
 /// The app writes on launch, when the focus watcher starts or stops, and
-/// otherwise no more than once every `heartbeat` seconds — except that a
+/// otherwise no more than once every `heartbeat` seconds; except that a
 /// *change* in the trust value is always worth writing immediately, since
 /// that is the moment the user came back from System Settings.
 public struct AccessibilityStateThrottle: Equatable, Sendable {
@@ -188,10 +188,10 @@ public struct AccessibilityStateThrottle: Equatable, Sendable {
 
 /// The exact words `--status` prints, per launch mode and per state file.
 public struct AccessibilityReport: Equatable, Sendable {
-    /// The `Accessibility:` line — what this invocation can honestly say
+    /// The `Accessibility:` line: what this invocation can honestly say
     /// about itself.
     public let processLine: String
-    /// The `Accessibility (menu bar app):` line — what the running app says
+    /// The `Accessibility (menu bar app):` line: what the running app says
     /// about itself, which is the answer that matters.
     public let appLine: String
     /// True when this invocation came from a terminal and its own
@@ -238,7 +238,7 @@ public struct AccessibilityReport: Equatable, Sendable {
     ///   Terminal. It is not enough on its own: a shell script, a CI job and
     ///   an agent harness all run with pipes for stdin/stdout/stderr and no
     ///   controlling terminal, and every one of them still inherits the
-    ///   responsible process's grant. This was not theoretical — the first
+    ///   responsible process's grant. This was not theoretical: the first
     ///   cut of this check used `isatty` alone and promptly printed
     ///   "Accessibility: trusted" from a pipe-only shell while the GUI app
     ///   was being denied, which is the exact bug it was written to fix.

@@ -6,8 +6,8 @@ import Foundation
 /// case-insensitively; a trailing `.*` matches a prefix (`com.jetbrains.*`).
 ///
 /// Vendor prefixes are preferred over exact ids for the password managers.
-/// An exact list is wrong the moment a vendor ships a new bundle id — Keeper
-/// alone has shipped under `com.callpod.*` and `com.keepersecurity.*` — and
+/// An exact list is wrong the moment a vendor ships a new bundle id (Keeper
+/// alone has shipped under `com.callpod.*` and `com.keepersecurity.*`), and
 /// being wrong here means reading a vault field and POSTing it to the local
 /// API. `SecretFieldHeuristic` is the second, id-independent guard for the
 /// managers that are not on any list.
