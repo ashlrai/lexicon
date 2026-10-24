@@ -124,7 +124,7 @@ import {
   runRemove,
   runHarvest,
 } from '../src/cli/commands.js';
-import { DEFAULT_NEXT_STEP, PROJECT_TRUST_NEXT_STEP, fail } from '../src/cli/io.js';
+import { DEFAULT_NEXT_STEP, PROJECT_TRUST_NEXT_STEP, fail, positiveIntOption } from '../src/cli/io.js';
 import { registersLexicon } from '../src/cli/cmd-doctor.js';
 import type { DoctorDeps } from '../src/cli/cmd-doctor.js';
 import { codexBlock, targetFor } from '../src/cli/cmd-install.js';
@@ -1102,6 +1102,18 @@ describe('export', () => {
 // Catches: a --json failure from a store error or a refusal with no hint of
 // its own printed { ok: false, error } with no nextStep, while the rest
 // carried one, so a script could not rely on the three keys.
+// Catches: `--limit 0` said only "expected a positive integer", with no example of a value that works.
+describe('positiveIntOption', () => {
+  it('accepts a positive integer and refuses anything else naming the flag with an example', () => {
+    const limit = positiveIntOption('--limit', 50);
+    expect(limit('7')).toBe(7);
+    for (const bad of ['0', '-3', 'abc', '']) {
+      expect(() => limit(bad), bad).toThrow('expected a positive integer, e.g. --limit 50');
+    }
+    expect(() => positiveIntOption('--interval', 250)('0')).toThrow('e.g. --interval 250');
+  });
+});
+
 describe('--json failure documents', () => {
   it('fail() always carries nextStep: the unreadable-lexicon hint, the trust step, else the default', () => {
     const plain = makeIO();

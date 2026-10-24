@@ -14741,27 +14741,6 @@ var require_node_child_process = __commonJS({
   }
 });
 
-// builtin-cjs:node:stream
-var require_node_stream = __commonJS({
-  "builtin-cjs:node:stream"(exports, module) {
-    module.exports = __require("node:stream");
-  }
-});
-
-// builtin-cjs:node:stream/promises
-var require_promises = __commonJS({
-  "builtin-cjs:node:stream/promises"(exports, module) {
-    module.exports = __require("node:stream/promises");
-  }
-});
-
-// builtin-cjs:node:readline
-var require_node_readline = __commonJS({
-  "builtin-cjs:node:readline"(exports, module) {
-    module.exports = __require("node:readline");
-  }
-});
-
 // node_modules/commander/lib/error.js
 var require_error = __commonJS({
   "node_modules/commander/lib/error.js"(exports) {
@@ -18192,6 +18171,27 @@ var require_commander = __commonJS({
     exports.CommanderError = CommanderError2;
     exports.InvalidArgumentError = InvalidArgumentError2;
     exports.InvalidOptionArgumentError = InvalidArgumentError2;
+  }
+});
+
+// builtin-cjs:node:stream
+var require_node_stream = __commonJS({
+  "builtin-cjs:node:stream"(exports, module) {
+    module.exports = __require("node:stream");
+  }
+});
+
+// builtin-cjs:node:stream/promises
+var require_promises = __commonJS({
+  "builtin-cjs:node:stream/promises"(exports, module) {
+    module.exports = __require("node:stream/promises");
+  }
+});
+
+// builtin-cjs:node:readline
+var require_node_readline = __commonJS({
+  "builtin-cjs:node:readline"(exports, module) {
+    module.exports = __require("node:readline");
   }
 });
 
@@ -60467,6 +60467,25 @@ var import_node_path13 = __toESM(require_node_path());
 
 // src/cli/io.ts
 var import_node_fs11 = __toESM(require_node_fs());
+
+// node_modules/commander/esm.mjs
+var import_index2 = __toESM(require_commander(), 1);
+var {
+  program,
+  createCommand,
+  createArgument,
+  createOption,
+  CommanderError,
+  InvalidArgumentError,
+  InvalidOptionArgumentError,
+  // deprecated old name
+  Command,
+  Argument,
+  Option,
+  Help
+} = import_index2.default;
+
+// src/cli/io.ts
 var import_node_path11 = __toESM(require_node_path());
 function line(io, s = "") {
   io.stdout(`${s}
@@ -63580,23 +63599,6 @@ var import_node_child_process7 = __toESM(require_node_child_process());
 var import_node_fs26 = __toESM(require_node_fs());
 var import_node_os10 = __toESM(require_node_os());
 var import_node_path26 = __toESM(require_node_path());
-
-// node_modules/commander/esm.mjs
-var import_index2 = __toESM(require_commander(), 1);
-var {
-  program,
-  createCommand,
-  createArgument,
-  createOption,
-  CommanderError,
-  InvalidArgumentError,
-  InvalidOptionArgumentError,
-  // deprecated old name
-  Command,
-  Argument,
-  Option,
-  Help
-} = import_index2.default;
 
 // src/serve/config.ts
 var import_node_crypto3 = __toESM(require_node_crypto());
