@@ -181,8 +181,9 @@ describe('exportLexicon', () => {
     expect(lines).toContain('Mason Wyatt,Mason White,person,');
   });
 
-  it('json: raw lexicon', () => {
-    expect(JSON.parse(exportLexicon(lexicon, 'json'))).toEqual(lexicon);
+  it('json: raw lexicon, without the merged-only scope and hits', () => {
+    const expected = { ...lexicon, terms: lexicon.terms.map(({ scope: _s, hits: _h, ...t }) => t) };
+    expect(JSON.parse(exportLexicon(lexicon, 'json'))).toEqual(expected);
   });
 
   it('deepgram: keywords with boost by category, canonicals only', () => {

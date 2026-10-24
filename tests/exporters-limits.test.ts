@@ -241,3 +241,16 @@ describe('claude-md within a character budget', () => {
     }
   });
 });
+
+describe('json: the lexicon file, not the merged view', () => {
+  // Catches: `scope` and `hits`, which loadLexicon adds to the merged view
+  // and no lexicon file holds, were written into the export, so a backup
+  // changed after every corrected prompt and an import carried this
+  // machine's counts.
+  it('leaves scope and hits out and keeps every file field', () => {
+    const merged = lex([{ canonical: 'Ashlr.AI', aliases: ['Ashler'], category: 'brand', notes: 'n', phonetic: 'p', scope: 'project', hits: 42 }]);
+    const out = JSON.parse(exportLexicon(merged, 'json')) as Lexicon;
+    expect(out).toEqual(lex([{ canonical: 'Ashlr.AI', aliases: ['Ashler'], category: 'brand', notes: 'n', phonetic: 'p' }]));
+    expect(exportLexicon({ ...merged, terms: [{ ...merged.terms[0], hits: 43 }] }, 'json')).toBe(exportLexicon(merged, 'json'));
+  });
+});

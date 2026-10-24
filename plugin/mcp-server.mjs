@@ -58715,7 +58715,8 @@ function exportGoogle(lexicon, _opts = {}, sink) {
 
 // src/core/exporters/json.ts
 function exportJson(lexicon, _opts = {}) {
-  return JSON.stringify(lexicon, null, 2) + "\n";
+  const terms = lexicon.terms.map(({ scope: _scope, hits: _hits, ...rest }) => rest);
+  return JSON.stringify({ ...lexicon, terms }, null, 2) + "\n";
 }
 
 // src/core/exporters/macos.ts
@@ -67295,7 +67296,11 @@ function createServer2(opts = {}) {
       const note = [skipped.note, empty].filter((n) => n !== void 0).join(" ");
       const extra = note ? { ...skipped, note } : skipped;
       const text = Object.keys(extra).length > 0 ? `${JSON.stringify({ ...loaded.merged, ...extra }, null, 2)}
-` : exportLexicon(loaded.merged, "json");
+` : (
+        // The merged view whole, `scope` and `hits` included (the json export leaves them out).
+        `${JSON.stringify(loaded.merged, null, 2)}
+`
+      );
       return {
         contents: [{ uri: uri.href, mimeType: "application/json", text }]
       };

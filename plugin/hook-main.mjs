@@ -20971,7 +20971,8 @@ function exportGoogle(lexicon, _opts = {}, sink) {
 
 // src/core/exporters/json.ts
 function exportJson(lexicon, _opts = {}) {
-  return JSON.stringify(lexicon, null, 2) + "\n";
+  const terms = lexicon.terms.map(({ scope: _scope, hits: _hits, ...rest }) => rest);
+  return JSON.stringify({ ...lexicon, terms }, null, 2) + "\n";
 }
 
 // src/core/exporters/macos.ts
