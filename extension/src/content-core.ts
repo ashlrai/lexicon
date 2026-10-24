@@ -183,8 +183,23 @@ export function installContent(deps: ContentDeps): ContentHandle {
     return offset + shift;
   }
 
-  /** Normalize the composer, rewrite it when needed, then run `resend`. */
+  /**
+   * Normalize the composer, rewrite it when needed, then run `resend`. The
+   * press was already cancelled, so `resend` runs even when the correction
+   * throws (a malformed reply, an editor that refuses the edit): the message
+   * then goes as the composer holds it. Before, the error was swallowed and
+   * the message was never sent.
+   */
   async function correctThen(composer: HTMLElement, text: string, resend: () => void, codeAt?: Array<[number, number]>): Promise<void> {
+    try {
+      await correctComposer(composer, text, codeAt);
+    } catch {
+      // Sent uncorrected, below.
+    }
+    resend();
+  }
+
+  async function correctComposer(composer: HTMLElement, text: string, codeAt?: Array<[number, number]>): Promise<void> {
     const reply = await normalizeComposer(composer, text, false, codeAt);
     if (reply.ok && reply.changed && reply.replacements.length > 0) {
       // The composer may have moved on while we waited (fast typist, voice
@@ -208,7 +223,6 @@ export function installContent(deps: ContentDeps): ContentHandle {
       // looked at: say so rather than let it pass as clean.
       if (reply.incomplete) showToast(doc, [], { mode: reply.mode, durationMs: deps.toastMs, notice: incompleteNotice(reply.incomplete), ...(reply.fallback ? { fallback: reply.fallback } : {}) });
     }
-    resend();
   }
 
   /**

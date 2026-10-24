@@ -184,6 +184,29 @@ describe('content: send interception', () => {
     expect(toastText()).toContain('Ashlr.AI');
   });
 
+  // Catches: an error after the press was cancelled (here a malformed reply
+  // the rewrite trips over) was swallowed by the send guard, so the message
+  // was never sent. It now goes as typed.
+  it('still sends, uncorrected, when the correction throws', async () => {
+    const { composer, button } = chatgptDom('ping ashler');
+    const bad = { ok: true, changed: true, mode: 'auto', input: 'ping ashler', output: 'ping Ashlr.AI', replacements: [null] } as unknown as NormalizeReply;
+    handle = installContent({ doc: document, hostname: 'chatgpt.com', send: vi.fn(() => Promise.resolve(bad)), settings: { enabled: true, live: false } });
+    const siteEnter = vi.fn((ev: KeyboardEvent) => ev.preventDefault());
+    composer.addEventListener('keydown', siteEnter);
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', code: 'Enter', bubbles: true, cancelable: true });
+    composer.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(true);
+    await handle.idle();
+    expect(siteEnter).toHaveBeenCalledTimes(1);
+    expect(readText(composer)).toBe('ping ashler');
+
+    const siteClick = vi.fn();
+    button.addEventListener('click', siteClick);
+    button.click();
+    await handle.idle();
+    expect(siteClick).toHaveBeenCalledTimes(1);
+  });
+
   it('lets Shift+Enter (newline) through', () => {
     const { composer } = chatgptDom('ashler');
     handle = installContent({ doc: document, hostname: 'chatgpt.com', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
