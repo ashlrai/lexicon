@@ -54,6 +54,24 @@ describe('whisper-prompt and openai: the prompt window Whisper reads', () => {
     expect(exportLexiconWithNotes(lex(terms.slice(0, 5)), 'whisper-prompt', { limit: 2 }).notes).toEqual([]);
   });
 
+  // Catches: names were whitespace-collapsed but not deduped after, so
+  // canonicals that differ only in whitespace were written into the prompt
+  // more than once, spending its tokens on the same name.
+  it('writes a name once when canonicals differ only in whitespace', () => {
+    const { text, notes, names } = exportLexiconWithNotes(
+      lex([
+        { canonical: 'Ashlr AI', aliases: [], hits: 9 },
+        { canonical: 'Ashlr  AI', aliases: [], hits: 5 },
+        { canonical: 'Ashlr\u00a0AI', aliases: [], hits: 1 },
+        { canonical: 'kubectl', aliases: [] },
+      ]),
+      'whisper-prompt',
+    );
+    expect(text).toBe('Ashlr AI, kubectl');
+    expect(names).toBe(2);
+    expect(notes).toEqual(['left out 2 names that read as one already listed once whitespace is collapsed: "Ashlr  AI" and "Ashlr\u00a0AI"']);
+  });
+
   it('a short lexicon is written whole, with no note', () => {
     const { text, notes } = exportLexiconWithNotes(lex([{ canonical: 'Ashlr.AI', aliases: [] }, { canonical: 'kubectl', aliases: [] }]), 'whisper-prompt');
     expect(text).toBe('Ashlr.AI, kubectl');

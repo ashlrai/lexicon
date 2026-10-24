@@ -60497,7 +60497,19 @@ function estimateWhisperTokens(text) {
 }
 function exportWhisperPrompt(lexicon, opts = {}, sink) {
   const limit = opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT;
-  const all = canonicalList(sortByImportance(lexicon.terms)).map((c) => c.canonical.replace(/\s+/g, " ").trim());
+  const all = [];
+  const seen = /* @__PURE__ */ new Set();
+  const repeats = [];
+  for (const { canonical } of canonicalList(sortByImportance(lexicon.terms))) {
+    const name = canonical.replace(/\s+/g, " ").trim();
+    if (!name) continue;
+    if (seen.has(name)) {
+      repeats.push(canonical);
+      continue;
+    }
+    seen.add(name);
+    all.push(name);
+  }
   const names = all.slice(0, Math.max(0, limit));
   const pastDefault = opts.limit === void 0 ? all.slice(names.length) : [];
   const kept = [];
@@ -60511,6 +60523,11 @@ function exportWhisperPrompt(lexicon, opts = {}, sink) {
     } else {
       dropped.push(name);
     }
+  }
+  if (repeats.length > 0) {
+    sink?.notes.push(
+      `left out ${repeats.length} name${repeats.length === 1 ? "" : "s"} that read as one already listed once whitespace is collapsed: ${quotedNames(repeats)}`
+    );
   }
   if (pastDefault.length > 0) {
     sink?.notes.push(

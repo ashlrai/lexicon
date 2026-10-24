@@ -51,7 +51,22 @@ export function estimateWhisperTokens(text: string): number {
 
 export function exportWhisperPrompt(lexicon: Lexicon, opts: ExportOptions = {}, sink?: ExportSink): string {
   const limit = opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT;
-  const all = canonicalList(sortByImportance(lexicon.terms)).map((c) => c.canonical.replace(/\s+/g, ' ').trim());
+  // Whitespace collapsed, then each name once: canonicals that differ only
+  // in whitespace (`Ashlr  AI`, a no-break space) each spent prompt tokens on
+  // the same name, and each took a place under the cap.
+  const all: string[] = [];
+  const seen = new Set<string>();
+  const repeats: string[] = [];
+  for (const { canonical } of canonicalList(sortByImportance(lexicon.terms))) {
+    const name = canonical.replace(/\s+/g, ' ').trim();
+    if (!name) continue;
+    if (seen.has(name)) {
+      repeats.push(canonical);
+      continue;
+    }
+    seen.add(name);
+    all.push(name);
+  }
   const names = all.slice(0, Math.max(0, limit));
   // Past the default cap: a `limit` the caller gave was applied before the
   // exporter (applyOptions) and is what they asked for, but the default one
@@ -69,6 +84,11 @@ export function exportWhisperPrompt(lexicon: Lexicon, opts: ExportOptions = {}, 
     } else {
       dropped.push(name);
     }
+  }
+  if (repeats.length > 0) {
+    sink?.notes.push(
+      `left out ${repeats.length} name${repeats.length === 1 ? '' : 's'} that read as one already listed once whitespace is collapsed: ${quotedNames(repeats)}`,
+    );
   }
   if (pastDefault.length > 0) {
     sink?.notes.push(

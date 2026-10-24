@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon export whisper-prompt` and `openai` write each name once. Whitespace was collapsed but nothing was deduped after, so canonicals that differ only in whitespace were written into the prompt more than once, spending its 223 tokens on the same name. The repeats are named in a note.
 - `lexicon export deepgram` writes each `keyterm` once. Whitespace was collapsed but nothing was deduped after, so canonicals that differ only in whitespace (`Ashlr  AI`, a no-break space) were sent as the same keyterm more than once, each taking a place under the 100 cap. The repeats are named in a note.
 - `lexicon export whisper-prompt` and `openai` with `--json` (with or without `--out`), and the `wrote <format> export (N terms)` line, count the names the prompt line holds. They counted the terms selected, so 150 long names of which the token window kept a few dozen said `terms: 150`. The exporter reports the count as `ExportResult.names`.
 - `lexicon harvest <file>` on a file that exists (a `package.json`, a README) says `harvest: not a directory: <path>` with the next step to pass the repository root instead, under `--json` and `--full` too. The scan's own `not a directory` came with the generic "fix what error names" step.
