@@ -10,6 +10,7 @@
  * only when neither takes.
  */
 import { CODE_SELECTOR, deepActiveElement, isTextField, selectionFor } from './adapters.js';
+import { API_MAX_BODY_BYTES } from './shared.js';
 import type { Correction } from './shared.js';
 
 const BLOCK_TAGS = new Set(['P', 'DIV', 'LI', 'PRE', 'BLOCKQUOTE', 'H1', 'H2', 'H3', 'H4', 'H5', 'H6', 'TR', 'SECTION']);
@@ -84,10 +85,10 @@ export function flatten(root: Element): Flattened {
  * these ranges a code block typed into ChatGPT's or Claude's composer was
  * corrected on send like the prose around it.
  */
-export function codeRanges(el: HTMLElement): Array<[number, number]> {
+export function codeRanges(el: HTMLElement, flat?: Flattened): Array<[number, number]> {
   if (isTextField(el)) return [];
   const out: Array<[number, number]> = [];
-  for (const seg of flatten(el).segments) {
+  for (const seg of (flat ?? flatten(el)).segments) {
     const code = seg.node.parentElement?.closest(CODE_SELECTOR) ?? null;
     if (code === null || !el.contains(code) || seg.node.data.length === 0) continue;
     const start = seg.start;
@@ -126,6 +127,45 @@ export function readText(el: HTMLElement): string {
 }
 
 /**
+ * The most characters of composer text the content script checks: the
+ * server's request limit (`API_MAX_BODY_BYTES`, MAX_BODY_BYTES in
+ * src/serve/server.ts), which text longer than this always exceeds as a
+ * request. A longer composer is not read, flattened or sent to the
+ * background at all, on each keystroke or on send.
+ */
+export const MAX_COMPOSER_CHARS = API_MAX_BODY_BYTES;
+
+/**
+ * True when `el` holds more than MAX_COMPOSER_CHARS characters, measured
+ * without flattening (a field's value, a rich composer's `textContent`,
+ * which leaves out only the line breaks flattening adds).
+ */
+export function composerTooLarge(el: HTMLElement): boolean {
+  const length = isTextField(el) ? el.value.length : (el.textContent ?? '').length;
+  return length > MAX_COMPOSER_CHARS;
+}
+
+/** What one check of a composer needs, from one flattening: its text, code ranges and caret. */
+export interface ComposerSnapshot {
+  text: string;
+  /** `codeRanges` of the composer. */
+  ranges: Array<[number, number]>;
+  /** `caretOffset` of the composer. */
+  caret: number;
+}
+
+/**
+ * `readText`, `codeRanges` and `caretOffset` of `el` from a single
+ * flattening. Each of them flattened the whole composer on its own, so a
+ * live check of a long message walked it three times before it was sent.
+ */
+export function snapshot(doc: Document, el: HTMLElement): ComposerSnapshot {
+  if (isTextField(el)) return { text: el.value, ranges: [], caret: el.selectionEnd ?? el.value.length };
+  const flat = flatten(el);
+  return { text: flat.text, ranges: codeRanges(el, flat), caret: caretOffset(doc, el, flat) };
+}
+
+/**
  * Map a flattened offset to a text node position. At a node boundary the
  * offset belongs to two nodes; a range START takes the later node (offset 0)
  * and a range END takes the earlier one (offset = length) so the range stays
@@ -145,9 +185,9 @@ export function locate(flat: Flattened, offset: number, side: 'start' | 'end' = 
 }
 
 /** Caret position in flattened coordinates, or the text length when unknown. */
-export function caretOffset(doc: Document, el: HTMLElement): number {
+export function caretOffset(doc: Document, el: HTMLElement, flattened?: Flattened): number {
   if (isTextField(el)) return el.selectionEnd ?? el.value.length;
-  const flat = flatten(el);
+  const flat = flattened ?? flatten(el);
   const sel = selectionFor(doc, el);
   if (!sel || sel.rangeCount === 0) return flat.text.length;
   const range = sel.getRangeAt(0);
@@ -254,11 +294,13 @@ function replaceInField(doc: Document, el: HTMLTextAreaElement | HTMLInputElemen
  * at `start`.
  */
 function replaceInEditable(doc: Document, el: HTMLElement, start: number, end: number, replacement: string): boolean {
-  const expectedPrefix = flatten(el).text.slice(0, start) + replacement;
-  const verify = (): boolean => flatten(el).text.startsWith(expectedPrefix);
+  // One flattening for the expected text and the range, one to check the
+  // edit: each step flattened the whole composer again, four or five walks
+  // of a long message per correction.
+  let flat = flatten(el);
+  const expectedPrefix = flat.text.slice(0, start) + replacement;
 
   const selectRange = (): Range | null => {
-    const flat = flatten(el);
     const from = locate(flat, start, 'start');
     const to = locate(flat, end, 'end');
     if (!from || !to) return null;
@@ -282,7 +324,9 @@ function replaceInEditable(doc: Document, el: HTMLElement, start: number, end: n
       } catch {
         ok = false;
       }
-      if (ok && verify()) return true;
+      const after = flatten(el);
+      if (ok && after.text.startsWith(expectedPrefix)) return true;
+      flat = after;
     }
   }
 
@@ -290,10 +334,10 @@ function replaceInEditable(doc: Document, el: HTMLElement, start: number, end: n
   if (!range) return false;
   range.deleteContents();
   range.insertNode(doc.createTextNode(replacement));
+  const spliced = flatten(el);
   if (sel) {
     // Leave the caret after the replacement.
-    const flat = flatten(el);
-    const after = locate(flat, start + replacement.length);
+    const after = locate(spliced, start + replacement.length);
     if (after) {
       const r = doc.createRange();
       r.setStart(after.node, after.offset);
@@ -303,7 +347,9 @@ function replaceInEditable(doc: Document, el: HTMLElement, start: number, end: n
     }
   }
   fireInput(el, 'insertReplacementText', replacement);
-  return verify();
+  // applyCorrections compares the whole text at the end, so a page that
+  // rewrites the composer on this input event is still caught there.
+  return spliced.text.startsWith(expectedPrefix);
 }
 
 /** A macrotask, so the editor behind a contenteditable can commit the previous edit. */
@@ -339,7 +385,9 @@ export async function applyCorrections(doc: Document, el: HTMLElement, correctio
       break;
     }
   }
-  if (!ok || flatten(el).text !== expected) setWholeText(doc, el, expected);
+  const text = flatten(el).text;
+  if (ok && text === expected) return text;
+  setWholeText(doc, el, expected);
   return flatten(el).text;
 }
 

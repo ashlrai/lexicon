@@ -7,10 +7,12 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { applyCorrections, caretOffset, readText, setCaret } from '../extension/src/editable.js';
+import { MAX_COMPOSER_CHARS, applyCorrections, caretOffset, readText, setCaret, snapshot } from '../extension/src/editable.js';
+import { API_MAX_BODY_BYTES } from '../extension/src/shared.js';
+import { MAX_BODY_BYTES as SERVER_MAX_BODY_BYTES } from '../src/serve/server.js';
 import { holdsCode } from '../extension/src/adapters.js';
 import { createEmbedded } from '../extension/src/embedded.js';
-import { installContent, NOT_SENT_NOTICE } from '../extension/src/content-core.js';
+import { installContent, NOT_SENT_NOTICE, TOO_LARGE_NOTICE } from '../extension/src/content-core.js';
 import type { ContentHandle } from '../extension/src/content-core.js';
 import type { NormalizeReply, Request } from '../extension/src/shared.js';
 import { TOAST_ID } from '../extension/src/toast.js';
@@ -227,5 +229,62 @@ describe('content: a known site\'s Enter is never swallowed when it cannot be re
     composer.dispatchEvent(again);
     await handle.idle();
     expect(again.defaultPrevented).toBe(false);
+  });
+});
+
+describe('content: long composers', () => {
+  /** How many times the composer's own children are listed: once per flattening of it. */
+  function countFlattens(el: HTMLElement): { count(): number; restore(): void } {
+    const desc = Object.getOwnPropertyDescriptor(Node.prototype, 'childNodes')!;
+    let n = 0;
+    Object.defineProperty(Node.prototype, 'childNodes', {
+      configurable: true,
+      get(this: Node) {
+        if (this === el) n++;
+        return desc.get!.call(this);
+      },
+    });
+    return { count: () => n, restore: () => Object.defineProperty(Node.prototype, 'childNodes', desc) };
+  }
+
+  it('caps the text it checks at the server\'s request limit', () => {
+    expect(MAX_COMPOSER_CHARS).toBe(API_MAX_BODY_BYTES);
+    expect(MAX_COMPOSER_CHARS).toBe(SERVER_MAX_BODY_BYTES);
+  });
+
+  it('a composer over the cap is never sent for a check, on input or on Enter, and Enter goes on as typed', async () => {
+    document.body.innerHTML = '<textarea id="t"></textarea>';
+    const t = document.getElementById('t') as HTMLTextAreaElement;
+    const send = vi.fn(fakeSend);
+    handle = installContent({ doc: document, hostname: 'example.org', send, settings: { enabled: true, live: true }, precheckDebounceMs: 1, liveDebounceMs: 1, toastMs: 60_000 });
+    t.value = `ping ashler ${'x'.repeat(MAX_COMPOSER_CHARS)}`;
+    t.dispatchEvent(new InputEvent('input', { bubbles: true }));
+    await wait(20);
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    t.dispatchEvent(ev);
+    await handle.idle();
+    expect(send).not.toHaveBeenCalled();
+    expect(ev.defaultPrevented).toBe(false);
+    expect(t.value.startsWith('ping ashler ')).toBe(true);
+    expect(document.getElementById(TOAST_ID)?.shadowRoot?.textContent).toContain(TOO_LARGE_NOTICE);
+  });
+
+  it('flattens a rich composer once for a check, and at most twice per correction', async () => {
+    document.body.innerHTML = '<div id="e" contenteditable="true"><p>ping ashler about <code>x</code> cooper netties</p><p>and ashlar</p></div>';
+    const e = document.getElementById('e')!;
+    const flat = countFlattens(e);
+    try {
+      const snap = snapshot(document, e);
+      expect(flat.count()).toBe(1);
+      expect(snap.text).toBe('ping ashler about x cooper netties\nand ashlar');
+      expect(snap.ranges).toEqual([[18, 19]]);
+      const r = engine.normalize(snap.text);
+      expect(r.replacements).toHaveLength(3);
+      const before = flat.count();
+      expect(await applyCorrections(document, e, r.replacements, r.output)).toBe(r.output);
+      expect(flat.count() - before).toBeLessThanOrEqual(2 * r.replacements.length + 1);
+    } finally {
+      flat.restore();
+    }
   });
 });
