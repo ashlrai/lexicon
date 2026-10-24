@@ -2972,8 +2972,23 @@ describe('lexicon serve (CLI)', () => {
       home: 'C:\\Users\\me',
       exec: fakeExec(ok),
     })).toBe(0);
-    expect(ok).toEqual([['schtasks', '/Delete', '/TN', 'Lexicon', '/F']]);
+    // Catches: /Delete alone left the task's running instance serving.
+    expect(ok).toEqual([
+      ['schtasks', '/End', '/TN', 'Lexicon'],
+      ['schtasks', '/Delete', '/TN', 'Lexicon', '/F'],
+    ]);
     expect(io.out.join('')).toContain('removed Scheduled Task Lexicon');
+
+    const ioEnd = memIO();
+    const endDenied: ServeExec = async (_cmd, args) =>
+      args[0] === '/End' ? { code: 1, stdout: '', stderr: 'ERROR: Access is denied.' } : { code: 0, stdout: '', stderr: '' };
+    expect(await runServe({ uninstall: true, globalPath: env.globalPath }, ioEnd, {
+      platform: 'win32',
+      home: 'C:\\Users\\me',
+      exec: endDenied,
+    })).toBe(1);
+    expect(ioEnd.out.join('')).toContain('removed Scheduled Task Lexicon');
+    expect(ioEnd.err.join('')).toContain('could not end the running instance of the Scheduled Task "Lexicon"');
 
     const io2 = memIO();
     const missing: ServeExec = async () => ({ code: 1, stdout: '', stderr: 'ERROR: The system cannot find the file specified.\r\n' });

@@ -875,10 +875,17 @@ export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeD
 
   if (platform === 'win32') {
     const taskName = scheduledTaskName(env);
+    // Deleting a task leaves its running instance serving (until logout), as
+    // bootout and disable --now do not on the other two platforms: end it first.
+    const ended = await runAndReport(exec, io, 'schtasks', ['/End', '/TN', taskName]);
+    const endFailed = ended.code !== 0 && !schtasksNotRunning(ended);
+    if (endFailed) {
+      io.stderr(`lexicon: could not end the running instance of the Scheduled Task "${safe(taskName)}" (schtasks /End failed, see above); it keeps serving until you log out or end it in Task Manager\n`);
+    }
     const deleted = await runAndReport(exec, io, 'schtasks', ['/Delete', '/TN', taskName, '/F']);
     if (deleted.code === 0) {
       line(io, `removed Scheduled Task ${safe(taskName)}`);
-      return (await removeServeEnv(opts, io)) ? 0 : 1;
+      return (await removeServeEnv(opts, io)) && !endFailed ? 0 : 1;
     }
     // schtasks exits non-zero when the task is not there, which is the same
     // "was not installed" case the other two platforms report rather than
