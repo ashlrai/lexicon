@@ -47872,18 +47872,18 @@ function check2(before, after) {
   while (s < max - p && before.charCodeAt(before.length - 1 - s) === after.charCodeAt(after.length - 1 - s)) s += 1;
   const changedEnd = Math.max(p, after.length - s);
   const termsKey = /^terms:[ \t]*(?:#[^\n]*)?$/m.exec(after);
-  if (!termsKey) return void 0;
+  if (!termsKey) return checkWhole(after);
   const listStart = termsKey.index + termsKey[0].length + 1;
-  if (p < listStart) return void 0;
-  const firstItem = /^( *)- /m.exec(after.slice(listStart));
-  if (!firstItem) return void 0;
-  const indent2 = firstItem[1];
-  const itemRe = new RegExp(`^${indent2}- `, "gm");
   const topLevelRe = /^(?:[^\s#-]|---|\.\.\.)/gm;
   topLevelRe.lastIndex = listStart;
   const nextTop = topLevelRe.exec(after);
   const listEnd = nextTop ? nextTop.index : after.length;
-  if (changedEnd > listEnd) return void 0;
+  if (changedEnd <= listStart || p >= listEnd) return checkOutsideList(after, termsKey.index, listStart, listEnd);
+  if (p < listStart || changedEnd > listEnd) return checkWhole(after);
+  const firstItem = /^( *)- /m.exec(after.slice(listStart));
+  if (!firstItem) return checkWhole(after);
+  const indent2 = firstItem[1];
+  const itemRe = new RegExp(`^${indent2}- `, "gm");
   let regionStart = -1;
   itemRe.lastIndex = listStart;
   const editLine = lineStart(after, p);
@@ -47894,7 +47894,7 @@ function check2(before, after) {
   const regionEnd = next && next.index < listEnd ? next.index : listEnd;
   if (regionEnd - regionStart > EDIT_CHECK_MAX_CHARS) return void 0;
   const region = after.slice(regionStart, regionEnd);
-  if (/(?:^|[\s[{,])[&*][^\s]|<<\s*:/.test(region)) return void 0;
+  if (hasAnchors(region)) return void 0;
   const header = "terms:\n";
   const firstLine = lineNumber(after, regionStart);
   const at = (offset) => firstLine + lineNumber(region, Math.max(0, offset - header.length)) - 1;
@@ -47911,14 +47911,116 @@ function check2(before, after) {
   const itemLines = [];
   const localRe = new RegExp(`^${indent2}- `, "gm");
   for (let m = localRe.exec(region); m; m = localRe.exec(region)) itemLines.push(firstLine + lineNumber(region, m.index) - 1);
+  let parsed;
   try {
-    parseLexicon({ version: 1, terms });
+    parsed = parseLexicon({ version: 1, terms });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    const issue2 = message.split("\n").find((l) => l.trim().startsWith("- ")) ?? message;
-    return issue2.trim().replace(/^- /, "").replace(/^terms\[(\d+)\]\.?/, (m, k) => `the term at line ${itemLines[Number(k)] ?? firstLine}${m.endsWith(".") ? ": " : ""}`);
+    return schemaIssue(err, (k) => `term at line ${itemLines[k] ?? firstLine}`);
+  }
+  return duplicateCanonical(after, parsed.terms, (k) => itemLines[k] ?? firstLine, indent2, listStart, listEnd, regionStart, regionEnd);
+}
+function hasAnchors(text) {
+  return /(?:^|[\s[{,])[&*][^\s]|<<\s*:/.test(text);
+}
+function hasSecondDocument(text) {
+  const re = /^(?:---|\.\.\.)(?:[ \t]|$)/gm;
+  for (let m = re.exec(text); m; m = re.exec(text)) if (m.index !== 0) return true;
+  return false;
+}
+function schemaIssue(err, termName) {
+  const message = err instanceof Error ? err.message : String(err);
+  const issue2 = message.split("\n").find((l) => l.trim().startsWith("- ")) ?? message;
+  return issue2.trim().replace(/^- /, "").replace(/^terms\[(\d+)\]\.?/, (m, k) => `the ${termName(Number(k))}${m.endsWith(".") ? ": " : ""}`);
+}
+function checkOutsideList(after, termsAt, listStart, listEnd) {
+  const head = `${after.slice(0, termsAt)}terms: []
+`;
+  const skeleton = head + after.slice(listEnd);
+  if (skeleton.length > EDIT_CHECK_MAX_CHARS || hasAnchors(skeleton) || hasSecondDocument(skeleton)) return void 0;
+  const lineOf = (offset) => offset < head.length ? lineNumber(skeleton, offset) : lineNumber(after, listEnd + offset - head.length);
+  return checkText(skeleton, lineOf);
+}
+function checkWhole(after) {
+  if (after.length > EDIT_CHECK_MAX_CHARS || hasAnchors(after) || hasSecondDocument(after)) return void 0;
+  return checkText(after, (offset) => lineNumber(after, offset));
+}
+function checkText(text, lineOf) {
+  let raw;
+  try {
+    raw = (0, import_yaml.parse)(text, { prettyErrors: false });
+  } catch (err) {
+    const pos = err.pos;
+    const offset = Array.isArray(pos) && typeof pos[0] === "number" ? pos[0] : 0;
+    return `line ${lineOf(offset)}: ${firstSentence(err)}`;
+  }
+  if (raw === null || raw === void 0) return void 0;
+  let parsed;
+  try {
+    parsed = parseLexicon(raw);
+  } catch (err) {
+    return schemaIssue(err, (k) => `term #${k + 1}`);
+  }
+  const seen = /* @__PURE__ */ new Map();
+  for (const [k, t] of parsed.terms.entries()) {
+    const key = foldCanonical(t.canonical);
+    const first = seen.get(key);
+    if (first !== void 0) return `the term #${k + 1}: ${sameCanonicalNote(`term #${first + 1}`)}`;
+    seen.set(key, k);
   }
   return void 0;
+}
+function foldCanonical(canonical) {
+  return canonical.trim().toLowerCase().normalize("NFC");
+}
+function sameCanonicalNote(other) {
+  return `its canonical is already the canonical of the ${other} (a canonical may be defined once per file: merge the two terms or remove one)`;
+}
+function duplicateCanonical(after, terms, termLine, indent2, listStart, listEnd, regionStart, regionEnd) {
+  const edited = /* @__PURE__ */ new Map();
+  for (const [k, t] of terms.entries()) {
+    const key = foldCanonical(t.canonical);
+    const first = edited.get(key);
+    if (first !== void 0) return `the term at line ${termLine(k)}: ${sameCanonicalNote(`term at line ${termLine(first)}`)}`;
+    edited.set(key, k);
+  }
+  const keyRe = new RegExp(`^${indent2}(?:- |  )canonical:[ \\t]*(.*)$`, "gm");
+  for (const [from, to] of [
+    [listStart, regionStart],
+    [regionEnd, listEnd]
+  ]) {
+    keyRe.lastIndex = from;
+    for (let m = keyRe.exec(after); m && m.index < to; m = keyRe.exec(after)) {
+      const value = scalarValue(m[1]);
+      if (value === void 0) continue;
+      const k = edited.get(foldCanonical(value));
+      if (k !== void 0) return `the term at line ${termLine(k)}: ${sameCanonicalNote(`term at line ${lineNumber(after, m.index)}`)}`;
+    }
+  }
+  return void 0;
+}
+function scalarValue(text) {
+  const t = text.trim();
+  if (!t || /^[|>&*!{[]/.test(t)) return void 0;
+  if (t.startsWith("'")) {
+    const m = /^'((?:[^']|'')*)'(?:\s+#.*)?$/.exec(t);
+    return m ? m[1].replace(/''/g, "'") : void 0;
+  }
+  if (t.startsWith('"')) {
+    const m = /^("(?:[^"\\]|\\.)*")(?:\s+#.*)?$/.exec(t);
+    if (!m) return void 0;
+    try {
+      const v = JSON.parse(m[1]);
+      return typeof v === "string" ? v : void 0;
+    } catch {
+      try {
+        const v = (0, import_yaml.parse)(m[1]);
+        return typeof v === "string" ? v : void 0;
+      } catch {
+        return void 0;
+      }
+    }
+  }
+  return t.replace(/\s+#.*$/, "").trim();
 }
 function firstSentence(err) {
   const message = err instanceof Error ? err.message : String(err);
