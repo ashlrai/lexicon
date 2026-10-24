@@ -40,6 +40,17 @@ describe('first run of the lexicon CLI', () => {
     expect(lexicon(['add', '--help']).stdout).not.toContain('Start here');
   }, 30_000);
 
+  // Catches: `lexicon export --help` said only "cap the number of terms" for
+  // --limit, so which terms survive the cap, and that csv/wispr count only
+  // terms with an alias, was in the MCP description alone.
+  it('export --help says which terms --limit keeps and the alias-row rule', () => {
+    const help = lexicon(['export', '--help']);
+    expect(help.status).toBe(0);
+    const flat = help.stdout.replace(/\s+/g, ' ');
+    expect(flat).toContain('cap the number of terms, applied after --category, keeping the most hits first (at equal hits brand, person and product terms first, then canonical A to Z)');
+    expect(flat).toContain('csv, wispr, superwhisper, macos and espanso (one row per alias) count only terms that have an alias');
+  }, 30_000);
+
   // Catches: `lexicon status` answered "Did you mean stats?" (term counts),
   // and `lexicon version` got no hint at all.
   it('another tool\'s name for a command points at the lexicon command that does that job', () => {

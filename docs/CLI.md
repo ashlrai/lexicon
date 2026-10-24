@@ -232,7 +232,12 @@ export the merged lexicon for another tool (run without a format to list them)
 Options:
   --out <file>                write to a file instead of stdout
   --category <categories...>  only these categories
-  --limit <n>                 cap the number of terms
+  --limit <n>                 cap the number of terms, applied after --category,
+                              keeping the most hits first (at equal hits brand,
+                              person and product terms first, then canonical A
+                              to Z); csv, wispr, superwhisper, macos and espanso
+                              (one row per alias) count only terms that have an
+                              alias
   --json                      print { ok: true, format, terms, bytes, path }
                               after writing --out, or { ok: true, format, terms,
                               bytes, content } with the export as a string
