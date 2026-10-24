@@ -64375,10 +64375,6 @@ function defaultClipboardExec(cmd, args, stdin, opts = {}) {
     });
     let errSize = 0;
     child.stderr?.on("data", (chunk) => {
-      if (!isWrite) {
-        errChunks.push(chunk);
-        return;
-      }
       const room = MAX_CLIPBOARD_WRITE_STDERR_BYTES - errSize;
       if (room <= 0) return;
       const kept = chunk.length > room ? chunk.subarray(0, room) : chunk;

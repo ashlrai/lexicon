@@ -986,6 +986,17 @@ describe('a clipboard too large to correct', () => {
     }
   }, 20_000);
 
+  // Catches: a read kept every byte the tool printed on stderr, unbounded,
+  // while a write's was capped.
+  it('a failed read keeps at most the capped stderr in its error', async () => {
+    const big = backends.MAX_CLIPBOARD_WRITE_STDERR_BYTES * 4;
+    const err = (await backends
+      .defaultClipboardExec(process.execPath, ['-e', `process.stderr.write('e'.repeat(${big}), () => process.exit(2))`])
+      .catch((e: unknown) => e)) as InstanceType<typeof backends.ExecError>;
+    expect(err).toMatchObject({ name: 'ExecError', exitCode: 2 });
+    expect(err.stderr.length).toBe(backends.MAX_CLIPBOARD_WRITE_STDERR_BYTES);
+  }, 20_000);
+
   // Catches: a write's stderr was 'ignore', so a clipboard tool that refused
   // the write (no display, a locked pasteboard) was reported only as
   // "exited with code N". Its stderr is now kept, bounded, in the error; and
