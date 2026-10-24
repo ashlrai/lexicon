@@ -18,6 +18,7 @@ import type { Command } from 'commander';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord, readJsonFile, writeJsonFile } from '../util/json.js';
 import { homeDir } from '../util/xdg.js';
+import { writeFileAtomic } from '../util/atomic.js';
 import { CliRefusal, bold, dim, green, jsonError, line, safe, safePath, shownCommand, safeLines, safeMessage, yellow } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
@@ -267,7 +268,9 @@ async function uninstallToml(ctx: Ctx, target: InstallTarget): Promise<void> {
   }
   const { next, outcome } = removeServerFromToml(text);
   if (outcome === 'removed' && !ctx.dryRun) {
-    await explainWrite(target.file, () => fs.writeFile(target.file, next, 'utf8'));
+    // Through a temp file and a rename, as install writes it: an in-place
+    // write that failed partway left config.toml cut short.
+    await explainWrite(target.file, () => writeFileAtomic(target.file, next));
   }
   report(ctx, { file: target.file, entry, outcome });
 }

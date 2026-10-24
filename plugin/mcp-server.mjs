@@ -67667,6 +67667,7 @@ var import_node_path28 = __toESM(require_node_path());
 init_errors3();
 init_json();
 init_xdg();
+init_atomic();
 function isInstalledServerEntry(entry) {
   if (!isRecord(entry) || typeof entry.command !== "string" || !Array.isArray(entry.args)) return false;
   if (!entry.args.every((a) => typeof a === "string")) return false;
@@ -67802,7 +67803,7 @@ async function uninstallToml(ctx, target) {
   }
   const { next, outcome } = removeServerFromToml(text);
   if (outcome === "removed" && !ctx.dryRun) {
-    await explainWrite(target.file, () => import_node_fs29.promises.writeFile(target.file, next, "utf8"));
+    await explainWrite(target.file, () => writeFileAtomic(target.file, next));
   }
   report(ctx, { file: target.file, entry, outcome });
 }

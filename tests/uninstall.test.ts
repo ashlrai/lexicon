@@ -2,7 +2,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { Command } from 'commander';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runInstall } from '../src/cli/cmd-install.js';
 import type { InstallDeps } from '../src/cli/cmd-install.js';
 import {
@@ -160,6 +160,28 @@ describe('lexicon uninstall codex', () => {
     const { io } = await uninstall('codex');
     expect(io.out).toContain(`removed [mcp_servers.lexicon] from ${file}`);
     expect(await fs.readFile(file, 'utf8')).toBe(before);
+  });
+
+  // Catches: uninstall wrote config.toml in place, which truncates it first,
+  // so a write that failed partway (a full disk) left the config cut short.
+  it('a write that fails partway leaves the old config.toml', async () => {
+    const file = path.join(home, '.codex', 'config.toml');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, 'model = "o3"\n');
+    await install('codex');
+    const installed = await fs.readFile(file, 'utf8');
+    const realWrite = fs.writeFile.bind(fs);
+    const spy = vi.spyOn(fs, 'writeFile').mockImplementation(async (target, data, options) => {
+      await realWrite(target, String(data).slice(0, 5), options);
+      throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+    });
+    try {
+      await expect(uninstall('codex')).rejects.toThrow('ENOSPC');
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await fs.readFile(file, 'utf8')).toBe(installed);
+    expect(await fs.readdir(path.dirname(file))).toEqual(['config.toml']);
   });
 
   it('pure: sub-tables go with an owned table, a foreign table stays', () => {
