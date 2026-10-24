@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon voice --list-devices` on ALSA numbers each capture device by its place in the list, as the pulse and dshow lists do. It used the card number, so two inputs on one card (an Intel HDA card's analog and alternate analog) shared an index and `--device <index>` could only pick the first.
 - `lexicon voice --toggle` empties `voice/recorder.log` at each start. The log was opened for append and never emptied, so it grew by every recording's errors, and a recording that failed with nothing logged quoted an earlier recording's last lines as `ffmpeg said:`.
 - `lexicon voice` quotes the ffmpeg path in the `<ffmpeg> -version` step it prints when the recorder cannot start or the device list cannot be read. The path went in as is, so an ffmpeg under a directory with a space (`C:\Program Files\ffmpeg\bin\ffmpeg.exe`) printed a command that ran something else.
 - The UserPromptSubmit hook reads a prompt's sentences for spelling corrections ("it's X not Y") within a 25 ms budget, and each distinct sentence once. Every sentence was parsed with no bound, so a 50,000-character paste of one correction repeated took about 420 ms against a 3000-term lexicon (now about 340, the rest being the 100 ms match budget and startup).

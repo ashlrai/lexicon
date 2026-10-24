@@ -1725,6 +1725,28 @@ describe('device parsers', () => {
     expect(formatDeviceList(alsa)).toBe('[0] HDA Intel PCH (ALC295 Analog)  (hw:0,0)\n[1] Yeti Stereo Microphone (USB Audio)  (hw:1,0)\n');
     expect(formatDeviceList([])).toBe('no audio input devices found\n');
   });
+
+  // Catches: devices were numbered by card, so two inputs on one card shared an index and --device <index> reached only the first.
+  it('numbers arecord devices by position, so two inputs on one card each get an index', () => {
+    const list = [
+      '**** List of CAPTURE Hardware Devices ****',
+      'card 0: PCH [HDA Intel PCH], device 0: ALC3246 Analog [ALC3246 Analog]',
+      '  Subdevices: 1/1',
+      'card 0: PCH [HDA Intel PCH], device 2: ALC3246 Alt Analog [ALC3246 Alt Analog]',
+      '  Subdevices: 1/1',
+      'card 2: Yeti [Yeti Stereo Microphone], device 0: USB Audio [USB Audio]',
+      '',
+    ].join('\n');
+    const alsa = parseArecordList(list);
+    expect(alsa.map((d) => [d.index, d.id])).toEqual([
+      [0, 'hw:0,0'],
+      [1, 'hw:0,2'],
+      [2, 'hw:2,0'],
+    ]);
+    expect(pickDevice(alsa, '1')?.id).toBe('hw:0,2');
+    expect(pickDevice(alsa, '2')?.id).toBe('hw:2,0');
+    expect(formatDeviceList(alsa).split('\n').filter(Boolean).map((l) => l.slice(0, 3))).toEqual(['[0]', '[1]', '[2]']);
+  });
 });
 
 describe('history', () => {
