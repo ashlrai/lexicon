@@ -1334,11 +1334,21 @@ function emptyHitsRegistry(): HitsRegistry {
 /**
  * Read the registry. Missing, unparseable or malformed all yield an empty one:
  * these are counters, and the safe failure mode for a counter is zero.
+ * `forWrite` (a read-modify-write under the lock) throws a read error other
+ * than a missing file instead: an EIO or EACCES read as empty, and the write
+ * that followed replaced every count in the file with the few being added.
  */
-async function readHitsRegistry(opts: StoreOptions): Promise<HitsRegistry> {
+async function readHitsRegistry(opts: StoreOptions, forWrite = false): Promise<HitsRegistry> {
+  let text: string;
+  try {
+    text = await fs.readFile(getHitsPath(opts), 'utf8');
+  } catch (e) {
+    if (forWrite && (e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+    return emptyHitsRegistry();
+  }
   let raw: unknown;
   try {
-    raw = JSON.parse(await fs.readFile(getHitsPath(opts), 'utf8'));
+    raw = JSON.parse(text);
   } catch {
     return emptyHitsRegistry();
   }
@@ -1435,7 +1445,7 @@ async function dropProjectHits(projectPath: string, canonical: string, opts: Sto
     const hitsPath = getHitsPath(opts);
     const key = await canonicalPath(projectPath);
     await withFileLock(hitsPath, async () => {
-      const registry = await readHitsRegistry(opts);
+      const registry = await readHitsRegistry(opts, true);
       const entry = registry.projects[key];
       if (!entry || !(hitKey(canonical) in entry)) return;
       delete entry[hitKey(canonical)];
@@ -1451,7 +1461,7 @@ async function dropGlobalHits(canonical: string, opts: StoreOptions): Promise<vo
   try {
     const hitsPath = getHitsPath(opts);
     await withFileLock(hitsPath, async () => {
-      const registry = await readHitsRegistry(opts);
+      const registry = await readHitsRegistry(opts, true);
       if (!registry.global || !(hitKey(canonical) in registry.global)) return;
       delete registry.global[hitKey(canonical)];
       await writeFileAtomic(hitsPath, formatJson(registry));
@@ -2199,7 +2209,7 @@ export async function recordHits(
     // not).
     const hitsPath = getHitsPath(opts);
     await withFileLock(hitsPath, async () => {
-      const registry = await readHitsRegistry(opts);
+      const registry = await readHitsRegistry(opts, true);
       if (project) {
         const entry = { ...(registry.projects[project.key] ?? {}) };
         for (const [canonical, n] of project.counts) entry[canonical] = (entry[canonical] ?? 0) + n;

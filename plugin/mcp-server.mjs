@@ -42930,10 +42930,17 @@ async function canonicalPath2(filePath) {
 function emptyHitsRegistry() {
   return { version: 1, projects: {} };
 }
-async function readHitsRegistry(opts) {
+async function readHitsRegistry(opts, forWrite = false) {
+  let text;
+  try {
+    text = await import_node_fs5.promises.readFile(getHitsPath(opts), "utf8");
+  } catch (e) {
+    if (forWrite && e.code !== "ENOENT") throw e;
+    return emptyHitsRegistry();
+  }
   let raw;
   try {
-    raw = JSON.parse(await import_node_fs5.promises.readFile(getHitsPath(opts), "utf8"));
+    raw = JSON.parse(text);
   } catch {
     return emptyHitsRegistry();
   }
@@ -42965,7 +42972,7 @@ async function dropProjectHits(projectPath, canonical, opts) {
     const hitsPath = getHitsPath(opts);
     const key = await canonicalPath2(projectPath);
     await withFileLock(hitsPath, async () => {
-      const registry2 = await readHitsRegistry(opts);
+      const registry2 = await readHitsRegistry(opts, true);
       const entry = registry2.projects[key];
       if (!entry || !(hitKey(canonical) in entry)) return;
       delete entry[hitKey(canonical)];
@@ -42978,7 +42985,7 @@ async function dropGlobalHits(canonical, opts) {
   try {
     const hitsPath = getHitsPath(opts);
     await withFileLock(hitsPath, async () => {
-      const registry2 = await readHitsRegistry(opts);
+      const registry2 = await readHitsRegistry(opts, true);
       if (!registry2.global || !(hitKey(canonical) in registry2.global)) return;
       delete registry2.global[hitKey(canonical)];
       await writeFileAtomic(hitsPath, formatJson(registry2));
@@ -43360,7 +43367,7 @@ async function recordHits(canonicals, opts = {}) {
     if (!project && counts.size === 0) return;
     const hitsPath = getHitsPath(opts);
     await withFileLock(hitsPath, async () => {
-      const registry2 = await readHitsRegistry(opts);
+      const registry2 = await readHitsRegistry(opts, true);
       if (project) {
         const entry = { ...registry2.projects[project.key] ?? {} };
         for (const [canonical, n] of project.counts) entry[canonical] = (entry[canonical] ?? 0) + n;
