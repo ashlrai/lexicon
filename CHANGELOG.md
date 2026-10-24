@@ -15,6 +15,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Documentation
 
+- docs/EXTENSION.md: the Firefox notes now say to allow `127.0.0.1` and `localhost` in the add-on's permissions panel as well as the chat sites; pairing, Test connection and Sync need them.
 - `docs/PHANTOM-USAGE.md`: using Lexicon with Phantom. Lexicon makes no model calls and has no gateway or base URL setting; `phantom exec` around an agent is unaffected; the `serve.json` token is local and not a Phantom secret.
 
 ### Added
