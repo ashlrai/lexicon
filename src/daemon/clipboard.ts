@@ -544,12 +544,24 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
   }
 
   if (opts.paste) {
+    const what =
+      notText === undefined
+        ? undefined
+        : notText.startsWith('clipboard holds binary')
+          ? 'clipboard holds binary data, not text'
+          : notText === 'no letters'
+            ? 'clipboard has no letters to correct'
+            : notText;
     if (platform !== 'darwin') {
-      err(`--paste is macOS-only (uses osascript); the text is on the clipboard, paste it with your usual shortcut (platform: ${platform})\n`);
+      // "the text is on the clipboard" is true only when the clipboard held text that was looked at.
+      err(
+        what === undefined
+          ? `--paste is macOS-only (uses osascript); the text is on the clipboard, paste it with your usual shortcut (platform: ${platform})\n`
+          : `--paste is macOS-only (uses osascript), and the clipboard holds no text to paste (${what}); it was left as it was (platform: ${platform})\n`,
+      );
     } else if (text.length === 0 && !tooLarge) {
       err('--paste skipped: clipboard is empty\n');
-    } else if (notText !== undefined) {
-      const what = notText.startsWith('clipboard holds binary') ? 'clipboard holds binary data, not text' : notText === 'no letters' ? 'clipboard has no letters to correct' : notText;
+    } else if (what !== undefined) {
       err(`--paste skipped: ${what}, so it was left as it was and nothing was pasted\n`);
     } else {
       const sendPaste =

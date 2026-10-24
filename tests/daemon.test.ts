@@ -647,6 +647,21 @@ describe('runClipboardOnce', () => {
     expect(result.written).toBe(true);
     expect(h.err.join('')).toMatch(/macOS-only/);
   });
+
+  // Catches: off macOS, --paste said "the text is on the clipboard" when the
+  // clipboard held binary data or nothing, which was never looked at.
+  it('--paste off macOS does not claim text is on a clipboard that holds none', async () => {
+    for (const [content, why] of [
+      ['', 'clipboard is empty or not text'],
+      ['PNG\u0000\u0001data', 'clipboard holds binary data, not text'],
+    ] as const) {
+      const { h, read, write, out, err } = onceHarness(content);
+      await runClipboardOnce({ read, write, out, err, paste: true, platform: 'linux' });
+      const said = h.err.join('');
+      expect(said).not.toContain('the text is on the clipboard');
+      expect(said).toBe(`--paste is macOS-only (uses osascript), and the clipboard holds no text to paste (${why}); it was left as it was (platform: linux)\n`);
+    }
+  });
 });
 
 describe('runDaemonCommand', () => {
