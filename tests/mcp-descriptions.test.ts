@@ -281,3 +281,18 @@ describe('resources and prompts', () => {
     expect(empty).toMatch(/no terms yet/);
   });
 });
+
+describe('setup_lexicon plan', () => {
+  // Catches: the plan list left out demo (the before and after a real run
+  // shows), interactive, wouldAsk and the preview's own `next`.
+  it('names every SetupPlan field the preview returns', async () => {
+    const d = (await tool('setup_lexicon')).description ?? '';
+    const types = await fs.readFile(path.join(import.meta.dirname, '..', 'src', 'cli', 'setup', 'types.ts'), 'utf8');
+    const body = /export interface SetupPlan \{([\s\S]*?)\n\}/.exec(types)?.[1] ?? '';
+    const fields = [...body.matchAll(/^ {2}(\w+)\??:/gm)].map((m) => m[1]!);
+    expect(fields.length).toBeGreaterThan(10);
+    const listed = /The plan is \{ ([^}]*) \}/.exec(d)?.[1] ?? '';
+    for (const field of [...fields, 'next']) expect(listed, field).toMatch(new RegExp(`\\b${field}\\b`));
+    expect(d).toContain('demo { heard, corrected, terms, usedExample }');
+  });
+});

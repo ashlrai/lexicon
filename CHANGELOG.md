@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- MCP `setup_lexicon` names every field of its preview: `demo` (the before and after a real run ends on), `interactive` and `wouldAsk` (false and empty here) and `next` were missing from the plan it lists.
 - MCP resource `lexicon://me` says an untrusted or changed project lexicon is left out (named by path, never quoted) and that an empty lexicon ends with a note on setting it up. The `voice-context` and `onboard` prompts say they take no arguments (an argument is refused), and `onboard` names its starter-pack and `normalize_transcript` steps.
 - MCP `trust_project` lists the words it answers with: `status` (`trusted`, `untrusted`, `changed`, `missing`, `invalid`, `none`), the `trust` action's `result` (`trusted`, `updated`, `re-pinned`, `already-trusted`, `declined`) and `untrust`'s `removed`. `lexicon_doctor` names `error` (present when `ok` is false), and `serve_status` says every result carries `url`.
 - MCP `import_dictionary` says that with both `path` and `content` the content is imported and the path is not read, only its extension steering format `auto`; it said to pass one or the other. MCP `import_vocabulary` says a preview holds at most 50 candidates and that a `previewToken` works for one apply, for five minutes, and until 20 newer previews were made.
