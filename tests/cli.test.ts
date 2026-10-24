@@ -322,6 +322,15 @@ describe('normalize', () => {
     const empty = makeIO();
     expect(await runNormalize([], { json: true }, empty, async () => '')).toBe(0);
     expect(JSON.parse(empty.out)).toEqual({ ok: true, input: '', output: '', replacements: [], changed: false });
+    // Catches: empty stdin exited 0 without a word. stdout and the exit code stay as they were.
+    expect(empty.err).toBe('lexicon: no text to correct (stdin was empty); pass it as arguments: lexicon normalize "ping ashler", or pipe it in: echo "ping ashler" | lexicon normalize\n');
+    const plainEmpty = makeIO();
+    expect(await runNormalize([], {}, plainEmpty, async () => '')).toBe(0);
+    expect(plainEmpty.out).toBe('');
+    expect(plainEmpty.err).toContain('stdin was empty');
+    const emptyArg = makeIO();
+    expect(await runNormalize([''], {}, emptyArg)).toBe(0);
+    expect(emptyArg.err).toContain('the argument was empty');
 
     vi.mocked(core.loadLexicon).mockRejectedValueOnce(new Error('bad yaml'));
     const bad = makeIO();

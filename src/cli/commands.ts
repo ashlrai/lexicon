@@ -773,6 +773,13 @@ export async function runNormalize(
   };
 
   if (text.length === 0) {
+    // Still exit 0 with stdout round-tripping the (empty) input, but say why
+    // nothing happened: `lexicon normalize < empty.txt` (or a forgotten pipe)
+    // exited 0 without a word. stderr only, so the protocol is unchanged.
+    io.stderr(
+      `lexicon: no text to correct (${fromArgs ? 'the argument was empty' : 'stdin was empty'}); ` +
+        'pass it as arguments: lexicon normalize "ping ashler", or pipe it in: echo "ping ashler" | lexicon normalize\n',
+    );
     if (opts.json) line(io, JSON.stringify(jsonOk({ input: '', output: '', replacements: [], changed: false })));
     return 0;
   }
