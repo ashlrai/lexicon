@@ -261,8 +261,9 @@ describe('normalize', () => {
     expect(json.err).toBe('');
   });
 
-  // Catches: `normalize --json --min-confidence 5` printed `{ ok: false, error }` with no nextStep.
-  it.each([5, 'high', -1])('refuses --min-confidence %s with a nextStep, before reading stdin', async (value) => {
+  // Catches: `normalize --json --min-confidence 5` printed `{ ok: false, error }` with no nextStep,
+  // and a blank value ('' or spaces, as an unset shell variable gives) was read as 0.
+  it.each([5, 'high', -1, '', '  '])('refuses --min-confidence %s with a nextStep, before reading stdin', async (value) => {
     const json = makeIO();
     const readInput = vi.fn(async () => 'meet Ashler');
     expect(await runNormalize([], { json: true, minConfidence: value }, json, readInput)).toBe(1);

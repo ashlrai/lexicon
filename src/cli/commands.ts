@@ -839,7 +839,9 @@ export interface NormalizeCliOptions extends CommonOptions {
 export function buildNormalizeOptions(opts: NormalizeCliOptions): NormalizeOptions {
   const out: NormalizeOptions = {};
   if (opts.minConfidence !== undefined) {
-    const n = typeof opts.minConfidence === 'number' ? opts.minConfidence : Number(opts.minConfidence);
+    // A blank value is refused: Number('') is 0, so `--min-confidence ""`
+    // (an unset shell variable) accepted every fuzzy and phonetic match.
+    const n = typeof opts.minConfidence === 'number' ? opts.minConfidence : opts.minConfidence.trim() === '' ? Number.NaN : Number(opts.minConfidence);
     if (!Number.isFinite(n) || n < 0 || n > 1) {
       throw new Error('--min-confidence must be a number between 0 and 1');
     }
