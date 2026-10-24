@@ -62,7 +62,7 @@ import {
 } from './setup/steps.js';
 
 /**
- * The wizard's vocabulary, its machine detection and its six steps live under
+ * The wizard's vocabulary, its machine detection and its seven steps live under
  * ./setup/; re-exported here because cmd-setup.js is the import path the MCP
  * `setup_lexicon` tool, index.ts and the tests already use.
  */
