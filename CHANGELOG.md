@@ -35,6 +35,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 - The `serve.log` cap also empties the log when the server's descriptor can only append (as on Windows), by truncating the file by path, and compares file ids exactly. Before, the copy to `serve.log.1` was made but the log kept its size, which turned main CI red on Windows.
 - A LEXICON_PATH under a regular file (`notes.txt\lexicon.yaml`) is named as unreadable on Windows too. Windows answers such a path with ENOENT rather than ENOTDIR, so the lexicon read as missing there and only a later write failed.
+- The Windows LexiconBar reads serve.json from `%USERPROFILE%\.config\lexicon` when `XDG_CONFIG_HOME` is blank or relative (`C:foo` included), as `lexicon serve` writes it there, and takes an absolute value trimmed. It probed a relative value first, under the working directory.
 - LexiconBar reads serve.json from `~/.config/lexicon` when `XDG_CONFIG_HOME` is blank or relative, as `lexicon serve` writes it there. It took a relative value as given, so the onboarding window and Fix Everywhere found no token.
 - `lexicon setup` step 5 says `installed ai.ashlr.lexicon.serve; check with: lexicon serve --status` once. It printed `installed installed ...`, its own prefix ahead of the installer's line.
 - `lexicon export --out` refuses the lexicon file's path when it reaches it through a symlinked directory before either file exists. The two paths were compared as given, so the export was written where the lexicon file would be.
