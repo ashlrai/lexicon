@@ -743,7 +743,7 @@ describe('clipboard backends', () => {
       { cmd: 'pbpaste', args: [] },
       { cmd: 'pbcopy', args: [], stdin: 'a' },
       { cmd: 'wl-paste', args: ['--no-newline', '--type', 'text'] },
-      { cmd: 'wl-copy', args: [], stdin: 'b' },
+      { cmd: 'wl-copy', args: ['--type', 'text/plain'], stdin: 'b' },
       { cmd: 'xclip', args: ['-selection', 'clipboard', '-o'] },
       { cmd: 'xclip', args: ['-selection', 'clipboard', '-i'], stdin: 'c' },
       { cmd: 'xsel', args: ['--clipboard', '--output'] },

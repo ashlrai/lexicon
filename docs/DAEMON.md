@@ -24,7 +24,7 @@ The clipboard tool is detected per platform (`lexicon daemon --which` and `lexic
 | Platform | Backend | Commands |
 |---|---|---|
 | macOS | `pbcopy` | `pbpaste` / `pbcopy` (built in) |
-| Linux, Wayland (`WAYLAND_DISPLAY` set) | `wl` | `wl-paste --no-newline --type text` / `wl-copy` (`sudo apt install wl-clipboard`) |
+| Linux, Wayland (`WAYLAND_DISPLAY` set) | `wl` | `wl-paste --no-newline --type text` / `wl-copy --type text/plain` (`sudo apt install wl-clipboard`) |
 | Linux, X11 | `xclip`, else `xsel` | `xclip -selection clipboard -o` / `-i` (`sudo apt install xclip`) |
 | Windows | `powershell` | `Get-Clipboard -Raw` / `Set-Clipboard` (built in; CRLF preserved) |
 

@@ -27,6 +27,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- On Wayland the clipboard watcher writes with `wl-copy --type text/plain`. Without a type wl-copy guesses one from the bytes, so a correction that looked like markup or a path could be offered as something a text field does not paste. The other backends already write plain text.
 - `lexicon daemon --once --paste` no longer pastes a clipboard it left as it was (too large, binary such as a copied image, or with no letters): the shortcut is meant to paste dictated text, so it pasted something else. It says why on stderr: `--paste skipped: clipboard too large, so it was left as it was and nothing was pasted`.
 - A second ctrl-C stops `lexicon daemon` at once. The first one waits for a clipboard read in flight (a clipboard tool that hangs runs until its timeout) and now says so; before, its listener was gone and the daemon did not answer a second one.
 - The clipboard watcher (`lexicon daemon`) saw a lexicon edit up to 5 seconds late, so a term just learned was not used on the next copy. Before it corrects a new clipboard text it now checks (with `stat`) whether the global or project lexicon or `trust.json` changed, and reloads if so; the 5 second reload stays as a backstop.
