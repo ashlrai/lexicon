@@ -17,7 +17,7 @@ import type { SetupOptions } from '../../cli/cmd-setup.js';
 import { isRecord } from '../../util/json.js';
 import { errorMessage } from '../../util/errors.js';
 import { runDoctorReport } from '../../cli/commands.js';
-import { runInstall } from '../../cli/cmd-install.js';
+import { reloadStepFor, runInstall } from '../../cli/cmd-install.js';
 import type { InstallOutcome } from '../../cli/cmd-install.js';
 import { runSetup } from '../../cli/cmd-setup.js';
 import { serveInstallBlocker } from '../../cli/cmd-serve.js';
@@ -72,7 +72,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         "Register the lexicon MCP server (and, for Claude Code, its hooks) in an agent client's config: claude, codex, cursor, windsurf, gemini, vscode or claude-desktop. " +
         'Call with apply omitted (or false) first: that is a preview that returns the exact file and entry that would change and writes nothing. ' +
         'Show the preview to the user and call again with apply: true only after they confirm. Idempotent: an entry that is already present is left alone. ' +
-        'Returns { client, scope, applied, ok, written, output, stderr?, next?, nextStep? }: `written` lists each config file the call touched as { file, outcome } with outcome created, updated or unchanged (empty for a preview), the same list the CLI install command prints with --json, so read it instead of parsing `output`. ' +
+        'Returns { client, scope, applied, ok, written, output, reload?, stderr?, next?, nextStep? }: `reload` is what the user must do so the client loads the server (restart it, or reload its window), to relay after an apply; `written` lists each config file the call touched as { file, outcome } with outcome created, updated or unchanged (empty for a preview), the same list the CLI install command prints with --json, so read it instead of parsing `output`. ' +
           'Check `ok`: false means the preview or install did not complete (`output` and `stderr` say which step failed, and `nextStep` what to do), so do not report it as installed or call again with apply: true. ' +
         "windsurf and claude-desktop have no project-level config: scope 'project' with them is an error that says to call again without scope.",
       inputSchema: {
@@ -120,6 +120,8 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
           output: io.out().trimEnd(),
           ...(stderr ? { stderr } : {}),
           // A failed preview is not one to confirm: `next` said to apply it anyway.
+          // What the user does so the client loads the server (also the output's `then:` line).
+          ...(ok ? { reload: reloadStepFor(client) } : {}),
           ...(!ok
             ? { nextStep: `The ${apply === true ? 'install' : 'preview'} did not complete; output and stderr say which step failed. Tell the user what failed and do not call again with apply: true until it is fixed.` }
             : apply === true

@@ -145,7 +145,7 @@ config (`./.cursor/mcp.json`, `claude mcp add --scope project`).
 > Apply it?
 > **User:** yes
 > **Agent:** *calls `install_client { client: "cursor", apply: true }`*
-> Written. Restart Cursor to pick it up.
+> Written. Reload the Cursor window (Developer: Reload Window) to pick it up.
 
 ### `trust_project { action, path? }`
 

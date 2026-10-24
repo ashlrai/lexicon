@@ -62157,10 +62157,27 @@ function clientCaveat(client, project) {
   if (client === "gemini") {
     return 'If your settings.json sets mcp.allowed, add "lexicon" to that list or Gemini CLI will skip this server.';
   }
-  if (client === "claude-desktop") {
-    return "Claude Desktop reads this only at launch: quit it completely and reopen.";
-  }
   return void 0;
+}
+function reloadStepFor(client) {
+  switch (client) {
+    case "claude":
+      return "restart Claude Code: a running session keeps the MCP servers and hooks it started with, so exit it and start a new one (/mcp then lists lexicon).";
+    case "codex":
+      return "restart Codex: it reads config.toml when a session starts, so exit any running codex session and start a new one (/mcp then lists lexicon).";
+    case "cursor":
+      return "reload the Cursor window (Command Palette: Developer: Reload Window) or restart Cursor, then check that lexicon is enabled in Cursor Settings > MCP.";
+    case "windsurf":
+      return "refresh the MCP servers in Windsurf (the refresh button in the Cascade MCP panel) or restart Windsurf.";
+    case "gemini":
+      return "restart Gemini CLI: it reads settings.json when it starts, so exit any running gemini session and start a new one (/mcp then lists lexicon).";
+    case "claude-desktop":
+      return "restart Claude Desktop: it reads this only at launch, so quit it completely (not just the window) and reopen it.";
+    case "vscode":
+      return "reload the VS Code window (Command Palette: Developer: Reload Window), or start lexicon from MCP: List Servers.";
+    default:
+      return void 0;
+  }
 }
 function labelFor(client) {
   switch (client) {
@@ -62457,6 +62474,8 @@ async function installText(client, opts, io, deps) {
   }
   const caveat = clientCaveat(name, project);
   if (caveat !== void 0) line(io, dim(`   note: ${caveat}`));
+  const reload = reloadStepFor(name);
+  if (reload !== void 0) line(io, opts.apply ? `   then: ${reload}` : dim(`   after --apply: ${reload}`));
   line(io);
   printExportHint(io, 2, name);
   if (!opts.apply) {
@@ -62551,6 +62570,12 @@ async function runInstallClaude(opts, io, deps = {}) {
   line(io);
   line(io, bold("3. Add to your CLAUDE.md"));
   line(io, `   ${CLAUDE_MD_SNIPPET}`);
+  if (opts.apply && !failed) {
+    line(io);
+    line(io, `then: ${reloadStepFor("claude")}`);
+  } else if (!opts.apply) {
+    line(io, dim(`   after --apply: ${reloadStepFor("claude")}`));
+  }
   if (!opts.apply) {
     line(io);
     line(io, dim("run again with --apply to perform steps 1 and 2"));
@@ -64653,7 +64678,7 @@ var registerSetupTools = (server, ctx) => {
     "install_client",
     {
       title: "Register the lexicon MCP server in an agent client",
-      description: "Register the lexicon MCP server (and, for Claude Code, its hooks) in an agent client's config: claude, codex, cursor, windsurf, gemini, vscode or claude-desktop. Call with apply omitted (or false) first: that is a preview that returns the exact file and entry that would change and writes nothing. Show the preview to the user and call again with apply: true only after they confirm. Idempotent: an entry that is already present is left alone. Returns { client, scope, applied, ok, written, output, stderr?, next?, nextStep? }: `written` lists each config file the call touched as { file, outcome } with outcome created, updated or unchanged (empty for a preview), the same list the CLI install command prints with --json, so read it instead of parsing `output`. Check `ok`: false means the preview or install did not complete (`output` and `stderr` say which step failed, and `nextStep` what to do), so do not report it as installed or call again with apply: true. windsurf and claude-desktop have no project-level config: scope 'project' with them is an error that says to call again without scope.",
+      description: "Register the lexicon MCP server (and, for Claude Code, its hooks) in an agent client's config: claude, codex, cursor, windsurf, gemini, vscode or claude-desktop. Call with apply omitted (or false) first: that is a preview that returns the exact file and entry that would change and writes nothing. Show the preview to the user and call again with apply: true only after they confirm. Idempotent: an entry that is already present is left alone. Returns { client, scope, applied, ok, written, output, reload?, stderr?, next?, nextStep? }: `reload` is what the user must do so the client loads the server (restart it, or reload its window), to relay after an apply; `written` lists each config file the call touched as { file, outcome } with outcome created, updated or unchanged (empty for a preview), the same list the CLI install command prints with --json, so read it instead of parsing `output`. Check `ok`: false means the preview or install did not complete (`output` and `stderr` say which step failed, and `nextStep` what to do), so do not report it as installed or call again with apply: true. windsurf and claude-desktop have no project-level config: scope 'project' with them is an error that says to call again without scope.",
       inputSchema: {
         client: external_exports.enum(INSTALL_CLIENT_VALUES).describe("Which client to configure."),
         apply: external_exports.boolean().optional().describe("false/omitted = preview only (default). true = write the config after the user confirmed."),
@@ -64692,6 +64717,8 @@ var registerSetupTools = (server, ctx) => {
         output: io.out().trimEnd(),
         ...stderr ? { stderr } : {},
         // A failed preview is not one to confirm: `next` said to apply it anyway.
+        // What the user does so the client loads the server (also the output's `then:` line).
+        ...ok ? { reload: reloadStepFor(client) } : {},
         ...!ok ? { nextStep: `The ${apply === true ? "install" : "preview"} did not complete; output and stderr say which step failed. Tell the user what failed and do not call again with apply: true until it is fixed.` } : apply === true ? {} : { next: "Show this to the user; call again with apply: true once they confirm." }
       });
     })

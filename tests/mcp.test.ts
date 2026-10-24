@@ -96,7 +96,10 @@ vi.mock('../src/core/index.js', async (importOriginal) => ({
 }));
 vi.mock('../src/cli/commands.js', () => ({ runDoctorReport: cli.runDoctorReport }));
 vi.mock('../src/cli/cmd-import.js', () => ({ MAX_IMPORT_BYTES: 8 * 1024 * 1024, runImport: cli.runImport }));
-vi.mock('../src/cli/cmd-install.js', () => ({ runInstall: cli.runInstall }));
+vi.mock('../src/cli/cmd-install.js', async (importOriginal) => ({
+  ...(await importOriginal<Record<string, unknown>>()),
+  runInstall: cli.runInstall,
+}));
 vi.mock('../src/cli/cmd-setup.js', () => ({ runSetup: cli.runSetup }));
 vi.mock('../src/cli/cmd-serve.js', () => ({ serveInstallBlocker: cli.serveInstallBlocker }));
 
@@ -787,6 +790,10 @@ describe('lexicon MCP server', () => {
         expect(preview.written).toEqual([]);
         const applied = JSON.parse(textOf(await client.callTool({ name: 'install_client', arguments: { client: 'cursor', apply: true } }))) as Record<string, unknown>;
         expect(applied.written).toEqual([{ file: '/home/u/.cursor/mcp.json', outcome: 'created' }]);
+        // Catches: only claude-desktop said the client must be restarted or reloaded to load the server.
+        expect(applied.reload).toMatch(/^reload the Cursor window/);
+        const desktop = JSON.parse(textOf(await client.callTool({ name: 'install_client', arguments: { client: 'claude-desktop', apply: true } }))) as Record<string, unknown>;
+        expect(desktop.reload).toMatch(/^restart Claude Desktop/);
         const tool = (await client.listTools()).tools.find((t) => t.name === 'install_client');
         expect(tool?.description).toContain('`written`');
       } finally {

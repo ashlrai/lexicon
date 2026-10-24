@@ -270,10 +270,36 @@ function clientCaveat(client: InstallClient, project: boolean): string | undefin
   if (client === 'gemini') {
     return 'If your settings.json sets mcp.allowed, add "lexicon" to that list or Gemini CLI will skip this server.';
   }
-  if (client === 'claude-desktop') {
-    return 'Claude Desktop reads this only at launch: quit it completely and reopen.';
-  }
   return undefined;
+}
+
+/**
+ * What the user does after the write so the client loads the new server. No
+ * client here starts a server it was not running when its config changed on
+ * disk: the CLIs (Claude Code, Codex, Gemini CLI) read their config when a
+ * session starts, Claude Desktop only at launch, Cursor and VS Code on a
+ * window reload, and Windsurf when its MCP panel is refreshed. Undefined for
+ * `generic`, whose client is unknown.
+ */
+export function reloadStepFor(client: InstallClient): string | undefined {
+  switch (client) {
+    case 'claude':
+      return 'restart Claude Code: a running session keeps the MCP servers and hooks it started with, so exit it and start a new one (/mcp then lists lexicon).';
+    case 'codex':
+      return 'restart Codex: it reads config.toml when a session starts, so exit any running codex session and start a new one (/mcp then lists lexicon).';
+    case 'cursor':
+      return 'reload the Cursor window (Command Palette: Developer: Reload Window) or restart Cursor, then check that lexicon is enabled in Cursor Settings > MCP.';
+    case 'windsurf':
+      return 'refresh the MCP servers in Windsurf (the refresh button in the Cascade MCP panel) or restart Windsurf.';
+    case 'gemini':
+      return 'restart Gemini CLI: it reads settings.json when it starts, so exit any running gemini session and start a new one (/mcp then lists lexicon).';
+    case 'claude-desktop':
+      return 'restart Claude Desktop: it reads this only at launch, so quit it completely (not just the window) and reopen it.';
+    case 'vscode':
+      return 'reload the VS Code window (Command Palette: Developer: Reload Window), or start lexicon from MCP: List Servers.';
+    default:
+      return undefined;
+  }
 }
 
 function labelFor(client: InstallClient): string {
@@ -700,6 +726,8 @@ async function installText(
   }
   const caveat = clientCaveat(name, project);
   if (caveat !== undefined) line(io, dim(`   note: ${caveat}`));
+  const reload = reloadStepFor(name);
+  if (reload !== undefined) line(io, opts.apply ? `   then: ${reload}` : dim(`   after --apply: ${reload}`));
   line(io);
 
   printExportHint(io, 2, name);
@@ -871,6 +899,12 @@ export async function runInstallClaude(
   // 3. CLAUDE.md nudge ----------------------------------------------------------------
   line(io, bold('3. Add to your CLAUDE.md'));
   line(io, `   ${CLAUDE_MD_SNIPPET}`);
+  if (opts.apply && !failed) {
+    line(io);
+    line(io, `then: ${reloadStepFor('claude')}`);
+  } else if (!opts.apply) {
+    line(io, dim(`   after --apply: ${reloadStepFor('claude')}`));
+  }
   if (!opts.apply) {
     line(io);
     line(io, dim('run again with --apply to perform steps 1 and 2'));

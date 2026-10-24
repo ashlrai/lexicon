@@ -96,6 +96,15 @@ const JSON_CASES: JsonClientCase[] = [
   },
 ];
 
+const RELOAD: Record<string, string> = {
+  cursor: 'reload the Cursor window (Command Palette: Developer: Reload Window) or restart Cursor',
+  windsurf: 'refresh the MCP servers in Windsurf',
+  gemini: 'restart Gemini CLI',
+  'claude-desktop': 'restart Claude Desktop: it reads this only at launch',
+  vscode: 'reload the VS Code window',
+  codex: 'restart Codex',
+};
+
 describe('lexicon install <json client> --apply', () => {
   for (const c of JSON_CASES) {
     describe(c.client, () => {
@@ -107,6 +116,8 @@ describe('lexicon install <json client> --apply', () => {
         expect(first.io.out).toContain(`created ${file}`);
         // Catches: the write named its file but not how to take the entry out again.
         expect(first.io.out).toContain(`undo: delete the "lexicon" entry under "${c.key}" in ${file}`);
+        // Catches: only claude-desktop named the step that makes the client load the new server.
+        expect(first.io.out).toContain(`then: ${RELOAD[c.client]}`);
         expect(first.io.out).toContain('lexicon export claude-md');
         expect(first.io.out).toContain(c.rulesHint);
 
@@ -237,6 +248,7 @@ describe('lexicon install codex --apply (TOML)', () => {
     const first = await run('codex', { apply: true });
     expect(first.code).toBe(0);
     expect(first.io.out).toContain(`created ${file}`);
+    expect(first.io.out).toContain(`then: ${RELOAD.codex}`);
     expect(first.io.out).toContain(`undo: delete the [${CODEX_TABLE}] table from ${file}`);
     expect(first.io.out).toContain('AGENTS.md');
     expect(await fs.readFile(file, 'utf8')).toBe(`${block}\n`);
@@ -613,6 +625,8 @@ describe('claude registration is idempotent', () => {
     expect(io.out).toContain(
       `undo: delete the lexicon hook entries under hooks.UserPromptSubmit and hooks.SessionStart in ${path.join(home, '.claude', 'settings.json')}`,
     );
+    // Catches: Claude Code was not told to restart, so a running session kept running without lexicon.
+    expect(io.out).toContain('then: restart Claude Code: a running session keeps the MCP servers and hooks it started with');
   });
 
   it('still fails, with the reason, for a real error', async () => {
