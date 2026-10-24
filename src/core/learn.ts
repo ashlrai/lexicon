@@ -226,11 +226,76 @@ function allStoplisted(phrase: string): boolean {
   return words.length > 0 && words.every((w) => STOPLIST.has(w));
 }
 
+/** Lowest edit similarity at which two bare correction sides count as spellings of one name. */
+const MIN_CORRECTION_SIMILARITY = 0.5;
+/** The same, for two sides that open with the same letter. */
+const MIN_SAME_OPENING_SIMILARITY = 0.3;
+
+/** Lowercased letters and digits per word, diacritics folded (`Zoë` -> `zoe`). */
+function spellingWords(s: string): string[] {
+  return s
+    .normalize('NFKD')
+    .replace(/\p{M}/gu, '')
+    .toLowerCase()
+    .split(/[^\p{L}\p{N}]+/u)
+    .filter((w) => w.length > 0);
+}
+
+/**
+ * Could `heard` be what speech-to-text wrote for `meant`? True when, after
+ * the words both sides share are set aside ("the API" / "the UI" compares
+ * "api" with "ui"), the rest is the same once squashed ("a w s" / "AWS"),
+ * holds a digit (a numeronym such as k8s or a version, which neither measure
+ * judges), is at least half the same by edit distance (`similarity`:
+ * "Versel" / "Vercel", "engine x" / "nginx", "cloud" / "Claude"), or has the
+ * same double-metaphone key (`phoneticKey`: "Ashler" / "Ashlr.AI", "tory" /
+ * "Tauri"), or opens with the same letter and is at least
+ * MIN_SAME_OPENING_SIMILARITY alike ("actually i" / "Ashlr.AI"). "it's the API not the UI" or "it's Monday not Tuesday" corrects
+ * what was meant, not how a name was spelled, and learned it rewrote every
+ * "the UI" the user dictated. Exported for tests and the CLI.
+ */
+export function spellingsAlike(heard: string, meant: string): boolean {
+  let h = spellingWords(heard);
+  let m = spellingWords(meant);
+  const shared = new Set(h.filter((w) => m.includes(w)));
+  const hRest = h.filter((w) => !shared.has(w));
+  const mRest = m.filter((w) => !shared.has(w));
+  if (hRest.length > 0 && mRest.length > 0) {
+    h = hRest;
+    m = mRest;
+  }
+  const a = h.join('');
+  const b = m.join('');
+  if (a === '' || b === '' || a === b) return true;
+  if (/\p{N}/u.test(a) || /\p{N}/u.test(b)) return true;
+  const sim = similarity(a, b);
+  if (sim >= MIN_CORRECTION_SIMILARITY) return true;
+  const ka = phoneticKey(a);
+  const kb = phoneticKey(b);
+  if (ka !== '' && ka === kb) return true;
+  // A garble keeps the opening letter: "actually i" for "Ashlr.AI". Not the
+  // opening phonetic key: every vowel opens with A there, so "ui" and "api" met.
+  return a[0] === b[0] && sim >= MIN_SAME_OPENING_SIMILARITY;
+}
+
+/** Options for `parseCorrection`. */
+export interface ParseCorrectionOptions {
+  /**
+   * Also return a correction whose two bare sides do not look or sound alike
+   * (`spellingsAlike` false), which is otherwise not a correction. The CLI
+   * uses it to say why "it's the API not the UI" learned nothing.
+   */
+  allowUnrelated?: boolean;
+}
+
 /**
  * Detect a natural-language spelling correction. Returns undefined unless one
- * of the supported phrasings matches cleanly; see CORRECTION_EXAMPLES.
+ * of the supported phrasings matches cleanly; see CORRECTION_EXAMPLES. When
+ * both sides are bare (unquoted) they must also be spellings of one name
+ * (`spellingsAlike`), unless `opts.allowUnrelated`; quoting either side is
+ * explicit and skips that check.
  */
-export function parseCorrection(text: string): Correction | undefined {
+export function parseCorrection(text: string, opts: ParseCorrectionOptions = {}): Correction | undefined {
   const input = text.replace(/\s+/g, ' ').trim();
   if (!input) return undefined;
 
@@ -269,6 +334,9 @@ export function parseCorrection(text: string): Correction | undefined {
     // "it's 2024 not 2023" or "it's 3:30, not 3:15" corrects a fact, not a
     // spelling: a name holds a letter. Learned, it rewrote every 2023 to 2024.
     if (!/\p{L}/u.test(meant)) return undefined;
+    // "it's the API not the UI" has the shape of a correction but corrects
+    // the meaning: two unquoted sides that neither look nor sound alike.
+    if (heard && allBare && !opts.allowUnrelated && !spellingsAlike(heard, meant)) return undefined;
     return { heard, meant };
   }
   return undefined;

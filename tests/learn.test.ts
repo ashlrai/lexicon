@@ -15,6 +15,7 @@ import {
   conflictNote,
   learnCorrection,
   parseCorrection,
+  spellingsAlike,
   suggestCanonicalFor,
 } from '../src/core/learn.js';
 import { correctionFromArgs, runLearn } from '../src/cli/cmd-learn.js';
@@ -127,9 +128,9 @@ describe('parseCorrection', () => {
     ['replace ashler with Ashlr.AI', { heard: 'ashler', meant: 'Ashlr.AI' }],
     ['replace the ashler with the Ashlr team', { heard: 'the ashler', meant: 'the Ashlr team' }],
     ['replace cube control with k8s', { heard: 'cube control', meant: 'k8s' }],
-    ['replace icon with logo', { heard: 'icon', meant: 'logo' }],
+    ['replace aikon with icon', { heard: 'aikon', meant: 'icon' }],
     ['ashler should be ashlr', { heard: 'ashler', meant: 'ashlr' }],
-    ['the ashler should be re-frame', { heard: 'the ashler', meant: 're-frame' }],
+    ['the re frame should be re-frame', { heard: 'the re frame', meant: 're-frame' }],
     // ...unless a side is quoted, which is explicit.
     ['replace "the icon" with "the new logo"', { heard: 'the icon', meant: 'the new logo' }],
     ['replace the icon with `the new logo`', { heard: 'the icon', meant: 'the new logo' }],
@@ -173,6 +174,49 @@ describe('parseCorrection', () => {
     '   ',
   ])('rejects %j', (text) => {
     expect(parseCorrection(text)).toBeUndefined();
+  });
+
+  // Catches: "it's the API not the UI" parsed as a spelling correction and
+  // learned "the UI" as an alias of "the API", so every later "the UI" the
+  // user dictated was rewritten. Two bare sides must look or sound alike.
+  it.each([
+    "it's the API not the UI",
+    "it's Linux not Windows",
+    "it's Postgres not MySQL",
+    "I meant Python not JavaScript",
+    'replace icon with logo',
+    'the ashler should be re-frame',
+    'not GitLab, Jira',
+  ])('rejects %j: the bare sides neither look nor sound alike', (text) => {
+    expect(parseCorrection(text)).toBeUndefined();
+    expect(parseCorrection(text, { allowUnrelated: true })).toBeDefined();
+  });
+
+  // The gate must not cost a real speech-to-text correction.
+  it.each([
+    ["it's Ashlr.AI not Ashler", 'Ashler', 'Ashlr.AI'],
+    ["it's Kubernetes not Cooper Netties", 'Cooper Netties', 'Kubernetes'],
+    ["it's Supabase not super base", 'super base', 'Supabase'],
+    ["it's PostgreSQL not post gress", 'post gress', 'PostgreSQL'],
+    ["it's nginx not engine x", 'engine x', 'nginx'],
+    ["it's Claude not cloud", 'cloud', 'Claude'],
+    ["it's Anthropic not and throw pick", 'and throw pick', 'Anthropic'],
+    ["it's Tauri not tory", 'tory', 'Tauri'],
+    ["it's SQLite not sequel light", 'sequel light', 'SQLite'],
+    ["it's Zoë not Zoey", 'Zoey', 'Zoë'],
+    ["it's AWS not a w s", 'a w s', 'AWS'],
+    ["it's k8s not kates", 'kates', 'k8s'],
+    ["it's Ashlr.AI not actually i", 'actually i', 'Ashlr.AI'],
+    ['Get Hub -> GitHub', 'Get Hub', 'GitHub'],
+    ["it's JSON not Jason", 'Jason', 'JSON'],
+  ])('still parses the STT correction %j', (text, heard, meant) => {
+    expect(parseCorrection(text)).toEqual({ heard, meant });
+  });
+
+  it('keeps an unrelated pair when a side is quoted (explicit)', () => {
+    expect(parseCorrection('it\'s "the API" not "the UI"')).toEqual({ heard: 'the UI', meant: 'the API' });
+    expect(spellingsAlike('the UI', 'the API')).toBe(false);
+    expect(spellingsAlike('Versel', 'Vercel')).toBe(true);
   });
 
   it('strips trailing punctuation and collapses whitespace', () => {
@@ -610,6 +654,23 @@ describe('lexicon learn (CLI)', () => {
       nextStep: "run: lexicon learn 'Mason White' <meant>, where <meant> is the spelling you want",
     });
     expect(json.err()).not.toContain('usage:');
+    expect(store.addTerm).not.toHaveBeenCalled();
+  });
+
+  // Catches: `lexicon learn --from "it's the API not the UI"` learned "the UI"
+  // as an alias of "the API"; it now says why nothing was learned and the
+  // explicit two-word command for a user who really means it.
+  it('refuses a correction whose sides neither look nor sound alike, naming the explicit command', async () => {
+    const { io, out, err } = captureIO();
+    expect(await runLearn([], { from: "it's the API not the UI", cwd: '/fake/repo' }, io)).toBe(1);
+    expect(err()).toBe(
+      'lexicon: "the UI" and "the API" neither look nor sound alike, so this reads as a change of meaning, not a spelling speech-to-text got wrong; nothing was learned\n' +
+        `lexicon: if speech-to-text really writes "the UI" for "the API", run: lexicon learn 'the UI' 'the API'\n`,
+    );
+    expect(out()).toBe('');
+    const json = captureIO();
+    expect(await runLearn(["it's", 'the', 'API', 'not', 'the', 'UI'], { json: true, cwd: '/fake/repo' }, json.io)).toBe(1);
+    expect(JSON.parse(json.out())).toMatchObject({ ok: false, error: expect.stringContaining('neither look nor sound alike'), nextStep: expect.stringContaining("lexicon learn 'the UI' 'the API'") });
     expect(store.addTerm).not.toHaveBeenCalled();
   });
 

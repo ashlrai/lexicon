@@ -44,6 +44,14 @@ export function oneSpellingRefusal(word: string): [error: string, nextStep: stri
   ];
 }
 
+/**
+ * The refusal for a sentence shaped like a correction whose bare sides do not
+ * look or sound alike (`spellingsAlike` false). Exported for tests.
+ */
+export function unrelatedCorrectionError(heard: string, meant: string): string {
+  return `"${heard}" and "${meant}" neither look nor sound alike, so this reads as a change of meaning, not a spelling speech-to-text got wrong; nothing was learned`;
+}
+
 export interface LearnOptions extends CommonOptions {
   /** Write to the project .lexicon.yaml instead of the global file / the term's current file. */
   project?: boolean;
@@ -95,6 +103,13 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
   }
   if (!correction) {
     const source = opts.from ?? words.join(' ');
+    // The shape of a correction whose two sides neither look nor sound alike
+    // ("it's the API not the UI"): say so, and how to learn it on purpose,
+    // rather than "could not find a correction" and the usage examples.
+    const unrelated = source ? parseCorrection(source, { allowUnrelated: true }) : undefined;
+    if (unrelated?.heard) {
+      return refuse(io, opts.json, unrelatedCorrectionError(unrelated.heard, unrelated.meant), `if speech-to-text really writes "${unrelated.heard}" for "${unrelated.meant}", run: ${learnCommand(unrelated.heard, unrelated.meant)}`);
+    }
     if (opts.json) {
       printJsonError(io, source ? `could not find a correction in "${source}"` : 'nothing to learn', 'run: lexicon learn <heard> <meant>, or lexicon learn --from "<sentence>"');
     }
