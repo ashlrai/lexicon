@@ -92,6 +92,7 @@ import {
   suggestAliases,
   trustProject,
   withLexiconLock,
+  spellingKey,
   writeLexiconFile,
 } from '../core/index.js';
 import { EXPORT_MAX_LIMIT, HARVEST_MAX_LIMIT } from '../core/index.js';
@@ -341,6 +342,9 @@ function addInputClosed(err: unknown, canonical: string, io: IO): number {
   return 0;
 }
 
+/** Why `runAdd` reports an alias as dropped (`droppedAliases[].reason` under --json). */
+const SAME_AS_CANONICAL_REASON = 'differs from the canonical only in case, and matching already ignores case';
+
 export async function runAdd(
   canonical: string,
   aliasArgs: readonly string[],
@@ -447,6 +451,12 @@ export async function runAdd(
     (loaded) => spellingConflicts(loaded.merged, result.term.aliases, result.term.canonical),
     () => [],
   );
+  // An alias that is the canonical in another case (`add Yod yod`) is
+  // dropped by addTerm, since matching ignores case: say so instead of
+  // printing `aliases: (none)` as if it had been taken.
+  const canonicalKey = spellingKey(result.term.canonical);
+  const sameAsCanonical = [...new Set(aliases.filter((a) => a.trim() !== '' && spellingKey(a) === canonicalKey))];
+  const droppedAliases = sameAsCanonical.map((alias) => ({ alias, reason: SAME_AS_CANONICAL_REASON }));
   if (opts.json) {
     line(
       io,
@@ -462,6 +472,7 @@ export async function runAdd(
           // listed for an existing term too, where none was added.
           suggested: !fallbackOnly || result.created ? suggested : [],
           ...(conflicts.length > 0 ? { conflicts, note: conflictNote(conflicts) } : result.unchanged ? { note: unchangedTermNote(result.term.canonical) } : {}),
+          ...(droppedAliases.length > 0 ? { droppedAliases } : {}),
         }),
         null,
         2,
@@ -485,6 +496,7 @@ export async function runAdd(
   const suggestedNote =
     marked.length === 0 ? '' : marked.length === saved.length ? ' (suggested)' : ` (suggested: ${safe(marked.join(', '))})`;
   line(io, `aliases: ${saved.length > 0 ? safe(saved.join(', ')) + dim(suggestedNote) : dim('(none)')}`);
+  for (const alias of sameAsCanonical) line(io, `note: ${safe(alias)} was not added as an alias of ${safe(result.term.canonical)}: it ${SAME_AS_CANONICAL_REASON}`);
   for (const c of conflicts) line(io, conflictLine(c));
   if (scope === 'project') line(io, dim(`project lexicon trusted at its new content (${safeMessage(result.file.path)})`));
   return 0;

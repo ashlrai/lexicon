@@ -348,6 +348,25 @@ describe('harvest --interactive', () => {
 // add --interactive
 // ---------------------------------------------------------------------------
 
+describe('add with an alias that is the canonical in another case', () => {
+  // Catches: `lexicon add Yod yod` dropped the alias silently and printed `aliases: (none)`, in text and --json.
+  it('says the alias was not added, in text and --json', async () => {
+    const text = makeIO();
+    expect(await runAdd('Yod', ['yod'], { cwd: tmp, globalPath }, text)).toBe(0);
+    expect(text.out).toContain('aliases: (none)');
+    expect(text.out).toContain('note: yod was not added as an alias of Yod: it differs from the canonical only in case');
+    const json = makeIO();
+    expect(await runAdd('Yod', ['YOD', 'Yodd'], { cwd: tmp, globalPath, json: true }, json)).toBe(0);
+    const doc = JSON.parse(json.out);
+    expect(doc.term.aliases).toEqual(['Yodd']);
+    expect(doc.droppedAliases).toEqual([{ alias: 'YOD', reason: 'differs from the canonical only in case, and matching already ignores case' }]);
+    // An ordinary add has no such key.
+    const plain = makeIO();
+    expect(await runAdd('Zed', ['zedd'], { cwd: tmp, globalPath, json: true }, plain)).toBe(0);
+    expect(JSON.parse(plain.out)).not.toHaveProperty('droppedAliases');
+  });
+});
+
 describe('add --interactive', () => {
   it('shows suggestions as a checklist, keeps the selection plus extras, asks phonetic and category', async () => {
     const p = scripted([
