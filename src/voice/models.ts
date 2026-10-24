@@ -6,7 +6,7 @@
  * needs no second download. Missing named models are fetched from Hugging
  * Face with a progress line. `--model <path>` is used as-is.
  */
-import { createWriteStream, existsSync, promises as fs } from 'node:fs';
+import { closeSync, createWriteStream, existsSync, openSync, promises as fs, readSync, statSync } from 'node:fs';
 import os from 'node:os';
 import { homeDir, usableHome } from '../util/xdg.js';
 import path from 'node:path';
@@ -68,8 +68,16 @@ export interface ResolveModelOptions {
   env?: NodeJS.ProcessEnv;
   /** Extra directories searched for an existing `ggml-<name>.bin` (default: the repo's bench models). */
   fallbackDirs?: readonly string[];
-  /** Existence probe, injectable for tests. */
+  /**
+   * Existence probe, injectable for tests. With it (and no `inspect`) a file
+   * that exists counts as a model without being read.
+   */
   exists?: (p: string) => boolean;
+  /**
+   * What is at `p`: `'missing'`, undefined for a usable model, or why the file
+   * there is not one. Default inspectModelFile (or `exists` alone, see above).
+   */
+  inspect?: (p: string) => string | undefined | 'missing';
 }
 
 export interface ResolvedModel {
@@ -77,8 +85,10 @@ export interface ResolvedModel {
   name: string;
   /** Absolute path where the model is or will be. */
   path: string;
-  /** True when the file is present. */
+  /** True when a usable model file is present (see inspectModelFile). */
   present: boolean;
+  /** Set when a file is at `path` but is not a usable model: why (`present` is false). */
+  problem?: string;
   /** Set when the model was found somewhere other than the primary models dir. */
   foundIn?: string;
   /** For named models only: the download URL. */
@@ -109,23 +119,61 @@ export function isModelPath(value: string): boolean {
   return value.endsWith('.bin') || value.includes('/') || value.includes('\\') || value.startsWith('.') || value.startsWith('~');
 }
 
+/**
+ * Whether the file at `p` can be a whisper.cpp model: `'missing'` when
+ * nothing (or no regular file) is there, a reason when it is empty or does
+ * not start with GGML_MAGIC, undefined when it does. Reads 4 bytes. A file
+ * that exists was taken as the model as it was: an empty file, or an error
+ * page saved by hand or by an older download, made whisper-cli fail on every
+ * dictation ("failed to load model") until it was found and deleted.
+ */
+export function inspectModelFile(p: string): string | undefined | 'missing' {
+  let size: number;
+  try {
+    const st = statSync(p);
+    if (!st.isFile()) return 'missing';
+    size = st.size;
+  } catch {
+    return 'missing';
+  }
+  if (size === 0) return 'the file is empty';
+  const head = Buffer.alloc(GGML_MAGIC.length);
+  let read = 0;
+  try {
+    const fd = openSync(p, 'r');
+    try {
+      read = readSync(fd, head, 0, head.length, 0);
+    } finally {
+      closeSync(fd);
+    }
+  } catch (e) {
+    return `it cannot be read (${e instanceof Error ? e.message : String(e)})`;
+  }
+  if (read < GGML_MAGIC.length || !head.equals(GGML_MAGIC)) return 'it is not a ggml whisper model (it does not start with the ggml magic bytes)';
+  return undefined;
+}
+
 /** Locate a model without downloading anything. */
 export function resolveModel(spec: string, opts: ResolveModelOptions): ResolvedModel {
-  const exists = opts.exists ?? existsSync;
+  const exists = opts.exists;
+  const inspect = opts.inspect ?? (exists ? (p: string) => (exists(p) ? undefined : 'missing') : inspectModelFile);
   if (isModelPath(spec)) {
     const abs = path.resolve(expandTilde(spec));
     const base = path.basename(abs);
     const name = base.replace(/^ggml-/, '').replace(/\.bin$/, '');
-    return { name, path: abs, present: exists(abs) };
+    const found = inspect(abs);
+    return { name, path: abs, present: found === undefined, ...(found !== undefined && found !== 'missing' ? { problem: found } : {}) };
   }
   const file = modelFileName(spec);
   const primary = path.join(modelsDir(opts.globalPath, opts.env), file);
-  if (exists(primary)) return { name: spec, path: primary, present: true, url: modelUrl(spec) };
+  const atPrimary = inspect(primary);
+  if (atPrimary === undefined) return { name: spec, path: primary, present: true, url: modelUrl(spec) };
+  // A fallback copy is used only when it is a model; a broken one is passed over.
   for (const dir of opts.fallbackDirs ?? (REPO_MODELS_DIR ? [REPO_MODELS_DIR] : [])) {
     const candidate = path.join(dir, file);
-    if (exists(candidate)) return { name: spec, path: candidate, present: true, foundIn: dir, url: modelUrl(spec) };
+    if (inspect(candidate) === undefined) return { name: spec, path: candidate, present: true, foundIn: dir, url: modelUrl(spec) };
   }
-  return { name: spec, path: primary, present: false, url: modelUrl(spec) };
+  return { name: spec, path: primary, present: false, url: modelUrl(spec), ...(atPrimary !== 'missing' ? { problem: atPrimary } : {}) };
 }
 
 export interface DownloadProgress {
@@ -249,12 +297,18 @@ export async function ensureModel(spec: string, opts: EnsureModelOptions): Promi
   const resolved = resolveModel(spec, opts);
   if (resolved.present) return resolved;
   if (!resolved.url) {
+    if (resolved.problem !== undefined) throw new Error(`whisper model ${resolved.path} is not usable: ${resolved.problem}`);
     throw new Error(`whisper model not found: ${resolved.path}`);
   }
   const download = opts.download ?? defaultDownloader;
   const log = opts.log ?? ((s: string) => void process.stderr.write(`${s}\n`));
   const progress = opts.progress ?? ((s: string) => void process.stderr.write(`\r${s}`));
-  log(`whisper model ${resolved.name} not found; fetching ${resolved.url} -> ${resolved.path}`);
+  // A broken file where the model belongs is replaced: the download renames over it.
+  log(
+    resolved.problem !== undefined
+      ? `whisper model ${resolved.name} at ${resolved.path} is not usable (${resolved.problem}); fetching ${resolved.url} again`
+      : `whisper model ${resolved.name} not found; fetching ${resolved.url} -> ${resolved.path}`,
+  );
   let lastPct = -1;
   try {
     await download(resolved.url, resolved.path, (p) => {

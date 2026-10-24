@@ -311,7 +311,7 @@ describe('plugin bundles find package files from where they are installed', () =
     copyFileSync(BUNDLE, path.join(pkg, 'plugin', 'mcp-server.mjs'));
     const outside = path.join(tmp, 'bench', 'audio', 'models');
     mkdirSync(outside, { recursive: true });
-    writeFileSync(path.join(outside, 'ggml-base.en.bin'), 'planted');
+    writeFileSync(path.join(outside, 'ggml-base.en.bin'), Buffer.concat([Buffer.from('lmgg'), Buffer.from('planted')]));
     const home = path.join(tmp, 'home');
     mkdirSync(home);
     const env: NodeJS.ProcessEnv = {

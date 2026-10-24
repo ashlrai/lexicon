@@ -602,7 +602,7 @@ function refuseMissingModelPath(opts: VoiceOptions, io: VoiceIO, r: Resolved): n
   }
   const model = resolveModel(spec, { globalPath: r.globalPath, env: r.env });
   if (model.present) return undefined;
-  const error = `whisper model not found: ${model.path}`;
+  const error = model.problem !== undefined ? `whisper model ${model.path} is not usable: ${model.problem}` : `whisper model not found: ${model.path}`;
   const nextStep = 'pass an existing ggml model file, or a model name like base.en to download it, with --model';
   io.stderr(`lexicon voice: ${error}\n  ${nextStep}\n`);
   return failed(r, EXIT_ERROR, error, nextStep);

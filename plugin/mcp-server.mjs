@@ -62749,22 +62749,50 @@ function expandTilde(spec, homeArg) {
 function isModelPath(value) {
   return value.endsWith(".bin") || value.includes("/") || value.includes("\\") || value.startsWith(".") || value.startsWith("~");
 }
+function inspectModelFile(p) {
+  let size;
+  try {
+    const st = (0, import_node_fs18.statSync)(p);
+    if (!st.isFile()) return "missing";
+    size = st.size;
+  } catch {
+    return "missing";
+  }
+  if (size === 0) return "the file is empty";
+  const head = Buffer.alloc(GGML_MAGIC.length);
+  let read = 0;
+  try {
+    const fd = (0, import_node_fs18.openSync)(p, "r");
+    try {
+      read = (0, import_node_fs18.readSync)(fd, head, 0, head.length, 0);
+    } finally {
+      (0, import_node_fs18.closeSync)(fd);
+    }
+  } catch (e) {
+    return `it cannot be read (${e instanceof Error ? e.message : String(e)})`;
+  }
+  if (read < GGML_MAGIC.length || !head.equals(GGML_MAGIC)) return "it is not a ggml whisper model (it does not start with the ggml magic bytes)";
+  return void 0;
+}
 function resolveModel(spec, opts) {
-  const exists = opts.exists ?? import_node_fs18.existsSync;
+  const exists = opts.exists;
+  const inspect = opts.inspect ?? (exists ? (p) => exists(p) ? void 0 : "missing" : inspectModelFile);
   if (isModelPath(spec)) {
     const abs = import_node_path19.default.resolve(expandTilde(spec));
     const base = import_node_path19.default.basename(abs);
     const name = base.replace(/^ggml-/, "").replace(/\.bin$/, "");
-    return { name, path: abs, present: exists(abs) };
+    const found = inspect(abs);
+    return { name, path: abs, present: found === void 0, ...found !== void 0 && found !== "missing" ? { problem: found } : {} };
   }
   const file2 = modelFileName(spec);
   const primary = import_node_path19.default.join(modelsDir(opts.globalPath, opts.env), file2);
-  if (exists(primary)) return { name: spec, path: primary, present: true, url: modelUrl(spec) };
+  const atPrimary = inspect(primary);
+  if (atPrimary === void 0) return { name: spec, path: primary, present: true, url: modelUrl(spec) };
   for (const dir of opts.fallbackDirs ?? (REPO_MODELS_DIR ? [REPO_MODELS_DIR] : [])) {
     const candidate = import_node_path19.default.join(dir, file2);
-    if (exists(candidate)) return { name: spec, path: candidate, present: true, foundIn: dir, url: modelUrl(spec) };
+    if (inspect(candidate) === void 0) return { name: spec, path: candidate, present: true, foundIn: dir, url: modelUrl(spec) };
   }
-  return { name: spec, path: primary, present: false, url: modelUrl(spec) };
+  return { name: spec, path: primary, present: false, url: modelUrl(spec), ...atPrimary !== "missing" ? { problem: atPrimary } : {} };
 }
 var GGML_MAGIC = Buffer.from([108, 109, 103, 103]);
 var STALE_PART_MS = 10 * 60 * 1e3;
@@ -64262,7 +64290,10 @@ async function runDoctorReport(opts, deps = {}) {
     push2("warn", `${e instanceof Error ? e.message : String(e)} (lexicon voice refuses to run with it)`);
   }
   if (model) {
-    push2("info", model.present ? `whisper model ${DEFAULT_MODEL} present: ${model.path}` : `whisper model ${DEFAULT_MODEL} absent (lexicon voice downloads it to ${model.path} on first run)`);
+    push2(
+      model.problem !== void 0 ? "warn" : "info",
+      model.present ? `whisper model ${DEFAULT_MODEL} present: ${model.path}` : model.problem !== void 0 ? `whisper model ${DEFAULT_MODEL} at ${model.path} is not usable: ${model.problem} (lexicon voice downloads it again on its next run)` : `whisper model ${DEFAULT_MODEL} absent (lexicon voice downloads it to ${model.path} on first run)`
+    );
   }
   if (platform === "darwin") {
     push2("info", "lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)");

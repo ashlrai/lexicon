@@ -190,7 +190,7 @@ async function makeHarness(overrides: { platform?: NodeJS.Platform; missing?: st
   const missing = new Set(overrides.missing ?? []);
   const modelsDir = path.join(dir, 'models');
   await fs.mkdir(modelsDir, { recursive: true });
-  await fs.writeFile(path.join(modelsDir, 'ggml-base.en.bin'), 'fake model');
+  await fs.writeFile(path.join(modelsDir, 'ggml-base.en.bin'), Buffer.concat([GGML_MAGIC, Buffer.from('fake model')]));
 
   const h: Harness = {
     dir,
@@ -1373,7 +1373,7 @@ describe('lexicon voice (foreground)', () => {
     const h = await harness();
     const alt = path.join(h.dir, 'alt-models');
     await fs.mkdir(alt);
-    await fs.writeFile(path.join(alt, 'ggml-base.en.bin'), 'x');
+    await fs.writeFile(path.join(alt, 'ggml-base.en.bin'), Buffer.concat([GGML_MAGIC, Buffer.from('x')]));
     h.deps.env = { PATH: h.binDir, LEXICON_WHISPER_MODELS: alt };
     h.deps.waitForStop = async () => 'enter';
     await runVoice(h.opts, h.io, h.deps);

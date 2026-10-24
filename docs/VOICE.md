@@ -76,7 +76,10 @@ directory in every working directory); a repo checkout
 also looks in `bench/audio/models/` so the benchmark's download is reused. A missing
 named model is fetched from
 `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-<name>.bin` with a
-progress line on stderr (`base.en` is 148 MB, `small.en` 488 MB). `--model /path/to/ggml-x.bin`
+progress line on stderr (`base.en` is 148 MB, `small.en` 488 MB). A model file that is
+already there is used only when it starts with the ggml magic bytes: an empty file or a
+saved error page is downloaded again (a named model) or refused before recording (a
+`--model` path), and `lexicon doctor` warns about it. `--model /path/to/ggml-x.bin`
 uses a file directly and never downloads; a path that does not exist exits `1`
 before anything is recorded.
 

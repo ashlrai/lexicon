@@ -152,7 +152,7 @@ function wavBytes(audioBytes: number): Buffer {
 async function voiceDeps(transcript: string): Promise<{ deps: Parameters<typeof runVoice>[2]; out: string[]; err: string[] }> {
   const modelsDir = path.join(path.dirname(globalPath), 'models');
   await fs.mkdir(modelsDir, { recursive: true });
-  await fs.writeFile(path.join(modelsDir, 'ggml-base.en.bin'), 'fake model');
+  await fs.writeFile(path.join(modelsDir, 'ggml-base.en.bin'), Buffer.concat([Buffer.from('lmgg'), Buffer.from('fake model')]));
   const binDir = '/fake/bin';
   const children: Array<{ pid: number; resolve: (code: number | null) => void }> = [];
   const alive = new Set<number>();
