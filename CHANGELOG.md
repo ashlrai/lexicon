@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `install.sh` names a next step when the installed `lexicon` is not on PATH (open a new terminal or `hash -r`, then add the bin directory under `npm prefix -g`), when it does not answer `--version` (run it to see the error), and when PATH selects another version (`command -v lexicon` shows which one runs).
 - `lexicon voice`, when the whisper model download fails, says to check the network and try again, names the URL to save as the model file by hand, or `--model <file>` for a model you already have. It said only `download failed: ...` or `fetch failed`.
 - `lexicon voice` prints the next step on stderr, not only in the `--json` document, when the lexicon file cannot be loaded (`lexicon doctor`), the input device cannot be resolved (`lexicon voice --list-devices`) or ffmpeg cannot be started. `lexicon voice --list-devices`, when the listing fails, now names one too: check ffmpeg, or pass `--device <name>`.
 - LexiconBar menu items read "lexicon CLI not found; set its path in Preferences..." and "Needs Accessibility permission; open System Settings", without the en-dash. A test now refuses an en or em dash in any LexiconBar string literal.
