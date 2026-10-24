@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon pending accept` and `reject` with an id the queue does not hold say to run `lexicon pending list` to see the ids. They said only `no pending alias with id <id>`.
 - LexiconBar onboarding, when the starter packs cannot be loaded, has a Try again button and says the packs come from the local API (check it with `lexicon serve --status`), or to skip the step and add packs later with `lexicon pack add <name>`.
 - `LexiconBar --status` names what to run when the local API is not reachable (`lexicon serve --status`, `lexicon serve`, or `lexicon serve --install`) and, when the token is missing, `lexicon serve --show` to create it.
 - LexiconBar, when the clipboard watcher or the local API child cannot start, says to set the lexicon CLI path in Preferences (it said only "lexicon CLI not found"), and when one keeps exiting and the app gives up, names `lexicon daemon` or `lexicon serve` to run in Terminal to see the error, and switching it on again from the menu.

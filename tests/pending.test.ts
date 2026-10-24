@@ -177,7 +177,10 @@ describe('lexicon pending CLI', () => {
     expect(io.err).toContain('name one or more ids, or pass --all');
     io = makeIO();
     expect(await runPendingReject(['deadbeef'], o, io)).toBe(1);
-    expect(io.err).toContain('no pending alias with id deadbeef');
+    expect(io.err).toContain('no pending alias with id deadbeef; run lexicon pending list to see the ids\n');
+    io = makeIO();
+    expect(await runPendingAccept(['deadbeef'], o, io)).toBe(1);
+    expect(io.err).toContain('no pending alias with id deadbeef; run lexicon pending list to see the ids\n');
   });
 
   it('marks entries the lexicon already knows', async () => {
