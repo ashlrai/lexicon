@@ -1849,7 +1849,18 @@ describe('lexicon MCP server', () => {
 
         fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true, version: '0.3.0', terms: 36, port: 41733 }), { status: 200 }));
         const up = await client.callTool({ name: 'serve_status', arguments: {} });
-        expect(JSON.parse(textOf(up))).toEqual({ up: true, url: 'http://127.0.0.1:41733/health', ok: true, version: '0.3.0', terms: 36, port: 41733 });
+        // No serve.json: up, and said so, as `serve --status --json` says it.
+        expect(JSON.parse(textOf(up))).toEqual({
+          up: true,
+          url: 'http://127.0.0.1:41733/health',
+          ok: true,
+          version: '0.3.0',
+          terms: 36,
+          port: 41733,
+          configured: false,
+          configPath: path.join(dir, 'serve.json'),
+          note: `serve is not configured: ${path.join(dir, 'serve.json')} does not exist; lexicon serve creates it`,
+        });
 
         // Catches: any 200 on the port read as up, though it was not lexicon serve.
         fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ status: 'fine' }), { status: 200 }));

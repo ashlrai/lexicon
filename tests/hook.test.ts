@@ -1026,6 +1026,24 @@ describe('runHook', () => {
       expect(truncateSessionContext(table, 20).length).toBeLessThanOrEqual(20);
     });
 
+    // Catches: the hard cut sliced at max - 3 whatever was there, so a cut
+    // after a high surrogate left half an emoji (not valid UTF-8).
+    it('truncateSessionContext never cuts inside a surrogate pair', async () => {
+      const { truncateSessionContext } = await import('../src/hooks/user-prompt-submit.js');
+      const lone = /[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
+      const emoji = '\u{1F600}'.repeat(40);
+      for (let max = 0; max <= 30; max += 1) {
+        // No table: the hard cut directly.
+        const plain = truncateSessionContext(`a${emoji}`, max);
+        expect(plain.length, `plain ${max}`).toBeLessThanOrEqual(max);
+        expect(lone.test(plain), `plain ${max}`).toBe(false);
+        // A table whose header alone is over the cap: the hard cut of the output.
+        const table = truncateSessionContext([`## ${emoji}`, '', '| a | b |', '| --- | --- |', '| r | x |'].join('\n'), max);
+        expect(table.length, `table ${max}`).toBeLessThanOrEqual(max);
+        expect(lone.test(table), `table ${max}`).toBe(false);
+      }
+    });
+
     // Catches: the loop stopped at the first row that did not fit, so one long
     // row near the top hid every later short row that would have fit.
     it('truncateSessionContext skips a row that does not fit and keeps the later ones that do', async () => {
@@ -1086,6 +1104,42 @@ describe('a long prompt stays inside the hook budget', () => {
     await runUserPromptSubmitHook(payload('deploy Ashler tonight'), { matchBudgetMs: 40 });
     const opts = mocks.normalize.mock.calls[0][2] as { shouldStop: () => boolean };
     expect(opts.shouldStop()).toBe(false);
+  });
+
+  // Catches: the match budget was counted from the scan start only, so the
+  // time Node's start, the load and the index load had already taken came on
+  // top: a 50k-character paste against 5000 terms took about 300 ms.
+  it('the real hook budget is what the process has left of HOOK_TOTAL_BUDGET_MS, never under the floor', async () => {
+    const { runUserPromptSubmitHook, hookMatchBudget, HOOK_MATCH_BUDGET_MS, HOOK_MATCH_FLOOR_MS, HOOK_SHORT_PROMPT_CHARS, HOOK_TOTAL_BUDGET_MS } = await import('../src/hooks/user-prompt-submit.js');
+    expect(hookMatchBudget(0)).toBe(HOOK_MATCH_BUDGET_MS);
+    expect(hookMatchBudget(HOOK_TOTAL_BUDGET_MS - 50)).toBe(50);
+    expect(hookMatchBudget(HOOK_TOTAL_BUDGET_MS)).toBe(HOOK_MATCH_FLOOR_MS);
+    expect(hookMatchBudget(10_000)).toBe(HOOK_MATCH_FLOOR_MS);
+    expect(hookMatchBudget(Number.NaN)).toBe(HOOK_MATCH_FLOOR_MS);
+    expect(HOOK_MATCH_FLOOR_MS).toBeGreaterThan(0);
+    mocks.normalize.mockImplementationOnce((text: string, _l: unknown, opts?: { shouldStop?: () => boolean }) => {
+      // Time the floor runs out, then report what was found.
+      const until = Date.now() + HOOK_MATCH_FLOOR_MS + 30;
+      while (Date.now() < until && !opts?.shouldStop?.());
+      return fakeNormalize(text);
+    });
+    const long = `a long prompt with no names ${'x'.repeat(HOOK_SHORT_PROMPT_CHARS)}`;
+    const out = await runUserPromptSubmitHook(payload(long), { elapsedMs: () => 10_000 });
+    expect(context(out)).toMatch(new RegExp(`after its ${HOOK_MATCH_FLOOR_MS} ms budget`));
+  });
+
+  // Catches: under load a slow start left a two-word prompt only the 20 ms
+  // floor, and the e2e hook returned the budget note with nothing matched.
+  it('a short prompt keeps the whole match budget however long the start took', async () => {
+    const { runUserPromptSubmitHook, hookMatchBudget, HOOK_MATCH_BUDGET_MS, HOOK_SHORT_PROMPT_CHARS } = await import('../src/hooks/user-prompt-submit.js');
+    expect(hookMatchBudget(10_000, HOOK_SHORT_PROMPT_CHARS)).toBe(HOOK_MATCH_BUDGET_MS);
+    expect(hookMatchBudget(10_000, HOOK_SHORT_PROMPT_CHARS + 1)).toBeLessThan(HOOK_MATCH_BUDGET_MS);
+    mocks.normalize.mockImplementationOnce((text: string, _l: unknown, opts?: { shouldStop?: () => boolean }) => {
+      const until = Date.now() + 40;
+      while (Date.now() < until && !opts?.shouldStop?.());
+      return fakeNormalize(text);
+    });
+    expect(await runUserPromptSubmitHook(payload('a short prompt'), { elapsedMs: () => 10_000 })).toBe('');
   });
 
   // Catches: the correction and data-block passes ran over the whole prompt,

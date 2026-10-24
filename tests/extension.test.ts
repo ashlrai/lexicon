@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ADAPTERS, GENERIC, adapterFor, builtinPage, composerFromTarget, findComposer, findSendButton, guardActive, siteNote } from '../extension/src/adapters.js';
-import { LEXICON_SHAPE_MESSAGE, createBackground, learnWarnings, tooLargeForApiMessage } from '../extension/src/background-core.js';
+import { LEXICON_SHAPE_MESSAGE, createBackground, isPairPageOf, learnWarnings, tooLargeForApiMessage } from '../extension/src/background-core.js';
 import { MAX_BODY_BYTES as SERVER_MAX_BODY_BYTES } from '../src/serve/server.js';
 import { conflictNote } from '../src/core/index.js';
 import type { KeyValueStore } from '../extension/src/background-core.js';
@@ -1125,6 +1125,7 @@ describe('extension errors name the next step', () => {
 
 describe('pairing (/pair page content script + background)', () => {
   const TOKEN = 'a'.repeat(32);
+  const PAIR_PAGE = { url: 'http://127.0.0.1:41733/pair' };
 
   function pairPage(token = TOKEN, port = '41733'): void {
     document.head.innerHTML =
@@ -1199,7 +1200,7 @@ describe('pairing (/pair page content script + background)', () => {
     })();
     const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
 
-    const reply = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733/', token: TOKEN });
+    const reply = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733/', token: TOKEN }, { url: 'http://127.0.0.1:41733/pair' });
     expect(reply).toEqual({ ok: true, baseUrl: 'http://127.0.0.1:41733', terms: 26, version: '9.9.9' });
     expect(calls[0].url).toBe('http://127.0.0.1:41733/stats');
     expect((calls[0].init.headers as Record<string, string>).Authorization).toBe(`Bearer ${TOKEN}`);
@@ -1224,23 +1225,47 @@ describe('pairing (/pair page content script + background)', () => {
     };
     const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
 
-    const rejected = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733', token: 'b'.repeat(32) });
+    const rejected = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733', token: 'b'.repeat(32) }, PAIR_PAGE);
     expect(rejected).toMatchObject({ ok: false, error: expect.stringContaining('401') });
     expect(fetchMock).toHaveBeenCalledTimes(1);
     expect((data.settings as { token: string }).token).toBe('keep-me');
 
-    const hostile = await bg.handle({ type: 'pair', baseUrl: 'http://evil.example:41733', token: 'b'.repeat(32) });
+    const hostile = await bg.handle({ type: 'pair', baseUrl: 'http://evil.example:41733', token: 'b'.repeat(32) }, { url: 'http://evil.example:41733/pair' });
     expect(hostile).toMatchObject({ ok: false, error: expect.stringContaining('127.0.0.1 or localhost') });
     // Catches: an upper-case hex token (a hand-edited serve.json, which lexicon
     // serve keeps) was refused before it was ever sent.
-    const upper = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733', token: 'B'.repeat(32) });
+    const upper = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733', token: 'B'.repeat(32) }, PAIR_PAGE);
     expect(upper).toMatchObject({ ok: false, error: expect.stringContaining('401') });
     expect(fetchMock).toHaveBeenCalledTimes(2);
-    const malformed = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733', token: 'not-hex' });
+    const malformed = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733', token: 'not-hex' }, PAIR_PAGE);
     expect(malformed).toMatchObject({ ok: false, error: expect.stringContaining('no valid token') });
     // Neither of those touched the network.
     expect(fetchMock).toHaveBeenCalledTimes(2);
     expect((data.settings as { token: string }).token).toBe('keep-me');
+  });
+
+  // Catches: pairReq paired with whatever baseUrl the /pair page's meta named,
+  // never checked against the tab that sent it, so a page could point the
+  // extension (and its token) at another loopback server.
+  it('the background pairs only with the origin of the /pair page that asked', async () => {
+    const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => ({ termCount: 1 }) }) as unknown as Response);
+    const data: Record<string, unknown> = { settings: { token: 'keep-me', baseUrl: 'http://127.0.0.1:41733', mode: 'api' } };
+    const store: KeyValueStore = {
+      get: async (keys) => Object.fromEntries(keys.filter((k) => k in data).map((k) => [k, data[k]])),
+      set: async (items) => {
+        Object.assign(data, items);
+      },
+    };
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
+    const req = { type: 'pair' as const, baseUrl: 'http://127.0.0.1:5000', token: 'b'.repeat(32) };
+    for (const sender of [undefined, {}, { url: 'http://127.0.0.1:41733/pair' }, { url: 'http://localhost:5000/pair' }, { url: 'http://127.0.0.1:5000/other' }, { url: 'https://chat.example/pair' }, { url: 'not a url' }]) {
+      const reply = await bg.handle(req, sender);
+      expect(reply, JSON.stringify(sender)).toMatchObject({ ok: false, error: expect.stringContaining('Pairing must come from http://127.0.0.1:5000/pair itself') });
+    }
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect((data.settings as { token: string }).token).toBe('keep-me');
+    expect(await bg.handle(req, { url: 'http://127.0.0.1:5000/pair/' })).toMatchObject({ ok: true, baseUrl: 'http://127.0.0.1:5000' });
+    expect(isPairPageOf('http://127.0.0.1:5000/pair?x=1', 'http://127.0.0.1:5000')).toBe(true);
   });
 });
 

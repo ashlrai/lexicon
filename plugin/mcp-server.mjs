@@ -42148,6 +42148,9 @@ async function loadTrustRegistry(opts) {
 async function readTrustRegistry(opts = {}) {
   return (await loadTrustRegistry(opts)).registry;
 }
+async function trustRegistryProblem(opts = {}) {
+  return (await loadTrustRegistry(opts)).problem;
+}
 async function readTrustRegistryForUpdate(opts) {
   const { registry: registry2, problem } = await loadTrustRegistry(opts);
   if (problem !== void 0) throw new TrustRegistryUnreadableError(getTrustPath(opts), problem);
@@ -60229,6 +60232,9 @@ function csvTextField(value) {
 function xmlEscape(value) {
   return value.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;").replace(/'/g, "&apos;");
 }
+function listItem(value) {
+  return value.includes(",") || value.trim().startsWith('"') ? `"${value.replace(/"/g, '""')}"` : value;
+}
 function joinAliasList(aliases) {
   return aliases.map((a) => a.includes(",") || a.trim().startsWith('"') ? `"${a.replace(/"/g, '""')}"` : a).join(", ");
 }
@@ -60564,7 +60570,7 @@ function exportWhisperPrompt(lexicon, opts = {}, sink) {
   const dropped = [];
   let used = 0;
   for (const name of names) {
-    const cost = estimateWhisperTokens(kept.length > 0 ? `, ${name}` : name);
+    const cost = estimateWhisperTokens(kept.length > 0 ? `, ${listItem(name)}` : listItem(name));
     if (dropped.length === 0 && used + cost <= WHISPER_PROMPT_TOKEN_BUDGET) {
       kept.push(name);
       used += cost;
@@ -60588,7 +60594,7 @@ function exportWhisperPrompt(lexicon, opts = {}, sink) {
     );
   }
   if (sink) sink.names = kept.length;
-  return kept.join(", ");
+  return kept.map(listItem).join(", ");
 }
 
 // src/core/exporters/openai.ts
@@ -65843,12 +65849,21 @@ async function checkLoginService(probe) {
     return { level: "info", message: `login service is not automated on ${platform}; run \`lexicon serve\` from your session startup instead` };
   }
   let fileExists = false;
+  let unreadable;
   try {
     const text = await import_node_fs23.promises.readFile(file2, "utf8");
     fileExists = true;
     program2 = platform === "darwin" ? programPathFromPlist(text) : programPathFromUnit(text);
-  } catch {
+  } catch (err) {
     fileExists = false;
+    const code = err.code;
+    if (code !== "ENOENT" && code !== "ENOTDIR") unreadable = code ?? errorMessage(err);
+  }
+  if (unreadable !== void 0) {
+    return {
+      level: "warn",
+      message: `${name} file cannot be read (${unreadable}), so the program it runs was not checked (${SERVE_REINSTALL_HINT}): ${file2}`
+    };
   }
   if (!loaded && !fileExists) {
     return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
@@ -65920,6 +65935,14 @@ function summarize(checks, state, audience = "cli") {
       // characters and an absolute path can use most of that, so what gets
       // cut has to be the part the check list already showed.
       nextStep: mcp ? `Ask the user to open it and fix the parse error: ${cliCommand(editCommand(first.scope).replace(/^lexicon /, ""))} (setup_lexicon will not repair this). The file is ${first.path}` : `Open it and fix the parse error: ${editCommand(first.scope)}  (lexicon setup will not repair this). The file is ${first.path}`
+    };
+  }
+  if (state.brokenTrust && state.untrustedProject) {
+    const { path: file2, problem } = state.brokenTrust;
+    return {
+      ready: false,
+      summary: `The trust registry ${problem}, so this repo's project lexicon reads as untrusted and is not merged.`,
+      nextStep: mcp ? `Ask the user to fix the JSON in ${file2}, or move it aside, then call trust_project with action "trust" (trusting fails until then)` : `Fix the JSON in ${file2}, or move it aside, then run: lexicon trust  (it refuses to write over the broken file)`
     };
   }
   if (state.terms === 0 && state.untrustedProject && state.skippedProjectTerms > 0) {
@@ -66007,11 +66030,20 @@ async function runDoctorReport(opts, deps = {}) {
       kind === "read" ? `global lexicon cannot be read (${readFix("global")}): ${error62}` : `global lexicon does not parse (run: ${editCommand("global")}): ${error62}`
     );
   }
+  const trustOpts = { cwd, env, home };
+  const trustPath = getTrustPath(trustOpts);
+  const trustProblem = await trustRegistryProblem(trustOpts);
+  if (trustProblem !== void 0) {
+    push2(
+      "fail",
+      `trust registry ${trustProblem}, so every project lexicon reads as untrusted and trusting one fails (fix the JSON in it, or move it aside and trust each project again): ${trustPath}`
+    );
+  }
   if (paths.project) {
     try {
       const p = await readLexiconFile(paths.project, "project");
       push2("ok", `project lexicon parses: ${paths.project} (${plural2(p.lexicon.terms.length, "term")})`);
-      const trust = await isTrusted(p, { cwd });
+      const trust = await isTrusted(p, trustOpts);
       if (trust === "trusted") {
         push2("ok", "project lexicon is trusted and merged");
         files.push(p);
@@ -66074,15 +66106,16 @@ async function runDoctorReport(opts, deps = {}) {
       if (COMMON_WORDS.has(key)) {
         push2("warn", `alias "${alias}" of "${term.canonical}" is a common English word and will fire on ordinary text`);
       }
-      const list = aliasOwners.get(key) ?? [];
-      list.push(term);
-      aliasOwners.set(key, list);
+      const owned = aliasOwners.get(key) ?? { alias, terms: [] };
+      owned.terms.push(term);
+      aliasOwners.set(key, owned);
     }
   }
-  for (const [alias, owners] of aliasOwners) {
-    const distinct = new Set(owners.map((t) => spellingKey(t.canonical)));
+  for (const { alias, terms } of aliasOwners.values()) {
+    const distinct = /* @__PURE__ */ new Map();
+    for (const t of terms) if (!distinct.has(spellingKey(t.canonical))) distinct.set(spellingKey(t.canonical), t.canonical);
     if (distinct.size > 1) {
-      push2("warn", `alias "${alias}" belongs to several terms: ${[...distinct].join(", ")} (ambiguous)`);
+      push2("warn", `alias "${alias}" belongs to several terms: ${[...distinct.values()].join(", ")} (ambiguous)`);
     }
   }
   if (allTerms.length > 0 && !checks.some((c) => c.level === "fail" && c.message.includes("conflict"))) {
@@ -66204,7 +66237,18 @@ async function runDoctorReport(opts, deps = {}) {
     push2("info", "lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)");
   }
   if (opts.audience === "mcp") for (const check3 of checks) check3.message = mcpRunHints(check3.message);
-  const verdict = summarize(checks, { terms: canonicalOwners.size, wired, untrustedProject, skippedProjectTerms, unreadable }, opts.audience);
+  const verdict = summarize(
+    checks,
+    {
+      terms: canonicalOwners.size,
+      wired,
+      untrustedProject,
+      skippedProjectTerms,
+      unreadable,
+      ...trustProblem !== void 0 ? { brokenTrust: { path: trustPath, problem: trustProblem } } : {}
+    },
+    opts.audience
+  );
   const firstFail = checks.find((c) => c.level === "fail");
   return {
     ok: firstFail === void 0,
@@ -66216,7 +66260,7 @@ async function runDoctorReport(opts, deps = {}) {
     paths: {
       global: paths.global,
       ...paths.project ? { project: paths.project } : {},
-      trust: getTrustPath({ cwd }),
+      trust: trustPath,
       settings: settingsPath,
       projectSettings: projectSettingsPath,
       projectSettingsFiles,
@@ -66457,6 +66501,7 @@ var import_node_path24 = __toESM(require_node_path());
 init_redact();
 init_atomic();
 init_json();
+init_errors3();
 var SERVE_FILE_MODE = 384;
 var SERVE_FILE_NAME = "serve.json";
 var DEFAULT_PORT = 41733;
@@ -66482,6 +66527,24 @@ function parseServeConfig(raw) {
 }
 function parseServeJson(text) {
   return JSON.parse(text.replace(/^\uFEFF/, ""));
+}
+function unusableServeConfigReason(file2) {
+  let text;
+  try {
+    text = (0, import_node_fs25.readFileSync)(file2, "utf8");
+  } catch (err) {
+    const code = err.code;
+    if (code === "ENOENT") return "does not exist; lexicon serve creates it";
+    return `could not be read (${typeof code === "string" ? code : errorMessage(err)}); make it a readable file, or remove it so lexicon serve makes a new token`;
+  }
+  if (text.replace(/^\uFEFF/, "").trim() === "") return "is empty; lexicon serve replaces it";
+  let raw;
+  try {
+    raw = parseServeJson(text);
+  } catch {
+    return "is not valid JSON; fix it, or delete it and lexicon serve makes a new token";
+  }
+  return `has no usable token (${tokenProblem(raw)}); lexicon serve replaces it`;
 }
 async function readServeConfig(opts = {}) {
   let text;
@@ -66611,6 +66674,8 @@ async function probeHealth(baseUrl, opts = {}) {
 // src/cli/cmd-serve.ts
 init_errors3();
 init_atomic();
+var SERVICE_SERVE_ARGS = ["serve", "--quiet"];
+var SERVE_LOG_MAX_BYTES = 4 * 1024 * 1024;
 var BOOTOUT_POLL_MS = 100;
 var BOOTOUT_POLL_TRIES = 50;
 function storeOpts(opts) {
@@ -66670,7 +66735,7 @@ function envReport(env) {
 `).join("");
 }
 function launchAgentPlist(nodePath, cliPath, logPath, label = LAUNCH_AGENT_LABEL, env) {
-  const args = [nodePath, cliPath, "serve"].map((a) => `    <string>${xmlEscape2(a)}</string>`).join("\n");
+  const args = [nodePath, cliPath, ...SERVICE_SERVE_ARGS].map((a) => `    <string>${xmlEscape2(a)}</string>`).join("\n");
   const envBlock = env && Object.keys(env).length > 0 ? [
     "  <key>EnvironmentVariables</key>",
     "  <dict>",
@@ -66703,7 +66768,7 @@ function launchAgentPlist(nodePath, cliPath, logPath, label = LAUNCH_AGENT_LABEL
   ].join("\n");
 }
 function scheduledTaskXml(nodePath, cliPath, userId, envFile) {
-  const args = `${envFile ? `--env-file="${envFile}" ` : ""}"${cliPath}" serve`;
+  const args = `${envFile ? `--env-file="${envFile}" ` : ""}"${cliPath}" ${SERVICE_SERVE_ARGS.join(" ")}`;
   const principal = [
     "  <Principals>",
     '    <Principal id="Author">',
@@ -66780,7 +66845,7 @@ function systemdUnit(nodePath, cliPath, env) {
     "[Service]",
     "Type=simple",
     ...envLines,
-    `ExecStart=${unitQuote(nodePath)} ${unitArg(cliPath)} serve`,
+    `ExecStart=${unitQuote(nodePath)} ${unitArg(cliPath)} ${SERVICE_SERVE_ARGS.join(" ")}`,
     "Restart=on-failure",
     "RestartSec=2",
     "",
@@ -66856,9 +66921,9 @@ async function runServeInstall(opts, io, deps = {}) {
     await import_node_fs26.promises.mkdir(import_node_path25.default.dirname(logPath), { recursive: true });
     await writeServiceFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv));
     line(io, `wrote ${safe(plistPath)}`);
-    line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} serve`);
+    line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} ${SERVICE_SERVE_ARGS.join(" ")}`);
     io.stdout(envReport(serviceEnv));
-    line(io, `  RunAtLoad + KeepAlive, logs in ${safe(logPath)}`);
+    line(io, `  RunAtLoad + KeepAlive, failures and start/stop logged in ${safe(logPath)} (moved to serve.log.1 at start once over ${SERVE_LOG_MAX_BYTES / 1024 / 1024} MiB)`);
     const uid = deps.uid ?? process.getuid?.() ?? 501;
     const target = `gui/${uid}/${label}`;
     const bootout = await exec("launchctl", ["bootout", target]);
@@ -66891,7 +66956,7 @@ async function runServeInstall(opts, io, deps = {}) {
     await import_node_fs26.promises.mkdir(import_node_path25.default.dirname(unitPath), { recursive: true });
     await writeServiceFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv));
     line(io, `wrote ${safe(unitPath)}`);
-    line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} serve`);
+    line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} ${SERVICE_SERVE_ARGS.join(" ")}`);
     io.stdout(envReport(serviceEnv));
     await runAndReport(exec, io, "systemctl", ["--user", "daemon-reload"]);
     const enable = await runAndReport(exec, io, "systemctl", ["--user", "enable", SYSTEMD_UNIT_NAME]);
@@ -66944,7 +67009,7 @@ async function runServeInstall(opts, io, deps = {}) {
     }
     line(io, `created Scheduled Task ${safe(taskName)} (trigger: at logon)`);
     line(io, `  Command:   ${safe(nodePath)}`);
-    line(io, `  Arguments: ${envFile ? `--env-file="${safe(envFile)}" ` : ""}"${safe(cliPath)}" serve`);
+    line(io, `  Arguments: ${envFile ? `--env-file="${safe(envFile)}" ` : ""}"${safe(cliPath)}" ${SERVICE_SERVE_ARGS.join(" ")}`);
     io.stdout(envFile ? envReport(serviceEnv) : "");
     const ended = await runAndReport(exec, io, "schtasks", ["/End", "/TN", taskName]);
     if (ended.code !== 0 && !await schtasksNothingToEnd(exec, taskName, ended)) {
@@ -68149,7 +68214,9 @@ var import_node_path29 = __toESM(require_node_path());
 async function serveTarget() {
   const config2 = await readServeConfig();
   const port = config2 !== void 0 && config2.port > 0 ? config2.port : DEFAULT_PORT;
-  return { base: serveUrl(port), ...config2?.token ? { token: config2.token } : {} };
+  const configPath = getServePath();
+  const notConfigured = config2 === void 0 ? { configured: false, configPath, note: `serve is not configured: ${configPath} ${unusableServeConfigReason(configPath)}` } : {};
+  return { base: serveUrl(port), ...config2?.token ? { token: config2.token } : {}, notConfigured };
 }
 var registerSetupTools = (server, ctx) => {
   const { load } = ctx;
@@ -68351,15 +68418,15 @@ var registerSetupTools = (server, ctx) => {
     "serve_status",
     {
       title: "Local API status",
-      description: "Check whether the local lexicon API (the CLI serve command, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); { up: false, error } when nothing answers, or when something other than lexicon serve answers on the port. Every result carries `url`, the /health address probed, and every up: false result carries `hint`, the next step. Call when a non-MCP surface is not correcting text.",
+      description: "Check whether the local lexicon API (the CLI serve command, used by the browser extension, Claude Desktop, Shortcuts and the menu bar app) is running on 127.0.0.1 (the port in serve.json, default 41733). Returns { up: true, version, terms, ... }; { up: false, running: true, status, error } when it is running but failing (fix `error`); { up: false, error } when nothing answers, or when something other than lexicon serve answers on the port. Every result carries `url`, the /health address probed, and every up: false result carries `hint`, the next step. When serve.json is missing or unusable (not valid JSON, no usable token, unreadable) the result adds `configured: false`, `configPath` and `note` saying why and what fixes it, as the CLI serve --status --json does. Call when a non-MCP surface is not correcting text.",
       inputSchema: {}
     },
     async () => guarded(async () => {
-      const { base, token } = await serveTarget();
+      const { base, token, notConfigured } = await serveTarget();
       const url2 = `${base}/health`;
       const probe = await probeHealth(base, token !== void 0 ? { token } : {});
-      if (probe.state === "up" && isLexiconHealth(probe.body)) return textResult({ up: true, url: url2, ...isRecord(probe.body) ? probe.body : {} });
-      if (probe.state === "up") return textResult({ up: false, url: url2, error: FOREIGN_HEALTH_ERROR, hint: SERVE_STATUS_HINTS.foreign });
+      if (probe.state === "up" && isLexiconHealth(probe.body)) return textResult({ up: true, url: url2, ...isRecord(probe.body) ? probe.body : {}, ...notConfigured });
+      if (probe.state === "up") return textResult({ up: false, url: url2, error: FOREIGN_HEALTH_ERROR, hint: SERVE_STATUS_HINTS.foreign, ...notConfigured });
       if (probe.state === "failing") {
         return textResult({
           up: false,
@@ -68367,7 +68434,8 @@ var registerSetupTools = (server, ctx) => {
           url: url2,
           status: probe.status,
           error: probe.error,
-          hint: SERVE_STATUS_HINTS.failing
+          hint: SERVE_STATUS_HINTS.failing,
+          ...notConfigured
         });
       }
       const cliDir = cliDirForInstall();
@@ -68376,7 +68444,8 @@ var registerSetupTools = (server, ctx) => {
         up: false,
         url: url2,
         error: probe.error,
-        hint: blocked ? `Start it with ${cliCommand("serve")}. A login service that keeps it running cannot be installed from this copy: ${blocked}.` : `${SERVE_STATUS_HINTS.down} setup_lexicon with serve: true does the same.`
+        hint: blocked ? `Start it with ${cliCommand("serve")}. A login service that keeps it running cannot be installed from this copy: ${blocked}.` : `${SERVE_STATUS_HINTS.down} setup_lexicon with serve: true does the same.`,
+        ...notConfigured
       });
     })
   );

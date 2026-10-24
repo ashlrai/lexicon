@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
-import { runHarvestInteractive, runReview, runEdit, editorCommand } from '../src/cli/cmd-review.js';
+import { runHarvestInteractive, runReview, runEdit, editorCommand, isTerminalEditor, resolveEditorSpawn } from '../src/cli/cmd-review.js';
 import type { SpawnEditor } from '../src/cli/cmd-review.js';
 import { runAdd, runHarvest, runRemove } from '../src/cli/commands.js';
 import { PromptClosedError, askKey, splitList } from '../src/cli/prompt.js';
@@ -78,6 +78,39 @@ function closingAfter(answers: Parameters<typeof scripted>[0]): Prompter {
     ask: (question, opts) => gate(() => inner.ask(question, opts)),
     confirm: (question, def) => gate(() => inner.confirm(question, def)),
     choose: (question, choices, opts) => gate(() => inner.choose(question, choices, opts)),
+    close: () => inner.close(),
+  };
+}
+
+/**
+ * Make the next write of `file` fail (as root too, unlike a chmod): a
+ * non-empty directory where writeFileAtomic puts its temp file
+ * (`<file>.<pid>.tmp`). Reads and the trust check still see the file.
+ */
+async function breakWrites(file: string): Promise<void> {
+  await fs.mkdir(path.join(`${file}.${process.pid}.tmp`, 'blocker'), { recursive: true });
+}
+
+/** `inner`, running `before` once just before the `n`th answer (1-based) is returned. */
+function withHook(inner: Prompter, n: number, before: () => Promise<void>): Prompter {
+  let count = 0;
+  const tick = async (): Promise<void> => {
+    count += 1;
+    if (count === n) await before();
+  };
+  return {
+    ask: async (question, opts) => {
+      await tick();
+      return inner.ask(question, opts);
+    },
+    confirm: async (question, def) => {
+      await tick();
+      return inner.confirm(question, def);
+    },
+    choose: async (question, choices, opts) => {
+      await tick();
+      return inner.choose(question, choices, opts);
+    },
     close: () => inner.close(),
   };
 }
@@ -184,6 +217,28 @@ describe('harvest --interactive', () => {
     // when something was added.
     expect(io.out).toContain('next: run lexicon list to see the terms');
     expect(none.out).not.toContain('next:');
+  });
+
+  // Catches: a write that failed for a reason other than trust (a full disk,
+  // an unreadable file) was thrown out of the walk, so the terms already
+  // added and the summary went unmentioned, and the error came alone.
+  it('a failed write stops the walk, says what was added before it, and exits 1', async () => {
+    const candidates = [candidate('Alpha'), candidate('Beta'), candidate('Gamma')];
+    const io = makeIO();
+    const p = withHook(scripted(['y', 'y']), 2, () => breakWrites(projectPath));
+    expect(await runHarvestInteractive(candidates, { cwd: repo, globalPath }, io, p)).toBe(1);
+    expect(io.err).toMatch(/lexicon: could not write the project lexicon at candidate 2 of 3 \(.+\); the terms added before it stay in the project lexicon/);
+    expect(io.out).toContain('added Alpha');
+    expect(io.out).toContain(`added 1 new term, merged 0, skipped 2 in ${projectPath}`);
+
+    // The same for `a` (one write for the rest), with nothing added before it.
+    await fs.rm(`${projectPath}.${process.pid}.tmp`, { recursive: true, force: true });
+    await fs.rm(projectPath, { force: true });
+    const all = makeIO();
+    const q = withHook(scripted(['a']), 1, () => breakWrites(projectPath));
+    expect(await runHarvestInteractive(candidates, { cwd: repo, globalPath }, all, q)).toBe(1);
+    expect(all.err).toMatch(/at candidate 1 of 3 \(.+\); nothing was added/);
+    expect(all.out).toContain('added 0 new terms, merged 0, skipped 3');
   });
 
   it('c changes the category and a adds every remaining candidate without asking', async () => {
@@ -610,6 +665,34 @@ describe('review', () => {
   // word on the two terms never shown; and ctrl-D threw `input closed before
   // the prompt was answered`, exit 1, losing the deletion already made with
   // no word on what was kept.
+  // Catches: a failed final write was thrown out of review with only the
+  // error, so nothing said that every answer given was lost with it.
+  it('a write that fails says the answers were not saved and exits 1', async () => {
+    await seedGlobal(terms);
+    const io = makeIO();
+    const p = withHook(scripted(['d', 'k', 'k', 'k']), 4, () => breakWrites(globalPath));
+    expect(await runReview({ globalPath }, io, p)).toBe(1);
+    expect(io.err).toMatch(new RegExp(`lexicon: could not write ${globalPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')} \\(.+\\); nothing was written, so this review's 1 removal and 0 edits were not saved`));
+    expect(io.out).not.toContain('Wrote');
+  });
+
+  // Catches: a term edited with p (or e, n) and then left with q or ctrl-D was
+  // counted among the terms "not reviewed (left as they were)", though its
+  // edit was written.
+  it('a term edited before q or ctrl-D is not counted as left as it was', async () => {
+    await seedGlobal(terms);
+    const quit = makeIO();
+    expect(await runReview({ globalPath }, quit, scripted(['k', 'p', 'STAYL', 'q']))).toBe(0);
+    expect(quit.out).toContain(`kept 1, removed 0, edited 1, 2 not reviewed (left as they were). Wrote ${globalPath}`);
+    expect((await readYaml(globalPath)).terms.find((t) => t.canonical === 'Stale')?.phonetic).toBe('STAYL');
+
+    await seedGlobal(terms);
+    const closed = makeIO();
+    expect(await runReview({ globalPath }, closed, closingAfter(['k', 'n', 'a note']))).toBe(0);
+    expect(closed.out).toContain('input closed at term 2 of 4; keeping the answers given before it');
+    expect(closed.out).toContain(`kept 1, removed 0, edited 1, 2 not reviewed (left as they were). Wrote ${globalPath}`);
+  });
+
   it('q and ctrl-D say how many terms were not reviewed, and ctrl-D keeps the answers given', async () => {
     await seedGlobal(terms);
     const quit = makeIO();
@@ -844,7 +927,7 @@ describe('edit', () => {
       return 1;
     };
     const io = makeIO();
-    expect(await runEdit({ cwd: repo, project: true, globalPath }, io, spawnEditor, { EDITOR: 'vim' })).toBe(1);
+    expect(await runEdit({ cwd: repo, project: true, globalPath }, io, spawnEditor, { EDITOR: 'vim' }, () => true)).toBe(1);
     expect(io.err).toContain('vim exited with code 1, so the edit is treated as aborted and the project lexicon was not re-trusted');
     expect(io.err).toContain('changed anyway, so its terms are not used until you review it and run: lexicon trust');
     expect(io.out).not.toContain('re-trusted');
@@ -871,6 +954,38 @@ describe('edit', () => {
     expect(review.out).toContain('[2/2] Proj');
   });
 
+  // Catches: with no terminal (a pipe, CI, an agent's shell) `lexicon edit` started vim anyway and hung waiting for keys.
+  it('refuses a terminal editor without a terminal, before creating anything, and still runs a GUI editor', async () => {
+    const fresh = path.join(tmp, 'no-tty', 'lexicon.yaml');
+    let spawned = 0;
+    const spawnEditor: SpawnEditor = async () => {
+      spawned++;
+      return 0;
+    };
+    for (const env of [{ EDITOR: 'vim' }, { VISUAL: '/usr/bin/nvim' }, { EDITOR: 'emacs -nw' }, { EDITOR: 'nano' }]) {
+      const io = makeIO();
+      expect(await runEdit({ globalPath: fresh }, io, spawnEditor, env, () => false)).toBe(1);
+      expect(io.err).toContain('is a terminal editor, and stdin and stdout are not both a terminal, so it would wait for input that never comes');
+      expect(io.err).toContain(`edit the file directly: ${fresh}`);
+      expect(io.err).toContain(env.VISUAL ? '$VISUAL (/usr/bin/nvim)' : '$EDITOR (');
+    }
+    expect(spawned).toBe(0);
+    await expect(fs.stat(fresh)).rejects.toThrow();
+    // A GUI editor opens its own window, and a terminal one runs in a terminal.
+    expect(await runEdit({ globalPath: fresh }, makeIO(), spawnEditor, { VISUAL: 'code --wait' }, () => false)).toBe(0);
+    expect(await runEdit({ globalPath: fresh }, makeIO(), spawnEditor, { EDITOR: 'vim' }, () => true)).toBe(0);
+    expect(spawned).toBe(2);
+  });
+
+  it('isTerminalEditor tells terminal editors from GUI ones', () => {
+    for (const [cmd, args] of [['vi', []], ['vim', []], ['C:\\Tools\\nvim.exe', []], ['nano', []], ['emacs', ['-nw']], ['emacsclient', ['-t']], ['hx', []]] as const) {
+      expect(isTerminalEditor(cmd, args)).toBe(true);
+    }
+    for (const [cmd, args] of [['code', ['--wait']], ['subl', ['-w']], ['gvim', ['-f']], ['vim', ['-g']], ['emacs', []], ['emacsclient', ['-c']], ['notepad', []]] as const) {
+      expect(isTerminalEditor(cmd, args)).toBe(false);
+    }
+  });
+
   it('leaves an untrusted project file untrusted and says so', async () => {
     await fs.writeFile(projectPath, 'version: 1\nterms: []\n', 'utf8');
     const io = makeIO();
@@ -879,5 +994,41 @@ describe('edit', () => {
     await expect(runEdit({ cwd: tmp, project: true, globalPath }, makeIO(), async () => 0, { EDITOR: 'x' })).rejects.toThrow(
       /no project lexicon found/,
     );
+  });
+});
+
+describe('resolveEditorSpawn', () => {
+  const winFiles = (...files: string[]) => (p: string): boolean => files.map((f) => f.toLowerCase()).includes(p.toLowerCase());
+
+  it('runs the command itself on POSIX, whatever PATH holds', () => {
+    expect(resolveEditorSpawn('code', ['--wait'], '/home/u/lexicon.yaml', 'linux', { PATH: '/usr/bin' }, () => true)).toEqual({
+      file: 'code',
+      args: ['--wait', '/home/u/lexicon.yaml'],
+      windowsVerbatimArguments: false,
+    });
+  });
+
+  // Catches: on win32 `code --wait` (code.cmd on PATH) was spawned without a shell and failed with ENOENT.
+  it('runs a .cmd shim found through PATHEXT on win32 through cmd.exe, the file path quoted and escaped', () => {
+    const env = { Path: 'C:\\Windows;C:\\Program Files\\Microsoft VS Code\\bin', PATHEXT: '.COM;.EXE;.BAT;.CMD', ComSpec: 'C:\\Windows\\system32\\cmd.exe' };
+    const run = resolveEditorSpawn('code', ['--wait'], 'C:\\Users\\A & B\\100%\\lexicon.yaml', 'win32', env, winFiles('C:\\Program Files\\Microsoft VS Code\\bin\\code.CMD'));
+    expect(run.file).toBe('C:\\Windows\\system32\\cmd.exe');
+    expect(run.windowsVerbatimArguments).toBe(true);
+    expect(run.args.slice(0, 3)).toEqual(['/d', '/s', '/c']);
+    expect(run.args[3]).toBe(
+      '"C:\\Program^ Files\\Microsoft^ VS^ Code\\bin\\code.CMD ^"--wait^" ^"C:\\Users\\A^ ^&^ B\\100^%\\lexicon.yaml^""',
+    );
+  });
+
+  it('runs a .exe or an unresolved editor directly on win32, and a .bat named with its path through cmd.exe', () => {
+    const env = { PATH: 'C:\\Tools', PATHEXT: '.EXE;.CMD' };
+    expect(resolveEditorSpawn('notepad', [], 'C:\\l.yaml', 'win32', env, winFiles('C:\\Tools\\notepad.exe'))).toEqual({
+      file: 'notepad',
+      args: ['C:\\l.yaml'],
+      windowsVerbatimArguments: false,
+    });
+    expect(resolveEditorSpawn('nope', [], 'C:\\l.yaml', 'win32', env, () => false).file).toBe('nope');
+    const bat = resolveEditorSpawn('C:\\Ed\\ed.bat', ['-w'], 'C:\\l.yaml', 'win32', env, winFiles('C:\\Ed\\ed.bat'));
+    expect(bat).toEqual({ file: 'cmd.exe', args: ['/d', '/s', '/c', '"C:\\Ed\\ed.bat ^"-w^" ^"C:\\l.yaml^""'], windowsVerbatimArguments: true });
   });
 });

@@ -37,7 +37,7 @@ corrected prompt. (With many MCP servers the first lexicon call also costs a
 ToolSearch turn, so this matters.) The hook does not always check the whole
 prompt: past its first 50,000 characters it adds "Lexicon checked only the
 first N of this prompt's M characters", and when matching runs out of time
-"Lexicon stopped checking this prompt ... after its 100 ms budget". With
+"Lexicon stopped checking this prompt ... after its N ms budget". With
 either line, the rest was never looked at: if a name there looks garbled, call
 `normalize_transcript` on that part only.
 

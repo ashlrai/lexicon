@@ -18,6 +18,7 @@ import {
   LEXICON_TIMEOUT_MS,
   pairableBaseUrl,
   pairPortOrigins,
+  PAIR_PATH,
   hostKey,
   RECENT_LIMIT,
   STORAGE_KEYS,
@@ -507,11 +508,17 @@ export function createBackground(deps: BackgroundDeps): Background {
    * Pairing: the /pair content script hands over the token it read from the
    * page. The token is proven against a bearer route (GET /stats; /health
    * needs no auth so it proves nothing) before anything is stored, then the
-   * settings switch to `api` with the new base URL and token.
+   * settings switch to `api` with the new base URL and token. The base URL
+   * must be the sender tab's own origin, on its /pair page: the URL came from
+   * the page's meta tags, and a page should not pair the extension with a
+   * server other than the one that served it.
    */
-  async function pairReq(rawBaseUrl: string, rawToken: string): Promise<PairReply | Failure> {
+  async function pairReq(rawBaseUrl: string, rawToken: string, senderUrl: string | undefined): Promise<PairReply | Failure> {
     const baseUrl = pairableBaseUrl(String(rawBaseUrl ?? ''));
     if (!baseUrl) return { ok: false, error: 'Pairing works only with a lexicon serve on 127.0.0.1 or localhost.' };
+    if (!isPairPageOf(senderUrl, baseUrl)) {
+      return { ok: false, error: `Pairing must come from ${baseUrl}${PAIR_PATH} itself; run \`lexicon serve --pair\` again.` };
+    }
     const token = String(rawToken ?? '').trim();
     if (!TOKEN_RE.test(token)) return { ok: false, error: 'The page carried no valid token; run `lexicon serve --pair` again.' };
     const candidate: Settings = { ...(await getSettings()), baseUrl, token, mode: 'api' };
@@ -582,7 +589,7 @@ export function createBackground(deps: BackgroundDeps): Background {
       case 'sync':
         return syncReq();
       case 'pair':
-        return pairReq(req.baseUrl, req.token);
+        return pairReq(req.baseUrl, req.token, sender?.url);
       case 'pairPort':
         return pairPortReq(req.baseUrl);
       case 'anySite': {
@@ -637,4 +644,21 @@ export function learnWarnings(heard: string, conflict: unknown, untrustedProject
     out += ` The project lexicon ${u.path} is ${u.trust === 'changed' ? 'changed since it was trusted' : 'not trusted'} and also claims "${heard}"; once it is trusted its term wins (review it with: lexicon trust).`;
   }
   return out;
+}
+
+/**
+ * True when `senderUrl` is the /pair page of `baseUrl` (same origin, path
+ * /pair with or without a trailing slash). Exported for tests.
+ */
+export function isPairPageOf(senderUrl: string | undefined, baseUrl: string): boolean {
+  if (!senderUrl) return false;
+  let page: URL;
+  let base: URL;
+  try {
+    page = new URL(senderUrl);
+    base = new URL(baseUrl);
+  } catch {
+    return false;
+  }
+  return page.origin === base.origin && page.pathname.replace(/\/+$/, '') === PAIR_PATH;
 }

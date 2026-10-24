@@ -6,7 +6,7 @@
  * Handlers are exported for tests; registerServeCommands() only wires commander.
  */
 import { spawn } from 'node:child_process';
-import { existsSync, promises as fs } from 'node:fs';
+import { existsSync, fstatSync, ftruncateSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import { homeDir } from '../util/xdg.js';
 import path from 'node:path';
@@ -92,6 +92,41 @@ export interface ServeDeps {
   onListening?: (info: { port: number; url: string; token: string }) => void;
   /** Waits between `launchctl print` polls after a bootout. Default a timer. */
   sleep?: (ms: number) => Promise<void>;
+  /** The descriptor the server's log goes to, for `capServiceLog`. Default 2 (stderr). */
+  logFd?: number;
+}
+
+/**
+ * The service's arguments after the CLI entry. `--quiet` keeps the per-request
+ * line out of the service log (launchd's `serve.log`, the journal), which
+ * otherwise grew by one line a request; failures and the start and stop lines
+ * are still written.
+ */
+export const SERVICE_SERVE_ARGS = ['serve', '--quiet'] as const;
+
+/** `serve.log` past this size is moved to `serve.log.1` and emptied when the server starts. */
+export const SERVE_LOG_MAX_BYTES = 4 * 1024 * 1024;
+
+/**
+ * Cap the LaunchAgent log when it is where this server's log goes: when `fd`
+ * is that file (same device and inode as `logPath`) and it is over `max`
+ * bytes, copy it to `<logPath>.1` (replacing an older one) and truncate it.
+ * launchd opens the file for appending, so later writes land at the new end.
+ * Returns true when it rotated; any error leaves the file alone (the server
+ * still starts).
+ */
+export async function capServiceLog(logPath: string, fd: number, max: number = SERVE_LOG_MAX_BYTES): Promise<boolean> {
+  try {
+    const target = fstatSync(fd);
+    if (!target.isFile() || target.size <= max || target.ino === 0) return false;
+    const file = await fs.stat(logPath);
+    if (file.dev !== target.dev || file.ino !== target.ino) return false;
+    await fs.copyFile(logPath, `${logPath}.1`);
+    ftruncateSync(fd, 0);
+    return true;
+  } catch {
+    return false;
+  }
 }
 
 /** How often, and how many times, `--install` asks launchd whether a booted-out label is gone. */
@@ -399,7 +434,7 @@ export function launchAgentPlist(
   label: string = LAUNCH_AGENT_LABEL,
   env?: Readonly<Record<string, string>>,
 ): string {
-  const args = [nodePath, cliPath, 'serve'].map((a) => `    <string>${xmlEscape(a)}</string>`).join('\n');
+  const args = [nodePath, cliPath, ...SERVICE_SERVE_ARGS].map((a) => `    <string>${xmlEscape(a)}</string>`).join('\n');
   const envBlock =
     env && Object.keys(env).length > 0
       ? [
@@ -455,7 +490,7 @@ export function launchAgentPlist(
  */
 export function scheduledTaskXml(nodePath: string, cliPath: string, userId?: string, envFile?: string): string {
   // The task has no environment of its own; node loads the variables itself.
-  const args = `${envFile ? `--env-file="${envFile}" ` : ''}"${cliPath}" serve`;
+  const args = `${envFile ? `--env-file="${envFile}" ` : ''}"${cliPath}" ${SERVICE_SERVE_ARGS.join(' ')}`;
   const principal = [
     '  <Principals>',
     '    <Principal id="Author">',
@@ -547,7 +582,7 @@ export function systemdUnit(nodePath: string, cliPath: string, env?: Readonly<Re
     '[Service]',
     'Type=simple',
     ...envLines,
-    `ExecStart=${unitQuote(nodePath)} ${unitArg(cliPath)} serve`,
+    `ExecStart=${unitQuote(nodePath)} ${unitArg(cliPath)} ${SERVICE_SERVE_ARGS.join(' ')}`,
     'Restart=on-failure',
     'RestartSec=2',
     '',
@@ -660,9 +695,9 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     await fs.mkdir(path.dirname(logPath), { recursive: true });
     await writeServiceFile(plistPath, launchAgentPlist(nodePath, cliPath, logPath, label, serviceEnv));
     line(io, `wrote ${safe(plistPath)}`);
-    line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} serve`);
+    line(io, `  ProgramArguments: ${safe(nodePath)} ${safe(cliPath)} ${SERVICE_SERVE_ARGS.join(' ')}`);
     io.stdout(envReport(serviceEnv));
-    line(io, `  RunAtLoad + KeepAlive, logs in ${safe(logPath)}`);
+    line(io, `  RunAtLoad + KeepAlive, failures and start/stop logged in ${safe(logPath)} (moved to serve.log.1 at start once over ${SERVE_LOG_MAX_BYTES / 1024 / 1024} MiB)`);
     const uid = deps.uid ?? process.getuid?.() ?? 501;
     // A previous install must be booted out before bootstrap accepts the new plist.
     const target = `gui/${uid}/${label}`;
@@ -698,7 +733,7 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     await fs.mkdir(path.dirname(unitPath), { recursive: true });
     await writeServiceFile(unitPath, systemdUnit(nodePath, cliPath, serviceEnv));
     line(io, `wrote ${safe(unitPath)}`);
-    line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} serve`);
+    line(io, `  ExecStart: ${safe(nodePath)} ${safe(cliPath)} ${SERVICE_SERVE_ARGS.join(' ')}`);
     io.stdout(envReport(serviceEnv));
     await runAndReport(exec, io, 'systemctl', ['--user', 'daemon-reload']);
     // `enable --now` starts a stopped unit but leaves a running one as it is,
@@ -763,7 +798,7 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
     }
     line(io, `created Scheduled Task ${safe(taskName)} (trigger: at logon)`);
     line(io, `  Command:   ${safe(nodePath)}`);
-    line(io, `  Arguments: ${envFile ? `--env-file="${safe(envFile)}" ` : ''}"${safe(cliPath)}" serve`);
+    line(io, `  Arguments: ${envFile ? `--env-file="${safe(envFile)}" ` : ''}"${safe(cliPath)}" ${SERVICE_SERVE_ARGS.join(' ')}`);
     io.stdout(envFile ? envReport(serviceEnv) : '');
     // /Create /F replaces the definition but leaves a running instance (an
     // earlier install's node and CLI path) serving, and only a logon starts
@@ -952,6 +987,8 @@ export async function runServeForeground(opts: ServeOptions, io: IO, deps: Serve
       `${red('warning:', env)} binding to ${safe(opts.host)} exposes the lexicon API to the network; anyone with the token can read and change your lexicon\n`,
     );
   }
+  // The LaunchAgent sends stdout and stderr to serve.log; keep it bounded.
+  await capServiceLog(launchAgentLogPath(home), deps.logFd ?? 2);
   const server = createServer({
     host,
     ...(opts.port !== undefined ? { port: opts.port } : {}),
@@ -990,7 +1027,9 @@ export async function runServeForeground(opts: ServeOptions, io: IO, deps: Serve
     deps.signal?.addEventListener('abort', stop, { once: true });
   });
   await server.stop();
-  if (!opts.quiet && !opts.json) line(io, 'lexicon serve stopped');
+  // Printed under --quiet too: it silences request lines only, and the
+  // service (which runs with it) should still record when it stopped.
+  if (!opts.json) line(io, 'lexicon serve stopped');
   return 0;
 }
 
@@ -1096,7 +1135,7 @@ export function registerServeCommands(program: Command, io: IO): void {
     .option('--port <n>', `port to listen on (default ${DEFAULT_PORT}; 0 picks a free port)`, parsePort)
     .option('--host <host>', 'interface to bind (default 127.0.0.1; anything else is exposed to the network)')
     .option('--json', 'print the listening info (or the --show, --status, --pair, --install or --uninstall result) as JSON, led by ok (for --status, ok equals up)')
-    .option('--quiet', 'do not log requests (only when running the server; refused with --show, --status, --pair, --install, --uninstall)')
+    .option('--quiet', 'do not log each request; failures and start/stop are still printed (the installed service runs with it; refused with --show, --status, --pair, --install, --uninstall)')
     .option('--show', 'print the URL and bearer token (for the extension options page) and exit')
     .option('--status', 'check whether the server is up and exit')
     .option('--pair', `open http://127.0.0.1:${DEFAULT_PORT}/pair in your browser so the extension pairs itself, and exit`)
