@@ -18,6 +18,7 @@ import {
   cachedPackPath,
   downloadPack,
   findRegistryEntry,
+  installPack,
   installRegistryPack,
   installedRegistryPacks,
   isRegistryRef,
@@ -31,6 +32,7 @@ import {
   resolvePackUrl,
   searchRegistryIndex,
   sha256Hex,
+  uninstallPack,
   uninstallRegistryPack,
   validateCommunityPack,
   verifyPackChecksum,
@@ -510,6 +512,40 @@ describe('install / update / remove round trip', () => {
     expect(preview.added).toEqual([]); expect(preview.removed).toEqual([]);
     expect(preview.changed?.[0].after).toMatchObject({ notes: 'model-visible note payload', phonetic: 'met-oh', caseSensitive: true });
     expect(preview.terms?.[0].aliases).toContain('approved-new-alias');
+  });
+
+  // Catches: removing a pack took a term an installed community pack also has (and the other way round).
+  it('pack removal keeps a term the other kind of installed pack still has', async () => {
+    const shared = `${PACK_V1}  - canonical: Kubernetes\n    category: product\n    aliases: [cuban eats, cuban needs, cuba needs, cooper netties, kube or netties, kubernetties]\n`;
+    writeFileSync(path.join(dir, 'cardiology.yaml'), shared);
+    const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
+    const { index, base } = await loadRegistryIndex(indexPath);
+    await installPack('developer', { cwd: dir, globalPath });
+    await installRegistryPack(entryFor(index), base, indexPath, { cwd: dir, globalPath });
+
+    const vendored = await uninstallPack('developer', { cwd: dir, globalPath });
+    expect(vendored.shared).toEqual(['Kubernetes']);
+    expect(vendored.removed).not.toContain('Kubernetes');
+    const community = await uninstallRegistryPack('example/cardiology', undefined, { cwd: dir, globalPath });
+    expect(community.removed).toContain('Kubernetes');
+    expect((await readLexiconFile(globalPath, 'global')).lexicon.terms).toEqual([]);
+
+    await installRegistryPack(entryFor(index), base, indexPath, { cwd: dir, globalPath });
+    await installPack('developer', { cwd: dir, globalPath });
+    expect((await uninstallRegistryPack('example/cardiology', undefined, { cwd: dir, globalPath })).shared).toEqual(['Kubernetes']);
+  });
+
+  // Catches: a relative --registry was recorded as typed, so pack update from another directory read a different file and MCP never counted it.
+  it('records a relative or file:// index source as the absolute path it was read from', async () => {
+    const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
+    const relative = path.relative(process.cwd(), indexPath);
+    const { index, base } = await loadRegistryIndex(relative);
+    await installRegistryPack(entryFor(index), base, relative, { globalPath });
+    expect((await readRegistryState({ globalPath })).packs['example/cardiology'].indexSource).toBe(indexPath);
+    expect(await userRegistrySources({ globalPath, cwd: dir, env: {} })).toContain(canonicalRegistrySource(indexPath));
+
+    await installRegistryPack(entryFor(index), base, `file://${indexPath}`, { globalPath });
+    expect((await readRegistryState({ globalPath })).packs['example/cardiology'].indexSource).toBe(indexPath);
   });
 
   it('installs, pins the checksum, updates on checksum change, removes cleanly', async () => {

@@ -6,7 +6,7 @@
 import type { VoiceExec } from './process.js';
 
 export interface AudioDevice {
-  /** Index as the platform tool reports it (avfoundation, dshow order, arecord card). */
+  /** Index as the platform tool reports it (avfoundation), or the position in the list (pulse, alsa, dshow). */
   index: number;
   /** Human-readable name (what `--device <name>` matches). */
   name: string;
@@ -59,14 +59,20 @@ export function parsePulseSources(output: string): AudioDevice[] {
   return devices;
 }
 
-/** Parse `arecord -l`: `card 1: Device [USB Audio], device 0: USB Audio [USB Audio]` -> `hw:1,0`. */
+/**
+ * Parse `arecord -l`: `card 1: Device [USB Audio], device 0: USB Audio [USB Audio]` -> `hw:1,0`.
+ * Each device is numbered by its place in the list, as pulse and dshow are.
+ * The card number was used, so two capture devices on one card (an Intel HDA
+ * card's analog and alternate inputs) shared an index, `--list-devices`
+ * showed it twice, and `--device <index>` could only ever pick the first.
+ */
 export function parseArecordList(output: string): AudioDevice[] {
   const devices: AudioDevice[] = [];
   for (const raw of output.split(/\r?\n/)) {
     const m = /^card (\d+): (\S+) \[(.*?)\], device (\d+): .*?\[(.*?)\]/.exec(raw);
     if (!m) continue;
     const card = Number(m[1]);
-    devices.push({ index: card, name: `${m[3]} (${m[5]})`, id: `hw:${card},${m[4]}`, backend: 'alsa' });
+    devices.push({ index: devices.length, name: `${m[3]} (${m[5]})`, id: `hw:${card},${m[4]}`, backend: 'alsa' });
   }
   return devices;
 }

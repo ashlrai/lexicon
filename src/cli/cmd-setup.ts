@@ -44,7 +44,7 @@ import path from 'node:path';
 import { existsSync } from 'node:fs';
 import type { Command } from 'commander';
 import { LIMITS, listPacks } from '../core/index.js';
-import { bold, dim, fail, jsonError, safe, shownCommand, tildify } from './io.js';
+import { bold, dim, fail, jsonError, safe, safeMessage, shownCommand, tildify } from './io.js';
 import { errorMessage } from '../util/errors.js';
 import type { IO } from './io.js';
 import { PromptClosedError, createPrompter, isInteractive, onlyStdoutRedirected } from './prompt.js';
@@ -240,6 +240,21 @@ function printStopped(ctx: Ctx): void {
   ctx.say(`${bold('Next:')} ${ctx.summary.nextStep}`);
 }
 
+/**
+ * The card for a run a step failed in: the error, what the finished steps
+ * wrote, and that a rerun picks up from there once the error is fixed.
+ */
+function printFailed(ctx: Ctx): void {
+  ctx.say();
+  ctx.say(bold(`Failed at "${ctx.summary.failedAt ?? ''}": ${safeMessage(ctx.summary.error ?? '')}; nothing after it ran.`));
+  printWritten(ctx);
+  ctx.summary.nextStep = ctx.opts.forAgent
+    ? 'Tell the user what the error names; once it is fixed, call setup_lexicon again: every step skips what is already done.'
+    : 'fix what the error names, then run lexicon setup again; every step skips what is already done';
+  ctx.say();
+  ctx.say(`${bold('Next:')} ${ctx.summary.nextStep}`);
+}
+
 /** Step h: the summary card. */
 function printSummary(ctx: Ctx): void {
   ctx.say();
@@ -268,7 +283,9 @@ function printWritten(ctx: Ctx): void {
  * summary (also printed as JSON under `opts.json`). Exit 1 when any client
  * or the serve install failed; the steps still all run. A prompt cancelled
  * at a terminal (its input closed) stops the run at that step, with a card
- * of what the finished steps wrote and `summary.stoppedAt`; exit 1. Under `opts.dryRun`
+ * of what the finished steps wrote and `summary.stoppedAt`; exit 1. A step
+ * that throws stops the run the same way, with `summary.failedAt` and
+ * `summary.error` (a dry run still throws: it wrote nothing). Under `opts.dryRun`
  * nothing is written, the summary stays empty and `plan` says what a real
  * run with the same options would do (printed as the JSON under `--json`).
  */
@@ -384,19 +401,31 @@ export async function runSetup(
         // ctrl-C or ctrl-D at a prompt closes its input. That surfaced as
         // `lexicon: input closed before the prompt was answered` and exit 1,
         // with no word of what the earlier steps had already written.
-        if (!(err instanceof PromptClosedError)) throw err;
-        ctx.summary.stoppedAt = title;
+        if (err instanceof PromptClosedError) {
+          ctx.summary.stoppedAt = title;
+          break;
+        }
+        // A step that failed part way (an export directory that cannot be
+        // written, a pack that will not install) threw out of the run, so the
+        // only output was the error: nothing said that the lexicon, the packs
+        // or the clients before it were already done. A dry run wrote
+        // nothing, so its error is still the whole story.
+        if (ctx.plan) throw err;
+        ctx.summary.failedAt = title;
+        ctx.summary.error = errorMessage(err);
+        ctx.warn(`lexicon setup: ${title}: ${safeMessage(ctx.summary.error)}`);
         break;
       }
     }
     if (ctx.plan) printPlan(ctx, ctx.plan);
     else if (ctx.summary.stoppedAt !== undefined) printStopped(ctx);
+    else if (ctx.summary.failedAt !== undefined) printFailed(ctx);
     else printSummary(ctx);
   } finally {
     if (ownPrompter) prompter?.close();
   }
   const failed =
-    ctx.summary.stoppedAt !== undefined || ctx.summary.serve === 'failed' || ctx.summary.clients.some((c) => c.status === 'failed');
+    ctx.summary.stoppedAt !== undefined || ctx.summary.failedAt !== undefined || ctx.summary.serve === 'failed' || ctx.summary.clients.some((c) => c.status === 'failed');
   // `ok` leads the document so a script reads success the same way it reads
   // the `{ ok: false, error, nextStep }` refusal; false when a client or serve failed (exit 1).
   if (opts.json) io.stdout(`${JSON.stringify({ ok: !failed, ...(ctx.plan ?? ctx.summary) }, null, 2)}\n`);

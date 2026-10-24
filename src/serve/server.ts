@@ -1296,9 +1296,10 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       return { ...result, notInstalled: true, summary: `${result.pack.name} is not installed${scope !== undefined ? ` in the ${scope} lexicon` : ''}; nothing was removed` };
     }
     const kept = result.kept.length > 0 ? `; kept ${result.kept.length} you edited (hits, extra aliases or never-words): ${result.kept.join(', ')}` : '';
+    const shared = result.shared.length > 0 ? `; kept ${result.shared.length} another installed pack also has: ${result.shared.join(', ')}` : '';
     return {
       ...result,
-      summary: `removed ${result.removed.length} term${result.removed.length === 1 ? '' : 's'} of ${result.pack.name} from ${result.files.join(', ')}${kept}`,
+      summary: `removed ${result.removed.length} term${result.removed.length === 1 ? '' : 's'} of ${result.pack.name} from ${result.files.join(', ')}${kept}${shared}`,
     };
   }
 

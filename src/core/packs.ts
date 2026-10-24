@@ -82,6 +82,8 @@ export interface UninstallPackResult {
   removed: string[];
   /** Pack terms left in place because the user edited them (hits, extra aliases or never-words). */
   kept: string[];
+  /** Pack terms left in place because another pack the same file records still has them. */
+  shared: string[];
   /** Every lexicon file that was rewritten. */
   files: string[];
 }
@@ -415,6 +417,33 @@ function hasExtra(have: readonly string[] | undefined, pack: readonly string[] |
  * documents and `removeTerm` has always walked them the same way.
  */
 /**
+ * The canonicals (lowercased) of the packs `names` from one file's
+ * `settings.packs`: a vendored pack from the packs directory, a community
+ * ref from its checksum-verified cache in `scope`'s registry directory. A
+ * pack that cannot be read contributes nothing, so it never blocks a removal.
+ */
+async function canonicalsOfPacks(names: readonly string[], scope: TermScope, opts: StoreOptions & PackOptions): Promise<Set<string>> {
+  const out = new Set<string>();
+  for (const name of names) {
+    try {
+      let canonicals: readonly string[] | undefined;
+      if (name.includes('/')) {
+        // Imported when needed: registry.ts imports this module, and its
+        // top-level schemas read PACK_NAME_RE as it loads.
+        const { cachedPackCanonicals } = await import('./registry.js');
+        canonicals = await cachedPackCanonicals(name, { ...opts, scope });
+      } else {
+        canonicals = (await loadPack(name, opts)).lexicon.terms.map((t) => t.canonical);
+      }
+      for (const c of canonicals ?? []) out.add(lower(c));
+    } catch {
+      // unreadable or unknown: nothing to keep for it
+    }
+  }
+  return out;
+}
+
+/**
  * Remove an already-loaded pack. `recordAs` is the name dropped from the
  * files' `settings.packs` (the plain name for vendored packs, the
  * `author/name` ref for registry ones). See `uninstallPack` for the
@@ -435,12 +464,16 @@ export async function uninstallLoadedPack(
 
   const removed: string[] = [];
   const kept: string[] = [];
+  const shared: string[] = [];
   const written: string[] = [];
   for (const target of targets) {
     await withLexiconLock(target.path, async () => {
       const file = await readLexiconFile(target.path, target.scope);
       if (!file.exists) return;
       const listed = (file.lexicon.settings?.packs ?? []).includes(recordAs);
+      // A term another installed pack also has is that pack's too: removing
+      // it here took it from a pack that stays installed.
+      const others = await canonicalsOfPacks((file.lexicon.settings?.packs ?? []).filter((p) => p !== recordAs), target.scope, { ...storeOpts, ...(opts.dir !== undefined ? { dir: opts.dir } : {}) });
       // `file` is about to be written back, so its terms have to stay exactly as
       // they are on disk; a term's usage count is not on disk any more, it is in
       // this user's sidecar. Read it alongside rather than into the term.
@@ -448,6 +481,10 @@ export async function uninstallLoadedPack(
       const remaining = file.lexicon.terms.filter((term) => {
         const packTerm = packTerms.get(lower(term.canonical));
         if (!packTerm || term.source !== 'pack') return true;
+        if (others.has(lower(term.canonical))) {
+          shared.push(term.canonical);
+          return true;
+        }
         if (effectiveHits(term, hits) > 0 || hasExtra(term.aliases, packTerm.aliases) || hasExtra(term.never, packTerm.never)) {
           kept.push(term.canonical);
           return true;
@@ -465,7 +502,7 @@ export async function uninstallLoadedPack(
       written.push(file.path);
     });
   }
-  return { pack: info(pack), removed, kept, files: written };
+  return { pack: info(pack), removed, kept, shared, files: written };
 }
 
 /**

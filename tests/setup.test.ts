@@ -885,6 +885,31 @@ describe('runSetup dictation export', () => {
   });
 });
 
+describe('runSetup with a step that fails', () => {
+  // Catches: a step that threw (here an export directory that is a file) ended the run with the error alone, saying nothing of the lexicon and clients already done.
+  it('stops at the failed step and says what was already written', async () => {
+    const exportDir = path.join(home, 'not-a-dir');
+    await fs.writeFile(exportDir, 'a file where the export directory should be\n');
+    const f = fakes();
+    const { code, summary, io } = await run({ yes: true, clients: 'claude', company: 'Ashlr.AI', app: 'wispr', exportDir }, f);
+    expect(code).toBe(1);
+    expect(summary.failedAt).toBe('Dictation app');
+    expect(summary.error).toEqual(expect.any(String));
+    expect(summary.termsAdded).toContain('Ashlr.AI');
+    expect(f.installed.length).toBeGreaterThan(0);
+    expect(io.err).toContain('lexicon setup: Dictation app: ');
+    expect(io.out).toContain('Failed at "Dictation app": ');
+    expect(io.out).toContain('terms added: ');
+    expect(io.out).toContain('Next: fix what the error names, then run lexicon setup again; every step skips what is already done');
+    expect(io.out).not.toContain('7. Does it work?');
+    expect(io.out).not.toContain('Done.');
+
+    const json = await run({ yes: true, clients: 'claude', company: 'Ashlr.AI', app: 'wispr', exportDir, json: true }, fakes());
+    expect(json.code).toBe(1);
+    expect(JSON.parse(json.io.out)).toMatchObject({ ok: false, failedAt: 'Dictation app', error: expect.any(String) });
+  });
+});
+
 describe('runSetup interactive', () => {
   // Catches: ctrl-C or ctrl-D at a prompt surfaced as `input closed before
   // the prompt was answered` and exit 1, with no word of what the steps

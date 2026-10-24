@@ -707,3 +707,62 @@ describe('pack add --json names the ref it stopped at', () => {
     expect(single.err).not.toContain('not attempted');
   });
 });
+
+describe('registry text on the terminal', () => {
+  // Catches: the index's version and the pack file's title and description reached the terminal unsanitized, escape sequences and all.
+  it('sanitizes what the index and the pack file say in show, add and update', async () => {
+    const ESC = '\u001b';
+    const hostile = PACK.replace('description: Heart words.', 'description: "Heart \\e[2J words."');
+    indexPath = writeIndex('1\\e[31m', hostile);
+
+    const show = makeIO();
+    expect(await runPackShow('example/cardiology', baseOpts(), show)).toBe(0);
+    expect(show.out).toContain('Heart');
+    expect(show.out).not.toContain(ESC);
+
+    const add = makeIO();
+    expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), yes: true }, add)).toBe(0);
+    expect(add.out).toContain('installed example/cardiology');
+    expect(add.out).not.toContain(ESC);
+
+    const current = makeIO();
+    expect(await runPackUpdate([], { globalPath, registry: indexPath }, current)).toBe(0);
+    expect(current.out).toContain('already current');
+    expect(current.out).not.toContain(ESC);
+
+    indexPath = writeIndex('2\\e[31m', `${hostile}  - canonical: Atenolol\n    aliases: [atenolol]\n    category: brand\n`);
+    const update = makeIO();
+    expect(await runPackUpdate([], { globalPath, registry: indexPath, yes: true }, update)).toBe(0);
+    expect(update.out).toContain('update available');
+    expect(update.out).not.toContain(ESC);
+  });
+});
+
+describe('printed pack commands', () => {
+  // Catches: the search's install line put --registry's path in unquoted, so a path with a space printed a command that ran something else.
+  it('pack search quotes the registry in its install line', async () => {
+    const spaced = path.join(dir, 'my registry');
+    mkdirSync(spaced);
+    writeFileSync(path.join(spaced, 'cardiology.yaml'), PACK);
+    const index = path.join(spaced, 'index.yaml');
+    writeFileSync(index, readFileSync(indexPath, 'utf8'));
+    const io = makeIO();
+    expect(await runPackSearch('cardio', { globalPath, registry: index }, io)).toBe(0);
+    expect(io.out).toContain(`lexicon pack add <ref> --registry ${quotedForShell(index)}`);
+  });
+
+  // Catches: the pinned line left --registry as a placeholder and put the index's free-text version in unquoted, even one no pin can name.
+  it('pack update names the whole command that moves a pin, and the unpinned add for a version no pin can name', async () => {
+    expect(await runPackAdd(['example/cardiology@1'], { ...baseOpts(), yes: true }, makeIO())).toBe(0);
+    indexPath = writeIndex('2');
+    const io = makeIO();
+    expect(await runPackUpdate([], { globalPath }, io)).toBe(0);
+    expect(io.out).toContain(`pinned at version 1 (index has 2); \`lexicon pack add example/cardiology@2 --registry ${shellWord(indexPath)}\` to move it`);
+
+    indexPath = writeIndex('2 beta; touch x');
+    const odd = makeIO();
+    expect(await runPackUpdate([], { globalPath }, odd)).toBe(0);
+    expect(odd.out).toContain(`that version cannot be pinned by name; \`lexicon pack add example/cardiology --registry ${shellWord(indexPath)}\` takes the index's file and drops the pin`);
+    expect(odd.out).not.toContain('@2 beta');
+  });
+});

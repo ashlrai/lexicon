@@ -34,6 +34,13 @@ function repoModelsDir(): string | undefined {
   return root ? path.join(root, 'bench', 'audio', 'models') : undefined;
 }
 
+/**
+ * Model names whisper.cpp publishes, named when a download answers 404 (a
+ * misspelt `--model`). Not a list `--model` is checked against: a name not
+ * here is still fetched, so a model published later works.
+ */
+export const KNOWN_MODELS: readonly string[] = ['tiny.en', 'base.en', 'small.en', 'medium.en', 'tiny', 'base', 'small', 'medium', 'large-v3', 'large-v3-turbo'];
+
 export function modelFileName(name: string): string {
   return `ggml-${name}.bin`;
 }
@@ -403,7 +410,7 @@ export async function defaultDownloader(url: string, dest: string, onProgress: (
   await fs.mkdir(path.dirname(dest), { recursive: true });
   await sweepStaleParts(dest);
   const res = await fetch(url, { redirect: 'follow', ...(signal ? { signal } : {}) });
-  if (!res.ok || !res.body) throw new Error(`download failed: ${res.status} ${res.statusText} (${url})`);
+  if (!res.ok || !res.body) throw Object.assign(new Error(`download failed: ${res.status} ${res.statusText} (${url})`), { status: res.status });
   const total = Number(res.headers.get('content-length')) || undefined;
   const claimed = claimedSha256(res.headers);
   const hash = createHash('sha256');
@@ -473,8 +480,10 @@ export async function ensureModel(spec: string, opts: EnsureModelOptions): Promi
       : `whisper model ${resolved.name} not found; fetching ${resolved.url} -> ${resolved.path}`,
   );
   let lastPct = -1;
+  let total: number | undefined;
   try {
     await download(resolved.url, resolved.path, (p) => {
+      total = p.total;
       const pct = p.total ? Math.floor((p.received / p.total) * 100) : Math.floor(p.received / 8_388_608);
       if (pct !== lastPct) {
         lastPct = pct;
@@ -483,6 +492,23 @@ export async function ensureModel(spec: string, opts: EnsureModelOptions): Promi
     }, opts.signal);
   } catch (e) {
     if (opts.signal?.aborted) throw new Error(`the download of whisper model ${resolved.name} was interrupted; nothing was kept`);
+    // "Check the network" was the advice for every failure: a misspelt model
+    // name (a 404) and a full disk were sent to look at their network.
+    const status = (e as { status?: unknown } | null)?.status;
+    if (status === 404) {
+      throw new Error(
+        `there is no whisper model named ${resolved.name} (${resolved.url} answered 404); ` +
+          `pass one that exists with --model, such as ${KNOWN_MODELS.join(', ')}, or a ggml file you have`,
+      );
+    }
+    const code = (e as NodeJS.ErrnoException | null)?.code;
+    if (code === 'ENOSPC' || code === 'EDQUOT') {
+      throw new Error(
+        `could not download whisper model ${resolved.name}: there is no space left for it in ${path.dirname(resolved.path)}` +
+          `${total ? ` (it is ${mb(total)})` : ''}; nothing was kept. Free some space and try again, ` +
+          'or set LEXICON_WHISPER_MODELS to a directory on a disk with room',
+      );
+    }
     // The failure alone ("fetch failed") said nothing about what to do next.
     const why = e instanceof Error ? e.message : String(e);
     throw new Error(

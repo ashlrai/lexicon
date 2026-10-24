@@ -76,7 +76,7 @@ directory in every working directory); a repo checkout
 also looks in `bench/audio/models/` so the benchmark's download is reused. A missing
 named model is fetched from
 `https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-<name>.bin` with a
-progress line on stderr (`base.en` is 148 MB, `small.en` 488 MB). A model file that is
+progress line on stderr (`base.en` is 148 MB, `small.en` 488 MB). A name Hugging Face answers 404 for (a misspelt `--model`) is said to be no whisper model, with names that exist. A model file that is
 already there is used only when it starts with the ggml magic bytes: an empty file or a
 saved error page is downloaded again (a named model) or refused before recording (a
 `--model` path), and `lexicon doctor` warns about it.
@@ -197,7 +197,7 @@ refuses to transcribe is kept too, because a refusal is a parser's opinion about
 container and the audio is the user's. Those kept captures add up, and nothing here
 deletes them for you: a start sweeps away only what cannot hold audio (zero-byte
 captures) and then says how many recordings are still sitting in `voice/` and how much
-space they take. ffmpeg's stderr for a toggle recording goes to `voice/recorder.log`.
+space they take. ffmpeg's stderr for a toggle recording goes to `voice/recorder.log`, which each start empties, so it holds the current recording's output only.
 
 ### Hotkey recipes
 

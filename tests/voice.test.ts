@@ -55,6 +55,7 @@ import {
   confirmRecorder,
   findOrphanRecorder,
   recorderFingerprint,
+  resolveInput,
 } from '../src/voice/recorder.js';
 import { WHISPER_TIMEOUT_BASE_MS, WHISPER_TIMEOUT_PER_AUDIO_SECOND_MS, cleanTranscript, parseWhisperOutput, whisperArgs, whisperTimeoutMs } from '../src/voice/transcribe.js';
 import {
@@ -474,6 +475,24 @@ describe('lexicon voice --toggle', () => {
     expect(await readState(h.globalPath)).toBeUndefined();
     // Nothing was in it, so nothing is kept.
     await expect(fs.access(wav)).rejects.toThrow();
+  });
+
+  // Catches: recorder.log was opened for append and never emptied, so a recording that failed quoted an earlier one's error.
+  it('starts each recording with an empty recorder log, so a failure never quotes an earlier one', async () => {
+    const h = await harness();
+    await ensureVoiceDir(h.globalPath);
+    await fs.writeFile(recorderLogPath(h.globalPath), '[AVFoundation indev @ 0x1] Error opening input: from yesterday\n');
+
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(await fs.readFile(recorderLogPath(h.globalPath), 'utf8')).toBe('');
+    if (process.platform !== 'win32') expect(await modeOf(recorderLogPath(h.globalPath))).toBe(0o600);
+
+    // This recording leaves nothing usable and ffmpeg logged nothing for it.
+    const wav = (await readState(h.globalPath))?.wav ?? '';
+    await fs.writeFile(wav, Buffer.alloc(0));
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(h.err.join('')).toContain('recording failed');
+    expect(h.err.join('')).not.toContain('from yesterday');
   });
 
   it('keeps a capture it cannot parse rather than deleting the user audio', async () => {
@@ -1622,6 +1641,32 @@ describe('lexicon voice --json failures', () => {
     expect(dshow.err.join('').match(/--list-devices/g)).toHaveLength(1);
   });
 
+  // Catches: the ffmpeg path went into `<ffmpeg> -version` as is, so a path with a space printed a command that ran something else.
+  it('quotes the ffmpeg path in the -version step for the platform shell', async () => {
+    for (const platform of ['darwin', 'win32'] as const) {
+      const ffmpeg = '/fake/bin/My Tools/ffmpeg';
+      const listFails = await harness({ platform });
+      listFails.deps.env = { PATH: listFails.binDir, LEXICON_FFMPEG_BIN: ffmpeg, LEXICON_WHISPER_BIN: '/fake/bin/whisper-cli' };
+      listFails.deps.exec = async () => {
+        throw new Error('boom');
+      };
+      expect(await runVoiceListDevices({ ...listFails.opts, json: true }, listFails.io, listFails.deps)).toBe(EXIT_ERROR);
+      const shown = commandLine([ffmpeg, '-version'], platform);
+      expect(shown).not.toBe(`${ffmpeg} -version`);
+      expect(listFails.err.join('')).toContain(`check ffmpeg with \`${shown}\`, or skip`);
+      expect(onlyDocument(listFails)).toMatchObject({ nextStep: expect.stringContaining(`\`${shown}\``) });
+
+      const spawnFails = await harness({ platform });
+      spawnFails.deps.env = { PATH: spawnFails.binDir, LEXICON_FFMPEG_BIN: ffmpeg, LEXICON_WHISPER_BIN: '/fake/bin/whisper-cli' };
+      spawnFails.deps.spawn = () => {
+        throw new Error('spawn ENOENT');
+      };
+      spawnFails.opts = { ...spawnFails.opts, device: 'MacBook Pro Microphone' };
+      expect(await runVoiceToggle(spawnFails.opts, spawnFails.io, spawnFails.deps)).toBe(EXIT_ERROR);
+      expect(spawnFails.err.join('')).toContain(`check ffmpeg (\`${shown}\`) and the input device`);
+    }
+  });
+
   it('without --json stdout stays empty on a failure', async () => {
     const h = await harness({ missing: ['whisper-cli', 'whisper-cpp'] });
     expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_MISSING_TOOL);
@@ -1680,6 +1725,49 @@ describe('device parsers', () => {
     ]);
     expect(formatDeviceList(alsa)).toBe('[0] HDA Intel PCH (ALC295 Analog)  (hw:0,0)\n[1] Yeti Stereo Microphone (USB Audio)  (hw:1,0)\n');
     expect(formatDeviceList([])).toBe('no audio input devices found\n');
+  });
+
+  // Catches: an index no device has recorded the default microphone (pulse) or reached ffmpeg as a device name (alsa, dshow).
+  it('refuses a --device index that no listed device has, before recording', async () => {
+    for (const platform of ['linux', 'win32'] as const) {
+      const h = await harness({ platform });
+      h.deps.env = { PATH: h.binDir, LEXICON_FFMPEG_BIN: '/fake/bin/ffmpeg', LEXICON_WHISPER_BIN: '/fake/bin/whisper-cli' };
+      expect(await runVoice({ ...h.opts, device: '7', json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+      expect(h.spawnCalls).toEqual([]);
+      expect(h.err.join('')).toContain('no audio input device has index 7 (the list has 0 to 1)');
+      expect(JSON.parse(h.out.join(''))).toMatchObject({ ok: false, code: EXIT_ERROR, error: expect.stringContaining('--list-devices') });
+    }
+    const exec: VoiceExec = async () => ({ code: 0, stdout: '', stderr: '' });
+    const alsa = parseArecordList(ARECORD_LIST);
+    await expect(resolveInput({ platform: 'linux', ffmpeg: 'ffmpeg', exec, device: '2', devices: alsa })).rejects.toThrow(/index 2/);
+    // A name is still passed on as it is, and an index that exists still resolves.
+    expect(await resolveInput({ platform: 'linux', ffmpeg: 'ffmpeg', exec, device: 'hw:3,0', devices: alsa })).toEqual({ format: 'alsa', input: 'hw:3,0' });
+    expect(await resolveInput({ platform: 'linux', ffmpeg: 'ffmpeg', exec, device: '1', devices: alsa })).toEqual({ format: 'alsa', input: 'hw:1,0' });
+    // ffmpeg has pulse but no pulse source was listed: the arecord id goes to the alsa demuxer, not to pulse.
+    const pulseExec: VoiceExec = async () => ({ code: 0, stdout: ' D  pulse           Pulse audio input\n', stderr: '' });
+    expect(await resolveInput({ platform: 'linux', ffmpeg: 'ffmpeg', exec: pulseExec, device: '1', devices: alsa })).toEqual({ format: 'alsa', input: 'hw:1,0' });
+  });
+
+  // Catches: devices were numbered by card, so two inputs on one card shared an index and --device <index> reached only the first.
+  it('numbers arecord devices by position, so two inputs on one card each get an index', () => {
+    const list = [
+      '**** List of CAPTURE Hardware Devices ****',
+      'card 0: PCH [HDA Intel PCH], device 0: ALC3246 Analog [ALC3246 Analog]',
+      '  Subdevices: 1/1',
+      'card 0: PCH [HDA Intel PCH], device 2: ALC3246 Alt Analog [ALC3246 Alt Analog]',
+      '  Subdevices: 1/1',
+      'card 2: Yeti [Yeti Stereo Microphone], device 0: USB Audio [USB Audio]',
+      '',
+    ].join('\n');
+    const alsa = parseArecordList(list);
+    expect(alsa.map((d) => [d.index, d.id])).toEqual([
+      [0, 'hw:0,0'],
+      [1, 'hw:0,2'],
+      [2, 'hw:2,0'],
+    ]);
+    expect(pickDevice(alsa, '1')?.id).toBe('hw:0,2');
+    expect(pickDevice(alsa, '2')?.id).toBe('hw:2,0');
+    expect(formatDeviceList(alsa).split('\n').filter(Boolean).map((l) => l.slice(0, 3))).toEqual(['[0]', '[1]', '[2]']);
   });
 });
 
