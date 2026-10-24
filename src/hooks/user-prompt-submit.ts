@@ -453,23 +453,62 @@ const SENTENCE_BREAK_RE = /(?<=[.!?])\s+/;
 export function parseCorrections(text: string): Correction[] {
   const found: Correction[] = [];
   const seen = new Set<string>();
-  const add = (c: Correction | undefined): void => {
+  const keyOf = (c: Correction): string => `${collapse(c.heard)}\u0000${collapse(c.meant)}`;
+  // `source` is the sentence the correction was read from: a side counts as
+  // quoted only when it is quoted there (see isOrdinaryContrast).
+  const add = (c: Correction | undefined, source: string): void => {
     if (!c || c.heard.trim() === '' || c.meant.trim() === '') return;
     if (CODE_SHAPE_RE.test(c.heard) || CODE_SHAPE_RE.test(c.meant)) return;
-    if (isOrdinaryContrast(text, c)) return;
-    const key = `${collapse(c.heard)}\u0000${collapse(c.meant)}`;
+    if (isOrdinaryContrast(source, c)) return;
+    const key = keyOf(c);
     if (seen.has(key)) return;
     seen.add(key);
     found.push(c);
   };
   // Code is not the user speaking: a correction phrase in a pasted block is
   // read as blanks (offsets kept), so it neither matches nor joins the prose.
-  const prose = blankCode(text);
-  add(parseCorrection(prose));
+  // Nor is quoted text: a Markdown blockquote or what a screen "says:".
+  const prose = blankQuoted(blankCode(text));
+  const whole = parseCorrection(prose);
   // Only a prompt with a second sentence can hold a second correction.
-  if (!SENTENCE_BREAK_RE.test(prose)) return found;
-  for (const sentence of prose.split(SENTENCE_BREAK_RE)) add(parseCorrection(sentence));
+  if (!SENTENCE_BREAK_RE.test(prose)) {
+    add(whole, prose);
+    return found;
+  }
+  const perSentence = prose.split(SENTENCE_BREAK_RE).map((sentence) => ({ sentence, c: parseCorrection(sentence) }));
+  const wholeKey = whole ? keyOf(whole) : undefined;
+  add(whole, perSentence.find((p) => p.c !== undefined && keyOf(p.c) === wholeKey)?.sentence ?? prose);
+  for (const { sentence, c } of perSentence) add(c, sentence);
   return found;
+}
+
+/**
+ * Text introduced by a verb of showing or saying and a colon ("The banner
+ * says: ...", "the error reads: ..."), up to the end of its sentence or line:
+ * the user is quoting a screen or a message, not correcting a spelling. "I
+ * said: ..." is the user speaking and is not matched.
+ */
+const REPORTED_RE = /(?<!\bI\s)\b(?:says|said|reads|read|shows|showed|displays|displayed|prints|printed|states|stated|writes|wrote|outputs|returns|returned)\s*:[^\S\n]*[^\n]*?(?:[.!?](?=\s|$)|(?=\n)|$)/giu;
+
+/** A Markdown blockquote line: up to three spaces, then `>`. */
+const BLOCKQUOTE_LINE_RE = /^[ \t]{0,3}>[^\n]*/gmu;
+
+/**
+ * `text` with quoted material replaced by spaces (offsets and line breaks
+ * kept): Markdown blockquote lines (`> it's Vercel not versel`, a pasted
+ * reply or document), and text a verb of showing or saying introduces with a
+ * colon (see REPORTED_RE: "The banner says: it's Vercel not versel."). Each
+ * was flagged as the user's own spelling correction, got a learn_correction
+ * line and a `lexicon pending` entry. A correction the user makes around
+ * such text is still read.
+ */
+function blankQuoted(text: string): string {
+  if (!/[>:]/.test(text)) return text;
+  const blank = (m: string): string => m.replace(/[^\n]/g, ' ');
+  return text.replace(BLOCKQUOTE_LINE_RE, blank).replace(REPORTED_RE, (m) => {
+    const colon = m.indexOf(':');
+    return m.slice(0, colon + 1) + blank(m.slice(colon + 1));
+  });
 }
 
 /**
@@ -506,7 +545,7 @@ function blankCode(text: string): string {
 /** Least similarity (letters and digits only, lowercased) at which two plain-word sides still read as one spelling. */
 export const CORRECTION_MIN_SIMILARITY = 0.45;
 
-/** `side` appears quoted in `text` ("x", \u201cx\u201d or `x`): the user marked it as a spelling. */
+/** `side` appears quoted in `text` ("x", \u201cx\u201d or `x`), the sentence the correction was read from: the user marked it as a spelling. */
 function quotedIn(text: string, side: string): boolean {
   return text.includes(`"${side}"`) || text.includes(`\u201c${side}\u201d`) || text.includes(`\`${side}\``);
 }

@@ -21212,20 +21212,37 @@ var SENTENCE_BREAK_RE = /(?<=[.!?])\s+/;
 function parseCorrections(text) {
   const found = [];
   const seen = /* @__PURE__ */ new Set();
-  const add = (c) => {
+  const keyOf = (c) => `${collapse2(c.heard)}\0${collapse2(c.meant)}`;
+  const add = (c, source) => {
     if (!c || c.heard.trim() === "" || c.meant.trim() === "") return;
     if (CODE_SHAPE_RE.test(c.heard) || CODE_SHAPE_RE.test(c.meant)) return;
-    if (isOrdinaryContrast(text, c)) return;
-    const key = `${collapse2(c.heard)}\0${collapse2(c.meant)}`;
+    if (isOrdinaryContrast(source, c)) return;
+    const key = keyOf(c);
     if (seen.has(key)) return;
     seen.add(key);
     found.push(c);
   };
-  const prose = blankCode(text);
-  add(parseCorrection(prose));
-  if (!SENTENCE_BREAK_RE.test(prose)) return found;
-  for (const sentence of prose.split(SENTENCE_BREAK_RE)) add(parseCorrection(sentence));
+  const prose = blankQuoted(blankCode(text));
+  const whole = parseCorrection(prose);
+  if (!SENTENCE_BREAK_RE.test(prose)) {
+    add(whole, prose);
+    return found;
+  }
+  const perSentence = prose.split(SENTENCE_BREAK_RE).map((sentence) => ({ sentence, c: parseCorrection(sentence) }));
+  const wholeKey = whole ? keyOf(whole) : void 0;
+  add(whole, perSentence.find((p) => p.c !== void 0 && keyOf(p.c) === wholeKey)?.sentence ?? prose);
+  for (const { sentence, c } of perSentence) add(c, sentence);
   return found;
+}
+var REPORTED_RE = /(?<!\bI\s)\b(?:says|said|reads|read|shows|showed|displays|displayed|prints|printed|states|stated|writes|wrote|outputs|returns|returned)\s*:[^\S\n]*[^\n]*?(?:[.!?](?=\s|$)|(?=\n)|$)/giu;
+var BLOCKQUOTE_LINE_RE = /^[ \t]{0,3}>[^\n]*/gmu;
+function blankQuoted(text) {
+  if (!/[>:]/.test(text)) return text;
+  const blank = (m) => m.replace(/[^\n]/g, " ");
+  return text.replace(BLOCKQUOTE_LINE_RE, blank).replace(REPORTED_RE, (m) => {
+    const colon = m.indexOf(":");
+    return m.slice(0, colon + 1) + blank(m.slice(colon + 1));
+  });
 }
 var CODE_SHAPE_RE = /[\p{L}\p{N}_]\(|[{};=]/u;
 function blankCode(text) {

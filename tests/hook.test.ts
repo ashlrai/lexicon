@@ -1418,3 +1418,54 @@ describe('a UTF-16 payload (Windows piping) is decoded', () => {
     }
   });
 });
+
+describe('quoted text is not the user correcting a spelling', () => {
+  // Catches: "it's X not Y" in a Markdown blockquote or in text a screen "says:" got a learn_correction line and a pending entry.
+  it('reads no correction out of a blockquote or reported UI text', async () => {
+    const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+    for (const text of [
+      "> it's Vercel not versel",
+      ">it's Vercel not versel",
+      "   > it's Vercel not versel\n\nwhat does this mean?",
+      "Here is the reply:\n> thanks!\n> it's Vercel not versel\nShould I answer?",
+      'The banner says: it\'s Vercel not versel.',
+      'The toast reads: it\'s Vercel not versel. Why does it say that?',
+      'the error printed: it\'s Vercel not versel',
+      'The dialog shows: it’s Vercel not versel!',
+    ]) {
+      expect(parseCorrections(text), text).toEqual([]);
+    }
+  });
+
+  it('still reads a correction the user makes around quoted text', async () => {
+    const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+    const vercel = [{ heard: 'versel', meant: 'Vercel' }];
+    for (const text of [
+      "it's Vercel not versel",
+      "no, it's Vercel not versel",
+      "Note: it's Vercel not versel.",
+      "I said: it's Vercel not versel.",
+      "> some quoted line\nit's Vercel not versel",
+      "The banner says: hello there. it's Vercel not versel.",
+      "a > b, and it's Vercel not versel",
+      "it's \"Vercel\" not \"versel\"",
+    ]) {
+      expect(parseCorrections(text), text).toEqual(vercel);
+    }
+    expect(parseCorrections("the error reads: it's Vercel not versel\nalso it's Supabase not super base")).toEqual([{ heard: 'super base', meant: 'Supabase' }]);
+  });
+
+  // Catches: a side quoted anywhere in the prompt kept an ordinary contrast as a spelling correction.
+  it('counts a side as quoted only in the sentence the correction is in', async () => {
+    const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+    expect(parseCorrections('it\'s flaky not broken. The test is named "broken".')).toEqual([]);
+    expect(parseCorrections('it\'s "flaky" not "broken". The test is named broken.')).toEqual([{ heard: 'broken', meant: 'flaky' }]);
+  });
+
+  it('gives a blockquoted correction no learn_correction line and queues nothing', async () => {
+    const { runHook } = await import('../src/hooks/user-prompt-submit.js');
+    const out = await runHook(payload("> it's Vercel not versel\n\nwhat does this mean?"));
+    expect(out).toBe('');
+    expect(mocks.queueCorrections).not.toHaveBeenCalled();
+  });
+});
