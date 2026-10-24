@@ -64110,7 +64110,17 @@ async function stepLexicon(ctx) {
     return;
   }
   if (gated) ctx.say(dim(`   already has ${before} terms; seeding only the names you passed`));
-  const guessCompany = async () => gated ? void 0 : suggestCompany(await readPackageName(ctx.cwd), tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
+  let companySkipped = false;
+  const guessCompany = async () => {
+    if (gated) return void 0;
+    const name = suggestCompany(await readPackageName(ctx.cwd), tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
+    if (name === void 0) return void 0;
+    const problem = setupNameProblem(name);
+    if (problem === void 0) return name;
+    companySkipped = true;
+    ctx.say(dim(`   skipped the company term: the guessed name ${problem}; pass --company "Your Co", or later: lexicon add "Your Co" --category brand`));
+    return void 0;
+  };
   if (ctx.plan) {
     const person2 = ctx.opts.person ?? (gated ? void 0 : gitPersonGuess(ctx).name);
     const company2 = ctx.opts.company ?? await guessCompany();
@@ -64159,7 +64169,7 @@ async function stepLexicon(ctx) {
     );
   }
   if (!company) {
-    if (!gated) ctx.say(dim('   no company term (add one later: lexicon add "Your Co" --category brand)'));
+    if (!gated && !companySkipped) ctx.say(dim('   no company term (add one later: lexicon add "Your Co" --category brand)'));
     return;
   }
   const aliases = suggestAliases(company);

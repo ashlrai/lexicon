@@ -198,10 +198,20 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
     return;
   }
   if (gated) ctx.say(dim(`   already has ${before} terms; seeding only the names you passed`));
-  const guessCompany = async (): Promise<string | undefined> =>
-    gated
-      ? undefined
-      : suggestCompany(await readPackageName(ctx.cwd), tryExec(ctx.exec, 'git', ['-C', ctx.cwd, 'remote', 'get-url', 'origin']));
+  // A guess the write would refuse (an over-long package scope or remote
+  // org) is skipped with a note, as gitPersonGuess does for the person,
+  // instead of failing setup after the person term was seeded.
+  let companySkipped = false;
+  const guessCompany = async (): Promise<string | undefined> => {
+    if (gated) return undefined;
+    const name = suggestCompany(await readPackageName(ctx.cwd), tryExec(ctx.exec, 'git', ['-C', ctx.cwd, 'remote', 'get-url', 'origin']));
+    if (name === undefined) return undefined;
+    const problem = setupNameProblem(name);
+    if (problem === undefined) return name;
+    companySkipped = true;
+    ctx.say(dim(`   skipped the company term: the guessed name ${problem}; pass --company "Your Co", or later: lexicon add "Your Co" --category brand`));
+    return undefined;
+  };
   if (ctx.plan) {
     // Same defaults as the non-interactive path below, without the writes.
     const person = ctx.opts.person ?? (gated ? undefined : gitPersonGuess(ctx).name);
@@ -257,7 +267,7 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
     );
   }
   if (!company) {
-    if (!gated) ctx.say(dim('   no company term (add one later: lexicon add "Your Co" --category brand)'));
+    if (!gated && !companySkipped) ctx.say(dim('   no company term (add one later: lexicon add "Your Co" --category brand)'));
     return;
   }
   const aliases = suggestAliases(company);

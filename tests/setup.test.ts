@@ -1173,6 +1173,28 @@ describe('runSetup starter packs', () => {
     }
   });
 
+  it('skips a guessed company the write would refuse (too long) with a note instead of failing after the person was seeded', async () => {
+    const longOrg = 'a'.repeat(120);
+    const f = fakes({
+      exec: (file, args) => {
+        if (file === 'git' && args.join(' ') === 'config --global user.name') return 'Mason Wyatt';
+        if (file === 'git' && args.join(' ') === `-C ${cwd} remote get-url origin`) return `https://github.com/${longOrg}/repo.git`;
+        if (file === 'git') throw new Error('exit 1');
+        throw new Error(`unexpected exec: ${file} ${args.join(' ')}`);
+      },
+    });
+    // The plan agrees: only the person would be seeded.
+    const planned = await run({ yes: true, dryRun: true, clients: 'none', packs: false }, f);
+    expect(planned.plan?.wouldSeed).toEqual(['Mason Wyatt']);
+    expect(planned.io.out).toMatch(/skipped the company term: the guessed name must be at most 80 characters/);
+    const { code, summary, io } = await run({ yes: true, clients: 'none', packs: false, harvest: false }, f);
+    expect(code).toBe(0);
+    expect(summary.termsAdded).toEqual(['Mason Wyatt']);
+    expect(io.out).toMatch(/skipped the company term: the guessed name must be at most 80 characters/);
+    expect(io.out).toContain('pass --company "Your Co"');
+    expect(io.out).not.toContain('no company term (add one later');
+  });
+
   it('goes through deps.listPacks / deps.installPack when injected, with global scope', async () => {
     const calls: { name: string; opts: unknown }[] = [];
     const f = fakes({
