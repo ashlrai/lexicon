@@ -65,7 +65,7 @@ chrome.runtime.onMessage.addListener((msg: Request, sender, sendResponse) => {
   // Only our own pages and content scripts may talk to the worker.
   if (sender.id !== chrome.runtime.id) return false;
   background
-    .handle(msg)
+    .handle(msg, { url: sender.tab?.url ?? sender.url })
     .then(sendResponse)
     .catch((err: unknown) => sendResponse({ ok: false, error: err instanceof Error ? err.message : String(err) }));
   return true;

@@ -42,9 +42,25 @@ export interface Settings {
 export const STORAGE_KEYS = {
   settings: 'settings',
   recent: 'recent',
+  /** Hosts the guard ran on through "Any site", newest first (see `rememberAnySiteHost`), so Options can list them. */
+  anySiteHosts: 'anySiteHosts',
 } as const;
 
 export const RECENT_LIMIT = 5;
+/** Most hosts kept under STORAGE_KEYS.anySiteHosts. */
+export const ANY_SITE_HOSTS_LIMIT = 100;
+
+/** A stored host list as it can be trusted: strings that look like a host (`hostKey` form), no repeats, at most ANY_SITE_HOSTS_LIMIT. */
+export function coerceHostList(raw: unknown): string[] {
+  if (!Array.isArray(raw)) return [];
+  const out: string[] = [];
+  for (const v of raw) {
+    if (typeof v !== 'string' || !/^[a-z0-9.-]{1,253}(?::\d{1,5})?$/.test(v) || out.includes(v)) continue;
+    out.push(v);
+    if (out.length >= ANY_SITE_HOSTS_LIMIT) break;
+  }
+  return out;
+}
 export const LIVE_DEBOUNCE_MS = 400;
 export const PRECHECK_DEBOUNCE_MS = 250;
 export const TOAST_MS = 3000;

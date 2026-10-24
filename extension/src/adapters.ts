@@ -192,6 +192,37 @@ export function eventOrigin(ev: Event): EventTarget | null {
   return path[0] ?? ev.target;
 }
 
+/** One row of the Options site list. `anySite`: reached through "Any site", not a built-in chat site. */
+export interface SiteRow {
+  label: string;
+  host: string;
+  anySite?: boolean;
+}
+
+/**
+ * The Options site list: every built-in chat site, then each host with a
+ * stored switch, then each host the guard ran on through "Any site"
+ * (`seen`, see the background's `rememberAnySiteHost`). It listed only the
+ * first two, so a site reached through "Any site" could be paused from the
+ * popup but never from Options.
+ */
+export function siteRows(sites: Record<string, boolean>, seen: readonly string[]): SiteRow[] {
+  const rows: SiteRow[] = [];
+  const known = new Set<string>();
+  for (const a of ADAPTERS) {
+    for (const host of a.hosts) {
+      known.add(host);
+      rows.push({ label: a.label, host });
+    }
+  }
+  for (const host of [...Object.keys(sites), ...seen]) {
+    if (known.has(host)) continue;
+    known.add(host);
+    rows.push({ label: host, host, anySite: true });
+  }
+  return rows;
+}
+
 export function adapterFor(hostname: string): SiteAdapter {
   const key = hostKey(hostname);
   return ADAPTERS.find((a) => a.hosts.includes(key)) ?? GENERIC;

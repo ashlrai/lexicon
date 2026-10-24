@@ -3,11 +3,14 @@
  * embedded engine. Pure apart from the injected fetch/storage so tests can
  * run it under jsdom with a fake server.
  */
+import { builtinPage } from './adapters.js';
 import { createEmbedded, learnIntoYaml, lexiconToYaml } from './embedded.js';
 import { conflictNote, conflictRemoveCommand, parseLexicon, redactSecrets } from './core.js';
 import type { NormalizeIncomplete } from './core.js';
 import {
+  ANY_SITE_HOSTS_LIMIT,
   API_MAX_BODY_BYTES,
+  coerceHostList,
   coerceSettings,
   errorMessage,
   FETCH_TIMEOUT_MS,
@@ -15,6 +18,7 @@ import {
   LEXICON_TIMEOUT_MS,
   pairableBaseUrl,
   pairPortOrigins,
+  hostKey,
   RECENT_LIMIT,
   STORAGE_KEYS,
   TOKEN_BACKOFF_MAX_MS,
@@ -38,6 +42,11 @@ import type {
   SyncReply,
 } from './shared.js';
 
+/** What `handle` reads of `chrome.runtime.MessageSender`. */
+export interface MessageSender {
+  url?: string;
+}
+
 export interface KeyValueStore {
   get(keys: string[]): Promise<Record<string, unknown>>;
   set(items: Record<string, unknown>): Promise<void>;
@@ -59,7 +68,8 @@ export interface BackgroundDeps {
 }
 
 export interface Background {
-  handle(req: Request): Promise<Reply>;
+  /** `sender.url`: the page of the tab the request came from, as the browser reports it (never the request's own word). */
+  handle(req: Request, sender?: MessageSender): Promise<Reply>;
   getSettings(): Promise<Settings>;
   saveSettings(patch: Partial<Settings>): Promise<Settings>;
 }
@@ -528,12 +538,42 @@ export function createBackground(deps: BackgroundDeps): Background {
     return origins ? { ok: true, origins } : { ok: true };
   }
 
-  async function handle(req: Request): Promise<Reply> {
+  /** Hosts already in STORAGE_KEYS.anySiteHosts this worker has seen, so a check writes the list only for a new one. */
+  const rememberedHosts = new Set<string>();
+
+  /**
+   * Adds the host of `url` to STORAGE_KEYS.anySiteHosts (newest first, at most
+   * ANY_SITE_HOSTS_LIMIT) when the guard runs there through "Any site", so
+   * Options lists it with a switch. Built-in chat pages are listed anyway.
+   */
+  async function rememberAnySiteHost(url: string | undefined): Promise<void> {
+    if (!url) return;
+    let host: string;
+    try {
+      const u = new URL(url);
+      if (u.protocol !== 'https:' && u.protocol !== 'http:') return;
+      host = hostKey(u.hostname);
+    } catch {
+      return;
+    }
+    if (!host || builtinPage(url) || rememberedHosts.has(host)) return;
+    const stored = coerceHostList((await deps.store.get([STORAGE_KEYS.anySiteHosts]))[STORAGE_KEYS.anySiteHosts]);
+    rememberedHosts.add(host);
+    if (stored[0] === host) return;
+    await deps.store.set({ [STORAGE_KEYS.anySiteHosts]: [host, ...stored.filter((h) => h !== host)].slice(0, ANY_SITE_HOSTS_LIMIT) });
+  }
+
+  async function handle(req: Request, sender?: MessageSender): Promise<Reply> {
     if (!req || typeof req !== 'object' || typeof (req as { type?: unknown }).type !== 'string') {
       return { ok: false, error: 'bad request' };
     }
     switch (req.type) {
       case 'normalize':
+        try {
+          await rememberAnySiteHost(sender?.url);
+        } catch {
+          // A storage failure must not cost the check.
+        }
         return normalizeReq(req.text, req.dryRun === true);
       case 'status':
         return statusReq(req.probe === true);
