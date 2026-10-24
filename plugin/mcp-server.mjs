@@ -64770,6 +64770,9 @@ function outputIsTTY(output2) {
 function isInteractive() {
   return Boolean(process.stdin.isTTY && process.stdout.isTTY);
 }
+function onlyStdoutRedirected(streams = process) {
+  return Boolean(streams.stdin.isTTY) && !streams.stdout.isTTY;
+}
 function createPrompter(io = {}) {
   const input2 = io.input ?? process.stdin;
   const output2 = io.output ?? process.stdout;
@@ -66201,7 +66204,16 @@ async function runSetup(opts, io, deps = {}) {
     };
   }
   say(bold(opts.dryRun ? "lexicon setup (dry run)" : "lexicon setup"));
-  if (!interactive && !opts.yes && !opts.json && !opts.dryRun) say(dim("(no terminal: taking the defaults, as with --yes)"));
+  if (!interactive && !opts.yes && !opts.json && !opts.dryRun) {
+    if (deps.isInteractive === void 0 && onlyStdoutRedirected()) {
+      say(dim("(stdout is not a terminal: taking the defaults, as with --yes)"));
+      io.stderr(
+        "lexicon setup: stdout is not a terminal (piped or redirected), so no questions were asked and the defaults were taken, as with --yes. To answer them, run lexicon setup without the pipe or redirect; or pass the answers as flags (--app, --clients, --packs, --serve, --harvest).\n"
+      );
+    } else {
+      say(dim("(no terminal: taking the defaults, as with --yes)"));
+    }
+  }
   say();
   const steps = [
     ["Global lexicon", stepLexicon],

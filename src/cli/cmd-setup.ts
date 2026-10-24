@@ -47,7 +47,7 @@ import { LIMITS, listPacks } from '../core/index.js';
 import { bold, dim, fail, jsonError, safe, shownCommand, tildify } from './io.js';
 import { errorMessage } from '../util/errors.js';
 import type { IO } from './io.js';
-import { PromptClosedError, createPrompter, isInteractive } from './prompt.js';
+import { PromptClosedError, createPrompter, isInteractive, onlyStdoutRedirected } from './prompt.js';
 import { SETUP_APPS, SETUP_CLIENTS } from './setup/types.js';
 import type { Ctx, SetupDeps, SetupOptions, SetupPlan, SetupSummary } from './setup/types.js';
 import { defaultSetupExec, isSetupApp, parseClientList, parsePackList, setupHintProblem, setupNameProblem } from './setup/detect.js';
@@ -353,7 +353,18 @@ export async function runSetup(
   }
 
   say(bold(opts.dryRun ? 'lexicon setup (dry run)' : 'lexicon setup'));
-  if (!interactive && !opts.yes && !opts.json && !opts.dryRun) say(dim('(no terminal: taking the defaults, as with --yes)'));
+  if (!interactive && !opts.yes && !opts.json && !opts.dryRun) {
+    // `lexicon setup | tee log` has a person at the keyboard: "no terminal"
+    // read as a bug, and the line went into the pipe. Say on stderr what to do.
+    if (deps.isInteractive === undefined && onlyStdoutRedirected()) {
+      say(dim('(stdout is not a terminal: taking the defaults, as with --yes)'));
+      io.stderr(
+        'lexicon setup: stdout is not a terminal (piped or redirected), so no questions were asked and the defaults were taken, as with --yes. To answer them, run lexicon setup without the pipe or redirect; or pass the answers as flags (--app, --clients, --packs, --serve, --harvest).\n',
+      );
+    } else {
+      say(dim('(no terminal: taking the defaults, as with --yes)'));
+    }
+  }
   say();
   const steps: [string, (c: Ctx) => Promise<void>][] = [
     ['Global lexicon', stepLexicon],

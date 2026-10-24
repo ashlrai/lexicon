@@ -24,7 +24,7 @@ import type { InstallOptions } from '../src/cli/cmd-install.js';
 import { runServeInstall } from '../src/cli/cmd-serve.js';
 import type { ServeDeps } from '../src/cli/cmd-serve.js';
 import { makeIO, quotedForShell, scripted } from './helpers.js';
-import { PromptClosedError } from '../src/cli/prompt.js';
+import { PromptClosedError, onlyStdoutRedirected } from '../src/cli/prompt.js';
 import { stepExport } from '../src/cli/setup/steps.js';
 import type { Ctx } from '../src/cli/setup/types.js';
 
@@ -519,6 +519,32 @@ describe('runSetup --yes', () => {
     expect(await fs.readFile(file, 'utf8')).toBe(edited);
     expect((await ask('y')).exports).toEqual([{ format: 'wispr', path: file }]);
     expect(await fs.readFile(file, 'utf8')).toBe(fresh);
+  });
+
+  // Catches: `lexicon setup | tee log` (stdin a terminal, stdout a pipe)
+  // took every default under a "(no terminal ...)" line sent into the pipe,
+  // with no word of why on stderr or how to answer the questions.
+  it('says on stderr that stdout is why the defaults were taken', async () => {
+    expect(onlyStdoutRedirected({ stdin: { isTTY: true }, stdout: { isTTY: false } })).toBe(true);
+    expect(onlyStdoutRedirected({ stdin: { isTTY: true }, stdout: { isTTY: true } })).toBe(false);
+    expect(onlyStdoutRedirected({ stdin: {}, stdout: {} })).toBe(false);
+    const f = fakes();
+    delete f.deps.isInteractive;
+    const stdin = Object.getOwnPropertyDescriptor(process.stdin, 'isTTY');
+    const stdout = Object.getOwnPropertyDescriptor(process.stdout, 'isTTY');
+    Object.defineProperty(process.stdin, 'isTTY', { value: true, configurable: true });
+    Object.defineProperty(process.stdout, 'isTTY', { value: false, configurable: true });
+    try {
+      const { io } = await run({ clients: 'none', serve: false, packs: false, harvest: false }, f);
+      expect(io.err).toContain('lexicon setup: stdout is not a terminal (piped or redirected), so no questions were asked and the defaults were taken, as with --yes.');
+      expect(io.out).toContain('(stdout is not a terminal: taking the defaults, as with --yes)');
+      expect(io.out).not.toContain('(no terminal:');
+    } finally {
+      if (stdin) Object.defineProperty(process.stdin, 'isTTY', stdin);
+      else delete (process.stdin as { isTTY?: boolean }).isTTY;
+      if (stdout) Object.defineProperty(process.stdout, 'isTTY', stdout);
+      else delete (process.stdout as { isTTY?: boolean }).isTTY;
+    }
   });
 
   it('says "1 row", not "1 rows", for a one-row export', async () => {
