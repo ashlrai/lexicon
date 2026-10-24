@@ -527,7 +527,7 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
       const nextStep = global ? `run ${commandLine(['lexicon', 'remove', canonical, '--global'])} to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}` : PROJECT_TRUST_NEXT_STEP;
       line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...(untrusted ? { untrustedProject: untrusted } : {}) }, null, 2));
     }
-    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
+    io.stderr(`lexicon: ${safeMessage(errorMessage(err))}\n`);
     if (global) io.stderr(`lexicon: to remove only the global copy (${safe(global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--global'])}\n`);
     return 1;
   }
@@ -543,7 +543,7 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
       : (emptyLexiconRemoveStep(loaded) ?? 'run lexicon list to see the exact canonical spellings');
   const notFound = (): string =>
     `lexicon: term "${safe(canonical)}" not found${scope ? ` in ${scope} lexicon` : ''}\n` +
-    (missStep ? `lexicon: ${safeLines(missStep)}\n` : '') +
+    (missStep ? `lexicon: ${safeMessage(missStep)}\n` : '') +
     (untrusted
       ? `lexicon: it is in the ${untrusted.trust === 'changed' ? 'changed' : 'untrusted'} project lexicon (${safe(untrusted.path)}), which is not loaded or edited; review it and run lexicon trust before removing it there\n`
       : '');
@@ -622,8 +622,8 @@ async function runRemoveAlias(
           ? emptyLexiconRemoveStep(loaded)
           : undefined;
     if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere), canonical, alias, removed: false, ...extra }, null, 2));
-    io.stderr(`lexicon: ${safeLines(message)}\n`);
-    if (elsewhere) io.stderr(`lexicon: ${safeLines(elsewhere)}\n`);
+    io.stderr(`lexicon: ${safeMessage(message)}\n`);
+    if (elsewhere) io.stderr(`lexicon: ${safeMessage(elsewhere)}\n`);
     if (isProjectTrustError(err)) {
       if (holdsAlias(loaded?.global)) {
         io.stderr(`lexicon: to remove it only from the global copy (${safe(loaded!.global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--alias', alias, '--global'])}\n`);

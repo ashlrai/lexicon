@@ -745,6 +745,28 @@ describe('edit', () => {
     expect(await fs.readFile(globalPath, 'utf8')).toBe(broken);
   });
 
+  // Catches: the parse error went through the 200-character display cap, so a deep lexicon path cut it off before the reason.
+  it('prints the whole parse error for a lexicon at a long path', async () => {
+    const deep = path.join(tmp, ...Array.from({ length: 12 }, () => 'nested-directory'), 'lexicon.yaml');
+    await fs.mkdir(path.dirname(deep), { recursive: true });
+    const spawnEditor: SpawnEditor = async (_cmd, _args, file) => {
+      await fs.writeFile(file, 'version: 1\nterms:\n  - canonical: ""\n    aliases: [x]\n', 'utf8');
+      return 0;
+    };
+    const io = makeIO();
+    expect(await runEdit({ globalPath: deep }, io, spawnEditor, { EDITOR: 'fake' })).toBe(1);
+    expect(io.err).toContain(`Invalid lexicon at ${deep}:`);
+    expect(io.err).toContain('terms[0].canonical');
+    expect(io.err).toContain(`your edits are still in ${deep};`);
+    expect(io.err).not.toContain('\u2026');
+    // The path to edit by hand, when no editor is set, is printed whole too.
+    const none = makeIO();
+    const fresh = path.join(path.dirname(deep), 'fresh.yaml');
+    expect(await runEdit({ globalPath: fresh }, none, undefined, {})).toBe(0);
+    expect(none.out).toContain(`\n${fresh}\n`);
+    expect(none.out).not.toContain('\u2026');
+  });
+
   it('passes editor arguments through, notes a non-zero exit, and re-trusts an edited trusted project file', async () => {
     await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: Seed\n    aliases: [seed]\n', 'utf8');
     await trustProject(projectPath, { globalPath });

@@ -30,7 +30,7 @@ import type { HarvestCandidate, Lexicon, LexiconFile, Term, TermCategory, TermSc
 import { PromptClosedError, askKey, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
 import { errorMessage } from '../util/errors.js';
-import { CliRefusal, bold, dim, line, parseCategory, plural, refuse, resolveCwd, safe, safeLines } from './io.js';
+import { CliRefusal, bold, dim, line, parseCategory, plural, refuse, resolveCwd, safe, safeLines, safeMessage } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 function isCategory(value: string): value is TermCategory {
@@ -725,7 +725,7 @@ export async function runEdit(
   await withLexiconLock(target, async () => {
     if (existsSync(target)) return;
     await writeLexiconFile({ path: target, scope, lexicon: emptyLexicon(), exists: false });
-    line(io, `created ${scope} lexicon: ${safe(target)}`);
+    line(io, `created ${scope} lexicon: ${safeMessage(target)}`);
   });
   const trustedBefore =
     scope === 'project'
@@ -735,7 +735,7 @@ export async function runEdit(
   const editor = editorCommand(env);
   if (!editor) {
     line(io, `no $VISUAL or $EDITOR set; edit the file directly:`);
-    line(io, safe(target));
+    line(io, safeMessage(target));
     // Nothing checks the file afterwards on this path, and a hand edit leaves
     // a project file untrusted (its terms unused) until it is trusted again.
     line(
@@ -768,10 +768,10 @@ export async function runEdit(
 
   try {
     const file = await readLexiconFile(target, scope);
-    line(io, `ok: ${plural(file.lexicon.terms.length, 'term')} in ${safe(target)}`);
+    line(io, `ok: ${plural(file.lexicon.terms.length, 'term')} in ${safeMessage(target)}`);
   } catch (err) {
-    io.stderr(`lexicon: ${safeLines(errorMessage(err))}\n`);
-    io.stderr(`lexicon: your edits are still in ${safe(target)}; fix the file and run: lexicon edit${opts.project ? ' --project' : ''}\n`);
+    io.stderr(`lexicon: ${safeMessage(errorMessage(err))}\n`);
+    io.stderr(`lexicon: your edits are still in ${safeMessage(target)}; fix the file and run: lexicon edit${opts.project ? ' --project' : ''}\n`);
     return 1;
   }
 
@@ -779,7 +779,7 @@ export async function runEdit(
     if (trustedBefore) {
       // The user just edited it themselves; that is the approval `lexicon trust` records.
       await refreshTrust(target, store);
-      line(io, dim(`project lexicon re-trusted (${safe(target)})`));
+      line(io, dim(`project lexicon re-trusted (${safeMessage(target)})`));
     } else {
       line(io, dim(`project lexicon is not trusted yet; review it and run: lexicon trust`));
     }

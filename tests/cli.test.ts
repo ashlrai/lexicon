@@ -662,6 +662,20 @@ describe('add / remove / path', () => {
     expect(full.err).not.toContain('nothing to remove');
   });
 
+  // Catches: remove's error lines went through the 200-character display cap, so a refusal naming a deep project path ended in `...` mid-sentence.
+  it('remove prints a long error naming a path whole', async () => {
+    const deep = `/tmp/${'nested-directory/'.repeat(12)}.lexicon.yaml`;
+    vi.mocked(core.removeTerm).mockRejectedValueOnce(new core.ProjectTrustError(deep, 'untrusted'));
+    const term = makeIO();
+    expect(await runRemove('Ashlr.AI', {}, term)).toBe(1);
+    expect(term.err).toContain(new core.ProjectTrustError(deep, 'untrusted').message);
+    expect(term.err).not.toContain('\u2026');
+    vi.mocked(core.removeAlias).mockRejectedValueOnce(new core.ProjectTrustError(deep, 'untrusted'));
+    const alias = makeIO();
+    expect(await runRemove('Ashlr.AI', { alias: 'Ashler' }, alias)).toBe(1);
+    expect(alias.err).toContain(new core.ProjectTrustError(deep, 'untrusted').message);
+  });
+
   // Catches: every `remove --json` failure document (not found, unknown alias,
   // refused untrusted copy) lacked `ok: false`, the key every other --json
   // refusal leads with, so a script had to special-case remove.
