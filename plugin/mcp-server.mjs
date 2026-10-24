@@ -59886,13 +59886,18 @@ async function learnCorrection(c, opts = {}) {
   const untrusted = untrustedClaim(loaded, heard, existing?.canonical ?? meant);
   const withConflict = { ...conflict ? { conflict } : {}, ...untrusted ? { untrustedProject: untrusted } : {} };
   if (existing) {
-    const alreadyKnown = sameText(existing.canonical, heard) || existing.aliases.some((a) => sameText(a, heard));
     const targetScope = scope ?? existing.scope ?? "global";
+    const targetFile = targetScope === "project" ? loaded.project : loaded.global;
+    const inTarget = scope === void 0 ? existing : targetFile?.lexicon.terms.find((t) => sameText(t.canonical, existing.canonical));
+    const known = (t) => t !== void 0 && (sameText(t.canonical, heard) || t.aliases.some((a) => sameText(a, heard)));
+    if (known(inTarget) && targetFile) {
+      return { term: existing, created: false, file: targetFile, aliasAdded: false, ...withConflict };
+    }
     const saved2 = await addTerm(
-      { canonical: existing.canonical, aliases: alreadyKnown ? [] : [heard], source: "learned" },
+      { canonical: existing.canonical, aliases: [heard], source: "learned" },
       { ...writeOpts, scope: targetScope }
     );
-    return { term: saved2.term, created: saved2.created, file: saved2.file, aliasAdded: !alreadyKnown, ...withConflict };
+    return { term: saved2.term, created: saved2.created, file: saved2.file, aliasAdded: true, ...withConflict };
   }
   const aliases = dedupeCaseInsensitive2([heard, ...suggestAliases(meant)]).filter((a) => !sameText(a, meant));
   const saved = await addTerm(
@@ -59945,7 +59950,7 @@ async function learnCaseOnly(heard, meant, loaded, storeOpts2, scope) {
   }
   const termScope = byCanonical.scope ?? "global";
   const file2 = termScope === "project" ? loaded.project : loaded.global;
-  if (byCanonical.canonical === meant && file2) {
+  if (byCanonical.canonical.normalize("NFC") === meant.normalize("NFC") && file2) {
     return { term: byCanonical, created: false, file: file2, aliasAdded: false, ...withConflict };
   }
   const onDisk = file2?.lexicon.terms.find((t) => sameText(t.canonical, byCanonical.canonical));

@@ -257,13 +257,30 @@ describe('learnCorrection', () => {
     expect(result.aliasAdded).toBe(true);
   });
 
-  it('reports aliasAdded:false when heard is already known', async () => {
+  // Catches: learning a known correction again rewrote the lexicon file
+  // (same bytes, new timestamp and inode), and with --project wrote a hollow
+  // copy of the global term into the project file (created, no alias).
+  it('reports aliasAdded:false and writes nothing when heard is already known', async () => {
     const result = await learnCorrection({ heard: 'ashler', meant: 'Ashlr.AI' });
-    expect(result.aliasAdded).toBe(false);
+    expect(result).toMatchObject({ created: false, aliasAdded: false, file: { path: '/fake/global.yaml' } });
+    expect(result.term.canonical).toBe('Ashlr.AI');
+    expect(store.addTerm).not.toHaveBeenCalled();
+  });
+
+  it('a known correction learned into another scope writes heard there, never a term without it', async () => {
+    const result = await learnCorrection({ heard: 'Ashler', meant: 'Ashlr.AI' }, { cwd: '/fake/repo', scope: 'project' });
     expect(store.addTerm).toHaveBeenCalledWith(
-      { canonical: 'Ashlr.AI', aliases: [], source: 'learned' },
-      { scope: 'global' },
+      { canonical: 'Ashlr.AI', aliases: ['Ashler'], source: 'learned' },
+      { cwd: '/fake/repo', scope: 'project' },
     );
+    expect(result.aliasAdded).toBe(true);
+    // Already in that file too: nothing written.
+    const project: Lexicon = { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'], scope: 'project' }] };
+    store.loadLexicon.mockResolvedValueOnce({ ...loaded, project: { ...loaded.project!, lexicon: project } });
+    store.addTerm.mockClear();
+    const again = await learnCorrection({ heard: 'Ashler', meant: 'Ashlr.AI' }, { cwd: '/fake/repo', scope: 'project' });
+    expect(store.addTerm).not.toHaveBeenCalled();
+    expect(again).toMatchObject({ created: false, aliasAdded: false, file: { path: '/fake/repo/.lexicon.yaml' } });
   });
 
   it('creates a new learned term with heard first, then suggested aliases', async () => {
@@ -301,6 +318,15 @@ describe('learnCorrection', () => {
         { scope: 'global', merge: false },
       );
       expect(result).toMatchObject({ created: false, aliasAdded: true });
+    });
+
+    // Catches: `Zoe` plus U+0308 (as pasted from a macOS file name) is the
+    // canonical `Zoë` the store holds, but compared as written it recased the
+    // term to itself, rewrote the file and reported the alias added.
+    it('writes nothing when meant is the canonical in another Unicode form', async () => {
+      const result = await learnCorrection({ heard: 'zoe\u0308', meant: 'Zoe\u0308' });
+      expect(store.addTerm).not.toHaveBeenCalled();
+      expect(result).toMatchObject({ created: false, aliasAdded: false });
     });
 
     it('writes nothing when the canonical is already spelled that way', async () => {

@@ -350,14 +350,23 @@ export async function learnCorrection(
   const withConflict = { ...(conflict ? { conflict } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
 
   if (existing) {
-    const alreadyKnown =
-      sameText(existing.canonical, heard) || existing.aliases.some((a) => sameText(a, heard));
     const targetScope: TermScope = scope ?? existing.scope ?? 'global';
+    // Known where it would be written: the term's own file, or the file an
+    // explicit scope names. Learning the same correction again rewrote the
+    // file with the same bytes (so a watcher reloaded and a project file's
+    // timestamp moved), and with a scope the term does not live in it wrote
+    // a hollow copy there (created, with no alias) while reporting nothing added.
+    const targetFile = targetScope === 'project' ? loaded.project : loaded.global;
+    const inTarget = scope === undefined ? existing : targetFile?.lexicon.terms.find((t) => sameText(t.canonical, existing.canonical));
+    const known = (t: Term | undefined): boolean => t !== undefined && (sameText(t.canonical, heard) || t.aliases.some((a) => sameText(a, heard)));
+    if (known(inTarget) && targetFile) {
+      return { term: existing, created: false, file: targetFile, aliasAdded: false, ...withConflict };
+    }
     const saved = await addTerm(
-      { canonical: existing.canonical, aliases: alreadyKnown ? [] : [heard], source: 'learned' },
+      { canonical: existing.canonical, aliases: [heard], source: 'learned' },
       { ...writeOpts, scope: targetScope },
     );
-    return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: !alreadyKnown, ...withConflict };
+    return { term: saved.term, created: saved.created, file: saved.file, aliasAdded: true, ...withConflict };
   }
 
   const aliases = dedupeCaseInsensitive([heard, ...suggestAliases(meant)]).filter((a) => !sameText(a, meant));
@@ -453,7 +462,9 @@ async function learnCaseOnly(
 
   const termScope: TermScope = byCanonical.scope ?? 'global';
   const file = termScope === 'project' ? loaded.project : loaded.global;
-  if (byCanonical.canonical === meant && file) {
+  // In NFC, as the store writes it: `Cafe` plus U+0301 is the canonical
+  // `Café` already, and recasing to it rewrote the file and reported a change.
+  if (byCanonical.canonical.normalize('NFC') === meant.normalize('NFC') && file) {
     return { term: byCanonical, created: false, file, aliasAdded: false, ...withConflict };
   }
   // Recase from the term as it is on disk, not the merged view: that one
