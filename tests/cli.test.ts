@@ -1765,6 +1765,7 @@ describe('runDoctorReport', () => {
       trust: path.join(path.dirname(state.globalPath), 'trust.json'),
       settings: settingsPath,
       projectSettings: path.join(doctorHome, '.claude', 'settings.json'),
+      projectSettingsFiles: [path.join(doctorHome, '.claude', 'settings.json'), path.join(doctorHome, '.claude', 'settings.local.json')],
       installedPlugins: installedPluginsPath,
     });
     expect(report.versions.node).toBe(process.version);
@@ -2095,9 +2096,10 @@ describe('doctor: Claude Code hooks and plugin', () => {
     const io = makeIO();
     const code = await runDoctor({}, io, { platform: 'linux', env: { PATH: s.bin }, exec: () => 'lexicon: connected', ...s });
     expect(code).toBe(0);
-    expect(io.out).toContain(`! UserPromptSubmit hook not found in ${s.settingsPath} (user scope) or `);
-    expect(io.out).toContain(`! SessionStart hook not found in ${s.settingsPath} (user scope) or `);
-    expect(io.out).toContain('(project scope) (fine if you use the plugin');
+    expect(io.out).toContain(`! UserPromptSubmit hook not found in ${s.settingsPath} (user scope), `);
+    expect(io.out).toContain(`! SessionStart hook not found in ${s.settingsPath} (user scope), `);
+    expect(io.out).toContain('/.claude/settings.json (project scope) or ');
+    expect(io.out).toContain('/.claude/settings.local.json (local scope) (fine if you use the plugin');
     expect(io.out).toContain('all checks passed');
   });
 
@@ -2116,6 +2118,42 @@ describe('doctor: Claude Code hooks and plugin', () => {
     expect(io.out).not.toContain('hook not found');
     const report = await runDoctorReport({ cwd: repo }, { platform: 'linux', env: { PATH: s.bin }, exec: () => 'lexicon: connected', ...s });
     expect(report.paths.projectSettings).toBe(projectSettingsPath);
+  });
+
+  // Catches: doctor read only <cwd>/.claude/settings.json, so run from a
+  // subdirectory it missed the hooks in the git root's settings (where Claude
+  // Code reads project settings), and it never read settings.local.json.
+  it('finds hooks in the git root\'s .claude/settings.json and settings.local.json from a subdirectory, naming each file', async () => {
+    const s = await scratch();
+    const repo = await tempDir('lexicon-doctor-root-');
+    await fs.mkdir(path.join(repo, '.git'));
+    const sub = path.join(repo, 'packages', 'app');
+    await fs.mkdir(sub, { recursive: true });
+    const shared = path.join(repo, '.claude', 'settings.json');
+    const local = path.join(repo, '.claude', 'settings.local.json');
+    await fs.mkdir(path.dirname(shared), { recursive: true });
+    const hook = 'node "/opt/lexicon/plugin/hook.mjs"';
+    await fs.writeFile(shared, JSON.stringify(mergeHookIntoSettings({}, hook, 5, ['UserPromptSubmit']).settings));
+    await fs.writeFile(local, JSON.stringify(mergeHookIntoSettings({}, hook, 5, ['SessionStart']).settings));
+    const io = makeIO();
+    const deps = { platform: 'linux' as const, env: { PATH: s.bin }, exec: () => 'lexicon: connected', ...s };
+    expect(await runDoctor({ cwd: sub }, io, deps)).toBe(0);
+    expect(io.out).toContain(`✓ UserPromptSubmit hook found in ${shared} (project scope)`);
+    expect(io.out).toContain(`✓ SessionStart hook found in ${local} (local scope)`);
+    expect(io.out).not.toContain('hook not found');
+    const report = await runDoctorReport({ cwd: sub }, deps);
+    expect(report.paths.projectSettingsFiles).toEqual([
+      path.join(sub, '.claude', 'settings.json'),
+      path.join(sub, '.claude', 'settings.local.json'),
+      shared,
+      local,
+    ]);
+
+    // Neither file has the hook: the warning names every file it looked in.
+    await fs.writeFile(local, '{}');
+    const io2 = makeIO();
+    await runDoctor({ cwd: sub }, io2, deps);
+    expect(io2.out).toContain(`! SessionStart hook not found in ${s.settingsPath} (user scope), ${path.join(sub, '.claude', 'settings.json')} (project scope), ${path.join(sub, '.claude', 'settings.local.json')} (local scope), ${shared} (project scope) or ${local} (local scope)`);
   });
 
   it('labels a user-scope hook as user scope', async () => {

@@ -62123,8 +62123,8 @@ var registerTrustTools = (server, ctx) => {
 };
 
 // src/cli/commands.ts
-var import_node_fs23 = __toESM(require_node_fs());
-var import_node_path23 = __toESM(require_node_path());
+var import_node_fs24 = __toESM(require_node_fs());
+var import_node_path24 = __toESM(require_node_path());
 
 // src/cli/claude-settings.ts
 var import_node_fs17 = __toESM(require_node_fs());
@@ -62387,8 +62387,8 @@ function defaultExec(file2, args) {
 }
 
 // src/cli/cmd-doctor.ts
-var import_node_fs22 = __toESM(require_node_fs());
-var import_node_path22 = __toESM(require_node_path());
+var import_node_fs23 = __toESM(require_node_fs());
+var import_node_path23 = __toESM(require_node_path());
 
 // src/daemon/clipboard-backends.ts
 var import_node_child_process4 = __toESM(require_node_child_process());
@@ -63349,8 +63349,171 @@ function quoteArg(s, platform = process.platform) {
   return /[\s"'$`\\]/.test(s) ? `"${s.replace(/(["\\$`])/g, "\\$1")}"` : s;
 }
 
-// src/cli/serve-paths.ts
+// src/cli/setup/detect.ts
+var import_node_child_process6 = __toESM(require_node_child_process());
+var import_node_fs22 = __toESM(require_node_fs());
 var import_node_path21 = __toESM(require_node_path());
+
+// src/cli/setup/types.ts
+var SETUP_CLIENTS = INSTALL_CLIENTS.filter((c) => c !== "generic");
+var SETUP_APPS = ["wispr", "superwhisper", "macos", "none"];
+var HARVEST_LIMIT2 = 10;
+var HARVEST_MIN_COUNT2 = 2;
+var SEEDED_TERMS = 3;
+
+// src/cli/setup/detect.ts
+function captureIO() {
+  const sink = {
+    out: "",
+    err: "",
+    stdout(s) {
+      sink.out += s;
+    },
+    stderr(s) {
+      sink.err += s;
+    }
+  };
+  return sink;
+}
+function lastLine(text) {
+  const lines = text.split("\n").map((l) => l.replace(/\x1b\[[0-9;]*m/g, "").trim()).filter(Boolean);
+  return lines[lines.length - 1] ?? "";
+}
+function setupNameProblem(value) {
+  const name = stripInvisible(value).trim();
+  if (name === "") return "must not be blank";
+  if (hasControlChars(name)) return "must be one line, with no control characters";
+  const unencodable = findUnencodableChar(name);
+  if (unencodable) return `must not contain ${unencodable} (${UNENCODABLE_NOTE})`;
+  if (name.length > LIMITS.word) return `must be at most ${LIMITS.word} characters (it has ${name.length})`;
+  return void 0;
+}
+function setupHintProblem(value) {
+  const hint = stripInvisible(value).trim();
+  if (hint === "") return void 0;
+  if (hasControlChars(hint)) return "must be one line, with no control characters";
+  const unencodable = findUnencodableChar(hint);
+  if (unencodable) return `must not contain ${unencodable} (${UNENCODABLE_NOTE})`;
+  if (hint.length > LIMITS.text) return `must be at most ${LIMITS.text} characters (it has ${hint.length})`;
+  return void 0;
+}
+function isSetupClient(value) {
+  return SETUP_CLIENTS.includes(value);
+}
+function isSetupApp(value) {
+  return SETUP_APPS.includes(value);
+}
+function parseClientList(value) {
+  const out = [];
+  for (const raw of value.split(",")) {
+    const name = raw.trim().toLowerCase();
+    if (!name || name === "none") continue;
+    if (!isSetupClient(name)) {
+      throw new Error(`unknown client "${raw.trim()}" (expected one of: ${SETUP_CLIENTS.join(", ")}, none)`);
+    }
+    if (!out.includes(name)) out.push(name);
+  }
+  return out;
+}
+function parsePackList(value, available) {
+  const out = [];
+  for (const raw of value.split(",")) {
+    const name = raw.trim().toLowerCase();
+    if (!name || name === "none") continue;
+    if (!available.includes(name)) {
+      throw new Error(`unknown pack "${raw.trim()}" (expected one of: ${available.join(", ")}, none)`);
+    }
+    if (!out.includes(name)) out.push(name);
+  }
+  return out;
+}
+function findGitRoot2(start, exists) {
+  let dir = import_node_path21.default.resolve(start);
+  for (; ; ) {
+    if (exists(import_node_path21.default.join(dir, ".git"))) return dir;
+    const parent = import_node_path21.default.dirname(dir);
+    if (parent === dir) return void 0;
+    dir = parent;
+  }
+}
+function suggestCompany(packageName, remoteUrl) {
+  const scope = packageName?.match(/^@([A-Za-z0-9][\w.-]*)\//)?.[1];
+  if (scope) return scope.charAt(0).toUpperCase() + scope.slice(1);
+  if (remoteUrl) {
+    const m = remoteUrl.trim().match(/[:/]([A-Za-z0-9][\w.-]*)\/[\w.-]+?(?:\.git)?\/?$/);
+    if (m && !/^(users?|orgs?)$/i.test(m[1])) return m[1];
+  }
+  return void 0;
+}
+async function readPackageName(cwd) {
+  try {
+    const raw = await import_node_fs22.promises.readFile(import_node_path21.default.join(cwd, "package.json"), "utf8");
+    const pkg = JSON.parse(raw);
+    return typeof pkg.name === "string" ? pkg.name : void 0;
+  } catch {
+    return void 0;
+  }
+}
+var defaultSetupExec = (file2, args) => (0, import_node_child_process6.execFileSync)(file2, args, { encoding: "utf8", timeout: 5e3, stdio: ["ignore", "pipe", "ignore"] }).trim();
+function tryExec2(exec, file2, args) {
+  try {
+    const out = exec(file2, args).trim();
+    return out || void 0;
+  } catch {
+    return void 0;
+  }
+}
+var APP_BUNDLES = {
+  "claude-desktop": "Claude.app",
+  cursor: "Cursor.app",
+  vscode: "Visual Studio Code.app",
+  windsurf: "Windsurf.app"
+};
+var CLI_NAMES = {
+  claude: "claude",
+  codex: "codex",
+  gemini: "gemini",
+  vscode: "code",
+  cursor: "cursor",
+  windsurf: "windsurf"
+};
+function configDirFor(client, ctx) {
+  if (client === "claude") return claudeConfigDir(ctx.env, ctx.home);
+  const file2 = configPathFor(client, { home: ctx.home, cwd: ctx.cwd, platform: ctx.platform, env: ctx.env, project: false });
+  return client === "vscode" ? import_node_path21.default.dirname(import_node_path21.default.dirname(file2)) : import_node_path21.default.dirname(file2);
+}
+async function detectClients(deps = {}, cwd = process.cwd()) {
+  const ctx = {
+    home: deps.home ?? homeDir(),
+    cwd,
+    platform: deps.platform ?? process.platform,
+    env: deps.env ?? process.env,
+    exists: deps.exists ?? import_node_fs22.existsSync
+  };
+  const out = [];
+  for (const name of SETUP_CLIENTS) {
+    let evidence;
+    const dir = configDirFor(name, ctx);
+    if (ctx.exists(dir)) evidence = dir;
+    if (!evidence && ctx.platform === "darwin" && APP_BUNDLES[name]) {
+      const bundle = import_node_path21.default.join("/Applications", APP_BUNDLES[name]);
+      if (ctx.exists(bundle)) evidence = bundle;
+    }
+    if (!evidence && CLI_NAMES[name]) {
+      const bin = await findOnPath(CLI_NAMES[name], {
+        env: ctx.env,
+        platform: ctx.platform,
+        exists: async (candidate) => ctx.exists(candidate)
+      });
+      if (bin) evidence = bin;
+    }
+    out.push(evidence ? { name, detected: true, evidence } : { name, detected: false });
+  }
+  return out;
+}
+
+// src/cli/serve-paths.ts
+var import_node_path22 = __toESM(require_node_path());
 var LAUNCH_AGENT_LABEL = "ai.ashlr.lexicon.serve";
 var SYSTEMD_UNIT_NAME = "lexicon-serve.service";
 var SCHEDULED_TASK_NAME = "Lexicon";
@@ -63364,13 +63527,13 @@ function scheduledTaskName(env = process.env) {
   return override && /^[A-Za-z0-9._-]+$/.test(override) ? override : SCHEDULED_TASK_NAME;
 }
 function launchAgentPath(home, env = process.env) {
-  return import_node_path21.default.join(usableHome(home), "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
+  return import_node_path22.default.join(usableHome(home), "Library", "LaunchAgents", `${serveLabel(env)}.plist`);
 }
 function launchAgentLogPath(home) {
-  return import_node_path21.default.join(usableHome(home), "Library", "Logs", "lexicon", "serve.log");
+  return import_node_path22.default.join(usableHome(home), "Library", "Logs", "lexicon", "serve.log");
 }
 function systemdUnitPath(home, env) {
-  return import_node_path21.default.join(xdgConfigHome(env, home), "systemd", "user", SYSTEMD_UNIT_NAME);
+  return import_node_path22.default.join(xdgConfigHome(env, home), "systemd", "user", SYSTEMD_UNIT_NAME);
 }
 function programPathFromPlist(plist) {
   const block = plist.match(/<key>ProgramArguments<\/key>\s*<array>([\s\S]*?)<\/array>/);
@@ -63559,6 +63722,12 @@ function parsesAsJson(text) {
     return false;
   }
 }
+function projectSettingsCandidates(cwd) {
+  const dirs = [import_node_path23.default.resolve(cwd)];
+  const root = findGitRoot2(cwd, import_node_fs23.existsSync);
+  if (root !== void 0 && import_node_path23.default.resolve(root) !== dirs[0]) dirs.push(import_node_path23.default.resolve(root));
+  return dirs.flatMap((dir) => [import_node_path23.default.join(dir, ".claude", "settings.json"), import_node_path23.default.join(dir, ".claude", "settings.local.json")]);
+}
 var SERVE_REINSTALL_HINT = "run: lexicon serve --uninstall && lexicon serve --install";
 async function checkLoginService(probe) {
   const { platform, env, exec, home } = probe;
@@ -63598,7 +63767,7 @@ async function checkLoginService(probe) {
     if (!loaded) {
       return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
     }
-    if (program2 !== void 0 && !(0, import_node_fs22.existsSync)(program2)) {
+    if (program2 !== void 0 && !(0, import_node_fs23.existsSync)(program2)) {
       return { level: "fail", message: `${name} points at a missing file: ${program2} (${SERVE_REINSTALL_HINT})` };
     }
     return { level: "ok", message: `${name} is registered and runs at logon` };
@@ -63607,7 +63776,7 @@ async function checkLoginService(probe) {
   }
   let fileExists = false;
   try {
-    const text = await import_node_fs22.promises.readFile(file2, "utf8");
+    const text = await import_node_fs23.promises.readFile(file2, "utf8");
     fileExists = true;
     program2 = platform === "darwin" ? programPathFromPlist(text) : programPathFromUnit(text);
   } catch {
@@ -63616,7 +63785,7 @@ async function checkLoginService(probe) {
   if (!loaded && !fileExists) {
     return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
   }
-  if (program2 !== void 0 && !(0, import_node_fs22.existsSync)(program2)) {
+  if (program2 !== void 0 && !(0, import_node_fs23.existsSync)(program2)) {
     return { level: "fail", message: `${name} points at a missing file: ${program2} (${SERVE_REINSTALL_HINT})` };
   }
   if (!loaded) {
@@ -63829,32 +63998,41 @@ async function runDoctorReport(opts, deps = {}) {
   if (allTerms.length > 0 && !checks.some((c) => c.level === "fail" && c.message.includes("conflict"))) {
     push2("ok", "no alias/canonical conflicts");
   }
-  const settingsPath = deps.settingsPath ?? import_node_path22.default.join(claudeConfigDir(env, home), "settings.json");
-  const projectSettingsPath = deps.projectSettingsPath ?? import_node_path22.default.join(cwd, ".claude", "settings.json");
-  const sameSettingsFile = import_node_path22.default.resolve(projectSettingsPath) === import_node_path22.default.resolve(settingsPath);
-  const installedPluginsPath = deps.installedPluginsPath ?? import_node_path22.default.join(claudeConfigDir(env, home), "plugins", "installed_plugins.json");
+  const settingsPath = deps.settingsPath ?? import_node_path23.default.join(claudeConfigDir(env, home), "settings.json");
+  const projectSettingsPath = deps.projectSettingsPath ?? import_node_path23.default.join(cwd, ".claude", "settings.json");
+  const projectSettingsFiles = deps.projectSettingsPath !== void 0 ? [projectSettingsPath] : projectSettingsCandidates(cwd);
+  const projectFiles = projectSettingsFiles.filter((file2) => import_node_path23.default.resolve(file2) !== import_node_path23.default.resolve(settingsPath)).map((file2) => ({ file: file2, scope: file2.endsWith("settings.local.json") ? "local" : "project" }));
+  const installedPluginsPath = deps.installedPluginsPath ?? import_node_path23.default.join(claudeConfigDir(env, home), "plugins", "installed_plugins.json");
   const settings = await readDoctorConfigJson(settingsPath);
-  const projectSettings = sameSettingsFile ? { exists: false } : await readDoctorConfigJson(projectSettingsPath);
+  const projectReads = await Promise.all(projectFiles.map(async (f) => ({ ...f, read: await readDoctorConfigJson(f.file) })));
   const installed = await readDoctorConfigJson(installedPluginsPath);
   if (settings.error) push2("warn", `Claude settings configuration is unconfirmed (${settings.error})`);
-  if (!sameSettingsFile && projectSettings.error) {
-    push2("warn", `Claude project settings configuration is unconfirmed (${projectSettings.error}): ${projectSettingsPath}`);
+  for (const p of projectReads) {
+    if (p.read.error) push2("warn", `Claude ${p.scope} settings configuration is unconfirmed (${p.read.error}): ${p.file}`);
   }
   if (installed.error) push2("warn", `Claude installed-plugin configuration is unconfirmed (${installed.error})`);
-  const pluginId = findInstalledLexiconPlugin(settings.value, installed.value) ?? findInstalledLexiconPlugin(projectSettings.value, void 0);
+  let pluginId = findInstalledLexiconPlugin(settings.value, installed.value);
+  for (const p of projectReads) pluginId ??= findInstalledLexiconPlugin(p.read.value, void 0);
   if (pluginId) {
     wired = true;
     push2("ok", `lexicon plugin installed as ${pluginId} (its hooks and MCP server are used)`);
   } else {
     for (const event of HOOK_EVENTS) {
-      const inUser = settingsHasLexiconHook(settings.value, event);
-      const inProject = !sameSettingsFile && settingsHasLexiconHook(projectSettings.value, event);
-      if (inUser) push2("ok", `${event} hook found in ${settingsPath} (user scope)`);
-      if (inProject) push2("ok", `${event} hook found in ${projectSettingsPath} (project scope)`);
-      if (inUser || inProject) {
+      let found = false;
+      if (settingsHasLexiconHook(settings.value, event)) {
+        found = true;
+        push2("ok", `${event} hook found in ${settingsPath} (user scope)`);
+      }
+      for (const p of projectReads) {
+        if (!settingsHasLexiconHook(p.read.value, event)) continue;
+        found = true;
+        push2("ok", `${event} hook found in ${p.file} (${p.scope} scope)`);
+      }
+      if (found) {
         wired = true;
       } else {
-        const where = sameSettingsFile ? settingsPath : `${settingsPath} (user scope) or ${projectSettingsPath} (project scope)`;
+        const looked = [`${settingsPath} (user scope)`, ...projectFiles.map((p) => `${p.file} (${p.scope} scope)`)];
+        const where = looked.length === 1 ? looked[0] : `${looked.slice(0, -1).join(", ")} or ${looked.at(-1)}`;
         push2(
           "warn",
           `${event} hook not found in ${where} (fine if you use the plugin; otherwise run: lexicon install claude --apply)`
@@ -63913,11 +64091,11 @@ async function runDoctorReport(opts, deps = {}) {
     push2("warn", `no clipboard backend found (${errorMessage(err)})`);
   }
   const whisperOverride = env.LEXICON_WHISPER_BIN;
-  const whisperCli = whisperOverride ? (0, import_node_fs22.existsSync)(whisperOverride) ? whisperOverride : void 0 : locateToolSync(WHISPER_BIN_NAMES, env, platform);
+  const whisperCli = whisperOverride ? (0, import_node_fs23.existsSync)(whisperOverride) ? whisperOverride : void 0 : locateToolSync(WHISPER_BIN_NAMES, env, platform);
   if (whisperCli) push2("ok", `whisper-cli found: ${whisperCli}`);
   else push2("warn", `whisper-cli not found (needed by lexicon voice; ${installHint(platform, { ffmpeg: false, whisper: true })})`);
   const ffmpegOverride = env.LEXICON_FFMPEG_BIN;
-  const ffmpegBin = ffmpegOverride ? (0, import_node_fs22.existsSync)(ffmpegOverride) ? ffmpegOverride : void 0 : locateToolSync(["ffmpeg"], env, platform);
+  const ffmpegBin = ffmpegOverride ? (0, import_node_fs23.existsSync)(ffmpegOverride) ? ffmpegOverride : void 0 : locateToolSync(["ffmpeg"], env, platform);
   if (ffmpegBin) push2("ok", `ffmpeg found: ${ffmpegBin}`);
   else push2("warn", `ffmpeg not found (needed by lexicon voice; ${installHint(platform, { ffmpeg: true, whisper: false })})`);
   const model = resolveModel(DEFAULT_MODEL, { globalPath: paths.global, env });
@@ -63941,6 +64119,7 @@ async function runDoctorReport(opts, deps = {}) {
       trust: getTrustPath({ cwd }),
       settings: settingsPath,
       projectSettings: projectSettingsPath,
+      projectSettingsFiles,
       installedPlugins: installedPluginsPath
     },
     versions: { lexicon: packageVersion(import.meta.url), node: process.version, platform }
@@ -64085,11 +64264,11 @@ function createPrompter(io = {}) {
 
 // src/cli/commands.ts
 var PROJECT_FILE_NAME2 = ".lexicon.yaml";
-function findGitRoot2(start) {
-  let dir = import_node_path23.default.resolve(start);
+function findGitRoot3(start) {
+  let dir = import_node_path24.default.resolve(start);
   for (; ; ) {
-    if ((0, import_node_fs23.existsSync)(import_node_path23.default.join(dir, ".git"))) return dir;
-    const parent = import_node_path23.default.dirname(dir);
+    if ((0, import_node_fs24.existsSync)(import_node_path24.default.join(dir, ".git"))) return dir;
+    const parent = import_node_path24.default.dirname(dir);
     if (parent === dir) return void 0;
     dir = parent;
   }
@@ -64110,7 +64289,7 @@ async function runInit(opts, io) {
   const cwd = resolveCwd(opts);
   const paths = resolvePaths({ cwd });
   const scope = opts.project ? "project" : "global";
-  const target = opts.project ? paths.project ?? import_node_path23.default.join(findGitRoot2(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
+  const target = opts.project ? paths.project ?? import_node_path24.default.join(findGitRoot3(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
   const created = await createLexiconFile(target, scope);
   if (created && scope === "project") await trustProject(target, { cwd });
   const trust = scope === "project" ? await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) : void 0;
@@ -64138,12 +64317,12 @@ async function runInit(opts, io) {
 }
 async function createLexiconFile(target, scope) {
   return withLexiconLock(target, async () => {
-    if ((0, import_node_fs23.existsSync)(target)) return false;
+    if ((0, import_node_fs24.existsSync)(target)) return false;
     const lexicon = emptyLexicon();
     lexicon.settings = { minConfidence: 0.82, phonetic: true, fuzzy: true, skipCode: true };
     const file2 = { path: target, scope, lexicon, exists: false };
     await writeLexiconFile(file2);
-    await import_node_fs23.promises.appendFile(target, EXAMPLE_TERM_COMMENT, "utf8");
+    await import_node_fs24.promises.appendFile(target, EXAMPLE_TERM_COMMENT, "utf8");
     return true;
   });
 }
@@ -64151,167 +64330,6 @@ async function createLexiconFile(target, scope) {
 // src/cli/cmd-setup.ts
 var import_node_path28 = __toESM(require_node_path());
 var import_node_fs28 = __toESM(require_node_fs());
-
-// src/cli/setup/types.ts
-var SETUP_CLIENTS = INSTALL_CLIENTS.filter((c) => c !== "generic");
-var SETUP_APPS = ["wispr", "superwhisper", "macos", "none"];
-var HARVEST_LIMIT2 = 10;
-var HARVEST_MIN_COUNT2 = 2;
-var SEEDED_TERMS = 3;
-
-// src/cli/setup/detect.ts
-var import_node_child_process6 = __toESM(require_node_child_process());
-var import_node_fs24 = __toESM(require_node_fs());
-var import_node_path24 = __toESM(require_node_path());
-function captureIO() {
-  const sink = {
-    out: "",
-    err: "",
-    stdout(s) {
-      sink.out += s;
-    },
-    stderr(s) {
-      sink.err += s;
-    }
-  };
-  return sink;
-}
-function lastLine(text) {
-  const lines = text.split("\n").map((l) => l.replace(/\x1b\[[0-9;]*m/g, "").trim()).filter(Boolean);
-  return lines[lines.length - 1] ?? "";
-}
-function setupNameProblem(value) {
-  const name = stripInvisible(value).trim();
-  if (name === "") return "must not be blank";
-  if (hasControlChars(name)) return "must be one line, with no control characters";
-  const unencodable = findUnencodableChar(name);
-  if (unencodable) return `must not contain ${unencodable} (${UNENCODABLE_NOTE})`;
-  if (name.length > LIMITS.word) return `must be at most ${LIMITS.word} characters (it has ${name.length})`;
-  return void 0;
-}
-function setupHintProblem(value) {
-  const hint = stripInvisible(value).trim();
-  if (hint === "") return void 0;
-  if (hasControlChars(hint)) return "must be one line, with no control characters";
-  const unencodable = findUnencodableChar(hint);
-  if (unencodable) return `must not contain ${unencodable} (${UNENCODABLE_NOTE})`;
-  if (hint.length > LIMITS.text) return `must be at most ${LIMITS.text} characters (it has ${hint.length})`;
-  return void 0;
-}
-function isSetupClient(value) {
-  return SETUP_CLIENTS.includes(value);
-}
-function isSetupApp(value) {
-  return SETUP_APPS.includes(value);
-}
-function parseClientList(value) {
-  const out = [];
-  for (const raw of value.split(",")) {
-    const name = raw.trim().toLowerCase();
-    if (!name || name === "none") continue;
-    if (!isSetupClient(name)) {
-      throw new Error(`unknown client "${raw.trim()}" (expected one of: ${SETUP_CLIENTS.join(", ")}, none)`);
-    }
-    if (!out.includes(name)) out.push(name);
-  }
-  return out;
-}
-function parsePackList(value, available) {
-  const out = [];
-  for (const raw of value.split(",")) {
-    const name = raw.trim().toLowerCase();
-    if (!name || name === "none") continue;
-    if (!available.includes(name)) {
-      throw new Error(`unknown pack "${raw.trim()}" (expected one of: ${available.join(", ")}, none)`);
-    }
-    if (!out.includes(name)) out.push(name);
-  }
-  return out;
-}
-function findGitRoot3(start, exists) {
-  let dir = import_node_path24.default.resolve(start);
-  for (; ; ) {
-    if (exists(import_node_path24.default.join(dir, ".git"))) return dir;
-    const parent = import_node_path24.default.dirname(dir);
-    if (parent === dir) return void 0;
-    dir = parent;
-  }
-}
-function suggestCompany(packageName, remoteUrl) {
-  const scope = packageName?.match(/^@([A-Za-z0-9][\w.-]*)\//)?.[1];
-  if (scope) return scope.charAt(0).toUpperCase() + scope.slice(1);
-  if (remoteUrl) {
-    const m = remoteUrl.trim().match(/[:/]([A-Za-z0-9][\w.-]*)\/[\w.-]+?(?:\.git)?\/?$/);
-    if (m && !/^(users?|orgs?)$/i.test(m[1])) return m[1];
-  }
-  return void 0;
-}
-async function readPackageName(cwd) {
-  try {
-    const raw = await import_node_fs24.promises.readFile(import_node_path24.default.join(cwd, "package.json"), "utf8");
-    const pkg = JSON.parse(raw);
-    return typeof pkg.name === "string" ? pkg.name : void 0;
-  } catch {
-    return void 0;
-  }
-}
-var defaultSetupExec = (file2, args) => (0, import_node_child_process6.execFileSync)(file2, args, { encoding: "utf8", timeout: 5e3, stdio: ["ignore", "pipe", "ignore"] }).trim();
-function tryExec2(exec, file2, args) {
-  try {
-    const out = exec(file2, args).trim();
-    return out || void 0;
-  } catch {
-    return void 0;
-  }
-}
-var APP_BUNDLES = {
-  "claude-desktop": "Claude.app",
-  cursor: "Cursor.app",
-  vscode: "Visual Studio Code.app",
-  windsurf: "Windsurf.app"
-};
-var CLI_NAMES = {
-  claude: "claude",
-  codex: "codex",
-  gemini: "gemini",
-  vscode: "code",
-  cursor: "cursor",
-  windsurf: "windsurf"
-};
-function configDirFor(client, ctx) {
-  if (client === "claude") return claudeConfigDir(ctx.env, ctx.home);
-  const file2 = configPathFor(client, { home: ctx.home, cwd: ctx.cwd, platform: ctx.platform, env: ctx.env, project: false });
-  return client === "vscode" ? import_node_path24.default.dirname(import_node_path24.default.dirname(file2)) : import_node_path24.default.dirname(file2);
-}
-async function detectClients(deps = {}, cwd = process.cwd()) {
-  const ctx = {
-    home: deps.home ?? homeDir(),
-    cwd,
-    platform: deps.platform ?? process.platform,
-    env: deps.env ?? process.env,
-    exists: deps.exists ?? import_node_fs24.existsSync
-  };
-  const out = [];
-  for (const name of SETUP_CLIENTS) {
-    let evidence;
-    const dir = configDirFor(name, ctx);
-    if (ctx.exists(dir)) evidence = dir;
-    if (!evidence && ctx.platform === "darwin" && APP_BUNDLES[name]) {
-      const bundle = import_node_path24.default.join("/Applications", APP_BUNDLES[name]);
-      if (ctx.exists(bundle)) evidence = bundle;
-    }
-    if (!evidence && CLI_NAMES[name]) {
-      const bin = await findOnPath(CLI_NAMES[name], {
-        env: ctx.env,
-        platform: ctx.platform,
-        exists: async (candidate) => ctx.exists(candidate)
-      });
-      if (bin) evidence = bin;
-    }
-    out.push(evidence ? { name, detected: true, evidence } : { name, detected: false });
-  }
-  return out;
-}
 
 // src/cli/setup/steps.ts
 var import_node_fs27 = __toESM(require_node_fs());
@@ -65053,7 +65071,7 @@ async function stepHarvest(ctx) {
     ctx.say(dim("   skipped (--no-harvest)"));
     return;
   }
-  const root = findGitRoot3(ctx.cwd, ctx.exists);
+  const root = findGitRoot2(ctx.cwd, ctx.exists);
   if (!root) {
     ctx.say(dim("   not a git repository; run `lexicon harvest --add` inside one later"));
     return;
