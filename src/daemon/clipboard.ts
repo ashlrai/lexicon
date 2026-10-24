@@ -19,6 +19,7 @@ import {
   defaultClipboardExec,
   detectClipboardBackend,
   isClipboardBackendName,
+  isClipboardTooLarge,
   CLIPBOARD_BACKEND_NAMES,
 } from './clipboard-backends.js';
 import type { ClipboardBackend, ClipboardBackendName, ClipboardExec } from './clipboard-backends.js';
@@ -223,7 +224,18 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
   }
 
   async function poll(): Promise<void> {
-    const text = await read();
+    let text: string;
+    try {
+      text = await read();
+    } catch (e) {
+      if (!isClipboardTooLarge(e)) throw e;
+      // Too large to correct, as an oversized string is below: skipped, not an
+      // error. Something new was copied, so the guard is cleared as it would be.
+      lastSeen = undefined;
+      lastWritten = undefined;
+      lastInput = undefined;
+      return;
+    }
     if (text === lastSeen || text === lastWritten || text === lastInput) {
       lastSeen = text;
       return;
@@ -355,16 +367,25 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
   const err = opts.err ?? ((s: string) => void process.stderr.write(s));
 
   const { read, write } = await resolveClipboard(opts);
-  const text = await read();
+  // A read past the backend's cap (MAX_CLIPBOARD_READ_BYTES) is the same
+  // "too large" as a string over MAX_CLIPBOARD_CHARS, not an error and not empty.
+  let tooLarge = false;
+  let text = '';
+  try {
+    text = await read();
+  } catch (e) {
+    if (!isClipboardTooLarge(e)) throw e;
+    tooLarge = true;
+  }
 
   const result: ClipboardOnceResult = { changed: false, written: false, corrections: 0, pasted: false };
 
-  if (!reportable(text)) {
+  if (tooLarge || !reportable(text)) {
     if (!quiet) {
       const why =
-        text.length === 0
+        text.length === 0 && !tooLarge
           ? 'clipboard is empty or not text'
-          : text.length > MAX_CLIPBOARD_CHARS
+          : tooLarge || text.length > MAX_CLIPBOARD_CHARS
             ? 'clipboard too large'
             : looksBinary(text)
               ? 'clipboard holds binary data, not text; left as it was'
@@ -396,7 +417,7 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
   if (opts.paste) {
     if (platform !== 'darwin') {
       err(`--paste is macOS-only (uses osascript); the text is on the clipboard, paste it with your usual shortcut (platform: ${platform})\n`);
-    } else if (text.length === 0) {
+    } else if (text.length === 0 && !tooLarge) {
       err('--paste skipped: clipboard is empty\n');
     } else {
       const sendPaste =

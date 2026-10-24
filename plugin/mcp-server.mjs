@@ -61916,7 +61916,20 @@ var ExecError = class extends Error {
   exitCode;
   stderr;
 };
-var MAX_OUTPUT = 16 * 1024 * 1024;
+var MAX_CLIPBOARD_READ_BYTES = 64 * 1024;
+var ClipboardTooLargeError = class extends Error {
+  constructor(cmd, limit) {
+    super(`${cmd}: clipboard holds more than ${limit} bytes`);
+    this.cmd = cmd;
+    this.limit = limit;
+    this.name = "ClipboardTooLargeError";
+  }
+  cmd;
+  limit;
+};
+function isClipboardTooLarge(err) {
+  return err instanceof Error && err.name === "ClipboardTooLargeError";
+}
 function defaultClipboardExec(cmd, args, stdin) {
   const isWrite = stdin !== void 0;
   return new Promise((resolve5, reject) => {
@@ -61936,9 +61949,9 @@ function defaultClipboardExec(cmd, args, stdin) {
     child.once("error", fail2);
     child.stdout?.on("data", (chunk) => {
       size += chunk.length;
-      if (size > MAX_OUTPUT) {
+      if (size > MAX_CLIPBOARD_READ_BYTES) {
         child.kill();
-        fail2(new Error(`${cmd}: output exceeds ${MAX_OUTPUT} bytes`));
+        fail2(new ClipboardTooLargeError(cmd, MAX_CLIPBOARD_READ_BYTES));
         return;
       }
       out.push(chunk);
@@ -61960,7 +61973,7 @@ async function readOrEmpty(exec, cmd, args) {
   try {
     return await exec(cmd, args);
   } catch (e) {
-    if (isEnoent(e)) throw e;
+    if (isEnoent(e) || isClipboardTooLarge(e)) throw e;
     if (e instanceof ExecError && /display|DISPLAY|WAYLAND_DISPLAY|compositor|not allowed|permission/i.test(e.stderr)) throw e;
     return "";
   }
@@ -62112,7 +62125,7 @@ function resolveModel(spec, opts) {
 // src/voice/process.ts
 var import_node_child_process5 = __toESM(require_node_child_process());
 var import_node_fs19 = __toESM(require_node_fs());
-var MAX_OUTPUT2 = 16 * 1024 * 1024;
+var MAX_OUTPUT = 16 * 1024 * 1024;
 var WHISPER_BIN_NAMES = ["whisper-cli", "whisper-cpp"];
 var INSTALL_HINTS = {
   darwin: "brew install ffmpeg whisper-cpp",
