@@ -561,6 +561,26 @@ describe('clipboard backends', () => {
     expect(clipboard).toBe('plain\nLF');
   });
 
+  // Catches: [Console]::OutputEncoding = [Text.Encoding]::UTF8 makes Windows
+  // PowerShell 5.1 write a byte order mark ahead of redirected output, so the
+  // read began with U+FEFF and the corrected text written back carried it.
+  it('powershell: a byte order mark ahead of the clipboard text is dropped, and none is asked for', async () => {
+    let written: string | undefined;
+    const { exec, calls } = fakeExec(({ stdin }) => {
+      if (stdin === undefined) return '\uFEFFmeet Ashler';
+      written = stdin;
+      return '';
+    });
+    const backend = powershellBackend(exec);
+    expect(await backend.read()).toBe('meet Ashler');
+    await backend.write('meet Ashlr.AI');
+    expect(written).toBe('meet Ashlr.AI');
+    for (const call of calls) {
+      expect(call.args[3]).toContain('New-Object System.Text.UTF8Encoding $false');
+      expect(call.args[3]).not.toContain('[Text.Encoding]::UTF8');
+    }
+  });
+
   it('every backend returns "" when the tool exits non-zero (empty / non-text clipboard)', async () => {
     const { exec } = fakeExec(({ cmd }) => new ExecError(cmd, 1, 'Nothing is copied'));
     for (const name of ['pbcopy', 'wl', 'xclip', 'xsel', 'powershell'] as const) {

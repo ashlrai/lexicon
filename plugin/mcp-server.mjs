@@ -62498,13 +62498,13 @@ function xselBackend(exec = defaultClipboardExec) {
 }
 function powershellBackend(exec = defaultClipboardExec, shell = "powershell") {
   let crlf = false;
-  const readScript = "[Console]::OutputEncoding = [Text.Encoding]::UTF8; [Console]::Out.Write([string](Get-Clipboard -Raw))";
-  const writeScript = "[Console]::InputEncoding = [Text.Encoding]::UTF8; $t = [Console]::In.ReadToEnd(); Set-Clipboard -Value $t";
+  const readScript = "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; [Console]::Out.Write([string](Get-Clipboard -Raw))";
+  const writeScript = "[Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false; $t = [Console]::In.ReadToEnd(); Set-Clipboard -Value $t";
   return {
     name: "powershell",
     description: `${shell} Get-Clipboard -Raw / Set-Clipboard (Windows)`,
     read: async () => {
-      const raw = await readOrEmpty(exec, shell, ["-NoProfile", "-NonInteractive", "-Command", readScript]);
+      const raw = (await readOrEmpty(exec, shell, ["-NoProfile", "-NonInteractive", "-Command", readScript])).replace(/^\uFEFF/, "");
       crlf = raw.includes("\r\n");
       return crlf ? raw.replace(/\r\n/g, "\n") : raw;
     },
