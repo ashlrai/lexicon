@@ -227,8 +227,25 @@ export interface AcceptedAlias {
 }
 
 /**
+ * Hold the lock of every lexicon file learnCorrection may write (the global
+ * one, then the project one when there is one) around `fn`. The lexicon lock
+ * is always the outer one (see withFileLock in CONTRACT.md), so acceptPending
+ * takes these before the pending file's lock, never inside it: a writer that
+ * holds a lexicon lock and then queues a correction would otherwise wait on
+ * the pending lock while accept waited on its lexicon lock.
+ */
+function withLexiconWriteLocks<T>(opts: StoreOptions, fn: () => Promise<T>): Promise<T> {
+  const paths = resolvePaths(opts);
+  const inner = paths.project ? () => withLexiconLock(paths.project as string, fn) : fn;
+  return withLexiconLock(paths.global, inner);
+}
+
+/**
  * Learn the selected entries (through learnCorrection, as `lexicon learn`
  * does) and remove each one that was learned. One that fails stays queued.
+ * The lexicon locks are taken first and the pending lock inside them, and all
+ * of them are held from reading the queue to writing it back, so a concurrent
+ * accept, reject or queue cannot see an entry that is half accepted.
  */
 export async function acceptPending(
   sel: ResolveSelection,
@@ -236,7 +253,7 @@ export async function acceptPending(
   learn: typeof learnCorrection = learnCorrection,
 ): Promise<{ accepted: AcceptedAlias[]; unknown: string[]; file: string }> {
   const file = pendingPath(opts);
-  return withLexiconLock(file, async () => {
+  return withLexiconWriteLocks(opts, () => withLexiconLock(file, async () => {
     const entries = await readPending(file);
     const { picked, unknown } = select(entries, sel);
     const accepted: AcceptedAlias[] = [];
@@ -252,5 +269,5 @@ export async function acceptPending(
     }
     if (done.size > 0) await writePending(file, entries.filter((e) => !done.has(e)));
     return { accepted, unknown, file };
-  });
+  }));
 }
