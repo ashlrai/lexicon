@@ -20,7 +20,7 @@ vi.mock('node:crypto', async (importOriginal) => {
     },
   };
 });
-import { createServer, getServePath } from '../src/serve/index.js';
+import { createServer, ensureServeConfig, getServePath } from '../src/serve/index.js';
 
 let dir: string;
 let globalPath: string;
@@ -68,6 +68,40 @@ describe('bearer token check', () => {
         expect(a).toBe(32);
         expect(b).toBe(32);
       }
+    } finally {
+      await server.stop();
+    }
+  });
+
+  // Catches: the running server read serve.json once at start, so after the
+  // file was deleted and `lexicon serve --show` minted a new token, that token
+  // was answered 401 (and /pair handed out the old one) until a restart.
+  it('a running server takes the token serve.json holds now, and only that one', async () => {
+    const servePath = getServePath({ globalPath });
+    const server = createServer({ port: 0, globalPath, cwd: dir, quiet: true, log: () => {} });
+    const info = await server.start();
+    try {
+      const get = (t: string, route = '/stats'): Promise<number> =>
+        fetch(`${info.url}${route}`, { headers: { Authorization: `Bearer ${t}` } }).then((r) => r.status);
+      const old = info.token;
+      expect(await get(old)).toBe(200);
+
+      await fs.rm(servePath);
+      const minted = (await ensureServeConfig({ globalPath })).token;
+      expect(minted).not.toBe(old);
+      expect(await get(minted)).toBe(200);
+      expect(await get(minted, `/health?cwd=${encodeURIComponent(dir)}`)).toBe(200);
+      // The old token is no longer the file's, so it is refused; so is any other.
+      expect(await get(old)).toBe(401);
+      expect(await get('ef'.repeat(16))).toBe(401);
+      const page = await fetch(`${info.url}/pair`, { headers: { Host: `127.0.0.1:${info.port}` } }).then((r) => r.text());
+      expect(page).toContain(minted);
+      expect(page).not.toContain(old);
+
+      // A file that no longer parses keeps what the server has.
+      await fs.writeFile(servePath, '{ not json', { mode: 0o600 });
+      expect(await get('12'.repeat(16))).toBe(401);
+      expect(await get(minted)).toBe(200);
     } finally {
       await server.stop();
     }
