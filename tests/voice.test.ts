@@ -55,6 +55,7 @@ import {
   confirmRecorder,
   findOrphanRecorder,
   recorderFingerprint,
+  resolveInput,
 } from '../src/voice/recorder.js';
 import { WHISPER_TIMEOUT_BASE_MS, WHISPER_TIMEOUT_PER_AUDIO_SECOND_MS, cleanTranscript, parseWhisperOutput, whisperArgs, whisperTimeoutMs } from '../src/voice/transcribe.js';
 import {
@@ -1724,6 +1725,27 @@ describe('device parsers', () => {
     ]);
     expect(formatDeviceList(alsa)).toBe('[0] HDA Intel PCH (ALC295 Analog)  (hw:0,0)\n[1] Yeti Stereo Microphone (USB Audio)  (hw:1,0)\n');
     expect(formatDeviceList([])).toBe('no audio input devices found\n');
+  });
+
+  // Catches: an index no device has recorded the default microphone (pulse) or reached ffmpeg as a device name (alsa, dshow).
+  it('refuses a --device index that no listed device has, before recording', async () => {
+    for (const platform of ['linux', 'win32'] as const) {
+      const h = await harness({ platform });
+      h.deps.env = { PATH: h.binDir, LEXICON_FFMPEG_BIN: '/fake/bin/ffmpeg', LEXICON_WHISPER_BIN: '/fake/bin/whisper-cli' };
+      expect(await runVoice({ ...h.opts, device: '7', json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+      expect(h.spawnCalls).toEqual([]);
+      expect(h.err.join('')).toContain('no audio input device has index 7 (the list has 0 to 1)');
+      expect(JSON.parse(h.out.join(''))).toMatchObject({ ok: false, code: EXIT_ERROR, error: expect.stringContaining('--list-devices') });
+    }
+    const exec: VoiceExec = async () => ({ code: 0, stdout: '', stderr: '' });
+    const alsa = parseArecordList(ARECORD_LIST);
+    await expect(resolveInput({ platform: 'linux', ffmpeg: 'ffmpeg', exec, device: '2', devices: alsa })).rejects.toThrow(/index 2/);
+    // A name is still passed on as it is, and an index that exists still resolves.
+    expect(await resolveInput({ platform: 'linux', ffmpeg: 'ffmpeg', exec, device: 'hw:3,0', devices: alsa })).toEqual({ format: 'alsa', input: 'hw:3,0' });
+    expect(await resolveInput({ platform: 'linux', ffmpeg: 'ffmpeg', exec, device: '1', devices: alsa })).toEqual({ format: 'alsa', input: 'hw:1,0' });
+    // ffmpeg has pulse but no pulse source was listed: the arecord id goes to the alsa demuxer, not to pulse.
+    const pulseExec: VoiceExec = async () => ({ code: 0, stdout: ' D  pulse           Pulse audio input\n', stderr: '' });
+    expect(await resolveInput({ platform: 'linux', ffmpeg: 'ffmpeg', exec: pulseExec, device: '1', devices: alsa })).toEqual({ format: 'alsa', input: 'hw:1,0' });
   });
 
   // Catches: devices were numbered by card, so two inputs on one card shared an index and --device <index> reached only the first.

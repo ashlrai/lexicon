@@ -260,6 +260,18 @@ export interface ResolveInputOptions {
 }
 
 /**
+ * Throw for a `--device <index>` that no listed device has; undefined for a
+ * name, which the caller passes on as it is. An index that matched nothing
+ * recorded from the default microphone without a word on Linux with pulse,
+ * and went to ffmpeg as a device name (`audio=7`, `-i 7`) everywhere else.
+ */
+function noSuchIndex(devices: readonly AudioDevice[], device: string): undefined {
+  if (!/^\d+$/.test(device.trim())) return undefined;
+  const range = devices.length === 0 ? 'none' : devices.length === 1 ? 'only index 0' : `0 to ${devices.length - 1}`;
+  throw new Error(`no audio input device has index ${device.trim()} (the list has ${range}); run lexicon voice --list-devices to see them`);
+}
+
+/**
  * Decide the ffmpeg input for this platform and `--device`.
  * - darwin: avfoundation `:default` (or `:N` / `:Name`)
  * - linux: pulse `default` when ffmpeg has the pulse demuxer, else alsa `default`
@@ -279,7 +291,7 @@ export async function resolveInput(opts: ResolveInputOptions): Promise<InputSpec
     case 'win32': {
       if (device) {
         const devices = opts.devices ?? (await listAudioDevices(opts));
-        const picked = pickDevice(devices, device);
+        const picked = pickDevice(devices, device) ?? noSuchIndex(devices, device);
         return { format: 'dshow', input: `audio=${picked ? picked.id : device}` };
       }
       const devices = opts.devices ?? (await listAudioDevices(opts));
@@ -293,14 +305,15 @@ export async function resolveInput(opts: ResolveInputOptions): Promise<InputSpec
         if (device && !/^\d+$/.test(device.trim())) return { format: 'pulse', input: device };
         if (device) {
           const devices = opts.devices ?? (await listAudioDevices(opts));
-          const picked = pickDevice(devices, device);
-          return { format: 'pulse', input: picked ? picked.id : 'default' };
+          const picked = pickDevice(devices, device) ?? noSuchIndex(devices, device);
+          // With no pulse sources listed the list is arecord's, whose ids are ALSA's.
+          return { format: picked?.backend === 'alsa' ? 'alsa' : 'pulse', input: picked ? picked.id : 'default' };
         }
         return { format: 'pulse', input: 'default' };
       }
       if (device) {
         const devices = opts.devices ?? (await listAudioDevices(opts));
-        const picked = pickDevice(devices, device);
+        const picked = pickDevice(devices, device) ?? noSuchIndex(devices, device);
         return { format: 'alsa', input: picked ? picked.id : device };
       }
       return { format: 'alsa', input: 'default' };

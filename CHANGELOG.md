@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon voice --device <index>` with an index no listed device has stops before recording, naming the range and `--list-devices`, on Linux and Windows. On Linux with pulse it recorded from the default microphone without a word, and elsewhere it passed the number to ffmpeg as a device name. On Linux with pulse but no pulse source listed, a device picked from the arecord list now goes to the ALSA demuxer rather than to pulse, which does not know `hw:` ids.
 - `lexicon voice --list-devices` on ALSA numbers each capture device by its place in the list, as the pulse and dshow lists do. It used the card number, so two inputs on one card (an Intel HDA card's analog and alternate analog) shared an index and `--device <index>` could only pick the first.
 - `lexicon voice --toggle` empties `voice/recorder.log` at each start. The log was opened for append and never emptied, so it grew by every recording's errors, and a recording that failed with nothing logged quoted an earlier recording's last lines as `ffmpeg said:`.
 - `lexicon voice` quotes the ffmpeg path in the `<ffmpeg> -version` step it prints when the recorder cannot start or the device list cannot be read. The path went in as is, so an ffmpeg under a directory with a space (`C:\Program Files\ffmpeg\bin\ffmpeg.exe`) printed a command that ran something else.
