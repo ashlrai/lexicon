@@ -20733,11 +20733,25 @@ function sortByCategory(terms) {
 function aliasPairs(lexicon) {
   const out = [];
   for (const term of lexicon.terms) {
+    const canonical = term.canonical.normalize("NFC");
+    const seen = /* @__PURE__ */ new Set();
     for (const alias of term.aliases) {
-      const a = alias.trim();
-      if (!a) continue;
-      out.push({ alias: a, canonical: term.canonical, term });
+      const a = alias.trim().normalize("NFC");
+      if (!a || seen.has(a)) continue;
+      seen.add(a);
+      out.push({ alias: a, canonical, term });
     }
+  }
+  return out;
+}
+function canonicalList(terms) {
+  const seen = /* @__PURE__ */ new Set();
+  const out = [];
+  for (const term of terms) {
+    const canonical = term.canonical.normalize("NFC");
+    if (seen.has(canonical)) continue;
+    seen.add(canonical);
+    out.push({ term, canonical });
   }
   return out;
 }
@@ -20757,13 +20771,13 @@ function mdCell(value) {
 
 // src/core/exporters/assemblyai.ts
 function exportAssemblyai(lexicon, _opts = {}) {
-  const word_boost = sortByImportance(lexicon.terms).map((t) => t.canonical);
+  const word_boost = canonicalList(sortByImportance(lexicon.terms)).map((c) => c.canonical);
   return JSON.stringify({ word_boost, boost_param: "high" }, null, 2) + "\n";
 }
 
 // src/core/exporters/azure.ts
 function exportAzure(lexicon, _opts = {}) {
-  const phraseList = sortByImportance(lexicon.terms).map((t) => t.canonical);
+  const phraseList = canonicalList(sortByImportance(lexicon.terms)).map((c) => c.canonical);
   return JSON.stringify({ phraseList }, null, 2) + "\n";
 }
 
@@ -20812,9 +20826,9 @@ function exportCsv(lexicon, _opts = {}) {
 // src/core/exporters/deepgram.ts
 function exportDeepgram(lexicon, _opts = {}) {
   const keywords = [];
-  for (const t of sortByImportance(lexicon.terms)) {
-    const keyword = t.canonical.replace(/:/g, " ").replace(/\s+/g, " ").trim();
-    if (keyword) keywords.push(`${keyword}:${isProperNounCategory(t.category) ? 2 : 1}`);
+  for (const { term, canonical } of canonicalList(sortByImportance(lexicon.terms))) {
+    const keyword = canonical.replace(/:/g, " ").replace(/\s+/g, " ").trim();
+    if (keyword) keywords.push(`${keyword}:${isProperNounCategory(term.category) ? 2 : 1}`);
   }
   return JSON.stringify({ keywords }, null, 2) + "\n";
 }
@@ -20849,9 +20863,9 @@ ${body}` : body;
 
 // src/core/exporters/google.ts
 function exportGoogle(lexicon, _opts = {}) {
-  const phrases = sortByImportance(lexicon.terms).map((t) => ({
-    value: t.canonical,
-    boost: isProperNounCategory(t.category) ? 20 : 10
+  const phrases = canonicalList(sortByImportance(lexicon.terms)).map(({ term, canonical }) => ({
+    value: canonical,
+    boost: isProperNounCategory(term.category) ? 20 : 10
   }));
   return JSON.stringify({ adaptation: { phraseSets: [{ phrases }] } }, null, 2) + "\n";
 }
@@ -20896,8 +20910,8 @@ function exportMarkdown(lexicon, _opts = {}) {
 var WHISPER_PROMPT_DEFAULT_LIMIT = 100;
 function exportWhisperPrompt(lexicon, opts = {}) {
   const limit = opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT;
-  const terms = sortByImportance(lexicon.terms).slice(0, Math.max(0, limit));
-  return terms.map((t) => t.canonical.replace(/\s+/g, " ").trim()).join(", ");
+  const terms = canonicalList(sortByImportance(lexicon.terms)).slice(0, Math.max(0, limit));
+  return terms.map((c) => c.canonical.replace(/\s+/g, " ").trim()).join(", ");
 }
 
 // src/core/exporters/openai.ts

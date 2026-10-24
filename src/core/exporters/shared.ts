@@ -61,15 +61,42 @@ export interface AliasPair {
   term: Term;
 }
 
-/** One entry per (alias, canonical). Terms without aliases contribute nothing. */
+/**
+ * One entry per (alias, canonical), both in NFC. Terms without aliases
+ * contribute nothing. A file written with a decomposed accent (`Cafe` plus
+ * U+0301, as text pasted from a macOS file name often is) exported that form
+ * as the trigger, which typed and transcribed text (precomposed) never
+ * matches; the store already treats both forms as one spelling, so one row is
+ * written for them.
+ */
 export function aliasPairs(lexicon: Lexicon): AliasPair[] {
   const out: AliasPair[] = [];
   for (const term of lexicon.terms) {
+    const canonical = term.canonical.normalize('NFC');
+    const seen = new Set<string>();
     for (const alias of term.aliases) {
-      const a = alias.trim();
-      if (!a) continue;
-      out.push({ alias: a, canonical: term.canonical, term });
+      const a = alias.trim().normalize('NFC');
+      if (!a || seen.has(a)) continue;
+      seen.add(a);
+      out.push({ alias: a, canonical, term });
     }
+  }
+  return out;
+}
+
+/**
+ * The canonicals of `terms` in order, in NFC, each spelling once: the list an
+ * STT engine's boost or prompt field takes, where a name in two Unicode forms
+ * was sent twice and in a form the engine's output (NFC) does not use.
+ */
+export function canonicalList(terms: readonly Term[]): { term: Term; canonical: string }[] {
+  const seen = new Set<string>();
+  const out: { term: Term; canonical: string }[] = [];
+  for (const term of terms) {
+    const canonical = term.canonical.normalize('NFC');
+    if (seen.has(canonical)) continue;
+    seen.add(canonical);
+    out.push({ term, canonical });
   }
   return out;
 }

@@ -1139,7 +1139,8 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
   // An alias-row format writes one row per non-blank alias (aliasPairs), so a
   // term without one writes nothing: "wrote csv export (2 terms)" counted it.
   const aliasRows = EXPORT_ALIAS_ROW_FORMATS.includes(format)
-    ? selected.map((t) => t.aliases.filter((a) => a.trim() !== '').length)
+    ? // One row per distinct alias in NFC, as aliasPairs writes them.
+      selected.map((t) => new Set(t.aliases.map((a) => a.trim().normalize('NFC')).filter((a) => a !== '')).size)
     : undefined;
   const rows = aliasRows?.reduce((sum, n) => sum + n, 0);
   const bytes = Buffer.byteLength(text, 'utf8');
