@@ -62949,6 +62949,7 @@ var ClipboardTooLargeError = class extends Error {
   limit;
 };
 var CLIPBOARD_EXEC_TIMEOUT_MS = 5e3;
+var POWERSHELL_EXEC_TIMEOUT_MS = 2e4;
 var ClipboardTimeoutError = class extends Error {
   constructor(cmd, timeoutMs) {
     super(`${cmd} did not finish within ${timeoutMs} ms and was stopped (the app holding the clipboard may not be answering)`);
@@ -63071,19 +63072,20 @@ function xselBackend(exec = defaultClipboardExec) {
 }
 function powershellBackend(exec = defaultClipboardExec, shell = "powershell") {
   let crlf = false;
+  const run = exec === defaultClipboardExec ? (cmd, args, stdin) => defaultClipboardExec(cmd, args, stdin, POWERSHELL_EXEC_TIMEOUT_MS) : exec;
   const readScript = "[Console]::OutputEncoding = New-Object System.Text.UTF8Encoding $false; [Console]::Out.Write([string](Get-Clipboard -Raw))";
   const writeScript = "[Console]::InputEncoding = New-Object System.Text.UTF8Encoding $false; $t = [Console]::In.ReadToEnd(); Set-Clipboard -Value $t";
   return {
     name: "powershell",
     description: `${shell} Get-Clipboard -Raw / Set-Clipboard (Windows)`,
     read: async () => {
-      const raw = (await readOrEmpty(exec, shell, ["-NoProfile", "-NonInteractive", "-Command", readScript])).replace(/^\uFEFF/, "");
+      const raw = (await readOrEmpty(run, shell, ["-NoProfile", "-NonInteractive", "-Command", readScript])).replace(/^\uFEFF/, "");
       crlf = raw.includes("\r\n") && !/(^|[^\r])\n/.test(raw);
       return crlf ? raw.replace(/\r\n/g, "\n") : raw;
     },
     write: async (text) => {
       const payload = crlf ? text.replace(/\r?\n/g, "\r\n") : text;
-      await exec(shell, ["-NoProfile", "-NonInteractive", "-Command", writeScript], payload);
+      await run(shell, ["-NoProfile", "-NonInteractive", "-Command", writeScript], payload);
     }
   };
 }

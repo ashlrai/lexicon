@@ -848,6 +848,12 @@ describe('a clipboard too large to correct', () => {
     expect(ok.length).toBe(backends.MAX_CLIPBOARD_READ_BYTES);
   });
 
+  // Catches: a cold powershell.exe start on a busy Windows machine ran past
+  // the 5 s limit, so a clipboard that was answering was reported as hung.
+  it('gives the PowerShell backend a longer limit than the other clipboard tools', () => {
+    expect(backends.POWERSHELL_EXEC_TIMEOUT_MS).toBeGreaterThanOrEqual(4 * backends.CLIPBOARD_EXEC_TIMEOUT_MS);
+  });
+
   // Catches: a clipboard tool that never exits (`xclip -o` waiting on a
   // selection owner that does not answer) left the read unsettled forever:
   // the watcher stopped polling without a word and the child kept the
