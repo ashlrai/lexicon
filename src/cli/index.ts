@@ -43,7 +43,7 @@ import type {
   RemoveOptions,
 } from './commands.js';
 import type { InstallOptions } from './cmd-install.js';
-import { CliRefusal, argvRequestsJson, cwdOptionProblem, exampleAfterMissingArgument, fail, jsonFlagsOf, line, optsRequestJson, refuse, unknownCommandHint, usageErrorJson } from './io.js';
+import { CliRefusal, argvRequestsJson, cwdOptionProblem, exampleAfterMissingArgument, fail, jsonFlagsOf, line, optsRequestJson, positiveIntOption, refuse, unknownCommandHint, usageErrorJson } from './io.js';
 
 
 interface DaemonCliOptions {
@@ -54,12 +54,6 @@ interface DaemonCliOptions {
   paste?: boolean;
   which?: boolean;
   backend?: ClipboardBackendName;
-}
-
-function positiveInt(value: string): number {
-  const n = Number.parseInt(value, 10);
-  if (!Number.isFinite(n) || n <= 0) throw new InvalidArgumentError('expected a positive integer');
-  return n;
 }
 
 const program = new Command();
@@ -166,8 +160,8 @@ program
   .command('harvest')
   .description('scan a repository for names worth adding to the lexicon')
   .argument('[path]', 'repository root (default: cwd)')
-  .option('--limit <n>', 'max candidates', positiveInt)
-  .option('--min-count <n>', 'minimum occurrences', positiveInt)
+  .option('--limit <n>', 'max candidates', positiveIntOption('--limit', 50))
+  .option('--min-count <n>', 'minimum occurrences', positiveIntOption('--min-count', 2))
   .option('--add', 'add candidates (with suggested aliases) to the project lexicon; on a terminal this walks them one by one')
   .option('-i, --interactive', 'walk candidates one by one: y add, n skip, e edit aliases, c category, a add all, q quit')
   .option('--yes', 'with --add: add every candidate without prompting')
@@ -184,8 +178,8 @@ program
   .argument('[format]')
   .option('--out <file>', 'write to a file instead of stdout')
   .option('--category <categories...>', 'only these categories')
-  .option('--limit <n>', 'cap the number of terms, applied after --category, keeping the most hits first (at equal hits brand, person and product terms first, then canonical A to Z); csv, wispr, superwhisper, macos and espanso (one row per alias) count only terms that have an alias', positiveInt)
-  .option('--json', 'print { ok: true, format, terms, bytes, path } after writing --out, or { ok: true, format, terms, bytes, content } with the export as a string without it; { ok: true, formats } with no format (plus projectTrust, skippedProject and note when an untrusted project lexicon was left out)')
+  .option('--limit <n>', 'cap the number of terms, applied after --category, keeping the most hits first (at equal hits brand, person and product terms first, then canonical A to Z); csv, wispr, superwhisper, macos and espanso (one row per alias) count only terms that have an alias', positiveIntOption('--limit', 50))
+  .option('--json', 'print { ok: true, format, terms, bytes, path } after writing --out, or { ok: true, format, terms, bytes, content } with the export as a string without it; { ok: true, formats } with no format (plus rows for the one-row-per-alias formats, and projectTrust, skippedProject and note when an untrusted project lexicon was left out)')
   .action(async (format: string | undefined, opts: ExportCliOptions) =>
     done(await runExport(format, withGlobals(opts), io)),
   );
@@ -224,7 +218,7 @@ program
   .description('watch the clipboard (macOS, Linux, Windows) and correct dictated text in place')
   .option('--once', 'correct the clipboard once and exit (for a keyboard shortcut after dictating)')
   .option('--paste', 'with --once: send Cmd+V afterwards (macOS only; needs Accessibility permission)')
-  .option('--interval <ms>', 'poll interval in milliseconds', positiveInt, 250)
+  .option('--interval <ms>', 'poll interval in milliseconds', positiveIntOption('--interval', 250), 250)
   .option('--dry-run', 'report corrections without writing to the clipboard')
   .option('--quiet', 'do not print corrections')
   .option('--backend <name>', 'force a clipboard backend: pbcopy|wl|xclip|xsel|powershell', (v: string) => {

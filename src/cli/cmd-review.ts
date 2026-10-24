@@ -716,10 +716,19 @@ export function registerReviewCommands(program: Command, io: IO): void {
     .option('--json', 'refused (exit 1): review asks about each term; prints { ok: false, error, nextStep } naming list --json, remove and add, and the MCP tools')
     .action(async (opts: ReviewOptions) => done(await runReview({ ...opts, ...globals() }, io)));
 
-  program
+  const edit = program
     .command('edit')
     .description('open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards')
     .option('--project', 'open the project .lexicon.yaml instead of the global file')
     .option('--json', 'refused (exit 1): edit opens an editor; prints { ok: false, error, nextStep } naming add, remove and the MCP tools')
     .action(async (opts: EditOptions) => done(await runEdit({ ...opts, ...globals() }, io)));
+  // `lexicon edit Nope` got commander's "Expected 0 arguments but got 1",
+  // which did not say that edit opens the whole file, or what changes one term.
+  const error = edit.error.bind(edit);
+  edit.error = (message, errorOptions) =>
+    error(errorOptions?.code === 'commander.excessArguments' ? EDIT_TAKES_NO_TERM : message, errorOptions);
 }
+
+/** The usage error of `lexicon edit <anything>`. */
+const EDIT_TAKES_NO_TERM =
+  'error: lexicon edit takes no term: it opens the whole lexicon file in $VISUAL/$EDITOR. To change one term: lexicon add <canonical> <alias...>, or lexicon remove <term>';

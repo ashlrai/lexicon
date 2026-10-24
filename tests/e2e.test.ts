@@ -646,14 +646,17 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: harvest', () => {
   it('rejects a non-positive --limit and a missing path', async () => {
     const bad = await runCli(['harvest', FAKE_REPO, '--limit', '0'], { env: shared.env });
     expect(bad.code).toBe(1);
-    expect(bad.stderr).toContain('positive integer');
+    expect(bad.stderr).toContain("option '--limit <n>' argument '0' is invalid. expected a positive integer, e.g. --limit 50");
+    const minCount = await runCli(['harvest', FAKE_REPO, '--min-count', '0'], { env: shared.env });
+    expect(minCount.code).toBe(1);
+    expect(minCount.stderr).toContain('expected a positive integer, e.g. --min-count 2');
     const missing = await runCli(['harvest', path.join(shared.home, 'nope')], { env: shared.env });
     expect(missing.code).toBe(1);
     expect(missing.stderr).toContain('does not exist');
     // suggest names the option like every other --limit.
     const suggest = await runCli(['suggest', '--limit', 'abc'], { env: shared.env });
     expect(suggest.code).toBe(1);
-    expect(suggest.stderr).toContain("option '--limit <n>' argument 'abc' is invalid");
+    expect(suggest.stderr).toContain("option '--limit <n>' argument 'abc' is invalid. expected a positive integer, e.g. --limit 20");
   });
 });
 

@@ -114,7 +114,7 @@ const VOICE_CONTEXT_INSTRUCTION =
   'If you see a word that looks like a garbled version of one of them, use the canonical form without asking.';
 
 /**
- * What `voice-context` and `lexicon://me` say when the merged lexicon has no
+ * What `voice-context`, `lexicon://me` and `lexicon://json` (its `note`, without the leading `Note: `) say when the merged lexicon has no
  * terms: an empty table under "apply these spellings" read as a lexicon that
  * was loaded and simply had nothing to correct.
  */
@@ -294,7 +294,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     {
       title: 'Lexicon JSON',
       description:
-        'The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`.',
+        'The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`. With no terms at all, `note` says so and how to set the lexicon up.',
       mimeType: 'application/json',
     },
     async (uri) => {
@@ -302,10 +302,16 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       // Additive keys, present only when a project file was skipped (path
       // only, never its contents), as list_terms and lexicon_stats report it.
       // The lexicon JSON importer strips unknown keys, so the text still imports.
-      const skipped = skippedProjectFields(loaded);
+      // With no terms (and no skipped file to name), the `note` lexicon://me
+      // carries, so an empty `terms` does not read as a loaded lexicon that
+      // simply has nothing to correct.
+      const extra =
+        loaded.skippedProject || loaded.merged.terms.length > 0
+          ? skippedProjectFields(loaded)
+          : { note: EMPTY_LEXICON_NOTE.replace(/^Note: /, '') };
       const text =
-        Object.keys(skipped).length > 0
-          ? `${JSON.stringify({ ...loaded.merged, ...skipped }, null, 2)}\n`
+        Object.keys(extra).length > 0
+          ? `${JSON.stringify({ ...loaded.merged, ...extra }, null, 2)}\n`
           : exportLexicon(loaded.merged, 'json');
       return {
         contents: [{ uri: uri.href, mimeType: 'application/json', text }],

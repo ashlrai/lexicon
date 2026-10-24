@@ -519,7 +519,7 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     ? `it is in the ${other.scope} lexicon (${other.path}); run with --${other.scope} to remove it`
     : untrusted
       ? undefined
-      : 'run lexicon list to see the exact canonical spellings';
+      : (emptyLexiconRemoveStep(loaded) ?? 'run lexicon list to see the exact canonical spellings');
   const notFound = (): string =>
     `lexicon: term "${safe(canonical)}" not found${scope ? ` in ${scope} lexicon` : ''}\n` +
     (missStep ? `lexicon: ${safeLines(missStep)}\n` : '') +
@@ -555,6 +555,20 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
  * trust error, a `--global` hint when the global copy holds the alias, and
  * exits 1, as `remove` does for a term.
  */
+/**
+ * The next step for a `remove` (with or without `--alias`) that missed on a
+ * lexicon with no terms, or undefined when it has some (or did not load).
+ * `lexicon list` shows nothing there, so pointing to it was a dead end: say
+ * there is nothing to remove and how to get terms, or `lexicon trust` when
+ * the only terms are in an untrusted project file that was not loaded.
+ */
+function emptyLexiconRemoveStep(loaded: LoadedLexicon | undefined): string | undefined {
+  if (loaded === undefined || loaded.merged.terms.length > 0) return undefined;
+  return loaded.skippedProject
+    ? 'the only terms are in the untrusted project lexicon, which is not loaded; review it and run lexicon trust'
+    : 'the lexicon has no terms yet, so there is nothing to remove; run lexicon setup, or add one with: lexicon add <canonical> <alias>';
+}
+
 async function runRemoveAlias(
   canonical: string,
   alias: string,
@@ -583,7 +597,9 @@ async function runRemoveAlias(
     const elsewhere =
       isInputError(err) && other && holdsAlias(other)
         ? `it is an alias of "${canonical}" in the ${other.scope} lexicon (${other.path}); run with --${other.scope} to remove it there, or with neither flag to remove it from every file whose copy has it`
-        : undefined;
+        : isInputError(err) && !untrusted
+          ? emptyLexiconRemoveStep(loaded)
+          : undefined;
     if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere), canonical, alias, removed: false, ...extra }, null, 2));
     io.stderr(`lexicon: ${safeLines(message)}\n`);
     if (elsewhere) io.stderr(`lexicon: ${safeLines(elsewhere)}\n`);
@@ -773,6 +789,13 @@ export async function runNormalize(
   };
 
   if (text.length === 0) {
+    // Still exit 0 with stdout round-tripping the (empty) input, but say why
+    // nothing happened: `lexicon normalize < empty.txt` (or a forgotten pipe)
+    // exited 0 without a word. stderr only, so the protocol is unchanged.
+    io.stderr(
+      `lexicon: no text to correct (${fromArgs ? 'the argument was empty' : 'stdin was empty'}); ` +
+        'pass it as arguments: lexicon normalize "ping ashler", or pipe it in: echo "ping ashler" | lexicon normalize\n',
+    );
     if (opts.json) line(io, JSON.stringify(jsonOk({ input: '', output: '', replacements: [], changed: false })));
     return 0;
   }
@@ -1019,7 +1042,9 @@ export interface ExportCliOptions extends CommonOptions {
    * Print a JSON document instead of the bare export: `{ ok: true, format,
    * terms, bytes, path }` after writing `--out`, `{ ok: true, format, terms,
    * bytes, content }` (the export as a string) without it, and `{ ok: true,
-   * formats }` when no format is given.
+   * formats }` when no format is given. A format that writes one row per
+   * alias (EXPORT_ALIAS_ROW_FORMATS) adds `rows`, the rows it wrote: a term
+   * without an alias is in `terms` but writes none.
    */
   json?: boolean;
 }
@@ -1130,6 +1155,12 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
   // The terms actually exported: the same category filter and cap exportLexicon applies.
   const selected = selectExportTerms(merged, exportOpts, format);
   const terms = selected.length;
+  // An alias-row format writes one row per non-blank alias (aliasPairs), so a
+  // term without one writes nothing: "wrote csv export (2 terms)" counted it.
+  const aliasRows = EXPORT_ALIAS_ROW_FORMATS.includes(format)
+    ? selected.map((t) => t.aliases.filter((a) => a.trim() !== '').length)
+    : undefined;
+  const rows = aliasRows?.reduce((sum, n) => sum + n, 0);
   const bytes = Buffer.byteLength(text, 'utf8');
   // An empty export read as a complete one: no word on stderr or under --json,
   // where MCP export_lexicon says why in a note. stderr only, as above.
@@ -1138,17 +1169,25 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
   const skipped = skippedProjectJson(loaded, 'Its terms are not in the export.');
   const notes = { ...skipped, ...(empty || skipped.note ? { note: [empty, skipped.note].filter(Boolean).join(' ') } : {}) };
 
+  const rowsField = rows !== undefined ? { rows } : {};
+
   if (opts.out) {
     const outPath = path.resolve(cwd, opts.out);
     await fs.mkdir(path.dirname(outPath), { recursive: true });
     await fs.writeFile(outPath, text, 'utf8');
     if (json) {
-      line(io, JSON.stringify(jsonOk({ format, terms, bytes, path: outPath, ...notes }), null, 2));
+      line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, path: outPath, ...notes }), null, 2));
     } else {
-      line(io, `wrote ${format} export (${plural(terms, 'term')}) to ${safe(outPath)}`);
+      let counted = plural(terms, 'term');
+      if (aliasRows !== undefined && rows !== undefined) {
+        const without = aliasRows.filter((n) => n === 0).length;
+        counted = `${plural(rows, 'row')} from ${plural(terms - without, 'term')}`;
+        if (without > 0) counted += `; ${plural(without, 'term')} without an alias wrote no row`;
+      }
+      line(io, `wrote ${format} export (${counted}) to ${safe(outPath)}`);
     }
   } else if (json) {
-    line(io, JSON.stringify(jsonOk({ format, terms, bytes, content: text, ...notes }), null, 2));
+    line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, content: text, ...notes }), null, 2));
   } else {
     io.stdout(text);
   }

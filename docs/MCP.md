@@ -55,7 +55,7 @@ Arguments are checked against each tool's schema before the tool runs. A key the
 | Resource | Type | Content |
 |---|---|---|
 | `lexicon://me` | `text/markdown` | The `claude-md` export of the merged lexicon. What an agent should read at session start. Adds one line naming a skipped untrusted project file, and one saying the lexicon is empty when it has no terms |
-| `lexicon://json` | `application/json` | The merged lexicon as JSON (an untrusted project file is left out, and named by path in `skippedProject`) |
+| `lexicon://json` | `application/json` | The merged lexicon as JSON (an untrusted project file is left out, and named by path in `skippedProject`; with no terms, `note` says so and names `setup_lexicon`) |
 
 ## Prompts
 

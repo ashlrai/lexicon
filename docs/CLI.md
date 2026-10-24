@@ -242,8 +242,9 @@ Options:
                               after writing --out, or { ok: true, format, terms,
                               bytes, content } with the export as a string
                               without it; { ok: true, formats } with no format
-                              (plus projectTrust, skippedProject and note when
-                              an untrusted project lexicon was left out)
+                              (plus rows for the one-row-per-alias formats, and
+                              projectTrust, skippedProject and note when an
+                              untrusted project lexicon was left out)
   -h, --help                  display help for command
 ```
 

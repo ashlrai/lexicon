@@ -32,7 +32,7 @@ vi.mock('../src/core/schema.js', async (importOriginal) => {
     },
   };
 });
-import { EXPORT_FORMATS, addTerm, loadLexicon, readLexiconFile, suggestAliases, trustProject, untrustProject } from '../src/core/index.js';
+import { EXPORT_FORMATS, addTerm, exportLexicon, loadLexicon, readLexiconFile, suggestAliases, trustProject, untrustProject } from '../src/core/index.js';
 import type { LexiconStats, NormalizeResult } from '../src/core/index.js';
 import {
   createServer,
@@ -46,6 +46,7 @@ import {
   pairPageHtml,
   readServeConfig,
   DEFAULT_PORT,
+  EXPORT_NOTE_HEADER,
   NORMALIZE_BUDGET_MS,
   PAIR_HEADERS,
   PAIR_META,
@@ -2743,5 +2744,128 @@ describe('consumer contract: Phantom desktop voice client', () => {
   it('answers 401 without the bearer token, which makes Phantom drop its cache', async () => {
     const res = await rawGet('/lexicon', {});
     expect(res.status).toBe(401);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Notes on an empty lexicon, a filter that matches nothing, a skipped project
+// ---------------------------------------------------------------------------
+
+describe('notes on an empty or partial answer', () => {
+  let dir: string;
+  let globalPath: string;
+  let emptyRepo: string;
+  let untrustedOnly: string;
+  let notes: LexiconHttpServer;
+  let started: ServeStartInfo;
+  const call = async (method: string, route: string, body?: unknown, extra: Record<string, string> = {}): Promise<Response> =>
+    fetch(`${started.url}${route}`, {
+      method,
+      headers: { Authorization: `Bearer ${started.token}`, ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...extra },
+      ...(body !== undefined ? { body: JSON.stringify(body) } : {}),
+    });
+  const at = (route: string, cwd: string): string => `${route}${route.includes('?') ? '&' : '?'}cwd=${encodeURIComponent(cwd)}`;
+
+  beforeAll(async () => {
+    dir = await fs.realpath(await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-notes-')));
+    globalPath = path.join(dir, 'config', 'lexicon.yaml');
+    emptyRepo = path.join(dir, 'empty');
+    untrustedOnly = path.join(dir, 'untrusted');
+    await fs.mkdir(emptyRepo, { recursive: true });
+    await fs.mkdir(path.join(untrustedOnly, '.git'), { recursive: true });
+    await fs.writeFile(path.join(untrustedOnly, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: HostileCorp\n    aliases: [hostyle]\n', 'utf8');
+    // No global lexicon file at all: the merged lexicon has no terms.
+    notes = createServer({ port: 0, cwd: emptyRepo, globalPath, quiet: true, reloadMs: 0 });
+    started = await notes.start();
+  });
+
+  afterAll(async () => {
+    await notes.stop();
+    await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  });
+
+  // Catches: POST /normalize on an empty lexicon answered `changed: false`
+  // with nothing saying that no term could ever match.
+  it('POST /normalize on an empty lexicon adds a hint naming lexicon setup (or lexicon trust)', async () => {
+    const res = await call('POST', '/normalize', { text: 'ping ashler', cwd: emptyRepo });
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as Record<string, unknown>;
+    expect(body).toMatchObject({ output: 'ping ashler', changed: false, replacements: [] });
+    expect(body.hint).toBe('The lexicon has no terms yet, so nothing can be corrected; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.');
+    const skipped = (await (await call('POST', '/normalize', { text: 'ping hostyle', cwd: untrustedOnly })).json()) as Record<string, unknown>;
+    expect(skipped.hint).toContain('run `lexicon trust`');
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler'] }, { globalPath, cwd: emptyRepo });
+    try {
+      const full = (await (await call('POST', '/normalize', { text: 'ping ashler', dryRun: true, cwd: emptyRepo })).json()) as Record<string, unknown>;
+      expect(full).not.toHaveProperty('hint');
+    } finally {
+      await fs.rm(globalPath, { force: true });
+    }
+  });
+
+  // Catches: GET /lexicon and /stats on an empty lexicon answered zeros with
+  // no step, and with a skipped project file no `lexicon trust` step, where
+  // `lexicon stats --json` and MCP list_terms / lexicon_stats give a `note`.
+  it('GET /lexicon and /stats add a note for an empty lexicon, and the lexicon trust step for a skipped project file', async () => {
+    const lex = (await (await call('GET', at('/lexicon', emptyRepo))).json()) as Record<string, unknown>;
+    expect(lex.note).toBe('The lexicon has no terms yet; add one with: lexicon add "Ashlr.AI" Ashler, or run `lexicon setup`.');
+    expect(lex.lexicon).toEqual({ version: 1, terms: [] });
+    const stats = (await (await call('GET', at('/stats', emptyRepo))).json()) as Record<string, unknown>;
+    expect(stats.note).toBe('The lexicon has no terms yet, so nothing is corrected or counted; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.');
+    expect(stats.termCount).toBe(0);
+
+    const skippedLex = (await (await call('GET', at('/lexicon', untrustedOnly))).json()) as Record<string, unknown>;
+    expect(skippedLex.note).toBe('An untrusted project .lexicon.yaml exists and was not loaded; review it and run `lexicon trust` to enable it.');
+    expect(skippedLex.skippedProject).toBe(path.join(untrustedOnly, '.lexicon.yaml'));
+    const skippedStats = (await (await call('GET', at('/stats', untrustedOnly))).json()) as Record<string, unknown>;
+    expect(skippedStats.note).toBe(
+      'An untrusted project .lexicon.yaml exists and was not loaded; review it and run `lexicon trust` to enable it. Its terms are not in the counts.',
+    );
+
+    // Terms and no skipped file: no note, the shape as before.
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler'] }, { globalPath, cwd: emptyRepo });
+    try {
+      expect(await (await call('GET', at('/lexicon', emptyRepo))).json()).not.toHaveProperty('note');
+      expect(await (await call('GET', at('/stats', emptyRepo))).json()).not.toHaveProperty('note');
+      // A skipped file still gets its step with terms loaded.
+      expect(((await (await call('GET', at('/stats', untrustedOnly))).json()) as { note?: string }).note).toContain('run `lexicon trust`');
+    } finally {
+      await fs.rm(globalPath, { force: true });
+    }
+  });
+
+  // Catches: GET /export/:format answered 200 with an empty body and no word
+  // of why, where `lexicon export` and MCP export_lexicon say so in a note.
+  it('GET /export/:format names why an export is empty in X-Lexicon-Note, the body unchanged', async () => {
+    const empty = await call('GET', at('/export/csv', emptyRepo));
+    expect(empty.status).toBe(200);
+    expect(empty.headers.get(EXPORT_NOTE_HEADER)).toBe(
+      'The lexicon has no terms yet, so the export is empty; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.',
+    );
+    expect(await empty.text()).toBe(exportLexicon({ version: 1, terms: [] }, 'csv'));
+    const skipped = await call('GET', at('/export/text', untrustedOnly));
+    expect(skipped.headers.get(EXPORT_NOTE_HEADER)).toContain('the only terms are in the untrusted project lexicon, which was left out; review it and run `lexicon trust`');
+    expect(await skipped.text()).not.toContain('HostileCorp');
+
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler'], category: 'brand' }, { globalPath, cwd: emptyRepo });
+    await addTerm({ canonical: 'Plainword', aliases: [], category: 'product' }, { globalPath, cwd: emptyRepo });
+    const full = await call('GET', at('/export/text', emptyRepo));
+    expect(full.headers.get(EXPORT_NOTE_HEADER)).toBeNull();
+    const noMatch = await call('GET', at('/export/text?category=person', emptyRepo));
+    expect(noMatch.headers.get(EXPORT_NOTE_HEADER)).toBe("No term matched ?category=person, so the export is empty; lexicon list shows each term's category.");
+    expect(await noMatch.text()).toBe('');
+    const noRows = await call('GET', at('/export/csv?category=product', emptyRepo));
+    expect(noRows.headers.get(EXPORT_NOTE_HEADER)).toBe(
+      'No exported term has an alias, and csv writes one row per alias, so the export has no rows; add one with: lexicon add <canonical> <alias>.',
+    );
+    // With terms loaded, a skipped project file is named too.
+    const partial = await call('GET', at('/export/text', untrustedOnly));
+    expect(partial.headers.get(EXPORT_NOTE_HEADER)).toBe(
+      'An untrusted project .lexicon.yaml exists and was not loaded; review it and run `lexicon trust` to enable it. Its terms are not in the export.',
+    );
+    // An allowed browser origin may read the header.
+    const cors = await call('GET', at('/export/text', untrustedOnly), undefined, { Origin: 'chrome-extension://abc' });
+    expect(cors.headers.get('access-control-expose-headers')).toBe(EXPORT_NOTE_HEADER);
+    await fs.rm(globalPath, { force: true });
   });
 });

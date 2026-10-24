@@ -124,7 +124,8 @@ import {
   runRemove,
   runHarvest,
 } from '../src/cli/commands.js';
-import { DEFAULT_NEXT_STEP, PROJECT_TRUST_NEXT_STEP, fail } from '../src/cli/io.js';
+import { DEFAULT_NEXT_STEP, PROJECT_TRUST_NEXT_STEP, fail, positiveIntOption } from '../src/cli/io.js';
+import { InputError } from '../src/util/errors.js';
 import { registersLexicon } from '../src/cli/cmd-doctor.js';
 import type { DoctorDeps } from '../src/cli/cmd-doctor.js';
 import { codexBlock, targetFor } from '../src/cli/cmd-install.js';
@@ -322,6 +323,15 @@ describe('normalize', () => {
     const empty = makeIO();
     expect(await runNormalize([], { json: true }, empty, async () => '')).toBe(0);
     expect(JSON.parse(empty.out)).toEqual({ ok: true, input: '', output: '', replacements: [], changed: false });
+    // Catches: empty stdin exited 0 without a word. stdout and the exit code stay as they were.
+    expect(empty.err).toBe('lexicon: no text to correct (stdin was empty); pass it as arguments: lexicon normalize "ping ashler", or pipe it in: echo "ping ashler" | lexicon normalize\n');
+    const plainEmpty = makeIO();
+    expect(await runNormalize([], {}, plainEmpty, async () => '')).toBe(0);
+    expect(plainEmpty.out).toBe('');
+    expect(plainEmpty.err).toContain('stdin was empty');
+    const emptyArg = makeIO();
+    expect(await runNormalize([''], {}, emptyArg)).toBe(0);
+    expect(emptyArg.err).toContain('the argument was empty');
 
     vi.mocked(core.loadLexicon).mockRejectedValueOnce(new Error('bad yaml'));
     const bad = makeIO();
@@ -544,6 +554,63 @@ describe('add / remove / path', () => {
       nextStep: 'pass one of --project or --global, or omit both to try the project lexicon, then the global one',
     });
     expect(io.err).toContain('lexicon: --project and --global cannot be combined');
+  });
+
+  // Catches: on an empty lexicon `lexicon remove Nope` pointed to `lexicon list`, which shows nothing.
+  it('remove on an empty lexicon points to lexicon setup / lexicon add, not lexicon list', async () => {
+    const empty = { version: 1 as const, terms: [] };
+    const loadedEmpty = { merged: empty, global: { path: state.globalPath, scope: 'global' as const, lexicon: empty, exists: true } };
+    const step = 'the lexicon has no terms yet, so there is nothing to remove; run lexicon setup, or add one with: lexicon add <canonical> <alias>';
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedEmpty);
+    const plain = makeIO();
+    expect(await runRemove('Nope', {}, plain)).toBe(1);
+    expect(plain.err).toContain(`lexicon: ${step}`);
+    expect(plain.err).not.toContain('lexicon list');
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedEmpty);
+    const asJson = makeIO();
+    expect(await runRemove('Nope', { json: true }, asJson)).toBe(1);
+    expect(JSON.parse(asJson.out)).toMatchObject({ ok: false, error: 'term "Nope" not found', nextStep: step, removed: false });
+    // Only untrusted project terms: the way to them is lexicon trust.
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({
+      ...loadedEmpty,
+      projectTrust: 'untrusted',
+      skippedProject: { path: '/tmp/proj/.lexicon.yaml', scope: 'project', lexicon: empty, exists: true },
+    });
+    const skipped = makeIO();
+    expect(await runRemove('Nope', {}, skipped)).toBe(1);
+    expect(skipped.err).toContain('the only terms are in the untrusted project lexicon, which is not loaded; review it and run lexicon trust');
+  });
+
+  // Catches: on an empty lexicon `lexicon remove X --alias y` gave only the generic "fix what error names" step.
+  it('remove --alias on an empty lexicon points to lexicon setup / lexicon add, or lexicon trust for an untrusted-only project', async () => {
+    const empty = { version: 1 as const, terms: [] };
+    const loadedEmpty = { merged: empty, global: { path: state.globalPath, scope: 'global' as const, lexicon: empty, exists: true } };
+    const step = 'the lexicon has no terms yet, so there is nothing to remove; run lexicon setup, or add one with: lexicon add <canonical> <alias>';
+    const miss = (): Error => new InputError('no term "Nope" in the global or project lexicon');
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedEmpty);
+    vi.mocked(core.removeAlias).mockRejectedValueOnce(miss());
+    const plain = makeIO();
+    expect(await runRemove('Nope', { alias: 'nop' }, plain)).toBe(1);
+    expect(plain.err).toContain(`lexicon: ${step}`);
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedEmpty);
+    vi.mocked(core.removeAlias).mockRejectedValueOnce(miss());
+    const asJson = makeIO();
+    expect(await runRemove('Nope', { alias: 'nop', json: true }, asJson)).toBe(1);
+    expect(JSON.parse(asJson.out)).toMatchObject({ ok: false, error: 'no term "Nope" in the global or project lexicon', nextStep: step, removed: false });
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({
+      ...loadedEmpty,
+      projectTrust: 'untrusted',
+      skippedProject: { path: '/tmp/proj/.lexicon.yaml', scope: 'project', lexicon: empty, exists: true },
+    });
+    vi.mocked(core.removeAlias).mockRejectedValueOnce(miss());
+    const skipped = makeIO();
+    expect(await runRemove('Nope', { alias: 'nop', json: true }, skipped)).toBe(1);
+    expect(JSON.parse(skipped.out).nextStep).toBe('the only terms are in the untrusted project lexicon, which is not loaded; review it and run lexicon trust');
+    // A lexicon with terms keeps the plain miss.
+    vi.mocked(core.removeAlias).mockRejectedValueOnce(miss());
+    const full = makeIO();
+    expect(await runRemove('Nope', { alias: 'nop' }, full)).toBe(1);
+    expect(full.err).not.toContain('nothing to remove');
   });
 
   // Catches: every `remove --json` failure document (not found, unknown alias,
@@ -978,6 +1045,35 @@ describe('export', () => {
     expect(whole.err).toBe('');
   });
 
+  // Catches: for an alias-row format, "wrote csv export (2 terms)" and --json `terms` counted a term with no alias, which writes no row.
+  it('an alias-row export reports the rows it wrote and the terms that wrote none', async () => {
+    const mixed = { version: 1 as const, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler', 'Ashlar', ' '] }, { canonical: 'Quokka', aliases: [] }] };
+    const loadedMixed = { merged: mixed, global: { path: state.globalPath, scope: 'global' as const, lexicon: mixed, exists: true } };
+    const dir = await tempDir('lexicon-cli-');
+    try {
+      vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedMixed);
+      const human = makeIO();
+      expect(await runExport('csv', { out: path.join(dir, 'lex.csv') }, human)).toBe(0);
+      expect(human.out).toContain('wrote csv export (2 rows from 1 term; 1 term without an alias wrote no row) to ');
+      vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedMixed);
+      const asJson = makeIO();
+      expect(await runExport('csv', { out: path.join(dir, 'lex.csv'), json: true }, asJson)).toBe(0);
+      // `terms` keeps its meaning (the terms after --category and --limit); `rows` is what the file holds.
+      expect(JSON.parse(asJson.out)).toMatchObject({ ok: true, format: 'csv', terms: 2, rows: 2 });
+      // A format that writes every term has no rows field and keeps the plain count.
+      vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedMixed);
+      const whole = makeIO();
+      expect(await runExport('json', { out: path.join(dir, 'lex.json'), json: true }, whole)).toBe(0);
+      expect(JSON.parse(whole.out)).not.toHaveProperty('rows');
+      vi.mocked(core.loadLexicon).mockResolvedValueOnce(loadedMixed);
+      const wholeHuman = makeIO();
+      expect(await runExport('json', { out: path.join(dir, 'lex.json') }, wholeHuman)).toBe(0);
+      expect(wholeHuman.out).toContain('wrote json export (2 terms) to ');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('--out reports the number of terms written after --category and --limit, not the lexicon size', async () => {
     const dir = await tempDir('lexicon-cli-');
     try {
@@ -1030,7 +1126,7 @@ describe('export', () => {
     it('without --out embeds the export as content', async () => {
       const io = makeIO();
       expect(await runExport('wispr-flow', { json: true }, io)).toBe(0);
-      expect(JSON.parse(io.out)).toEqual({ ok: true, format: 'wispr', terms: 2, bytes: 13, content: 'export:wispr\n' });
+      expect(JSON.parse(io.out)).toEqual({ ok: true, format: 'wispr', terms: 2, rows: 3, bytes: 13, content: 'export:wispr\n' });
     });
 
     it('with no format lists the formats as JSON', async () => {
@@ -1073,6 +1169,21 @@ describe('export', () => {
 // Catches: a --json failure from a store error or a refusal with no hint of
 // its own printed { ok: false, error } with no nextStep, while the rest
 // carried one, so a script could not rely on the three keys.
+// Catches: `--limit 0` said only "expected a positive integer", with no example of a value that works,
+// and `--limit 5abc` / `--limit 1.5` were taken as 5 and 1.
+describe('positiveIntOption', () => {
+  it('accepts a positive integer and refuses anything else naming the flag with an example', () => {
+    const limit = positiveIntOption('--limit', 50);
+    expect(limit('7')).toBe(7);
+    expect(limit(' 12 ')).toBe(12);
+    // parseInt read '5abc' as 5 and '1.5' as 1: only a whole number string counts.
+    for (const bad of ['0', '-3', 'abc', '', '5abc', '1.5', '1e3', '0x10', '00', '99999999999999999999']) {
+      expect(() => limit(bad), bad).toThrow('expected a positive integer, e.g. --limit 50');
+    }
+    expect(() => positiveIntOption('--interval', 250)('0')).toThrow('e.g. --interval 250');
+  });
+});
+
 describe('--json failure documents', () => {
   it('fail() always carries nextStep: the unreadable-lexicon hint, the trust step, else the default', () => {
     const plain = makeIO();
@@ -2294,6 +2405,8 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
         [['add', '--json'], "missing required argument 'canonical'", 'lexicon add --help'],
         [['pack', 'add', '--json'], "missing required argument 'name'", 'lexicon pack add --help'],
         [['nope', '--json'], "unknown command 'nope'", 'lexicon --help'],
+        // Catches: `lexicon edit Nope` said only "Expected 0 arguments but got 1".
+        [['edit', 'Nope', '--json'], 'lexicon edit takes no term: it opens the whole lexicon file in $VISUAL/$EDITOR. To change one term: lexicon add <canonical> <alias...>, or lexicon remove <term>', 'lexicon edit --help'],
       ];
       for (const [args, error, help] of cases) {
         const r = lexicon([...args, '--cwd', tmp], globalPath);
