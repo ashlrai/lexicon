@@ -62974,6 +62974,11 @@ var import_node_path23 = __toESM(require_node_path());
 // src/daemon/clipboard-backends.ts
 var import_node_child_process4 = __toESM(require_node_child_process());
 var CLIPBOARD_BACKEND_NAMES = ["pbcopy", "wl", "xclip", "xsel", "powershell"];
+function utf8LocaleEnv(env = process.env) {
+  const named = (k) => (env[k] ?? "") !== "";
+  if (named("LC_ALL") || named("LC_CTYPE") || named("LANG")) return env;
+  return { ...env, LANG: "en_US.UTF-8", LC_CTYPE: "en_US.UTF-8" };
+}
 var ExecError = class extends Error {
   constructor(cmd, exitCode, stderr) {
     super(`${cmd} exited with code ${exitCode ?? "null"}${stderr.trim() ? `: ${stderr.trim()}` : ""}`);
@@ -63015,12 +63020,14 @@ function isClipboardTimeout(err) {
 function isClipboardTooLarge(err) {
   return err instanceof Error && err.name === "ClipboardTooLargeError";
 }
-function defaultClipboardExec(cmd, args, stdin, timeoutMs = CLIPBOARD_EXEC_TIMEOUT_MS) {
+function defaultClipboardExec(cmd, args, stdin, opts = {}) {
   const isWrite = stdin !== void 0;
+  const { timeoutMs = CLIPBOARD_EXEC_TIMEOUT_MS, env } = typeof opts === "number" ? { timeoutMs: opts, env: void 0 } : opts;
   return new Promise((resolve5, reject) => {
     const child = (0, import_node_child_process4.spawn)(cmd, [...args], {
       stdio: [isWrite ? "pipe" : "ignore", isWrite ? "ignore" : "pipe", isWrite ? "ignore" : "pipe"],
-      windowsHide: true
+      windowsHide: true,
+      ...env ? { env } : {}
     });
     const out = [];
     const errChunks = [];
@@ -63060,22 +63067,23 @@ function defaultClipboardExec(cmd, args, stdin, timeoutMs = CLIPBOARD_EXEC_TIMEO
     }
   });
 }
-async function readOrEmpty(exec, cmd, args) {
+async function readOrEmpty(exec, cmd, args, opts) {
   try {
-    return await exec(cmd, args);
+    return await (opts ? exec(cmd, args, void 0, opts) : exec(cmd, args));
   } catch (e) {
     if (isEnoent(e) || isClipboardTooLarge(e) || isClipboardTimeout(e)) throw e;
     if (e instanceof ExecError && /display|DISPLAY|WAYLAND_DISPLAY|compositor|not allowed|permission/i.test(e.stderr)) throw e;
     return "";
   }
 }
-function pbcopyBackend(exec = defaultClipboardExec) {
+function pbcopyBackend(exec = defaultClipboardExec, env = process.env) {
+  const opts = { env: utf8LocaleEnv(env) };
   return {
     name: "pbcopy",
     description: "pbpaste / pbcopy (macOS)",
-    read: () => readOrEmpty(exec, "pbpaste", []),
+    read: () => readOrEmpty(exec, "pbpaste", [], opts),
     write: async (text) => {
-      await exec("pbcopy", [], text);
+      await exec("pbcopy", [], text, opts);
     }
   };
 }
@@ -63146,7 +63154,7 @@ async function detectClipboardBackend(platform = process.platform, env = process
       if (!await has("pbpaste") || !await has("pbcopy")) {
         throw new Error("pbpaste/pbcopy not found on PATH (they ship with macOS; check your PATH)");
       }
-      return pbcopyBackend(exec);
+      return pbcopyBackend(exec, env);
     }
     case "win32": {
       if (await has("powershell")) return powershellBackend(exec, "powershell");

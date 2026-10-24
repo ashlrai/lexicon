@@ -151,7 +151,7 @@ export async function resolveClipboard(opts: ClipboardCommonOptions): Promise<Re
     if (opts.backend === 'powershell') shell = await powershellShell(onPath);
   }
   const backend: ClipboardBackend = opts.backend
-    ? createClipboardBackend(opts.backend, exec, shell)
+    ? createClipboardBackend(opts.backend, exec, shell, env)
     : await detectClipboardBackend(platform, env, undefined, exec);
   return {
     name: backend.name,

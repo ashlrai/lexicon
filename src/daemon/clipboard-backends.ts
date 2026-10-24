@@ -37,7 +37,27 @@ export function isClipboardBackendName(value: string): value is ClipboardBackend
  * Must reject with an `ExecError` (or an Error carrying `code: 'ENOENT'`) on a
  * non-zero exit or a missing binary.
  */
-export type ClipboardExec = (cmd: string, args: readonly string[], stdin?: string) => Promise<string>;
+export type ClipboardExec = (cmd: string, args: readonly string[], stdin?: string, opts?: ClipboardExecOptions) => Promise<string>;
+
+/** What a backend may ask of `exec` beyond the command. */
+export interface ClipboardExecOptions {
+  /** The child's whole environment; default the caller's (`process.env`). */
+  env?: NodeJS.ProcessEnv;
+}
+
+/**
+ * `env` with a UTF-8 `LANG` and `LC_CTYPE` when it names no locale at all (no
+ * `LC_ALL`, `LC_CTYPE` or `LANG`), as under launchd, cron or a bare `env -i`.
+ * pbpaste and pbcopy pick their text encoding from the locale and, with none,
+ * read and wrote non-ASCII text (`Zoë`, `東京`) in a legacy encoding, so a
+ * corrected clipboard came back as mojibake. A locale the caller did set is
+ * left alone.
+ */
+export function utf8LocaleEnv(env: NodeJS.ProcessEnv = process.env): NodeJS.ProcessEnv {
+  const named = (k: string): boolean => (env[k] ?? '') !== '';
+  if (named('LC_ALL') || named('LC_CTYPE') || named('LANG')) return env;
+  return { ...env, LANG: 'en_US.UTF-8', LC_CTYPE: 'en_US.UTF-8' };
+}
 
 export class ExecError extends Error {
   constructor(
@@ -122,13 +142,15 @@ export function defaultClipboardExec(
   cmd: string,
   args: readonly string[],
   stdin?: string,
-  timeoutMs: number = CLIPBOARD_EXEC_TIMEOUT_MS,
+  opts: number | (ClipboardExecOptions & { timeoutMs?: number }) = {},
 ): Promise<string> {
   const isWrite = stdin !== undefined;
+  const { timeoutMs = CLIPBOARD_EXEC_TIMEOUT_MS, env } = typeof opts === 'number' ? { timeoutMs: opts, env: undefined } : opts;
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, [...args], {
       stdio: [isWrite ? 'pipe' : 'ignore', isWrite ? 'ignore' : 'pipe', isWrite ? 'ignore' : 'pipe'],
       windowsHide: true,
+      ...(env ? { env } : {}),
     });
     const out: Buffer[] = [];
     const errChunks: Buffer[] = [];
@@ -178,9 +200,9 @@ export function defaultClipboardExec(
  * and so does a ClipboardTooLargeError: swallowed, a clipboard over the read
  * cap was reported as empty while a smaller oversized one was "too large".
  */
-async function readOrEmpty(exec: ClipboardExec, cmd: string, args: readonly string[]): Promise<string> {
+async function readOrEmpty(exec: ClipboardExec, cmd: string, args: readonly string[], opts?: ClipboardExecOptions): Promise<string> {
   try {
-    return await exec(cmd, args);
+    return await (opts ? exec(cmd, args, undefined, opts) : exec(cmd, args));
   } catch (e) {
     if (isEnoent(e) || isClipboardTooLarge(e) || isClipboardTimeout(e)) throw e;
     if (e instanceof ExecError && /display|DISPLAY|WAYLAND_DISPLAY|compositor|not allowed|permission/i.test(e.stderr)) throw e;
@@ -188,13 +210,15 @@ async function readOrEmpty(exec: ClipboardExec, cmd: string, args: readonly stri
   }
 }
 
-export function pbcopyBackend(exec: ClipboardExec = defaultClipboardExec): ClipboardBackend {
+/** pbpaste / pbcopy, run with `utf8LocaleEnv(env)` so non-ASCII text survives a caller with no locale. */
+export function pbcopyBackend(exec: ClipboardExec = defaultClipboardExec, env: NodeJS.ProcessEnv = process.env): ClipboardBackend {
+  const opts = { env: utf8LocaleEnv(env) };
   return {
     name: 'pbcopy',
     description: 'pbpaste / pbcopy (macOS)',
-    read: () => readOrEmpty(exec, 'pbpaste', []),
+    read: () => readOrEmpty(exec, 'pbpaste', [], opts),
     write: async (text) => {
-      await exec('pbcopy', [], text);
+      await exec('pbcopy', [], text, opts);
     },
   };
 }
@@ -346,11 +370,16 @@ export async function powershellShell(which: (bin: string) => Promise<boolean>):
   return (await which('pwsh')) ? 'pwsh' : 'powershell';
 }
 
-/** Build a backend by name, for `--backend`. `shell` is the PowerShell to run for `powershell` (default `powershell`). */
-export function createClipboardBackend(name: ClipboardBackendName, exec: ClipboardExec = defaultClipboardExec, shell: 'powershell' | 'pwsh' = 'powershell'): ClipboardBackend {
+/** Build a backend by name, for `--backend`. `shell` is the PowerShell to run for `powershell` (default `powershell`); `env` the caller's environment, for pbcopy's locale. */
+export function createClipboardBackend(
+  name: ClipboardBackendName,
+  exec: ClipboardExec = defaultClipboardExec,
+  shell: 'powershell' | 'pwsh' = 'powershell',
+  env: NodeJS.ProcessEnv = process.env,
+): ClipboardBackend {
   switch (name) {
     case 'pbcopy':
-      return pbcopyBackend(exec);
+      return pbcopyBackend(exec, env);
     case 'wl':
       return wlBackend(exec);
     case 'xclip':
@@ -389,7 +418,7 @@ export async function detectClipboardBackend(
       if (!(await has('pbpaste')) || !(await has('pbcopy'))) {
         throw new Error('pbpaste/pbcopy not found on PATH (they ship with macOS; check your PATH)');
       }
-      return pbcopyBackend(exec);
+      return pbcopyBackend(exec, env);
     }
     case 'win32': {
       if (await has('powershell')) return powershellBackend(exec, 'powershell');
