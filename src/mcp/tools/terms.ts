@@ -145,14 +145,15 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails, and it never invents a ' +
         'term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. ' +
         `Only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. ` +
-        'Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently, ' +
+        'Returns { output, changed, replacements, summary }; when `changed` is false the text was already correct and you should carry on silently ' +
+        '(except with dryRun: true, where nothing is applied, so `output` is the input and `changed` is false even when `replacements` lists corrections: read `replacements` for what a real call would fix), ' +
         'unless the result also carries `skippedProject`: then this repo has a project lexicon that is not trusted yet, so tell the user once that ' + cliCommand('trust') + ' would enable it.',
       inputSchema: {
         text: z.string().describe('The dictated or transcribed text to correct.'),
         dryRun: z
           .boolean()
           .optional()
-          .describe('When true, report candidate replacements without applying them (output === input).'),
+          .describe('When true, report candidate replacements without applying them: `output` is the input, `changed` is false even when `replacements` is not empty, and no hit is recorded.'),
         minConfidence: z
           .number()
           .min(0)

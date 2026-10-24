@@ -55,6 +55,21 @@ async function call(name: string, args: Record<string, unknown>): Promise<{ isEr
   }
 }
 
+/** The tool list an agent reads, from a server on the temp repo. */
+async function listTools() {
+  const server = createServer({ cwd: repo });
+  const client = new Client({ name: 'test', version: '0' });
+  const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+  await server.connect(serverTransport);
+  await client.connect(clientTransport);
+  try {
+    return (await client.listTools()).tools;
+  } finally {
+    await client.close();
+    await server.close();
+  }
+}
+
 /**
  * The repo's .lexicon.yaml, created empty and trusted as `lexicon trust`
  * would: an MCP write into a trusted file keeps it trusted, so the tests
@@ -357,6 +372,21 @@ describe('add_term errors', () => {
       expect(res.text).not.toContain('Refusing to write lexicon');
     }
     expect(await fs.readFile(process.env.LEXICON_PATH as string, 'utf8')).toBe(before);
+  });
+});
+
+// Catches: the description said a `changed: false` result means the text was
+// already correct, but with dryRun `changed` is false even when `replacements`
+// lists corrections, so an agent following it dropped them.
+describe('normalize_transcript with dryRun', () => {
+  it('says changed is false with replacements listed, as the result has it', async () => {
+    await call('add_term', { canonical: 'Ashlr.AI', aliases: ['Ashler'] });
+    const payload = JSON.parse((await call('normalize_transcript', { text: 'ask Ashler', dryRun: true })).text) as { output: string; changed: boolean; replacements: unknown[] };
+    expect(payload).toMatchObject({ output: 'ask Ashler', changed: false });
+    expect(payload.replacements).toHaveLength(1);
+    const tool = (await listTools()).find((t) => t.name === 'normalize_transcript');
+    expect(tool?.description).toContain('`changed` is false even when `replacements` lists corrections');
+    expect((tool?.inputSchema.properties as Record<string, { description?: string }>).dryRun?.description).toContain('`changed` is false even when `replacements` is not empty');
   });
 });
 
