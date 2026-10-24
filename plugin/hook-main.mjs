@@ -21070,7 +21070,10 @@ function exportOpenai(lexicon, opts = {}, sink) {
 
 // src/core/exporters/superwhisper.ts
 function exportSuperwhisper(lexicon, _opts = {}, sink) {
-  const entries2 = aliasPairs(lexicon).map(({ alias, canonical }) => ({
+  const { kept, dropped } = uniqueTriggers(aliasPairs(lexicon));
+  const shared = sharedTriggerNote(dropped, "replacement");
+  if (shared) sink?.notes.push(shared);
+  const entries2 = kept.map(({ alias, canonical }) => ({
     original: alias,
     replacement: canonical
   }));
@@ -21109,18 +21112,20 @@ function exportText(lexicon, _opts = {}) {
 function exportWispr(lexicon, _opts = {}, sink) {
   const lines = ["word,replacement"];
   const leftOut = [];
-  for (const { alias, canonical } of aliasPairs(lexicon)) {
-    if (isFormulaCell(alias) || isFormulaCell(canonical)) {
-      leftOut.push(`${alias} -> ${canonical}`);
-      continue;
-    }
-    lines.push(`${csvField(alias)},${csvField(canonical)}`);
-  }
+  const safe = aliasPairs(lexicon).filter(({ alias, canonical }) => {
+    if (!isFormulaCell(alias) && !isFormulaCell(canonical)) return true;
+    leftOut.push(`${alias} -> ${canonical}`);
+    return false;
+  });
+  const { kept, dropped } = uniqueTriggers(safe);
+  for (const { alias, canonical } of kept) lines.push(`${csvField(alias)},${csvField(canonical)}`);
   if (leftOut.length > 0) {
     sink?.notes.push(
       `left out ${leftOut.length} pair${leftOut.length === 1 ? "" : "s"} a spreadsheet would run as a formula (a cell starting with = + - @, a tab or a carriage return): ${quotedNames(leftOut)}`
     );
   }
+  const shared = sharedTriggerNote(dropped, "word");
+  if (shared) sink?.notes.push(shared);
   if (sink) sink.rows = lines.length - 1;
   return lines.join("\n") + "\n";
 }
