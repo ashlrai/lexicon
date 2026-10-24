@@ -19,7 +19,7 @@ lexicon export <format> --out <file>
 | `whisper-prompt` | One line for Whisper `initial_prompt`, canonicals joined with `, ` | Any Whisper wrapper. Keep it under about 100 terms or it stops helping. Whisper reads the line as text it has already heard and never splits it, so a name holding `, ` still biases the right spelling, though a person cannot tell where it ends |
 | `openai` | One line of canonicals | OpenAI transcription `prompt` field (same as `whisper-prompt`) |
 | `deepgram` | Keyword boost JSON (`keyword:boost`) | Deepgram `keywords` parameter. The format has no escape for a colon, so one in a name becomes a space (`Win:2` is written `Win 2:1`) |
-| `assemblyai` | `word_boost` JSON | AssemblyAI `word_boost` / `boost_param` |
+| `assemblyai` | `word_boost` JSON | AssemblyAI `word_boost` / `boost_param`. At most 1,000 entries, the API's limit: a larger lexicon keeps its most used names |
 | `azure` | `phraseList` JSON | Azure Speech `PhraseListGrammar` |
 | `google` | Adaptation `phraseSets` JSON | Google Speech-to-Text model adaptation (boost 20 for brand/person/product, 10 otherwise) |
 | `claude-md` | Markdown table under `## Voice lexicon` | `CLAUDE.md`, `AGENTS.md`, any system prompt. Also what `lexicon://me` and the `SessionStart` hook emit |

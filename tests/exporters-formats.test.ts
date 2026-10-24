@@ -1,4 +1,5 @@
 /**
+ * Per-format rules of the exports: NFC spellings and API size limits.
  * Exported spellings are in NFC: the form typed and transcribed text uses,
  * and the one the store compares under. A decomposed accent in the file
  * (`Cafe` plus U+0301) must not reach a trigger or a boost list as is.
@@ -55,5 +56,21 @@ describe('exports in NFC', () => {
   // markdown are read back, and claude-md is what the agent sees.
   it('leaves the raw lexicon JSON exactly as stored', () => {
     expect(JSON.parse(exportLexicon(lexicon, 'json'))).toEqual(lexicon);
+  });
+});
+
+describe('format size limits', () => {
+  // Catches: word_boost listed every canonical, though AssemblyAI takes at
+  // most 1,000 entries and refuses a longer list, so a large lexicon
+  // exported a request the API rejects.
+  it('keeps the AssemblyAI word_boost list within the API limit, most important first', async () => {
+    const { ASSEMBLYAI_WORD_BOOST_MAX } = await import('../src/core/exporters/assemblyai.js');
+    expect(ASSEMBLYAI_WORD_BOOST_MAX).toBe(1000);
+    const terms = Array.from({ length: 1500 }, (_, i) => ({ canonical: `Term${String(i).padStart(4, '0')}`, aliases: [], hits: i === 1400 ? 50 : 0 }));
+    const out = JSON.parse(exportLexicon({ version: 1, terms }, 'assemblyai')) as { word_boost: string[] };
+    expect(out.word_boost).toHaveLength(1000);
+    expect(out.word_boost[0]).toBe('Term1400');
+    expect(out.word_boost[1]).toBe('Term0000');
+    expect(new Set(out.word_boost).size).toBe(1000);
   });
 });

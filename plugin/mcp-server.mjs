@@ -58489,8 +58489,9 @@ function mdCell(value) {
 }
 
 // src/core/exporters/assemblyai.ts
+var ASSEMBLYAI_WORD_BOOST_MAX = 1e3;
 function exportAssemblyai(lexicon, _opts = {}) {
-  const word_boost = canonicalList(sortByImportance(lexicon.terms)).map((c) => c.canonical);
+  const word_boost = canonicalList(sortByImportance(lexicon.terms)).slice(0, ASSEMBLYAI_WORD_BOOST_MAX).map((c) => c.canonical);
   return JSON.stringify({ word_boost, boost_param: "high" }, null, 2) + "\n";
 }
 
