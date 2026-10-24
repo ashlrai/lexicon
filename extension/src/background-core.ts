@@ -111,6 +111,15 @@ export const NORMALIZE_SHAPE_MESSAGE =
   'API /normalize returned an unexpected shape: the server and this extension are likely different releases; update lexicon or the extension so they match.';
 
 /**
+ * A GET /lexicon reply without a `lexicon` object (another program on the
+ * port, a proxy's page, a server from another release). The core's
+ * parseLexicon reads a missing value as an empty lexicon, so Sync replaced
+ * the embedded YAML with nothing.
+ */
+export const LEXICON_SHAPE_MESSAGE =
+  'API /lexicon returned no lexicon, so the embedded lexicon was left as it was: the server and this extension are likely different releases, or another program answers on that port; run `lexicon serve --status` to check.';
+
+/**
  * The `fallback` of a normalize whose /normalize body (`bytes`, UTF-8) is over
  * the server's request limit: the server would answer 413 to every such
  * check, so the embedded lexicon checks it and nothing is posted.
@@ -371,8 +380,10 @@ export function createBackground(deps: BackgroundDeps): Background {
   async function syncReq(): Promise<SyncReply | Failure> {
     const settings = await getSettings();
     try {
-      const raw = (await fetchJson(settings, '/lexicon')) as { lexicon?: unknown; skippedProject?: unknown; projectTrust?: unknown };
-      const lexicon = parseLexicon(raw?.lexicon);
+      const raw = (await fetchJson(settings, '/lexicon')) as { lexicon?: unknown; skippedProject?: unknown; projectTrust?: unknown } | null;
+      const body = raw?.lexicon;
+      if (!body || typeof body !== 'object' || !Array.isArray((body as { terms?: unknown }).terms)) return { ok: false, error: LEXICON_SHAPE_MESSAGE };
+      const lexicon = parseLexicon(body);
       const yaml = lexiconToYaml(lexicon);
       await saveSettings({ yaml });
       // GET /lexicon names a repo file it left out (untrusted or changed) by

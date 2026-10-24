@@ -8,7 +8,7 @@ import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { ADAPTERS, GENERIC, adapterFor, composerFromTarget, findComposer, findSendButton } from '../extension/src/adapters.js';
-import { createBackground, tooLargeForApiMessage } from '../extension/src/background-core.js';
+import { LEXICON_SHAPE_MESSAGE, createBackground, tooLargeForApiMessage } from '../extension/src/background-core.js';
 import { MAX_BODY_BYTES as SERVER_MAX_BODY_BYTES } from '../src/serve/server.js';
 import { conflictNote } from '../src/core/index.js';
 import type { KeyValueStore } from '../extension/src/background-core.js';
@@ -721,6 +721,19 @@ describe('message routing (mock chrome.runtime) and background', () => {
     const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore({ settings: { token: 'secret-token' } }), defaultYaml: EXAMPLE_YAML });
     const sync = await bg.handle({ type: 'sync' });
     expect(sync).toMatchObject({ ok: true, terms: 1, skippedProject: { path: '/repo/.lexicon.yaml', trust: 'changed' } });
+  });
+
+  // Catches: a 200 GET /lexicon without a `lexicon` object (another program
+  // on the port, a proxy page) parsed as an empty lexicon and Sync wiped the
+  // embedded YAML.
+  it('sync leaves the embedded lexicon alone when GET /lexicon carries no lexicon', async () => {
+    for (const body of [{}, { lexicon: null }, { lexicon: { version: 1 } }, null, { lexicon: 'terms: []' }]) {
+      const fetchMock = vi.fn(async () => ({ ok: true, status: 200, json: async () => body }) as unknown as Response);
+      const store = memoryStore({ settings: { token: 'secret-token', yaml: EXAMPLE_YAML } });
+      const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
+      expect(await bg.handle({ type: 'sync' })).toEqual({ ok: false, error: LEXICON_SHAPE_MESSAGE });
+      expect((await bg.getSettings()).yaml).toBe(EXAMPLE_YAML);
+    }
   });
 
   it('a rejected token falls back to embedded and says why', async () => {
