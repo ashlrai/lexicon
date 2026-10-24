@@ -25,16 +25,18 @@ const source = (rel: string): string => readFileSync(path.join(SOURCES, 'Lexicon
 describe('LexiconBar messages name a next step', () => {
   // Catches: a failure line that said what went wrong and stopped there.
   it.each([
+    ['ChildProcessSupervisor.swift', 'state = .failed("The lexicon CLI was not found. Set its path in Preferences.")'],
+    ['ChildProcessSupervisor.swift', 'restarts. Run `lexicon \\(name)` in Terminal to see the error, then switch it on again from the menu.'],
     ['AppDelegate.swift', 'another app may own it. Pick another shortcut in Preferences > Hotkeys.'],
     ['AppDelegate.swift', 's. Run `lexicon voice --seconds 3 --model \\(self.settings.model)` in Terminal to see where it stops'],
     ['AppDelegate.swift', 'Unexpected voice output, so the lexicon CLI and LexiconBar are likely different releases; update lexicon (npm i -g @ashlr/lexicon) or LexiconBar.'],
     ['AppDelegate.swift', 'printed no global path, so the lexicon CLI and LexiconBar are likely different releases; choose Run doctor from the menu'],
     ['AppDelegate.swift', 'or `lexicon add <canonical> <alias>` (for example `lexicon add \\"Ashlr.AI\\" Ashler`) to create it'],
     ['AppDelegate.swift', 'Turn LexiconBar on in System Settings > General > Login Items instead.'],
-    ['ChildProcessSupervisor.swift', 'state = .failed("The lexicon CLI was not found. Set its path in Preferences.")'],
-    ['ChildProcessSupervisor.swift', 'restarts. Run `lexicon \\(name)` in Terminal to see the error, then switch it on again from the menu.'],
     ['App.swift', 'Check it with `lexicon serve --status`; start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login.'],
     ['App.swift', '(token ? "" : ". Run `lexicon serve --show` to create it.")'],
+    ['Onboarding/OnboardingViews.swift', 'Button("Try again") { model.loadPacks() }'],
+    ['Onboarding/OnboardingViews.swift', 'add packs later with `lexicon pack add <name>`.'],
   ])('%s: %s', (file, text) => {
     expect(source(file)).toContain(text);
   });
