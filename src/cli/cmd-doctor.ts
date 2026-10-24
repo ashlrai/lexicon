@@ -319,12 +319,24 @@ export async function checkLoginService(probe: LoginServiceProbe): Promise<Docto
     return { level: 'info', message: `login service is not automated on ${platform}; run \`lexicon serve\` from your session startup instead` };
   }
   let fileExists = false;
+  /** Why a service file that is there could not be read (EACCES, EISDIR); undefined when it was read or is absent. */
+  let unreadable: string | undefined;
   try {
     const text = await fs.readFile(file, 'utf8');
     fileExists = true;
     program = platform === 'darwin' ? programPathFromPlist(text) : programPathFromUnit(text);
-  } catch {
+  } catch (err) {
     fileExists = false;
+    const code = (err as NodeJS.ErrnoException).code;
+    if (code !== 'ENOENT' && code !== 'ENOTDIR') unreadable = code ?? errorMessage(err);
+  }
+  if (unreadable !== undefined) {
+    // Read as missing, a file that is there was reported as no service at
+    // all, or as a loaded one with "no service file at" its own path.
+    return {
+      level: 'warn',
+      message: `${name} file cannot be read (${unreadable}), so the program it runs was not checked (${SERVE_REINSTALL_HINT}): ${file}`,
+    };
   }
   if (!loaded && !fileExists) {
     return { level: 'info', message: 'no login service installed (optional; keeps the local API up: lexicon serve --install)' };

@@ -65849,12 +65849,21 @@ async function checkLoginService(probe) {
     return { level: "info", message: `login service is not automated on ${platform}; run \`lexicon serve\` from your session startup instead` };
   }
   let fileExists = false;
+  let unreadable;
   try {
     const text = await import_node_fs23.promises.readFile(file2, "utf8");
     fileExists = true;
     program2 = platform === "darwin" ? programPathFromPlist(text) : programPathFromUnit(text);
-  } catch {
+  } catch (err) {
     fileExists = false;
+    const code = err.code;
+    if (code !== "ENOENT" && code !== "ENOTDIR") unreadable = code ?? errorMessage(err);
+  }
+  if (unreadable !== void 0) {
+    return {
+      level: "warn",
+      message: `${name} file cannot be read (${unreadable}), so the program it runs was not checked (${SERVE_REINSTALL_HINT}): ${file2}`
+    };
   }
   if (!loaded && !fileExists) {
     return { level: "info", message: "no login service installed (optional; keeps the local API up: lexicon serve --install)" };
