@@ -39,7 +39,8 @@ rewrite anything they copy. Payloads over 20,000 characters are skipped.
 
 **Local HTTP API (`lexicon serve`).** The server binds `127.0.0.1` only (a
 non-loopback `--host` is possible but prints a warning) and every request
-except `GET /health` needs the bearer token from `<config dir>/serve.json`,
+except a plain `GET /health`, the `GET /pair` pairing page (below) and an
+`OPTIONS` preflight needs the bearer token from `<config dir>/serve.json`,
 which is created with mode 0600 (an existing one that others can read is put
 back to 0600 when it is reused) and compared in constant time. CORS headers are
 sent only to browser-extension origins (`chrome-extension://`,

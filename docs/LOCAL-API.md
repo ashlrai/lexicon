@@ -60,8 +60,10 @@ Eleven routes, twelve rows below: `/packs/:name` takes both a POST and a DELETE.
 Every request must carry a `Host` header of `127.0.0.1:<port>`,
 `localhost:<port>` or `[::1]:<port>` (with a non-loopback `--host`, the bound
 IP address as well); anything else is 403 on every route, which is what stops
-a DNS rebinding page. Every request except `GET /health` (without `?cwd=`)
-and `GET /pair` needs `Authorization: Bearer <token>`. Requests and responses are JSON
+a DNS rebinding page. Every request except `GET /health` (without `?cwd=`),
+`GET /pair` and an `OPTIONS` preflight needs `Authorization: Bearer <token>`;
+`OPTIONS` answers 204 with no body on any path, carrying the CORS headers
+only for an allowed origin. Requests and responses are JSON
 (`Content-Type: application/json`) unless noted. Every GET route also answers
 `HEAD` (`curl -I`) with the status and headers GET would send, `Content-Length`
 included, and no body. Errors are
@@ -82,7 +84,7 @@ included, and no body. Errors are
 | GET | `/aliases` | `?canonical=X` | `{ canonical, aliases }`: the spellings STT is likely to produce for a name, for an onboarding form. `canonical` loses invisible characters and outer spaces first, as a stored canonical does, and is then at most 80 characters with no control character or newline left inside it (400 otherwise, as for a stored canonical) |
 | GET | `/export/:format` | | the export as text; `Content-Type` per format (see below). `?category=` (repeat it or separate with commas) and `?limit=<n>` filter and cap it like `lexicon export --category` and `--limit`; an unknown format is a 404 whose `error` lists the formats. When the export is empty (no terms yet, only an untrusted project file has terms, or no term matched `?category=`), an alias-row format has no rows, or a skipped project file's terms were left out, the `X-Lexicon-Note` response header says so and names the next step, as `lexicon export` does on stderr; the body is the export either way |
 
-Status codes: 400 invalid JSON, a bad or unknown field (bodies are strict: a misspelled key such as `dry_run` is refused, not ignored), an unknown or repeated query parameter on any route but `/pair` (query strings are strict the same way: `/lexicon?cdw=` and `/health?cdw=` are refused, with or without the token; only `/export`'s `category` may repeat; a POST route takes no query parameter at all, since its options are body fields, so `POST /packs/developer?scope=project` is refused and nothing is installed), an unknown `category` or a `limit` that is not a positive integer on `/export`, a `cwd` that is empty or not an existing directory, or a body on `DELETE /packs/:name`, 401 missing or wrong token, `/health?cwd=` included (the `error` names `lexicon serve --pair` for the browser extension and `lexicon serve --show` for any other client),
+Status codes: 400 invalid JSON, a bad or unknown field (bodies are strict: a misspelled key such as `dry_run` is refused, not ignored), an unknown or repeated query parameter on any route but `/pair` (query strings are strict the same way: `/lexicon?cdw=` and `/health?cdw=` are refused, with or without the token; only `/export`'s `category` may repeat; a POST route takes no query parameter at all, since its options are body fields, so `POST /packs/developer?scope=project` is refused and nothing is installed), an unknown `category` or a `limit` that is not a positive integer on `/export`, a `cwd` that is empty or not an existing directory, or a body on `DELETE /packs/:name`, 401 missing or wrong token, `/health?cwd=` included (with `WWW-Authenticate: Bearer`; the `error` names `lexicon serve --pair` for the browser extension and `lexicon serve --show` for any other client),
 403 a `Host` that does not name this server (any route), a project-scope
 write into an untrusted or changed `.lexicon.yaml` (the `error` names the file,
 says nothing was written, and gives both ways on: `lexicon trust` and a retry,

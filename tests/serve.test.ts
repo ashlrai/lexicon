@@ -342,6 +342,23 @@ describe('auth', () => {
     });
     expect(post.status).toBe(401);
   });
+
+  // Pins what docs/LOCAL-API.md and SECURITY.md now say: an OPTIONS preflight
+  // needs no token (204, no body, on any path) and every 401 carries
+  // `WWW-Authenticate: Bearer`. The docs listed only /health and /pair as the
+  // routes without a token and never named the header.
+  it('OPTIONS needs no token and a 401 carries WWW-Authenticate: Bearer', async () => {
+    for (const route of ['/normalize', '/stats', '/nope']) {
+      const pre = await fetch(`${info.url}${route}`, { method: 'OPTIONS' });
+      expect(pre.status, route).toBe(204);
+      expect(await pre.text(), route).toBe('');
+    }
+    for (const route of ['/stats', `/health?cwd=${encodeURIComponent(env.cwd)}`]) {
+      const res = await fetch(`${info.url}${route}`);
+      expect(res.status, route).toBe(401);
+      expect(res.headers.get('www-authenticate'), route).toBe('Bearer');
+    }
+  });
 });
 
 /**
