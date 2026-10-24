@@ -217,6 +217,35 @@ describe.skipIf(process.platform === 'win32')('POSIX install script version and 
     );
   });
 
+  it('names the npm bin directory when lexicon is there but not on PATH', () => {
+    rmSync(path.join(home, 'bin', 'lexicon'));
+    mkdirSync(path.join(home, 'prefix', 'bin'), { recursive: true });
+    writeFileSync(path.join(home, 'prefix', 'bin', 'lexicon'), '#!/bin/sh\n', { mode: 0o755 });
+    const result = run();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(`lexicon is installed in ${path.join(home, 'prefix', 'bin')} but that directory is not on PATH`);
+  });
+
+  // Catches: on Windows (Git Bash, MSYS) npm's shims are in the prefix
+  // itself, so `$(npm prefix -g)/bin/lexicon` was never there and the hint
+  // named a bin directory that does not exist.
+  it('on MINGW/MSYS names the npm prefix itself, converted with cygpath', () => {
+    rmSync(path.join(home, 'bin', 'lexicon'));
+    stub('uname', `printf 'MINGW64_NT-10.0-19045\\n'`);
+    mkdirSync(path.join(home, 'prefix'), { recursive: true });
+    writeFileSync(path.join(home, 'prefix', 'lexicon'), '#!/bin/sh\n', { mode: 0o755 });
+    const plain = run();
+    expect(plain.status).toBe(1);
+    expect(plain.stderr).toContain(`lexicon is installed in ${path.join(home, 'prefix')} but that directory is not on PATH`);
+    expect(plain.stderr).toContain('add the directory npm prefix -g prints (npm on Windows has no bin/ under it)\n');
+    expect(plain.stderr).not.toContain('bin directory under');
+
+    stub('npm', `case "$1" in install) exit 0 ;; view) printf '0.5.4\\n' ;; prefix) printf '%s\\n' 'C:\\Users\\me\\AppData\\Roaming\\npm' ;; esac`);
+    stub('cygpath', `[ "$1" = "-u" ] && [ "$2" = 'C:\\Users\\me\\AppData\\Roaming\\npm' ] && printf '%s\\n' "$HOME/prefix"`);
+    const converted = run();
+    expect(converted.stderr).toContain(`lexicon is installed in ${path.join(home, 'prefix')} but that directory is not on PATH`);
+  });
+
   it('names a next step when the installed lexicon is not on PATH', () => {
     rmSync(path.join(home, 'bin', 'lexicon'));
     const result = run();
