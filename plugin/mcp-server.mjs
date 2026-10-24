@@ -47672,9 +47672,9 @@ function sanitizeForDisplay(s) {
   return sanitizeForDisplayMax(s, DISPLAY_MAX_CHARS);
 }
 function sanitizeForDisplayMax(s, max) {
-  const clean = stripControlChars(s.replace(ANSI_RE, "")).replace(OTHER_RE, "");
-  const chars = Array.from(clean);
-  if (chars.length <= max) return clean;
+  const clean2 = stripControlChars(s.replace(ANSI_RE, "")).replace(OTHER_RE, "");
+  const chars = Array.from(clean2);
+  if (chars.length <= max) return clean2;
   return `${chars.slice(0, Math.max(0, max - 1)).join("")}\u2026`;
 }
 function neutralizeMarkup(s) {
@@ -47682,11 +47682,11 @@ function neutralizeMarkup(s) {
 }
 var MODEL_PATH_MAX_CHARS = 120;
 function pathForModel(p, max = MODEL_PATH_MAX_CHARS) {
-  const clean = neutralizeMarkup(sanitizeForDisplayMax(p, Number.POSITIVE_INFINITY));
-  const parts = clean.split(/[\\/]/).filter((part) => part !== "");
-  let out = clean;
+  const clean2 = neutralizeMarkup(sanitizeForDisplayMax(p, Number.POSITIVE_INFINITY));
+  const parts = clean2.split(/[\\/]/).filter((part) => part !== "");
+  let out = clean2;
   if (parts.length > 3) {
-    const sep2 = clean.lastIndexOf("\\") > clean.lastIndexOf("/") ? "\\" : "/";
+    const sep2 = clean2.lastIndexOf("\\") > clean2.lastIndexOf("/") ? "\\" : "/";
     out = `\u2026${sep2}${parts.slice(-3).join(sep2)}`;
   }
   const chars = Array.from(out);
@@ -54860,15 +54860,21 @@ async function projectWriteTrusted(opts = {}) {
   return status === "trusted";
 }
 function prepareIncoming(term) {
-  const canonical = term.canonical.trim();
-  if (!canonical) throw new InputError("canonical must not be empty");
+  const trimmed = term.canonical.trim();
+  if (!trimmed) throw new InputError("canonical must not be empty");
   assertNoBlankEntries(term);
-  const prepared = { ...term, canonical, aliases: dedupeAliases(term.aliases ?? [], canonical) };
-  const never2 = dedupeCaseInsensitive(term.never ?? []);
+  const canonical = clean(trimmed) || trimmed;
+  const prepared = { ...term, canonical, aliases: dedupeAliases((term.aliases ?? []).map(clean), canonical) };
+  if (typeof term.phonetic === "string") prepared.phonetic = clean(term.phonetic);
+  if (typeof term.notes === "string") prepared.notes = clean(term.notes);
+  const never2 = dedupeCaseInsensitive((term.never ?? []).map(clean));
   if (never2.length > 0) prepared.never = never2;
   else delete prepared.never;
   assertTermFields(prepared);
   return prepared;
+}
+function clean(s) {
+  return typeof s === "string" ? stripInvisible(s).trim() : s;
 }
 var BLANK_ENTRY_RE = /^[\s\p{Cf}]*$/u;
 function assertNoBlankEntries(term) {
@@ -57873,7 +57879,7 @@ function joinAliasList(aliases) {
   return aliases.map((a) => a.includes(",") || a.trim().startsWith('"') ? `"${a.replace(/"/g, '""')}"` : a).join(", ");
 }
 function mdCell(value) {
-  return value.replace(/\|/g, "\\|").replace(/\r\n|[\n\r\u0085\u2028\u2029]/g, " ");
+  return value.replace(/\|/g, (_pipe2, at) => at > 0 && value[at - 1] === "\\" ? "\u200B\\|" : "\\|").replace(/\r\n|[\n\r\u0085\u2028\u2029]/g, " ");
 }
 
 // src/core/exporters/assemblyai.ts

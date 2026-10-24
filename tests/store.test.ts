@@ -27,6 +27,7 @@ vi.mock('../src/core/schema.js', () => ({
     return { ...obj, version: 1, terms: Array.isArray(obj.terms) ? obj.terms : [] };
   },
   emptyLexicon: (): Lexicon => ({ version: 1, terms: [] }),
+  stripInvisible: (s: string): string => s.replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, ''),
 }));
 
 /**
@@ -768,6 +769,21 @@ describe('addTerm', () => {
     }
     await expect(addTerms([{ canonical: 'New', aliases: [' '] }], { cwd: tmp, globalPath })).rejects.toThrow(/aliases\[0\]/);
     expect(await fs.readFile(globalPath, 'utf8')).toBe(before);
+  });
+
+  // Catches: addTerm wrote an alias as given, invisible characters and all,
+  // so `Ash\u200bler` (or the zero-width space the claude-md export puts
+  // between a backslash and a pipe, read back by lexicon import) was not a
+  // duplicate of `Ashler` and the YAML carried the character the next read strips.
+  it('stores aliases, never words and the canonical without the invisible characters the schema strips', async () => {
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler'] }, { cwd: tmp, globalPath });
+    const before = await fs.readFile(globalPath, 'utf8');
+    const again = await addTerm({ canonical: 'Ashlr\u200b.AI', aliases: ['Ash\u200bler'] }, { cwd: tmp, globalPath });
+    expect(again.unchanged).toBe(true);
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(before);
+    const added = await addTerm({ canonical: 'Back', aliases: ['a\\\u200b|b'], never: ['n\ufeffo'], notes: 'x\u200by' }, { cwd: tmp, globalPath });
+    expect(added.term).toMatchObject({ canonical: 'Back', aliases: ['a\\|b'], never: ['no'], notes: 'xy' });
+    expect(await fs.readFile(globalPath, 'utf8')).not.toMatch(/[\u200b\ufeff]/);
   });
 
   it('trims and dedupes the never words of a new term', async () => {
