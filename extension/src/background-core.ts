@@ -62,6 +62,8 @@ export interface Background {
 
 interface HealthCache {
   at: number;
+  /** The base URL probed: a cache for another URL (Options writes storage directly) is not reused. */
+  baseUrl: string;
   health: ServerHealth | null;
   error?: string;
 }
@@ -191,6 +193,9 @@ export function createBackground(deps: BackgroundDeps): Background {
       try {
         res = await deps.fetch(`${settings.baseUrl}${path}`, { ...init, headers, signal: ctrl.signal });
       } catch (err) {
+        // Nothing answered: whatever /health said earlier no longer holds, so
+        // the next request probes again instead of trusting the cache.
+        healthCache = null;
         // A refused connection is a bare TypeError ("Failed to fetch" in
         // Chromium, "NetworkError when attempting to fetch resource." in
         // Firefox), which the popup, Test connection and Sync showed as is.
@@ -200,6 +205,9 @@ export function createBackground(deps: BackgroundDeps): Background {
       // Only 401 means the token. The server also answers 403 for an untrusted
       // project lexicon and 400 for bad input, each with an `{ error }` body
       // that says what to fix, so pass that through instead of a bare status.
+      // A 401 or 403 can mean the server restarted with another token or
+      // another lexicon: drop the cached /health so the next request asks.
+      if (res.status === 401 || res.status === 403) healthCache = null;
       if (res.status === 401) throw new TokenRejectedError();
       if (!res.ok) {
         const detail = await apiErrorDetail(res, settings.token);
@@ -207,7 +215,10 @@ export function createBackground(deps: BackgroundDeps): Background {
       }
       return (await res.json()) as unknown;
     } catch (err) {
-      if ((err as { name?: string }).name === 'AbortError') throw new Error(`API ${path} timed out after ${FETCH_TIMEOUT_MS} ms; ${SERVE_STATUS_STEP}`);
+      if ((err as { name?: string }).name === 'AbortError') {
+        healthCache = null;
+        throw new Error(`API ${path} timed out after ${FETCH_TIMEOUT_MS} ms; ${SERVE_STATUS_STEP}`);
+      }
       throw err;
     } finally {
       clearTimeout(timer);
@@ -215,7 +226,7 @@ export function createBackground(deps: BackgroundDeps): Background {
   }
 
   async function health(settings: Settings, force = false): Promise<HealthCache> {
-    if (!force && healthCache && now() - healthCache.at < HEALTH_TTL_MS) return healthCache;
+    if (!force && healthCache && healthCache.baseUrl === settings.baseUrl && now() - healthCache.at < HEALTH_TTL_MS) return healthCache;
     try {
       const raw = (await fetchJson(settings, '/health', { auth: false })) as Partial<ServerHealth>;
       const h: ServerHealth = {
@@ -223,9 +234,9 @@ export function createBackground(deps: BackgroundDeps): Background {
         version: typeof raw.version === 'string' ? raw.version : '?',
         terms: typeof raw.terms === 'number' ? raw.terms : 0,
       };
-      healthCache = { at: now(), health: h.ok ? h : null, error: h.ok ? undefined : `server reports not ok; ${SERVE_STATUS_STEP}` };
+      healthCache = { at: now(), baseUrl: settings.baseUrl, health: h.ok ? h : null, error: h.ok ? undefined : `server reports not ok; ${SERVE_STATUS_STEP}` };
     } catch (err) {
-      healthCache = { at: now(), health: null, error: errorMessage(err) };
+      healthCache = { at: now(), baseUrl: settings.baseUrl, health: null, error: errorMessage(err) };
     }
     return healthCache;
   }

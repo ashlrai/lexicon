@@ -1,0 +1,86 @@
+// @vitest-environment jsdom
+/**
+ * The background's view of the local API over time: the /health cache, a
+ * rejected token, request timeouts and which servers count as lexicon serve.
+ * A fake fetch stands in for the server; nothing listens on a port.
+ */
+import { readFileSync } from 'node:fs';
+import { resolve } from 'node:path';
+import { afterEach, describe, expect, it, vi } from 'vitest';
+import { createBackground } from '../extension/src/background-core.js';
+import type { KeyValueStore } from '../extension/src/background-core.js';
+import type { NormalizeReply, StatusReply } from '../extension/src/shared.js';
+
+const EXAMPLE_YAML = readFileSync(resolve(process.cwd(), 'examples/lexicon.example.yaml'), 'utf8');
+const TOKEN = 'a'.repeat(32);
+const HEALTH = { ok: true, version: '9.9.9', terms: 3, port: 41733 };
+
+function memoryStore(initial: Record<string, unknown> = {}): KeyValueStore & { data: Record<string, unknown> } {
+  const data: Record<string, unknown> = { ...initial };
+  return {
+    data,
+    async get(keys) {
+      const out: Record<string, unknown> = {};
+      for (const k of keys) if (k in data) out[k] = data[k];
+      return out;
+    },
+    async set(items) {
+      Object.assign(data, items);
+    },
+  };
+}
+
+const json = (body: unknown, status = 200): Response => ({ ok: status < 400, status, json: async () => body }) as unknown as Response;
+const normalized = (text: string): unknown => ({ input: text, output: text, changed: false, replacements: [], summary: '' });
+
+afterEach(() => {
+  vi.useRealTimers();
+});
+
+describe('extension health cache', () => {
+  // Catches: only saveSettings cleared the /health cache, so a server that
+  // went away (or came back with another token) under a Sync or a Learn was
+  // trusted for the rest of the 10 s TTL.
+  it('drops the cached /health when a request finds the server gone or answering 401/403', async () => {
+    let down = false;
+    let learnStatus = 200;
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      if (down) throw new TypeError('Failed to fetch');
+      if (url.endsWith('/health')) return json(HEALTH);
+      if (url.endsWith('/normalize')) return json(normalized(String(JSON.parse(String(init.body)).text)));
+      if (url.endsWith('/learn')) return json({ error: 'project lexicon is untrusted' }, learnStatus);
+      return json({ error: 'nope' }, 404);
+    });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore({ settings: { token: TOKEN } }), defaultYaml: EXAMPLE_YAML });
+    const healthCalls = (): number => fetchMock.mock.calls.filter(([u]) => String(u).endsWith('/health')).length;
+
+    expect(((await bg.handle({ type: 'normalize', text: 'hi' })) as NormalizeReply & { ok: true }).mode).toBe('api');
+    expect(healthCalls()).toBe(1);
+
+    // A Sync that finds nothing listening: the next normalize asks /health again.
+    down = true;
+    expect(await bg.handle({ type: 'sync' })).toMatchObject({ ok: false });
+    down = false;
+    expect(((await bg.handle({ type: 'normalize', text: 'hi' })) as NormalizeReply & { ok: true }).mode).toBe('api');
+    expect(healthCalls()).toBe(2);
+
+    // A 403 from /learn: the server may have restarted on another lexicon.
+    learnStatus = 403;
+    expect(await bg.handle({ type: 'learn', heard: 'quorbix', meant: 'Quorbyx' })).toMatchObject({ ok: false });
+    await bg.handle({ type: 'normalize', text: 'hi' });
+    expect(healthCalls()).toBe(3);
+  });
+
+  // Catches: Options stores the connection fields itself, not through the
+  // background, so a /health cached for the old base URL answered for the new one.
+  it('does not reuse a /health cached for another base URL', async () => {
+    const fetchMock = vi.fn(async (url: string) => (url.endsWith('/health') ? json(HEALTH) : json(normalized('hi'))));
+    const store = memoryStore({ settings: { token: TOKEN } });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store, defaultYaml: EXAMPLE_YAML });
+    await bg.handle({ type: 'normalize', text: 'hi' });
+    store.data.settings = { token: TOKEN, baseUrl: 'http://127.0.0.1:41800' };
+    await bg.handle({ type: 'normalize', text: 'hi' });
+    const probed = fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.endsWith('/health'));
+    expect(probed).toEqual(['http://127.0.0.1:41733/health', 'http://127.0.0.1:41800/health']);
+  });
+});
