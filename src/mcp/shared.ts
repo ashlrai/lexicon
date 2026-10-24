@@ -9,7 +9,7 @@ import { delimiter, dirname, isAbsolute, join, relative, resolve, sep } from 'no
 import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { projectWriteTrusted, resolvePaths } from '../core/index.js';
+import { projectWriteTrusted, resolvePaths, skippedProjectNote } from '../core/index.js';
 import type { ImportFormat, LoadOptions, LoadedLexicon, TermSuggestion } from '../core/index.js';
 import type { IO } from '../cli/commands.js';
 import { unreadableLexiconEdit } from '../cli/io.js';
@@ -279,14 +279,7 @@ export function skippedProjectFields(
   /** One more sentence for the note: what the skipped file means for this result. */
   consequence?: string,
 ): { projectTrust?: LoadedLexicon['projectTrust']; skippedProject?: string; note?: string } {
-  if (!loaded.skippedProject) return {};
-  const note =
-    loaded.projectTrust === 'changed'
-      ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; the user can review it and run ' + cliCommand('trust') + ' again.'
-      : 'An untrusted project .lexicon.yaml exists and was not loaded; the user can review it and run ' + cliCommand('trust') + ' to enable it.';
-  return {
-    projectTrust: loaded.projectTrust,
-    skippedProject: loaded.skippedProject.path,
-    note: consequence ? `${note} ${consequence}` : note,
-  };
+  const note = skippedProjectNote(loaded, consequence, { who: 'the user can ', trust: cliCommand('trust') });
+  if (!loaded.skippedProject || note === undefined) return {};
+  return { projectTrust: loaded.projectTrust, skippedProject: loaded.skippedProject.path, note };
 }

@@ -12,7 +12,7 @@ import { statSync } from 'node:fs';
 import { InvalidArgumentError } from 'commander';
 import type { Command } from 'commander';
 import path from 'node:path';
-import { TERM_CATEGORIES, conflictRemoveCommand, isProjectTrustError, sanitizeForDisplay, sanitizeForDisplayMax } from '../core/index.js';
+import { TERM_CATEGORIES, conflictRemoveCommand, isProjectTrustError, sanitizeForDisplay, sanitizeForDisplayMax, skippedProjectNote } from '../core/index.js';
 import type { LearnConflict, LoadedLexicon, TermCategory, TermHolder } from '../core/index.js';
 import { errorMessage } from '../util/errors.js';
 
@@ -440,16 +440,9 @@ export function skippedProjectJson(
   loaded: Pick<LoadedLexicon, 'projectTrust' | 'skippedProject'>,
   consequence?: string,
 ): { projectTrust?: LoadedLexicon['projectTrust']; skippedProject?: string; note?: string } {
-  if (!loaded.skippedProject) return {};
-  const head =
-    loaded.projectTrust === 'changed'
-      ? 'The project .lexicon.yaml changed since it was trusted and was not loaded; review it and run `lexicon trust` again.'
-      : 'An untrusted project .lexicon.yaml exists and was not loaded; review it and run `lexicon trust` to enable it.';
-  return {
-    projectTrust: loaded.projectTrust,
-    skippedProject: loaded.skippedProject.path,
-    note: consequence ? `${head} ${consequence}` : head,
-  };
+  const note = skippedProjectNote(loaded, consequence);
+  if (!loaded.skippedProject || note === undefined) return {};
+  return { projectTrust: loaded.projectTrust, skippedProject: loaded.skippedProject.path, note };
 }
 
 /**

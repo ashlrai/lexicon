@@ -63,7 +63,10 @@ import {
   conflictNote,
   unchangedTermNote,
   diffSummary,
+  emptyExportNote,
+  emptyExportReason,
   emptyLexicon,
+  emptyLexiconNote,
   isEmptyLexicon,
   exportLexicon,
   selectExportTerms,
@@ -676,7 +679,7 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
     terms.length > 0 || loaded.skippedProject
       ? undefined
       : total === 0
-        ? 'The lexicon has no terms yet; add one with: lexicon add "Ashlr.AI" Ashler, or run `lexicon setup`.'
+        ? emptyLexiconNote()
         : `No term matches ${filters.join(' ')}; ${plural(total, 'term')} in all, which lexicon list without ${filters.length === 1 ? 'it' : 'them'} shows.`;
 
   if (opts.full) {
@@ -1076,44 +1079,6 @@ function exportFormatNextStep(): string {
   return `run: lexicon export <format>, with one of: ${EXPORT_FORMATS.join(', ')} (lexicon export with no format describes each)`;
 }
 
-/**
- * Why an export holds no terms (or, for a format that writes one row per
- * alias, no rows), ending in the step that fixes it, or undefined when it
- * holds some. The CLI form of MCP export_lexicon's note. `aliasRows` is the
- * format and the terms it was handed; only an alias-row format
- * (EXPORT_ALIAS_ROW_FORMATS) whose terms all lack an alias gets the no-rows
- * note.
- */
-export function emptyExportNote(
-  loaded: Pick<LoadedLexicon, 'merged' | 'skippedProject'>,
-  categories: readonly string[] | undefined,
-  exported: number,
-  aliasRows?: { format: ExportFormat; terms: readonly Pick<Term, 'aliases'>[] },
-): string | undefined {
-  const noRows =
-    aliasRows !== undefined &&
-    EXPORT_ALIAS_ROW_FORMATS.includes(aliasRows.format) &&
-    !aliasRows.terms.some((t) => t.aliases.some((a) => a.trim() !== ''));
-  const noRowsNote = (format: ExportFormat): string =>
-    `No exported term has an alias, and ${format} writes one row per alias, so the export has no rows; add one with: lexicon add <canonical> <alias>.`;
-  if (exported > 0) return noRows && aliasRows ? noRowsNote(aliasRows.format) : undefined;
-  if (loaded.merged.terms.length === 0) {
-    return loaded.skippedProject
-      ? 'The export is empty: the only terms are in the untrusted project lexicon, which was left out; review it and run `lexicon trust`.'
-      : 'The lexicon has no terms yet, so the export is empty; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.';
-  }
-  const filtered = categories !== undefined && categories.length > 0;
-  const matched = filtered ? loaded.merged.terms.filter((t) => t.category !== undefined && categories.includes(t.category)).length : loaded.merged.terms.length;
-  if (filtered && matched === 0) {
-    return `No term matched --category ${categories.join(' ')}, so the export is empty; lexicon list shows each term's category.`;
-  }
-  // Terms matched but none was exported: an alias-row format with --limit
-  // counts only terms that have an alias, so a lexicon whose terms all lack
-  // one exports none. MCP export_lexicon and the local API say "no rows" here.
-  if (noRows && aliasRows) return noRowsNote(aliasRows.format);
-  return undefined;
-}
-
 export async function runExport(requested: string | undefined, opts: ExportCliOptions, io: IO): Promise<number> {
   const json = opts.json === true;
   if (requested === undefined) {
@@ -1173,7 +1138,8 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
   const bytes = Buffer.byteLength(text, 'utf8');
   // An empty export read as a complete one: no word on stderr or under --json,
   // where MCP export_lexicon says why in a note. stderr only, as above.
-  const empty = emptyExportNote(loaded, exportOpts.categories, terms, { format, terms: selected });
+  const reason = emptyExportReason(loaded, format, exportOpts);
+  const empty = reason && emptyExportNote(reason, { format, filter: `--category ${(exportOpts.categories ?? []).join(' ')}` });
   if (empty) io.stderr(`lexicon: ${safe(empty.charAt(0).toLowerCase() + empty.slice(1))}\n`);
   const skipped = skippedProjectJson(loaded, 'Its terms are not in the export.');
   const notes = { ...skipped, ...(empty || skipped.note ? { note: [empty, skipped.note].filter(Boolean).join(' ') } : {}) };
