@@ -35,6 +35,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 - The `serve.log` cap also empties the log when the server's descriptor can only append (as on Windows), by truncating the file by path, and compares file ids exactly. Before, the copy to `serve.log.1` was made but the log kept its size, which turned main CI red on Windows.
 - A LEXICON_PATH under a regular file (`notes.txt\lexicon.yaml`) is named as unreadable on Windows too. Windows answers such a path with ENOENT rather than ENOTDIR, so the lexicon read as missing there and only a later write failed.
+- `lexicon review --category other` offers the terms that have no category too, as `list` and `export` count them. They were skipped.
 - `lexicon normalize --min-confidence ""` (a blank value, as an unset shell variable gives) is refused like any other value outside 0 to 1. It was read as 0, which let every fuzzy and phonetic match through.
 - `lexicon list --category other` and MCP `list_terms` with `category: "other"` include the terms that have no category, as export now does. They were left out.
 - Browser extension: when the browser refuses to store the settings (its storage full), Options' Save says `Not saved:` with the reason and what to try, and the popup puts its site switch back and says the same. Save said nothing and the switch looked applied, while nothing was stored.

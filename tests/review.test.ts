@@ -519,6 +519,15 @@ describe('review', () => {
     { canonical: 'Keeper', aliases: [], category: 'product' },
   ];
 
+  // Catches: `--category other` skipped a term with no category, which list
+  // and export count as other.
+  it('--category other reviews the terms without a category', async () => {
+    await seedGlobal([...terms, { canonical: 'Plain', aliases: ['plane'] }]);
+    const io = makeIO();
+    expect(await runReview({ globalPath, category: 'other' }, io, scripted(['k']))).toBe(0);
+    expect(io.out).toContain('[1/1] Plain');
+  });
+
   it('keeps, deletes, edits aliases/phonetic/notes and writes once at the end', async () => {
     await seedGlobal(terms);
     const p = scripted([
