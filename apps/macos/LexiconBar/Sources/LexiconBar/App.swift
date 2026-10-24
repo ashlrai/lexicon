@@ -131,9 +131,10 @@ enum LexiconBarMain {
         if let terms {
             print("Local API: reachable at http://127.0.0.1:\(port) (\(terms) terms)")
         } else {
-            print("Local API: \(apiError ?? "not reachable")")
+            let why = (apiError ?? "not reachable").trimmingCharacters(in: CharacterSet(charactersIn: ". "))
+            print("Local API: \(why). Check it with `lexicon serve --status`; start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login.")
         }
-        print("Token: \(token ? "found" : "missing") (\(NormalizeClient.serveJSONPath))")
+        print("Token: \(token ? "found" : "missing") (\(NormalizeClient.serveJSONPath))\(token ? "" : ". Run `lexicon serve --show` to create it.")")
         print("Serve ownership: \(owner). \(serve.title)")
         print("Fix everywhere: \(fixOn ? "on" : "off")")
         return trusted && reachable && token ? 0 : 1

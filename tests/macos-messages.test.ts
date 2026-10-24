@@ -33,6 +33,8 @@ describe('LexiconBar messages name a next step', () => {
     ['AppDelegate.swift', 'Turn LexiconBar on in System Settings > General > Login Items instead.'],
     ['ChildProcessSupervisor.swift', 'state = .failed("The lexicon CLI was not found. Set its path in Preferences.")'],
     ['ChildProcessSupervisor.swift', 'restarts. Run `lexicon \\(name)` in Terminal to see the error, then switch it on again from the menu.'],
+    ['App.swift', 'Check it with `lexicon serve --status`; start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login.'],
+    ['App.swift', '(token ? "" : ". Run `lexicon serve --show` to create it.")'],
   ])('%s: %s', (file, text) => {
     expect(source(file)).toContain(text);
   });
