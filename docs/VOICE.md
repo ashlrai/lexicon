@@ -128,6 +128,10 @@ lexicon voice --toggle --paste           # press once: "recording"; press again:
 lexicon voice --status                   # "recording since <time>" (exit 0) or "idle" (exit 1)
 ```
 
+With `--json`, `--status` prints `{ ok: true, recording: true, since, pid }` while a
+recording runs and `{ ok: false, recording: false }` when idle: `ok` follows the exit
+code, as `lexicon serve --status --json` does, and an idle answer carries no `error`.
+
 The first call spawns ffmpeg detached, writes
 `~/.config/lexicon/voice/recording.json` (`{ pid, wav, startedAt }`), prints
 `recording` and exits immediately. The second call takes the state file, stops that

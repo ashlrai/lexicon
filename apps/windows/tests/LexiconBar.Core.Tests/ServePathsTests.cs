@@ -65,6 +65,34 @@ public class ServePathsTests
         Assert.Equal(Path.Combine(@"D:\xdg", "lexicon", "serve.json"), candidates[0]);
     }
 
+    [Theory]
+    [InlineData("   ")]
+    [InlineData("xdg")]
+    [InlineData(@"config\xdg")]
+    [InlineData(@"C:xdg")]
+    public void ABlankOrRelativeXdgConfigHomeFallsBackLikeTheCli(string xdg)
+    {
+        // src/util/xdg.ts honours XDG_CONFIG_HOME only when it is absolute once
+        // trimmed, so the CLI writes serve.json under ~/.config for these.
+        IReadOnlyList<string> candidates = ServePaths.Candidates(
+            Env(("XDG_CONFIG_HOME", xdg)),
+            @"C:\Users\mason");
+        Assert.Single(candidates);
+        Assert.Equal(Path.Combine(@"C:\Users\mason", ".config", "lexicon", "serve.json"), candidates[0]);
+    }
+
+    [Theory]
+    [InlineData(@"  D:\xdg  ", @"D:\xdg")]
+    [InlineData("D:/xdg", "D:/xdg")]
+    [InlineData(@"\\server\share\xdg", @"\\server\share\xdg")]
+    public void AnAbsoluteXdgConfigHomeIsTakenTrimmed(string xdg, string expected)
+    {
+        IReadOnlyList<string> candidates = ServePaths.Candidates(
+            Env(("XDG_CONFIG_HOME", xdg)),
+            @"C:\Users\mason");
+        Assert.Equal(Path.Combine(expected, "lexicon", "serve.json"), candidates[0]);
+    }
+
     [Fact]
     public void EmptyEnvironmentVariablesAreIgnoredNotTreatedAsRoot()
     {

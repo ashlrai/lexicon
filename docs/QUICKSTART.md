@@ -45,37 +45,53 @@ lexicon setup
 1. Global lexicon
    created ~/.config/lexicon/lexicon.yaml
    add "Mason Wyatt" as a person term (how you want your name spelled)? [Y/n]
-   added Mason Wyatt (person): Mason Wyat
-   Your company or product name (as you want it spelled; Enter to skip) [Ashlr] Ashlr.AI
-   STT will likely write: Ashlr AI, Ashler, Ashlar, Ashler AI
+   added Mason Wyatt (person): Mason Wiatt, Mason Wyat
+   Your company or product name (as you want it spelled; Enter to skip) Ashlr.AI
+   STT will likely write: Ashlr AI, Ashlr, Ashler, Ashlar, Ashler AI, Ashlar AI
    phonetic hint (e.g. ASH-ler, Enter for none) ASH-ler
-   added Ashlr.AI (brand): Ashlr AI, Ashler, Ashlar, Ashler AI
+   added Ashlr.AI (brand): Ashlr AI, Ashlr, Ashler, Ashlar, Ashler AI, Ashlar AI
    add another term? [y/N]
 
 2. Starter packs
    add starter packs to the global lexicon (Enter keeps the checked ones):
-     [x] 1) developer (82 terms)  [x] 2) ai (45)  [ ] 3) business (35)  [x] 4) voice-tools (14)
+  [x] 1) developer  Developer tools, 82 terms
+  [x] 2) ai  AI models and tools, 45 terms
+  [x] 3) voice-tools  Voice and dictation tools, 14 terms
+toggle numbers (e.g. 2,3), a=all, n=none, Enter=done
+   also add business (Business and startup vocabulary, 35 terms)? [y/N]
    installed developer: 82 added, 0 merged
    installed ai: 45 added, 0 merged
    installed voice-tools: 14 added, 0 merged
 
 3. Repo harvest
-   found 4 names in ~/code/lexicon:  (table of canonical, category, count, aliases)
+   found 2 names in ~/code/lexicon:
+canonical   category  count  suggested aliases
+----------  --------  -----  ---------------------
+lexicon     product   1      lexikon
+quokkatron  product   1      quoccatron, quokatron
    add them to the project lexicon (~/code/lexicon/.lexicon.yaml)? [y/N] y
-   added 4 new terms, merged 0 in ~/code/lexicon/.lexicon.yaml (trusted)
+   added 2 new terms, merged 0 in ~/code/lexicon/.lexicon.yaml (trusted)
 
 4. Agent clients
-   install the lexicon MCP server (and hooks) into:  [x] 1) claude  [x] 2) cursor
-   claude: installed updated ~/.claude/settings.json: added UserPromptSubmit + SessionStart hooks
-   cursor: installed created ~/.cursor/mcp.json: mcpServers.lexicon
+   install the lexicon MCP server (and hooks) into:
+  [x] 1) claude  /usr/local/bin/claude
+  [x] 2) cursor  ~/.cursor
+toggle numbers (e.g. 2,3), a=all, n=none, Enter=done
+   claude: installed ~/.claude/settings.json
+   cursor: installed ~/.cursor/mcp.json
 
 5. Local API (lexicon serve)
    install the local API (browser extension, Claude Desktop, menu bar app) as a login service? [Y/n]
    installed ai.ashlr.lexicon.serve; check with: lexicon serve --status
 
 6. Dictation app
-   which dictation app do you use?  1) Wispr Flow  2) Superwhisper  3) macOS Text Replacement  4) none
-   wrote ~/Desktop/lexicon-wispr.csv (147 terms)
+   which dictation app do you use?
+  1) Wispr Flow
+  2) Superwhisper
+  3) macOS Text Replacement
+  4) none / something else
+number [1] 1
+   wrote ~/Desktop/lexicon-wispr.csv (329 rows)
    import it in Wispr Flow > Dictionary > Import
 
 7. Does it work?
@@ -84,14 +100,18 @@ lexicon setup
    fixed: "Mason Wiatt" -> "Mason Wyatt", "Ashler" -> "Ashlr.AI"
 
 Done.
-   lexicon: ~/.config/lexicon/lexicon.yaml   terms added: Mason Wyatt, Ashlr.AI, Playwright, ...
-   clients: claude, cursor   local API: installed   exports: ~/Desktop/lexicon-wispr.csv
+   lexicon: ~/.config/lexicon/lexicon.yaml
+   terms added: Mason Wyatt, Ashlr.AI, lexicon, quokkatron
+   packs: developer (82 added), ai (45 added), voice-tools (14 added)
+   clients: claude, cursor
+   local API: installed
+   exports: ~/Desktop/lexicon-wispr.csv
 
 Next: open Claude Code and dictate a sentence with "Ashlr.AI" in it. That is the whole thing.
    later: lexicon suggest (names you keep correcting), lexicon stats, lexicon voice (local push-to-talk)
 ```
 
-Step 3 is the one prompt that defaults to no. It proposes only names the repo says out loud somewhere other than its own code: what the manifests declare, what the README names, the git authors, the directory. A class or a type is something you type rather than say, and its name split into words ("InlineData" into "inline data") would rewrite ordinary dictation, so the harvest leaves those alone; `lexicon harvest --interactive` walks the list one name at a time when you do want them.
+Step 3 is the one step whose question defaults to no. It proposes only names the repo says out loud somewhere other than its own code: what the manifests declare, what the README names, the git authors, the directory. A class or a type is something you type rather than say, and its name split into words ("InlineData" into "inline data") would rewrite ordinary dictation, so the harvest leaves those alone; `lexicon harvest --interactive` walks the list one name at a time when you do want them.
 
 Step 7 is not a canned example: it takes the terms the run just seeded, writes the sentence speech-to-text would have produced for them, and runs the real normalizer over it. If you skipped everything and the lexicon has nothing to show off, it falls back to the example terms and says so, so the run always ends with the product working.
 
