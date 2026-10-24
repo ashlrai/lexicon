@@ -98,12 +98,15 @@ export function unusableServeConfigReason(file: string): string {
     return `could not be read (${typeof code === 'string' ? code : errorMessage(err)}); make it a readable file, or remove it so lexicon serve makes a new token`;
   }
   if (text.replace(/^\uFEFF/, '').trim() === '') return 'is empty; lexicon serve replaces it';
+  let raw: unknown;
   try {
-    parseServeJson(text);
+    raw = parseServeJson(text);
   } catch {
     return 'is not valid JSON; fix it, or delete it and lexicon serve makes a new token';
   }
-  return 'has no usable token; lexicon serve replaces it';
+  // Why, as onTokenReplaced says it: "has no usable token" alone left the
+  // user to guess between a missing key, a number and a bad hex string.
+  return `has no usable token (${tokenProblem(raw)}); lexicon serve replaces it`;
 }
 
 /** The stored config, or undefined when the file is missing or unusable (a bad token is never reused). */
