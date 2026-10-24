@@ -396,6 +396,14 @@ describe('list', () => {
     expect((JSON.parse(io.out) as Array<{ canonical: string }>).map((t) => t.canonical)).toEqual(['Plain']);
   });
 
+  // Catches: --category " brand" (a quoted shell list) was refused as an
+  // unknown category while the local API trims ?category= and takes it.
+  it('--category trims the value as the local API does', async () => {
+    const io = makeIO();
+    expect(await runList({ category: ' Brand ', json: true }, io)).toBe(0);
+    expect((JSON.parse(io.out) as Array<{ canonical: string }>).map((t) => t.canonical)).toEqual(['Ashlr.AI']);
+  });
+
   it('shows the project path when one is present', async () => {
     state.projectPath = '/tmp/proj/.lexicon.yaml';
     const io = makeIO();
