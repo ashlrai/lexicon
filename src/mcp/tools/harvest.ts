@@ -13,7 +13,8 @@ import {
   addTerm,
   addTerms,
   defaultProjectPath,
-  harvestRepo,
+  harvestReport,
+  harvestTruncatedNote,
   isProjectTrustError,
   loadLexicon,
   loadVoiceHistory,
@@ -84,6 +85,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         `\`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. ` +
         'WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- ' +
         'candidates come back as names, categories and counts: { root, candidates: [{ canonical, category, source, evidence, count, suggestedAliases }], count }, ' +
+        'plus `truncated: true` and a `note` when the scan stopped at its file cap (tell the user, and offer to harvest a subdirectory), ' +
         'where `evidence` names where a name was seen (a file path, "git log", "package.json#name"), never the text around it, and `suggestedAliases` is often empty on purpose (an identifier gets none). ' +
         'With `add: true` the result adds `added`, `failures` and `path`, and is an error when no candidate could be written.',
       inputSchema: {
@@ -101,10 +103,11 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
     async ({ path, limit, minCount, add }) =>
       guarded(async () => {
         const root = path ? containedPath(ctx, path, (dir) => `harvest ${shellWord(dir)}`) : ctx.cwd;
-        const candidates = await harvestRepo(root, {
+        const report = await harvestReport(root, {
           ...(limit !== undefined ? { limit } : {}),
           ...(minCount !== undefined ? { minCount } : {}),
         });
+        const candidates = report.candidates;
         let added = 0;
         let written: string | undefined;
         const failures: Array<{ canonical: string; error: string }> = [];
@@ -156,8 +159,17 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
           ...(written !== undefined
             ? { path: written, ...(writeOpts.leaveUntrusted ? untrustedWriteFields(written, `${added} name(s)`, true) : {}) }
             : {}),
-          ...(failures.length > 0
-            ? { note: `${failures.length} of ${candidates.length} candidate${candidates.length === 1 ? ' was' : 's were'} not added (first: ${failures[0]?.error}); see failures` }
+          // The 5000-file cap was never reported, so a large tree looked fully scanned.
+          ...(report.truncated ? { truncated: true } : {}),
+          ...(failures.length > 0 || report.truncated
+            ? {
+                note: [
+                  ...(failures.length > 0
+                    ? [`${failures.length} of ${candidates.length} candidate${candidates.length === 1 ? ' was' : 's were'} not added (first: ${failures[0]?.error}); see failures`]
+                    : []),
+                  ...(report.truncated ? [harvestTruncatedNote(root)] : []),
+                ].join('. '),
+              }
             : {}),
         };
         // Every write failed: nothing was added, so this is not a success the

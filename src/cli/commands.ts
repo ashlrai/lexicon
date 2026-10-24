@@ -72,7 +72,8 @@ import {
   exportLexiconWithNotes,
   selectExportTerms,
   resolveExportFormat,
-  harvestRepo,
+  harvestReport,
+  harvestTruncatedNote,
   loadLexicon,
   normalize,
   isProjectTrustError,
@@ -966,12 +967,16 @@ export async function runHarvest(
   if (minCount !== undefined) harvestOpts.minCount = minCount;
   if (opts.symbols) harvestOpts.symbols = true;
 
-  const candidates: HarvestCandidate[] = await harvestRepo(target, harvestOpts);
+  const report = await harvestReport(target, harvestOpts);
+  const candidates: HarvestCandidate[] = report.candidates;
+  // The 5000-file cap was never reported, so a large tree looked fully scanned.
+  const truncatedLine = report.truncated ? `warn: ${harvestTruncatedNote(target)}` : undefined;
 
   if (interactive) {
     // The walkthrough is the display; the table would only repeat it.
     const prompter = (deps.createPrompter ?? (() => createPrompter({ input: process.stdin, output: process.stdout })))();
     try {
+      if (truncatedLine) line(io, safeMessage(truncatedLine));
       return await runHarvestInteractive(
         candidates,
         { cwd: target, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}) },
@@ -999,6 +1004,11 @@ export async function runHarvest(
       c.evidence[0] ?? '',
     ]);
     io.stdout(renderTable(rows, ['canonical', 'category', 'count', 'suggested aliases', 'evidence']));
+  }
+
+  if (truncatedLine) {
+    if (json) io.stderr(`lexicon: ${safeMessage(truncatedLine.replace(/^warn: /, ''))}\n`);
+    else line(io, safeMessage(truncatedLine));
   }
 
   let created = 0;
@@ -1044,7 +1054,8 @@ export async function runHarvest(
   if (!opts.full && opts.json && opts.add) line(io, JSON.stringify(candidates, null, 2));
   if (opts.full) {
     const addResult = opts.add ? { added: created + merged, created, merged, ...(filePath ? { path: filePath } : {}) } : {};
-    line(io, JSON.stringify(jsonOk({ root: target, candidates, count: candidates.length, ...addResult }), null, 2));
+    const truncated = report.truncated ? { truncated: true as const, note: harvestTruncatedNote(target) } : {};
+    line(io, JSON.stringify(jsonOk({ root: target, candidates, count: candidates.length, ...truncated, ...addResult }), null, 2));
   }
   return 0;
 }

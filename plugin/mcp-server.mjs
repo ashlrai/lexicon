@@ -55885,7 +55885,8 @@ function confusions(s) {
 }
 
 // src/core/harvest.ts
-var MAX_FILES = 5e3;
+var HARVEST_MAX_FILES = 5e3;
+var MAX_FILES = HARVEST_MAX_FILES;
 var MAX_FILE_BYTES = 512 * 1024;
 var MAX_EVIDENCE = 5;
 var ALWAYS_IGNORED_DIRS = /* @__PURE__ */ new Set([
@@ -57319,6 +57320,9 @@ var HARVEST_STOPLIST = /* @__PURE__ */ new Set([
   "Languages"
 ]);
 async function harvestRepo(root, opts = {}) {
+  return (await harvestReport(root, opts)).candidates;
+}
+async function harvestReport(root, opts = {}) {
   const absRoot = import_node_path6.default.resolve(root);
   const stat = safeStat(absRoot);
   if (!stat || !stat.isDirectory()) {
@@ -57360,7 +57364,7 @@ async function harvestRepo(root, opts = {}) {
       bump3(author, "person", "harvest:git", "git log", 1, true);
     }
   }
-  const { files } = gitFiles(absRoot, ignore2) ?? walk(absRoot, ignore2);
+  const { files, truncated } = gitFiles(absRoot, ignore2) ?? walk(absRoot, ignore2);
   for (const file2 of files) {
     const rel = import_node_path6.default.relative(absRoot, file2) || import_node_path6.default.basename(file2);
     const base = import_node_path6.default.basename(file2);
@@ -57404,9 +57408,17 @@ async function harvestRepo(root, opts = {}) {
     }
   }
   const candidates = [];
+  let belowMinCount = 0;
+  let symbolsOnly = 0;
   for (const bucket of buckets.values()) {
-    if (!bucket.external && !wantSymbols) continue;
-    if (!bucket.alwaysInclude && bucket.count < minCount) continue;
+    if (!bucket.external && !wantSymbols) {
+      symbolsOnly += 1;
+      continue;
+    }
+    if (!bucket.alwaysInclude && bucket.count < minCount) {
+      belowMinCount += 1;
+      continue;
+    }
     candidates.push({
       canonical: bucket.canonical,
       category: bucket.category,
@@ -57417,7 +57429,10 @@ async function harvestRepo(root, opts = {}) {
     });
   }
   candidates.sort((a, b) => b.count - a.count || compareText(a.canonical, b.canonical));
-  return candidates.slice(0, Math.max(0, limit));
+  return { candidates: candidates.slice(0, Math.max(0, limit)), truncated, filesScanned: files.length, belowMinCount, symbolsOnly };
+}
+function harvestTruncatedNote(root) {
+  return `The scan stopped after the first ${HARVEST_MAX_FILES} files under ${root}, so names in the rest of it were not seen; harvest a subdirectory to scan that part in full.`;
 }
 function walk(root, ignore2) {
   const files = [];
@@ -57909,7 +57924,13 @@ function countDotTldBrands(text) {
 }
 function gitAuthors(root) {
   try {
-    const out = (0, import_node_child_process.execFileSync)("git", ["-C", root, "log", "--format=%an", "-n", "500"], {
+    const prefix = (0, import_node_child_process.execFileSync)("git", ["-C", root, "rev-parse", "--show-prefix"], {
+      encoding: "utf8",
+      stdio: ["ignore", "pipe", "ignore"],
+      timeout: 5e3
+    }).trim();
+    const scope = prefix === "" ? [] : ["--", "."];
+    const out = (0, import_node_child_process.execFileSync)("git", ["-C", root, "log", "--format=%an", "-n", "500", ...scope], {
       encoding: "utf8",
       stdio: ["ignore", "pipe", "ignore"],
       timeout: 5e3
@@ -62284,7 +62305,7 @@ var registerHarvestTools = (server, ctx) => {
     "harvest_repo",
     {
       title: "Harvest names from a repository",
-      description: "Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without `add` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml. Show the candidate list and get a yes first. A file the user already trusted stays trusted; a new, untrusted or changed one is not trusted by the write (`trusted: false`) and applies only after the user reviews it and runs " + cliCommand("trust") + `: relay \`nextStep\`. \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts: { root, candidates: [{ canonical, category, source, evidence, count, suggestedAliases }], count }, where \`evidence\` names where a name was seen (a file path, "git log", "package.json#name"), never the text around it, and \`suggestedAliases\` is often empty on purpose (an identifier gets none). With \`add: true\` the result adds \`added\`, \`failures\` and \`path\`, and is an error when no candidate could be written.`,
+      description: "Scan a repository for proper nouns an STT engine is likely to mangle: package and dependency names, git authors, README brands, the project directory. Only names the repo says somewhere other than its own source are proposed: a class that exists nowhere but code is something the user types, not something they say, and adding it teaches the lexicon to rewrite ordinary dictation. WHEN TO CALL: when you are in a repo with no .lexicon.yaml and the user dictates about it, or when they ask what this project would add. Call it without `add` first -- that is a read-only preview. WHAT IT CHANGES: nothing unless `add: true`, which writes the candidates into the repo's .lexicon.yaml. Show the candidate list and get a yes first. A file the user already trusted stays trusted; a new, untrusted or changed one is not trusted by the write (`trusted: false`) and applies only after the user reviews it and runs " + cliCommand("trust") + `: relay \`nextStep\`. \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused. WHAT IT WILL NOT DO: it does not touch the global lexicon, and it does not pull file contents into the conversation -- candidates come back as names, categories and counts: { root, candidates: [{ canonical, category, source, evidence, count, suggestedAliases }], count }, plus \`truncated: true\` and a \`note\` when the scan stopped at its file cap (tell the user, and offer to harvest a subdirectory), where \`evidence\` names where a name was seen (a file path, "git log", "package.json#name"), never the text around it, and \`suggestedAliases\` is often empty on purpose (an identifier gets none). With \`add: true\` the result adds \`added\`, \`failures\` and \`path\`, and is an error when no candidate could be written.`,
       inputSchema: {
         path: nonBlank().optional().describe(`Repository root. Omit for the server working directory (a blank one is refused). Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
         limit: external_exports.number().int().positive().max(HARVEST_MAX_LIMIT).optional().describe(`Max candidates to return (default 50, at most ${HARVEST_MAX_LIMIT}).`),
@@ -62294,10 +62315,11 @@ var registerHarvestTools = (server, ctx) => {
     },
     async ({ path: path28, limit, minCount, add }) => guarded(async () => {
       const root = path28 ? containedPath(ctx, path28, (dir) => `harvest ${shellWord2(dir)}`) : ctx.cwd;
-      const candidates = await harvestRepo(root, {
+      const report2 = await harvestReport(root, {
         ...limit !== void 0 ? { limit } : {},
         ...minCount !== void 0 ? { minCount } : {}
       });
+      const candidates = report2.candidates;
       let added = 0;
       let written;
       const failures = [];
@@ -62335,7 +62357,14 @@ var registerHarvestTools = (server, ctx) => {
         count: candidates.length,
         ...add ? { added, failures } : {},
         ...written !== void 0 ? { path: written, ...writeOpts.leaveUntrusted ? untrustedWriteFields(written, `${added} name(s)`, true) : {} } : {},
-        ...failures.length > 0 ? { note: `${failures.length} of ${candidates.length} candidate${candidates.length === 1 ? " was" : "s were"} not added (first: ${failures[0]?.error}); see failures` } : {}
+        // The 5000-file cap was never reported, so a large tree looked fully scanned.
+        ...report2.truncated ? { truncated: true } : {},
+        ...failures.length > 0 || report2.truncated ? {
+          note: [
+            ...failures.length > 0 ? [`${failures.length} of ${candidates.length} candidate${candidates.length === 1 ? " was" : "s were"} not added (first: ${failures[0]?.error}); see failures`] : [],
+            ...report2.truncated ? [harvestTruncatedNote(root)] : []
+          ].join(". ")
+        } : {}
       };
       if (add && added === 0 && failures.length > 0) return { ...textResult(payload), isError: true };
       return textResult(payload);

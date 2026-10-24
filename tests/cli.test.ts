@@ -50,6 +50,7 @@ vi.mock('../src/core/index.js', async (importOriginal) => {
     const output = text.replace(re, 'Ashlr.AI');
     return { input: text, output, replacements, changed: output !== text };
   };
+  const harvestRepo = vi.fn(async () => []);
   return {
     ...actual,
     normalize: vi.fn(normalize),
@@ -83,7 +84,9 @@ vi.mock('../src/core/index.js', async (importOriginal) => {
     }),
     isProjectTrustError: actual.isProjectTrustError,
     findTerm: vi.fn(),
-    harvestRepo: vi.fn(async () => []),
+    harvestRepo,
+    // runHarvest reads the report; the candidates still come from the harvestRepo mock.
+    harvestReport: async (...args: unknown[]) => ({ candidates: await (harvestRepo as (...a: unknown[]) => Promise<unknown>)(...args), truncated: false, filesScanned: 0, belowMinCount: 0, symbolsOnly: 0 }),
     exportLexicon: vi.fn((_l: Lexicon, format: string) => `export:${format}`),
     exportLexiconWithNotes: vi.fn((_l: Lexicon, format: string) => ({
       text: `export:${format}`,
