@@ -102,6 +102,9 @@ const TAIL = `\\s*(?:[.!?]+\\s+[\\s\\S]*)?[.!?]*\\s*$`;
 // \u2014 is the em dash, written as an escape so the source holds none.
 const LEAD = `(?:^|[\\s,;:\u2014-])`;
 
+/** An apostrophe: the ASCII one or U+2019, written as an escape. */
+const APOS = `['\u2019]`;
+
 type Side = 'meant' | 'heard';
 
 interface CorrectionPattern {
@@ -131,8 +134,10 @@ interface CorrectionPattern {
 
 /** Order matters: first match wins. Every regex is case-insensitive. */
 const PATTERNS: readonly CorrectionPattern[] = [
-  // "it's X not Y" / "it's X, not Y" / "it's spelled X, not Y"
-  { template: `${LEAD}it'?s (?:spelled |spelt |written |called )?{X},? not {Y}${TAIL}`, order: ['meant', 'heard'], example: "it's Ashlr.AI, not Ashler", needle: /not /iu },
+  // "it's X not Y" / "it's X, not Y" / "it's spelled X, not Y". The apostrophe
+  // may be the typographic one (U+2019) that macOS and iOS smart punctuation and
+  // dictation write; with only `'` accepted, "it\u2019s Ashlr.AI not Ashler" was no correction.
+  { template: `${LEAD}it${APOS}?s (?:spelled |spelt |written |called )?{X},? not {Y}${TAIL}`, order: ['meant', 'heard'], example: "it's Ashlr.AI, not Ashler", needle: /not /iu },
   // "I said X not Y"
   { template: `${LEAD}i said {X},? not {Y}${TAIL}`, order: ['meant', 'heard'], example: 'I said Ashlr.AI not Ashler', needle: /not /iu },
   // "I meant X not Y"
@@ -140,7 +145,7 @@ const PATTERNS: readonly CorrectionPattern[] = [
   // "X not Y" with no verb - only when both sides are quoted, otherwise far too loose
   { template: `^\\s*{X},? not {Y}${TAIL}`, order: ['meant', 'heard'], quotedOnly: true, example: '"Ashlr.AI" not "Ashler"', needle: /not /iu },
   // "not Y, X" / "not Y, it's X"
-  { template: `^\\s*not {Y},\\s*(?:it'?s |i meant |i said |but )?{X}${TAIL}`, order: ['heard', 'meant'], example: "not Ashler, Ashlr.AI", needle: /not /iu },
+  { template: `^\\s*not {Y},\\s*(?:it${APOS}?s |i meant |i said |but )?{X}${TAIL}`, order: ['heard', 'meant'], example: "not Ashler, Ashlr.AI", needle: /not /iu },
   // "replace Y with X"
   { template: `${LEAD}replace {Y} with {X}${TAIL}`, order: ['heard', 'meant'], bareNeedsName: true, example: 'replace Ashler with Ashlr.AI', needle: /replace /iu },
   // "Y -> X" / "Y => X" / "Y → X"
