@@ -321,7 +321,7 @@ export function registerLearnCommands(program: Command, io: IO): void {
     .description('record a spelling correction: what STT heard and what you meant')
     .argument('[words...]', '<heard> <meant>, or a sentence like "Ashler -> Ashlr.AI"')
     .option('--from <sentence>', 'parse a natural-language correction, e.g. "it\'s Ashlr.AI not Ashler" (instead of <heard> <meant>, not with them)')
-    .option('--project', 'write to the project lexicon instead of the global one')
+    .option('--project', 'write to the project lexicon (default: the file that already holds the meant term, else the global one)')
     .option('--json', 'print the result as JSON')
     // A bare "->" would otherwise be rejected as an unknown option; let it through
     // as a word so `lexicon learn Ashler -> Ashlr.AI` works without `--`.

@@ -469,7 +469,8 @@ Arguments:
 Options:
   --from <sentence>  parse a natural-language correction, e.g. "it's Ashlr.AI
                      not Ashler" (instead of <heard> <meant>, not with them)
-  --project          write to the project lexicon instead of the global one
+  --project          write to the project lexicon (default: the file that
+                     already holds the meant term, else the global one)
   --json             print the result as JSON
   -h, --help         display help for command
 ```
