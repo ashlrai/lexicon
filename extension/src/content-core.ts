@@ -24,6 +24,9 @@ import { incompleteNotice, LIVE_DEBOUNCE_MS, PRECHECK_DEBOUNCE_MS } from './shar
 import type { Correction, NormalizeReply, Request } from './shared.js';
 import { removeToast, showToast } from './toast.js';
 
+/** The toast line when a known site took neither the replayed Enter nor a send-button click. */
+export const NOT_SENT_NOTICE = 'Not sent: this site ignored the replayed Enter and its send button was not found. Press Enter again to send.';
+
 export interface ContentSettings {
   enabled: boolean;
   live: boolean;
@@ -73,6 +76,16 @@ export function installContent(deps: ContentDeps): ContentHandle {
   let restoring = false;
   /** True between compositionstart and compositionend: an IME owns the text being typed. */
   let composing = false;
+  /**
+   * Whether this page acts on a script-dispatched Enter in the composer:
+   * `works` once one was cancelled (taken by the page) or the page cancelled
+   * a real Enter the guard let through, `fails` once one was not taken while
+   * no send button matched. A known site whose button selector no longer
+   * matches is sent to only through that Enter, so until it is known to
+   * work there the guard lets the user's own Enter through rather than
+   * swallow a send it may not be able to replay.
+   */
+  let enterReplay: 'unknown' | 'works' | 'fails' = 'unknown';
 
   const setTimer = (fn: () => void, ms: number): number | undefined => win?.setTimeout(fn, ms);
   const clearTimer = (id: number | undefined): void => {
@@ -221,7 +234,25 @@ export function installContent(deps: ContentDeps): ContentHandle {
     const composer = composerFromTarget(eventOrigin(ev), adapter);
     if (!composer) return;
     const text = readText(composer);
-    if (shouldSkip(text)) return;
+    // A press that goes on as typed: if the page takes it (cancels it, as a
+    // composer that sends on Enter does), a replayed Enter is likely to be
+    // taken too. Checked a task later, once every listener has run.
+    const learnFromPress = (): void => {
+      if (!adapter.send || enterReplay !== 'unknown') return;
+      setTimer(() => {
+        if (ev.defaultPrevented && enterReplay === 'unknown') enterReplay = 'works';
+      }, 0);
+    };
+    if (shouldSkip(text)) {
+      learnFromPress();
+      return;
+    }
+    if (adapter.send && enterReplay !== 'works' && !findSendButton(doc, adapter, composer)) {
+      // Nothing to click, and a synthetic Enter is not known to send here:
+      // the original press goes on as typed rather than being swallowed.
+      learnFromPress();
+      return;
+    }
 
     ev.preventDefault();
     ev.stopImmediatePropagation();
@@ -242,11 +273,22 @@ export function installContent(deps: ContentDeps): ContentHandle {
     guard(() =>
       correctThen(composer, text, () => {
         withPassthrough(() => {
-          if (!composer.dispatchEvent(new KeyboardEvent('keydown', init))) return;
+          if (!composer.dispatchEvent(new KeyboardEvent('keydown', init))) {
+            enterReplay = 'works';
+            return;
+          }
           // Nobody consumed the synthetic Enter; fall back to the button.
           const button = findSendButton(doc, adapter, composer);
           if (button) {
             button.click();
+            return;
+          }
+          if (adapter.send) {
+            // The page ignored the replay and its button is gone too: the
+            // message is corrected but not sent. Say so, and let the next
+            // Enter through as typed (the precheck now holds the text).
+            enterReplay = 'fails';
+            showToast(doc, [], { durationMs: deps.toastMs, notice: NOT_SENT_NOTICE });
             return;
           }
           // A known site sends through its button only; anywhere else the

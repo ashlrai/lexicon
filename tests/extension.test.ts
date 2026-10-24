@@ -305,7 +305,7 @@ describe('content: send interception', () => {
   // Catches: the undo's own input event cleared the precheck and scheduled a
   // new dry run, so the next Enter corrected the restored wording again.
   it('after undo, Enter sends the restored wording as it is', async () => {
-    document.body.innerHTML = '<form><textarea placeholder="Ask Grok anything"></textarea></form>';
+    document.body.innerHTML = '<form><textarea placeholder="Ask Grok anything"></textarea><button aria-label="Submit"></button></form>';
     const t = document.querySelector('textarea')!;
     const send = vi.fn(fakeSend);
     handle = installContent({ doc: document, hostname: 'grok.com', send, settings: { enabled: true, live: false }, precheckDebounceMs: 5, toastMs: 60_000 });
@@ -430,7 +430,7 @@ describe('toast', () => {
   });
 
   it('carries the fallback reason from a corrected send into the toast', async () => {
-    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true"><p>ping ashler</p></div>';
+    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true"><p>ping ashler</p></div><button data-testid="send-button"></button>';
     const composer = document.getElementById('prompt-textarea')!;
     const send = vi.fn(async (req: Request): Promise<NormalizeReply> => {
       const reply = await fakeSend(req);
@@ -550,7 +550,7 @@ describe('message routing (mock chrome.runtime) and background', () => {
       return true;
     });
 
-    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true"><p>ping ashler</p></div>';
+    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true"><p>ping ashler</p></div><button data-testid="send-button"></button>';
     const composer = document.getElementById('prompt-textarea')!;
     composer.addEventListener('keydown', (ev) => ev.preventDefault());
     handle = installContent({
@@ -1436,15 +1436,18 @@ describe('content: generic sites keep the Enter key working', () => {
     document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>ping ashler</p></div>';
     const composer = document.getElementById('prompt-textarea')!;
     handle = installContent({ doc: document, hostname: 'chatgpt.com', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
-    composer.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    const ev = new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+    composer.dispatchEvent(ev);
     await handle.idle();
-    expect(readText(composer)).toBe('ping Ashlr.AI');
+    // Nothing to click and no replay known to work: the press goes on as typed.
+    expect(ev.defaultPrevented).toBe(false);
+    expect(readText(composer)).toBe('ping ashler');
   });
 });
 
 describe('content: undo never overwrites what the user typed since', () => {
   it('leaves a new draft alone when the corrected message was sent and the user started another', async () => {
-    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>ping ashler</p></div>';
+    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>ping ashler</p></div><button data-testid="send-button"></button>';
     const composer = document.getElementById('prompt-textarea')!;
     handle = installContent({ doc: document, hostname: 'chatgpt.com', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
     composer.addEventListener('keydown', (ev) => ev.preventDefault());
@@ -1458,7 +1461,7 @@ describe('content: undo never overwrites what the user typed since', () => {
   });
 
   it('still restores the dictated wording into an emptied composer', async () => {
-    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>ping ashler</p></div>';
+    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>ping ashler</p></div><button data-testid="send-button"></button>';
     const composer = document.getElementById('prompt-textarea')!;
     handle = installContent({ doc: document, hostname: 'chatgpt.com', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
     composer.addEventListener('keydown', (ev) => ev.preventDefault());
@@ -1851,8 +1854,8 @@ describe('content: code in a known site\'s composer is never corrected', () => {
   // `const Ashlr.AI = 1`): the rich editor holds code as <pre>/<code>, which
   // flattening dropped, so the matcher's own code skipping never saw it.
   const sites: Record<string, { host: string; html: (inner: string) => string; id: string }> = {
-    ChatGPT: { host: 'chatgpt.com', id: 'prompt-textarea', html: (inner) => `<div id="prompt-textarea" contenteditable="true" class="ProseMirror">${inner}</div>` },
-    Claude: { host: 'claude.ai', id: 'c', html: (inner) => `<div id="c" contenteditable="true" class="ProseMirror">${inner}</div>` },
+    ChatGPT: { host: 'chatgpt.com', id: 'prompt-textarea', html: (inner) => `<div id="prompt-textarea" contenteditable="true" class="ProseMirror">${inner}</div><button data-testid="send-button"></button>` },
+    Claude: { host: 'claude.ai', id: 'c', html: (inner) => `<div id="c" contenteditable="true" class="ProseMirror">${inner}</div><button aria-label="Send message"></button>` },
   };
 
   for (const [name, site] of Object.entries(sites)) {

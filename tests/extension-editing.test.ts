@@ -7,12 +7,26 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import { applyCorrections, caretOffset, setCaret } from '../extension/src/editable.js';
+import { applyCorrections, caretOffset, readText, setCaret } from '../extension/src/editable.js';
 import { holdsCode } from '../extension/src/adapters.js';
 import { createEmbedded } from '../extension/src/embedded.js';
+import { installContent, NOT_SENT_NOTICE } from '../extension/src/content-core.js';
+import type { ContentHandle } from '../extension/src/content-core.js';
+import type { NormalizeReply, Request } from '../extension/src/shared.js';
+import { TOAST_ID } from '../extension/src/toast.js';
 
 const EXAMPLE_YAML = readFileSync(resolve(process.cwd(), 'examples/lexicon.example.yaml'), 'utf8');
 const engine = createEmbedded(EXAMPLE_YAML);
+
+function fakeSend(req: Request): Promise<NormalizeReply> {
+  if (req.type !== 'normalize') throw new Error(`unexpected ${req.type}`);
+  const r = engine.normalize(req.text, req.dryRun);
+  return Promise.resolve({ ok: true, input: r.input, output: r.output, changed: r.changed, replacements: r.replacements, mode: 'embedded' });
+}
+
+const wait = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+
+let handle: ContentHandle | null = null;
 
 /** Counts assignments through the textarea `value` setter (what drops the native undo history). */
 function countValueSets(): { count(): number; restore(): void } {
@@ -35,6 +49,9 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  handle?.destroy();
+  handle = null;
+  document.getElementById(TOAST_ID)?.remove();
   vi.restoreAllMocks();
   delete (document as { execCommand?: unknown }).execCommand;
 });
@@ -154,5 +171,61 @@ describe('editable: the caret inside an open shadow root', () => {
     r.collapse(true);
     ranges.push(r);
     expect(holdsCode(document, editor)).toBe(true);
+  });
+});
+
+describe('content: a known site\'s Enter is never swallowed when it cannot be replayed', () => {
+  const enter = (): KeyboardEvent => new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+
+  it('lets the press through when no send button matches and the replay is not known to work', async () => {
+    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>ping ashler</p></div>';
+    const composer = document.getElementById('prompt-textarea')!;
+    const send = vi.fn(fakeSend);
+    handle = installContent({ doc: document, hostname: 'chatgpt.com', send, settings: { enabled: true, live: false } });
+    const ev = enter();
+    composer.dispatchEvent(ev);
+    await handle.idle();
+    expect(ev.defaultPrevented).toBe(false);
+    expect(send).not.toHaveBeenCalled();
+    expect(readText(composer)).toBe('ping ashler');
+  });
+
+  it('learns from a press the page took, and corrects the next send through the replayed Enter', async () => {
+    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>ping ashler</p></div>';
+    const composer = document.getElementById('prompt-textarea')!;
+    const sent: string[] = [];
+    composer.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter') return;
+      ev.preventDefault();
+      sent.push(readText(composer));
+    });
+    handle = installContent({ doc: document, hostname: 'chatgpt.com', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
+    composer.dispatchEvent(enter());
+    await handle.idle();
+    expect(sent).toEqual(['ping ashler']);
+    await wait(5);
+    composer.innerHTML = '<p>and ashler again</p>';
+    composer.dispatchEvent(enter());
+    await handle.idle();
+    expect(sent).toEqual(['ping ashler', 'and Ashlr.AI again']);
+  });
+
+  it('says the message was not sent when the button vanished and the replay was ignored, and lets the next Enter through', async () => {
+    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>ping ashler</p></div><button data-testid="send-button"></button>';
+    const composer = document.getElementById('prompt-textarea')!;
+    const slowSend = vi.fn(async (req: Request): Promise<NormalizeReply> => {
+      // The site re-renders while the check runs: the button is gone when the replay falls back to it.
+      document.querySelector('button')?.remove();
+      return fakeSend(req);
+    });
+    handle = installContent({ doc: document, hostname: 'chatgpt.com', send: slowSend, settings: { enabled: true, live: false }, toastMs: 60_000 });
+    composer.dispatchEvent(enter());
+    await handle.idle();
+    expect(readText(composer)).toBe('ping Ashlr.AI');
+    expect(document.getElementById(TOAST_ID)?.shadowRoot?.textContent).toContain(NOT_SENT_NOTICE);
+    const again = enter();
+    composer.dispatchEvent(again);
+    await handle.idle();
+    expect(again.defaultPrevented).toBe(false);
   });
 });
