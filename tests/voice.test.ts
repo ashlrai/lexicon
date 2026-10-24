@@ -1431,6 +1431,21 @@ describe('lexicon voice (foreground)', () => {
     expect(h.spawnCalls[0].args).toEqual(expect.arrayContaining(['-f', 'pulse', '-i', 'default']));
   });
 
+  // Catches: off darwin, --paste said "the text is on the clipboard" before
+  // the copy ran, so a copy that then failed left that line false.
+  it('--paste off darwin says the text is on the clipboard only after the copy worked', async () => {
+    const h = await harness({ platform: 'linux' });
+    h.deps.waitForStop = async () => 'enter';
+    h.deps.clipboardWrite = async () => {
+      throw new Error('no clipboard tool');
+    };
+    expect(await runVoice({ ...h.opts, paste: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+    const err = h.err.join('');
+    expect(err).not.toContain('the text is on the clipboard');
+    expect(err).toContain('--paste is not supported yet on linux, and the copy it falls back to failed, so the text is not on the clipboard');
+    expect(err).toContain('could not copy to the clipboard: no clipboard tool');
+  });
+
   it('--device picks the avfoundation index by name', async () => {
     const h = await harness();
     h.deps.waitForStop = async () => 'enter';
