@@ -65509,7 +65509,7 @@ function programPathFromUnit(unit) {
   const line2 = unit.split("\n").find((l) => l.startsWith("ExecStart="));
   if (!line2) return void 0;
   const words = [...line2.slice("ExecStart=".length).matchAll(/"((?:[^"\\]|\\.)*)"/g)].map((m) => m[1].replace(/\\(.)/g, "$1").replace(/%%/g, "%"));
-  return words[1];
+  return words[1]?.replace(/\$\$/g, "$");
 }
 function xmlUnescape2(s) {
   return s.replace(/&quot;/g, '"').replace(/&gt;/g, ">").replace(/&lt;/g, "<").replace(/&amp;/g, "&");
@@ -66648,6 +66648,9 @@ function taskUserId(env) {
 function unitQuote(s) {
   return `"${s.replace(/\\/g, "\\\\").replace(/"/g, '\\"').replace(/%/g, "%%")}"`;
 }
+function unitArg(s) {
+  return unitQuote(s).replace(/\$/g, "$$$$");
+}
 function systemdUnit(nodePath, cliPath, env) {
   const envLines = Object.entries(env ?? {}).map(([name, value]) => `Environment=${unitQuote(`${name}=${value}`)}`);
   return [
@@ -66658,7 +66661,7 @@ function systemdUnit(nodePath, cliPath, env) {
     "[Service]",
     "Type=simple",
     ...envLines,
-    `ExecStart=${unitQuote(nodePath)} ${unitQuote(cliPath)} serve`,
+    `ExecStart=${unitQuote(nodePath)} ${unitArg(cliPath)} serve`,
     "Restart=on-failure",
     "RestartSec=2",
     "",

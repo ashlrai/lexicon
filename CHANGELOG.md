@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon serve --install` on Linux doubles a `$` in the CLI path it writes into the unit's `ExecStart=`. systemd expands `${NAME}` in an argument and reads `$$` as one `$`, so a path holding either was started as another path. The node path (which systemd does not expand) and `Environment=` values are written as before, and `lexicon doctor` reads the doubled form back.
 - `lexicon serve --install` on Linux restarts the systemd unit after writing it (`systemctl --user enable`, then `restart`). It ran `enable --now`, which starts a stopped unit but leaves a running one alone, so reinstalling after an upgrade, a move or a new `LEXICON_PATH` kept the old process serving until the next login.
 - The `curl | sh` installer, when `lexicon` is not on PATH afterwards, looks for it in the npm prefix itself on Windows (Git Bash, MSYS, Cygwin), where npm puts its shims, converted with `cygpath` when there is one, and says to add that directory. It looked in `$(npm prefix -g)/bin`, which npm does not use there, so it never found the install and named a directory that does not exist. A failing `npm prefix -g` no longer ends the script before the hint either.
 - `lexicon uninstall claude` tells a local-scope `lexicon` registration to go with `claude mcp remove --scope local lexicon`. It said to pass `--scope user`, which is the run that had just reported it: `lexicon install` never registers at local scope and no `--scope` of uninstall reaches one.

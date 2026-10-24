@@ -502,6 +502,18 @@ function unitQuote(s: string): string {
   return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"').replace(/%/g, '%%')}"`;
 }
 
+/**
+ * An `ExecStart=` argument after the executable: `unitQuote`, with `$` doubled.
+ * systemd expands `${NAME}` (and `$NAME` as a word of its own) in arguments
+ * and reads `$$` as one `$`, so a CLI path holding `${...}` or `$$` was
+ * started as some other path. The executable itself is not expanded
+ * (`systemd-analyze verify` looks for a doubled `$$` literally), and
+ * `Environment=` values are never expanded, so both keep a single `$`.
+ */
+function unitArg(s: string): string {
+  return unitQuote(s).replace(/\$/g, '$$$$');
+}
+
 /** The systemd user unit, with one `Environment=` line per entry of `env`. */
 export function systemdUnit(nodePath: string, cliPath: string, env?: Readonly<Record<string, string>>): string {
   const envLines = Object.entries(env ?? {}).map(([name, value]) => `Environment=${unitQuote(`${name}=${value}`)}`);
@@ -513,7 +525,7 @@ export function systemdUnit(nodePath: string, cliPath: string, env?: Readonly<Re
     '[Service]',
     'Type=simple',
     ...envLines,
-    `ExecStart=${unitQuote(nodePath)} ${unitQuote(cliPath)} serve`,
+    `ExecStart=${unitQuote(nodePath)} ${unitArg(cliPath)} serve`,
     'Restart=on-failure',
     'RestartSec=2',
     '',

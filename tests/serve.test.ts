@@ -2639,6 +2639,15 @@ describe('lexicon serve (CLI)', () => {
       expect(programPathFromUnit(unit)).toBe('/opt/100%/index.js');
     });
 
+    // Catches: systemd expands `${NAME}` in an ExecStart argument and reads
+    // `$$` as `$`, so a CLI path holding either was started as another path.
+    it('systemd: a $ in the CLI path is doubled (not in the node path) and still round-trips', () => {
+      const unit = systemdUnit('/opt/n$de/bin/node', '/opt/a${HOME}$$b/index.js', { LEXICON_PATH: '/x/$y.yaml' });
+      expect(unit).toContain('ExecStart="/opt/n$de/bin/node" "/opt/a$${HOME}$$$$b/index.js" serve');
+      expect(unit).toContain('Environment="LEXICON_PATH=/x/$y.yaml"');
+      expect(programPathFromUnit(unit)).toBe('/opt/a${HOME}$$b/index.js');
+    });
+
     it('Windows: a serve.env next to serve.json, loaded with node --env-file', async () => {
       const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-schtasks-'));
       const envFile = path.join(path.dirname(env.globalPath), SERVE_ENV_FILE_NAME);
