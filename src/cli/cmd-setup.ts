@@ -47,6 +47,7 @@ import { bold, dim, fail, jsonError, safe, tildify } from './io.js';
 import { errorMessage } from '../util/errors.js';
 import type { IO } from './io.js';
 import { createPrompter, isInteractive } from './prompt.js';
+import { shellWord } from './cmd-install.js';
 import { SETUP_APPS, SETUP_CLIENTS } from './setup/types.js';
 import type { Ctx, SetupDeps, SetupOptions, SetupPlan, SetupSummary } from './setup/types.js';
 import { defaultSetupExec, isSetupApp, parseClientList, parsePackList } from './setup/detect.js';
@@ -150,7 +151,36 @@ function printPlan(ctx: Ctx, p: SetupPlan): void {
       : `   would export: ${p.wouldExport.length > 0 ? exports : dim('nothing (--app <app> writes one)')}`,
   );
   ctx.say();
-  ctx.say(dim('   run again without --dry-run to apply.'));
+  ctx.say(dim(`   to apply, run: ${setupApplyCommand(ctx.opts)}`));
+}
+
+/**
+ * The command a dry run names to apply its plan: `lexicon setup` with every
+ * flag this run was given except `--dry-run`, each word POSIX-quoted only when
+ * it needs it (as `installApplyCommand` does), so the line can be copied as it
+ * is. `--cwd` is named only when it is not the current directory.
+ */
+export function setupApplyCommand(opts: SetupOptions): string {
+  const words = ['lexicon'];
+  if (opts.cwd !== undefined && path.resolve(opts.cwd) !== process.cwd()) words.push('--cwd', opts.cwd);
+  words.push('setup');
+  if (opts.yes) words.push('--yes');
+  if (opts.clients !== undefined) words.push('--clients', opts.clients);
+  if (opts.company !== undefined) words.push('--company', opts.company);
+  if (opts.person !== undefined) words.push('--person', opts.person);
+  if (opts.phonetic !== undefined) words.push('--phonetic', opts.phonetic);
+  if (opts.app !== undefined) words.push('--app', opts.app);
+  if (opts.exportDir !== undefined) words.push('--export-dir', opts.exportDir);
+  if (typeof opts.packs === 'string') words.push('--packs', opts.packs);
+  else if (opts.packs === false) words.push('--no-packs');
+  if (opts.harvest === true) words.push('--harvest');
+  else if (opts.harvest === false) words.push('--no-harvest');
+  if (opts.serve === true) words.push('--serve');
+  else if (opts.serve === false) words.push('--no-serve');
+  if (opts.reseed) words.push('--reseed');
+  if (opts.home) words.push('--home', opts.home);
+  if (opts.json) words.push('--json');
+  return safe(words.map(shellWord).join(' '));
 }
 
 /**

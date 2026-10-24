@@ -544,7 +544,7 @@ function jsonSnippet(key: 'mcpServers' | 'servers', entry: StdioServerEntry | Vs
 }
 
 /** Quote one word of a printed command for a POSIX shell, only when it needs it. */
-function shellWord(s: string): string {
+export function shellWord(s: string): string {
   return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
 }
 

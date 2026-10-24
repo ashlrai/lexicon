@@ -652,6 +652,21 @@ describe('runSetup --dry-run', () => {
     expect(io.out).toContain('nothing here is prompted for');
   });
 
+  // Catches: the plan card ended "run again without --dry-run to apply", so the
+  // reader had to rebuild a command with a quoted company name and five flags.
+  it('ends with the exact command that applies it, keeping the flags this run was given', async () => {
+    const { io } = await run(
+      { yes: true, dryRun: true, clients: 'none', company: "Ashlr's AI", phonetic: 'ASH-ler', packs: false, harvest: false, serve: true, app: 'none' },
+      fakes(),
+    );
+    expect(io.out).toContain(
+      `to apply, run: lexicon --cwd ${cwd} setup --yes --clients none --company 'Ashlr'\\''s AI' --phonetic ASH-ler --app none --no-packs --no-harvest --serve`,
+    );
+    // An interactive dry run names the interactive command: no --yes was given.
+    const asked = await run({ dryRun: true }, fakes({ isInteractive: () => true }));
+    expect(asked.io.out).toMatch(new RegExp(`to apply, run: lexicon --cwd \\S+ setup\\n`));
+  });
+
   it('still lists the detected clients under --clients none, and serve/export stay off unless asked', async () => {
     const f = fakes({}, [path.join(home, '.claude'), '/Applications/Cursor.app']);
     const { plan } = await run({ yes: true, dryRun: true, clients: 'none', company: 'Ashlr.AI' }, f);

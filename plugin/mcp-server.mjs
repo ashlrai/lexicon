@@ -64553,7 +64553,29 @@ function printPlan(ctx, p) {
     asks("export") ? `   dictation export: ${dim("asks")} which app, and Enter writes ${exports}` : `   would export: ${p.wouldExport.length > 0 ? exports : dim("nothing (--app <app> writes one)")}`
   );
   ctx.say();
-  ctx.say(dim("   run again without --dry-run to apply."));
+  ctx.say(dim(`   to apply, run: ${setupApplyCommand(ctx.opts)}`));
+}
+function setupApplyCommand(opts) {
+  const words = ["lexicon"];
+  if (opts.cwd !== void 0 && import_node_path28.default.resolve(opts.cwd) !== process.cwd()) words.push("--cwd", opts.cwd);
+  words.push("setup");
+  if (opts.yes) words.push("--yes");
+  if (opts.clients !== void 0) words.push("--clients", opts.clients);
+  if (opts.company !== void 0) words.push("--company", opts.company);
+  if (opts.person !== void 0) words.push("--person", opts.person);
+  if (opts.phonetic !== void 0) words.push("--phonetic", opts.phonetic);
+  if (opts.app !== void 0) words.push("--app", opts.app);
+  if (opts.exportDir !== void 0) words.push("--export-dir", opts.exportDir);
+  if (typeof opts.packs === "string") words.push("--packs", opts.packs);
+  else if (opts.packs === false) words.push("--no-packs");
+  if (opts.harvest === true) words.push("--harvest");
+  else if (opts.harvest === false) words.push("--no-harvest");
+  if (opts.serve === true) words.push("--serve");
+  else if (opts.serve === false) words.push("--no-serve");
+  if (opts.reseed) words.push("--reseed");
+  if (opts.home) words.push("--home", opts.home);
+  if (opts.json) words.push("--json");
+  return safe(words.map(shellWord2).join(" "));
 }
 function printNext(ctx) {
   const s = ctx.summary;
