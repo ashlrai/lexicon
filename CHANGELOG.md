@@ -154,6 +154,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - MCP `learn_correction` refuses a blank or whitespace-only `heard` or `meant` at the schema with `must not be blank at heard` (or `meant`), as `remove_term` and `suggest_canonical` do. `.min(1)` let `"  "` through, and the handler then answered `nothing to learn: ...` without naming the argument. `remove_term`'s `canonical`, which had no description, now says what to pass, and all four arguments say a blank one is refused.
 - `lexicon doctor` reads the hooks in the repo's `.claude/settings.json` as well as the user settings.json, and says which scope each hook was found in (`(user scope)` or `(project scope)`). After `lexicon install claude --scope project --apply` it reported "hook not found", because only the user file was read. The `--json` report adds `paths.projectSettings`.
 - `lexicon serve` reads a request path that starts with `//` as a path: `new URL(req.url, base)` read `//health` as host `health` and path `/`, so the request was routed by the wrong path. It is now a 404 for the unknown path `//health` (`requestUrl`).
+- `lexicon serve`: a lexicon load that started before a write (`/learn`, `/add`, a pack install or uninstall) and finished after the write cleared the cache no longer puts the old lexicon back in the cache, where the next requests for up to two seconds answered without the write. Such a load still answers its own request.
 
 ## 0.5.6 (2026-10-18)
 

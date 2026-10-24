@@ -120,3 +120,28 @@ describe('requestUrl', () => {
     expect(ok.status).toBe(200);
   });
 });
+
+describe('lexicon cache', () => {
+  it('does not cache a load that started before a write and finished after its invalidation', async () => {
+    // A cwd nothing has loaded yet, so the first request misses the cache.
+    const cwd = path.join(home, 'race');
+    await fs.mkdir(cwd, { recursive: true });
+    const health = `/health?cwd=${encodeURIComponent(cwd)}`;
+    let release!: () => void;
+    gate.hold = new Promise<void>((r) => (release = r));
+    const started = new Promise<void>((r) => (gate.loaded = r));
+    // A load reads the one-term lexicon, then is held.
+    const stale = api('GET', health);
+    await started;
+    gate.loaded = undefined;
+    // The write lands and clears the cache while that load is in flight.
+    const add = await api('POST', '/add', { canonical: 'Vercel', aliases: ['versel'], cwd });
+    expect(add.status).toBe(200);
+    release();
+    const staleBody = (await (await stale).json()) as { terms: number };
+    expect(staleBody.terms).toBe(1);
+    // The next request sees the write, not the old lexicon the held load read.
+    const fresh = (await (await api('GET', health)).json()) as { terms: number };
+    expect(fresh.terms).toBe(2);
+  });
+});

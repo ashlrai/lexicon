@@ -904,6 +904,13 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
   let boundPort = 0;
   let inFlight = 0;
   const cache = new Map<string, CachedLexicon>();
+  /**
+   * Bumped by every write invalidation (and by stop). A load that started before a write and
+   * finished after the write's invalidation read the old file; it is
+   * returned to its own request but not cached, or it would put the old
+   * lexicon back for up to `reloadMs`.
+   */
+  let generation = 0;
 
   /**
    * The request's `cwd` (body field or `?cwd=`), or the server's own when it
@@ -931,12 +938,14 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     if (hit && now - hit.at < reloadMs) return hit;
     // No route reads a skipped project file's terms (each names it by path
     // only), so an untrusted or changed one is never parsed, as in the hook.
+    const startedAt = generation;
     const loaded = await loadLexicon({ cwd, ...storeOpts, parseSkipped: false });
+    const entry: CachedLexicon = { loaded, at: now };
+    if (generation !== startedAt) return entry;
     if (cache.size >= MAX_CACHED_CWDS && !cache.has(cwd)) {
       const oldest = cache.keys().next().value;
       if (oldest !== undefined) cache.delete(oldest);
     }
-    const entry: CachedLexicon = { loaded, at: now };
     cache.set(cwd, entry);
     return entry;
   }
@@ -955,6 +964,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
    * its load and matcher index are still exact.
    */
   function invalidateWritten(written: readonly { scope: TermScope; path: string }[]): void {
+    generation += 1;
     if (written.some((f) => f.scope === 'global')) {
       cache.clear();
       return;
@@ -980,6 +990,9 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
    * is still exact. Clearing the whole cache here made one normalize reload every cwd.
    */
   function invalidateHits(canonicals: readonly string[]): void {
+    // No generation bump: a load in flight here can miss only these hit
+    // counts (for at most reloadMs), and bumping on every counted normalize
+    // would keep busy cwds from ever being cached.
     const keys = new Set(canonicals.map((c) => c.trim().toLowerCase()));
     for (const [key, entry] of cache) {
       if (entry.loaded.merged.terms.some((t) => keys.has(t.canonical.trim().toLowerCase()))) cache.delete(key);
@@ -1506,6 +1519,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       server.close(() => resolve());
       server.closeAllConnections();
     });
+    generation += 1;
     cache.clear();
   }
 
