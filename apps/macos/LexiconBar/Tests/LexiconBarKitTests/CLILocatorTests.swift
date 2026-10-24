@@ -42,6 +42,14 @@ final class CLILocatorTests: XCTestCase {
         XCTAssertEqual(loc?.displayPath, "/x/dist/cli/index.js")
     }
 
+    // Catches: nvm versions were sorted as strings, so v9 came before v22 and
+    // v22.9.0 before v22.10.0, and the oldest Node ran the CLI.
+    func testNvmVersionsNewestFirstByNumber() {
+        XCTAssertEqual(CLILocator.newestFirst(["v9.11.2", "v22.1.0", "v18.20.4", "v22.10.0", "v22.9.0"]),
+                       ["v22.10.0", "v22.9.0", "v22.1.0", "v18.20.4", "v9.11.2"])
+        XCTAssertEqual(CLILocator.newestFirst([]), [])
+    }
+
     func testChildPATHDedupesAndKeepsLoginFirst() {
         let l = locator(existing: [], loginPath: "/opt/homebrew/bin:/usr/bin")
         let path = l.childPATH(current: "/usr/bin:/bin")

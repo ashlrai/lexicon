@@ -62,12 +62,33 @@ public struct CLILocator: Sendable {
         }
         dirs += ["/opt/homebrew/bin", "/usr/local/bin", "\(home)/.local/bin", "\(home)/.volta/bin",
                  "\(home)/.fnm/aliases/default/bin", "\(home)/.nvm/versions/node/current/bin", "/usr/bin"]
-        // nvm: any installed version, newest name first.
+        // nvm: any installed version, newest first.
         let nvm = "\(home)/.nvm/versions/node"
         if let versions = try? FileManager.default.contentsOfDirectory(atPath: nvm) {
-            dirs += versions.sorted(by: >).map { "\(nvm)/\($0)/bin" }
+            dirs += CLILocator.newestFirst(versions).map { "\(nvm)/\($0)/bin" }
         }
         return dirs
+    }
+
+    /// nvm version directory names (`v22.1.0`), newest first by number. A
+    /// plain string sort put `v9.11.2` ahead of `v22.1.0` (and `v22.9.0`
+    /// ahead of `v22.10.0`), so the oldest Node installed ran the CLI, which
+    /// needs Node 20 or newer.
+    public static func newestFirst(_ versions: [String]) -> [String] {
+        func key(_ name: String) -> [Int] {
+            let bare = name.hasPrefix("v") ? String(name.dropFirst()) : name
+            return bare.split(separator: ".").map { Int($0.prefix(while: { $0.isNumber })) ?? -1 }
+        }
+        return versions.sorted { a, b in
+            let ka = key(a)
+            let kb = key(b)
+            for i in 0..<max(ka.count, kb.count) {
+                let x = i < ka.count ? ka[i] : -1
+                let y = i < kb.count ? kb[i] : -1
+                if x != y { return x > y }
+            }
+            return a > b
+        }
     }
 
     public func findNode() -> URL? {

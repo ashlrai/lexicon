@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- The macOS menu bar app picks the newest nvm Node by version number, for running the CLI from a source checkout and in the PATH its children get. The installed versions were sorted as strings, so `v9.11.2` came before `v22.1.0` (and `v22.9.0` before `v22.10.0`), and the oldest Node ran a CLI that needs Node 20 or newer. (Not built here: no Swift toolchain on this machine.)
 - `lexicon install` and `lexicon uninstall` name a deep config file whole: the file merged into or removed from, the `undo:` line, Claude's `settings.json`, the server path and a refusal naming the file to fix (raw under `--json`). These went through the 200-character display cap, so a deep home directory's config path ended in an ellipsis.
 - `lexicon install claude-desktop` and `vscode` on Windows with a blank `%APPDATA%` write to `<home>\AppData\Roaming`. A blank value was used as is, so the config path came out relative and the file was written under the current directory, where the client never looks.
 - `lexicon trust` and `lexicon untrust` name a deep project file whole: in the preview, the `trust <path>?` question, the `trusted`, `already trusted` and `untrusted` lines, the registry line and the refusals. Every path went through the 200-character display cap, so the file being approved could end in an ellipsis where its name was.
