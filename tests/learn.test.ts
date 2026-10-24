@@ -513,7 +513,7 @@ describe('lexicon learn (CLI)', () => {
     expect(JSON.parse(meantOnly.out())).toEqual({
       ok: false,
       error: '"that should be Ashlr.AI" names the intended spelling (Ashlr.AI) but not what was heard',
-      nextStep: 'run: lexicon learn <heard> "Ashlr.AI"',
+      nextStep: 'run: lexicon learn <heard> Ashlr.AI',
     });
   });
 
@@ -557,11 +557,11 @@ describe('lexicon learn (CLI)', () => {
     const { io, out } = captureIO();
     expect(await runLearn(['ashler', 'Ashley'], { cwd: '/fake/repo' }, io)).toBe(0);
     expect(out()).toContain('warn: Ashler is also an alias of Ashlr.AI (global), so it may still be corrected to that');
-    expect(out()).toContain('lexicon remove "Ashlr.AI" --alias "Ashler"');
+    expect(out()).toContain('lexicon remove Ashlr.AI --alias Ashler --global');
 
     const ownTerm = captureIO();
     await runLearn(['Kubernetes', 'Kubectl'], { cwd: '/fake/repo' }, ownTerm.io);
-    expect(ownTerm.out()).toContain('warn: Kubernetes is its own term (project), so it may still be kept as written; to drop that term: lexicon remove "Kubernetes" --project');
+    expect(ownTerm.out()).toContain('warn: Kubernetes is its own term (project), so it may still be kept as written; to drop that term: lexicon remove Kubernetes --project');
 
     const json = captureIO();
     await runLearn(['Kubernetes', 'Kubectl'], { cwd: '/fake/repo', json: true }, json.io);
@@ -606,7 +606,8 @@ describe('lexicon learn (CLI)', () => {
     expect(JSON.parse(json.out())).toEqual({
       ok: false,
       error: 'only one spelling was given ("Mason White"); learn needs the spelling STT wrote and the one you meant, so nothing was learned',
-      nextStep: 'run: lexicon learn "Mason White" <meant>, where <meant> is the spelling you want',
+      // Quoted for the shell: single quotes on POSIX and in PowerShell alike.
+      nextStep: "run: lexicon learn 'Mason White' <meant>, where <meant> is the spelling you want",
     });
     expect(json.err()).not.toContain('usage:');
     expect(store.addTerm).not.toHaveBeenCalled();
@@ -631,9 +632,9 @@ describe('lexicon learn (CLI)', () => {
       expect(JSON.parse(out())).toEqual({
         ok: false,
         error: '"Ashlr.AI" and "Ashlr.AI" are the same spelling; nothing to learn',
-        nextStep: 'run: lexicon learn <heard> "Ashlr.AI", where <heard> is the misspelling STT wrote',
+        nextStep: 'run: lexicon learn <heard> Ashlr.AI, where <heard> is the misspelling STT wrote',
       });
-      expect(err()).toContain('lexicon: run: lexicon learn <heard> "Ashlr.AI"');
+      expect(err()).toContain('lexicon: run: lexicon learn <heard> Ashlr.AI');
     }
     expect(store.addTerm).not.toHaveBeenCalled();
   });
@@ -643,8 +644,12 @@ describe('lexicon learn (CLI)', () => {
     const code = await runLearn([], { from: 'spelled Zoë' }, io);
     expect(code).toBe(1);
     expect(err()).toContain('not what was heard');
-    expect(err()).toContain('lexicon learn <heard> "Zoë"');
+    expect(err()).toContain("lexicon learn <heard> 'Zoë'");
     expect(out()).toBe('');
+    // Catches: JSON quoting ("Z$oe") left a `$` for a POSIX shell to expand.
+    const dollar = captureIO();
+    expect(await runLearn([], { from: 'spelled Z$oe' }, dollar.io)).toBe(1);
+    expect(dollar.err()).toContain("lexicon learn <heard> 'Z$oe'");
   });
 
   it('--json prints only the error object on stdout when there is nothing to learn (usage goes to stderr)', async () => {

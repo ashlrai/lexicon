@@ -12,7 +12,7 @@ import { statSync } from 'node:fs';
 import { InvalidArgumentError } from 'commander';
 import type { Command } from 'commander';
 import path from 'node:path';
-import { TERM_CATEGORIES, commandLine, conflictRemoveCommand, isProjectTrustError, sanitizeForDisplay, sanitizeForDisplayMax, skippedProjectNote } from '../core/index.js';
+import { TERM_CATEGORIES, commandLine, isProjectTrustError, sanitizeForDisplay, sanitizeForDisplayMax, skippedProjectNote } from '../core/index.js';
 import type { LearnConflict, LoadedLexicon, TermCategory, TermHolder } from '../core/index.js';
 import { errorMessage } from '../util/errors.js';
 
@@ -496,8 +496,8 @@ export function untrustedAliasLine(canonical: string, alias: string, holder: { p
  */
 export function conflictLine(c: LearnConflict): string {
   return c.as === 'alias'
-    ? `warn: ${safe(c.spelling)} is also an alias of ${safe(c.canonical)} (${c.scope}), so it may still be corrected to that; to drop it: ${conflictRemoveCommand(c, safe)}`
-    : `warn: ${safe(c.spelling)} is its own term (${c.scope}), so it may still be kept as written; to drop that term: lexicon remove ${JSON.stringify(safe(c.canonical))} --${c.scope}`;
+    ? `warn: ${safe(c.spelling)} is also an alias of ${safe(c.canonical)} (${c.scope}), so it may still be corrected to that; to drop it: ${shownCommand(['lexicon', 'remove', c.canonical, '--alias', c.spelling, `--${c.scope}`])}`
+    : `warn: ${safe(c.spelling)} is its own term (${c.scope}), so it may still be kept as written; to drop that term: ${shownCommand(['lexicon', 'remove', c.canonical, `--${c.scope}`])}`;
 }
 
 /**

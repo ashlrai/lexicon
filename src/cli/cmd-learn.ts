@@ -6,7 +6,7 @@
 import type { Command } from 'commander';
 import { CORRECTION_EXAMPLES, computeStats, conflictNote, emptyStatsNote, learnCorrection, learnUnchangedNote, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, LoadedLexicon, TermScope } from '../core/index.js';
-import { conflictLine, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, skippedProjectJson, warnSkippedProject } from './io.js';
+import { conflictLine, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, shownCommand, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** On stderr: it follows an error, and stdout must stay parseable under --json. */
@@ -20,9 +20,15 @@ function usageHint(io: IO): void {
 // learn
 // ---------------------------------------------------------------------------
 
-/** `word` as one shell word in a command to copy: bare when it needs no quotes. */
-function argWord(word: string): string {
-  return /^[\p{L}\p{N}_.@+:,/-]+$/u.test(word) ? word : JSON.stringify(word);
+/**
+ * `lexicon learn <word> <meant>` or `lexicon learn <heard> <meant>` with the
+ * known words quoted for this platform's shell (shownCommand) and the
+ * placeholder left as written. JSON quoting left a `$` or a backtick in a
+ * spelling for a POSIX shell to expand, and is not how PowerShell quotes.
+ */
+function learnCommand(heard: string | undefined, meant: string | undefined): string {
+  const head = shownCommand(['lexicon', 'learn', ...(heard !== undefined ? [heard] : [])]);
+  return `${heard === undefined ? `${head} <heard>` : head} ${meant === undefined ? '<meant>' : shownCommand([meant])}`;
 }
 
 /**
@@ -34,7 +40,7 @@ export function oneSpellingRefusal(word: string): [error: string, nextStep: stri
   const spelling = word.trim().replace(/\s+/g, ' ');
   return [
     `only one spelling was given ("${spelling}"); learn needs the spelling STT wrote and the one you meant, so nothing was learned`,
-    `run: lexicon learn ${argWord(spelling)} <meant>, where <meant> is the spelling you want`,
+    `run: ${learnCommand(spelling, undefined)}, where <meant> is the spelling you want`,
   ];
 }
 
@@ -101,13 +107,13 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
       printJsonError(
         io,
         `"${opts.from ?? words.join(' ')}" names the intended spelling (${correction.meant}) but not what was heard`,
-        `run: lexicon learn <heard> ${JSON.stringify(correction.meant)}`,
+        `run: ${learnCommand(undefined, correction.meant)}`,
       );
     }
     io.stderr(
       `lexicon: "${safe(opts.from ?? words.join(' '))}" names the intended spelling (${safe(correction.meant)}) but not what was heard\n`,
     );
-    io.stderr(`run: lexicon learn <heard> ${JSON.stringify(correction.meant)}\n`);
+    io.stderr(`run: ${learnCommand(undefined, correction.meant)}\n`);
     return 1;
   }
   // The same spelling twice: learnCorrection refuses it with only an error, so
@@ -118,7 +124,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
   const meantNorm = correction.meant.trim().replace(/\s+/g, ' ');
   if (meantNorm && heardNorm === meantNorm) {
     const error = `"${heardNorm}" and "${meantNorm}" are the same spelling; nothing to learn`;
-    const nextStep = `run: lexicon learn <heard> ${JSON.stringify(meantNorm)}, where <heard> is the misspelling STT wrote`;
+    const nextStep = `run: ${learnCommand(undefined, meantNorm)}, where <heard> is the misspelling STT wrote`;
     if (opts.json) printJsonError(io, error, nextStep);
     io.stderr(`lexicon: ${safe(error)}\n`);
     io.stderr(`lexicon: ${safe(nextStep)}\n`);
