@@ -117,6 +117,8 @@ export interface StatusReply {
   tokenSet: boolean;
   /** Set when the server is up but answered 401 to the stored token. */
   tokenError?: string;
+  /** Set when the server is up and took the token, but a bearer route failed for another reason (so corrections fall back). */
+  apiError?: string;
   embeddedTerms: number;
   embeddedError?: string;
   recent: Correction[];
@@ -272,6 +274,7 @@ export function incompleteNotice(inc: NormalizeIncomplete): string {
  */
 export function connectionTestLine(s: StatusReply): string {
   if (s.server && s.tokenError) return `Reachable (lexicon ${s.server.version}), but ${s.tokenError}`;
+  if (s.server && s.apiError) return `Reachable (lexicon ${s.server.version}), but ${s.apiError.replace(/[.\s]+$/, '')}. Corrections use the embedded lexicon until that is fixed.`;
   if (s.server && !s.tokenSet) {
     return `Server is up, not paired: lexicon ${s.server.version}, ${countOf(s.server.terms, 'term')}. Corrections use the embedded lexicon until you run \`lexicon serve --pair\`.`;
   }
@@ -302,6 +305,7 @@ export function statusView(s: StatusReply): StatusView {
   const api = s.configuredMode === 'api';
   const parts: string[] = [`${countOf(s.embeddedTerms, 'embedded term')}`];
   if (api && s.tokenError) parts.push(s.tokenError);
+  else if (api && s.apiError) parts.push(`server: ${s.apiError}`);
   else if (api && !s.server) parts.push(s.serverError ? `server: ${s.serverError}` : 'server unreachable; start it with `lexicon serve`');
   if (api && !s.tokenSet) {
     parts.push(

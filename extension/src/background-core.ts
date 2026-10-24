@@ -298,16 +298,23 @@ export function createBackground(deps: BackgroundDeps): Background {
     // stored one. Prove it on a bearer route, or "Test connection" reports
     // Connected while every /normalize falls back with a 401.
     let tokenError: string | undefined;
+    // Any other failure of that bearer route (a 404 from another program
+    // that answers /health with ok, a 500 from a lexicon that does not
+    // parse, a timeout) fails every /normalize too. It was ignored, so the
+    // popup read "Local API" and Test connection "Connected" while every
+    // correction fell back to the embedded lexicon.
+    let apiError: string | undefined;
     if (settings.mode === 'api' && h.health && settings.token) {
       try {
         await fetchJson(settings, '/stats');
       } catch (err) {
         if (err instanceof TokenRejectedError) tokenError = err.message;
+        else apiError = errorMessage(err);
       }
     }
     // No token means every /normalize falls back (fetchJson refuses a bearer
     // route without one), so the popup must not read "Local API" then either.
-    const activeMode: Mode = settings.mode === 'api' && h.health && settings.token && !tokenError ? 'api' : 'embedded';
+    const activeMode: Mode = settings.mode === 'api' && h.health && settings.token && !tokenError && !apiError ? 'api' : 'embedded';
     const embeddedError = embedded.load(settings.yaml);
     return {
       ok: true,
@@ -317,6 +324,7 @@ export function createBackground(deps: BackgroundDeps): Background {
       serverError: h.error,
       tokenSet: settings.token.length > 0,
       ...(tokenError !== undefined ? { tokenError } : {}),
+      ...(apiError !== undefined ? { apiError } : {}),
       embeddedTerms: embedded.termCount(),
       embeddedError: embeddedError ?? undefined,
       recent: await getRecent(),

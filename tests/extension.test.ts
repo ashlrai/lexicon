@@ -780,6 +780,29 @@ describe('message routing (mock chrome.runtime) and background', () => {
     expect(good.tokenError).toBeUndefined();
   });
 
+  // Catches: a bearer route failing for a reason other than 401 (another
+  // program answering /health with ok, a lexicon that does not parse) was
+  // ignored, so status said Local API and Test connection said Connected
+  // while every /normalize fell back to the embedded lexicon.
+  it('status reports a /stats failure other than 401 instead of Connected', async () => {
+    const json = (body: unknown, status = 200): Response => ({ ok: status < 400, status, json: async () => body }) as unknown as Response;
+    const fetchMock = vi.fn(async (url: string) => {
+      if (url.endsWith('/health')) return json({ ok: true, version: '9.9.9', terms: 3 });
+      return json({ error: 'nope' }, 404);
+    });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore({ settings: { token: 'a'.repeat(32) } }), defaultYaml: EXAMPLE_YAML });
+    const status = (await bg.handle({ type: 'status' })) as StatusReply;
+    expect(status.server).toEqual({ ok: true, version: '9.9.9', terms: 3 });
+    expect(status.activeMode).toBe('embedded');
+    expect(status.tokenError).toBeUndefined();
+    expect(status.apiError).toMatch(/nope/);
+    const line = connectionTestLine(status);
+    expect(line.startsWith('Connected')).toBe(false);
+    expect(line).toMatch(/^Reachable \(lexicon 9\.9\.9\), but .*nope.*\. Corrections use the embedded lexicon until that is fixed\.$/);
+    expect(statusView(status).line).toMatch(/server: .*nope/);
+    expect(statusView(status).warn).toBe(true);
+  });
+
   // Catches: a token pasted with a character no header can carry (a smart
   // quote, a non-breaking space) made fetch throw a TypeError, which read as
   // "cannot reach lexicon serve" and left status saying Connected while every
