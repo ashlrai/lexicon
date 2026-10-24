@@ -25,6 +25,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- MCP `import_vocabulary` refuses a `previewToken` that is not the lowercase UUID a preview returns, at the argument (`at previewToken`). Any string was taken, so a 100 KB token or one with a trailing newline was looked up and answered "preview is missing".
 - MCP `import_dictionary` caps `content` at 8 MB of UTF-8 bytes, as documented and as `lexicon import` caps a file. The schema counted characters, so text of two-byte characters under 8M characters but over 8 MB passed and was refused later as `stdin is ... bytes`, naming the wrong input; it is now refused at `content`.
 - MCP `normalize_transcript` with empty or whitespace-only `text` carries a `note` (`no text to correct ...`), as `lexicon normalize` says on empty input; it answered `{ output: "", changed: false }` and nothing else, which read as text that needed no correction.
 - An alias, never word or canonical that differs from another only by Unicode normalisation (precomposed `Café` and `Cafe` plus a combining accent, as macOS and some keyboards write it) is one spelling: `lexicon add`, `learn`, MCP `add_term` and the project merge compare spellings in NFC, so `lexicon://me` no longer shows `Café | Café` and a second add in the other form finds the term. `lexicon remove <term> --alias` and MCP `remove_term` with `alias` find an alias given in the other form too.

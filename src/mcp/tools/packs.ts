@@ -230,6 +230,8 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
       }),
   );
 
+  /** The shape of randomUUID(), which mints every previewToken. */
+  const PREVIEW_TOKEN_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
   server.registerTool(
     'import_vocabulary',
     {
@@ -247,7 +249,13 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
           .describe('Explicit sources the user approved reading. Omitted sources returns only descriptions without probing or harvesting.'),
         apply: z.boolean().optional().describe('false/omitted = preview only: return availability and candidates, write nothing (default). true = write the candidates after the user approved the preview.'),
         scope: z.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
-        previewToken: z.string().optional().describe('Token from the approved preview; required to apply, refused without apply: true. Expires after five minutes or a server restart.'),
+        // The token is randomUUID()'s: anything else cannot name a preview, so
+        // it is refused here rather than looked up (a 100 KB string used to be).
+        previewToken: z
+          .string()
+          .regex(PREVIEW_TOKEN_RE, 'must be the previewToken a preview returned (a lowercase UUID)')
+          .optional()
+          .describe('Token from the approved preview (a lowercase UUID, as the preview returned it); required to apply, refused without apply: true. Expires after five minutes or a server restart.'),
         approvedCandidateIds: z.array(z.string().regex(/^[a-f0-9]{64}$/)).max(IMPORT_PREVIEW_MAX_CANDIDATES).optional().describe('Only candidate ids approved by the user from that preview; required to apply, refused without apply: true; empty means import nothing.'),
       },
     },

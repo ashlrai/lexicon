@@ -1289,6 +1289,24 @@ describe('lexicon MCP server', () => {
         } finally { await close(); }
       });
 
+      // Catches: previewToken was any string, so a 100 KB token or one with
+      // newlines reached the lookup and was answered "preview is missing"
+      // instead of being refused at the argument.
+      it('refuses a previewToken that is not a preview token at the schema', async () => {
+        const { client, close } = await connect();
+        try {
+          const preview = JSON.parse(textOf(await client.callTool({ name: 'import_vocabulary', arguments: { sources: ['github'] } })));
+          expect(preview.previewToken).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/);
+          for (const previewToken of ['x'.repeat(100_000), `${preview.previewToken}\n`, preview.previewToken.toUpperCase(), '']) {
+            const result = await client.callTool({ name: 'import_vocabulary', arguments: { apply: true, sources: ['github'], previewToken, approvedCandidateIds: [] } });
+            expect(result.isError).toBe(true);
+            expect(textOf(result)).toMatch(/at previewToken/);
+            expect(textOf(result)).not.toContain('preview is missing');
+          }
+          expect(mocks.applyImportCandidates).not.toHaveBeenCalled();
+        } finally { await close(); }
+      });
+
       it('rejects ids absent from a preview and changed destination scope', async () => {
         const { client, close } = await connect();
         try {
