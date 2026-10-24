@@ -390,6 +390,53 @@ describe('lexicon install codex --apply (TOML)', () => {
     expect(text).toBe(`model = "o3"\n\n[mcp_servers.other]\ncommand = "other"\n\n${block}\n`);
   });
 
+  // Catches: only a literal `[mcp_servers.lexicon]` header was recognised, so
+  // a quoted spelling of the same table got a second one appended, and Codex
+  // refuses a config.toml that defines a table twice.
+  it.each([
+    ['[mcp_servers."lexicon"]'],
+    ["[ mcp_servers . 'lexicon' ]  # mine"],
+    ['["mcp_servers".lexicon]'],
+  ])('replaces the lexicon table spelled %s instead of adding a second one', async (header) => {
+    const file = path.join(home, rel);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, `model = "o3"\n\n${header}\ncommand = "node"\nargs = ["/old/server.js"]\n\n[mcp_servers.other]\ncommand = "other"\n`);
+    await run('codex', { apply: true });
+    const text = await fs.readFile(file, 'utf8');
+    expect(text).toBe(`model = "o3"\n\n${block}\n\n[mcp_servers.other]\ncommand = "other"\n`);
+    expect((await run('codex', { apply: true })).io.out).toContain('nothing changed');
+  });
+
+  // Catches: an inline or dotted definition of the server under
+  // [mcp_servers] got a [mcp_servers.lexicon] table appended beside it.
+  it.each([
+    ['an inline table', '[mcp_servers]\nlexicon = { command = "node", args = ["/mine.js"] }\n', /an inline table under \[mcp_servers\] on line 2/],
+    ['a quoted inline table', '[mcp_servers]\n"lexicon" = { command = "node" }\n', /an inline table under \[mcp_servers\] on line 2/],
+    ['dotted keys', '[mcp_servers]\nlexicon.command = "node"\nlexicon.args = []\n', /dotted keys under \[mcp_servers\] on line 2/],
+    ['root dotted keys', 'model = "o3"\nmcp_servers.lexicon.command = "node"\n', /dotted keys in the root table on line 2/],
+    ['an inline mcp_servers', 'mcp_servers = { other = { command = "x" } }\n', /defines \[mcp_servers\] as an inline table on line 1/],
+    ['an array of tables', '[[mcp_servers.lexicon]]\ncommand = "node"\n', /array of tables/],
+  ])('refuses, writing nothing, when config.toml holds %s', async (_label, original, problem) => {
+    const file = path.join(home, rel);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, original);
+    const err = await run('codex', { apply: true }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(CliRefusal);
+    expect((err as CliRefusal).message).toMatch(problem);
+    expect((err as CliRefusal).message).toContain(`${file} already `);
+    expect((err as CliRefusal).nextStep).toContain(`[${CODEX_TABLE}] table shown above`);
+    expect(await fs.readFile(file, 'utf8')).toBe(original);
+  });
+
+  it('is not misled by keys under other tables or multi-line arrays', async () => {
+    const file = path.join(home, rel);
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    const original = '[mcp_servers.other]\nlexicon = "a value"\nargs = [\n  "lexicon",\n]\n';
+    await fs.writeFile(file, original);
+    await run('codex', { apply: true });
+    expect(await fs.readFile(file, 'utf8')).toBe(`${original}\n${block}\n`);
+  });
+
   it('writes ./.codex/config.toml with --project', async () => {
     await run('codex', { apply: true, project: true });
     expect(await fs.readFile(path.join(cwd, '.codex', 'config.toml'), 'utf8')).toBe(`${block}\n`);
@@ -965,6 +1012,17 @@ describe('LEXICON_PATH and LEXICON_CWD reach the installed server', () => {
     expect(merged).toContain(`LEXICON_CWD = ${JSON.stringify(work())}`);
     const again = await run('codex', { apply: true }, lexEnv());
     expect(again.io.out).toContain('nothing changed');
+  });
+
+  it('adds missing env keys to a quoted [mcp_servers."lexicon".env] sub-table', async () => {
+    const file = path.join(home, '.codex/config.toml');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, ['[mcp_servers."lexicon"]', 'command = "node"', 'args = ["/old.js"]', '', '[mcp_servers."lexicon".env]', 'FOO = "bar"', ''].join('\n'));
+    await run('codex', { apply: true }, lexEnv());
+    const merged = await fs.readFile(file, 'utf8');
+    expect(merged).not.toContain('env = {');
+    expect(merged).toContain(`[mcp_servers."lexicon".env]\nFOO = "bar"\nLEXICON_PATH = ${JSON.stringify(path.resolve(cwd, 'lex/my.yaml'))}\n`);
+    expect((await run('codex', { apply: true }, lexEnv())).io.out).toContain('nothing changed');
   });
 
   // Catches: the undo named only [mcp_servers.lexicon], so following it left

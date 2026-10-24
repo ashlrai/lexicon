@@ -64771,9 +64771,87 @@ function upsertTomlKeys(text, header, values) {
   const next = lines.join("\n");
   return { next, changed: next !== text };
 }
+function readTomlKey(text, from) {
+  const parts = [];
+  let i = from;
+  for (; ; ) {
+    while (text[i] === " " || text[i] === "	") i += 1;
+    const c = text[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (j < text.length && text[j] !== '"') j += text[j] === "\\" ? 2 : 1;
+      if (j >= text.length) return void 0;
+      try {
+        parts.push(JSON.parse(text.slice(i, j + 1)));
+      } catch {
+        return void 0;
+      }
+      i = j + 1;
+    } else if (c === "'") {
+      const j = text.indexOf("'", i + 1);
+      if (j < 0) return void 0;
+      parts.push(text.slice(i + 1, j));
+      i = j + 1;
+    } else {
+      const m = /^[A-Za-z0-9_-]+/.exec(text.slice(i));
+      if (!m) return void 0;
+      parts.push(m[0]);
+      i += m[0].length;
+    }
+    while (text[i] === " " || text[i] === "	") i += 1;
+    if (text[i] !== ".") return { parts, end: i };
+    i += 1;
+  }
+}
+function tomlHeaderKey(line2) {
+  const m = /^\s*(\[\[?)/.exec(line2);
+  if (!m) return void 0;
+  const array2 = m[1] === "[[";
+  const key = readTomlKey(line2, (m[0] ?? "").length);
+  if (!key) return void 0;
+  const close = array2 ? "]]" : "]";
+  if (!line2.startsWith(close, key.end)) return void 0;
+  return /^\s*(#.*)?$/.test(line2.slice(key.end + close.length)) ? { parts: key.parts, array: array2 } : void 0;
+}
+function sameKey(a, b) {
+  return a.length === b.length && a.every((p, i) => p === b[i]);
+}
 function tomlHeaderRe(header) {
-  const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  return new RegExp(`^\\s*\\[\\s*${escaped}\\s*\\]\\s*(#.*)?$`);
+  const want = header.split(".");
+  return {
+    test(line2) {
+      const key = tomlHeaderKey(line2);
+      return key !== void 0 && !key.array && sameKey(key.parts, want);
+    }
+  };
+}
+function codexServerElsewhere(text) {
+  const own2 = CODEX_TABLE.split(".");
+  const lines = text.split("\n");
+  let table = [];
+  for (const [n, l] of lines.entries()) {
+    const header = tomlHeaderKey(l);
+    if (header) {
+      table = header.parts;
+      if (header.array && sameKey(header.parts.slice(0, 2), own2)) {
+        return `defines the lexicon server as an array of tables ([[${header.parts.join(".")}]]) on line ${n + 1}`;
+      }
+      continue;
+    }
+    if (isBlankOrComment(l)) continue;
+    const key = readTomlKey(l, 0);
+    if (!key || l[key.end] !== "=") continue;
+    if (sameKey(table.slice(0, 2), own2)) continue;
+    const full = [...table, ...key.parts];
+    if (sameKey(full, own2.slice(0, 1))) {
+      return `defines [${own2[0]}] as an inline table on line ${n + 1}, and a [${CODEX_TABLE}] table cannot be added to one`;
+    }
+    if (!sameKey(full.slice(0, 2), own2)) continue;
+    const where = table.length === 0 ? "in the root table" : `under [${table.join(".")}]`;
+    const inline = full.length === 2 && /^\s*\{/.test(l.slice(key.end + 1));
+    return `defines the lexicon server as ${inline ? "an inline table" : "dotted keys"} ${where} on line ${n + 1}`;
+  }
+  return void 0;
 }
 function isBlankOrComment(line2) {
   const trimmed = line2.trim();
@@ -64843,6 +64921,13 @@ function mergeChanged(first, second) {
   return { next: second.next, changed: first.changed || second.changed };
 }
 function planToml(text, target) {
+  const elsewhere = codexServerElsewhere(text);
+  if (elsewhere) {
+    throw new CliRefusal(
+      `${target.file} already ${elsewhere}; nothing was changed`,
+      `replace that definition with the [${CODEX_TABLE}] table shown above (or remove it), then run this again`
+    );
+  }
   const { env, ...launch } = target.entry;
   const envTable = `${CODEX_TABLE}.env`;
   const subTable = env !== void 0 && text.split("\n").some((l) => tomlHeaderRe(envTable).test(l));

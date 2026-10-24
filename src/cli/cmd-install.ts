@@ -453,9 +453,114 @@ export function upsertTomlKeys(text: string, header: string, values: Record<stri
   return { next, changed: next !== text };
 }
 
-function tomlHeaderRe(header: string): RegExp {
-  const escaped = header.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-  return new RegExp(`^\\s*\\[\\s*${escaped}\\s*\\]\\s*(#.*)?$`);
+/**
+ * Read a TOML dotted key (`a.b`, `a."b"`, `'a' . b`) from `text` at `from`,
+ * up to the first character after it that is not whitespace. Undefined when
+ * there is no key there.
+ */
+function readTomlKey(text: string, from: number): { parts: string[]; end: number } | undefined {
+  const parts: string[] = [];
+  let i = from;
+  for (;;) {
+    while (text[i] === ' ' || text[i] === '\t') i += 1;
+    const c = text[i];
+    if (c === '"') {
+      let j = i + 1;
+      while (j < text.length && text[j] !== '"') j += text[j] === '\\' ? 2 : 1;
+      if (j >= text.length) return undefined;
+      try {
+        parts.push(JSON.parse(text.slice(i, j + 1)) as string);
+      } catch {
+        return undefined;
+      }
+      i = j + 1;
+    } else if (c === "'") {
+      const j = text.indexOf("'", i + 1);
+      if (j < 0) return undefined;
+      parts.push(text.slice(i + 1, j));
+      i = j + 1;
+    } else {
+      const m = /^[A-Za-z0-9_-]+/.exec(text.slice(i));
+      if (!m) return undefined;
+      parts.push(m[0]);
+      i += m[0].length;
+    }
+    while (text[i] === ' ' || text[i] === '\t') i += 1;
+    if (text[i] !== '.') return { parts, end: i };
+    i += 1;
+  }
+}
+
+/** The key of a `[table]` (or, with `array`, `[[table]]`) header line; undefined for any other line. */
+function tomlHeaderKey(line: string): { parts: string[]; array: boolean } | undefined {
+  const m = /^\s*(\[\[?)/.exec(line);
+  if (!m) return undefined;
+  const array = m[1] === '[[';
+  const key = readTomlKey(line, (m[0] ?? '').length);
+  if (!key) return undefined;
+  const close = array ? ']]' : ']';
+  if (!line.startsWith(close, key.end)) return undefined;
+  return /^\s*(#.*)?$/.test(line.slice(key.end + close.length)) ? { parts: key.parts, array } : undefined;
+}
+
+function sameKey(a: readonly string[], b: readonly string[]): boolean {
+  return a.length === b.length && a.every((p, i) => p === b[i]);
+}
+
+/**
+ * Matches the `[header]` line of the table `header` (a dotted key of bare
+ * parts) however its key is spelled: `[mcp_servers."lexicon"]`,
+ * `[ mcp_servers . 'lexicon' ]`. Only `[mcp_servers.lexicon]` matched, so a
+ * quoted spelling of the same table got a second one appended, and Codex
+ * refuses a file that defines a table twice.
+ */
+function tomlHeaderRe(header: string): { test(line: string): boolean } {
+  const want = header.split('.');
+  return {
+    test(line: string): boolean {
+      const key = tomlHeaderKey(line);
+      return key !== undefined && !key.array && sameKey(key.parts, want);
+    },
+  };
+}
+
+/**
+ * Where `text` defines the lexicon server other than through its own
+ * `[mcp_servers.lexicon]` table and sub-tables: an inline table or dotted
+ * keys under `[mcp_servers]` (`lexicon = { ... }`, `lexicon.command = ...`),
+ * dotted keys in the root table (`mcp_servers.lexicon.command = ...`) or an
+ * array of tables. A table appended beside any of these defines the server
+ * twice. Lines inside multi-line strings are not told apart, so one that
+ * looks like such a key there is reported too (a refusal, never a write).
+ */
+function codexServerElsewhere(text: string): string | undefined {
+  const own = CODEX_TABLE.split('.');
+  const lines = text.split('\n');
+  let table: string[] = [];
+  for (const [n, l] of lines.entries()) {
+    const header = tomlHeaderKey(l);
+    if (header) {
+      table = header.parts;
+      if (header.array && sameKey(header.parts.slice(0, 2), own)) {
+        return `defines the lexicon server as an array of tables ([[${header.parts.join('.')}]]) on line ${n + 1}`;
+      }
+      continue;
+    }
+    if (isBlankOrComment(l)) continue;
+    const key = readTomlKey(l, 0);
+    if (!key || l[key.end] !== '=') continue;
+    if (sameKey(table.slice(0, 2), own)) continue;
+    const full = [...table, ...key.parts];
+    if (sameKey(full, own.slice(0, 1))) {
+      // `mcp_servers = { ... }`: an inline table cannot be extended by a table header.
+      return `defines [${own[0]}] as an inline table on line ${n + 1}, and a [${CODEX_TABLE}] table cannot be added to one`;
+    }
+    if (!sameKey(full.slice(0, 2), own)) continue;
+    const where = table.length === 0 ? 'in the root table' : `under [${table.join('.')}]`;
+    const inline = full.length === 2 && /^\s*\{/.test(l.slice(key.end + 1));
+    return `defines the lexicon server as ${inline ? 'an inline table' : 'dotted keys'} ${where} on line ${n + 1}`;
+  }
+  return undefined;
 }
 
 /**
@@ -566,6 +671,13 @@ function mergeChanged(first: MergeResult<string>, second: MergeResult<string>): 
 
 /** Codex's config.toml `text` with the lexicon table merged in, and whether the env keys went into a sub-table. */
 function planToml(text: string, target: InstallTarget): MergeResult<string> & { subTable: boolean } {
+  const elsewhere = codexServerElsewhere(text);
+  if (elsewhere) {
+    throw new CliRefusal(
+      `${target.file} already ${elsewhere}; nothing was changed`,
+      `replace that definition with the [${CODEX_TABLE}] table shown above (or remove it), then run this again`,
+    );
+  }
   const { env, ...launch } = target.entry;
   const envTable = `${CODEX_TABLE}.env`;
   // A user who keeps the server's variables in a `[mcp_servers.lexicon.env]`
