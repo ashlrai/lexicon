@@ -1,12 +1,21 @@
 import { describe, expect, it } from 'vitest';
 import path from 'node:path';
 import { commandLine, conflictNote, conflictRemoveCommand, hostPlatform, posixShellWord, powerShellWord, shellWord } from '../src/core/index.js';
-import { shownCommand, stillInLine } from '../src/cli/io.js';
+import { shownCommand, shownWord, stillInLine } from '../src/cli/io.js';
 
 // The quoting of every command lexicon prints for a person to copy: POSIX on
 // macOS and Linux, PowerShell on Windows. Each platform branch is tested here
 // on any host, since CI on Linux cannot run the Windows one.
 describe('shell quoting for printed commands', () => {
+  // Catches: one word quoted with shownCommand got PowerShell's call operator,
+  // printing `lexicon learn <heard> & 'Zoë'` on Windows.
+  it('quotes a lone word without a call operator on every platform', () => {
+    expect(shownWord('Zoë', 'win32')).toBe("'Zoë'");
+    expect(shownWord('Zoë', 'linux')).toBe("'Zoë'");
+    expect(shownWord('Ashlr.AI', 'win32')).toBe('Ashlr.AI');
+    expect(shownCommand(['Zoë'], 'win32')).toBe("& 'Zoë'");
+  });
+
   it('leaves a plain word bare and single-quotes the rest for a POSIX shell', () => {
     expect(posixShellWord('/tmp/lexicon-x/index.yaml')).toBe('/tmp/lexicon-x/index.yaml');
     expect(posixShellWord('claude,cursor')).toBe('claude,cursor');

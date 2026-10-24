@@ -6,7 +6,7 @@
 import type { Command } from 'commander';
 import { CORRECTION_EXAMPLES, compareText, computeStats, conflictNote, emptyStatsNote, learnCorrection, learnUnchangedNote, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, LoadedLexicon, TermScope } from '../core/index.js';
-import { conflictLine, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, shownCommand, skippedProjectJson, warnSkippedProject } from './io.js';
+import { conflictLine, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, shownCommand, shownWord, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** On stderr: it follows an error, and stdout must stay parseable under --json. */
@@ -28,7 +28,7 @@ function usageHint(io: IO): void {
  */
 function learnCommand(heard: string | undefined, meant: string | undefined): string {
   const head = shownCommand(['lexicon', 'learn', ...(heard !== undefined ? [heard] : [])]);
-  return `${heard === undefined ? `${head} <heard>` : head} ${meant === undefined ? '<meant>' : shownCommand([meant])}`;
+  return `${heard === undefined ? `${head} <heard>` : head} ${meant === undefined ? '<meant>' : shownWord(meant)}`;
 }
 
 /**
