@@ -925,7 +925,7 @@ describe('claude registration is idempotent', () => {
     for (const [got, expected] of [
       [getOutput('node', SERVER), 'already registered with claude, nothing changed'],
       [getOutput('python3', '/home/me/my-lexicon.py'), 'a "lexicon" server that lexicon install did not write is registered with claude (python3 /home/me/my-lexicon.py); left as it is'],
-      [getOutput('node', '/old/plugin/mcp-server.mjs', 'Local config (private to you in this project)'), 'already registered with claude at local scope (node /old/plugin/mcp-server.mjs), nothing changed at user scope'],
+      [getOutput('node', '/old/plugin/mcp-server.mjs', 'Local config (private to you in this project)'), 'already registered with claude at user scope, nothing changed (claude mcp get shows the local-scope one)'],
       ['something else entirely', 'claude mcp get did not show its command to compare'],
     ] as const) {
       const { calls, exec } = claudeWith(got);
@@ -934,6 +934,30 @@ describe('claude registration is idempotent', () => {
       expect(io.out).toContain(expected);
       expect(calls.some((c) => c[1] === 'remove')).toBe(false);
     }
+  });
+
+  // Catches: `claude mcp get` shows the local-scope registration over the
+  // user-scope one `claude mcp add` refused on, and the local one was the one
+  // compared, so a stale user-scope registration was never repointed.
+  it('repoints a stale user-scope registration under a local-scope one, read from .claude.json', async () => {
+    const local = getOutput('python3', '/me/local.py', 'Local config (private to you in this project)');
+    await fs.writeFile(path.join(home, '.claude.json'), JSON.stringify({ mcpServers: { lexicon: { type: 'stdio', command: 'node', args: ['/old/checkout/plugin/mcp-server.mjs'] } } }));
+    const { calls, exec } = claudeWith(local);
+    const io = makeIO();
+    expect(await runInstall('claude', { apply: true, home, cwd }, io, { cliDir: CLI_DIR, env: { PATH: '' }, exec })).toBe(0);
+    expect(calls.map((c) => c.slice(0, 2).join(' '))).toEqual(['mcp add', 'mcp get', 'mcp remove', 'mcp add']);
+    expect(calls[2]).toEqual(['mcp', 'remove', '--scope', 'user', 'lexicon']);
+    expect(io.out).toContain(`repointed lexicon: node /old/checkout/plugin/mcp-server.mjs -> node ${SERVER}`);
+    expect(io.out).toContain('note: a local-scope lexicon registration takes precedence over the user-scope one here; to use this one: claude mcp remove --scope local lexicon');
+
+    // Already current at user scope: nothing changed, with the same note.
+    await fs.writeFile(path.join(home, '.claude.json'), JSON.stringify({ mcpServers: { lexicon: { command: 'node', args: [SERVER] } } }));
+    const same = claudeWith(local);
+    const io2 = makeIO();
+    expect(await runInstall('claude', { apply: true, home, cwd }, io2, { cliDir: CLI_DIR, env: { PATH: '' }, exec: same.exec })).toBe(0);
+    expect(io2.out).toContain('already registered with claude, nothing changed');
+    expect(io2.out).toContain('takes precedence over the user-scope one here');
+    expect(same.calls.some((c) => c[1] === 'remove')).toBe(false);
   });
 
   it('fails, naming the add to run, when the old registration was removed but the new add failed', async () => {

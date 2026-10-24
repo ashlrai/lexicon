@@ -28,7 +28,11 @@ import {
   isInstalledLexiconHook,
   isInstalledLexiconServer,
   parseClaudeMcpGet,
+  claudeRegistrationFile,
+  claudeUserConfigPath,
+  readClaudeRegistrationAt,
 } from './claude-settings.js';
+import type { ClaudeRegistrationFiles } from './claude-settings.js';
 import { CODEX_TABLE, INSTALL_CLIENTS, claudeSettingsPathFor, explainWrite, resolveServerPath, targetFor } from './cmd-install.js';
 import type { InstallClient, InstallTarget } from './cmd-install.js';
 
@@ -52,6 +56,8 @@ export interface UninstallDeps {
   exec?: (file: string, args: readonly string[]) => string;
   /** Claude settings file for the hooks. Default: as `lexicon install claude` picks it. */
   settingsPath?: string;
+  /** Claude's user config (`.claude.json`), read when `claude mcp get` shows a registration at another scope. Default `claudeUserConfigPath(env, home)`. */
+  claudeUserConfig?: string;
 }
 
 /**
@@ -266,7 +272,13 @@ async function uninstallToml(ctx: Ctx, target: InstallTarget): Promise<void> {
   report(ctx, { file: target.file, entry, outcome });
 }
 
-async function uninstallClaude(ctx: Ctx, scope: 'user' | 'project', settingsPath: string, exec: (file: string, args: readonly string[]) => string): Promise<boolean> {
+async function uninstallClaude(
+  ctx: Ctx,
+  scope: 'user' | 'project',
+  settingsPath: string,
+  exec: (file: string, args: readonly string[]) => string,
+  files: ClaudeRegistrationFiles,
+): Promise<boolean> {
   const { io } = ctx;
   let ok = true;
   line(io, bold('1. Remove the MCP server registration'));
@@ -285,12 +297,30 @@ async function uninstallClaude(ctx: Ctx, scope: 'user' | 'project', settingsPath
       line(io, dim(`   to remove it by hand: claude mcp remove --scope ${scope} lexicon`));
     }
   }
-  if (out !== undefined) {
-    const got = parseClaudeMcpGet(out);
+  let got = out === undefined ? undefined : parseClaudeMcpGet(out);
+  // `claude mcp get` has no --scope: it shows the registration that takes
+  // precedence (local, then project, then user), so one at this scope under
+  // another is read from its own file. It was reported as not registered here
+  // and left behind.
+  let shadow: string | undefined;
+  if (got?.scope !== undefined && got.scope !== scope) {
+    shadow = got.scope;
+    const own = await readClaudeRegistrationAt(scope, files);
+    if (own === undefined) {
+      ok = false;
+      got = undefined;
+      line(io, yellow(`   could not read ${safePath(claudeRegistrationFile(scope, files))} to check the ${scope}-scope registration (claude mcp get shows the ${shadow}-scope one)`));
+      line(io, dim(`   to remove it by hand: claude mcp remove --scope ${scope} lexicon`));
+    } else if (own === null) {
+      got = undefined;
+      report(ctx, { file: where, entry, outcome: 'absent' }, `the lexicon server is registered at ${shadow} scope, not ${scope} (pass --scope ${shadow === 'local' ? 'user' : shadow} for it, or claude mcp remove --scope ${shadow} lexicon)`);
+    } else {
+      got = own;
+    }
+  }
+  if (got !== undefined) {
     const launch = `${got.command ?? ''} ${got.args ?? ''}`.trim();
-    if (got.scope !== undefined && got.scope !== scope) {
-      report(ctx, { file: where, entry, outcome: 'absent' }, `the lexicon server is registered at ${got.scope} scope, not ${scope} (pass --scope ${got.scope === 'local' ? 'user' : got.scope} for it, or claude mcp remove --scope ${got.scope} lexicon)`);
-    } else if (got.command === undefined || got.args === undefined || !isInstalledLexiconServer(got.command, got.args)) {
+    if (got.command === undefined || got.args === undefined || !isInstalledLexiconServer(got.command, got.args)) {
       report(ctx, { file: where, entry, outcome: 'kept' }, launch || 'claude mcp get did not show its command');
     } else {
       let removedIt = true;
@@ -304,6 +334,10 @@ async function uninstallClaude(ctx: Ctx, scope: 'user' | 'project', settingsPath
         }
       }
       if (removedIt) report(ctx, { file: where, entry, outcome: 'removed' });
+    }
+    if (shadow !== undefined) {
+      const how = shadow === 'project' ? 'lexicon uninstall claude --scope project' : `claude mcp remove --scope ${shadow} lexicon`;
+      line(io, dim(`   note: a ${shadow}-scope lexicon registration is there too and stays; to remove it: ${how}`));
     }
   }
   line(io);
@@ -386,7 +420,10 @@ async function uninstallText(client: string | undefined, opts: UninstallOptions,
   if (name === 'claude') {
     const settingsPath =
       deps.settingsPath ?? (opts.home && !project ? path.join(claudeConfigDir(env, home), 'settings.json') : claudeSettingsPathFor(scope, cwd, env));
-    ok = await uninstallClaude(ctx, scope, settingsPath, deps.exec ?? defaultExec);
+    ok = await uninstallClaude(ctx, scope, settingsPath, deps.exec ?? defaultExec, {
+      userConfig: deps.claudeUserConfig ?? claudeUserConfigPath(env, home),
+      cwd,
+    });
     if (!project) {
       const settings = await readJsonFile(settingsPath);
       const installed = await readJsonFile(path.join(path.dirname(settingsPath), 'plugins', 'installed_plugins.json'));

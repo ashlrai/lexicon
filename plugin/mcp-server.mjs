@@ -63970,6 +63970,27 @@ function parseClaudeMcpGet(out) {
   if (args !== void 0) result.args = args;
   return result;
 }
+function claudeUserConfigPath(env = process.env, home) {
+  const override = env.CLAUDE_CONFIG_DIR?.trim();
+  return override ? import_node_path17.default.join(override, ".claude.json") : import_node_path17.default.join(home === void 0 ? homeDir() : usableHome(home), ".claude.json");
+}
+function claudeRegistrationFile(scope, files) {
+  return scope === "user" ? files.userConfig : import_node_path17.default.join(files.cwd, ".mcp.json");
+}
+async function readClaudeRegistrationAt(scope, files) {
+  const read = await readJsonFile(claudeRegistrationFile(scope, files));
+  if (!read.exists) return null;
+  if (read.error !== void 0) return void 0;
+  const servers = isRecord(read.value) ? read.value.mcpServers : void 0;
+  const entry = isRecord(servers) ? servers.lexicon : void 0;
+  if (entry === void 0) return null;
+  const result = { scope };
+  if (!isRecord(entry)) return result;
+  if (typeof entry.command === "string" && entry.command !== "") result.command = entry.command;
+  if (Array.isArray(entry.args) && entry.args.every((a) => typeof a === "string")) result.args = entry.args.join(" ");
+  else if (entry.args === void 0) result.args = "";
+  return result;
+}
 function mergeHookIntoSettings(settings, command, timeout = 5, events = ["UserPromptSubmit"]) {
   const base = isRecord(settings) ? structuredClone(settings) : {};
   if (base.hooks !== void 0 && !isRecord(base.hooks)) {
@@ -65079,6 +65100,7 @@ async function installText(client, opts, io, deps) {
       // uninstall reads it: a CLAUDE_CONFIG_DIR only the process had sent the
       // hooks to a file the given environment (and uninstall) never names.
       ...opts.home && !project ? { settingsPath: import_node_path19.default.join(claudeConfigDir(env, home), "settings.json") } : {},
+      ...opts.home ? { claudeUserConfig: claudeUserConfigPath(env, home) } : {},
       ...deps.onWritten ? { onWritten: deps.onWritten } : {},
       ...deps.exec ? { exec: deps.exec } : {},
       env
@@ -65168,7 +65190,8 @@ async function runInstallClaude(opts, io, deps = {}) {
     } catch (err) {
       const message = errorMessage(err);
       if (/already exists/i.test(message)) {
-        if (!refreshClaudeRegistration(io, exec, scope, mcpArgs, serverLaunch)) failed = true;
+        const files = { userConfig: deps.claudeUserConfig ?? claudeUserConfigPath(deps.env ?? process.env), cwd: import_node_path19.default.resolve(opts.cwd ?? process.cwd()) };
+        if (!await refreshClaudeRegistration(io, exec, scope, mcpArgs, serverLaunch, files)) failed = true;
         line(io, dim(`   undo: claude mcp remove --scope ${scope} lexicon`));
       } else {
         failed = true;
@@ -65221,7 +65244,7 @@ async function runInstallClaude(opts, io, deps = {}) {
   }
   return failed ? 1 : 0;
 }
-function refreshClaudeRegistration(io, exec, scope, mcpArgs, launch) {
+async function refreshClaudeRegistration(io, exec, scope, mcpArgs, launch, files) {
   let got;
   try {
     got = parseClaudeMcpGet(exec("claude", ["mcp", "get", "lexicon"]));
@@ -65229,6 +65252,21 @@ function refreshClaudeRegistration(io, exec, scope, mcpArgs, launch) {
     line(io, dim(`   already registered with claude, nothing changed (could not read it back with claude mcp get to compare: ${safeLines(errorMessage(err))})`));
     return true;
   }
+  const shadow = got.scope !== void 0 && got.scope !== scope ? got.scope : void 0;
+  if (shadow !== void 0) {
+    const own2 = await readClaudeRegistrationAt(scope, files);
+    if (!own2) {
+      const why = own2 === void 0 ? `${safePath(claudeRegistrationFile(scope, files))} could not be read to compare` : `claude mcp get shows the ${shadow}-scope one`;
+      line(io, dim(`   already registered with claude at ${scope} scope, nothing changed (${why})`));
+      return true;
+    }
+    got = own2;
+  }
+  const shadowNote = () => {
+    if (shadow !== void 0) {
+      line(io, dim(`   note: a ${shadow}-scope lexicon registration takes precedence over the ${scope}-scope one here; to use this one: claude mcp remove --scope ${shadow} lexicon`));
+    }
+  };
   const wanted = launch.args.join(" ");
   if (got.command === void 0 || got.args === void 0) {
     line(io, dim("   already registered with claude, nothing changed (claude mcp get did not show its command to compare)"));
@@ -65236,13 +65274,10 @@ function refreshClaudeRegistration(io, exec, scope, mcpArgs, launch) {
   }
   if (got.command === launch.command && got.args === wanted) {
     line(io, dim("   already registered with claude, nothing changed"));
+    shadowNote();
     return true;
   }
   const old = safePath(`${got.command} ${got.args}`.trim());
-  if (got.scope !== void 0 && got.scope !== scope) {
-    line(io, dim(`   already registered with claude at ${got.scope} scope (${old}), nothing changed at ${scope} scope`));
-    return true;
-  }
   if (!isInstalledLexiconServer(got.command, got.args)) {
     line(io, yellow(`   a "lexicon" server that lexicon install did not write is registered with claude (${old}); left as it is`));
     line(io, dim(`   to replace it: claude mcp remove --scope ${scope} lexicon, then run this again`));
@@ -65262,6 +65297,7 @@ function refreshClaudeRegistration(io, exec, scope, mcpArgs, launch) {
     return false;
   }
   line(io, green(`   repointed lexicon: ${old} -> ${safePath(`${launch.command} ${wanted}`)}`));
+  shadowNote();
   return true;
 }
 function quoteArg(s, platform = process.platform) {
@@ -67753,7 +67789,7 @@ async function uninstallToml(ctx, target) {
   }
   report(ctx, { file: target.file, entry, outcome });
 }
-async function uninstallClaude(ctx, scope, settingsPath, exec) {
+async function uninstallClaude(ctx, scope, settingsPath, exec, files) {
   const { io } = ctx;
   let ok = true;
   line(io, bold("1. Remove the MCP server registration"));
@@ -67772,12 +67808,26 @@ async function uninstallClaude(ctx, scope, settingsPath, exec) {
       line(io, dim(`   to remove it by hand: claude mcp remove --scope ${scope} lexicon`));
     }
   }
-  if (out !== void 0) {
-    const got = parseClaudeMcpGet(out);
+  let got = out === void 0 ? void 0 : parseClaudeMcpGet(out);
+  let shadow;
+  if (got?.scope !== void 0 && got.scope !== scope) {
+    shadow = got.scope;
+    const own2 = await readClaudeRegistrationAt(scope, files);
+    if (own2 === void 0) {
+      ok = false;
+      got = void 0;
+      line(io, yellow(`   could not read ${safePath(claudeRegistrationFile(scope, files))} to check the ${scope}-scope registration (claude mcp get shows the ${shadow}-scope one)`));
+      line(io, dim(`   to remove it by hand: claude mcp remove --scope ${scope} lexicon`));
+    } else if (own2 === null) {
+      got = void 0;
+      report(ctx, { file: where, entry, outcome: "absent" }, `the lexicon server is registered at ${shadow} scope, not ${scope} (pass --scope ${shadow === "local" ? "user" : shadow} for it, or claude mcp remove --scope ${shadow} lexicon)`);
+    } else {
+      got = own2;
+    }
+  }
+  if (got !== void 0) {
     const launch = `${got.command ?? ""} ${got.args ?? ""}`.trim();
-    if (got.scope !== void 0 && got.scope !== scope) {
-      report(ctx, { file: where, entry, outcome: "absent" }, `the lexicon server is registered at ${got.scope} scope, not ${scope} (pass --scope ${got.scope === "local" ? "user" : got.scope} for it, or claude mcp remove --scope ${got.scope} lexicon)`);
-    } else if (got.command === void 0 || got.args === void 0 || !isInstalledLexiconServer(got.command, got.args)) {
+    if (got.command === void 0 || got.args === void 0 || !isInstalledLexiconServer(got.command, got.args)) {
       report(ctx, { file: where, entry, outcome: "kept" }, launch || "claude mcp get did not show its command");
     } else {
       let removedIt = true;
@@ -67791,6 +67841,10 @@ async function uninstallClaude(ctx, scope, settingsPath, exec) {
         }
       }
       if (removedIt) report(ctx, { file: where, entry, outcome: "removed" });
+    }
+    if (shadow !== void 0) {
+      const how = shadow === "project" ? "lexicon uninstall claude --scope project" : `claude mcp remove --scope ${shadow} lexicon`;
+      line(io, dim(`   note: a ${shadow}-scope lexicon registration is there too and stays; to remove it: ${how}`));
     }
   }
   line(io);
@@ -67865,7 +67919,10 @@ async function uninstallText(client, opts, io, deps, changes) {
   let ok = true;
   if (name === "claude") {
     const settingsPath = deps.settingsPath ?? (opts.home && !project ? import_node_path28.default.join(claudeConfigDir(env, home), "settings.json") : claudeSettingsPathFor(scope, cwd, env));
-    ok = await uninstallClaude(ctx, scope, settingsPath, deps.exec ?? defaultExec);
+    ok = await uninstallClaude(ctx, scope, settingsPath, deps.exec ?? defaultExec, {
+      userConfig: deps.claudeUserConfig ?? claudeUserConfigPath(env, home),
+      cwd
+    });
     if (!project) {
       const settings = await readJsonFile(settingsPath);
       const installed = await readJsonFile(import_node_path28.default.join(import_node_path28.default.dirname(settingsPath), "plugins", "installed_plugins.json"));

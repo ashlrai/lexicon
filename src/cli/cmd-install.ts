@@ -36,9 +36,12 @@ import {
   launchFor,
   mergeHookIntoSettings,
   parseClaudeMcpGet,
+  claudeRegistrationFile,
+  claudeUserConfigPath,
+  readClaudeRegistrationAt,
   resolveIntegrationPaths,
 } from './claude-settings.js';
-import type { ClaudeMcpRegistration } from './claude-settings.js';
+import type { ClaudeMcpRegistration, ClaudeRegistrationFiles } from './claude-settings.js';
 
 // ---------------------------------------------------------------------------
 // Types
@@ -912,6 +915,7 @@ async function installText(
       // uninstall reads it: a CLAUDE_CONFIG_DIR only the process had sent the
       // hooks to a file the given environment (and uninstall) never names.
       ...(opts.home && !project ? { settingsPath: path.join(claudeConfigDir(env, home), 'settings.json') } : {}),
+      ...(opts.home ? { claudeUserConfig: claudeUserConfigPath(env, home) } : {}),
       ...(deps.onWritten ? { onWritten: deps.onWritten } : {}),
       ...(deps.exec ? { exec: deps.exec } : {}),
       env,
@@ -1006,6 +1010,8 @@ export interface InstallClaudeDeps {
   env?: NodeJS.ProcessEnv;
   /** Claude's plugin registry. Default `plugins/installed_plugins.json` beside `settingsPath`. */
   installedPluginsPath?: string;
+  /** Claude's user config (`.claude.json`), read when `claude mcp get` shows a registration at another scope. Default `claudeUserConfigPath(env)`. */
+  claudeUserConfig?: string;
 }
 
 /**
@@ -1093,7 +1099,8 @@ export async function runInstallClaude(
         // `claude mcp add` refuses to overwrite an existing entry. With the same
         // launch that is the idempotent case; one an earlier install wrote from
         // another location (a reinstall, a move to `npm i -g`) is repointed.
-        if (!refreshClaudeRegistration(io, exec, scope, mcpArgs, serverLaunch)) failed = true;
+        const files = { userConfig: deps.claudeUserConfig ?? claudeUserConfigPath(deps.env ?? process.env), cwd: path.resolve(opts.cwd ?? process.cwd()) };
+        if (!(await refreshClaudeRegistration(io, exec, scope, mcpArgs, serverLaunch, files))) failed = true;
         line(io, dim(`   undo: claude mcp remove --scope ${scope} lexicon`));
       } else {
         failed = true;
@@ -1163,13 +1170,14 @@ export async function runInstallClaude(
  * tool did not write and one that cannot be read back are left alone. Returns
  * false only when the refresh was attempted and failed.
  */
-function refreshClaudeRegistration(
+async function refreshClaudeRegistration(
   io: IO,
   exec: (file: string, args: readonly string[]) => string,
   scope: 'user' | 'project',
   mcpArgs: readonly string[],
   launch: { command: string; args: string[] },
-): boolean {
+  files: ClaudeRegistrationFiles,
+): Promise<boolean> {
   let got: ClaudeMcpRegistration;
   try {
     got = parseClaudeMcpGet(exec('claude', ['mcp', 'get', 'lexicon']));
@@ -1177,6 +1185,25 @@ function refreshClaudeRegistration(
     line(io, dim(`   already registered with claude, nothing changed (could not read it back with claude mcp get to compare: ${safeLines(errorMessage(err))})`));
     return true;
   }
+  // `claude mcp add` refused because this scope has one, but `claude mcp get`
+  // shows the registration that takes precedence (local, then project, then
+  // user), so the one at this scope is read from its file instead. Comparing
+  // the other one left a stale registration here never repointed.
+  const shadow = got.scope !== undefined && got.scope !== scope ? got.scope : undefined;
+  if (shadow !== undefined) {
+    const own = await readClaudeRegistrationAt(scope, files);
+    if (!own) {
+      const why = own === undefined ? `${safePath(claudeRegistrationFile(scope, files))} could not be read to compare` : `claude mcp get shows the ${shadow}-scope one`;
+      line(io, dim(`   already registered with claude at ${scope} scope, nothing changed (${why})`));
+      return true;
+    }
+    got = own;
+  }
+  const shadowNote = (): void => {
+    if (shadow !== undefined) {
+      line(io, dim(`   note: a ${shadow}-scope lexicon registration takes precedence over the ${scope}-scope one here; to use this one: claude mcp remove --scope ${shadow} lexicon`));
+    }
+  };
   const wanted = launch.args.join(' ');
   if (got.command === undefined || got.args === undefined) {
     line(io, dim('   already registered with claude, nothing changed (claude mcp get did not show its command to compare)'));
@@ -1184,13 +1211,10 @@ function refreshClaudeRegistration(
   }
   if (got.command === launch.command && got.args === wanted) {
     line(io, dim('   already registered with claude, nothing changed'));
+    shadowNote();
     return true;
   }
   const old = safePath(`${got.command} ${got.args}`.trim());
-  if (got.scope !== undefined && got.scope !== scope) {
-    line(io, dim(`   already registered with claude at ${got.scope} scope (${old}), nothing changed at ${scope} scope`));
-    return true;
-  }
   if (!isInstalledLexiconServer(got.command, got.args)) {
     line(io, yellow(`   a "lexicon" server that lexicon install did not write is registered with claude (${old}); left as it is`));
     line(io, dim(`   to replace it: claude mcp remove --scope ${scope} lexicon, then run this again`));
@@ -1210,6 +1234,7 @@ function refreshClaudeRegistration(
     return false;
   }
   line(io, green(`   repointed lexicon: ${old} -> ${safePath(`${launch.command} ${wanted}`)}`));
+  shadowNote();
   return true;
 }
 

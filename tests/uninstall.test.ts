@@ -240,6 +240,58 @@ describe('lexicon uninstall claude', () => {
     expect(broken.io.out).toContain('to remove it by hand: claude mcp remove --scope user lexicon');
   });
 
+  // Catches: `claude mcp get` has no --scope and shows the local-scope
+  // registration over the user-scope one, so the user-scope server an
+  // install wrote was reported as not registered and left behind.
+  it('removes the user-scope registration under a local-scope one, read from .claude.json', async () => {
+    const local = get('/me/local.js', 'Local config (private to you in this project)');
+    const calls: string[][] = [];
+    const exec = (_f: string, args: readonly string[]): string => {
+      calls.push([...args]);
+      return args[1] === 'get' ? local : 'Removed';
+    };
+    await fs.writeFile(path.join(home, '.claude.json'), JSON.stringify({ mcpServers: { lexicon: { type: 'stdio', command: 'node', args: [SERVER] } } }));
+    const { code, io } = await uninstall('claude', {}, { env: { PATH: '' }, exec });
+    expect(code).toBe(0);
+    expect(calls.at(-1)).toEqual(['mcp', 'remove', '--scope', 'user', 'lexicon']);
+    expect(io.out).toContain('removed lexicon server from claude mcp (user scope)');
+    expect(io.out).toContain('note: a local-scope lexicon registration is there too and stays; to remove it: claude mcp remove --scope local lexicon');
+
+    // A user-scope server of the user's own under it is named and kept.
+    await fs.writeFile(path.join(home, '.claude.json'), JSON.stringify({ mcpServers: { lexicon: { command: 'python3', args: ['/me/mine.py'] } } }));
+    calls.length = 0;
+    const kept = await uninstall('claude', {}, { env: { PATH: '' }, exec });
+    expect(kept.io.out).toContain('lexicon server was not written by lexicon install (python3 /me/mine.py); left as it is');
+    expect(calls.some((c) => c[1] === 'remove')).toBe(false);
+
+    // CLAUDE_CONFIG_DIR moves .claude.json.
+    const dir = path.join(home, 'alt');
+    await fs.mkdir(dir);
+    await fs.writeFile(path.join(dir, '.claude.json'), JSON.stringify({ mcpServers: { lexicon: { command: 'node', args: [SERVER] } } }));
+    calls.length = 0;
+    await uninstall('claude', {}, { env: { PATH: '', CLAUDE_CONFIG_DIR: dir }, exec, settingsPath: path.join(dir, 'settings.json') });
+    expect(calls.at(-1)).toEqual(['mcp', 'remove', '--scope', 'user', 'lexicon']);
+
+    // An unreadable one is a failure that says how to remove it by hand.
+    await fs.writeFile(path.join(home, '.claude.json'), '{ not json');
+    const broken = await uninstall('claude', {}, { env: { PATH: '' }, exec });
+    expect(broken.code).toBe(1);
+    expect(broken.io.out).toContain(`could not read ${path.join(home, '.claude.json')} to check the user-scope registration (claude mcp get shows the local-scope one)`);
+    expect(broken.io.out).toContain('to remove it by hand: claude mcp remove --scope user lexicon');
+  });
+
+  it('removes the project-scope registration under a local-scope one, read from .mcp.json', async () => {
+    const calls: string[][] = [];
+    const exec = (_f: string, args: readonly string[]): string => {
+      calls.push([...args]);
+      return args[1] === 'get' ? get('/me/local.js', 'Local config (private to you in this project)') : 'Removed';
+    };
+    await fs.writeFile(path.join(cwd, '.mcp.json'), JSON.stringify({ mcpServers: { lexicon: { command: 'node', args: [SERVER] } } }));
+    const { io } = await uninstall('claude', { scope: 'project' }, { env: { PATH: '' }, exec });
+    expect(calls.at(-1)).toEqual(['mcp', 'remove', '--scope', 'project', 'lexicon']);
+    expect(io.out).toContain('removed lexicon server from claude mcp (project scope)');
+  });
+
   it('at project scope reads the repo settings.json', async () => {
     await install('claude', { scope: 'project' }, { ...installDeps, exec: () => 'Added' });
     const exec = (_f: string, args: readonly string[]): string => (args[1] === 'get' ? get(SERVER, 'Project config (shared via .mcp.json)') : '');
