@@ -1698,6 +1698,12 @@ describe('runDoctorReport', () => {
     expect(report.versions.lexicon).toMatch(/^\d+\.\d+\.\d+/);
   });
 
+  it('counts one unique term in the singular', async () => {
+    vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: { version: 1, terms: [FIXED_LEXICON.terms[0]] }, exists: true });
+    const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '' }, exec: () => '' });
+    expect(report.checks.map((c) => c.message)).toContain('1 unique term across 1 file');
+  });
+
   /**
    * The three fields an agent is told to read instead of the check list:
    * "is lexicon set up for this user, and if not what is the one command

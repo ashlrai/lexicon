@@ -1,9 +1,9 @@
 /**
  * XDG Base Directory resolution, in one place.
  *
- * Four call sites used to read `XDG_CONFIG_HOME` four different ways — `||`
- * on `process.env` directly, a trimmed truthiness check, and twice with `??`
- * — so `XDG_CONFIG_HOME=""` produced a *relative* path in two of them and the
+ * Four call sites used to read `XDG_CONFIG_HOME` four different ways (`||`
+ * on `process.env` directly, a trimmed truthiness check, and twice with
+ * `??`), so `XDG_CONFIG_HOME=""` produced a *relative* path in two of them and the
  * `~/.config` fallback in the other two. The spec is explicit on both points:
  *
  *   "If $XDG_CONFIG_HOME is either not set or empty, a default equal to
@@ -12,7 +12,7 @@
  *    implementation encounters a relative path [...] it should consider the
  *    path invalid and ignore it."
  *
- * — https://specifications.freedesktop.org/basedir-spec/latest/
+ * Source: https://specifications.freedesktop.org/basedir-spec/latest/
  *
  * So: unset, blank, whitespace-only and relative all fall back, and the env
  * var wins in every other case. `env` and `home` are parameters rather than

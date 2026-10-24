@@ -154,7 +154,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
             ? { path: written, ...(writeOpts.leaveUntrusted ? untrustedWriteFields(written, `${added} name(s)`, true) : {}) }
             : {}),
           ...(failures.length > 0
-            ? { note: `${failures.length} of ${candidates.length} candidates were not added (first: ${failures[0]?.error}); see failures` }
+            ? { note: `${failures.length} of ${candidates.length} candidate${candidates.length === 1 ? ' was' : 's were'} not added (first: ${failures[0]?.error}); see failures` }
             : {}),
         };
         // Every write failed: nothing was added, so this is not a success the

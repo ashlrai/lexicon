@@ -27,6 +27,15 @@ describe('parseLexicon', () => {
     expect(parseLexicon({}).terms).toEqual([]);
   });
 
+  it('leaves the optional word lists out when the input has none (never, protectedWords, packs)', () => {
+    const lex = parseLexicon({ terms: [{ canonical: 'Kubernetes' }], settings: { fuzzy: true } });
+    expect(lex.terms[0]).toStrictEqual({ canonical: 'Kubernetes', aliases: [] });
+    expect(lex.settings).toStrictEqual({ fuzzy: true });
+    // An explicit empty list is the file's own and is kept.
+    expect(parseLexicon({ terms: [{ canonical: 'K', never: [] }] }).terms[0].never).toEqual([]);
+    expect(parseLexicon({ terms: [{ canonical: 'K', never: [' ', 'k8s'] }] }).terms[0].never).toEqual(['k8s']);
+  });
+
   it('treats null/undefined (empty YAML file) as an empty lexicon', () => {
     expect(parseLexicon(null)).toEqual(emptyLexicon());
     expect(parseLexicon(undefined)).toEqual(emptyLexicon());

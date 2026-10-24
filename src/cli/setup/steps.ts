@@ -334,7 +334,7 @@ export async function stepPacks(ctx: Ctx): Promise<void> {
   const byName = new Map(available.map((p) => [p.name, p]));
   const describe = (name: string): string => {
     const p = byName.get(name);
-    return p ? `${name} ${dim(`(${p.terms} terms)`)}` : name;
+    return p ? `${name} ${dim(`(${plural(p.terms, 'term')})`)}` : name;
   };
   const explicit = typeof ctx.opts.packs === 'string' ? parsePackList(ctx.opts.packs, available.map((p) => p.name)) : undefined;
   // A rerun (or setup_lexicon after `pack add`) must not offer what is already
@@ -394,12 +394,12 @@ export async function stepPacks(ctx: Ctx): Promise<void> {
   } else if (ctx.prompter) {
     chosen = defaults.length === 0 ? [] : await ctx.prompter.choose(
       '   add starter packs to the global lexicon (Enter keeps the checked ones):',
-      defaults.map((name) => ({ label: `${name}  ${dim(safe(`${byName.get(name)?.title ?? ''}, ${byName.get(name)?.terms ?? 0} terms`))}`, value: name })),
+      defaults.map((name) => ({ label: `${name}  ${dim(safe(`${byName.get(name)?.title ?? ''}, ${plural(byName.get(name)?.terms ?? 0, 'term')}`))}`, value: name })),
       { multi: true },
     );
     for (const p of available) {
       if (defaults.includes(p.name) || installed.includes(p.name)) continue;
-      if (await ctx.prompter.confirm(`   also add ${safe(p.name)} (${safe(p.title)}, ${p.terms} terms)?`, false)) chosen.push(p.name);
+      if (await ctx.prompter.confirm(`   also add ${safe(p.name)} (${safe(p.title)}, ${plural(p.terms, 'term')})?`, false)) chosen.push(p.name);
     }
     if (chosen.length === 0) {
       ctx.say(dim('   skipped; later: lexicon pack add developer'));
@@ -470,7 +470,7 @@ export async function stepHarvest(ctx: Ctx): Promise<void> {
     return;
   }
   if (ctx.prompter) {
-    ctx.say(`   found ${candidates.length} names in ${safe(tildify(root, ctx.home))}:`);
+    ctx.say(`   found ${plural(candidates.length, 'name')} in ${safe(tildify(root, ctx.home))}:`);
     const rows = candidates.map((c) => [c.canonical, c.category, String(c.count), c.suggestedAliases.slice(0, 3).join(', ')]);
     ctx.say(renderTable(rows, ['canonical', 'category', 'count', 'suggested aliases']).replace(/\n$/, ''));
     // Default no. This is a write inside the user's repository plus a trust

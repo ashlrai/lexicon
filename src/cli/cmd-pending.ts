@@ -103,6 +103,7 @@ export async function runPendingAccept(ids: readonly string[], opts: PendingOpti
       ),
     );
   }
+  if (!opts.json && res.accepted.length === 0 && res.unknown.length === 0) line(io, emptyQueueLine('accept', res.file));
   for (const a of res.accepted) {
     if (a.error) io.stderr(`lexicon: ${a.entry.id} not accepted: ${safe(a.error)} (it stays pending)\n`);
     else if (!opts.json) line(io, `accepted ${a.entry.id}: ${safe(a.entry.heard)} -> ${safe(a.result!.term.canonical)} in ${safe(a.result!.file.path)}`);
@@ -126,6 +127,14 @@ function partialFailure(failed: readonly string[], unknown: readonly string[]): 
   };
 }
 
+/**
+ * What `accept --all` / `reject --all` print on an empty queue, which used to
+ * be nothing at all: what happened and where entries come from.
+ */
+function emptyQueueLine(verb: 'accept' | 'reject', file: string): string {
+  return `no pending aliases to ${verb} (${safe(file)}); corrections the prompt hook notices are queued here, and lexicon pending lists them`;
+}
+
 /** A selected id the queue does not hold, and how to see the ones it does. */
 function unknownPendingLine(id: string): string {
   return `no pending alias with id ${safe(id)}; run lexicon pending list to see the ids`;
@@ -146,6 +155,7 @@ export async function runPendingReject(ids: readonly string[], opts: PendingOpti
       JSON.stringify({ ok: code === 0, ...partialFailure([], res.unknown), file: res.file, rejected: res.rejected.map((e) => e.id), unknown: res.unknown }, null, 2),
     );
   } else {
+    if (res.rejected.length === 0 && res.unknown.length === 0) line(io, emptyQueueLine('reject', res.file));
     for (const e of res.rejected) line(io, `rejected ${e.id}: ${safe(e.heard)} -> ${safe(e.meant)} (not learned)`);
   }
   for (const id of res.unknown) io.stderr(`lexicon: ${unknownPendingLine(id)}\n`);

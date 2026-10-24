@@ -171,6 +171,20 @@ describe('lexicon pending CLI', () => {
     expect((JSON.parse(io.out) as { pending: unknown[] }).pending).toEqual([]);
   });
 
+  // Catches: `accept --all` / `reject --all` on an empty queue printed nothing.
+  it('--all on an empty queue says so, with where entries come from', async () => {
+    const o = await opts();
+    for (const [verb, run] of [['accept', runPendingAccept], ['reject', runPendingReject]] as const) {
+      const io = makeIO();
+      expect(await run([], { ...o, all: true }, io)).toBe(0);
+      expect(io.out).toMatch(new RegExp(`^no pending aliases to ${verb} \\(.*pending-aliases\\.yaml\\); .*lexicon pending lists them\\n$`));
+      expect(io.err).toBe('');
+      const json = makeIO();
+      expect(await run([], { ...o, all: true, json: true }, json)).toBe(0);
+      expect(JSON.parse(json.out)).toMatchObject({ ok: true, unknown: [] });
+    }
+  });
+
   it('refuses without a selection and reports unknown ids', async () => {
     const o = await opts();
     let io = makeIO();

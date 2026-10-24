@@ -203,3 +203,17 @@ describe('the lexicon commands LexiconBar names exist', () => {
     expect(problems).toEqual([]);
   });
 });
+
+describe('LexiconBar onboarding sends the aliases the user kept', () => {
+  // Catches: switching off every suggested chip left `aliases` out of the
+  // POST /add body, so the server added its suggestions anyway. The server
+  // reads an explicit [] as "no aliases"; nil still asks for suggestions.
+  it('sends aliases: [] when every chip is off, and leaves the key out only for nil', () => {
+    const api = source('LocalAPI.swift');
+    expect(api).toContain('        if let aliases { body["aliases"] = aliases }\n');
+    expect(api).not.toMatch(/if let aliases, !aliases\.isEmpty/);
+    const model = source('Onboarding/OnboardingModel.swift');
+    expect(model).toContain('let aliases: [String]? = draft.chips.isEmpty ? nil : draft.selectedAliases\n');
+    expect(model).toContain('self.api.add(canonical: canonical, aliases: aliases)');
+  });
+});

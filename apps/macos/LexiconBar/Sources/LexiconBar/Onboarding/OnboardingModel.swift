@@ -307,7 +307,9 @@ final class OnboardingModel: ObservableObject {
         guard draft.isReady, !draft.submitted else { return }
         let id = draft.id
         let canonical = draft.trimmedCanonical
-        let aliases = draft.selectedAliases
+        // No chips yet (suggestions never arrived): nil, so the server suggests.
+        // Chips all switched off: [], so the term is added with none.
+        let aliases: [String]? = draft.chips.isEmpty ? nil : draft.selectedAliases
         drafts[index].submitted = true
         enqueueWrite { [weak self] done in
             guard let self else { done(); return }

@@ -99,7 +99,8 @@ const GROUPS_PER_SIDE = 4;
  */
 const TAIL = `\\s*(?:[.!?]+\\s+[\\s\\S]*)?[.!?]*\\s*$`;
 /** A correction may be introduced mid-message ("no, it's X not Y") but must end its sentence (see TAIL). */
-const LEAD = `(?:^|[\\s,;:—-])`;
+// \u2014 is the em dash, written as an escape so the source holds none.
+const LEAD = `(?:^|[\\s,;:\u2014-])`;
 
 type Side = 'meant' | 'heard';
 

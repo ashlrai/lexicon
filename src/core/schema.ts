@@ -200,10 +200,23 @@ function NonEmptyWord() {
  * each entry validated as a word and the list capped.
  */
 function WordList(maxItems: number, what: string) {
-  return z
-    .array(z.string())
-    .default([])
-    .transform((list) => list.map((s) => stripInvisible(s).trim()).filter((s) => s.length > 0))
+  return CleanWordList(z.array(z.string()).default([]), maxItems, what);
+}
+
+/**
+ * An optional word list (`never`, `protectedWords`, `packs`): absent stays
+ * absent. It used to share WordList's `.default([])`, so every term read from
+ * a file came back with `never: []` while a term `addTerm` had just written
+ * had no `never` key, and list/learn/add --json and the MCP results showed
+ * the two shapes side by side.
+ */
+function OptionalWordList(maxItems: number, what: string) {
+  return CleanWordList(z.array(z.string()), maxItems, what).optional();
+}
+
+function CleanWordList<T extends z.ZodType<string[] | undefined, unknown>>(list: T, maxItems: number, what: string) {
+  return list
+    .transform((list) => (list ?? []).map((s) => stripInvisible(s).trim()).filter((s) => s.length > 0))
     .pipe(
       z
         .array(
@@ -255,7 +268,7 @@ function buildTerm(category: ReturnType<typeof buildCategory>, scope: ReturnType
     // call. Only `writeLexiconFile` decides what a project file may gain: see
     // `pinProjectHits` in store.ts.
     hits: z.number().int().nonnegative().optional(),
-    never: WordList(LIMITS.aliases, 'never words per term').optional(),
+    never: OptionalWordList(LIMITS.aliases, 'never words per term'),
   });
 }
 
@@ -264,9 +277,9 @@ function buildSettings() {
     minConfidence: z.number().min(0).max(1).optional(),
     phonetic: z.boolean().optional(),
     fuzzy: z.boolean().optional(),
-    protectedWords: WordList(LIMITS.protectedWords, 'protected words').optional(),
+    protectedWords: OptionalWordList(LIMITS.protectedWords, 'protected words'),
     skipCode: z.boolean().optional(),
-    packs: WordList(LIMITS.aliases, 'packs').optional(),
+    packs: OptionalWordList(LIMITS.aliases, 'packs'),
   });
 }
 

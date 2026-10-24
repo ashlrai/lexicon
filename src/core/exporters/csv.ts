@@ -1,4 +1,4 @@
-/** Generic CSV: canonical,alias,category,phonetic — one row per alias. */
+/** Generic CSV: canonical,alias,category,phonetic, one row per alias. */
 import type { ExportOptions, Lexicon } from '../types.js';
 import { aliasPairs, csvField } from './shared.js';
 

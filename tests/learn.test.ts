@@ -59,6 +59,12 @@ afterEach(() => {
 describe('parseCorrection', () => {
   const ashlr = { heard: 'Ashler', meant: 'Ashlr.AI' };
 
+  // LEAD writes the em dash as an escape (tests/no-dashes.test.ts); it still leads a correction.
+  it('takes an em dash before the correction as a lead, as a comma is', () => {
+    expect(parseCorrection("ok\u2014it's Ashlr.AI not Ashler")).toEqual(ashlr);
+    expect(parseCorrection('ok\u2014replace Ashler with Ashlr.AI')).toEqual(ashlr);
+  });
+
   it.each([
     ["it's Ashlr.AI not Ashler", ashlr],
     ["it's Ashlr.AI, not Ashler", ashlr],
