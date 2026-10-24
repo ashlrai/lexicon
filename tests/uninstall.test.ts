@@ -13,6 +13,7 @@ import {
   runUninstall,
 } from '../src/cli/cmd-uninstall.js';
 import type { UninstallDeps, UninstallOptions } from '../src/cli/cmd-uninstall.js';
+import { shellWord } from '../src/core/index.js';
 import { makeIO } from './helpers.js';
 
 const CLI_DIR = '/opt/lexicon/dist/cli';
@@ -57,7 +58,7 @@ describe('lexicon uninstall <json client>', () => {
     const dry = await uninstall('cursor', { dryRun: true });
     expect(dry.code).toBe(0);
     expect(dry.io.out).toContain(`would remove mcpServers.lexicon from ${file}`);
-    expect(dry.io.out).toContain(`to remove it, run: lexicon --cwd ${cwd} uninstall cursor --home ${home}`);
+    expect(dry.io.out).toContain(`to remove it, run: lexicon --cwd ${shellWord(cwd)} uninstall cursor --home ${shellWord(home)}`);
     expect(await fs.readFile(file, 'utf8')).toContain('"lexicon"');
 
     const real = await uninstall('cursor');

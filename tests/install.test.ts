@@ -16,7 +16,8 @@ import {
 } from '../src/cli/cmd-install.js';
 import type { InstallDeps, InstallOptions } from '../src/cli/cmd-install.js';
 import { hookTimeoutFor, isVolatileEntry, launchCommandLine, launchFor } from '../src/cli/claude-settings.js';
-import { makeIO } from './helpers.js';
+import { shellWord } from '../src/core/index.js';
+import { makeIO, quotedForShell } from './helpers.js';
 
 const CLI_DIR = '/opt/lexicon/dist/cli';
 const SERVER = path.resolve(CLI_DIR, '../mcp/server.js');
@@ -667,9 +668,9 @@ describe('installing from an npx cache', () => {
 describe('a preview names the full command that applies it', () => {
   it('keeps --cwd, --project or --scope and --home', async () => {
     const project = await run('cursor', { project: true });
-    expect(project.io.out).toContain(`to write step 1, run: lexicon --cwd ${cwd} install cursor --project --home ${home} --apply`);
+    expect(project.io.out).toContain(`to write step 1, run: lexicon --cwd ${shellWord(cwd)} install cursor --project --home ${shellWord(home)} --apply\n`);
     const scoped = await run('codex', { scope: 'user' });
-    expect(scoped.io.out).toContain(`to write step 1, run: lexicon --cwd ${cwd} install codex --scope user --home ${home} --apply`);
+    expect(scoped.io.out).toContain(`to write step 1, run: lexicon --cwd ${shellWord(cwd)} install codex --scope user --home ${shellWord(home)} --apply\n`);
     expect(scoped.io.out).not.toContain('run again with --apply');
   });
 
@@ -677,12 +678,28 @@ describe('a preview names the full command that applies it', () => {
     const io = makeIO();
     const spaced = path.join(home, "it's here");
     await runInstall('windsurf', { home: spaced, cwd: process.cwd() }, io, baseDeps());
-    expect(io.out).toContain(`to write step 1, run: lexicon install windsurf --home '${spaced.replace("'", "'\\''")}' --apply`);
+    expect(io.out).toContain(`to write step 1, run: lexicon install windsurf --home ${quotedForShell(spaced)} --apply\n`);
   });
 
   it('for claude names steps 1 and 2 with the scope given', async () => {
     const { io } = await run('claude', { scope: 'project' });
-    expect(io.out).toContain(`to perform steps 1 and 2, run: lexicon --cwd ${cwd} install claude --scope project --home ${home} --apply`);
+    expect(io.out).toContain(`to perform steps 1 and 2, run: lexicon --cwd ${shellWord(cwd)} install claude --scope project --home ${shellWord(home)} --apply\n`);
+  });
+
+  // Catches: the command was capped at 200 characters like any displayed
+  // text, so a deep temp or home directory (macOS /var/folders/...) printed
+  // `--home /var/fo…` and a command that could not be run.
+  it('prints the whole command, however long the paths', async () => {
+    const deep = path.join(home, ...Array.from({ length: 8 }, (_, i) => `a-rather-long-directory-name-${i}`));
+    await fs.mkdir(deep, { recursive: true });
+    const io = makeIO();
+    await runInstall('cursor', { home: deep, cwd: process.cwd() }, io, baseDeps());
+    const command = `lexicon install cursor --home ${shellWord(deep)} --apply`;
+    expect(command.length).toBeGreaterThan(300);
+    expect(io.out).toContain(`to write step 1, run: ${command}\n`);
+    const claude = makeIO();
+    await runInstall('claude', { home: deep, cwd: process.cwd() }, claude, baseDeps());
+    expect(claude.out).toContain(`to perform steps 1 and 2, run: lexicon install claude --home ${shellWord(deep)} --apply\n`);
   });
 });
 

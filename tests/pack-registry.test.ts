@@ -15,8 +15,8 @@ import {
   runPackUpdate,
   runPackValidate,
 } from '../src/cli/cmd-pack.js';
-import { sha256Hex } from '../src/core/index.js';
-import { makeIO, scripted } from './helpers.js';
+import { sha256Hex, shellWord } from '../src/core/index.js';
+import { makeIO, quotedForShell, scripted } from './helpers.js';
 
 const PACK = `name: cardiology
 title: Cardiology terms
@@ -140,7 +140,7 @@ describe('pack add (community)', () => {
   it('off a terminal without --yes writes nothing, prints the full command and exits 1', async () => {
     const io = makeIO();
     expect(await runPackAdd(['example/cardiology@1'], { ...baseOpts(), project: true, cwd: dir }, io, { isInteractive: () => false })).toBe(1);
-    expect(io.err).toContain(`not a terminal, so nothing was written. Review the list above, then run: lexicon pack add example/cardiology@1 --registry ${indexPath} --project --yes`);
+    expect(io.err).toContain(`not a terminal, so nothing was written. Review the list above, then run: lexicon pack add example/cardiology@1 --registry ${shellWord(indexPath)} --project --yes`);
     expect(existsSync(path.join(dir, '.lexicon.yaml'))).toBe(false);
     expect(existsSync(globalPath)).toBe(false);
     const spaced = makeIO();
@@ -149,7 +149,7 @@ describe('pack add (community)', () => {
     writeFileSync(odd, readFileSync(indexPath));
     writeFileSync(path.join(path.dirname(odd), 'cardiology.yaml'), PACK);
     expect(await runPackAdd(['example/cardiology'], { globalPath, registry: odd }, spaced, { isInteractive: () => false })).toBe(1);
-    expect(spaced.err).toContain(`run: lexicon pack add example/cardiology --registry '${dir}/my reg'\\''s/index.yaml' --yes`);
+    expect(spaced.err).toContain(`run: lexicon pack add example/cardiology --registry ${quotedForShell(odd)} --yes`);
   });
 
   it('--yes installs after the preview', async () => {
@@ -241,7 +241,7 @@ describe('pack update off a terminal', () => {
     expect(await runPackUpdate([], { globalPath, registry: index2 }, io, { isInteractive: () => false })).toBe(1);
     expect(io.out).toContain('example/cardiology: update available');
     expect(io.out).toContain('skipped; nothing written.');
-    expect(io.err).toContain(`not a terminal, so nothing was written. Review the list above, then run: lexicon pack update example/cardiology --registry ${index2} --yes`);
+    expect(io.err).toContain(`not a terminal, so nothing was written. Review the list above, then run: lexicon pack update example/cardiology --registry ${shellWord(index2)} --yes`);
     expect(readFileSync(globalPath, 'utf8')).toBe(before);
   });
 });
@@ -632,7 +632,7 @@ describe('pack add with a vendored and a previewed or declined community ref rep
     expect(io.out).not.toContain('declined; nothing written.');
     expect(io.out).toContain('the terms are live');
     expect(io.out).toContain('1 pack installed (developer); declined: example/cardiology');
-    expect(io.err).toContain(`run: lexicon pack add example/cardiology --registry ${indexPath} --yes`);
+    expect(io.err).toContain(`run: lexicon pack add example/cardiology --registry ${shellWord(indexPath)} --yes`);
     expect(readFileSync(globalPath, 'utf8')).not.toContain('Metoprolol');
   });
 });

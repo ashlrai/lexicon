@@ -61292,6 +61292,21 @@ function demonstrate(lexicon, prefer = []) {
   };
 }
 
+// src/core/shell.ts
+function posixShellWord(s) {
+  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
+}
+function powerShellWord(s) {
+  return /^[\w+=:./\\-][\w@+=:./\\~-]*$/.test(s) ? s : `'${s.replace(/['\u2018-\u201B]/g, (c) => c + c)}'`;
+}
+function shellWord(s, platform = process.platform) {
+  return platform === "win32" ? powerShellWord(s) : posixShellWord(s);
+}
+function commandLine(words, platform = process.platform) {
+  const quoted = words.map((w) => shellWord(w, platform));
+  return `${platform === "win32" && words.length > 0 && quoted[0] !== words[0] ? "& " : ""}${quoted.join(" ")}`;
+}
+
 // src/mcp/shared.ts
 var import_node_fs13 = __toESM(require_node_fs());
 var import_node_path13 = __toESM(require_node_path());
@@ -61332,6 +61347,9 @@ function styler(output2 = process.stdout, env = process.env) {
 }
 var { bold, dim, red, green, yellow } = styler(process.stdout);
 var safe = sanitizeForDisplay;
+function shownCommand(words, platform = process.platform) {
+  return sanitizeForDisplayMax(commandLine(words, platform), Number.POSITIVE_INFINITY);
+}
 function safeLines(s) {
   return s.split("\n").map(safe).join("\n");
 }
@@ -61525,7 +61543,7 @@ function readableRoots(ctx, env = process.env) {
   }
   return [...new Set(dirs.map(realOrResolved))];
 }
-function shellWord(dir) {
+function shellWord2(dir) {
   return /^[\w@%+=:,./-]+$/.test(dir) ? dir : `'${dir.replace(/'/g, `'\\''`)}'`;
 }
 function isWithin(child, parent) {
@@ -62035,7 +62053,7 @@ var registerHarvestTools = (server, ctx) => {
       }
     },
     async ({ path: path28, limit, minCount, add }) => guarded(async () => {
-      const root = path28 ? containedPath(ctx, path28, (dir) => `harvest ${shellWord(dir)}`) : ctx.cwd;
+      const root = path28 ? containedPath(ctx, path28, (dir) => `harvest ${shellWord2(dir)}`) : ctx.cwd;
       const candidates = await harvestRepo(root, {
         ...limit !== void 0 ? { limit } : {},
         ...minCount !== void 0 ? { minCount } : {}
@@ -62094,7 +62112,7 @@ var registerHarvestTools = (server, ctx) => {
       }
     },
     async ({ cwd: cwdArg, limit }) => guarded(async () => {
-      const root = cwdArg ? containedPath(ctx, cwdArg, (dir) => `suggest --cwd ${shellWord(dir)}`) : ctx.cwd;
+      const root = cwdArg ? containedPath(ctx, cwdArg, (dir) => `suggest --cwd ${shellWord2(dir)}`) : ctx.cwd;
       const loaded = await loadLexicon({ cwd: root, parseSkipped: false });
       const history = await loadVoiceHistory(loaded.global.path).catch((err) => {
         log("loadVoiceHistory failed:", errorMessage(err));
@@ -62160,7 +62178,7 @@ var registerHarvestTools = (server, ctx) => {
       const here = resolvePaths({ cwd: ctx.cwd }).project ?? defaultProjectPath(ctx.cwd);
       if ((0, import_node_path14.resolve)(suggestion.path) !== (0, import_node_path14.resolve)(here)) {
         throw new Error(
-          `this suggestion is for the project lexicon ${suggestion.path}, but this server writes the project lexicon at ${here}; nothing was written. The user can apply it in that repo with ${cliCommand(`suggest --cwd ${shellWord((0, import_node_path14.dirname)(suggestion.path))} --apply`)}, or call apply_suggestion with scope "global" if they want it in the global lexicon instead.`
+          `this suggestion is for the project lexicon ${suggestion.path}, but this server writes the project lexicon at ${here}; nothing was written. The user can apply it in that repo with ${cliCommand(`suggest --cwd ${shellWord2((0, import_node_path14.dirname)(suggestion.path))} --apply`)}, or call apply_suggestion with scope "global" if they want it in the global lexicon instead.`
         );
       }
     }
@@ -62271,7 +62289,7 @@ var registerHarvestTools = (server, ctx) => {
 var import_node_fs14 = __toESM(require_node_fs());
 var import_node_path15 = __toESM(require_node_path());
 function explicitLexiconPath(ctx, path28) {
-  const hint = (target) => `trust ${shellWord(target)}`;
+  const hint = (target) => `trust ${shellWord2(target)}`;
   const requested = (0, import_node_path15.resolve)(ctx.cwd, path28);
   if (!(0, import_node_fs14.existsSync)(requested)) {
     if (!(0, import_node_fs14.existsSync)((0, import_node_path15.dirname)(requested))) return containedPath(ctx, path28, hint);
@@ -63389,7 +63407,7 @@ async function explainWrite(file2, write) {
     if (code !== "EACCES" && code !== "EPERM" && code !== "EROFS") throw err;
     throw new CliRefusal(
       `could not write ${safe(file2)} (${code}): it is read-only or not yours; nothing was changed`,
-      `make it writable (ls -l ${shellWord2(file2)} shows who owns it; chmod u+w ${shellWord2(file2)}) and run this again, or add the entry shown above to it by hand`
+      `make it writable (ls -l ${posixShellWord(file2)} shows who owns it; chmod u+w ${posixShellWord(file2)}) and run this again, or add the entry shown above to it by hand`
     );
   }
 }
@@ -63438,9 +63456,6 @@ async function alreadyInstalled(target) {
 function jsonSnippet(key, entry) {
   return JSON.stringify({ [key]: { lexicon: entry } }, null, 2);
 }
-function shellWord2(s) {
-  return /^[\w@%+=:,./-]+$/.test(s) ? s : `'${s.replace(/'/g, `'\\''`)}'`;
-}
 function installApplyCommand(client, opts) {
   const words = ["lexicon"];
   if (opts.cwd !== void 0 && import_node_path20.default.resolve(opts.cwd) !== process.cwd()) words.push("--cwd", opts.cwd);
@@ -63449,7 +63464,7 @@ function installApplyCommand(client, opts) {
   else if (opts.project) words.push("--project");
   if (opts.home) words.push("--home", opts.home);
   words.push("--apply");
-  return safe(words.map(shellWord2).join(" "));
+  return shownCommand(words);
 }
 function undoEntry(target, applied) {
   const file2 = safe(target.file);
@@ -63746,7 +63761,7 @@ function refreshClaudeRegistration(io, exec, scope, mcpArgs, launch) {
   return true;
 }
 function quoteArg(s, platform = process.platform) {
-  if (platform === "win32") return /[\s"]/.test(s) || import_node_path20.default.win32.isAbsolute(s) ? `"${s.replace(/"/g, "")}"` : s;
+  if (platform === "win32") return powerShellWord(s);
   return /[\s"'$`\\]/.test(s) ? `"${s.replace(/(["\\$`])/g, "\\$1")}"` : s;
 }
 
@@ -65828,7 +65843,7 @@ function setupApplyCommand(opts) {
   if (opts.reseed) words.push("--reseed");
   if (opts.home) words.push("--home", opts.home);
   if (opts.json) words.push("--json");
-  return safe(words.map(shellWord2).join(" "));
+  return shownCommand(words);
 }
 function printNext(ctx) {
   const s = ctx.summary;
@@ -66057,7 +66072,7 @@ function uninstallCommand(client, opts) {
   if (opts.scope !== void 0) words.push("--scope", opts.scope);
   else if (opts.project) words.push("--project");
   if (opts.home) words.push("--home", opts.home);
-  return safe(words.map(shellWord2).join(" "));
+  return shownCommand(words);
 }
 function report(ctx, change, detail) {
   ctx.changes.push(change);
@@ -66900,7 +66915,7 @@ var registerPackTools = (server, ctx) => {
           "pass path or content: path is a dictionary file in this workspace, content the dictionary text itself (format defaults to auto); nothing was imported"
         );
       }
-      const file2 = content === void 0 && path28 !== void 0 ? containedPath(ctx, path28, (f) => `import ${shellWord(f)}`) : path28 ?? "-";
+      const file2 = content === void 0 && path28 !== void 0 ? containedPath(ctx, path28, (f) => `import ${shellWord2(f)}`) : path28 ?? "-";
       const io = bufferIO();
       const writeOpts = scope === "project" ? await mcpWriteOpts(ctx) : {};
       const code = await runImport(

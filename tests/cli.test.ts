@@ -1434,11 +1434,11 @@ describe('install-claude', () => {
     expect(code).toBe(0);
     expect(exec).not.toHaveBeenCalled();
     // resolveIntegrationPaths resolves against cliDir, so these are backslash
-    // paths on Windows; and on Windows an absolute path is quoted in the
-    // printed `claude mcp add` line, where on POSIX it is bare.
+    // paths on Windows. The printed `claude mcp add` line is quoted for
+    // PowerShell there, which needs no quotes around a backslash path, so the
+    // path is bare on every platform.
     const { server, hook } = resolveIntegrationPaths(cliDir);
-    const shown = process.platform === 'win32' ? `"${server}"` : server;
-    expect(io.out).toContain(`claude mcp add --scope user lexicon -- node ${shown}`);
+    expect(io.out).toContain(`claude mcp add --scope user lexicon -- node ${server}\n`);
     expect(io.out).toContain('"UserPromptSubmit"');
     // The hook command is embedded in JSON, so its quotes arrive escaped.
     expect(io.out).toContain(JSON.stringify(`node "${hook}"`).slice(1, -1));

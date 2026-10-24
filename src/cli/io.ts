@@ -12,7 +12,7 @@ import { statSync } from 'node:fs';
 import { InvalidArgumentError } from 'commander';
 import type { Command } from 'commander';
 import path from 'node:path';
-import { TERM_CATEGORIES, conflictRemoveCommand, isProjectTrustError, sanitizeForDisplay, sanitizeForDisplayMax, skippedProjectNote } from '../core/index.js';
+import { TERM_CATEGORIES, commandLine, conflictRemoveCommand, isProjectTrustError, sanitizeForDisplay, sanitizeForDisplayMax, skippedProjectNote } from '../core/index.js';
 import type { LearnConflict, LoadedLexicon, TermCategory, TermHolder } from '../core/index.js';
 import { errorMessage } from '../util/errors.js';
 
@@ -95,6 +95,17 @@ export const { bold, dim, red, green, yellow } = styler(process.stdout);
  * quote any of those. `renderTable` applies it to every cell on its own.
  */
 export const safe: (s: string) => string = sanitizeForDisplay;
+
+/**
+ * A command this program composed for the user to copy and run: `words`
+ * quoted for the shell on `platform` by `commandLine` (POSIX, or PowerShell on
+ * win32), then sanitized like `safe` but never cut. A command shortened with
+ * an ellipsis cannot be run, and a deep temp or home directory pushed a
+ * printed `--home <dir> --apply` past `safe`'s 200 characters.
+ */
+export function shownCommand(words: readonly string[], platform: NodeJS.Platform = process.platform): string {
+  return sanitizeForDisplayMax(commandLine(words, platform), Number.POSITIVE_INFINITY);
+}
 
 /** `safe` per line, for text whose line breaks are the point (diff summaries, multi-line errors). */
 export function safeLines(s: string): string {

@@ -18,7 +18,7 @@ import type { Command } from 'commander';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord, readJsonFile, writeJsonFile } from '../util/json.js';
 import { homeDir } from '../util/xdg.js';
-import { CliRefusal, bold, dim, green, jsonError, line, safe, safeLines, safeMessage, yellow } from './io.js';
+import { CliRefusal, bold, dim, green, jsonError, line, safe, shownCommand, safeLines, safeMessage, yellow } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
   HOOK_EVENTS,
@@ -29,7 +29,7 @@ import {
   isInstalledLexiconServer,
   parseClaudeMcpGet,
 } from './claude-settings.js';
-import { CODEX_TABLE, INSTALL_CLIENTS, claudeSettingsPathFor, explainWrite, resolveServerPath, shellWord, targetFor } from './cmd-install.js';
+import { CODEX_TABLE, INSTALL_CLIENTS, claudeSettingsPathFor, explainWrite, resolveServerPath, targetFor } from './cmd-install.js';
 import type { InstallClient, InstallTarget } from './cmd-install.js';
 
 export interface UninstallOptions extends CommonOptions {
@@ -212,7 +212,7 @@ export function uninstallCommand(client: string, opts: UninstallOptions): string
   if (opts.scope !== undefined) words.push('--scope', opts.scope);
   else if (opts.project) words.push('--project');
   if (opts.home) words.push('--home', opts.home);
-  return safe(words.map(shellWord).join(' '));
+  return shownCommand(words);
 }
 
 interface Ctx {

@@ -27,3 +27,4 @@ export * from './suggestTerms.js';
 export * from './packs.js';
 export * from './registry.js';
 export * from './demo.js';
+export * from './shell.js';
