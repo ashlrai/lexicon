@@ -29,6 +29,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 ### Fixed
 
 - A LEXICON_PATH under a regular file (`notes.txt\lexicon.yaml`) is named as unreadable on Windows too. Windows answers such a path with ENOENT rather than ENOTDIR, so the lexicon read as missing there and only a later write failed.
+- `lexicon serve` compares the bearer token as fixed-length SHA-256 digests. It checked the length first and returned before `timingSafeEqual` for a token of another length, so the timing of a 401 told a caller how long the real token is.
 - `lexicon serve --uninstall` on Windows ends the Scheduled Task's running instance (`schtasks /End`) before deleting the task. `/Delete` alone left the server running until logout, while the command said it was removed. A failed `/End` is named and exits 1.
 - `lexicon serve --install` on macOS waits (up to 5 seconds) for `launchctl print` to stop finding the LaunchAgent after `launchctl bootout` before it runs `launchctl bootstrap`. `bootout` returns before launchd has removed the job, so a reinstall could bootstrap into that window and fail with `Bootstrap failed: 5: Input/output error`.
 - `lexicon serve --install` writes the LaunchAgent plist and the systemd unit through a temp file and a rename, still as mode 0644. They were written in place, which truncates the file first, so a full disk or a killed install left launchd or systemd a cut-short service file.

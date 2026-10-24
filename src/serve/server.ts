@@ -21,7 +21,7 @@
  * `createServer()` is exported so tests and the menu bar app can embed it;
  * signal handling lives in the CLI command (src/cli/cmd-serve.ts).
  */
-import { timingSafeEqual } from 'node:crypto';
+import { createHash, timingSafeEqual } from 'node:crypto';
 import { promises as fs, realpathSync } from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
@@ -666,9 +666,11 @@ function tokenMatches(header: string | undefined, token: string): boolean {
   if (!header) return false;
   const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
   if (!match) return false;
-  const given = Buffer.from(match[1], 'utf8');
-  const expected = Buffer.from(token, 'utf8');
-  if (given.length !== expected.length) return false;
+  // Fixed-length digests of both: a length check ahead of timingSafeEqual
+  // returned early for a token of the wrong length, so timing told a caller
+  // how long the real token is (32 to 128 hex characters are all valid).
+  const given = createHash('sha256').update(match[1], 'utf8').digest();
+  const expected = createHash('sha256').update(token, 'utf8').digest();
   return timingSafeEqual(given, expected);
 }
 
