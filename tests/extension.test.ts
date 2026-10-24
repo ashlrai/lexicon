@@ -1184,7 +1184,7 @@ describe('content: generic sites keep the Enter key working', () => {
 
   it('a form without a submit button and several text fields is not submitted, as a real Enter would not', async () => {
     document.body.innerHTML =
-      '<form id="f"><input id="u" type="text"><input id="p" type="password"><button type="button">log in</button></form>';
+      '<form id="f"><input id="u" type="text"><input id="n" type="text"><button type="button">save</button></form>';
     const u = document.getElementById('u') as HTMLInputElement;
     const form = document.getElementById('f') as HTMLFormElement;
     const submitted = vi.fn((e: Event) => e.preventDefault());
@@ -1196,6 +1196,35 @@ describe('content: generic sites keep the Enter key working', () => {
     await handle.idle();
     expect(u.value).toBe('ping Ashlr.AI');
     expect(submitted).not.toHaveBeenCalled();
+  });
+
+  // Catches: with "any site" on, Enter in a login form's username field
+  // rewrote the username ("ashler" -> "Ashlr.AI") before the form submitted.
+  it('never rewrites a username, email or code field, or a text field in a form with a password', async () => {
+    for (const html of [
+      '<form id="f"><input id="u" type="text" autocomplete="username"><button type="submit">go</button></form>',
+      '<form id="f"><input id="u" type="text" autocomplete="section-login email"><button type="submit">go</button></form>',
+      '<form id="f"><input id="u" type="text" autocomplete="one-time-code"><button type="submit">go</button></form>',
+      '<form id="f"><input id="u" type="text"><input type="password"><button type="submit">log in</button></form>',
+    ]) {
+      document.body.innerHTML = html;
+      const u = document.getElementById('u') as HTMLInputElement;
+      const form = document.getElementById('f') as HTMLFormElement;
+      const submitted = vi.fn((e: Event) => e.preventDefault());
+      form.addEventListener('submit', submitted);
+      const send = vi.fn(fakeSend);
+      handle = installContent({ doc: document, hostname: 'example.org', send, settings: { enabled: true, live: true }, liveDebounceMs: 5, precheckDebounceMs: 5 });
+      u.value = 'ashler';
+      u.focus();
+      u.dispatchEvent(new Event('input', { bubbles: true }));
+      await wait(20);
+      u.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+      await handle.idle();
+      expect(u.value, html).toBe('ashler');
+      expect(send, html).not.toHaveBeenCalled();
+      handle.destroy();
+      handle = null;
+    }
   });
 
   it('a form without a submit button and one text field is still submitted', async () => {

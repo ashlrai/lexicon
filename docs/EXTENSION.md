@@ -124,7 +124,7 @@ With **Local API** selected, the extension falls back to the embedded lexicon wh
 
 "Verified" means the built `content.js` was injected into the live page on that date with a fake `chrome.runtime` bridge (replies recorded from the real local API), `ping ashler about cooper netties` was typed, Enter was dispatched, and the composer read `ping Ashlr.AI about Kubernetes` with the toast shown; the re-dispatched Enter was swallowed by the harness so nothing was sent. "Assumed" rows sit behind a login wall and are taken from public DOM reports. These apps change their markup without notice; the table lives in `extension/src/adapters.ts` and every entry has a broad fallback. When a site stops working, fix that one row.
 
-Each site has an on/off switch in the popup (for the current tab) and in Options (all of them). **Any site** in Options asks for the optional `<all_urls>` permission and registers the content script everywhere else, using the focused text box as the composer.
+Each site has an on/off switch in the popup (for the current tab) and in Options (all of them). **Any site** in Options asks for the optional `<all_urls>` permission and registers the content script everywhere else, using the focused text box as the composer. A one-line field that holds an identifier is never a composer: one whose `autocomplete` names a username, email, one-time code, password, phone, URL or card field, and any text field in a form with a password field, so a login form's username is never rewritten.
 
 ## Popup
 
