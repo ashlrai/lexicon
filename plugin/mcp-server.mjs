@@ -61862,6 +61862,7 @@ var import_node_path22 = __toESM(require_node_path());
 
 // src/daemon/clipboard-backends.ts
 var import_node_child_process4 = __toESM(require_node_child_process());
+var CLIPBOARD_BACKEND_NAMES = ["pbcopy", "wl", "xclip", "xsel", "powershell"];
 var ExecError = class extends Error {
   constructor(cmd, exitCode, stderr) {
     super(`${cmd} exited with code ${exitCode ?? "null"}${stderr.trim() ? `: ${stderr.trim()}` : ""}`);
@@ -62009,7 +62010,9 @@ async function detectClipboardBackend(platform = process.platform, env = process
       throw new Error(`no clipboard tool found (${session}); ${LINUX_INSTALL_HINT}`);
     }
     default:
-      throw new Error(`clipboard daemon does not support platform "${platform}"`);
+      throw new Error(
+        `clipboard daemon does not support platform "${platform}"; pass --backend <${CLIPBOARD_BACKEND_NAMES.join("|")}> if one of those tools works here, or pipe the text through lexicon normalize instead`
+      );
   }
 }
 
@@ -64077,8 +64080,10 @@ async function runServeInstall(opts, io, deps = {}) {
     try {
       const created = await runAndReport(exec, io, "schtasks", ["/Create", "/TN", taskName, "/XML", xmlPath, "/F"]);
       if (created.code !== 0) {
-        io.stderr(`lexicon: could not create the Scheduled Task "${safe(taskName)}"; nothing is installed
-`);
+        io.stderr(
+          `lexicon: could not create the Scheduled Task "${safe(taskName)}"; nothing is installed. Fix the schtasks /Create error above and rerun \`lexicon serve --install\`, or run \`lexicon serve\` to start the local API in the foreground
+`
+        );
         return 1;
       }
     } finally {

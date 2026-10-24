@@ -226,6 +226,18 @@ function failed(r: Resolved, code: number, error: string, nextStep?: string): nu
   return code;
 }
 
+/**
+ * A failure with a next step: `lexicon voice: <error>` and the indented step
+ * on stderr, and both in the --json document. The step went only to --json
+ * before, so a terminal user saw the error alone. A step the error already
+ * names (a dshow error that says `--list-devices`) is not repeated.
+ */
+function refuseWith(r: Resolved, io: VoiceIO, error: string, nextStep: string): number {
+  const repeated = nextStep === DEVICE_HINT && error.includes('--list-devices');
+  io.stderr(`lexicon voice: ${error}\n${repeated ? '' : `  ${nextStep}\n`}`);
+  return failed(r, EXIT_ERROR, error, nextStep);
+}
+
 function jsonFailure(code: number, error: string, nextStep?: string): VoiceJsonFailure {
   return { ok: false, error, ...(nextStep ? { nextStep } : {}), code };
 }
@@ -657,8 +669,7 @@ async function transcribeCapture(
   try {
     loaded = await loadForVoice(r, opts);
   } catch (e) {
-    io.stderr(`lexicon voice: ${message(e)} (audio kept at ${wav})\n`);
-    return failed(r, EXIT_ERROR, `${message(e)} (audio kept at ${wav})`, 'fix the lexicon file (`lexicon doctor` names the problem), then transcribe the kept audio');
+    return refuseWith(r, io, `${message(e)} (audio kept at ${wav})`, 'fix the lexicon file (`lexicon doctor` names the problem), then transcribe the kept audio');
   }
   try {
     r.log('transcribing ...');
@@ -700,16 +711,14 @@ async function recordForeground(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps
   try {
     loaded = await loadForVoice(r, opts);
   } catch (e) {
-    io.stderr(`lexicon voice: ${message(e)}\n`);
-    return failed(r, EXIT_ERROR, message(e), 'fix the lexicon file (`lexicon doctor` names the problem), then run `lexicon voice` again');
+    return refuseWith(r, io, message(e), 'fix the lexicon file (`lexicon doctor` names the problem), then run `lexicon voice` again');
   }
 
   let input;
   try {
     input = await resolveInput({ platform: r.platform, ffmpeg: tools.ffmpeg, exec: r.exec, ...(opts.device ? { device: opts.device } : {}) });
   } catch (e) {
-    io.stderr(`lexicon voice: ${message(e)}\n`);
-    return failed(r, EXIT_ERROR, message(e), DEVICE_HINT);
+    return refuseWith(r, io, message(e), DEVICE_HINT);
   }
 
   await fs.mkdir(r.tmpDir, { recursive: true });
@@ -1039,8 +1048,7 @@ async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r
   try {
     input = await resolveInput({ platform: r.platform, ffmpeg: tools.ffmpeg, exec: r.exec, ...(opts.device ? { device: opts.device } : {}) });
   } catch (e) {
-    io.stderr(`lexicon voice: ${message(e)}\n`);
-    return failed(r, EXIT_ERROR, message(e), DEVICE_HINT);
+    return refuseWith(r, io, message(e), DEVICE_HINT);
   }
 
   const dir = await ensureVoiceDir(r.globalPath);
@@ -1061,8 +1069,7 @@ async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r
   } catch (e) {
     await clearState(r.globalPath);
     await fs.rm(wav, { force: true }).catch(() => undefined);
-    io.stderr(`lexicon voice: ${message(e)}\n`);
-    return failed(r, EXIT_ERROR, message(e), `check ffmpeg (\`${tools.ffmpeg} -version\`) and the input device (\`lexicon voice --list-devices\`), then try again`);
+    return refuseWith(r, io, message(e), `check ffmpeg (\`${tools.ffmpeg} -version\`) and the input device (\`lexicon voice --list-devices\`), then try again`);
   }
   await writeState(r.globalPath, { pid: child.pid, wav, startedAt: startedAt.toISOString() });
   // Sweep what is provably worthless (zero-byte captures, a claim breadcrumb a
@@ -1110,7 +1117,6 @@ async function listDevices(opts: VoiceOptions, io: VoiceIO, r: Resolved, deps: V
     else io.stdout(formatDeviceList(devices));
     return EXIT_OK;
   } catch (e) {
-    io.stderr(`lexicon voice: could not list devices: ${message(e)}\n`);
-    return failed(r, EXIT_ERROR, `could not list devices: ${message(e)}`);
+    return refuseWith(r, io, `could not list devices: ${message(e)}`, `check ffmpeg with \`${tools.ffmpeg} -version\`, or skip the list and pass the device by name: lexicon voice --device <name>`);
   }
 }

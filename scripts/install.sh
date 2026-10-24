@@ -96,11 +96,11 @@ if ! have lexicon; then
   if [ -x "${NPM_BIN}/lexicon" ]; then
     say "lexicon is installed in ${NPM_BIN} but that directory is not on PATH; add it, then run: lexicon setup" >&2
   fi
-  fail "lexicon not on PATH"
+  fail "lexicon not on PATH; open a new terminal (or run: hash -r) and run: lexicon --version, and if it is still missing, add the bin directory under: npm prefix -g"
 fi
-INSTALLED_VERSION="$(lexicon --version)" || fail "the installed lexicon did not answer --version"
+INSTALLED_VERSION="$(lexicon --version)" || fail "the installed lexicon did not answer --version; run lexicon --version to see its error, then rerun this installer"
 if [ -n "$EXPECTED_VERSION" ] && [ "$INSTALLED_VERSION" != "$EXPECTED_VERSION" ]; then
-  fail "lexicon on PATH reports ${INSTALLED_VERSION}, expected ${EXPECTED_VERSION}; fix PATH before running setup"
+  fail "lexicon on PATH reports ${INSTALLED_VERSION}, expected ${EXPECTED_VERSION}; fix PATH (command -v lexicon shows which one runs) before running setup"
 fi
 say "installed lexicon ${INSTALLED_VERSION}"
 

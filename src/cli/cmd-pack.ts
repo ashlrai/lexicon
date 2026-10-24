@@ -672,6 +672,10 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
   }
 }
 
+/** The `nextStep` of `pack validate` on a path that does not exist: it takes a pack YAML file, not a pack name. */
+const PACK_FILE_NOT_FOUND_NEXT_STEP =
+  'check the path (a relative one resolves against the current directory); validate takes a pack YAML file, so to see the packs you can add run lexicon pack list';
+
 /** `lexicon pack validate <file>`: the publish-time review bar for a community pack. Exit 1 on errors, 0 with warnings listed. */
 export async function runPackValidate(file: string, opts: PackCliOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
@@ -681,7 +685,7 @@ export async function runPackValidate(file: string, opts: PackCliOptions, io: IO
     try {
       text = await fs.readFile(abs, 'utf8');
     } catch (err) {
-      if (isEnoent(err)) throw new Error(`file not found: ${abs}`);
+      if (isEnoent(err)) throw new CliRefusal(`file not found: ${abs}`, PACK_FILE_NOT_FOUND_NEXT_STEP);
       throw err;
     }
     // A community pack is installed by its index entry's name, never by the

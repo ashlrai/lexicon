@@ -37,6 +37,11 @@ describe('LexiconBar messages name a next step', () => {
     ['App.swift', '(token ? "" : ". Run `lexicon serve --show` to create it.")'],
     ['Onboarding/OnboardingViews.swift', 'Button("Try again") { model.loadPacks() }'],
     ['Onboarding/OnboardingViews.swift', 'add packs later with `lexicon pack add <name>`.'],
+    ['FixEverywhere/NormalizeClient.swift', '"Local API unreachable; check it with `lexicon serve --status` and start it with `lexicon serve`. Cause: \\(why)"'],
+    [
+      'FixEverywhere/NormalizeClient.swift',
+      '"Local API returned an unexpected body, so `lexicon serve` and LexiconBar are likely different releases; update lexicon (npm i -g @ashlr/lexicon) or LexiconBar, then restart `lexicon serve`."',
+    ],
   ])('%s: %s', (file, text) => {
     expect(source(file)).toContain(text);
   });
@@ -50,6 +55,83 @@ describe('LexiconBar messages name a next step', () => {
     expect(prefs).toContain('Section("Hotkeys")');
     expect(prefs).toContain('Picker("Whisper model"');
     expect(source('Settings.swift')).toContain('"base.en"');
+  });
+});
+
+/**
+ * The string literals of a Swift source, interpolations included: `"..."`
+ * and `"""..."""`, with a `\\( ... )` interpolation scanned as code (so a
+ * literal nested inside one is its own entry), and comments skipped.
+ */
+function swiftStringLiterals(text: string): string[] {
+  const literals: string[] = [];
+  let i = 0;
+  const code = (closeOnParen: boolean): void => {
+    let depth = 0;
+    while (i < text.length) {
+      if (text.startsWith('//', i)) {
+        const end = text.indexOf('\n', i);
+        i = end === -1 ? text.length : end;
+      } else if (text.startsWith('/*', i)) {
+        const end = text.indexOf('*/', i + 2);
+        i = end === -1 ? text.length : end + 2;
+      } else if (text[i] === '"') {
+        stringLiteral();
+      } else if (text[i] === '(') {
+        depth++;
+        i++;
+      } else if (text[i] === ')') {
+        i++;
+        if (closeOnParen && depth-- === 0) return;
+      } else {
+        i++;
+      }
+    }
+  };
+  const stringLiteral = (): void => {
+    const multi = text.startsWith('"""', i);
+    const close = multi ? '"""' : '"';
+    i += close.length;
+    let body = '';
+    while (i < text.length && !text.startsWith(close, i)) {
+      if (text.startsWith('\\(', i)) {
+        i += 2;
+        body += '\\(...)';
+        code(true);
+      } else if (text[i] === '\\') {
+        body += text.slice(i, i + 2);
+        i += 2;
+      } else {
+        body += text[i];
+        i++;
+      }
+    }
+    i += close.length;
+    literals.push(body);
+  };
+  code(false);
+  return literals;
+}
+
+// Catches: a menu title with an en-dash ("lexicon CLI not found \u{2013} Preferences"), against the no-dash house style.
+describe('LexiconBar strings use no en or em dashes', () => {
+  it('scans literals, escapes and interpolations', () => {
+    expect(swiftStringLiterals('let a = "x \\u{2013} y" // "not \u2014 this"\nlet b = "p \\(f("q")) r"')).toEqual([
+      'x \\u{2013} y',
+      'q',
+      'p \\(...) r',
+    ]);
+  });
+
+  it('no Swift string literal in Sources holds one, written out or as \\u{...}', () => {
+    const dash = /[\u2013\u2014]|\\u\{0*201[34]\}/i;
+    const found = swiftFiles(SOURCES).flatMap((file) =>
+      swiftStringLiterals(readFileSync(file, 'utf8'))
+        .filter((literal) => dash.test(literal))
+        .map((literal) => `${path.relative(SOURCES, file)}: "${literal}"`),
+    );
+    expect(swiftFiles(SOURCES).flatMap((file) => swiftStringLiterals(readFileSync(file, 'utf8'))).length).toBeGreaterThan(200);
+    expect(found).toEqual([]);
   });
 });
 

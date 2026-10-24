@@ -294,6 +294,9 @@ export async function detectClipboardBackend(
       throw new Error(`no clipboard tool found (${session}); ${LINUX_INSTALL_HINT}`);
     }
     default:
-      throw new Error(`clipboard daemon does not support platform "${platform}"`);
+      throw new Error(
+        `clipboard daemon does not support platform "${platform}"; pass --backend <${CLIPBOARD_BACKEND_NAMES.join('|')}> if one of those tools works here, ` +
+          'or pipe the text through lexicon normalize instead',
+      );
   }
 }

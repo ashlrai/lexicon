@@ -121,6 +121,7 @@ describe.skipIf(process.platform === 'win32')('POSIX install script version and 
     const result = run({ TEST_INSTALLED_VERSION: '0.5.3' });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('expected 0.5.4');
+    expect(result.stderr).toContain('fix PATH (command -v lexicon shows which one runs) before running setup');
     expect(result.stdout).not.toContain('installed lexicon');
   });
 
@@ -200,6 +201,19 @@ describe.skipIf(process.platform === 'win32')('POSIX install script version and 
     const result = run({ TEST_VERSION_CODE: '1' });
     expect(result.status).toBe(1);
     expect(result.stderr).toContain('did not answer --version');
+    // Catches: the failure named no next step.
+    expect(result.stderr).toContain(
+      'lexicon install: the installed lexicon did not answer --version; run lexicon --version to see its error, then rerun this installer\n',
+    );
+  });
+
+  it('names a next step when the installed lexicon is not on PATH', () => {
+    rmSync(path.join(home, 'bin', 'lexicon'));
+    const result = run();
+    expect(result.status).toBe(1);
+    expect(result.stderr).toContain(
+      'lexicon install: lexicon not on PATH; open a new terminal (or run: hash -r) and run: lexicon --version, and if it is still missing, add the bin directory under: npm prefix -g\n',
+    );
   });
 });
 

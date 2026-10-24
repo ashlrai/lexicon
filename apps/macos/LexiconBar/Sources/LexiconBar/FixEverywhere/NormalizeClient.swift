@@ -21,9 +21,9 @@ final class NormalizeClient: @unchecked Sendable {
         var description: String {
             switch self {
             case .noCredentials(let path): return "serve.json not found at \(path); run `lexicon serve --install`."
-            case .transport(let why): return "Local API unreachable: \(why)"
+            case .transport(let why): return "Local API unreachable; check it with `lexicon serve --status` and start it with `lexicon serve`. Cause: \(why)"
             case .http(let code, let body): return "Local API returned \(code)\(body.isEmpty ? "" : ": \(body)")"
-            case .badBody: return "Local API returned an unexpected body."
+            case .badBody: return "Local API returned an unexpected body, so `lexicon serve` and LexiconBar are likely different releases; update lexicon (npm i -g @ashlr/lexicon) or LexiconBar, then restart `lexicon serve`."
             }
         }
     }

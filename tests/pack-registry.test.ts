@@ -310,6 +310,17 @@ describe('pack validate file handling', () => {
     expect(await runPackValidate(path.join(dir, 'nope.yaml'), { globalPath }, io)).toBe(1);
     expect(io.err).toContain('file not found');
     expect(io.err).not.toContain('unknown pack');
+    // Catches: the error named the path with no next step.
+    expect(io.err).toContain(
+      'lexicon: check the path (a relative one resolves against the current directory); validate takes a pack YAML file, so to see the packs you can add run lexicon pack list\n',
+    );
+    const json = makeIO();
+    expect(await runPackValidate(path.join(dir, 'nope.yaml'), { globalPath, json: true }, json)).toBe(1);
+    expect(JSON.parse(json.out)).toEqual({
+      ok: false,
+      error: `file not found: ${path.join(dir, 'nope.yaml')}`,
+      nextStep: 'check the path (a relative one resolves against the current directory); validate takes a pack YAML file, so to see the packs you can add run lexicon pack list',
+    });
   });
 });
 

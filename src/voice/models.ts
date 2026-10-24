@@ -164,13 +164,22 @@ export async function ensureModel(spec: string, opts: EnsureModelOptions): Promi
   const progress = opts.progress ?? ((s: string) => void process.stderr.write(`\r${s}`));
   log(`whisper model ${resolved.name} not found; fetching ${resolved.url} -> ${resolved.path}`);
   let lastPct = -1;
-  await download(resolved.url, resolved.path, (p) => {
-    const pct = p.total ? Math.floor((p.received / p.total) * 100) : Math.floor(p.received / 8_388_608);
-    if (pct !== lastPct) {
-      lastPct = pct;
-      progress(formatProgress(modelFileName(resolved.name), p));
-    }
-  });
+  try {
+    await download(resolved.url, resolved.path, (p) => {
+      const pct = p.total ? Math.floor((p.received / p.total) * 100) : Math.floor(p.received / 8_388_608);
+      if (pct !== lastPct) {
+        lastPct = pct;
+        progress(formatProgress(modelFileName(resolved.name), p));
+      }
+    });
+  } catch (e) {
+    // The failure alone ("fetch failed") said nothing about what to do next.
+    const why = e instanceof Error ? e.message : String(e);
+    throw new Error(
+      `could not download whisper model ${resolved.name}: ${why}; check the network and try again, ` +
+        `or save ${resolved.url} as ${resolved.path} yourself, or pass --model <file> with a ggml model you have`,
+    );
+  }
   log('');
   return { ...resolved, present: true };
 }

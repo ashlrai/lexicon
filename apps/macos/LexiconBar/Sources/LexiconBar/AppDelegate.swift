@@ -203,7 +203,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         let busy = voiceState == .transcribing || voiceState == .fixingClipboard
 
         if !available {
-            let item = NSMenuItem(title: "lexicon CLI not found \u{2013} Preferences\u{2026}", action: #selector(openPreferences), keyEquivalent: "")
+            let item = NSMenuItem(title: "lexicon CLI not found; set its path in Preferences\u{2026}", action: #selector(openPreferences), keyEquivalent: "")
             item.target = self
             item.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: nil)
             menu.addItem(item)
@@ -331,7 +331,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSMenuDelegate {
         showBubble.state = settings.showBubble ? .on : .off
         showBubble.toolTip = "A small panel near the caret after each fix, with Undo, Never and Add. Off falls back to a notification."
         if settings.fixEverywhere, !accessibilityTrusted {
-            let hint = add("Needs Accessibility permission \u{2013} open System Settings", #selector(openAccessibilitySettings), enabled: true, indent: 1)
+            let hint = add("Needs Accessibility permission; open System Settings", #selector(openAccessibilitySettings), enabled: true, indent: 1)
             hint.image = NSImage(systemSymbolName: "exclamationmark.triangle", accessibilityDescription: nil)
         }
     }

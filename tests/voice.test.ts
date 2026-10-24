@@ -1190,6 +1190,22 @@ describe('lexicon voice (foreground)', () => {
     expect(whisperCall(h)!.args).toEqual(expect.arrayContaining(['-m', path.join(h.dir, 'models', 'ggml-small.en.bin')]));
   });
 
+  // Catches: a failed download reported only "fetch failed", with no way forward.
+  it('a failed model download names the network, the file to save by hand and --model', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    h.deps.download = async () => {
+      throw new Error('fetch failed');
+    };
+    expect(await runVoice({ ...h.opts, model: 'small.en' }, h.io, h.deps)).toBe(EXIT_ERROR);
+    const dest = path.join(h.dir, 'models', 'ggml-small.en.bin');
+    expect(h.err.join('')).toContain(
+      `lexicon voice: could not download whisper model small.en: fetch failed; check the network and try again, ` +
+        `or save https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.en.bin as ${dest} yourself, ` +
+        'or pass --model <file> with a ggml model you have (audio kept at ',
+    );
+  });
+
   it('LEXICON_WHISPER_MODELS overrides the models directory', async () => {
     const h = await harness();
     const alt = path.join(h.dir, 'alt-models');
@@ -1359,6 +1375,36 @@ describe('lexicon voice --json failures', () => {
     h.deps.exec = async () => ({ code: 1, stdout: '', stderr: '' });
     expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
     expect(onlyDocument(h)).toMatchObject({ ok: false, code: EXIT_ERROR, nextStep: expect.stringContaining('--list-devices') });
+  });
+
+  // Catches: these next steps reached only the --json document; a terminal user saw the error alone.
+  it('without --json the next step is printed on stderr too', async () => {
+    const broken = await harness();
+    await fs.writeFile(broken.globalPath, 'version: 1\nterms: [\n');
+    expect(await runVoice(broken.opts, broken.io, broken.deps)).toBe(EXIT_ERROR);
+    expect(broken.err.join('')).toContain('\n  fix the lexicon file (`lexicon doctor` names the problem), then run `lexicon voice` again\n');
+
+    const spawnFails = await harness();
+    spawnFails.deps.spawn = () => {
+      throw new Error('spawn ENOENT');
+    };
+    expect(await runVoiceToggle(spawnFails.opts, spawnFails.io, spawnFails.deps)).toBe(EXIT_ERROR);
+    expect(spawnFails.err.join('')).toMatch(/lexicon voice: spawn ENOENT\n {2}check ffmpeg \(`\S+ -version`\) and the input device \(`lexicon voice --list-devices`\), then try again\n/);
+
+    const listFails = await harness();
+    listFails.deps.exec = async () => {
+      throw new Error('boom');
+    };
+    expect(await runVoiceListDevices({ ...listFails.opts, json: true }, listFails.io, listFails.deps)).toBe(EXIT_ERROR);
+    expect(listFails.err.join('')).toMatch(/lexicon voice: could not list devices: boom\n {2}check ffmpeg with `\S+ -version`, or skip the list and pass the device by name: lexicon voice --device <name>\n/);
+    expect(onlyDocument(listFails)).toMatchObject({ ok: false, error: 'could not list devices: boom', nextStep: expect.stringContaining('--device <name>') });
+
+    // A dshow error that already names --list-devices is not followed by the same step again.
+    const dshow = await harness({ platform: 'win32' });
+    dshow.deps.env = { PATH: dshow.binDir, LEXICON_FFMPEG_BIN: '/fake/bin/ffmpeg', LEXICON_WHISPER_BIN: '/fake/bin/whisper-cli' };
+    dshow.deps.exec = async () => ({ code: 1, stdout: '', stderr: '' });
+    expect(await runVoice(dshow.opts, dshow.io, dshow.deps)).toBe(EXIT_ERROR);
+    expect(dshow.err.join('').match(/--list-devices/g)).toHaveLength(1);
   });
 
   it('without --json stdout stays empty on a failure', async () => {
