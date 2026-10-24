@@ -641,9 +641,12 @@ describe('message routing (mock chrome.runtime) and background', () => {
       expect(learn.message).toContain(token ? 'rejected the token' : 'No API token set');
       expect(learn.message).toContain('Sync from local API replaces');
       expect(await bg.handle({ type: 'normalize', text: 'ping quorbix' })).toMatchObject({ ok: true, mode: 'embedded', output: 'ping Quorbyx' });
-      // A server that refuses the correction itself is not overridden by the embedded copy.
+      // A server that refuses the correction itself is not overridden by the
+      // embedded copy. A fresh background: this one backs off from the token
+      // the server just rejected, so it would not ask.
       learnStatus = 400;
-      if (token) expect(await bg.handle({ type: 'learn', heard: 'Hetznr', meant: 'Hetzner' })).toMatchObject({ ok: false });
+      const fresh = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore({ settings: { token } }), defaultYaml: EXAMPLE_YAML });
+      if (token) expect(await fresh.handle({ type: 'learn', heard: 'Hetznr', meant: 'Hetzner' })).toMatchObject({ ok: false });
     }
   });
 

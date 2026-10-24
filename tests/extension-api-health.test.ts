@@ -9,6 +9,7 @@ import { resolve } from 'node:path';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import { createBackground } from '../extension/src/background-core.js';
 import type { KeyValueStore } from '../extension/src/background-core.js';
+import { TOKEN_BACKOFF_MS, connectionTestLine, statusView } from '../extension/src/shared.js';
 import type { NormalizeReply, StatusReply } from '../extension/src/shared.js';
 
 const EXAMPLE_YAML = readFileSync(resolve(process.cwd(), 'examples/lexicon.example.yaml'), 'utf8');
@@ -82,5 +83,62 @@ describe('extension health cache', () => {
     await bg.handle({ type: 'normalize', text: 'hi' });
     const probed = fetchMock.mock.calls.map(([u]) => String(u)).filter((u) => u.endsWith('/health'));
     expect(probed).toEqual(['http://127.0.0.1:41733/health', 'http://127.0.0.1:41800/health']);
+  });
+});
+
+describe('extension rejected-token backoff', () => {
+  // Catches: after a 401 every normalize (and every Learn, Sync and popup
+  // open) sent the same rejected token again, and nothing said the extension
+  // had stopped trying until the settings changed.
+  it('stops sending a rejected token until it backs off or the token changes, and says so', async () => {
+    let clock = 1_000_000;
+    let goodToken = 'f'.repeat(32);
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      if (url.endsWith('/health')) return json(HEALTH);
+      const auth = (init.headers as Record<string, string>).Authorization;
+      if (auth !== `Bearer ${goodToken}`) return json({ error: 'missing or invalid bearer token' }, 401);
+      if (url.endsWith('/stats')) return json({ termCount: 3 });
+      return json(normalized('ping ashler'));
+    });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore({ settings: { token: TOKEN } }), defaultYaml: EXAMPLE_YAML, now: () => clock });
+    const bearerCalls = (): number => fetchMock.mock.calls.filter(([u]) => !String(u).endsWith('/health')).length;
+
+    for (let i = 0; i < 5; i++) {
+      const reply = (await bg.handle({ type: 'normalize', text: 'ping ashler' })) as NormalizeReply & { ok: true };
+      expect(reply.mode).toBe('embedded');
+      expect(reply.fallback).toMatch(/rejected the token \(401\)/);
+    }
+    expect(bearerCalls()).toBe(1);
+    expect(await bg.handle({ type: 'learn', heard: 'quorbix', meant: 'Quorbyx' })).toMatchObject({ ok: true, mode: 'embedded' });
+    expect(await bg.handle({ type: 'sync' })).toMatchObject({ ok: false, error: expect.stringMatching(/rejected the token/) });
+    expect(bearerCalls()).toBe(1);
+
+    // The popup's status reads the backoff without asking the server again, and says it.
+    const status = (await bg.handle({ type: 'status' })) as StatusReply;
+    expect(bearerCalls()).toBe(1);
+    expect(status.tokenError).toMatch(/rejected the token/);
+    expect(status.tokenRetryAt).toBe(1_000_000 + TOKEN_BACKOFF_MS);
+    expect(statusView(status, clock).line).toContain('The extension will not send this token again for 30 s; pairing or saving another token retries at once.');
+    expect(connectionTestLine(status, clock)).toContain('will not send this token again for 30 s');
+
+    // Test connection asks anyway; a second 401 doubles the wait.
+    const probed = (await bg.handle({ type: 'status', probe: true })) as StatusReply;
+    expect(bearerCalls()).toBe(2);
+    expect(probed.tokenRetryAt).toBe(1_000_000 + 2 * TOKEN_BACKOFF_MS);
+
+    // Once the backoff is over, one request tries again.
+    clock += 2 * TOKEN_BACKOFF_MS + 1;
+    await bg.handle({ type: 'normalize', text: 'ping ashler' });
+    await bg.handle({ type: 'normalize', text: 'ping ashler' });
+    expect(bearerCalls()).toBe(3);
+
+    // A new token is tried at once and, accepted, clears the backoff.
+    goodToken = 'e'.repeat(32);
+    await bg.saveSettings({ token: goodToken });
+    expect(((await bg.handle({ type: 'normalize', text: 'ping ashler' })) as NormalizeReply & { ok: true }).mode).toBe('api');
+    const ok = (await bg.handle({ type: 'status' })) as StatusReply;
+    expect(ok.tokenError).toBeUndefined();
+    expect(ok.tokenRetryAt).toBeUndefined();
+    expect(ok.activeMode).toBe('api');
   });
 });
