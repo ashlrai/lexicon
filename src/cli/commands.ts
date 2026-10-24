@@ -650,9 +650,12 @@ async function runRemoveAlias(
     result = await removeAlias(canonical, alias, scope ? { scope, cwd } : { cwd });
   } catch (err) {
     const message = errorMessage(err);
+    // Compared as the store compares spellings (spellingKey: trimmed,
+    // lowercased, NFC): `Cafe` plus U+0301 typed for a stored `Café` missed
+    // here though removeAlias would find it, so the --global hint was lost.
     const holdsAlias = (file: LexiconFile | undefined): boolean =>
       file?.lexicon.terms.some(
-        (t) => t.canonical.trim().toLowerCase() === canonical.trim().toLowerCase() && t.aliases.some((a) => a.trim().toLowerCase() === alias.trim().toLowerCase()),
+        (t) => spellingKey(t.canonical) === spellingKey(canonical) && t.aliases.some((a) => spellingKey(a) === spellingKey(alias)),
       ) === true;
     // --project or --global named a file whose copy lacks the term or the
     // alias while the other (loaded) file's copy has it: name that file and
@@ -1020,6 +1023,15 @@ export async function runHarvest(
   if (opts.interactive && json) throw new Error('harvest: --interactive and --json cannot be combined');
   const interactive = opts.interactive === true || (opts.add === true && !opts.yes && !json && tty);
 
+  // The flags first: a bad --limit or --min-count is the error to report,
+  // not the project-trust refusal below, which fixing the flag cannot clear.
+  const harvestOpts: HarvestOptions = {};
+  const limit = parseIntOption(opts.limit, '--limit', HARVEST_MAX_LIMIT);
+  const minCount = parseIntOption(opts.minCount, '--min-count');
+  if (limit !== undefined) harvestOpts.limit = limit;
+  if (minCount !== undefined) harvestOpts.minCount = minCount;
+  if (opts.symbols) harvestOpts.symbols = true;
+
   // `--add` writes to the project file, which refuses an untrusted one. Check
   // up front, as the interactive walk does: the table (or the --json array)
   // used to print first, so the output read as a success right before exit 1.
@@ -1036,13 +1048,6 @@ export async function runHarvest(
       }
     }
   }
-
-  const harvestOpts: HarvestOptions = {};
-  const limit = parseIntOption(opts.limit, '--limit', HARVEST_MAX_LIMIT);
-  const minCount = parseIntOption(opts.minCount, '--min-count');
-  if (limit !== undefined) harvestOpts.limit = limit;
-  if (minCount !== undefined) harvestOpts.minCount = minCount;
-  if (opts.symbols) harvestOpts.symbols = true;
 
   const report = await harvestReport(target, harvestOpts);
   const candidates: HarvestCandidate[] = report.candidates;
@@ -1223,7 +1228,18 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
 
   const exportOpts: ExportOptions = {};
   if (opts.category && opts.category.length > 0) {
-    exportOpts.categories = opts.category.map((c) => parseCategory(c)).filter((c): c is TermCategory => !!c);
+    // Space- or comma-separated, as GET /export/:format?category=brand,person
+    // takes them: `--category brand,person` was refused as one unknown
+    // category. A blank piece of a comma list is skipped, as the API skips it.
+    const categories: TermCategory[] = [];
+    for (const value of opts.category) {
+      const pieces = value.includes(',') ? value.split(',').filter((v) => v.trim() !== '') : [value];
+      for (const piece of pieces) {
+        const category = parseCategory(piece);
+        if (category && !categories.includes(category)) categories.push(category);
+      }
+    }
+    exportOpts.categories = categories;
   }
   const limit = parseIntOption(opts.limit, '--limit', EXPORT_MAX_LIMIT);
   if (limit !== undefined) exportOpts.limit = limit;
@@ -1291,11 +1307,23 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
 
 /** `p` resolved through links when it exists, case-folded where the filesystem usually ignores case. */
 async function samePathKey(p: string): Promise<string> {
-  let real = path.resolve(p);
-  try {
-    real = await fs.realpath(real);
-  } catch {
-    // Not there yet: compare the path as given.
+  const resolved = path.resolve(p);
+  // Not there yet: resolve the nearest ancestor that exists and keep the rest
+  // as given, so an --out reaching a lexicon path that does not exist yet
+  // through a symlinked directory (`link/lexicon.yaml`, `link` -> its
+  // directory) still compares equal. The path as given missed it.
+  let real = resolved;
+  const rest: string[] = [];
+  for (let dir = resolved; ; ) {
+    try {
+      real = path.join(await fs.realpath(dir), ...rest);
+      break;
+    } catch {
+      const parent = path.dirname(dir);
+      if (parent === dir) break;
+      rest.unshift(path.basename(dir));
+      dir = parent;
+    }
   }
   return process.platform === 'win32' || process.platform === 'darwin' ? real.toLowerCase().normalize('NFC') : real;
 }

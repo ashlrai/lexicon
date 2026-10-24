@@ -396,6 +396,14 @@ describe('list', () => {
     expect((JSON.parse(io.out) as Array<{ canonical: string }>).map((t) => t.canonical)).toEqual(['Plain']);
   });
 
+  // Catches: --category " brand" (a quoted shell list) was refused as an
+  // unknown category while the local API trims ?category= and takes it.
+  it('--category trims the value as the local API does', async () => {
+    const io = makeIO();
+    expect(await runList({ category: ' Brand ', json: true }, io)).toBe(0);
+    expect((JSON.parse(io.out) as Array<{ canonical: string }>).map((t) => t.canonical)).toEqual(['Ashlr.AI']);
+  });
+
   it('shows the project path when one is present', async () => {
     state.projectPath = '/tmp/proj/.lexicon.yaml';
     const io = makeIO();
@@ -1176,6 +1184,14 @@ describe('export', () => {
     expect(io2.out).toContain('wrote json export');
   });
 
+  // Catches: --category brand,person (the form GET /export/:format?category=
+  // takes) was refused as one unknown category "brand,person".
+  it('--category takes a comma-separated list too', async () => {
+    const io = makeIO();
+    expect(await runExport('wispr', { category: ['brand, person', 'brand', 'other,'] }, io)).toBe(0);
+    expect(core.exportLexiconWithNotes).toHaveBeenCalledWith(expect.anything(), 'wispr', { categories: ['brand', 'person', 'other'] });
+  });
+
   // Catches: --out was written in place (an export cut short left a truncated
   // file where the last good one was), a directory failed with a bare EISDIR,
   // and --out naming the lexicon file itself replaced every term with the export.
@@ -1215,6 +1231,31 @@ describe('export', () => {
       expect(await runExport('csv', { out: state.projectPath }, proj)).toBe(1);
       expect(proj.err).toContain('is the project lexicon file the export reads');
       expect(existsSync(state.projectPath)).toBe(false);
+    } finally {
+      state.globalPath = saved;
+    }
+  });
+
+  // Catches: when neither the lexicon file nor --out existed yet, the paths
+  // were compared as given, so --out reaching the lexicon path through a
+  // symlinked directory was written as the lexicon file.
+  it('--out refuses the lexicon path reached through a symlinked directory before either exists', async () => {
+    const dir = await fs.realpath(await tempDir('lexicon-cli-out-link-'));
+    const real = path.join(dir, 'real');
+    await fs.mkdir(real);
+    const link = path.join(dir, 'link');
+    try {
+      await fs.symlink(real, link, 'dir');
+    } catch {
+      return; // no symlinks here (Windows without the privilege)
+    }
+    const saved = state.globalPath;
+    try {
+      state.globalPath = path.join(real, 'sub', 'lexicon.yaml');
+      const io = makeIO();
+      expect(await runExport('json', { out: path.join(link, 'sub', 'lexicon.yaml') }, io)).toBe(1);
+      expect(io.err).toContain('is the global lexicon file the export reads, so nothing was written');
+      expect(existsSync(state.globalPath)).toBe(false);
     } finally {
       state.globalPath = saved;
     }
@@ -3133,6 +3174,28 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       const other = lexicon(['stats', '--full', '--cwd', tmp], globalPath);
       expect(other.status).toBe(1);
       expect(other.stdout).toBe('');
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
+  // Catches: the wrong-scope hint compared spellings with trim and lowercase
+  // only, so a canonical or alias typed in another Unicode form (NFD
+  // `Cafe` plus U+0301 for a stored NFC `Café`) lost the hint naming the file
+  // and flag, though the store matches them as one spelling.
+  it('remove --alias with the wrong scope names the other file for a spelling in another Unicode form', async () => {
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-alias-nfc-'));
+    try {
+      const repo = path.join(tmp, 'repo');
+      const globalPath = path.join(tmp, 'config', 'lexicon.yaml');
+      await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+      expect(lexicon(['add', 'Caf\u00e9', 'kaf\u00e9', '--cwd', repo], globalPath).status).toBe(0);
+
+      const wrong = lexicon(['remove', 'Cafe\u0301', '--alias', 'KAFE\u0301', '--project', '--json', '--cwd', repo], globalPath);
+      expect(wrong.status).toBe(1);
+      expect(JSON.parse(wrong.stdout).nextStep).toBe(
+        `it is an alias of "Cafe\u0301" in the global lexicon (${globalPath}); run with --global to remove it there, or with neither flag to remove it from every file whose copy has it`,
+      );
     } finally {
       await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }

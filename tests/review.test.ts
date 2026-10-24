@@ -335,6 +335,11 @@ describe('harvest --interactive', () => {
     expect(JSON.parse(json.out)).toEqual({ ok: false, added: false, path: projectPath, projectTrust: 'untrusted', error: expect.stringContaining('is untrusted'), nextStep: `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again` });
     expect(await fs.readFile(projectPath, 'utf8')).toBe('version: 1\nterms: []\n');
 
+    // Catches: a bad --limit or --min-count was reported only after the
+    // trust refusal, so fixing the trust first still left a bad flag.
+    await expect(runHarvest(repo, { add: true, yes: true, limit: '0', globalPath }, makeIO(), { isInteractive: () => false })).rejects.toThrow('--limit must be a positive integer');
+    await expect(runHarvest(repo, { add: true, yes: true, minCount: 'x', globalPath }, makeIO(), { isInteractive: () => false })).rejects.toThrow('--min-count must be a positive integer');
+
     // Without --add nothing is written, so the scan still prints.
     const scan = makeIO();
     expect(await runHarvest(repo, { minCount: 1, globalPath }, scan, { isInteractive: () => false })).toBe(0);

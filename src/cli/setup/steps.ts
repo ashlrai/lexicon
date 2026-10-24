@@ -683,7 +683,9 @@ export async function stepServe(ctx: Ctx): Promise<void> {
   }
   if (code === 0) {
     ctx.summary.serve = 'installed';
-    ctx.say(`   installed ${dim(safeMessage(lastLine(captured.out)))}`);
+    // The installer's own line already leads with "installed <label>", which
+    // read "installed installed ai.ashlr.lexicon.serve; ..." under the prefix.
+    ctx.say(`   installed ${dim(safeMessage(lastLine(captured.out).replace(/^installed /, '')))}`);
   } else {
     ctx.summary.serve = 'failed';
     ctx.warn(`   failed ${safeMessage(lastLine(captured.err) || lastLine(captured.out))}`);

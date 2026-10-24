@@ -181,7 +181,7 @@ program
   .description('export the merged lexicon for another tool (run without a format to list them)')
   .argument('[format]')
   .option('--out <file>', 'write to a file instead of stdout')
-  .option('--category <categories...>', 'only these categories')
+  .option('--category <categories...>', 'only these categories, space- or comma-separated')
   .option('--limit <n>', `cap the number of terms, applied after --category, keeping the most hits first (at equal hits brand, person and product terms first, then canonical A to Z); csv, wispr, superwhisper, macos and espanso (one row per alias) count only terms that have an alias; at most ${EXPORT_MAX_LIMIT}`, positiveIntOption('--limit', 50, EXPORT_MAX_LIMIT))
   .option('--json', 'print { ok: true, format, terms, bytes, path } after writing --out, or { ok: true, format, terms, bytes, content } with the export as a string without it; { ok: true, formats } with no format (plus rows for the one-row-per-alias formats, dropped (one sentence per kind of entry the format left out to fit its target, also printed on stderr without --json), and projectTrust, skippedProject and note when an untrusted project lexicon was left out)')
   .action(async (format: string | undefined, opts: ExportCliOptions) =>

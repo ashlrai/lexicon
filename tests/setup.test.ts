@@ -444,6 +444,8 @@ describe('runSetup --yes', () => {
     expect(existsSync(args[2])).toBe(true);
     expect(calls[0]).toEqual(['launchctl', 'bootout', 'gui/501/ai.ashlr.lexicon.serve']);
     expect(io.out).toContain('installed ai.ashlr.lexicon.serve');
+    // Catches: the step's own "installed" prefix doubled the installer's.
+    expect(io.out).not.toContain('installed installed');
 
     // A cliDir without a built index.js (the plugin bundle's "next to me" mistake): refused, nothing written, no bootout.
     const broken = path.join(home, 'plugin');

@@ -17,6 +17,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Documentation
 
+- `lexicon voice --help` gives the JSON that `--status --json` prints: `{ ok: true, recording: true, since, pid }` while a toggle recording runs, `{ ok: false, recording: false }` when idle. The `--json` text described only the result and failure shapes.
 - `lexicon learn --help` says where a correction goes without `--project`: to the file that already holds the meant term, else the global lexicon. It said `--project` wrote to the project lexicon "instead of the global one", though a term already in the project lexicon gets its alias there either way.
 - `lexicon voice --toggle` says which press reads which flag, in `--help` and docs/VOICE.md: the start press records with its `--device` and `--seconds`, the stop press transcribes and delivers with its own `--model`, `--lang`, `--translate`, `--no-prompt`, `--no-history`, `--copy` and `--paste`, so a hotkey should pass the same flags to both. A `--paste` given only to the start press was dropped without a word.
 - docs/EXTENSION.md: the Firefox notes now say to allow `127.0.0.1` and `localhost` in the add-on's permissions panel as well as the chat sites; pairing, Test connection and Sync need them.
@@ -35,6 +36,13 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 - The `serve.log` cap also empties the log when the server's descriptor can only append (as on Windows), by truncating the file by path, and compares file ids exactly. Before, the copy to `serve.log.1` was made but the log kept its size, which turned main CI red on Windows.
 - A LEXICON_PATH under a regular file (`notes.txt\lexicon.yaml`) is named as unreadable on Windows too. Windows answers such a path with ENOENT rather than ENOTDIR, so the lexicon read as missing there and only a later write failed.
+- The Windows LexiconBar reads serve.json from `%USERPROFILE%\.config\lexicon` when `XDG_CONFIG_HOME` is blank or relative (`C:foo` included), as `lexicon serve` writes it there, and takes an absolute value trimmed. It probed a relative value first, under the working directory.
+- LexiconBar reads serve.json from `~/.config/lexicon` when `XDG_CONFIG_HOME` is blank or relative, as `lexicon serve` writes it there. It took a relative value as given, so the onboarding window and Fix Everywhere found no token.
+- `lexicon setup` step 5 says `installed ai.ashlr.lexicon.serve; check with: lexicon serve --status` once. It printed `installed installed ...`, its own prefix ahead of the installer's line.
+- `lexicon export --out` refuses the lexicon file's path when it reaches it through a symlinked directory before either file exists. The two paths were compared as given, so the export was written where the lexicon file would be.
+- `lexicon remove <canonical> --alias <alias>` with the wrong `--project` or `--global` names the file whose copy holds the alias when the canonical or alias is typed in another Unicode form (`Cafe` plus a combining accent for a stored `Café`), as the store matches them. It compared with trim and lowercase only and fell back to a generic next step.
+- `lexicon export --category` takes a comma-separated list (`--category brand,person`) as well as space-separated values, as `GET /export/:format?category=brand,person` does. A comma list was refused as one unknown category.
+- `--category` is trimmed before it is checked, in `lexicon list`, `add`, `export` and `review`, as the local API trims `?category=`. `--category " brand"` was refused as an unknown category.
 - `lexicon review --category other` offers the terms that have no category too, as `list` and `export` count them. They were skipped.
 - `lexicon normalize --min-confidence ""` (a blank value, as an unset shell variable gives) is refused like any other value outside 0 to 1. It was read as 0, which let every fuzzy and phonetic match through.
 - `lexicon list --category other` and MCP `list_terms` with `category: "other"` include the terms that have no category, as export now does. They were left out.

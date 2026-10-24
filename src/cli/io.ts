@@ -336,16 +336,18 @@ export class CliRefusal extends Error {
 }
 
 /**
- * A `--category` value, lowercased; undefined when the flag is absent. An
- * unknown one is a CliRefusal naming the categories, so every command that
- * takes `--category` (list, add, export, review) gives the same next step.
+ * A `--category` value, trimmed and lowercased; undefined when the flag is
+ * absent. An unknown one is a CliRefusal naming the categories, so every
+ * command that takes `--category` (list, add, export, review) gives the same
+ * next step. Trimmed as the local API trims `?category=`: `--category " brand"`
+ * (a quoted shell list) was refused there but taken by the HTTP API.
  */
 export function parseCategory(value: string | undefined): TermCategory | undefined {
   if (value === undefined) return undefined;
-  const lower = value.toLowerCase();
+  const lower = value.trim().toLowerCase();
   if (!(TERM_CATEGORIES as readonly string[]).includes(lower)) {
     throw new CliRefusal(
-      `unknown category "${value}" (expected one of: ${TERM_CATEGORIES.join(', ')})`,
+      `unknown category "${value.trim()}" (expected one of: ${TERM_CATEGORIES.join(', ')})`,
       `pass one of ${TERM_CATEGORIES.join(', ')} to --category, or leave --category out`,
     );
   }
