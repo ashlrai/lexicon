@@ -588,7 +588,15 @@ describe('lexicon voice --toggle', () => {
     expect(h.out).toEqual(['recording since 2026-09-19T12:00:00.000Z\n']);
     h.out.length = 0;
     expect(await runVoiceStatus({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_OK);
-    expect(JSON.parse(h.out[0])).toEqual({ recording: true, since: '2026-09-19T12:00:00.000Z', pid: 4242 });
+    expect(JSON.parse(h.out[0])).toEqual({ ok: true, recording: true, since: '2026-09-19T12:00:00.000Z', pid: 4242 });
+  });
+
+  // Catches: `voice --status --json` was the one object-shaped --json document
+  // without `ok`, so idle (exit 1) read as `{ recording: false }` alone.
+  it('--status --json leads with ok, false when idle (exit 1)', async () => {
+    const h = await harness();
+    expect(await runVoiceStatus({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_ERROR);
+    expect(JSON.parse(h.out[0])).toEqual({ ok: false, recording: false });
   });
 });
 

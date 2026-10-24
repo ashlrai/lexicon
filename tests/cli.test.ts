@@ -2565,7 +2565,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       }
       // The flags --status reads still work: idle is exit 1 with its own document.
       const status = lexicon(['voice', '--status', '--json', '--quiet', '--cwd', tmp], globalPath);
-      expect(JSON.parse(status.stdout)).toEqual({ recording: false });
+      expect(JSON.parse(status.stdout)).toEqual({ ok: false, recording: false });
     } finally {
       await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
