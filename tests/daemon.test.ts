@@ -240,6 +240,34 @@ describe('runClipboardDaemon', () => {
     await h.done;
   });
 
+  // Catches: the guard kept the last corrected input forever, so copying the
+  // same dictated text again later (after copying anything else) was never corrected.
+  it('corrects the same text again once something else was copied in between', async () => {
+    const h = start('meet Ashler');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.write).toHaveBeenCalledTimes(1);
+    h.clipboard = 'something else';
+    await vi.advanceTimersByTimeAsync(250);
+    h.clipboard = 'meet Ashler';
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.write).toHaveBeenCalledTimes(2);
+    expect(h.write).toHaveBeenLastCalledWith('meet Ashlr.AI');
+    h.controller.abort();
+    await h.done;
+  });
+
+  it('a clipboard tool that puts the original back right after the write is not fought', async () => {
+    const h = start('meet Ashler');
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.write).toHaveBeenCalledTimes(1);
+    // A clipboard manager restores what was there before.
+    h.clipboard = 'meet Ashler';
+    await vi.advanceTimersByTimeAsync(250 * 4);
+    expect(h.write).toHaveBeenCalledTimes(1);
+    h.controller.abort();
+    await h.done;
+  });
+
   it('reloads the lexicon at most every 5s and stops when the signal aborts', async () => {
     const h = start('a Ashler');
     await vi.advanceTimersByTimeAsync(0);

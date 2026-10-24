@@ -229,6 +229,12 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
       return;
     }
     lastSeen = text;
+    // Something new was copied, so the guard has done its job: it only has to
+    // stop us rewriting our own output, or fighting a clipboard tool that puts
+    // the original straight back. Kept forever, it meant the same dictated
+    // text copied again later (after anything else) was never corrected.
+    lastWritten = undefined;
+    lastInput = undefined;
     if (!reportable(text)) return;
 
     const loaded = await currentLexicon();
