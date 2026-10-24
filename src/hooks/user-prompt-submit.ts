@@ -59,6 +59,17 @@ export const HOOK_MATCH_BUDGET_MS = 100;
 export const HOOK_PROMPT_MAX_CHARS = 50_000;
 
 /**
+ * How long the hook waits for the pending file's lock (queueing a
+ * correction) and for `hits.json`'s (usage counters) before giving up on
+ * that bookkeeping. Both used the store default of ten seconds: a lock held
+ * by another lexicon process held the prompt (pending) or kept the hook's
+ * process alive (hits) for ten seconds, past the plugin's five-second hook
+ * timeout and far past the 200 ms budget. A lock is normally held for a few
+ * milliseconds.
+ */
+export const HOOK_LOCK_TIMEOUT_MS = 50;
+
+/**
  * Where to cut `text` to at most `max` characters: after the last whitespace
  * in the final 200 (so a word is not split), and never between the halves of
  * a surrogate pair.
@@ -643,7 +654,7 @@ function recordHitsInBackground(result: NormalizeResult, cwd: string, loaded: Lo
   const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
   if (canonicals.length === 0) return;
   // `loaded` spares recordHits re-reading both lexicon files.
-  void recordHits(canonicals, { cwd, loaded }).catch((err: unknown) => {
+  void recordHits(canonicals, { cwd, loaded, lockTimeoutMs: HOOK_LOCK_TIMEOUT_MS }).catch((err: unknown) => {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[lexicon hook] recordHits: ${message}\n`);
   });
@@ -659,7 +670,7 @@ function recordHitsInBackground(result: NormalizeResult, cwd: string, loaded: Lo
 async function queueForReview(corrections: readonly Correction[], loaded: LoadedLexicon): Promise<void> {
   if (process.env.LEXICON_QUEUE_CORRECTIONS === '0') return;
   try {
-    await queueCorrections(corrections, { globalPath: loaded.global.path, source: 'prompt-hook', lexicon: loaded.merged });
+    await queueCorrections(corrections, { globalPath: loaded.global.path, source: 'prompt-hook', lexicon: loaded.merged, lockTimeoutMs: HOOK_LOCK_TIMEOUT_MS });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[lexicon hook] could not queue corrections for review: ${sanitizeForDisplayMax(message, 300)}\n`);

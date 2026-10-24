@@ -1082,6 +1082,30 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: UserPromptSubmit 
     expect(r.stderr).toContain('[lexicon hook] could not write the hook output (EPIPE)');
   });
 
+  // Catches: queueing a correction and the hit counters waited the store's ten
+  // seconds for a lock another lexicon process held, past the plugin's five
+  // second hook timeout (the prompt was held, or the process stayed alive).
+  it('does not wait out a lock another process holds on the pending file or hits.json', async () => {
+    const h = await cloneOf(shared, 'hook-locks');
+    const dir = path.dirname(h.globalPath);
+    // Attributed to this live test process on this host, so it is never broken as stale.
+    const holder = JSON.stringify({ pid: process.pid, host: os.hostname(), token: 'e2e-holder', at: new Date().toISOString() });
+    await fs.writeFile(path.join(dir, 'pending-aliases.yaml.lock'), holder);
+    await fs.writeFile(path.join(dir, 'hits.json.lock'), holder);
+    const started = Date.now();
+    const r = await runNode(HOOK, [], { env: h.env, stdin: payload("ping Ashler. it's Vercel not versel", h.repo) });
+    const elapsed = Date.now() - started;
+    expect(r.code).toBe(0);
+    const ctx = (JSON.parse(r.stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext;
+    expect(ctx).toContain('ping Ashlr.AI');
+    expect(ctx).toContain('learn_correction tool with heard: "versel", meant: "Vercel"');
+    expect(r.stderr).toContain('could not queue corrections for review');
+    expect(elapsed).toBeLessThan(4000);
+    // Neither held file was touched.
+    await expect(fs.stat(path.join(dir, 'pending-aliases.yaml'))).rejects.toThrow();
+    await expect(fs.stat(path.join(dir, 'hits.json'))).rejects.toThrow();
+  });
+
   it('is reachable through `lexicon hook` as well', async () => {
     const h = await cloneOf(shared, 'hook-cli');
     const r = await runCli(['hook'], { env: h.env, stdin: payload('ping Ashler', h.repo) });

@@ -20133,8 +20133,8 @@ function indexHeadProject(head) {
     return void 0;
   }
 }
-function withLexiconLock(filePath, fn) {
-  return withFileLock(filePath, fn);
+function withLexiconLock(filePath, fn, opts) {
+  return withFileLock(filePath, fn, opts);
 }
 var HITS_FILE_NAME = "hits.json";
 function getHitsPath(opts = {}) {
@@ -20339,7 +20339,7 @@ async function recordHits(canonicals, opts = {}) {
       }
       await import_node_fs5.promises.mkdir(import_node_path5.default.dirname(hitsPath), { recursive: true });
       await writeFileAtomic(hitsPath, formatJson(registry2));
-    });
+    }, opts.lockTimeoutMs !== void 0 ? { timeoutMs: opts.lockTimeoutMs } : void 0);
   } catch {
   }
 }
@@ -20830,6 +20830,7 @@ async function queueCorrections(corrections, opts = {}) {
   const file = pendingPath(opts);
   const now = (opts.now ?? /* @__PURE__ */ new Date()).toISOString();
   const source = opts.source ?? "manual";
+  const lockOpts = opts.lockTimeoutMs !== void 0 ? { timeoutMs: opts.lockTimeoutMs } : void 0;
   return withLexiconLock(file, async () => {
     const entries2 = await readPending(file);
     const queued = [];
@@ -20858,7 +20859,7 @@ async function queueCorrections(corrections, opts = {}) {
       await writePending(file, entries2);
     }
     return { queued, skipped, file };
-  });
+  }, lockOpts);
 }
 
 // src/util/package.ts
@@ -20900,6 +20901,7 @@ function cliCommand(args) {
 // src/hooks/user-prompt-submit.ts
 var HOOK_MATCH_BUDGET_MS = 100;
 var HOOK_PROMPT_MAX_CHARS = 5e4;
+var HOOK_LOCK_TIMEOUT_MS = 50;
 function promptCut(text, max) {
   if (text.length <= max) return text.length;
   let cut = max;
@@ -21208,7 +21210,7 @@ function truncateSessionContext(text, max = SESSION_CONTEXT_MAX_CHARS) {
 function recordHitsInBackground(result, cwd, loaded) {
   const canonicals = [...new Set(result.replacements.map((r) => r.canonical))];
   if (canonicals.length === 0) return;
-  void recordHits(canonicals, { cwd, loaded }).catch((err) => {
+  void recordHits(canonicals, { cwd, loaded, lockTimeoutMs: HOOK_LOCK_TIMEOUT_MS }).catch((err) => {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[lexicon hook] recordHits: ${message}
 `);
@@ -21217,7 +21219,7 @@ function recordHitsInBackground(result, cwd, loaded) {
 async function queueForReview(corrections, loaded) {
   if (process.env.LEXICON_QUEUE_CORRECTIONS === "0") return;
   try {
-    await queueCorrections(corrections, { globalPath: loaded.global.path, source: "prompt-hook", lexicon: loaded.merged });
+    await queueCorrections(corrections, { globalPath: loaded.global.path, source: "prompt-hook", lexicon: loaded.merged, lockTimeoutMs: HOOK_LOCK_TIMEOUT_MS });
   } catch (err) {
     const message = err instanceof Error ? err.message : String(err);
     process.stderr.write(`[lexicon hook] could not queue corrections for review: ${sanitizeForDisplayMax(message, 300)}
@@ -21454,6 +21456,7 @@ export {
   CORRECTION_MIN_SIMILARITY,
   CORRECTION_NOTES_MAX,
   DATA_BLOCK_MIN_ROWS,
+  HOOK_LOCK_TIMEOUT_MS,
   HOOK_MATCH_BUDGET_MS,
   HOOK_PROMPT_MAX_CHARS,
   ONBOARD_NOTE,

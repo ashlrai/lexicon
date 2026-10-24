@@ -613,6 +613,18 @@ describe('project-scope writes never launder an unreviewed file', () => {
     expect(findTerm((await readLexiconFile(projectPath, 'project')).lexicon, 'Foo')).toBeDefined();
   });
 
+  it('recordHits gives up after lockTimeoutMs on a hits.json lock another live process holds', async () => {
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler'] }, { globalPath, cwd: tmp });
+    const hitsPath = getHitsPath({ globalPath });
+    await fs.mkdir(path.dirname(hitsPath), { recursive: true });
+    await fs.writeFile(`${hitsPath}${LOCK_SUFFIX}`, JSON.stringify({ pid: process.pid, host: os.hostname(), token: 'other', at: new Date().toISOString() }));
+    const started = Date.now();
+    await expect(recordHits(['Ashlr.AI'], { cwd: tmp, globalPath, lockTimeoutMs: 50 })).resolves.toBeUndefined();
+    expect(Date.now() - started).toBeLessThan(2000);
+    await expect(fs.stat(hitsPath)).rejects.toThrow();
+    await fs.rm(`${hitsPath}${LOCK_SUFFIX}`);
+  });
+
   it('recordHits on an untrusted project file neither throws nor writes', async () => {
     const { nested, projectPath, before } = await hostileRepo();
     await expect(

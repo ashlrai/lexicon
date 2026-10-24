@@ -1,5 +1,6 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
+import { isHeldLockError } from '../src/util/atomic.js';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
@@ -166,6 +167,17 @@ describe('pending aliases are queued, never applied', () => {
     expect((await listPending(o)).entries).toEqual([]);
     expect(await corrected('ping Quibbletron')).toBe('ping Ashlr.AI');
   }, 15_000);
+
+  it('lockTimeoutMs bounds the wait for a pending lock another live process holds', async () => {
+    const o = await opts();
+    const file = pendingPathFor(globalPath);
+    await fs.writeFile(`${file}.lock`, JSON.stringify({ pid: process.pid, host: os.hostname(), token: 'other', at: new Date().toISOString() }));
+    const started = Date.now();
+    const err = await queueCorrections([{ heard: 'Ashler', meant: 'Ashlr.AI' }], { ...o, lockTimeoutMs: 50 }).catch((e: unknown) => e);
+    expect(isHeldLockError(err)).toBe(true);
+    expect(Date.now() - started).toBeLessThan(2000);
+    await fs.rm(`${file}.lock`);
+  });
 
   it('never overwrites a pending file it cannot read', async () => {
     const o = await opts();

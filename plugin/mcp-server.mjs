@@ -54556,8 +54556,8 @@ function assertReadsBack(text, filePath) {
     throw new InputError(`Refusing to write lexicon at ${filePath}: ${errorMessage(err)}`);
   }
 }
-function withLexiconLock(filePath, fn) {
-  return withFileLock(filePath, fn);
+function withLexiconLock(filePath, fn, opts) {
+  return withFileLock(filePath, fn, opts);
 }
 var TERM_KEY_ORDER = [
   "canonical",
@@ -55046,7 +55046,7 @@ async function recordHits(canonicals, opts = {}) {
       }
       await import_node_fs5.promises.mkdir(import_node_path5.default.dirname(hitsPath), { recursive: true });
       await writeFileAtomic(hitsPath, formatJson(registry2));
-    });
+    }, opts.lockTimeoutMs !== void 0 ? { timeoutMs: opts.lockTimeoutMs } : void 0);
   } catch {
   }
 }

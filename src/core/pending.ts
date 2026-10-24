@@ -135,6 +135,12 @@ export interface QueueOptions extends StoreOptions {
   now?: Date;
   /** Skip corrections the lexicon already knows. */
   lexicon?: Lexicon;
+  /**
+   * Give up on the pending file's lock after this long (FileLockError),
+   * default DEFAULT_LOCK_TIMEOUT_MS. The prompt hook passes a short one so a
+   * held lock cannot hold the user's prompt for ten seconds.
+   */
+  lockTimeoutMs?: number;
 }
 
 export interface QueueResult {
@@ -155,6 +161,7 @@ export async function queueCorrections(
   const file = pendingPath(opts);
   const now = (opts.now ?? new Date()).toISOString();
   const source = opts.source ?? 'manual';
+  const lockOpts = opts.lockTimeoutMs !== undefined ? { timeoutMs: opts.lockTimeoutMs } : undefined;
   return withLexiconLock(file, async () => {
     const entries = await readPending(file);
     const queued: PendingAlias[] = [];
@@ -183,7 +190,7 @@ export async function queueCorrections(
       await writePending(file, entries);
     }
     return { queued, skipped, file };
-  });
+  }, lockOpts);
 }
 
 export async function listPending(opts: StoreOptions = {}): Promise<{ file: string; entries: PendingAlias[] }> {

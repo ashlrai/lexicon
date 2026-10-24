@@ -31,6 +31,7 @@ import { recalledParsedHash, rememberParsedBytes, rememberParsedHash, shareParse
 import type { TrustStatus } from './trust.js';
 import { InputError, errorMessage, isEnoent } from '../util/errors.js';
 import { withFileLock, writeFileAtomic } from '../util/atomic.js';
+import type { FileLockOptions } from '../util/atomic.js';
 import { isBoundedReadError, readBoundedRegularFile } from '../util/bounded-read.js';
 import { formatJson } from '../util/json.js';
 import { globalLexiconPath } from '../util/xdg.js';
@@ -1027,8 +1028,8 @@ function assertReadsBack(text: string, filePath: string): Lexicon {
  * overwriting; `recordHits` is the one caller that swallows that, because a
  * lost hit count is bookkeeping and it may never throw by contract.
  */
-export function withLexiconLock<T>(filePath: string, fn: () => Promise<T>): Promise<T> {
-  return withFileLock(filePath, fn);
+export function withLexiconLock<T>(filePath: string, fn: () => Promise<T>, opts?: FileLockOptions): Promise<T> {
+  return withFileLock(filePath, fn, opts);
 }
 
 const TERM_KEY_ORDER: (keyof Term)[] = [
@@ -1887,7 +1888,16 @@ export async function removeAlias(
  */
 export async function recordHits(
   canonicals: string[],
-  opts: StoreOptions & { loaded?: Pick<LoadedLexicon, 'global' | 'project' | 'projectTrust'> } = {},
+  opts: StoreOptions & {
+    loaded?: Pick<LoadedLexicon, 'global' | 'project' | 'projectTrust'>;
+    /**
+     * Give up on `hits.json`'s lock after this long (default
+     * DEFAULT_LOCK_TIMEOUT_MS). The prompt hook passes a short one: its
+     * process cannot exit while this waits, and a held lock kept it alive for
+     * ten seconds, past the plugin's own hook timeout.
+     */
+    lockTimeoutMs?: number;
+  } = {},
 ): Promise<void> {
   try {
     if (canonicals.length === 0) return;
@@ -1954,7 +1964,7 @@ export async function recordHits(
       }
       await fs.mkdir(path.dirname(hitsPath), { recursive: true });
       await writeFileAtomic(hitsPath, formatJson(registry));
-    });
+    }, opts.lockTimeoutMs !== undefined ? { timeoutMs: opts.lockTimeoutMs } : undefined);
   } catch {
     // best effort by contract
   }
