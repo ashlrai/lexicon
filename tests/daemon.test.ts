@@ -298,6 +298,25 @@ describe('runClipboardDaemon', () => {
     expect(read).not.toHaveBeenCalled();
   });
 
+  // Catches: lastSeen was set before the write, so a write that failed once
+  // (a clipboard tool that hiccuped) was never retried for that text.
+  it('retries a write that failed on the next poll, and reports the failure once', async () => {
+    const h = start('meet Ashler');
+    h.write.mockRejectedValueOnce(new Error('wl-copy exited with code 1: compositor busy'));
+    await vi.advanceTimersByTimeAsync(0);
+    expect(h.write).toHaveBeenCalledTimes(1);
+    expect(h.clipboard).toBe('meet Ashler');
+    expect(h.err.join('')).toContain('compositor busy');
+    await vi.advanceTimersByTimeAsync(250);
+    expect(h.write).toHaveBeenCalledTimes(2);
+    expect(h.clipboard).toBe('meet Ashlr.AI');
+    await vi.advanceTimersByTimeAsync(250 * 3);
+    expect(h.write).toHaveBeenCalledTimes(2);
+    expect(h.err.join('')).toMatch(/working again/);
+    h.controller.abort();
+    await h.done;
+  });
+
   it('throws with an install hint on Linux when no clipboard tool is on PATH', async () => {
     await expect(runClipboardDaemon({ quiet: true, platform: 'linux', env: { PATH: '' } })).rejects.toThrow(/wl-clipboard.*xclip/);
   });

@@ -254,7 +254,15 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
     if (!result.changed) return;
 
     if (!dryRun) {
-      await write(result.output);
+      try {
+        await write(result.output);
+      } catch (e) {
+        // lastSeen already holds this text, so the next poll would skip it
+        // and a write that failed once was never retried. Forget it so the
+        // next poll tries again; the error is reported once by the caller.
+        lastSeen = undefined;
+        throw e;
+      }
       lastWritten = result.output;
       lastInput = text;
       lastSeen = result.output;
