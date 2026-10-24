@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
 import { parse as parseYaml } from 'yaml';
+import { importLexicon } from '../src/core/importers/index.js';
 import {
   EXPORT_ALIAS_ROW_FORMATS,
   EXPORT_FORMAT_INFO,
@@ -279,6 +280,36 @@ describe('exportLexicon', () => {
     expect(exportLexicon(empty, 'openai')).toBe('');
     expect(exportLexicon(empty, 'text')).toBe('');
     expect(exportLexicon(empty, 'markdown')).toBe('');
+  });
+});
+
+describe('exports a real user would re-import', () => {
+  // Catches: the claude-md note cell is `category notes (phonetic)` and the
+  // markdown importer takes a trailing parenthesis as the phonetic hint, so a
+  // note ending in one ("the CLI (not the app)") came back as notes "the CLI"
+  // with phonetic "not the app" when there was no phonetic of its own.
+  it('claude-md: a note that ends in a parenthesis round-trips as the note', () => {
+    const lex: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'A', aliases: ['a1'], notes: 'the CLI (not the app)' },
+        { canonical: 'D', aliases: ['d1'], category: 'brand', notes: 'v2 (beta)' },
+        { canonical: 'C', aliases: ['c1'], category: 'brand', notes: 'v2 (beta)', phonetic: 'see' },
+        { canonical: 'E', aliases: ['e1'], notes: 'plain' },
+      ],
+    };
+    const out = exportLexicon(lex, 'claude-md');
+    const back = importLexicon(out, 'markdown').terms.map(({ canonical, category, notes, phonetic }) => ({ canonical, category, notes, phonetic }));
+    expect(back).toEqual(
+      expect.arrayContaining([
+        { canonical: 'A', category: undefined, notes: 'the CLI (not the app)', phonetic: undefined },
+        { canonical: 'D', category: 'brand', notes: 'v2 (beta)', phonetic: undefined },
+        { canonical: 'C', category: 'brand', notes: 'v2 (beta)', phonetic: 'see' },
+        { canonical: 'E', category: undefined, notes: 'plain', phonetic: undefined },
+      ]),
+    );
+    // A note that does not end in a parenthesis is written as before.
+    expect(out).toContain('| E | e1 | plain |');
   });
 });
 

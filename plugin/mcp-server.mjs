@@ -57903,6 +57903,7 @@ function noteFor(term) {
   if (term.category) parts.push(term.category);
   if (term.notes?.trim()) parts.push(term.notes.trim());
   if (term.phonetic?.trim()) parts.push(`(${term.phonetic.trim()})`);
+  else if (term.notes?.trim().endsWith(")")) parts.push("()");
   return parts.join(" ");
 }
 

@@ -69,10 +69,17 @@ export function exportClaudeMdWithin(lexicon: Lexicon, maxChars: number, more: (
   return { text: text.length <= maxChars ? text : `${text.slice(0, Math.max(0, maxChars - 4))}...\n`, omitted };
 }
 
+/**
+ * The note cell, `category notes (phonetic)`. The markdown importer reads a
+ * trailing parenthesis as the phonetic hint, so a note ending in one with no
+ * phonetic of its own ("the CLI (not the app)") gets an empty `()` after it,
+ * which the importer reads as no phonetic, leaving the note whole.
+ */
 function noteFor(term: Term): string {
   const parts: string[] = [];
   if (term.category) parts.push(term.category);
   if (term.notes?.trim()) parts.push(term.notes.trim());
   if (term.phonetic?.trim()) parts.push(`(${term.phonetic.trim()})`);
+  else if (term.notes?.trim().endsWith(')')) parts.push('()');
   return parts.join(' ');
 }
