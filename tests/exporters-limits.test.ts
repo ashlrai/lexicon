@@ -37,6 +37,20 @@ describe('whisper-prompt and openai: the prompt window Whisper reads', () => {
     }
   });
 
+  // Catches: names past the default 100-name cap were left out without a
+  // word: the window note counted only the first 100, so 150 short names
+  // that fit 74 said "left out 26 names" when 76 were.
+  it('names past the default 100-name cap are counted in a note too', () => {
+    const terms: Term[] = Array.from({ length: 150 }, (_, i) => ({ canonical: `Q${String(i).padStart(3, '0')}`, aliases: [], hits: 1000 - i }));
+    const { text, notes } = exportLexiconWithNotes(lex(terms), 'whisper-prompt');
+    const kept = text.split(', ').length;
+    const counted = notes.map((n) => Number(/^left out (\d+) name/.exec(n)?.[1] ?? 0)).reduce((a, b) => a + b, 0);
+    expect(kept + counted).toBe(150);
+    expect(notes.some((n) => n.startsWith('left out 50 names past the 100 a prompt holds by default') && n.includes('"Q100"'))).toBe(true);
+    // An explicit --limit is what was asked for: no note for it.
+    expect(exportLexiconWithNotes(lex(terms.slice(0, 5)), 'whisper-prompt', { limit: 2 }).notes).toEqual([]);
+  });
+
   it('a short lexicon is written whole, with no note', () => {
     const { text, notes } = exportLexiconWithNotes(lex([{ canonical: 'Ashlr.AI', aliases: [] }, { canonical: 'kubectl', aliases: [] }]), 'whisper-prompt');
     expect(text).toBe('Ashlr.AI, kubectl');

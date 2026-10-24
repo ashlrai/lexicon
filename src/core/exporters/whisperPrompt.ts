@@ -51,9 +51,12 @@ export function estimateWhisperTokens(text: string): number {
 
 export function exportWhisperPrompt(lexicon: Lexicon, opts: ExportOptions = {}, sink?: ExportSink): string {
   const limit = opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT;
-  const names = canonicalList(sortByImportance(lexicon.terms))
-    .slice(0, Math.max(0, limit))
-    .map((c) => c.canonical.replace(/\s+/g, ' ').trim());
+  const all = canonicalList(sortByImportance(lexicon.terms)).map((c) => c.canonical.replace(/\s+/g, ' ').trim());
+  const names = all.slice(0, Math.max(0, limit));
+  // Past the default cap: a `limit` the caller gave was applied before the
+  // exporter (applyOptions) and is what they asked for, but the default one
+  // left names out without a word, and the window note undercounted.
+  const pastDefault = opts.limit === undefined ? all.slice(names.length) : [];
   const kept: string[] = [];
   const dropped: string[] = [];
   let used = 0;
@@ -66,6 +69,11 @@ export function exportWhisperPrompt(lexicon: Lexicon, opts: ExportOptions = {}, 
     } else {
       dropped.push(name);
     }
+  }
+  if (pastDefault.length > 0) {
+    sink?.notes.push(
+      `left out ${pastDefault.length} name${pastDefault.length === 1 ? '' : 's'} past the ${WHISPER_PROMPT_DEFAULT_LIMIT} a prompt holds by default (the most used kept): ${quotedNames(pastDefault)}`,
+    );
   }
   if (dropped.length > 0) {
     sink?.notes.push(

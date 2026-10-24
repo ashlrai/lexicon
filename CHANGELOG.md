@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon export whisper-prompt` and `openai` (and MCP `export_lexicon`, `GET /export`) name the names left out past the default 100-name cap in a note of their own. They were left out without a word, and the prompt-window note counted only the first 100, so 150 short names that fit 74 said `left out 26 names` when 76 were.
 - `lexicon daemon --once --paste --dry-run` is refused before the clipboard is read, naming `--once --dry-run` to preview and `--once --paste` to correct and paste. The dry run left the clipboard uncorrected and the paste then sent the original text to the frontmost app without a word.
 - `lexicon daemon` exits 130 after ctrl-C and 143 after SIGTERM whether it stops gracefully or is forced by a second signal. A graceful stop exited 0 while the forced one exited 130 or 143, so the status depended on whether a clipboard read was in flight. `runClipboardDaemon` now resolves to what stopped it (`ClipboardDaemonStop`).
 - A `serve.json` token in upper-case hex is kept, by `lexicon serve` and by the browser extension's pairing. Only lower case counted as a token, so a hand-edited one was replaced and every client given it was refused. The bearer check is unchanged: exact and constant-time, so case is not folded.

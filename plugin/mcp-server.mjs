@@ -60481,7 +60481,9 @@ function estimateWhisperTokens(text) {
 }
 function exportWhisperPrompt(lexicon, opts = {}, sink) {
   const limit = opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT;
-  const names = canonicalList(sortByImportance(lexicon.terms)).slice(0, Math.max(0, limit)).map((c) => c.canonical.replace(/\s+/g, " ").trim());
+  const all = canonicalList(sortByImportance(lexicon.terms)).map((c) => c.canonical.replace(/\s+/g, " ").trim());
+  const names = all.slice(0, Math.max(0, limit));
+  const pastDefault = opts.limit === void 0 ? all.slice(names.length) : [];
   const kept = [];
   const dropped = [];
   let used = 0;
@@ -60493,6 +60495,11 @@ function exportWhisperPrompt(lexicon, opts = {}, sink) {
     } else {
       dropped.push(name);
     }
+  }
+  if (pastDefault.length > 0) {
+    sink?.notes.push(
+      `left out ${pastDefault.length} name${pastDefault.length === 1 ? "" : "s"} past the ${WHISPER_PROMPT_DEFAULT_LIMIT} a prompt holds by default (the most used kept): ${quotedNames(pastDefault)}`
+    );
   }
   if (dropped.length > 0) {
     sink?.notes.push(
