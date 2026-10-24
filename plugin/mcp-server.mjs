@@ -67098,8 +67098,8 @@ var registerPackTools = (server, ctx) => {
     },
     async ({ name, scope, registry: registry2, confirm, previewDigest }) => guarded(async () => {
       if (isRegistryRef(name)) {
-        if (!registry2) throw new Error("a community pack ref needs the registry parameter (the index it was listed from)");
         const parsed = parseRegistryRef(name);
+        if (!registry2) throw new Error("a community pack ref needs the registry parameter (the index it was listed from)");
         await assertUserRegistry(registry2, { cwd: ctx.cwd });
         const { index, base } = await loadRegistryIndex(registry2);
         const entry = findRegistryEntry(index, parsed.ref);

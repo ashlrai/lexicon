@@ -324,3 +324,19 @@ describe('setup_lexicon plan', () => {
     expect(d).toContain('demo { heard, corrected, terms, usedExample }');
   });
 });
+
+describe('add_pack refs', () => {
+  // Catches: a name with a slash that is no pack ref ("../../etc") was
+  // answered "a community pack ref needs the registry parameter", sending
+  // the agent to look for a registry for a name that can never be a pack.
+  it('refuses a malformed community ref as malformed, with or without a registry', async () => {
+    for (const args of [{ name: '../../etc' }, { name: 'Acme/Pack' }, { name: '../../etc', registry: 'https://example.invalid/index.json' }]) {
+      const res = await call('add_pack', args);
+      expect(res.isError, JSON.stringify(args)).toBe(true);
+      expect(res.blocks[0], JSON.stringify(args)).toContain(`invalid pack ref "${args.name}"`);
+      expect(res.blocks[0]).not.toContain('needs the registry parameter');
+    }
+    const ok = await call('add_pack', { name: 'acme/pack' });
+    expect(ok.blocks[0]).toContain('needs the registry parameter');
+  });
+});
