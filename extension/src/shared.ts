@@ -260,6 +260,18 @@ export function statusView(s: StatusReply): StatusView {
 }
 
 /**
+ * The popup's status when the status request itself failed: the pill says
+ * what failed (a bare "Error" did not) and the line how to get it back.
+ */
+export function statusFailedView(error: string): StatusView {
+  return {
+    mode: 'Status unavailable',
+    warn: true,
+    line: `could not read the extension status: ${error}. Close and reopen the popup; if it persists, reload Lexicon on the browser's extensions page.`,
+  };
+}
+
+/**
  * What Options says, and the background throws, when the browser did not
  * grant the optional "any site" permission.
  */

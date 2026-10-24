@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- The browser extension popup, when it cannot read the extension status, shows "Status unavailable" and says to reopen the popup or reload Lexicon on the extensions page. The pill read a bare "Error".
 - The browser extension, when the "Any site" permission is declined, says to tick the box again and choose Allow, and that the listed chat sites still work without it. Options said only "Permission not granted."
 - Browser extension errors name the next step. A bare `API <path> returned HTTP <status>`, a timeout (now with its 1500 ms) and a `/health` reporting not ok add "run `lexicon serve --status` to check the server". A `/normalize` reply of another shape says the server and the extension are likely different releases and to update one. An embedded lexicon that does not parse, a `terms` that is not a list, and a term or alias cap reached on learn point at Options > Embedded lexicon (or Sync from local API, or pairing with `lexicon serve --pair` for the term cap).
 - `lexicon list --json --category product` (or `--query`) that matches no term words its `note` as MCP `list_terms` does: `No term matches --category product; the lexicon has 2 terms in all, ...`. It said `2 terms in all` without naming what held them.

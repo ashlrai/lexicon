@@ -17,7 +17,7 @@ import type { ContentHandle } from '../extension/src/content-core.js';
 import { applyCorrections, flatten, invertCorrections, readText } from '../extension/src/editable.js';
 import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
-import { ANY_SITE_DENIED_MESSAGE, coerceSettings, connectionTestLine, countOf, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
+import { ANY_SITE_DENIED_MESSAGE, coerceSettings, connectionTestLine, countOf, hostKey, pairUrl, pairableBaseUrl, siteEnabled, statusFailedView, statusView, syncedLine, PAIR_META } from '../extension/src/shared.js';
 import type { Correction, Failure, LearnReply, NormalizeReply, PairReply, Request, StatusReply } from '../extension/src/shared.js';
 import { TOAST_ID, showToast } from '../extension/src/toast.js';
 import { setMessage } from '../extension/src/rich-text.js';
@@ -834,6 +834,18 @@ describe('extension errors name the next step', () => {
     expect(() => learnIntoYaml(full, 'Kwokka', 'Quokka')).toThrow(
       'The embedded lexicon already has 5000 terms; remove one under Options > Embedded lexicon, or pair with the local API (`lexicon serve --pair`), which keeps the lexicon on disk.',
     );
+  });
+
+  // Catches: the popup pill read a bare "Error" when the status request
+  // failed, naming neither what failed nor what to try.
+  it('the popup pill says what failed and the line how to get it back', () => {
+    expect(statusFailedView('no response')).toEqual({
+      mode: 'Status unavailable',
+      warn: true,
+      line: "could not read the extension status: no response. Close and reopen the popup; if it persists, reload Lexicon on the browser's extensions page.",
+    });
+    const popup = readFileSync(resolve(process.cwd(), 'extension/src/popup.ts'), 'utf8');
+    expect(popup).not.toMatch(/textContent = 'Error'/);
   });
 
   // Catches: "Permission not granted." with no word of how to grant it or
