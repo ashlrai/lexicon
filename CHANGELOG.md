@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon serve --status` and `--pair` say a `serve.json` that exists but cannot be read (a directory, a permission error) could not be read, naming the error code. It was reported as `does not exist; lexicon serve creates it`, and lexicon serve then failed on it instead of creating anything.
 - `lexicon serve --pair` refuses a port where something other than lexicon serve answers `/health` (exit 1, the `--status` wording and its `--port <n>` next step) instead of opening that program's page as the pairing page. Any `{ ok: true }` reply counted as lexicon serve.
 - `lexicon daemon` prints its error lines (a clipboard tool's stderr, a lexicon reload or `recordHits` failure naming a path) and correction summaries without control characters or escape sequences. They were written as they came, so an escape sequence in a tool's message or a directory name reached the terminal.
 - `lexicon daemon` retries the clipboard text after a lexicon that would not load. The next poll skipped that text, printed `working again` while the lexicon was still broken, and the text was never corrected once the file was fixed.

@@ -256,6 +256,12 @@ describe('serve.json', () => {
 
       await fs.writeFile(servePath, '  \n');
       expect((await ensureServeConfig({ globalPath: gp })).token).toMatch(/^[0-9a-f]{32}$/);
+
+      // Catches: a serve.json that exists but cannot be read (here a directory) was reported as missing.
+      await fs.rm(servePath);
+      expect(unusableServeConfigReason(servePath)).toBe('does not exist; lexicon serve creates it');
+      await fs.mkdir(servePath);
+      expect(unusableServeConfigReason(servePath)).toBe('could not be read (EISDIR); make it a readable file, or remove it so lexicon serve makes a new token');
     } finally {
       await fs.rm(dir, { recursive: true, force: true });
     }
