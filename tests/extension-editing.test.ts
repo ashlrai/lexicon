@@ -232,6 +232,62 @@ describe('content: a known site\'s Enter is never swallowed when it cannot be re
   });
 });
 
+describe('content: the first send on a known site whose send button selector is stale', () => {
+  const enter = (): KeyboardEvent => new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true });
+
+  // Catches: with no send button matching and the replayed Enter not yet
+  // known to work, the press went on as typed, so the first message on the
+  // site was sent uncorrected even though the precheck already held its
+  // corrections.
+  it('a textarea is corrected in place before the press goes on, when the precheck has the corrections', async () => {
+    document.body.innerHTML = '<textarea id="userInput"></textarea>';
+    const t = document.getElementById('userInput') as HTMLTextAreaElement;
+    const sent: string[] = [];
+    t.addEventListener('keydown', (ev) => {
+      if (ev.key !== 'Enter') return;
+      ev.preventDefault();
+      sent.push(t.value);
+    });
+    const send = vi.fn(fakeSend);
+    handle = installContent({ doc: document, hostname: 'copilot.microsoft.com', send, settings: { enabled: true, live: false }, precheckDebounceMs: 1, toastMs: 60_000 });
+    t.value = 'ping ashler';
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(20);
+    const ev = enter();
+    t.dispatchEvent(ev);
+    // The page's own handler took the press (not the extension) and read the corrected text.
+    expect(sent).toEqual(['ping Ashlr.AI']);
+    await handle.idle();
+    await wait(5);
+    // A non-dry run records the hit; the extension never held the press.
+    expect(send.mock.calls.some(([req]) => req.type === 'normalize' && req.dryRun === false && req.text === 'ping ashler')).toBe(true);
+    expect(document.getElementById(TOAST_ID)?.shadowRoot?.textContent).toContain('Ashlr.AI');
+  });
+
+  it('without a ready precheck, or in a rich text box, the press still goes on as typed', async () => {
+    document.body.innerHTML = '<textarea id="userInput"></textarea>';
+    const t = document.getElementById('userInput') as HTMLTextAreaElement;
+    handle = installContent({ doc: document, hostname: 'copilot.microsoft.com', send: vi.fn(fakeSend), settings: { enabled: true, live: false }, precheckDebounceMs: 60_000 });
+    t.value = 'ping ashler';
+    t.dispatchEvent(new Event('input', { bubbles: true }));
+    const ev = enter();
+    t.dispatchEvent(ev);
+    expect(ev.defaultPrevented).toBe(false);
+    expect(t.value).toBe('ping ashler');
+    handle.destroy();
+
+    document.body.innerHTML = '<div id="prompt-textarea" contenteditable="true" class="ProseMirror"><p>ping ashler</p></div>';
+    const composer = document.getElementById('prompt-textarea')!;
+    handle = installContent({ doc: document, hostname: 'chatgpt.com', send: vi.fn(fakeSend), settings: { enabled: true, live: false }, precheckDebounceMs: 1 });
+    composer.dispatchEvent(new Event('input', { bubbles: true }));
+    await wait(20);
+    const rich = enter();
+    composer.dispatchEvent(rich);
+    expect(rich.defaultPrevented).toBe(false);
+    expect(readText(composer)).toBe('ping ashler');
+  });
+});
+
 describe('content: long composers', () => {
   /** How many times the composer's own children are listed: once per flattening of it. */
   function countFlattens(el: HTMLElement): { count(): number; restore(): void } {

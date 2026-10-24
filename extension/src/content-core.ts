@@ -59,6 +59,12 @@ export interface ContentHandle {
 interface Precheck {
   text: string;
   changed: boolean;
+  /**
+   * The dry run's corrections for `text`, kept when the check was complete,
+   * so a send that cannot be held (see `enterReplay`) can still be corrected
+   * in place before the press goes on.
+   */
+  ready?: NormalizeReply & { ok: true };
 }
 
 export function installContent(deps: ContentDeps): ContentHandle {
@@ -205,6 +211,29 @@ export function installContent(deps: ContentDeps): ContentHandle {
     resend();
   }
 
+  /**
+   * Write the precheck's corrections for `text` into `composer` now, without
+   * waiting, when that can be done before this event's other listeners run:
+   * only in a text field, whose edits (`applyCorrections` there has no await)
+   * land at once. A rich text editor may take its edits in a later task, so
+   * the press there goes on as typed, as before. The hits are recorded by a
+   * normalize run in the background; its answer is not waited for.
+   */
+  function correctInPlace(composer: HTMLElement, text: string, codeAt: Array<[number, number]>): void {
+    const ready = precheck !== null && precheck.text === text ? precheck.ready : undefined;
+    if (!ready || !isTextField(composer) || readText(composer) !== text) return;
+    // A dry run leaves `output` as the input: build the corrected text here.
+    let output = text;
+    for (const r of [...ready.replacements].sort((a, b) => b.start - a.start)) output = output.slice(0, r.start) + r.replacement + output.slice(r.end);
+    withPassthrough(() => {
+      void applyCorrections(doc, composer, ready.replacements, output);
+    });
+    if (readText(composer) !== output) return;
+    precheck = { text: output, changed: false };
+    toastFor(composer, text, ready.replacements, { ...ready, output, changed: true });
+    void normalizeComposer(composer, text, false, codeAt);
+  }
+
   /** Says, without holding the send, that a composer over MAX_COMPOSER_CHARS was not checked. */
   function tooLargeNotice(): void {
     showToast(doc, [], { durationMs: deps.toastMs, notice: TOO_LARGE_NOTICE });
@@ -261,7 +290,11 @@ export function installContent(deps: ContentDeps): ContentHandle {
     }
     if (adapter.send && enterReplay !== 'works' && !findSendButton(doc, adapter, composer)) {
       // Nothing to click, and a synthetic Enter is not known to send here:
-      // the original press goes on as typed rather than being swallowed.
+      // the original press goes on rather than being swallowed. When the
+      // precheck already holds this text's corrections, they are written
+      // first, synchronously, so the page's own Enter handler (which runs
+      // after this capture listener) sends the corrected text.
+      correctInPlace(composer, text, ranges);
       learnFromPress();
       return;
     }
@@ -356,7 +389,12 @@ export function installContent(deps: ContentDeps): ContentHandle {
         // so the replacements list is what says whether Enter must be intercepted.
         // A check that stopped early is intercepted too, so the send can say so.
         if (reply.ok && readText(composer) === text) {
-          precheck = { text, changed: reply.changed || reply.replacements.length > 0 || reply.incomplete !== undefined };
+          const fixes = reply.replacements.length > 0;
+          precheck = {
+            text,
+            changed: reply.changed || fixes || reply.incomplete !== undefined,
+            ...(fixes && reply.incomplete === undefined ? { ready: reply } : {}),
+          };
         }
       });
     }, precheckMs);
