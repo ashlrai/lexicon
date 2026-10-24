@@ -61382,6 +61382,11 @@ async function downloadPack(entry, base, deps = {}) {
   verifyPackChecksum(bytes, entry.checksum, entry.ref);
   return bytes;
 }
+function recordedRegistrySource(source) {
+  const s = source.trim();
+  if (/^https?:\/\//i.test(s)) return s;
+  return import_node_path10.default.resolve(s.startsWith("file://") ? s.slice("file://".length) : s);
+}
 async function writeCache(ref, bytes, opts) {
   const dest = cachedPackPath(ref, opts);
   await import_node_fs10.promises.mkdir(import_node_path10.default.dirname(dest), { recursive: true });
@@ -61425,7 +61430,7 @@ async function commitPack(pack, bytes, entry, indexSource, opts, expectedInstall
         checksum: entry.checksum,
         version: entry.version,
         ...pinnedVersion !== void 0 ? { pinnedVersion } : {},
-        indexSource,
+        indexSource: recordedRegistrySource(indexSource),
         installedAt: (/* @__PURE__ */ new Date()).toISOString()
       };
       await writeRegistryState(state, opts);

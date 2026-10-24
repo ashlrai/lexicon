@@ -512,6 +512,19 @@ describe('install / update / remove round trip', () => {
     expect(preview.terms?.[0].aliases).toContain('approved-new-alias');
   });
 
+  // Catches: a relative --registry was recorded as typed, so pack update from another directory read a different file and MCP never counted it.
+  it('records a relative or file:// index source as the absolute path it was read from', async () => {
+    const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
+    const relative = path.relative(process.cwd(), indexPath);
+    const { index, base } = await loadRegistryIndex(relative);
+    await installRegistryPack(entryFor(index), base, relative, { globalPath });
+    expect((await readRegistryState({ globalPath })).packs['example/cardiology'].indexSource).toBe(indexPath);
+    expect(await userRegistrySources({ globalPath, cwd: dir, env: {} })).toContain(canonicalRegistrySource(indexPath));
+
+    await installRegistryPack(entryFor(index), base, `file://${indexPath}`, { globalPath });
+    expect((await readRegistryState({ globalPath })).packs['example/cardiology'].indexSource).toBe(indexPath);
+  });
+
   it('installs, pins the checksum, updates on checksum change, removes cleanly', async () => {
     const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
     const { index, base } = await loadRegistryIndex(indexPath);

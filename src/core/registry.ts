@@ -623,6 +623,21 @@ export async function downloadPack(
   return bytes;
 }
 
+/**
+ * The index source as the registry state records it: an http(s) URL as
+ * given, a local path or `file://` URL as the absolute path it was read from
+ * (`loadRegistryIndex` resolves it the same way). A relative `--registry` was
+ * recorded as typed, so `pack update` and `pack remove` run from any other
+ * directory looked for a different file ("registry index not found"), and
+ * MCP never counted it as a registry the user chose (canonicalRegistrySource
+ * matches no relative path).
+ */
+export function recordedRegistrySource(source: string): string {
+  const s = source.trim();
+  if (/^https?:\/\//i.test(s)) return s;
+  return path.resolve(s.startsWith('file://') ? s.slice('file://'.length) : s);
+}
+
 async function writeCache(ref: string, bytes: Buffer, opts: RegistryStoreOptions): Promise<string> {
   const dest = cachedPackPath(ref, opts);
   await fs.mkdir(path.dirname(dest), { recursive: true });
@@ -680,7 +695,7 @@ async function commitPack(
       state.packs[entry.ref] = {
         checksum: entry.checksum, version: entry.version,
         ...(pinnedVersion !== undefined ? { pinnedVersion } : {}),
-        indexSource, installedAt: new Date().toISOString(),
+        indexSource: recordedRegistrySource(indexSource), installedAt: new Date().toISOString(),
       };
       await writeRegistryState(state, opts);
       return result;
