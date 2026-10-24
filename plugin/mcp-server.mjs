@@ -66072,6 +66072,7 @@ async function createLexiconFile(target, scope) {
 init_xdg();
 var import_node_path28 = __toESM(require_node_path());
 var import_node_fs28 = __toESM(require_node_fs());
+init_errors3();
 
 // src/cli/setup/steps.ts
 var import_node_fs27 = __toESM(require_node_fs());
@@ -67233,6 +67234,14 @@ function printStopped(ctx) {
   ctx.say();
   ctx.say(`${bold("Next:")} ${ctx.summary.nextStep}`);
 }
+function printFailed(ctx) {
+  ctx.say();
+  ctx.say(bold(`Failed at "${ctx.summary.failedAt ?? ""}": ${safeMessage(ctx.summary.error ?? "")}; nothing after it ran.`));
+  printWritten(ctx);
+  ctx.summary.nextStep = ctx.opts.forAgent ? "Tell the user what the error names; once it is fixed, call setup_lexicon again: every step skips what is already done." : "fix what the error names, then run lexicon setup again; every step skips what is already done";
+  ctx.say();
+  ctx.say(`${bold("Next:")} ${ctx.summary.nextStep}`);
+}
 function printSummary(ctx) {
   ctx.say();
   ctx.say(bold("Done."));
@@ -67346,18 +67355,25 @@ async function runSetup(opts, io, deps = {}) {
       try {
         await step(ctx);
       } catch (err) {
-        if (!(err instanceof PromptClosedError)) throw err;
-        ctx.summary.stoppedAt = title;
+        if (err instanceof PromptClosedError) {
+          ctx.summary.stoppedAt = title;
+          break;
+        }
+        if (ctx.plan) throw err;
+        ctx.summary.failedAt = title;
+        ctx.summary.error = errorMessage(err);
+        ctx.warn(`lexicon setup: ${title}: ${safeMessage(ctx.summary.error)}`);
         break;
       }
     }
     if (ctx.plan) printPlan(ctx, ctx.plan);
     else if (ctx.summary.stoppedAt !== void 0) printStopped(ctx);
+    else if (ctx.summary.failedAt !== void 0) printFailed(ctx);
     else printSummary(ctx);
   } finally {
     if (ownPrompter) prompter?.close();
   }
-  const failed = ctx.summary.stoppedAt !== void 0 || ctx.summary.serve === "failed" || ctx.summary.clients.some((c) => c.status === "failed");
+  const failed = ctx.summary.stoppedAt !== void 0 || ctx.summary.failedAt !== void 0 || ctx.summary.serve === "failed" || ctx.summary.clients.some((c) => c.status === "failed");
   if (opts.json) io.stdout(`${JSON.stringify({ ok: !failed, ...ctx.plan ?? ctx.summary }, null, 2)}
 `);
   return { code: failed ? 1 : 0, summary: ctx.summary, ...ctx.plan ? { plan: ctx.plan } : {} };
