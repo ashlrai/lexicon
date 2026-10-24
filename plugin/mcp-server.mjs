@@ -59104,6 +59104,12 @@ function skippedProjectNote(loaded, consequence, voice = CLI_TRUST_VOICE) {
 function emptyLexiconNote(step = 'add one with: lexicon add "Ashlr.AI" Ashler, or run `lexicon setup`.') {
   return `${noTermsYet()}; ${step}`;
 }
+var CLI_TERM_LISTER = { name: "lexicon list", verb: "shows" };
+function noTermMatchesNote(context) {
+  const lister = context.lister ?? CLI_TERM_LISTER;
+  const terms = `${context.total} term${context.total === 1 ? "" : "s"}`;
+  return `No term matches ${context.filter}; the lexicon has ${terms} in all, which ${lister.name} without ${context.filters === 1 ? "it" : "them"} ${lister.verb}.`;
+}
 function emptyStatsNote(loaded, step = `${FIRST_TERM_STEP}.`) {
   if (loaded.merged.terms.length > 0 || loaded.skippedProject) return void 0;
   return `${noTermsYet({ so: "nothing is corrected or counted" })}; ${step}`;
@@ -61066,7 +61072,14 @@ var registerTermTools = (server, ctx) => {
         ...skippedProjectFields(loaded),
         // Why nothing came back, as `lexicon list` says it: no terms at
         // all, or a filter that matched none of them.
-        ...terms.length > 0 || loaded.skippedProject ? {} : loaded.merged.terms.length === 0 ? { note: emptyLexiconNote("add_term or setup_lexicon adds some.") } : { note: `No term matches the ${[...category ? ["category"] : [], ...needle ? ["query"] : []].join(" and ")} given; the lexicon has ${loaded.merged.terms.length} term${loaded.merged.terms.length === 1 ? "" : "s"} in all, which list_terms without ${category && needle ? "them" : "it"} returns.` }
+        ...terms.length > 0 || loaded.skippedProject ? {} : loaded.merged.terms.length === 0 ? { note: emptyLexiconNote("add_term or setup_lexicon adds some.") } : {
+          note: noTermMatchesNote({
+            filter: `the ${[...category ? ["category"] : [], ...needle ? ["query"] : []].join(" and ")} given`,
+            filters: category && needle ? 2 : 1,
+            total: loaded.merged.terms.length,
+            lister: { name: "list_terms", verb: "returns" }
+          })
+        }
       });
     })
   );

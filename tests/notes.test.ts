@@ -7,6 +7,7 @@ import {
   emptyLexiconNote,
   emptyNormalizeHint,
   emptyStatsNote,
+  noTermMatchesNote,
   noTermsYet,
   onlyUntrustedTerms,
   skippedProjectNote,
@@ -96,8 +97,20 @@ describe('core notes', () => {
     expect(onlyUntrustedTerms('is not loaded')).toBe('the only terms are in the untrusted project lexicon, which is not loaded');
   });
 
-  // Catches: a surface spelling the "no terms yet" or "only terms are in the
-  // untrusted project lexicon" sentence itself again, outside core/notes.ts,
+  // Catches: `lexicon list --json` saying "2 terms in all" where MCP
+  // list_terms said "the lexicon has 2 terms in all": two copies of the
+  // sentence had already drifted apart.
+  it('words a filter that matched nothing the same for the CLI and MCP', () => {
+    expect(noTermMatchesNote({ filter: '--category product', filters: 1, total: 2 })).toBe(
+      'No term matches --category product; the lexicon has 2 terms in all, which lexicon list without it shows.',
+    );
+    expect(noTermMatchesNote({ filter: 'the category and query given', filters: 2, total: 1, lister: { name: 'list_terms', verb: 'returns' } })).toBe(
+      'No term matches the category and query given; the lexicon has 1 term in all, which list_terms without them returns.',
+    );
+  });
+
+  // Catches: a surface spelling the "no terms yet", "only terms are in the
+  // untrusted project lexicon" or "No term matches" sentence itself again, outside core/notes.ts,
   // where the next rewording would leave it behind.
   it('no other source file spells the shared openings itself', () => {
     const root = path.resolve(__dirname, '../src');
@@ -112,7 +125,7 @@ describe('core notes', () => {
     walk(root);
     const copies = files
       .filter((f) => f !== path.join(root, 'core', 'notes.ts'))
-      .filter((f) => /lexicon has no terms yet|only terms are in the untrusted project lexicon/i.test(readFileSync(f, 'utf8')))
+      .filter((f) => /lexicon has no terms yet|only terms are in the untrusted project lexicon|No term matches/.test(readFileSync(f, 'utf8')))
       .map((f) => path.relative(root, f));
     expect(copies).toEqual([]);
   });

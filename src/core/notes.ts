@@ -79,6 +79,26 @@ export function emptyLexiconNote(step = 'add one with: lexicon add "Ashlr.AI" As
   return `${noTermsYet()}; ${step}`;
 }
 
+/** The tool that lists terms, as a no-match note names it: `lexicon list` shows, MCP `list_terms` returns. */
+export interface TermLister {
+  name: string;
+  verb: string;
+}
+
+const CLI_TERM_LISTER: TermLister = { name: 'lexicon list', verb: 'shows' };
+
+/**
+ * The note for a term list whose filter matched none of the lexicon's terms
+ * (`lexicon list --category/--query`, MCP list_terms `category`/`query`):
+ * `filter` names the filter as the caller took it, `filters` how many were
+ * given (`it` or `them`), `total` the terms there are.
+ */
+export function noTermMatchesNote(context: { filter: string; filters: number; total: number; lister?: TermLister }): string {
+  const lister = context.lister ?? CLI_TERM_LISTER;
+  const terms = `${context.total} term${context.total === 1 ? '' : 's'}`;
+  return `No term matches ${context.filter}; the lexicon has ${terms} in all, which ${lister.name} without ${context.filters === 1 ? 'it' : 'them'} ${lister.verb}.`;
+}
+
 /**
  * The note for statistics of a lexicon with no terms (`lexicon stats`, MCP
  * lexicon_stats, `GET /stats`), ending in `step`. Undefined when there are

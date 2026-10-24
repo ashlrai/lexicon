@@ -82,6 +82,7 @@ import {
   termHolders,
   untrustedAliasHolder,
   untrustedTermHolder,
+  noTermMatchesNote,
   noTermsYet,
   onlyUntrustedTerms,
   resolvePaths,
@@ -684,7 +685,7 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
       ? undefined
       : total === 0
         ? emptyLexiconNote()
-        : `No term matches ${filters.join(' ')}; ${plural(total, 'term')} in all, which lexicon list without ${filters.length === 1 ? 'it' : 'them'} shows.`;
+        : noTermMatchesNote({ filter: filters.join(' '), filters: filters.length, total });
 
   if (opts.full) {
     // The MCP list_terms shape; plain --json keeps the bare array scripts already parse.

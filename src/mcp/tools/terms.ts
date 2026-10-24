@@ -20,6 +20,7 @@ import {
   exportLexicon,
   learnCorrection,
   loadMatcherIndex,
+  noTermMatchesNote,
   normalizeWithIndex,
   recordHits,
   removeAlias,
@@ -491,7 +492,14 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
             ? {}
             : loaded.merged.terms.length === 0
               ? { note: emptyLexiconNote('add_term or setup_lexicon adds some.') }
-              : { note: `No term matches the ${[...(category ? ['category'] : []), ...(needle ? ['query'] : [])].join(' and ')} given; the lexicon has ${loaded.merged.terms.length} term${loaded.merged.terms.length === 1 ? '' : 's'} in all, which list_terms without ${category && needle ? 'them' : 'it'} returns.` }),
+              : {
+                  note: noTermMatchesNote({
+                    filter: `the ${[...(category ? ['category'] : []), ...(needle ? ['query'] : [])].join(' and ')} given`,
+                    filters: category && needle ? 2 : 1,
+                    total: loaded.merged.terms.length,
+                    lister: { name: 'list_terms', verb: 'returns' },
+                  }),
+                }),
         });
       }),
   );

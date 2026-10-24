@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon list --json --category product` (or `--query`) that matches no term words its `note` as MCP `list_terms` does: `No term matches --category product; the lexicon has 2 terms in all, ...`. It said `2 terms in all` without naming what held them.
 - `runExport` and `runHarvest` called directly with a `limit` or `minCount` of 0 refuse it (`--limit must be a positive integer`), as the `--limit` flag does. A direct `limit: 0` csv export wrote nothing and then said the lexicon had no rows.
 - `lexicon setup` on a terminal, when the guessed company name cannot be written (too long, say), says it is not suggesting that name and to type the one you want at the prompt that follows. It said "pass --company" just before that prompt appeared. Skipping the prompt still names `lexicon add` for later; `--yes` and `--dry-run` keep the `--company` note.
 - `runExport` and `runHarvest` called with a string `limit` or `minCount` (not through the `lexicon` CLI flags) take only a string of digits, as `--limit` does: `5abc` was read as 5 and `1.5` as 1. A non-integer number is refused too.

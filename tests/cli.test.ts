@@ -454,7 +454,7 @@ describe('list', () => {
     expect(await runList({ category: 'product', full: true }, missFull)).toBe(0);
     expect(JSON.parse(missFull.out)).toMatchObject({
       counts: { matched: 0, total: 2 },
-      note: 'No term matches --category product; 2 terms in all, which lexicon list without it shows.',
+      note: 'No term matches --category product; the lexicon has 2 terms in all, which lexicon list without it shows.',
     });
 
     const empty = { version: 1 as const, terms: [] };
