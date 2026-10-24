@@ -296,6 +296,16 @@ describe('normalize', () => {
    * could tell them apart, and a person watching a pipeline saw silence and
    * concluded it was working.
    */
+  // Catches: the load error went through the 200-character display cap, so a deep lexicon path cut it off before the reason.
+  it('prints a load error naming a long path whole', async () => {
+    const message = `Failed to parse lexicon YAML at /tmp/${'nested-directory/'.repeat(12)}lexicon.yaml: bad indentation`;
+    vi.mocked(core.loadLexicon).mockRejectedValueOnce(new Error(message));
+    const io = makeIO();
+    expect(await runNormalize(['meet Ashler'], {}, io)).toBe(1);
+    expect(io.err).toContain(message);
+    expect(io.err).not.toContain('\u2026');
+  });
+
   it('passes text through byte-exactly but exits 1 when the lexicon fails to load', async () => {
     vi.mocked(core.loadLexicon).mockRejectedValueOnce(new Error('bad yaml'));
     const io = makeIO();

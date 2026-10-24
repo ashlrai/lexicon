@@ -875,7 +875,7 @@ export async function runNormalize(
     // different answers and exit 0 made them indistinguishable: a script, a
     // watcher or a person saw silence and concluded it was working.
     const message = errorMessage(err);
-    io.stderr(`lexicon: ${safeLines(message)}\n`);
+    io.stderr(`lexicon: ${safeMessage(message)}\n`);
     io.stderr('lexicon: no corrections were applied and the text is unchanged (run: lexicon doctor)\n');
     if (opts.json) {
       // `{ ok: false, error, nextStep }` and then the unchanged NormalizeResult,
@@ -956,7 +956,7 @@ export async function runHarvest(
       if (status !== 'trusted') {
         const message = new ProjectTrustError(projectPath, status).message;
         if (json) line(io, JSON.stringify({ ...jsonError(message, `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again`), added: false, path: projectPath, projectTrust: status }, null, 2));
-        io.stderr(`lexicon: ${safeLines(message)}\n`);
+        io.stderr(`lexicon: ${safeMessage(message)}\n`);
         return 1;
       }
     }
@@ -1042,7 +1042,7 @@ export async function runHarvest(
       const hint = unreadableLexiconHint(message);
       const where = filePath ? { path: filePath } : {};
       line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where }, null, 2));
-      io.stderr(`lexicon: ${safeLines(message)}\n`);
+      io.stderr(`lexicon: ${safeMessage(message)}\n`);
       if (hint) io.stderr(`lexicon: ${hint}\n`);
       io.stderr('lexicon: nothing was added: the candidates are written together, so none of them are in the project lexicon\n');
       return 1;

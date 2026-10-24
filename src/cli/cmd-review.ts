@@ -30,7 +30,7 @@ import type { HarvestCandidate, Lexicon, LexiconFile, Term, TermCategory, TermSc
 import { PromptClosedError, askKey, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
 import { errorMessage } from '../util/errors.js';
-import { CliRefusal, bold, dim, line, parseCategory, plural, refuse, resolveCwd, safe, safeLines, safeMessage } from './io.js';
+import { CliRefusal, bold, dim, line, parseCategory, plural, refuse, resolveCwd, safe, safeMessage } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 function isCategory(value: string): value is TermCategory {
@@ -164,7 +164,7 @@ export async function runHarvestInteractive(
   if (projectPath && existsSync(projectPath)) {
     const status = await isTrusted({ path: projectPath, scope: 'project', lexicon: emptyLexicon(), exists: true }, store);
     if (status !== 'trusted') {
-      io.stderr(`lexicon: ${safeLines(new ProjectTrustError(projectPath, status).message)}\n`);
+      io.stderr(`lexicon: ${safeMessage(new ProjectTrustError(projectPath, status).message)}\n`);
       return 1;
     }
   }
@@ -190,7 +190,7 @@ export async function runHarvestInteractive(
   /** False after printing a ProjectTrustError (nothing in the call was written); any other error is thrown. */
   const refused = (err: unknown): false => {
     if (err instanceof ProjectTrustError) {
-      io.stderr(`lexicon: ${safeLines(err.message)}\n`);
+      io.stderr(`lexicon: ${safeMessage(err.message)}\n`);
       return false;
     }
     throw err;
@@ -460,7 +460,7 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   if (file.scope === 'project') {
     const status = await isTrusted(file, store);
     if (status !== 'trusted') {
-      io.stderr(`lexicon: ${safeLines(new ProjectTrustError(file.path, status).message)}\n`);
+      io.stderr(`lexicon: ${safeMessage(new ProjectTrustError(file.path, status).message)}\n`);
       return 1;
     }
   }
@@ -610,7 +610,7 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
           mergedElsewhere = merged.changes;
         } catch (err) {
           io.stderr(
-            `lexicon: ${safe(file.path)} changed during review but could not be re-read (${safeLines(errorMessage(err))}); writing the reviewed version\n`,
+            `lexicon: ${safeMessage(file.path)} changed during review but could not be re-read (${safeMessage(errorMessage(err))}); writing the reviewed version\n`,
           );
           file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
         }

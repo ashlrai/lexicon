@@ -245,6 +245,26 @@ describe('harvest --interactive', () => {
     expect(await fs.readFile(projectPath, 'utf8')).toBe('version: 1\nterms: []\n');
   });
 
+  // Catches: the trust refusals went through the 200-character display cap, so a deep repo path cut off the `lexicon trust` next step.
+  it('prints the trust refusal for a project lexicon at a long path whole', async () => {
+    const deepRepo = path.join(tmp, ...Array.from({ length: 12 }, () => 'nested-directory'), 'repo');
+    await fs.mkdir(path.join(deepRepo, '.git'), { recursive: true });
+    await fs.writeFile(path.join(deepRepo, 'package.json'), JSON.stringify({ name: 'quokkatron' }), 'utf8');
+    const deepProject = path.join(deepRepo, '.lexicon.yaml');
+    await fs.writeFile(deepProject, 'version: 1\nterms:\n  - canonical: Proj\n    aliases: [prodge]\n', 'utf8');
+    const walk = makeIO();
+    expect(await runHarvestInteractive([candidate('Alpha')], { cwd: deepRepo, globalPath }, walk, scripted([]))).toBe(1);
+    const add = makeIO();
+    expect(await runHarvest(deepRepo, { add: true, yes: true, minCount: 1, globalPath }, add, { isInteractive: () => false })).toBe(1);
+    const review = makeIO();
+    expect(await runReview({ cwd: deepRepo, project: true, globalPath }, review, scripted([]))).toBe(1);
+    for (const io of [walk, add, review]) {
+      expect(io.err).toContain(deepProject);
+      expect(io.err).toMatch(/run `lexicon trust` first/);
+      expect(io.err).not.toContain('\u2026');
+    }
+  });
+
   // Catches: `harvest --add --yes` printed the candidate table (or the --json
   // array) and only then hit the trust gate, so the output read as a success.
   it('runHarvest --add --yes refuses an untrusted project lexicon before printing candidates', async () => {
