@@ -764,6 +764,31 @@ describe('message routing (mock chrome.runtime) and background', () => {
     expect(good.tokenError).toBeUndefined();
   });
 
+  // Catches: a token pasted with a character no header can carry (a smart
+  // quote, a non-breaking space) made fetch throw a TypeError, which read as
+  // "cannot reach lexicon serve" and left status saying Connected while every
+  // /normalize fell back to the embedded lexicon.
+  it('a stored token no header can carry is reported as a token problem, not an unreachable server', async () => {
+    const json = (body: unknown, status = 200): Response => ({ ok: status < 400, status, json: async () => body }) as unknown as Response;
+    const fetchMock = vi.fn(async (url: string, init: RequestInit) => {
+      if (url.endsWith('/health')) return json({ ok: true, version: '9.9.9', terms: 3 });
+      // What Chromium does with a header value outside ISO-8859-1.
+      const auth = (init.headers as Record<string, string>).Authorization;
+      if ([...auth].some((ch) => ch.charCodeAt(0) > 0xff)) throw new TypeError("Failed to execute 'fetch' on 'WorkerGlobalScope': String contains non ISO-8859-1 code point.");
+      return json({ termCount: 3 });
+    });
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: memoryStore({ settings: { token: '\u201c' + 'a'.repeat(32) + '\u201d' } }), defaultYaml: EXAMPLE_YAML });
+    const status = (await bg.handle({ type: 'status' })) as StatusReply;
+    expect(status.server).toEqual({ ok: true, version: '9.9.9', terms: 3 });
+    expect(status.activeMode).toBe('embedded');
+    expect(status.tokenError).toMatch(/token/);
+    expect(status.tokenError).not.toMatch(/cannot reach/);
+    const reply = (await bg.handle({ type: 'normalize', text: 'ping ashler' })) as NormalizeReply & { ok: true };
+    expect(reply.mode).toBe('embedded');
+    expect(reply.fallback).toMatch(/lexicon serve --show/);
+    expect(reply.fallback).not.toMatch(/cannot reach/);
+  });
+
   // Catches: a /learn whose `conflict` says another term also holds the
   // spelling (or whose `untrustedProject` claims it) showed a bare "Added ..."
   // in the popup, so the user trusted a correction that may not win.

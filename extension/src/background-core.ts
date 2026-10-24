@@ -75,11 +75,21 @@ function isIncomplete(value: unknown): value is NormalizeIncomplete {
 
 /** A 401 from the API: the server is up but the stored token is not its token. */
 class TokenRejectedError extends Error {
-  constructor() {
-    super('API rejected the token (401). Re-copy it from `lexicon serve --show`, or run `lexicon serve --pair`.');
+  constructor(message = 'API rejected the token (401). Re-copy it from `lexicon serve --show`, or run `lexicon serve --pair`.') {
+    super(message);
     this.name = 'TokenRejectedError';
   }
 }
+
+/**
+ * A stored token holding a character no HTTP header can carry (a smart quote
+ * or non-breaking space picked up with a paste). fetch throws a TypeError for
+ * it, which read as "cannot reach lexicon serve" while the server was up, and
+ * status said Connected while every /normalize fell back. The server's tokens
+ * are hex, so such a token can never be right.
+ */
+export const MALFORMED_TOKEN_MESSAGE =
+  'The stored API token has characters a lexicon token never has (it is hex only); re-copy it from `lexicon serve --show`, or run `lexicon serve --pair`.';
 
 /** A bearer route with no token stored. Pairing is the one-command fix; pasting is the fallback. */
 export const NO_TOKEN_MESSAGE = 'No API token set: run `lexicon serve --pair` to pair this browser, or paste the token `lexicon serve --show` prints into Options.';
@@ -147,6 +157,7 @@ export function createBackground(deps: BackgroundDeps): Background {
       if (init.body !== undefined) headers['Content-Type'] = 'application/json';
       if (init.auth !== false) {
         if (!settings.token) throw new Error(NO_TOKEN_MESSAGE);
+        if (!/^[\x21-\x7e]+$/.test(settings.token)) throw new TokenRejectedError(MALFORMED_TOKEN_MESSAGE);
         headers.Authorization = `Bearer ${settings.token}`;
       }
       let res: Response;
