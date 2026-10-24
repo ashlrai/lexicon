@@ -66572,6 +66572,7 @@ async function probeHealth(baseUrl, opts = {}) {
 
 // src/cli/cmd-serve.ts
 init_errors3();
+init_atomic();
 function storeOpts(opts) {
   return opts.globalPath !== void 0 ? { globalPath: opts.globalPath } : {};
 }
@@ -66872,8 +66873,8 @@ async function runServeInstall(opts, io, deps = {}) {
         } catch (err) {
           return fail(io, `cannot carry the environment into the Scheduled Task: ${errorMessage(err)}; nothing is installed`);
         }
-        envFile = import_node_path25.default.join(import_node_path25.default.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
-        await import_node_fs26.promises.writeFile(envFile, text, "utf8");
+        envFile = serveEnvPath(opts);
+        await writeFileAtomic(envFile, text, { mode: 384 });
       }
     }
     const xml = scheduledTaskXml(nodePath, cliPath, taskUserId(env), envFile);
@@ -66921,6 +66922,9 @@ async function runServeInstall(opts, io, deps = {}) {
 function schtasksNotRunning(result) {
   return schtasksNotFound(result) || /not (currently )?running|no running instance/i.test(`${result.stderr}
 ${result.stdout}`);
+}
+function serveEnvPath(opts) {
+  return import_node_path25.default.join(import_node_path25.default.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
 }
 function schtasksNotFound(result) {
   return /cannot find|does not exist/i.test(`${result.stderr}

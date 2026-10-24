@@ -2794,6 +2794,56 @@ describe('lexicon serve (CLI)', () => {
       }
     });
 
+    // Catches: serve.env was written in place under the umask (0644 here,
+    // beside a 0600 serve.json), so a write cut short truncated it, and
+    // --uninstall left it behind.
+    it('Windows: serve.env is written 0600 through a temp file and removed on uninstall', async () => {
+      const home = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-schtasks-'));
+      const envFile = path.join(path.dirname(env.globalPath), SERVE_ENV_FILE_NAME);
+      const deps = {
+        platform: 'win32' as const,
+        home,
+        env: { ...shellEnv, USERNAME: 'me' },
+        exec: fakeExec([]),
+        nodePath: 'C:\\node\\node.exe',
+        nodeVersion: 'v22.11.0',
+      };
+      try {
+        const cli = await fakeCli(home);
+        await fs.mkdir(path.dirname(envFile), { recursive: true });
+        await fs.writeFile(envFile, 'OLD=1\n', { mode: 0o644 });
+        await fs.chmod(envFile, 0o644);
+        const realWrite = fs.writeFile.bind(fs);
+        const spy = vi.spyOn(fs, 'writeFile').mockImplementation(async (target, data, options) => {
+          if (String(target).includes(SERVE_ENV_FILE_NAME)) {
+            await realWrite(target, String(data).slice(0, 3), options);
+            throw Object.assign(new Error('ENOSPC: no space left on device'), { code: 'ENOSPC' });
+          }
+          return realWrite(target, data, options);
+        });
+        try {
+          const failed = memIO();
+          expect(await runServe({ install: true, globalPath: env.globalPath, cwd }, failed, { ...deps, cliPath: cli })).toBe(1);
+          expect(failed.err.join('')).toContain('ENOSPC');
+        } finally {
+          spy.mockRestore();
+        }
+        expect(await fs.readFile(envFile, 'utf8')).toBe('OLD=1\n');
+
+        expect(await runServe({ install: true, globalPath: env.globalPath, cwd }, memIO(), { ...deps, cliPath: cli })).toBe(0);
+        if (process.platform !== 'win32') expect((await fs.stat(envFile)).mode & 0o777).toBe(0o600);
+        expect(await fs.readFile(envFile, 'utf8')).toBe(serveEnvFile({ LEXICON_PATH: lexPath, XDG_CONFIG_HOME: xdg }));
+
+        const io = memIO();
+        expect(await runServe({ uninstall: true, globalPath: env.globalPath }, io, deps)).toBe(0);
+        await expect(fs.access(envFile)).rejects.toThrow();
+        expect(io.out.join('')).toContain(`removed ${envFile}`);
+      } finally {
+        await fs.rm(envFile, { force: true });
+        await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+      }
+    });
+
     it.skipIf(!nodeSupportsEnvFile(process.version))('serveEnvFile is read back verbatim by node --env-file', async () => {
       const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-envfile-'));
       try {

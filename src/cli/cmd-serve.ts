@@ -17,6 +17,7 @@ import { resolveCliEntry } from './cli-entry.js';
 import { lexiconServerEnv } from './cmd-install.js';
 import { isVolatileEntry } from './claude-settings.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
+import { writeFileAtomic } from '../util/atomic.js';
 import { fail, jsonError, jsonOk, line, refuse, safe, safeError, safeLines, safeMessage, tildify } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import {
@@ -712,8 +713,11 @@ export async function runServeInstall(opts: ServeOptions, io: IO, deps: ServeDep
         } catch (err) {
           return fail(io, `cannot carry the environment into the Scheduled Task: ${errorMessage(err)}; nothing is installed`);
         }
-        envFile = path.join(path.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
-        await fs.writeFile(envFile, text, 'utf8');
+        envFile = serveEnvPath(opts);
+        // 0600 like serve.json beside it (it names the user's lexicon paths),
+        // and through a temp file: a plain write took the umask and, cut
+        // short, left the running task a truncated env file.
+        await writeFileAtomic(envFile, text, { mode: 0o600 });
       }
     }
     const xml = scheduledTaskXml(nodePath, cliPath, taskUserId(env), envFile);
@@ -776,6 +780,11 @@ function schtasksNotRunning(result: ExecResult): boolean {
   return schtasksNotFound(result) || /not (currently )?running|no running instance/i.test(`${result.stderr}\n${result.stdout}`);
 }
 
+/** The serve.env the Windows Scheduled Task loads with --env-file, beside serve.json. */
+function serveEnvPath(opts: ServeOptions): string {
+  return path.join(path.dirname(getServePath(storeOpts(opts))), SERVE_ENV_FILE_NAME);
+}
+
 /** True when a failed schtasks command means the task does not exist. */
 function schtasksNotFound(result: ExecResult): boolean {
   return /cannot find|does not exist/i.test(`${result.stderr}\n${result.stdout}`);
@@ -802,12 +811,29 @@ async function removeServiceFile(file: string, io: IO): Promise<boolean> {
   }
 }
 
+/**
+ * Remove the serve.env an install wrote for the Scheduled Task; uninstall
+ * left it behind. Missing is fine and says nothing. False (reported) when it
+ * is there and cannot be removed.
+ */
+async function removeServeEnv(opts: ServeOptions, io: IO): Promise<boolean> {
+  const file = serveEnvPath(opts);
+  try {
+    await fs.unlink(file);
+    line(io, `removed ${safe(file)}`);
+    return true;
+  } catch (err) {
+    if (isEnoent(err)) return true;
+    io.stderr(`lexicon: could not remove ${safe(file)}: ${safeLines(errorMessage(err))}\n`);
+    return false;
+  }
+}
+
 export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeDeps = {}): Promise<number> {
   const platform = deps.platform ?? process.platform;
   const home = deps.home ?? homeDir();
   const env = deps.env ?? process.env;
   const exec = deps.exec ?? defaultServeExec;
-  void opts;
 
   if (platform === 'darwin') {
     const plistPath = launchAgentPath(home, env);
@@ -831,7 +857,7 @@ export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeD
     const deleted = await runAndReport(exec, io, 'schtasks', ['/Delete', '/TN', taskName, '/F']);
     if (deleted.code === 0) {
       line(io, `removed Scheduled Task ${safe(taskName)}`);
-      return 0;
+      return (await removeServeEnv(opts, io)) ? 0 : 1;
     }
     // schtasks exits non-zero when the task is not there, which is the same
     // "was not installed" case the other two platforms report rather than
@@ -839,7 +865,7 @@ export async function runServeUninstall(opts: ServeOptions, io: IO, deps: ServeD
     // left the task in place and was reported as not installed, exit 0.
     if (schtasksNotFound(deleted)) {
       line(io, `Scheduled Task ${safe(taskName)} was not installed`);
-      return 0;
+      return (await removeServeEnv(opts, io)) ? 0 : 1;
     }
     const why = (deleted.stderr || deleted.stdout).trim() || `exit ${deleted.code ?? 'error'}`;
     io.stderr(`lexicon: could not remove the Scheduled Task "${safe(taskName)}": ${safeLines(why)}\n`);
