@@ -1978,6 +1978,15 @@ describe('history', () => {
     expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t1']);
     expect((await loadVoiceHistory(h.globalPath)).map((e) => e.at)).toEqual(['t1']);
   });
+
+  // Catches: an entry larger than any reader looks at was written, and the byte cap dropped every older entry to make room, leaving a history nobody could read.
+  it('does not write an entry larger than HISTORY_READ_MAX_BYTES, keeping the older history', async () => {
+    const h = await harness();
+    await appendHistory(h.globalPath, entry(0));
+    const before = await fs.readFile(historyPath(h.globalPath), 'utf8');
+    await appendHistory(h.globalPath, entry(1, 'y'.repeat(HISTORY_READ_MAX_BYTES)));
+    expect(await fs.readFile(historyPath(h.globalPath), 'utf8')).toBe(before);
+  });
 });
 
 // Catches: a whisper-cli that could not be started at transcription time was

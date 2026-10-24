@@ -29,8 +29,10 @@ export const HISTORY_MAX_BYTES = 4 * 1024 * 1024;
  * (`VOICE_HISTORY_READ_MAX_BYTES`) `lexicon suggest` reads it with, so the
  * two always see the same newest entries. The file is kept within
  * HISTORY_MAX_BYTES except for a newest entry larger than that, which is kept
- * on its own; the margin lets such an entry be read back. A file larger
- * than this (another program's, an older version's) is never loaded whole.
+ * on its own; the margin lets such an entry be read back. An entry larger
+ * than this could not be read back by anyone, so it is not written (the
+ * older history is kept instead). A file larger than this (another
+ * program's, an older version's) is never loaded whole.
  */
 export const HISTORY_READ_MAX_BYTES = VOICE_HISTORY_READ_MAX_BYTES;
 
@@ -74,12 +76,18 @@ export function historyPath(globalPath: string): string {
  * HISTORY_MAX_BYTES (oldest dropped first). Lines that do not parse as an
  * entry (a line cut short by a crash or a full disk, or text another program
  * wrote) are dropped rather than carried forward: readers skip them anyway,
- * and they took up room under the line cap. Never throws (history is
+ * and they took up room under the line cap. An entry larger than
+ * HISTORY_READ_MAX_BYTES is not written. Never throws (history is
  * best-effort).
  */
 export async function appendHistory(globalPath: string, entry: HistoryEntry, max: number = HISTORY_MAX_LINES): Promise<void> {
   const file = historyPath(globalPath);
   try {
+    const line = JSON.stringify(entry);
+    // No reader looks past HISTORY_READ_MAX_BYTES, and the byte cap below
+    // would drop every older entry to make room, so an entry this large
+    // would leave a history nobody can read. The older history is kept.
+    if (Buffer.byteLength(line, 'utf8') + 1 > HISTORY_READ_MAX_BYTES) return;
     await ensureVoiceDir(globalPath);
     await withFileLock(
       file,
@@ -91,7 +99,7 @@ export async function appendHistory(globalPath: string, entry: HistoryEntry, max
         // At most HISTORY_MAX_BYTES are kept, so only the file's end is read.
         const existing = (await readRegularFileTail(file, HISTORY_READ_MAX_BYTES)) ?? '';
         const lines = existing.split('\n').filter((l) => l.length > 0 && entryOf(l) !== undefined);
-        lines.push(JSON.stringify(entry));
+        lines.push(line);
         let kept = lines.length > max ? lines.slice(lines.length - max) : lines;
         let bytes = kept.reduce((n, l) => n + Buffer.byteLength(l, 'utf8') + 1, 0);
         let drop = 0;
