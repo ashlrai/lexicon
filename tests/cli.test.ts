@@ -1023,6 +1023,50 @@ describe('export', () => {
     expect(io2.out).toContain('wrote json export');
   });
 
+  // Catches: --out was written in place (an export cut short left a truncated
+  // file where the last good one was), a directory failed with a bare EISDIR,
+  // and --out naming the lexicon file itself replaced every term with the export.
+  it('--out replaces the file atomically and refuses a directory or the lexicon file it reads', async () => {
+    const dir = await tempDir('lexicon-cli-out-');
+    const out = path.join(dir, 'lex.json');
+    await fs.writeFile(out, 'old export\n', { mode: 0o640 });
+    const before = await fs.stat(out);
+    const io = makeIO();
+    expect(await runExport('json', { out }, io)).toBe(0);
+    expect(await fs.readFile(out, 'utf8')).toBe('export:json\n');
+    const after = await fs.stat(out);
+    // A rename put a new file there; the old one was never truncated in place.
+    expect(after.ino).not.toBe(before.ino);
+    if (process.platform !== 'win32') expect(after.mode & 0o777).toBe(0o640);
+    expect((await fs.readdir(dir)).sort()).toEqual(['lex.json']);
+
+    const asDir = makeIO();
+    expect(await runExport('json', { out: dir, json: true }, asDir)).toBe(1);
+    expect(JSON.parse(asDir.out)).toMatchObject({ ok: false, error: `--out ${dir} is a directory, so nothing was exported` });
+
+    const saved = state.globalPath;
+    try {
+      state.globalPath = path.join(dir, 'lexicon.yaml');
+      await fs.writeFile(state.globalPath, 'version: 1\nterms: []\n');
+      const link = path.join(dir, 'link.yaml');
+      await fs.symlink(state.globalPath, link).catch(() => undefined);
+      for (const target of [state.globalPath, ...(existsSync(link) ? [link] : [])]) {
+        const self = makeIO();
+        expect(await runExport('json', { out: target }, self)).toBe(1);
+        expect(self.err).toContain('is the global lexicon file the export reads, so nothing was written');
+        expect(self.err).toContain('lexicon: name another file with --out, or leave --out off to print the export');
+      }
+      expect(await fs.readFile(state.globalPath, 'utf8')).toBe('version: 1\nterms: []\n');
+      state.projectPath = path.join(dir, '.lexicon.yaml');
+      const proj = makeIO();
+      expect(await runExport('csv', { out: state.projectPath }, proj)).toBe(1);
+      expect(proj.err).toContain('is the project lexicon file the export reads');
+      expect(existsSync(state.projectPath)).toBe(false);
+    } finally {
+      state.globalPath = saved;
+    }
+  });
+
   // Catches: an empty export (no terms yet, or --category matching none) came
   // out with no word on stderr or under --json, read as a complete export,
   // while MCP export_lexicon says why in a note.

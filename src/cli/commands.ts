@@ -161,6 +161,7 @@ import { runHarvestInteractive } from './cmd-review.js';
 import { PromptClosedError, createPrompter, isInteractive, splitList } from './prompt.js';
 import type { Prompter } from './prompt.js';
 import { errorMessage, isInputError } from '../util/errors.js';
+import { writeFileAtomic } from '../util/atomic.js';
 
 // ---------------------------------------------------------------------------
 // IO + shared helpers
@@ -1154,8 +1155,11 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
 
   if (opts.out) {
     const outPath = path.resolve(cwd, opts.out);
-    await fs.mkdir(path.dirname(outPath), { recursive: true });
-    await fs.writeFile(outPath, text, 'utf8');
+    const problem = await exportTargetProblem(outPath, loaded);
+    if (problem) return refuse(io, json, problem, 'name another file with --out, or leave --out off to print the export');
+    // Through a temp file and a rename: an export cut short (a full disk, a
+    // killed process) left a truncated file where the last good export was.
+    await writeFileAtomic(outPath, text);
     if (json) {
       line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, path: outPath, ...notes }), null, 2));
     } else {
@@ -1173,6 +1177,38 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
     io.stdout(text);
   }
   return 0;
+}
+
+/** `p` resolved through links when it exists, case-folded where the filesystem usually ignores case. */
+async function samePathKey(p: string): Promise<string> {
+  let real = path.resolve(p);
+  try {
+    real = await fs.realpath(real);
+  } catch {
+    // Not there yet: compare the path as given.
+  }
+  return process.platform === 'win32' || process.platform === 'darwin' ? real.toLowerCase().normalize('NFC') : real;
+}
+
+/**
+ * Why `lexicon export --out <outPath>` must not write there, or undefined. A
+ * directory failed with a bare EISDIR, and the lexicon file the export was
+ * read from (`--out ~/.config/lexicon/lexicon.yaml`, a slip of the shell
+ * history) was overwritten with the export, losing every term.
+ */
+async function exportTargetProblem(outPath: string, loaded: LoadedLexicon): Promise<string | undefined> {
+  try {
+    if ((await fs.stat(outPath)).isDirectory()) return `--out ${outPath} is a directory, so nothing was exported`;
+  } catch {
+    // Nothing there: the export creates it.
+  }
+  const target = await samePathKey(outPath);
+  for (const file of [loaded.global, loaded.project, loaded.skippedProject]) {
+    if (file && (await samePathKey(file.path)) === target) {
+      return `--out ${outPath} is the ${file.scope} lexicon file the export reads, so nothing was written (it would replace your terms with the export)`;
+    }
+  }
+  return undefined;
 }
 
 // ---------------------------------------------------------------------------
