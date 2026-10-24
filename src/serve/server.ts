@@ -700,6 +700,28 @@ function canonicalFile(filePath: string): string {
   }
 }
 
+/**
+ * The request target as a URL on this server. `new URL(target, base)` reads a
+ * target that starts with `//` as a network-path reference, so `//health`
+ * became host `health`, path `/`. The origin is prefixed instead, so the path
+ * is always the request's own; an absolute-form target (`http://host/path`)
+ * keeps only its path and query, and anything else is `/`.
+ */
+export function requestUrl(target: string | undefined): URL {
+  const base = 'http://localhost';
+  const raw = target ?? '/';
+  try {
+    if (raw.startsWith('/')) return new URL(base + raw);
+    if (/^[a-z][a-z0-9+.-]*:\/\//i.test(raw)) {
+      const abs = new URL(raw);
+      return new URL(base + abs.pathname + abs.search);
+    }
+  } catch {
+    // fall through
+  }
+  return new URL(base + '/');
+}
+
 interface CachedLexicon {
   loaded: LoadedLexicon;
   at: number;
@@ -1346,12 +1368,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     const started = Date.now();
     const method = req.method ?? 'GET';
     const head = method === 'HEAD';
-    let url: URL;
-    try {
-      url = new URL(req.url ?? '/', 'http://localhost');
-    } catch {
-      url = new URL('/', 'http://localhost');
-    }
+    const url = requestUrl(req.url);
     const logLine = (): void => {
       if (opts.quiet) return;
       log(`[serve] ${method} ${sanitizeForDisplay(url.pathname)} ${res.statusCode} ${Date.now() - started}ms`);
