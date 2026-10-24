@@ -1341,7 +1341,38 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: committed plugin 
     expect(await fs.readdir(h.repo)).toEqual(['.git']);
   });
 
-  it('committed MCP bundle exposes20 tools and loads all guided source tags', async () => {
+  it('committed MCP bundle: uninstall_client dry-runs by default and removes only on apply: true', async () => {
+    const h = await importedHome('bundle-uninstall');
+    const rpc = new StdioRpc(h.env, h.repo, path.join(REPO_ROOT, 'plugin', 'mcp-server.mjs'));
+    const file = path.join(h.home, '.cursor', 'mcp.json');
+    try {
+      await rpc.request('initialize', { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'bundle-e2e', version: '0.0.0' } });
+      rpc.notify('notifications/initialized');
+      const call = async (name: string, args: Record<string, unknown>): Promise<Record<string, unknown>> => {
+        const r = (await rpc.request('tools/call', { name, arguments: args })).result as ToolCallResult;
+        expect(r.isError, r.content[0].text).not.toBe(true);
+        return JSON.parse(r.content[0].text) as Record<string, unknown>;
+      };
+      await call('install_client', { client: 'cursor', apply: true });
+      const installed = await fs.readFile(file, 'utf8');
+      expect(JSON.parse(installed).mcpServers.lexicon).toBeDefined();
+      const dry = await call('uninstall_client', { client: 'cursor' });
+      expect(dry).toMatchObject({ client: 'cursor', scope: 'user', applied: false, ok: true });
+      expect(dry.changes).toEqual([{ file, entry: 'mcpServers.lexicon', outcome: 'removed' }]);
+      expect(dry.next).toMatch(/apply: true/);
+      expect(await fs.readFile(file, 'utf8')).toBe(installed);
+      const applied = await call('uninstall_client', { client: 'cursor', apply: true });
+      expect(applied).toMatchObject({ applied: true, ok: true });
+      expect(JSON.parse(await fs.readFile(file, 'utf8')).mcpServers.lexicon).toBeUndefined();
+      const again = await call('uninstall_client', { client: 'cursor', apply: true });
+      expect(again.changes).toEqual([{ file, entry: 'mcpServers.lexicon', outcome: 'absent' }]);
+      const refused = (await rpc.request('tools/call', { name: 'uninstall_client', arguments: { client: 'windsurf', scope: 'project' } })).result as ToolCallResult;
+      expect(refused.isError).toBe(true);
+      expect(refused.content[0].text).toContain('call uninstall_client again without scope');
+    } finally { expect(await rpc.close()).toBe(0); }
+  });
+
+  it('committed MCP bundle exposes 21 tools and loads all guided source tags', async () => {
     const h = await importedHome('bundle-mcp');
     const rpc = new StdioRpc(h.env, h.repo, path.join(REPO_ROOT, 'plugin', 'mcp-server.mjs'));
     try {
@@ -1350,7 +1381,8 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: committed plugin 
       rpc.notify('notifications/initialized');
       const tools = await rpc.request('tools/list');
       const names = (tools.result as { tools: { name: string }[] }).tools.map((tool) => tool.name);
-      expect(names).toHaveLength(20);
+      expect(names).toHaveLength(21);
+      expect(names).toContain('uninstall_client');
       expect(names).toContain('import_vocabulary');
       const called = await rpc.request('tools/call', { name: 'normalize_transcript', arguments: { text: 'ada love lace at orion some it uses signal forge' } });
       const result = called.result as ToolCallResult;

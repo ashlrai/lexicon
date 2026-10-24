@@ -1344,7 +1344,7 @@ describe('every tool rejects a missing required argument and a mistyped property
     const textOf = (r: ToolResult): string => (r.content ?? []).map((c) => c.text ?? '').join('\n');
     try {
       const { tools } = await client.listTools();
-      expect(tools.length).toBe(20);
+      expect(tools.length).toBe(21);
       let probes = 0;
       for (const tool of tools) {
         const props = (tool.inputSchema.properties ?? {}) as Record<string, PropSchema>;
