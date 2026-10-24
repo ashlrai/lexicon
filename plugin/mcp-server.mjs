@@ -64878,14 +64878,16 @@ function serveUrl(port, host = DEFAULT_HOST) {
   return `http://${h}:${port}`;
 }
 function isLexiconHealth(body) {
-  return typeof body === "object" && body !== null && !Array.isArray(body) && body.ok === true;
+  if (typeof body !== "object" || body === null || Array.isArray(body)) return false;
+  const b = body;
+  return b.ok === true && typeof b.version === "string" && b.version.length > 0 && Number.isInteger(b.terms) && b.terms >= 0;
 }
 var SERVE_STATUS_HINTS = {
   failing: "The server is running but cannot serve the lexicon; fix what `error` names (often a lexicon file that does not parse) and check again. Starting another server will not help.",
   down: "Start it with `lexicon serve`, or `lexicon serve --install` to keep it running at login.",
   foreign: "Something other than lexicon serve answers on this port. Stop that program, or run the local API on another port: lexicon serve --port <n>."
 };
-var FOREIGN_HEALTH_ERROR = "unexpected /health response (not lexicon serve)";
+var FOREIGN_HEALTH_ERROR = "something else answers on that port: its /health response is not lexicon serve's";
 async function probeHealth(baseUrl, opts = {}) {
   const doFetch = opts.fetch ?? fetch;
   let res;

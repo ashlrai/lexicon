@@ -1824,7 +1824,12 @@ describe('lexicon MCP server', () => {
         // Catches: any 200 on the port read as up, though it was not lexicon serve.
         fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ status: 'fine' }), { status: 200 }));
         const foreign = JSON.parse(textOf(await client.callTool({ name: 'serve_status', arguments: {} }))) as Record<string, unknown>;
-        expect(foreign).toMatchObject({ up: false, error: 'unexpected /health response (not lexicon serve)' });
+        expect(foreign).toMatchObject({ up: false, error: "something else answers on that port: its /health response is not lexicon serve's" });
+
+        // Catches: a bare { ok: true } (no version, no terms) read as lexicon serve.
+        fetchSpy.mockResolvedValueOnce(new Response(JSON.stringify({ ok: true }), { status: 200 }));
+        const bare = JSON.parse(textOf(await client.callTool({ name: 'serve_status', arguments: {} }))) as Record<string, unknown>;
+        expect(bare).toMatchObject({ up: false, error: expect.stringContaining('something else answers on that port') });
         expect(String(foreign.hint)).toContain('lexicon serve --port <n>');
 
         // `lexicon serve --port 41799` records its port in serve.json; status
