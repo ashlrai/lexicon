@@ -1,9 +1,11 @@
 import { describe, expect, it } from 'vitest';
 import { parse as parseYaml } from 'yaml';
+import { importLexicon } from '../src/core/importers/index.js';
 import {
   EXPORT_ALIAS_ROW_FORMATS,
   EXPORT_FORMAT_INFO,
   EXPORT_FORMATS,
+  exportClaudeMdWithin,
   exportLexicon,
   isExportFormat,
   selectExportTerms,
@@ -278,6 +280,71 @@ describe('exportLexicon', () => {
     expect(exportLexicon(empty, 'openai')).toBe('');
     expect(exportLexicon(empty, 'text')).toBe('');
     expect(exportLexicon(empty, 'markdown')).toBe('');
+  });
+});
+
+describe('exports a real user would re-import', () => {
+  // Catches: the claude-md note cell is `category notes (phonetic)` and the
+  // markdown importer takes a trailing parenthesis as the phonetic hint, so a
+  // note ending in one ("the CLI (not the app)") came back as notes "the CLI"
+  // with phonetic "not the app" when there was no phonetic of its own.
+  it('claude-md: a note that ends in a parenthesis round-trips as the note', () => {
+    const lex: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'A', aliases: ['a1'], notes: 'the CLI (not the app)' },
+        { canonical: 'D', aliases: ['d1'], category: 'brand', notes: 'v2 (beta)' },
+        { canonical: 'C', aliases: ['c1'], category: 'brand', notes: 'v2 (beta)', phonetic: 'see' },
+        { canonical: 'E', aliases: ['e1'], notes: 'plain' },
+      ],
+    };
+    const out = exportLexicon(lex, 'claude-md');
+    const back = importLexicon(out, 'markdown').terms.map(({ canonical, category, notes, phonetic }) => ({ canonical, category, notes, phonetic }));
+    expect(back).toEqual(
+      expect.arrayContaining([
+        { canonical: 'A', category: undefined, notes: 'the CLI (not the app)', phonetic: undefined },
+        { canonical: 'D', category: 'brand', notes: 'v2 (beta)', phonetic: undefined },
+        { canonical: 'C', category: 'brand', notes: 'v2 (beta)', phonetic: 'see' },
+        { canonical: 'E', category: undefined, notes: 'plain', phonetic: undefined },
+      ]),
+    );
+    // A note that does not end in a parenthesis is written as before.
+    expect(out).toContain('| E | e1 | plain |');
+  });
+});
+
+describe('exportClaudeMdWithin', () => {
+  const more = (n: number): string => `... ${n} more`;
+
+  it('returns the whole export when it fits', () => {
+    const full = exportLexicon(lexicon, 'claude-md');
+    expect(exportClaudeMdWithin(lexicon, full.length, more)).toEqual({ text: full, omitted: 0 });
+  });
+
+  it('keeps the most used rows that fit, skips one that does not, and says how many it left out', () => {
+    const big: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'Used', aliases: ['yoosed'], hits: 3 },
+        { canonical: 'Aaa', aliases: Array.from({ length: 40 }, (_, i) => `long alias number ${i}`) },
+        ...Array.from({ length: 30 }, (_, i) => ({ canonical: `T${String(i).padStart(2, '0')}`, aliases: [`tee ${i}`] })),
+      ],
+    };
+    const frame = exportClaudeMdWithin({ version: 1, terms: [] }, 10_000, more).text.length;
+    const max = frame + 200;
+    const { text, omitted } = exportClaudeMdWithin(big, max, more);
+    expect(text.length).toBeLessThanOrEqual(max);
+    expect(text.startsWith('## Voice lexicon')).toBe(true);
+    expect(text).toContain('ask rather than guess.');
+    expect(text).toContain('| Used | yoosed |  |');
+    // The long row comes second by importance but does not fit; later short rows still do.
+    expect(text).not.toContain('| Aaa |');
+    expect(text).toContain('| T00 |');
+    const rows = text.split('\n').filter((l) => /^\| (?!Canonical|---)/.test(l));
+    expect(rows.length + omitted).toBe(big.terms.length);
+    expect(text).toContain(`\n... ${omitted} more\n\nIf a word`);
+    // Kept rows are in the export's own order: Used sorts after the T rows.
+    expect(rows.at(-1)).toContain('| Used |');
   });
 });
 

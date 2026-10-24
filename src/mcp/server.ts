@@ -21,7 +21,7 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
-import { exportLexicon, loadLexicon, neutralizeMarkup, noTermsYet, pathForModel } from '../core/index.js';
+import { exportClaudeMdWithin, exportLexicon, loadLexicon, neutralizeMarkup, noTermsYet, pathForModel } from '../core/index.js';
 import type { LoadOptions, LoadedLexicon } from '../core/index.js';
 import { SERVER_NAME, log, readPackageVersion, skippedProjectFields, withLexiconFix } from './shared.js';
 import { errorMessage } from '../util/errors.js';
@@ -107,6 +107,38 @@ export function dirsFromRoots(roots: ReadonlyArray<{ uri: string }>): string[] {
     }
   }
   return dirs;
+}
+
+/**
+ * Most characters of lexicon table `lexicon://me` and `voice-context` put into
+ * model context (about 4000 tokens); the closing notes (a skipped project
+ * file, bounded by pathForModel, and the empty-lexicon note) and the
+ * voice-context instruction come on top. The server instructions tell every
+ * agent to read lexicon://me at session start, and with no cap a 3000-term
+ * lexicon put about 236 KB into the conversation. Rows past it are left out,
+ * the most used kept (see exportClaudeMdWithin), and a line says how many and
+ * where the rest are. Four times the SessionStart hook's cap, because an
+ * agent asked for this text and the hook sends its own on every session.
+ */
+export const MODEL_CONTEXT_MAX_CHARS = 16_000;
+
+/** The line after the kept rows when `MODEL_CONTEXT_MAX_CHARS` left some out. */
+function moreTermsLine(omitted: number): string {
+  return (
+    `... ${omitted} more term${omitted === 1 ? '' : 's'} left out to keep this short (the most used, then brand, person and product names, are kept). ` +
+    'Call list_terms with a query (it matches canonical spellings and aliases) to look one up, or export_lexicon with format claude-md for the whole table.'
+  );
+}
+
+/**
+ * The model-facing claude-md table: capped at MODEL_CONTEXT_MAX_CHARS, then
+ * neutralizeMarkup (`<` / `>` in a canonical or note must not open or close a
+ * tag; it keeps the length, so the cap still holds).
+ */
+function lexiconForModel(loaded: LoadedLexicon): string {
+  const full = exportLexicon(loaded.merged, 'claude-md');
+  const text = full.length <= MODEL_CONTEXT_MAX_CHARS ? full : exportClaudeMdWithin(loaded.merged, MODEL_CONTEXT_MAX_CHARS, moreTermsLine).text;
+  return neutralizeMarkup(text);
 }
 
 const VOICE_CONTEXT_INSTRUCTION =
@@ -275,14 +307,14 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       title: 'Personal voice lexicon',
       description:
         'Canonical spellings of names the user dictates and how STT mishears them, as markdown (the claude-md export of the global lexicon plus the project .lexicon.yaml when it is trusted). Read this before interpreting dictated input. ' +
-        'An untrusted (or changed) project file is left out and named by path in a closing note, never quoted; with no terms at all, a closing note says so and how to set the lexicon up.',
+        'An untrusted (or changed) project file is left out and named by path in a closing note, never quoted; with no terms at all, a closing note says so and how to set the lexicon up. ' +
+        `The table is capped at ${MODEL_CONTEXT_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept and a line says how many were left out; list_terms (with a query) and export_lexicon (format claude-md) reach the rest.`,
       mimeType: 'text/markdown',
     },
     async (uri) => {
       const loaded = await loadForContext();
-      // neutralizeMarkup over the export: this text is read as context,
-      // so `<` / `>` in a canonical or note must not open or close a tag.
-      const text = neutralizeMarkup(exportLexicon(loaded.merged, 'claude-md')) + skippedProjectSuffix(loaded) + emptyLexiconSuffix(loaded);
+      // Capped and markup-neutralized: this text is read as context (lexiconForModel).
+      const text = lexiconForModel(loaded) + skippedProjectSuffix(loaded) + emptyLexiconSuffix(loaded);
       return {
         contents: [{ uri: uri.href, mimeType: 'text/markdown', text }],
       };
@@ -333,13 +365,14 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       title: 'Voice context',
       description:
         "Load the user's canonical spellings into the conversation so dictated input is interpreted correctly for the rest of the session: the lexicon://me text and an instruction to apply it. " +
-        'Takes no arguments. With no terms it says there is nothing to apply and how to set the lexicon up instead; an untrusted project file is left out and named by path.',
+        'Takes no arguments. With no terms it says there is nothing to apply and how to set the lexicon up instead; an untrusted project file is left out and named by path. ' +
+        `The table is capped at ${MODEL_CONTEXT_MAX_CHARS} characters as lexicon://me is, with a line saying how many terms were left out and how to get them.`,
     },
     async () => {
       const loaded = await loadForContext();
       // The same path-only note lexicon://me carries, so the session knows the
       // repo's own spellings are missing and why.
-      const snippet = neutralizeMarkup(exportLexicon(loaded.merged, 'claude-md')).trimEnd() + skippedProjectSuffix(loaded);
+      const snippet = lexiconForModel(loaded).trimEnd() + skippedProjectSuffix(loaded);
       // Nothing to apply: say so instead of asking the model to apply an empty table.
       const instruction = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE : VOICE_CONTEXT_INSTRUCTION;
       return {

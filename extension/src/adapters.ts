@@ -142,6 +142,8 @@ export function isIdentifierField(el: HTMLInputElement | HTMLTextAreaElement): b
 export const CODE_EDITOR_SELECTOR = '.cm-editor, .CodeMirror, .monaco-editor, .ace_editor';
 /** What marks code inside a rich-text editor: a code block (`<pre>`) or one of the editors above. */
 const CODE_BLOCK_SELECTOR = `pre, ${CODE_EDITOR_SELECTOR}`;
+/** Any code inside a rich-text composer: a code block, inline `<code>` (or `<kbd>`, `<samp>`, which the matcher skips in text too), or a code editor. */
+export const CODE_SELECTOR = `pre, code, kbd, samp, ${CODE_EDITOR_SELECTOR}`;
 
 /**
  * An element that edits code: a `<pre>` or `<code>`, or anything inside a

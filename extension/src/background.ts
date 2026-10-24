@@ -7,7 +7,9 @@ import { BUILTIN_MATCHES } from './adapters.js';
 import { createBackground } from './background-core.js';
 import { chromeStore } from './chrome-store.js';
 import defaultYaml from '../../examples/lexicon.example.yaml';
-import { ANY_SITE_DENIED_MESSAGE, PAIR_PORT_DENIED_MESSAGE, pairPortOrigins, pairScriptMatches } from './shared.js';
+import { ANY_SITE_DENIED_MESSAGE } from './shared.js';
+import { prunePairPorts, registerPairPort } from './pair-port.js';
+import type { PairPortApi } from './pair-port.js';
 import type { Request } from './shared.js';
 
 const ANY_SITE_SCRIPT_ID = 'lexicon-any-site';
@@ -33,21 +35,17 @@ async function setAnySite(enabled: boolean): Promise<void> {
   ]);
 }
 
-const PAIR_PORT_SCRIPT_ID = 'lexicon-pair-port';
+/** `chrome.scripting` and `chrome.permissions` as pair-port.ts takes them. */
+const pairPortApi: PairPortApi = { scripting: chrome.scripting, permissions: chrome.permissions };
 
 /**
  * `pair.js` on the /pair page of a `lexicon serve --port` other than the
- * default (the manifest's content script covers 41733 only). Options asks for
- * the port's two loopback origins first, inside the click.
+ * default (the manifest's content script covers 41733 only), one
+ * registration per port (see pair-port.ts). Options asks for the port's two
+ * loopback origins first, inside the click.
  */
-async function setPairPort(origins: string[] | undefined): Promise<void> {
-  const registered = await chrome.scripting.getRegisteredContentScripts({ ids: [PAIR_PORT_SCRIPT_ID] });
-  if (registered.length) await chrome.scripting.unregisterContentScripts({ ids: [PAIR_PORT_SCRIPT_ID] });
-  if (!origins) return;
-  if (!(await chrome.permissions.contains({ origins }))) throw new Error(PAIR_PORT_DENIED_MESSAGE);
-  await chrome.scripting.registerContentScripts([
-    { id: PAIR_PORT_SCRIPT_ID, matches: pairScriptMatches(origins), js: ['pair.js'], runAt: 'document_idle', persistAcrossSessions: true },
-  ]);
+function setPairPort(origins: string[] | undefined): Promise<void> {
+  return registerPairPort(pairPortApi, origins);
 }
 
 const background = createBackground({
@@ -77,10 +75,8 @@ async function reconcileAnySite(): Promise<void> {
     // Permission revoked by the user: leave the toggle for the options page to reflect.
   }
   try {
-    const settings = await background.getSettings();
-    const origins = pairPortOrigins(settings.baseUrl);
-    // Access to the port revoked: stop the /pair script there (Options asks again).
-    if (origins && !(await chrome.permissions.contains({ origins }))) await setPairPort(undefined);
+    // Access to a port revoked: stop the /pair script there (Options asks again).
+    await prunePairPorts(pairPortApi);
   } catch {
     // Nothing registered, or the scripting API is unavailable: nothing to undo.
   }

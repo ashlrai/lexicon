@@ -250,8 +250,32 @@ const buildCategory = () => z.enum(TERM_CATEGORIES);
 const buildScope = () => z.enum(TERM_SCOPES);
 const buildSource = () => z.enum(TERM_SOURCES);
 
+/**
+ * Drop every key of `raw` that is not in `keep` and holds null, so a key left
+ * empty in hand-edited YAML (`terms:`, `aliases:`, `never:`, `settings:`
+ * with nothing after them, which YAML reads as null) parses as if it were
+ * left out: `aliases` and `terms` come back `[]`, the optional ones stay
+ * absent, as round 72's shapes have them. Without this one emptied line
+ * failed the whole file ("expected array, received null") and with it every
+ * command, tool and prompt. `keep` names the required keys, whose null is
+ * still an error (a term with `canonical:` empty is not a term). A null
+ * entry inside a list is still an error too.
+ */
+function nullKeysAsAbsent(keep: readonly string[]): (raw: unknown) => unknown {
+  return (raw) => {
+    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+    let out: Record<string, unknown> | undefined;
+    for (const [key, value] of Object.entries(raw)) {
+      if (value !== null || keep.includes(key)) continue;
+      out ??= { ...(raw as Record<string, unknown>) };
+      delete out[key];
+    }
+    return out ?? raw;
+  };
+}
+
 function buildTerm(category: ReturnType<typeof buildCategory>, scope: ReturnType<typeof buildScope>, source: ReturnType<typeof buildSource>) {
-  return z.object({
+  return z.preprocess(nullKeysAsAbsent(['canonical']), z.object({
     canonical: NonEmptyWord(),
     aliases: WordList(LIMITS.aliases, 'aliases per term'),
     phonetic: SafeString(LIMITS.text).optional(),
@@ -269,26 +293,29 @@ function buildTerm(category: ReturnType<typeof buildCategory>, scope: ReturnType
     // `pinProjectHits` in store.ts.
     hits: z.number().int().nonnegative().optional(),
     never: OptionalWordList(LIMITS.aliases, 'never words per term'),
-  });
+  }));
 }
 
 function buildSettings() {
-  return z.object({
+  return z.preprocess(nullKeysAsAbsent([]), z.object({
     minConfidence: z.number().min(0).max(1).optional(),
     phonetic: z.boolean().optional(),
     fuzzy: z.boolean().optional(),
     protectedWords: OptionalWordList(LIMITS.protectedWords, 'protected words'),
     skipCode: z.boolean().optional(),
     packs: OptionalWordList(LIMITS.aliases, 'packs'),
-  });
+  }));
 }
 
 function buildLexicon(term: ReturnType<typeof buildTerm>, settings: ReturnType<typeof buildSettings>) {
-  return z.object({
-    version: z.literal(1).default(1),
-    terms: z.array(term).max(LIMITS.terms, `at most ${LIMITS.terms} terms`).default([]),
-    settings: settings.optional(),
-  });
+  return z.preprocess(
+    nullKeysAsAbsent([]),
+    z.object({
+      version: z.literal(1).default(1),
+      terms: z.array(term).max(LIMITS.terms, `at most ${LIMITS.terms} terms`).default([]),
+      settings: settings.optional(),
+    }),
+  );
 }
 
 let built: Schemas | undefined;

@@ -905,7 +905,7 @@ describe('runHook', () => {
       expect(ctx.startsWith('## Voice lexicon')).toBe(true);
       expect(ctx).toContain('| Term0 | turm0, tirm0 | product |');
       expect(ctx).toContain('ask rather than guess.');
-      const more = /^\.\.\. (\d+) more terms; read the lexicon:\/\/me resource for the full list\.$/m.exec(ctx);
+      const more = /^\.\.\. (\d+) more terms; read the lexicon:\/\/me resource for more, or call the list_terms tool to look any term up\.$/m.exec(ctx);
       expect(more).not.toBeNull();
       const shown = (ctx.match(/^\| Term\d+ \|/gm) ?? []).length;
       expect(shown).toBeGreaterThan(10);
@@ -925,7 +925,7 @@ describe('runHook', () => {
       const { runHook, SESSION_CONTEXT_MAX_CHARS } = await import('../src/hooks/user-prompt-submit.js');
       const ctx = context(await runHook(sessionStartPayload()));
       expect(ctx.length).toBeLessThanOrEqual(SESSION_CONTEXT_MAX_CHARS);
-      expect(ctx).toMatch(/more terms; read the lexicon:\/\/me resource for the full list\./);
+      expect(ctx).toMatch(/more terms; read the lexicon:\/\/me resource for more, or call the list_terms tool to look any term up\./);
       expect(ctx.split('\n').at(-1)).toMatch(/^Note: this repo's \.lexicon\.yaml at .* changed since/);
     });
 
@@ -940,7 +940,7 @@ describe('runHook', () => {
       expect(cut.length).toBeLessThanOrEqual(max);
       expect(cut.startsWith('## H\n\n| a | b |\n| --- | --- |\n| row0 | value 0 |')).toBe(true);
       expect(cut).not.toContain('| row39 |');
-      const more = /^\.\.\. (\d+) more terms; read the lexicon:\/\/me resource for the full list\.$/m.exec(cut);
+      const more = /^\.\.\. (\d+) more terms; read the lexicon:\/\/me resource for more, or call the list_terms tool to look any term up\.$/m.exec(cut);
       expect(more).not.toBeNull();
       expect((cut.match(/^\| row\d+ \|/gm) ?? []).length + Number(more![1])).toBe(40);
       expect(cut.endsWith('\n\nfooter')).toBe(true);

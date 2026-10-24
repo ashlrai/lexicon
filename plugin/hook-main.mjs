@@ -10614,6 +10614,9 @@ function handlePipeResult(left, next, ctx) {
   }
   return next._zod.run({ value: left.value, issues: left.issues }, ctx);
 }
+var $ZodPreprocess = /* @__PURE__ */ $constructor("$ZodPreprocess", (inst, def) => {
+  $ZodPipe.init(inst, def);
+});
 var $ZodReadonly = /* @__PURE__ */ $constructor("$ZodReadonly", (inst, def) => {
   $ZodType.init(inst, def);
   defineLazyInternal(inst, "propValues", (zod) => zod.def.innerType._zod.propValues);
@@ -13491,6 +13494,10 @@ function pipe(in_, out) {
     // ...util.normalizeParams(params),
   });
 }
+var ZodPreprocess = /* @__PURE__ */ $constructor("ZodPreprocess", (inst, def) => {
+  ZodPipe.init(inst, def);
+  $ZodPreprocess.init(inst, def);
+});
 var ZodReadonly = /* @__PURE__ */ $constructor("ZodReadonly", (inst, def) => {
   $ZodReadonly.init(inst, def);
   ZodType.init(inst, def);
@@ -13513,6 +13520,13 @@ function refine(fn, _params = {}) {
 }
 function superRefine(fn, params) {
   return _superRefine(fn, params);
+}
+function preprocess(fn, schema) {
+  return new ZodPreprocess({
+    type: "pipe",
+    in: transform(fn),
+    out: schema
+  });
 }
 
 // src/core/schema.ts
@@ -13593,8 +13607,20 @@ function CleanWordList(list, maxItems, what) {
 var buildCategory = () => _enum(TERM_CATEGORIES);
 var buildScope = () => _enum(TERM_SCOPES);
 var buildSource = () => _enum(TERM_SOURCES);
+function nullKeysAsAbsent(keep) {
+  return (raw) => {
+    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return raw;
+    let out;
+    for (const [key, value] of Object.entries(raw)) {
+      if (value !== null || keep.includes(key)) continue;
+      out ??= { ...raw };
+      delete out[key];
+    }
+    return out ?? raw;
+  };
+}
 function buildTerm(category, scope, source) {
-  return object({
+  return preprocess(nullKeysAsAbsent(["canonical"]), object({
     canonical: NonEmptyWord(),
     aliases: WordList(LIMITS.aliases, "aliases per term"),
     phonetic: SafeString(LIMITS.text).optional(),
@@ -13612,24 +13638,27 @@ function buildTerm(category, scope, source) {
     // `pinProjectHits` in store.ts.
     hits: number2().int().nonnegative().optional(),
     never: OptionalWordList(LIMITS.aliases, "never words per term")
-  });
+  }));
 }
 function buildSettings() {
-  return object({
+  return preprocess(nullKeysAsAbsent([]), object({
     minConfidence: number2().min(0).max(1).optional(),
     phonetic: boolean2().optional(),
     fuzzy: boolean2().optional(),
     protectedWords: OptionalWordList(LIMITS.protectedWords, "protected words"),
     skipCode: boolean2().optional(),
     packs: OptionalWordList(LIMITS.aliases, "packs")
-  });
+  }));
 }
 function buildLexicon(term, settings) {
-  return object({
-    version: literal(1).default(1),
-    terms: array(term).max(LIMITS.terms, `at most ${LIMITS.terms} terms`).default([]),
-    settings: settings.optional()
-  });
+  return preprocess(
+    nullKeysAsAbsent([]),
+    object({
+      version: literal(1).default(1),
+      terms: array(term).max(LIMITS.terms, `at most ${LIMITS.terms} terms`).default([]),
+      settings: settings.optional()
+    })
+  );
 }
 var built;
 function schemas() {
@@ -20453,6 +20482,9 @@ function exportAzure(lexicon, _opts = {}) {
 // src/core/exporters/claudeMd.ts
 var CLAUDE_MD_HEADING = "## Voice lexicon";
 function exportClaudeMd(lexicon, _opts = {}) {
+  return renderClaudeMd(sortByCategory(lexicon.terms).map(claudeMdRow));
+}
+function renderClaudeMd(rows, more) {
   const lines = [
     CLAUDE_MD_HEADING,
     "",
@@ -20461,19 +20493,20 @@ function exportClaudeMd(lexicon, _opts = {}) {
     "| Canonical | Sounds like / STT writes | Note |",
     "| --- | --- | --- |"
   ];
-  for (const term of sortByCategory(lexicon.terms)) {
-    lines.push(
-      `| ${mdCell(term.canonical)} | ${mdCell(joinAliasList(term.aliases))} | ${mdCell(noteFor(term))} |`
-    );
-  }
+  lines.push(...rows);
+  if (more !== void 0) lines.push(more);
   lines.push("", "If a word looks like a garbled proper noun and is not listed, ask rather than guess.");
   return lines.join("\n") + "\n";
+}
+function claudeMdRow(term) {
+  return `| ${mdCell(term.canonical)} | ${mdCell(joinAliasList(term.aliases))} | ${mdCell(noteFor(term))} |`;
 }
 function noteFor(term) {
   const parts = [];
   if (term.category) parts.push(term.category);
   if (term.notes?.trim()) parts.push(term.notes.trim());
   if (term.phonetic?.trim()) parts.push(`(${term.phonetic.trim()})`);
+  else if (term.notes?.trim().endsWith(")")) parts.push("()");
   return parts.join(" ");
 }
 
@@ -20523,6 +20556,7 @@ function exportJson(lexicon, _opts = {}) {
 }
 
 // src/core/exporters/macos.ts
+var NOT_XML_RE = /[\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
 function exportMacos(lexicon, _opts = {}) {
   const lines = [
     '<?xml version="1.0" encoding="UTF-8"?>',
@@ -20531,6 +20565,7 @@ function exportMacos(lexicon, _opts = {}) {
     "<array>"
   ];
   for (const { alias, canonical } of aliasPairs(lexicon)) {
+    if (NOT_XML_RE.test(alias) || NOT_XML_RE.test(canonical)) continue;
     lines.push("	<dict>");
     lines.push("		<key>phrase</key>");
     lines.push(`		<string>${xmlEscape(canonical)}</string>`);
@@ -21199,7 +21234,7 @@ function truncateSessionContext(text, max = SESSION_CONTEXT_MAX_CHARS) {
   while (end < lines.length && lines[end].startsWith("|")) end += 1;
   const rows = lines.slice(sep + 1, end);
   const footer = lines.slice(end);
-  const moreLine = (n) => `... ${n} more term${n === 1 ? "" : "s"}; read the lexicon://me resource for the full list.`;
+  const moreLine = (n) => `... ${n} more term${n === 1 ? "" : "s"}; read the lexicon://me resource for more, or call the list_terms tool to look any term up.`;
   const fixed = header.join("\n").length + footer.join("\n").length + moreLine(rows.length).length + 3;
   let used = fixed;
   const kept = [];
