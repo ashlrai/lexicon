@@ -238,7 +238,8 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'found, which beats inventing your own; show the user what was generated so they can veto one, and when the result has no aliases ' +
         'propose some or ask the user. Pass `aliases: []` to add the term with no aliases and none generated. On an existing term, omitted aliases add none, ' +
         'so passing only never, phonetic, category or notes changes just that. When another term already holds one of the aliases, ' +
-        'the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term.',
+        'the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term. ' +
+        'A field over the lexicon caps given on each argument is an error naming that field, and nothing is written.',
       inputSchema: {
         canonical: z
           .string()
@@ -249,14 +250,18 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         aliases: z
           .array(z.string())
           .optional()
-          .describe('Spellings STT actually produces for this term. Omit to auto-suggest (new terms only; often none are found). An explicit [] adds none and generates none.'),
-        phonetic: z.string().optional().describe('Pronunciation hint, e.g. "ASH-ler".'),
+          .describe(
+            `Spellings STT actually produces for this term, each at most ${LIMITS.word} characters; a term holds at most ${LIMITS.aliases}. Omit to auto-suggest (new terms only; often none are found). An explicit [] adds none and generates none.`,
+          ),
+        phonetic: z.string().optional().describe(`Pronunciation hint, e.g. "ASH-ler": one line, at most ${LIMITS.text} characters.`),
         category: z.enum(TERM_CATEGORIES).optional(),
-        notes: z.string().optional().describe('Free text shown to agents, e.g. "my company; never write Ashlar".'),
+        notes: z.string().optional().describe(`Free text shown to agents, e.g. "my company; never write Ashlar": one line, at most ${LIMITS.text} characters.`),
         never: z
           .array(z.string())
           .optional()
-          .describe('Ordinary words that must never be rewritten to this term even if they sound alike, e.g. ["sauce"] for SaaS.'),
+          .describe(
+            `Ordinary words that must never be rewritten to this term even if they sound alike, e.g. ["sauce"] for SaaS; each at most ${LIMITS.word} characters, at most ${LIMITS.aliases} per term.`,
+          ),
         scope: z
           .enum(TERM_SCOPES)
           .optional()

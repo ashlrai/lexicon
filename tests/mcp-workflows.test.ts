@@ -309,6 +309,24 @@ describe('remove_term', () => {
 // Catches: the description said it returns ranked { canonical, confidence,
 // aliases } candidates, while the result is { heard, suggestions } with at
 // most three of them, so an agent looked for an array that is not there.
+// Catches: add_term's aliases, never, phonetic and notes arguments named no
+// cap, so an agent learned the 80, 64 and 200 limits only from a refusal.
+describe('add_term argument descriptions', () => {
+  it('state the caps the write enforces', async () => {
+    const props = (await listTools()).find((t) => t.name === 'add_term')?.inputSchema.properties as Record<string, { description?: string }>;
+    expect(props.aliases?.description).toContain('each at most 80 characters; a term holds at most 64');
+    expect(props.never?.description).toContain('each at most 80 characters, at most 64 per term');
+    expect(props.phonetic?.description).toContain('one line, at most 200 characters');
+    expect(props.notes?.description).toContain('one line, at most 200 characters');
+    // And the write refuses past them, as described.
+    const many = await call('add_term', { canonical: 'Foo', aliases: Array.from({ length: 65 }, (_, i) => `foo${i}`) });
+    expect(many.isError).toBe(true);
+    expect(many.text).toContain('at most 64 aliases per term');
+    const notes = await call('add_term', { canonical: 'Foo', notes: 'x'.repeat(201) });
+    expect(notes.text).toContain('notes: must be at most 200 characters');
+  });
+});
+
 describe('suggest_canonical result shape', () => {
   it('is { heard, suggestions } with at most 3, as the description says', async () => {
     for (const canonical of ['Ashlr.AI', 'Ashley', 'Asher', 'Ashlar Labs', 'Ashland']) await call('add_term', { canonical, aliases: [] });
