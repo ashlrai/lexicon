@@ -29,6 +29,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 ### Fixed
 
 - A LEXICON_PATH under a regular file (`notes.txt\lexicon.yaml`) is named as unreadable on Windows too. Windows answers such a path with ENOENT rather than ENOTDIR, so the lexicon read as missing there and only a later write failed.
+- A clipboard write that fails names what the tool printed on stderr (at most 4 KiB). The write's stderr was ignored, so a refused `pbcopy`, `wl-copy`, `xclip` or `xsel` write said only `exited with code N`.
 - A running `lexicon serve` picks up a replaced `serve.json`. The token was read once at start, so after the file was deleted and `lexicon serve --show` minted a new token, the server answered that token 401 (and `/pair` handed out the old one) until it was restarted. A token that does not match now makes the server re-read the file when it changed, with the same format checks; only the token the file holds is accepted.
 - `lexicon serve` records the port it bound in `serve.json` by re-reading the file under its lock and changing only `port`. It wrote back the copy it read before binding, so an edit made in between (a hand-added `allowedOrigins`, a token `lexicon serve --show` minted after the file was deleted) was undone.
 - `lexicon serve` compares the bearer token as fixed-length SHA-256 digests. It checked the length first and returned before `timingSafeEqual` for a token of another length, so the timing of a 401 told a caller how long the real token is.

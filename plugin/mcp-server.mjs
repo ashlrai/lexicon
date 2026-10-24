@@ -64197,12 +64197,14 @@ function isClipboardTimeout(err) {
 function isClipboardTooLarge(err) {
   return err instanceof Error && err.name === "ClipboardTooLargeError";
 }
+var MAX_CLIPBOARD_WRITE_STDERR_BYTES = 4 * 1024;
+var WRITE_STDERR_GRACE_MS = 200;
 function defaultClipboardExec(cmd, args, stdin, opts = {}) {
   const isWrite = stdin !== void 0;
   const { timeoutMs = CLIPBOARD_EXEC_TIMEOUT_MS, env } = typeof opts === "number" ? { timeoutMs: opts, env: void 0 } : opts;
   return new Promise((resolve5, reject) => {
     const child = (0, import_node_child_process4.spawn)(cmd, [...args], {
-      stdio: [isWrite ? "pipe" : "ignore", isWrite ? "ignore" : "pipe", isWrite ? "ignore" : "pipe"],
+      stdio: [isWrite ? "pipe" : "ignore", isWrite ? "ignore" : "pipe", "pipe"],
       windowsHide: true,
       ...env ? { env } : {}
     });
@@ -64230,13 +64232,42 @@ function defaultClipboardExec(cmd, args, stdin, opts = {}) {
       }
       out.push(chunk);
     });
-    child.stderr?.on("data", (chunk) => errChunks.push(chunk));
-    child.once(isWrite ? "exit" : "close", (code) => {
+    let errSize = 0;
+    child.stderr?.on("data", (chunk) => {
+      if (!isWrite) {
+        errChunks.push(chunk);
+        return;
+      }
+      const room = MAX_CLIPBOARD_WRITE_STDERR_BYTES - errSize;
+      if (room <= 0) return;
+      const kept = chunk.length > room ? chunk.subarray(0, room) : chunk;
+      errChunks.push(kept);
+      errSize += kept.length;
+    });
+    const finish = (code) => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       if (code === 0) resolve5(Buffer.concat(out).toString("utf8"));
       else reject(new ExecError(cmd, code, Buffer.concat(errChunks).toString("utf8")));
+    };
+    child.once(isWrite ? "exit" : "close", (code) => {
+      if (settled) return;
+      if (!isWrite || code === 0 || !child.stderr || child.stderr.readableEnded) {
+        child.stderr?.destroy();
+        finish(code);
+        return;
+      }
+      clearTimeout(timer);
+      const stderr = child.stderr;
+      const done = () => {
+        clearTimeout(grace);
+        stderr.destroy();
+        finish(code);
+      };
+      const grace = setTimeout(done, WRITE_STDERR_GRACE_MS);
+      stderr.once("end", done);
+      stderr.once("error", done);
     });
     if (isWrite && child.stdin) {
       child.stdin.once("error", () => void 0);

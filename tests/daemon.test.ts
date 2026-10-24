@@ -971,6 +971,28 @@ describe('a clipboard too large to correct', () => {
     }
   }, 20_000);
 
+  // Catches: a write's stderr was 'ignore', so a clipboard tool that refused
+  // the write (no display, a locked pasteboard) was reported only as
+  // "exited with code N". Its stderr is now kept, bounded, in the error; and
+  // a child the tool forks with the pipe inherited (xclip -i) still does not
+  // hold the write open.
+  it('a failed write names what the tool printed on stderr, bounded, and a forked child does not hold a write open', async () => {
+    await expect(
+      backends.defaultClipboardExec(process.execPath, ['-e', "process.stdin.resume(); process.stdin.on('end', () => { process.stderr.write('Error: Can\\'t open display: :0\\n'); process.exit(1); })"], 'text'),
+    ).rejects.toMatchObject({ name: 'ExecError', exitCode: 1, message: expect.stringContaining("Can't open display: :0") });
+    const big = backends.MAX_CLIPBOARD_WRITE_STDERR_BYTES * 4;
+    const err = await backends
+      .defaultClipboardExec(process.execPath, ['-e', `process.stderr.write('e'.repeat(${big}), () => process.exit(2))`], 'text')
+      .catch((e: unknown) => e as InstanceType<typeof backends.ExecError>);
+    expect(err).toMatchObject({ name: 'ExecError', exitCode: 2 });
+    expect(err.stderr.length).toBe(backends.MAX_CLIPBOARD_WRITE_STDERR_BYTES);
+    // The parent exits at once; the grandchild keeps stderr open for 4 s.
+    const started = Date.now();
+    const forker = `require('child_process').spawn(process.execPath, ['-e', 'setTimeout(() => {}, 4000)'], { detached: true, stdio: ['ignore', 'ignore', 'inherit'] }).unref(); process.exit(0)`;
+    await expect(backends.defaultClipboardExec(process.execPath, ['-e', forker], 'text')).resolves.toBe('');
+    expect(Date.now() - started).toBeLessThan(3_000);
+  }, 20_000);
+
   it('the loop skips a too-large clipboard without reporting an error, then corrects the next copy', async () => {
     let bytes = 17 * 1024 * 1024;
     const { exec, writes } = bigExec(() => bytes, 'meet Ashler');

@@ -132,9 +132,21 @@ export function isClipboardTooLarge(err: unknown): boolean {
 }
 
 /**
- * Default process runner. Writes (a `stdin` payload) ignore stdout/stderr and
+ * Most stderr bytes a failed write keeps for its error message. A write's
+ * stderr was ignored, so a refused write said only "exited with code N".
+ */
+export const MAX_CLIPBOARD_WRITE_STDERR_BYTES = 4 * 1024;
+/** How long a failed write waits for the rest of its stderr after the exit. */
+const WRITE_STDERR_GRACE_MS = 200;
+
+/**
+ * Default process runner. Writes (a `stdin` payload) ignore stdout and
  * resolve as soon as the process exits: `xclip -i` forks a child that keeps
- * the selection alive and would otherwise hold the pipes open forever. A read
+ * the selection alive and would otherwise hold the pipes open forever. A
+ * write's stderr is read, at most MAX_CLIPBOARD_WRITE_STDERR_BYTES of it, so
+ * a failed write names why; the pipe is let go of at the exit (after up to
+ * 200 ms for the rest of a failed write's message), so a forked child that
+ * inherited it cannot keep the process alive. A read
  * whose stdout passes MAX_CLIPBOARD_READ_BYTES kills the tool and rejects with
  * a ClipboardTooLargeError.
  */
@@ -148,7 +160,7 @@ export function defaultClipboardExec(
   const { timeoutMs = CLIPBOARD_EXEC_TIMEOUT_MS, env } = typeof opts === 'number' ? { timeoutMs: opts, env: undefined } : opts;
   return new Promise((resolve, reject) => {
     const child = spawn(cmd, [...args], {
-      stdio: [isWrite ? 'pipe' : 'ignore', isWrite ? 'ignore' : 'pipe', isWrite ? 'ignore' : 'pipe'],
+      stdio: [isWrite ? 'pipe' : 'ignore', isWrite ? 'ignore' : 'pipe', 'pipe'],
       windowsHide: true,
       ...(env ? { env } : {}),
     });
@@ -176,13 +188,44 @@ export function defaultClipboardExec(
       }
       out.push(chunk);
     });
-    child.stderr?.on('data', (chunk: Buffer) => errChunks.push(chunk));
-    child.once(isWrite ? 'exit' : 'close', (code: number | null) => {
+    let errSize = 0;
+    child.stderr?.on('data', (chunk: Buffer) => {
+      if (!isWrite) {
+        errChunks.push(chunk);
+        return;
+      }
+      const room = MAX_CLIPBOARD_WRITE_STDERR_BYTES - errSize;
+      if (room <= 0) return;
+      const kept = chunk.length > room ? chunk.subarray(0, room) : chunk;
+      errChunks.push(kept);
+      errSize += kept.length;
+    });
+    const finish = (code: number | null): void => {
       if (settled) return;
       settled = true;
       clearTimeout(timer);
       if (code === 0) resolve(Buffer.concat(out).toString('utf8'));
       else reject(new ExecError(cmd, code, Buffer.concat(errChunks).toString('utf8')));
+    };
+    child.once(isWrite ? 'exit' : 'close', (code: number | null) => {
+      if (settled) return;
+      if (!isWrite || code === 0 || !child.stderr || child.stderr.readableEnded) {
+        child.stderr?.destroy();
+        finish(code);
+        return;
+      }
+      // A failed write: what it printed may still be in the pipe. It has
+      // exited, so the timeout no longer applies.
+      clearTimeout(timer);
+      const stderr = child.stderr;
+      const done = (): void => {
+        clearTimeout(grace);
+        stderr.destroy();
+        finish(code);
+      };
+      const grace = setTimeout(done, WRITE_STDERR_GRACE_MS);
+      stderr.once('end', done);
+      stderr.once('error', done);
     });
     if (isWrite && child.stdin) {
       // EPIPE when the tool exits early; the exit code tells the real story.
