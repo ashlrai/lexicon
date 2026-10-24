@@ -528,6 +528,20 @@ describe('blank required strings', () => {
     expect(suggest.text).toMatch(/must not be blank at heard/);
   });
 
+  // Catches: learn_correction's heard and meant were `.min(1)`, so "  " passed
+  // the schema and the refusal came from the handler, not naming the argument.
+  it('are refused for learn_correction heard and meant at the schema, naming the argument', async () => {
+    for (const [args, field] of [
+      [{ heard: '   ', meant: 'Ashlr.AI' }, 'heard'],
+      [{ heard: 'Ashler', meant: '\t ' }, 'meant'],
+    ] as const) {
+      const res = await call('learn_correction', args);
+      expect(res.isError).toBe(true);
+      expect(res.text).toMatch(new RegExp(`must not be blank at ${field}`));
+    }
+    await expect(fs.stat(path.join(home, 'lexicon.yaml'))).rejects.toThrow();
+  });
+
   // import_dictionary with blank content answered a success with 0 terms, so an
   // agent that lost the file's text on the way reported an import that read nothing.
   it('are refused for import_dictionary content and path', async () => {
@@ -924,6 +938,17 @@ describe('tool and resource descriptions agree with what the code does', () => {
     expect(props('suggest_terms').limit?.description).toContain('(default 20)');
     expect(props('export_lexicon').limit?.description).toContain('Omitted: every term.');
     expect(props('export_lexicon').categories?.description).toContain('Omitted: every category.');
+  });
+
+  // Catches: remove_term's canonical had no description at all.
+  it('remove_term canonical and learn_correction heard/meant describe themselves and say blank is refused', async () => {
+    const { tools } = await listed();
+    const props = (name: string): Record<string, { description?: string }> =>
+      (tools.find((t) => t.name === name) as { inputSchema?: { properties?: Record<string, { description?: string }> } } | undefined)?.inputSchema?.properties ?? {};
+    expect(props('remove_term').canonical?.description).toMatch(/^The canonical spelling of the term to remove/);
+    for (const d of [props('remove_term').canonical?.description, props('learn_correction').heard?.description, props('learn_correction').meant?.description]) {
+      expect(d).toContain('must not be blank');
+    }
   });
 
   // Catches: the 60-character cap on heard and meant was in no schema

@@ -337,10 +337,12 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'lexicon file than the `scope` you asked for, `foundIn` and `note` say which scope to pass instead, otherwise the `note` points at list_terms. With `alias`, an ' +
         'unknown term or an alias the term does not have is an error; when the other lexicon file\'s copy of the term has that alias, the error names that file and the scope to pass.',
       inputSchema: {
-        canonical: nonBlank(),
+        canonical: nonBlank().describe(
+          'The canonical spelling of the term to remove, as list_terms shows it (case-insensitive), e.g. "Ashlr.AI"; must not be blank. With `alias`, the term that alias is removed from.',
+        ),
         alias: nonBlank()
           .optional()
-          .describe('Remove only this alias (case-insensitive) from the term instead of the whole term.'),
+          .describe('Remove only this alias (case-insensitive) from the term instead of the whole term; must not be blank.'),
         scope: z
           .enum(TERM_SCOPES)
           .optional()
@@ -577,8 +579,18 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
         'pass only the misspelled name as `heard`, not the sentence around it, and it never edits another term: when one already claims `heard` ' +
         'the result carries `conflict` { canonical, scope, as, spelling } and the summary says what to call; when an untrusted project lexicon also claims it, `untrustedProject` { path, trust } (path only, never its contents). Then get on with what the user actually asked for.',
       inputSchema: {
-        heard: z.string({ error: oneSpellingError('heard') }).min(1).describe(`The wrong form that was written, e.g. "Ashler": only the name, at most ${MAX_CORRECTION_LENGTH} characters.`),
-        meant: z.string({ error: oneSpellingError('meant') }).min(1).describe(`The spelling the user wants, e.g. "Ashlr.AI", at most ${MAX_CORRECTION_LENGTH} characters.`),
+        // nonBlank's check: `.min(1)` let "  " through to the handler, whose
+        // refusal did not name the argument.
+        heard: z
+          .string({ error: oneSpellingError('heard') })
+          .min(1)
+          .regex(/\S/, 'must not be blank')
+          .describe(`The wrong form that was written, e.g. "Ashler": only the name, at most ${MAX_CORRECTION_LENGTH} characters; must not be blank.`),
+        meant: z
+          .string({ error: oneSpellingError('meant') })
+          .min(1)
+          .regex(/\S/, 'must not be blank')
+          .describe(`The spelling the user wants, e.g. "Ashlr.AI", at most ${MAX_CORRECTION_LENGTH} characters; must not be blank.`),
         scope: z
           .enum(TERM_SCOPES)
           .optional()
