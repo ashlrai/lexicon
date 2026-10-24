@@ -981,9 +981,9 @@ describe('a clipboard too large to correct', () => {
       backends.defaultClipboardExec(process.execPath, ['-e', "process.stdin.resume(); process.stdin.on('end', () => { process.stderr.write('Error: Can\\'t open display: :0\\n'); process.exit(1); })"], 'text'),
     ).rejects.toMatchObject({ name: 'ExecError', exitCode: 1, message: expect.stringContaining("Can't open display: :0") });
     const big = backends.MAX_CLIPBOARD_WRITE_STDERR_BYTES * 4;
-    const err = await backends
+    const err = (await backends
       .defaultClipboardExec(process.execPath, ['-e', `process.stderr.write('e'.repeat(${big}), () => process.exit(2))`], 'text')
-      .catch((e: unknown) => e as InstanceType<typeof backends.ExecError>);
+      .catch((e: unknown) => e)) as InstanceType<typeof backends.ExecError>;
     expect(err).toMatchObject({ name: 'ExecError', exitCode: 2 });
     expect(err.stderr.length).toBe(backends.MAX_CLIPBOARD_WRITE_STDERR_BYTES);
     // The parent exits at once; the grandchild keeps stderr open for 4 s.
