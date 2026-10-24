@@ -163,3 +163,39 @@ describe('harvest_repo and suggest_terms', () => {
     expect(full.blocks).toHaveLength(1);
   });
 });
+
+describe('import_dictionary and import_vocabulary', () => {
+  // Catches: "pass either path or content" while both together import the
+  // content and let the path's extension pick the format.
+  it('import_dictionary with both: content is imported, the path is not read, its extension picks the format', async () => {
+    const d = (await tool('import_dictionary')).description ?? '';
+    expect(d).toContain("With both, content is imported and path is not read: only its file name is used, so its extension steers format 'auto'");
+    const res = await call('import_dictionary', { content: 'word,replacement\nhead sner,Hetzner\n', path: 'missing-dict.csv', dryRun: true });
+    expect(res.isError).toBe(false);
+    const report = res.json();
+    expect(report.terms).toMatchObject([{ canonical: 'Hetzner', aliases: ['head sner'] }]);
+  });
+
+  // Catches: the preview cap, the single use and the 20-preview window were in
+  // no description, so an agent holding an old token got "preview is missing".
+  it('import_vocabulary: a token is used once and is dropped once 20 newer previews were made', async () => {
+    const d = (await tool('import_vocabulary')).description ?? '';
+    expect(d).toContain('(at most 50 per preview, across the sources chosen)');
+    expect(d).toContain('a token is gone after one apply, after five minutes, or once 20 newer previews were made');
+    await connected(async (client) => {
+      const preview = async (): Promise<string> => {
+        const r = (await client.callTool({ name: 'import_vocabulary', arguments: { sources: [] } })) as { content: { text: string }[] };
+        return (JSON.parse(r.content[0]?.text ?? '') as { previewToken: string }).previewToken;
+      };
+      const apply = async (token: string) =>
+        (await client.callTool({ name: 'import_vocabulary', arguments: { sources: [], apply: true, previewToken: token, approvedCandidateIds: [] } })) as { isError?: boolean; content: { text: string }[] };
+      const tokens: string[] = [];
+      for (let i = 0; i < 21; i += 1) tokens.push(await preview());
+      expect((await apply(tokens[0]!)).isError).toBe(true);
+      expect((await apply(tokens[1]!)).isError).not.toBe(true);
+      const again = await apply(tokens[1]!);
+      expect(again.isError).toBe(true);
+      expect(again.content[0]?.text).toContain('preview is missing, expired');
+    });
+  });
+});

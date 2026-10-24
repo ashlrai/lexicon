@@ -65193,13 +65193,16 @@ function printReport(report, io) {
 }
 
 // src/mcp/tools/packs.ts
+var IMPORT_PREVIEW_MAX_CANDIDATES = 50;
+var IMPORT_PREVIEWS_KEPT = 20;
+var IMPORT_PREVIEW_TTL_MS = 3e5;
 var REGISTRY_SOURCE_DESC = "Registry index for community packs, as the user gave it: only an index the user registered is read (one they installed a pack from with the CLI, or one in LEXICON_REGISTRIES); any other is refused. Omit for the vendored starter packs only.";
 var registerPackTools = (server, ctx) => {
   const { load } = ctx;
   const imports = /* @__PURE__ */ new Map();
   const destination = (scope) => JSON.stringify({ cwd: ctx.cwd, scope: scope ?? "global", ...resolvePaths({ cwd: ctx.cwd }) });
   const pruneImports = () => {
-    for (const [token, preview] of imports) if (Date.now() - preview.at > 3e5) imports.delete(token);
+    for (const [token, preview] of imports) if (Date.now() - preview.at > IMPORT_PREVIEW_TTL_MS) imports.delete(token);
   };
   server.registerTool(
     "list_packs",
@@ -65344,13 +65347,13 @@ var registerPackTools = (server, ctx) => {
     "import_vocabulary",
     {
       title: "Import proper nouns from the user's own sources (preview, then apply)",
-      description: "Guided vocabulary import: harvest candidate terms from where the user's proper nouns live (contacts: macOS Contacts names; calendar: macOS Calendar event titles and attendee names; github: the gh CLI's username, org members and repo names). Every source is local-first and opt-in: the preview names exactly what each source reads, unavailable sources say why, and email/Slack are not implemented (reading mail needs new OAuth scopes, which is a conversation, not a default). Ask which sources to read first, then pass explicit sources without apply to preview candidates. Show the candidate contents and ids; apply requires the returned previewToken and only approvedCandidateIds. Applying consumes the same snapshot without reading the sources again. Candidates merge like a pack install: an existing term keeps its spelling and only gains aliases; new terms are stamped import:<source> so their origin stays visible. With scope project and a project file that is not trusted yet, the file is written but left untrusted (`trusted: false`): relay `nextStep`.",
+      description: `Guided vocabulary import: harvest candidate terms from where the user's proper nouns live (contacts: macOS Contacts names; calendar: macOS Calendar event titles and attendee names; github: the gh CLI's username, org members and repo names). Every source is local-first and opt-in: the preview names exactly what each source reads, unavailable sources say why, and email/Slack are not implemented (reading mail needs new OAuth scopes, which is a conversation, not a default). Ask which sources to read first, then pass explicit sources without apply to preview candidates (at most ${IMPORT_PREVIEW_MAX_CANDIDATES} per preview, across the sources chosen). Show the candidate contents and ids; apply requires the returned previewToken and only approvedCandidateIds. Applying consumes the same snapshot without reading the sources again, once: a token is gone after one apply, after five minutes, or once ${IMPORT_PREVIEWS_KEPT} newer previews were made. Candidates merge like a pack install: an existing term keeps its spelling and only gains aliases; new terms are stamped import:<source> so their origin stays visible. With scope project and a project file that is not trusted yet, the file is written but left untrusted (\`trusted: false\`): relay \`nextStep\`.`,
       inputSchema: {
         sources: external_exports.array(external_exports.enum(IMPLEMENTED_IMPORT_SOURCES)).optional().describe("Explicit sources the user approved reading. Omitted sources returns only descriptions without probing or harvesting."),
         apply: external_exports.boolean().optional().describe("false/omitted = preview only: return availability and candidates, write nothing (default). true = write the candidates after the user approved the preview."),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
         previewToken: external_exports.string().optional().describe("Token from the approved preview; required to apply, refused without apply: true. Expires after five minutes or a server restart."),
-        approvedCandidateIds: external_exports.array(external_exports.string().regex(/^[a-f0-9]{64}$/)).max(50).optional().describe("Only candidate ids approved by the user from that preview; required to apply, refused without apply: true; empty means import nothing.")
+        approvedCandidateIds: external_exports.array(external_exports.string().regex(/^[a-f0-9]{64}$/)).max(IMPORT_PREVIEW_MAX_CANDIDATES).optional().describe("Only candidate ids approved by the user from that preview; required to apply, refused without apply: true; empty means import nothing.")
       }
     },
     async ({ sources, apply, scope, previewToken, approvedCandidateIds }) => guarded(async () => {
@@ -65405,8 +65408,8 @@ var registerPackTools = (server, ctx) => {
         });
       }
       const chosen = wanted.filter((id) => availability.some((s) => s.id === id && s.implemented && s.available));
-      const candidates = chosen.length === 0 ? [] : await harvestImportSources(chosen, {}, { limit: 50 });
-      while (imports.size >= 20) imports.delete(imports.keys().next().value);
+      const candidates = chosen.length === 0 ? [] : await harvestImportSources(chosen, {}, { limit: IMPORT_PREVIEW_MAX_CANDIDATES });
+      while (imports.size >= IMPORT_PREVIEWS_KEPT) imports.delete(imports.keys().next().value);
       const token = (0, import_node_crypto4.randomUUID)();
       imports.set(token, { at: Date.now(), sources: [...new Set(wanted)].sort(), destination: destination(scope), candidates: structuredClone(candidates) });
       return textResult({
@@ -65423,9 +65426,9 @@ var registerPackTools = (server, ctx) => {
     "import_dictionary",
     {
       title: "Import an existing dictionary",
-      description: `Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB). \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused with the command the user can run themselves. Use dryRun: true first to show the user what would be added, then run again without it. With scope project and a project file that is not trusted yet, the file is written but left untrusted (\`trusted: false\`): relay \`nextStep\`. A dry run against such a file does not read it, so its rows carry no \`created\` (the report has \`untrustedTarget: true\`).`,
+      description: `Import a dictionary the user already has (Wispr Flow CSV, Superwhisper JSON, macOS Text Replacement plist, espanso YAML, markdown (the CLAUDE.md '## Voice lexicon' table or '- **Canonical**: aliases' bullets), plain text 'Canonical: alias1, alias2', generic CSV, or a lexicon JSON/YAML) into the lexicon. Pass either path (a file on disk, resolved from the server working directory) or content (the text itself, up to 8 MB of UTF-8). With both, content is imported and path is not read: only its file name is used, so its extension steers format 'auto' (content passed with a .csv path is parsed as CSV). \`path\` must be inside the server directory, its git root, a client root or ${HARVEST_ROOTS_ENV}; anything else is refused with the command the user can run themselves. Use dryRun: true first to show the user what would be added, then run again without it. With scope project and a project file that is not trusted yet, the file is written but left untrusted (\`trusted: false\`): relay \`nextStep\`. A dry run against such a file does not read it, so its rows carry no \`created\` (the report has \`untrustedTarget: true\`).`,
       inputSchema: {
-        path: nonBlank().optional().describe("File to import. Its extension helps auto-detection."),
+        path: nonBlank().optional().describe("File to import. Its extension helps auto-detection. Alongside content it is not read, and only its extension and name are used."),
         content: nonBlank().max(MAX_IMPORT_BYTES).optional().describe("The dictionary text, when the file is not on this machine. Must not be blank."),
         format: external_exports.enum(IMPORT_FORMAT_VALUES).optional().describe("Input format; 'auto' (default) sniffs it."),
         scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default) or 'project' (.lexicon.yaml in the current repo)."),
