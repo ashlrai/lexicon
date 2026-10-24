@@ -64851,13 +64851,13 @@ function sameKey(a, b) {
   return a.length === b.length && a.every((p, i) => p === b[i]);
 }
 function tomlHeaderRe(header) {
+  return { test: (line2) => isTomlTableHeader(line2, header) };
+}
+function isTomlTableHeader(line2, header, opts = {}) {
   const want = header.split(".");
-  return {
-    test(line2) {
-      const key = tomlHeaderKey(line2);
-      return key !== void 0 && !key.array && sameKey(key.parts, want);
-    }
-  };
+  const key = tomlHeaderKey(line2);
+  if (key === void 0 || key.array) return false;
+  return opts.orSubTable ? sameKey(key.parts.slice(0, want.length), want) : sameKey(key.parts, want);
 }
 function codexServerElsewhere(text) {
   const own2 = CODEX_TABLE.split(".");
@@ -67697,8 +67697,8 @@ function removeServerFromJson(current, key) {
   delete next[key].lexicon;
   return { next, outcome: "removed" };
 }
-var LEXICON_TABLE_RE = /^\s*\[\s*mcp_servers\.lexicon\s*\]\s*(#.*)?$/;
-var LEXICON_ANY_TABLE_RE = /^\s*\[\s*mcp_servers\.lexicon(?:\s*\.[^\]]*)?\s*\]\s*(#.*)?$/;
+var isLexiconTable = (l) => isTomlTableHeader(l, CODEX_TABLE);
+var isLexiconAnyTable = (l) => isTomlTableHeader(l, CODEX_TABLE, { orSubTable: true });
 var TABLE_RE = /^\s*\[/;
 function isBlankOrComment2(l) {
   const t = l.trim();
@@ -67719,7 +67719,7 @@ function tomlValue(lines, key) {
 }
 function removeServerFromToml(text) {
   const lines = text.split("\n");
-  const start = lines.findIndex((l) => LEXICON_TABLE_RE.test(l));
+  const start = lines.findIndex(isLexiconTable);
   if (start < 0) return { next: text, outcome: "absent" };
   let end = start + 1;
   while (end < lines.length && !TABLE_RE.test(lines[end] ?? "")) end += 1;
@@ -67730,7 +67730,7 @@ function removeServerFromToml(text) {
   if (!owned) return { next: text, outcome: "kept" };
   let out = lines;
   for (; ; ) {
-    const at = out.findIndex((l) => LEXICON_ANY_TABLE_RE.test(l));
+    const at = out.findIndex(isLexiconAnyTable);
     if (at < 0) break;
     let stop = at + 1;
     while (stop < out.length && !TABLE_RE.test(out[stop] ?? "")) stop += 1;
@@ -67814,6 +67814,13 @@ async function uninstallToml(ctx, target) {
   } catch (err) {
     if (isEnoent(err)) return report(ctx, { file: target.file, entry, outcome: "absent" }, "does not exist");
     throw new Error(`could not read ${target.file}: ${errorMessage(err)}`);
+  }
+  const elsewhere = codexServerElsewhere(text);
+  if (elsewhere) {
+    throw new CliRefusal(
+      `${target.file} ${elsewhere}; nothing was changed`,
+      `remove that lexicon definition from ${target.file} by hand`
+    );
   }
   const { next, outcome } = removeServerFromToml(text);
   if (outcome === "removed" && !ctx.dryRun) {

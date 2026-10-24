@@ -193,6 +193,34 @@ describe('lexicon uninstall codex', () => {
   });
 });
 
+// Catches: uninstall codex matched only the literal [mcp_servers.lexicon]
+// header, so a quoted or spaced spelling (which install recognises) was
+// reported absent and left in place, and the inline and dotted forms install
+// refuses were reported absent too.
+describe('uninstall codex sees every spelling install sees', () => {
+  const launch = `command = "node"\nargs = [${JSON.stringify(SERVER)}]\n`;
+
+  it('removes a quoted or spaced header and its quoted sub-table', () => {
+    for (const header of ['[mcp_servers."lexicon"]', "[ mcp_servers . 'lexicon' ]  # ours"]) {
+      const text = `a = 1\n\n${header}\n${launch}\n[mcp_servers."lexicon".env]\nX = "1"\n\n[other]\nb = 2\n`;
+      expect(removeServerFromToml(text)).toEqual({ next: 'a = 1\n\n[other]\nb = 2\n', outcome: 'removed' });
+    }
+  });
+
+  it('refuses an inline table or dotted keys, writing nothing', async () => {
+    const file = path.join(home, '.codex', 'config.toml');
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    for (const text of [
+      `[mcp_servers]\nlexicon = { command = "node", args = [${JSON.stringify(SERVER)}] }\n`,
+      `mcp_servers.lexicon.command = "node"\n`,
+    ]) {
+      await fs.writeFile(file, text);
+      await expect(uninstall('codex')).rejects.toThrow(/defines the lexicon server as (an inline table|dotted keys).*nothing was changed/);
+      expect(await fs.readFile(file, 'utf8')).toBe(text);
+    }
+  });
+});
+
 describe('lexicon uninstall claude', () => {
   const get = (args: string, scope = 'User config (available in all your projects)') =>
     `lexicon:\n  Scope: ${scope}\n  Status: ok\n  Type: stdio\n  Command: node\n  Args: ${args}\n`;

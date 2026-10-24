@@ -518,13 +518,20 @@ function sameKey(a: readonly string[], b: readonly string[]): boolean {
  * refuses a file that defines a table twice.
  */
 function tomlHeaderRe(header: string): { test(line: string): boolean } {
+  return { test: (line: string): boolean => isTomlTableHeader(line, header) };
+}
+
+/**
+ * True when `line` is the `[header]` line of the table `header` (a dotted key
+ * of bare parts) however its key is spelled, or with `orSubTable` the header
+ * of one of its sub-tables (`[header.env]`). Never an array-of-tables header.
+ * Shared by install and uninstall so both see the same table.
+ */
+export function isTomlTableHeader(line: string, header: string, opts: { orSubTable?: boolean } = {}): boolean {
   const want = header.split('.');
-  return {
-    test(line: string): boolean {
-      const key = tomlHeaderKey(line);
-      return key !== undefined && !key.array && sameKey(key.parts, want);
-    },
-  };
+  const key = tomlHeaderKey(line);
+  if (key === undefined || key.array) return false;
+  return opts.orSubTable ? sameKey(key.parts.slice(0, want.length), want) : sameKey(key.parts, want);
 }
 
 /**
@@ -536,7 +543,7 @@ function tomlHeaderRe(header: string): { test(line: string): boolean } {
  * twice. Lines inside multi-line strings are not told apart, so one that
  * looks like such a key there is reported too (a refusal, never a write).
  */
-function codexServerElsewhere(text: string): string | undefined {
+export function codexServerElsewhere(text: string): string | undefined {
   const own = CODEX_TABLE.split('.');
   const lines = text.split('\n');
   let table: string[] = [];
