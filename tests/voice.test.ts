@@ -1622,6 +1622,32 @@ describe('lexicon voice --json failures', () => {
     expect(dshow.err.join('').match(/--list-devices/g)).toHaveLength(1);
   });
 
+  // Catches: the ffmpeg path went into `<ffmpeg> -version` as is, so a path with a space printed a command that ran something else.
+  it('quotes the ffmpeg path in the -version step for the platform shell', async () => {
+    for (const platform of ['darwin', 'win32'] as const) {
+      const ffmpeg = '/fake/bin/My Tools/ffmpeg';
+      const listFails = await harness({ platform });
+      listFails.deps.env = { PATH: listFails.binDir, LEXICON_FFMPEG_BIN: ffmpeg, LEXICON_WHISPER_BIN: '/fake/bin/whisper-cli' };
+      listFails.deps.exec = async () => {
+        throw new Error('boom');
+      };
+      expect(await runVoiceListDevices({ ...listFails.opts, json: true }, listFails.io, listFails.deps)).toBe(EXIT_ERROR);
+      const shown = commandLine([ffmpeg, '-version'], platform);
+      expect(shown).not.toBe(`${ffmpeg} -version`);
+      expect(listFails.err.join('')).toContain(`check ffmpeg with \`${shown}\`, or skip`);
+      expect(onlyDocument(listFails)).toMatchObject({ nextStep: expect.stringContaining(`\`${shown}\``) });
+
+      const spawnFails = await harness({ platform });
+      spawnFails.deps.env = { PATH: spawnFails.binDir, LEXICON_FFMPEG_BIN: ffmpeg, LEXICON_WHISPER_BIN: '/fake/bin/whisper-cli' };
+      spawnFails.deps.spawn = () => {
+        throw new Error('spawn ENOENT');
+      };
+      spawnFails.opts = { ...spawnFails.opts, device: 'MacBook Pro Microphone' };
+      expect(await runVoiceToggle(spawnFails.opts, spawnFails.io, spawnFails.deps)).toBe(EXIT_ERROR);
+      expect(spawnFails.err.join('')).toContain(`check ffmpeg (\`${shown}\`) and the input device`);
+    }
+  });
+
   it('without --json stdout stays empty on a failure', async () => {
     const h = await harness({ missing: ['whisper-cli', 'whisper-cpp'] });
     expect(await runVoice(h.opts, h.io, h.deps)).toBe(EXIT_MISSING_TOOL);

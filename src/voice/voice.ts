@@ -30,7 +30,7 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { commandLine, diffSummary, loadLexicon, recordHits, resolvePaths, sanitizeForDisplay } from '../core/index.js';
+import { commandLine, diffSummary, loadLexicon, recordHits, resolvePaths, sanitizeForDisplay, sanitizeForDisplayMax } from '../core/index.js';
 import type { Lexicon, LoadedLexicon } from '../core/index.js';
 import { PASTE_APPLESCRIPT, emptyLexiconHint } from '../daemon/clipboard.js';
 import { ExecError, detectClipboardBackend } from '../daemon/clipboard-backends.js';
@@ -577,6 +577,16 @@ function micPermissionHint(r: Resolved, launcher: string): string {
   return r.platform === 'darwin'
     ? `  Check that ${launcher} has Microphone permission: System Settings > Privacy & Security > Microphone.\n`
     : '';
+}
+
+/**
+ * `<ffmpeg> -version` quoted for the user's shell and made safe for a
+ * terminal. The path went in as is, so an ffmpeg under a directory with a
+ * space (`C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe`, `~/My Tools/ffmpeg`)
+ * printed a command that ran something else.
+ */
+function ffmpegVersionCommand(ffmpeg: string, platform: NodeJS.Platform): string {
+  return sanitizeForDisplayMax(commandLine([ffmpeg, '-version'], platform), Number.POSITIVE_INFINITY);
 }
 
 /** The --json `nextStep` for an input device ffmpeg could not resolve. */
@@ -1188,7 +1198,7 @@ async function startDetached(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps, r
   } catch (e) {
     await clearState(r.globalPath);
     await fs.rm(wav, { force: true }).catch(() => undefined);
-    return refuseWith(r, io, message(e), `check ffmpeg (\`${tools.ffmpeg} -version\`) and the input device (\`lexicon voice --list-devices\`), then try again`);
+    return refuseWith(r, io, message(e), `check ffmpeg (\`${ffmpegVersionCommand(tools.ffmpeg, r.platform)}\`) and the input device (\`lexicon voice --list-devices\`), then try again`);
   }
   await writeState(r.globalPath, { pid: child.pid, wav, startedAt: startedAt.toISOString() });
   // Sweep what is provably worthless (zero-byte captures, a claim breadcrumb a
@@ -1253,6 +1263,6 @@ async function listDevices(opts: VoiceOptions, io: VoiceIO, r: Resolved, deps: V
     else io.stdout(formatDeviceList(devices));
     return EXIT_OK;
   } catch (e) {
-    return refuseWith(r, io, `could not list devices: ${message(e)}`, `check ffmpeg with \`${tools.ffmpeg} -version\`, or skip the list and pass the device by name: lexicon voice --device <name>`);
+    return refuseWith(r, io, `could not list devices: ${message(e)}`, `check ffmpeg with \`${ffmpegVersionCommand(tools.ffmpeg, r.platform)}\`, or skip the list and pass the device by name: lexicon voice --device <name>`);
   }
 }
