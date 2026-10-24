@@ -3001,6 +3001,18 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       });
       expect(missing.stderr).toContain('lexicon: pass a directory that exists');
 
+      // Catches: a file named as the root got the scan's bare `not a directory` and the generic next step.
+      const file = path.join(tmp, 'package.json');
+      await fs.writeFile(file, '{}\n');
+      const notDir = lexicon(['harvest', file, '--full', '--cwd', tmp], globalPath);
+      expect(notDir.status).toBe(1);
+      expect(JSON.parse(notDir.stdout)).toEqual({
+        ok: false,
+        error: `harvest: not a directory: ${file}`,
+        nextStep: 'pass a directory (the repository root, not a file in it), or leave the path out to harvest the current directory',
+      });
+      expect(notDir.stderr).toContain('lexicon: pass a directory (the repository root');
+
       // A command without --full keeps an empty stdout for it: there it is just an unknown option.
       const other = lexicon(['stats', '--full', '--cwd', tmp], globalPath);
       expect(other.status).toBe(1);

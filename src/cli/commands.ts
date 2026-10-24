@@ -50,7 +50,7 @@
  *    src/util/ (`errorMessage`, `isRecord`, `findOnPath`, ...). If you find
  *    yourself writing a second copy of one, import it instead.
  */
-import { existsSync, promises as fs } from 'node:fs';
+import { existsSync, promises as fs, statSync } from 'node:fs';
 import path from 'node:path';
 import {
   DEMO_LEXICON,
@@ -967,6 +967,11 @@ export async function runHarvest(
   const json = opts.json === true || opts.full === true;
   if (!existsSync(target)) {
     return refuse(io, json, `harvest: path does not exist: ${target}`, 'pass a directory that exists, or leave the path out to harvest the current directory');
+  }
+  // A file (package.json, a README) is refused here with the same hint: the
+  // scan's own `not a directory` came with the generic next step.
+  if (!statSync(target).isDirectory()) {
+    return refuse(io, json, `harvest: not a directory: ${target}`, 'pass a directory (the repository root, not a file in it), or leave the path out to harvest the current directory');
   }
 
   const tty = (deps.isInteractive ?? isInteractive)();
