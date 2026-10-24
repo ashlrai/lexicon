@@ -2084,6 +2084,21 @@ describe('lexicon serve (CLI)', () => {
     expect(await fs.readdir(dir)).toEqual([]);
   });
 
+  // Catches: --pair took any `{ ok: true }` /health for lexicon serve, so another program on the port had its page opened as the pairing page.
+  it('--pair refuses a port where something other than lexicon serve answers', async () => {
+    const calls: string[][] = [];
+    const foreignFetch = (async () => new Response(JSON.stringify({ ok: true }), { status: 200, headers: { 'Content-Type': 'application/json' } })) as unknown as typeof fetch;
+    const text = memIO();
+    expect(await runServe({ pair: true, port: info.port, globalPath: env.globalPath }, text, { platform: 'darwin', exec: fakeExec(calls), fetch: foreignFetch })).toBe(1);
+    expect(calls).toEqual([]);
+    expect(text.err.join('')).toContain('something else answers on that port');
+    expect(text.err.join('')).toContain('lexicon serve --port <n>');
+    const json = memIO();
+    expect(await runServe({ pair: true, json: true, port: info.port, globalPath: env.globalPath }, json, { platform: 'darwin', exec: fakeExec(calls), fetch: foreignFetch })).toBe(1);
+    expect(JSON.parse(json.out.join(''))).toMatchObject({ ok: false, up: false, error: expect.stringContaining('something else answers on that port'), nextStep: expect.stringContaining('lexicon serve --port <n>') });
+    expect(calls).toEqual([]);
+  });
+
   it('--pair exits 1 with a start hint when the server is down, and when no browser opens', async () => {
     const closed = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
     const c = await closed.start();

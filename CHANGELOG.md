@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon serve --pair` refuses a port where something other than lexicon serve answers `/health` (exit 1, the `--status` wording and its `--port <n>` next step) instead of opening that program's page as the pairing page. Any `{ ok: true }` reply counted as lexicon serve.
 - `lexicon daemon` prints its error lines (a clipboard tool's stderr, a lexicon reload or `recordHits` failure naming a path) and correction summaries without control characters or escape sequences. They were written as they came, so an escape sequence in a tool's message or a directory name reached the terminal.
 - `lexicon daemon` retries the clipboard text after a lexicon that would not load. The next poll skipped that text, printed `working again` while the lexicon was still broken, and the text was never corrected once the file was fixed.
 - `lexicon edit` treats an editor that exits non-zero (vim `:cq`) as an aborted edit: it says so, does not re-trust a trusted project file (and says when the file changed anyway and needs `lexicon trust`), and exits 1. It only noted the exit code, then checked and re-trusted whatever the editor left, which blessed content the user had backed out of.
