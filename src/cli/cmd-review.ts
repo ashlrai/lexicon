@@ -803,6 +803,26 @@ export function editorCommand(env: NodeJS.ProcessEnv = process.env): { command: 
   return command ? { command, args } : undefined;
 }
 
+/** Editors that run in the terminal they are started from (lower case, no `.exe`). */
+const TERMINAL_EDITORS = new Set([
+  'vi', 'vim', 'nvim', 'lvim', 'view', 'ex', 'nvi', 'elvis', 'vis', 'nano', 'pico', 'micro', 'joe', 'jed', 'jove',
+  'ne', 'mg', 'zile', 'kak', 'hx', 'helix', 'ed', 'mcedit', 'tilde', 'amp',
+]);
+
+/**
+ * True when `command args` is an editor that runs in the terminal: one of
+ * TERMINAL_EDITORS (but not `vim -g`, which opens gvim), `emacs` with `-nw`,
+ * `-t` or `--no-window-system`, or `emacsclient` with `-t`, `-nw` or `--tty`.
+ * A GUI editor (`code --wait`, `subl -w`, `gvim -f`, plain `emacs`) is false.
+ */
+export function isTerminalEditor(command: string, args: readonly string[]): boolean {
+  const name = path.basename(command.replace(/\\/g, '/')).toLowerCase().replace(/\.exe$/, '');
+  if (TERMINAL_EDITORS.has(name)) return !(/^(vim|nvim|vi|view)$/.test(name) && args.includes('-g'));
+  if (name === 'emacs') return args.some((a) => a === '-nw' || a === '-t' || a === '--no-window-system');
+  if (name === 'emacsclient') return args.some((a) => a === '-t' || a === '-nw' || a === '--tty');
+  return false;
+}
+
 /**
  * Open the global (or `--project`) lexicon in the user's editor, then re-parse
  * it. The file is never rewritten by this command: an invalid result is
@@ -814,6 +834,7 @@ export async function runEdit(
   io: IO,
   spawnEditor: SpawnEditor = spawnEditorInherit,
   env: NodeJS.ProcessEnv = process.env,
+  interactive: () => boolean = isInteractive,
 ): Promise<number> {
   if (opts.json) return refuse(io, true, 'edit opens an editor and has no --json output', EDIT_NON_INTERACTIVE_NEXT_STEP);
   const cwd = resolveCwd(opts);
@@ -830,6 +851,20 @@ export async function runEdit(
     scope = 'global';
   }
 
+  const editor = editorCommand(env);
+  // Without a terminal on both ends (a pipe, CI, an agent's shell) a
+  // terminal editor waits for keys that never come, so the command hung.
+  // Checked before anything is created. A GUI editor opens its own window.
+  if (editor && isTerminalEditor(editor.command, editor.args) && !interactive()) {
+    const variable = env.VISUAL?.trim() ? '$VISUAL' : '$EDITOR';
+    return refuse(
+      io,
+      false,
+      `${variable} (${editor.command}) is a terminal editor, and stdin and stdout are not both a terminal, so it would wait for input that never comes`,
+      `run lexicon edit in a terminal, set VISUAL to an editor that opens a window and waits (e.g. VISUAL="code --wait"), or edit the file directly: ${target}`,
+    );
+  }
+
   // The existence check and the create are one locked step, the way `runInit`
   // does it. Apart, a `lexicon add` landing between them wrote the file this
   // had just decided was missing, and the empty lexicon written here was
@@ -844,7 +879,6 @@ export async function runEdit(
       ? (await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, store)) === 'trusted'
       : true;
 
-  const editor = editorCommand(env);
   if (!editor) {
     line(io, `no $VISUAL or $EDITOR set; edit the file directly:`);
     line(io, safeMessage(target));

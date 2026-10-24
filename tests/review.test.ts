@@ -7,7 +7,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { parse as parseYaml, stringify as stringifyYaml } from 'yaml';
-import { runHarvestInteractive, runReview, runEdit, editorCommand, resolveEditorSpawn } from '../src/cli/cmd-review.js';
+import { runHarvestInteractive, runReview, runEdit, editorCommand, isTerminalEditor, resolveEditorSpawn } from '../src/cli/cmd-review.js';
 import type { SpawnEditor } from '../src/cli/cmd-review.js';
 import { runAdd, runHarvest, runRemove } from '../src/cli/commands.js';
 import { PromptClosedError, askKey, splitList } from '../src/cli/prompt.js';
@@ -927,7 +927,7 @@ describe('edit', () => {
       return 1;
     };
     const io = makeIO();
-    expect(await runEdit({ cwd: repo, project: true, globalPath }, io, spawnEditor, { EDITOR: 'vim' })).toBe(1);
+    expect(await runEdit({ cwd: repo, project: true, globalPath }, io, spawnEditor, { EDITOR: 'vim' }, () => true)).toBe(1);
     expect(io.err).toContain('vim exited with code 1, so the edit is treated as aborted and the project lexicon was not re-trusted');
     expect(io.err).toContain('changed anyway, so its terms are not used until you review it and run: lexicon trust');
     expect(io.out).not.toContain('re-trusted');
@@ -952,6 +952,38 @@ describe('edit', () => {
     const review = makeIO();
     expect(await runReview({ cwd: repo, project: true, globalPath }, review, scripted(['k', 'k']))).toBe(0);
     expect(review.out).toContain('[2/2] Proj');
+  });
+
+  // Catches: with no terminal (a pipe, CI, an agent's shell) `lexicon edit` started vim anyway and hung waiting for keys.
+  it('refuses a terminal editor without a terminal, before creating anything, and still runs a GUI editor', async () => {
+    const fresh = path.join(tmp, 'no-tty', 'lexicon.yaml');
+    let spawned = 0;
+    const spawnEditor: SpawnEditor = async () => {
+      spawned++;
+      return 0;
+    };
+    for (const env of [{ EDITOR: 'vim' }, { VISUAL: '/usr/bin/nvim' }, { EDITOR: 'emacs -nw' }, { EDITOR: 'nano' }]) {
+      const io = makeIO();
+      expect(await runEdit({ globalPath: fresh }, io, spawnEditor, env, () => false)).toBe(1);
+      expect(io.err).toContain('is a terminal editor, and stdin and stdout are not both a terminal, so it would wait for input that never comes');
+      expect(io.err).toContain(`edit the file directly: ${fresh}`);
+      expect(io.err).toContain(env.VISUAL ? '$VISUAL (/usr/bin/nvim)' : '$EDITOR (');
+    }
+    expect(spawned).toBe(0);
+    await expect(fs.stat(fresh)).rejects.toThrow();
+    // A GUI editor opens its own window, and a terminal one runs in a terminal.
+    expect(await runEdit({ globalPath: fresh }, makeIO(), spawnEditor, { VISUAL: 'code --wait' }, () => false)).toBe(0);
+    expect(await runEdit({ globalPath: fresh }, makeIO(), spawnEditor, { EDITOR: 'vim' }, () => true)).toBe(0);
+    expect(spawned).toBe(2);
+  });
+
+  it('isTerminalEditor tells terminal editors from GUI ones', () => {
+    for (const [cmd, args] of [['vi', []], ['vim', []], ['C:\\Tools\\nvim.exe', []], ['nano', []], ['emacs', ['-nw']], ['emacsclient', ['-t']], ['hx', []]] as const) {
+      expect(isTerminalEditor(cmd, args)).toBe(true);
+    }
+    for (const [cmd, args] of [['code', ['--wait']], ['subl', ['-w']], ['gvim', ['-f']], ['vim', ['-g']], ['emacs', []], ['emacsclient', ['-c']], ['notepad', []]] as const) {
+      expect(isTerminalEditor(cmd, args)).toBe(false);
+    }
   });
 
   it('leaves an untrusted project file untrusted and says so', async () => {
