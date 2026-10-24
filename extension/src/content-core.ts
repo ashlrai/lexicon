@@ -13,6 +13,7 @@ import {
   composerFromTarget,
   findComposer,
   findSendButton,
+  isTextField,
   sendButtonFromTarget,
 } from './adapters.js';
 import type { SiteAdapter } from './adapters.js';
@@ -146,6 +147,16 @@ export function installContent(deps: ContentDeps): ContentHandle {
     });
   }
 
+  /** `offset` in the text after `corrections`: moved by each one wholly before it, to the end of one it falls inside. */
+  function shiftOffset(offset: number, corrections: readonly Correction[]): number {
+    let shift = 0;
+    for (const c of [...corrections].sort((a, b) => a.start - b.start)) {
+      if (c.end <= offset) shift += c.replacement.length - (c.end - c.start);
+      else if (c.start < offset) return c.start + shift + c.replacement.length;
+    }
+    return offset + shift;
+  }
+
   /** Normalize the composer, rewrite it when needed, then run `resend`. */
   async function correctThen(composer: HTMLElement, text: string, resend: () => void): Promise<void> {
     const reply = await normalizeComposer(composer, text, false);
@@ -153,7 +164,14 @@ export function installContent(deps: ContentDeps): ContentHandle {
       // The composer may have moved on while we waited (fast typist, voice
       // input still streaming). Only rewrite when it still holds `text`.
       if (readText(composer) === text) {
+        // A rich text box keeps the selection where the last (first in the
+        // text) replacement left it, so the line break a generic site's Enter
+        // then inserts landed mid-text. Put the caret back where it was,
+        // shifted by the corrections before it. A text field keeps its own.
+        const focused = !isTextField(composer) && (composer === doc.activeElement || composer.contains(doc.activeElement));
+        const caret = focused ? caretOffset(doc, composer) : undefined;
         await applyCorrections(doc, composer, reply.replacements, reply.output);
+        if (caret !== undefined) setCaret(doc, composer, shiftOffset(caret, reply.replacements));
         precheck = { text: reply.output, changed: false };
         toastFor(composer, text, reply.replacements, reply);
       }

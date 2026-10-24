@@ -1167,6 +1167,23 @@ describe('content: generic sites keep the Enter key working', () => {
     expect(t.selectionEnd).toBe(t.value.length);
   });
 
+  // Catches: in a rich text box the rewrite left the selection on the last
+  // word it replaced (the first in the text, since corrections apply back to
+  // front), so the line break Enter then inserted landed mid-text, after
+  // "ping Ashlr.AI", instead of at the caret at the end.
+  it('a rich text box gets its line break at the caret, shifted by the corrections before it', async () => {
+    document.body.innerHTML = '<div id="e" class="ProseMirror" contenteditable="true"><p id="first">ping ashler</p><p id="last">use x with ashler and more</p></div>';
+    const e = document.getElementById('e') as HTMLElement;
+    e.focus();
+    // The caret after "ashler" in the last paragraph, before " and more".
+    document.getSelection()!.collapse(document.getElementById('last')!.firstChild, 'use x with ashler'.length);
+    handle = installContent({ doc: document, hostname: 'example.org', send: vi.fn(fakeSend), settings: { enabled: true, live: false } });
+    e.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await handle.idle();
+    expect(document.getElementById('first')!.innerHTML).toBe('ping Ashlr.AI');
+    expect(document.getElementById('last')!.innerHTML).toBe('use x with Ashlr.AI<br> and more');
+  });
+
   it('a single-line input inside a form still submits it through its default button', async () => {
     document.body.innerHTML = '<form id="f"><input id="q" type="text"><button id="go" type="submit">go</button></form>';
     const q = document.getElementById('q') as HTMLInputElement;
