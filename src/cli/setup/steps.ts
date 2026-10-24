@@ -13,7 +13,7 @@ import {
   addTerm,
   addTerms,
   demonstrate,
-  exportLexicon,
+  exportLexiconWithNotes,
   harvestRepo,
   installPack,
   installedPacks,
@@ -726,11 +726,16 @@ export async function stepExport(ctx: Ctx): Promise<void> {
   }
   // The export is of the merged terms only: an untrusted project file is never parsed.
   const loaded = await loadLexicon({ cwd: ctx.cwd, parseSkipped: false });
-  const text = exportLexicon(loaded.merged, format);
+  const exported = exportLexiconWithNotes(loaded.merged, format);
   // A temp file and a rename (writeFileAtomic makes the directory too), as `lexicon export --out` writes.
-  await writeFileAtomic(file, text);
+  await writeFileAtomic(file, exported.text);
   ctx.summary.exports.push({ format, path: file });
-  ctx.say(`   wrote ${safe(tildify(file, ctx.home))} (${plural(loaded.merged.terms.length, 'term')})`);
+  // Every app format writes one row per alias, so the rows are what the app imports.
+  const count = exported.rows !== undefined ? plural(exported.rows, 'row') : plural(loaded.merged.terms.length, 'term');
+  ctx.say(`   wrote ${safe(tildify(file, ctx.home))} (${count})`);
+  // What the format left out (a pair a spreadsheet would run as a formula, a
+  // shared shortcut) was dropped without a word, as `lexicon export` says it.
+  for (const note of exported.notes) ctx.warn(`   ${safeLines(note)}`);
   ctx.say(`   import it in ${APP_LABELS[app].where}`);
 }
 

@@ -444,19 +444,24 @@ describe('runSetup --yes', () => {
     const csv = await fs.readFile(path.join(exportDir, 'lexicon-wispr.csv'), 'utf8');
     expect(csv).toContain('Ashlr.AI');
     expect(io.out).toContain('Wispr Flow > Dictionary > Import');
-    expect(io.out).toContain('lexicon-wispr.csv (2 terms)');
+    // The rows Wispr Flow imports, one per alias of the two seeded terms.
+    const rows = csv.trimEnd().split('\n').length - 1;
+    expect(rows).toBeGreaterThan(1);
+    expect(io.out).toContain(`lexicon-wispr.csv (${rows} rows)`);
     await expect(run({ yes: true, clients: 'none', app: 'dragon' }, f)).rejects.toThrow(/unknown app "dragon"/);
   });
 
-  it('says "1 term", not "1 terms", for a one-term export', async () => {
+  it('says "1 row", not "1 rows", for a one-row export', async () => {
     const exportDir = path.join(home, 'Desktop');
     const noGit = fakes({
       exec: () => {
         throw new Error('no git');
       },
     });
-    const { io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI', app: 'wispr', exportDir }, noGit);
-    expect(io.out).toContain('lexicon-wispr.csv (1 term)');
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n  - canonical: A\n    aliases: []\n  - canonical: B\n    aliases: []\n');
+    const { io } = await run({ yes: true, clients: 'none', app: 'wispr', exportDir }, noGit);
+    expect(io.out).toContain('lexicon-wispr.csv (1 row)');
   });
 
   it('rejects bad --clients / --app before touching anything', async () => {
@@ -761,6 +766,26 @@ describe('runSetup --dry-run', () => {
     const { plan, io } = await run({ yes: true, dryRun: true, json: true, clients: 'none', company: 'Ashlr.AI' }, f);
     expect(JSON.parse(io.out)).toEqual({ ok: true, ...plan });
     expect(io.err).toContain('dry run');
+  });
+});
+
+describe('runSetup dictation export', () => {
+  // Catches: the export step wrote with exportLexicon, so a pair the format
+  // left out (a cell a spreadsheet would run as a formula) vanished without
+  // a word, and the line counted terms rather than the rows the app imports.
+  it('names what the export left out and counts the rows written', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler, "=Ashlar"]\n  - canonical: A\n    aliases: []\n  - canonical: B\n    aliases: []\n');
+    const exportDir = path.join(home, 'out');
+    const f = fakes();
+    const { code, summary, io } = await run({ yes: true, clients: 'none', app: 'wispr', exportDir }, f);
+    expect(code).toBe(0);
+    const file = path.join(exportDir, 'lexicon-wispr.csv');
+    expect(summary.exports).toEqual([{ format: 'wispr', path: file }]);
+    expect(await fs.readFile(file, 'utf8')).toBe('word,replacement\nAshler,Ashlr.AI\n');
+    expect(io.out).toMatch(/wrote .*lexicon-wispr\.csv \(1 row\)/);
+    expect(io.err).toContain('left out 1 pair a spreadsheet would run as a formula');
+    expect(io.err).toContain('"=Ashlar -> Ashlr.AI"');
   });
 });
 

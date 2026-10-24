@@ -65926,10 +65926,12 @@ async function stepExport(ctx) {
     return;
   }
   const loaded = await loadLexicon({ cwd: ctx.cwd, parseSkipped: false });
-  const text = exportLexicon(loaded.merged, format);
-  await writeFileAtomic(file2, text);
+  const exported = exportLexiconWithNotes(loaded.merged, format);
+  await writeFileAtomic(file2, exported.text);
   ctx.summary.exports.push({ format, path: file2 });
-  ctx.say(`   wrote ${safe(tildify(file2, ctx.home))} (${plural2(loaded.merged.terms.length, "term")})`);
+  const count = exported.rows !== void 0 ? plural2(exported.rows, "row") : plural2(loaded.merged.terms.length, "term");
+  ctx.say(`   wrote ${safe(tildify(file2, ctx.home))} (${count})`);
+  for (const note of exported.notes) ctx.warn(`   ${safeLines(note)}`);
   ctx.say(`   import it in ${APP_LABELS[app].where}`);
 }
 async function stepDemo(ctx) {
