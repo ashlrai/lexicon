@@ -1713,6 +1713,20 @@ describe('doctor', () => {
     expect(report).toEqual(JSON.parse(JSON.stringify(await runDoctorReport({}, deps))));
   });
 
+  // Catches: the ambiguous-alias warning printed the folded keys, `alias "ashler" belongs to several terms: ashlr.ai, ashlar co`.
+  it('names an alias several terms share, and those terms, as the lexicon spells them', async () => {
+    const shared: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'Ashlr.AI', aliases: ['Ashler'] },
+        { canonical: 'Ashlar Co', aliases: ['ashler'] },
+      ],
+    };
+    vi.mocked(core.readLexiconFile).mockResolvedValue({ path: state.globalPath, scope: 'global', lexicon: shared, exists: true });
+    const report = await runDoctorReport({}, { platform: 'linux', env: { PATH: '' }, exec: () => 'no servers', home: doctorHome });
+    expect(report.checks).toContainEqual({ level: 'warn', message: 'alias "Ashler" belongs to several terms: Ashlr.AI, Ashlar Co (ambiguous)' });
+  });
+
   it('warns about an alias its own never list blocks', async () => {
     // Phantom's .lexicon.yaml shipped Locus with alias Locust and never: [locust];
     // never is case-insensitive, so the alias could never fire and doctor said all was well.

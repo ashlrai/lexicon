@@ -795,7 +795,7 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
     }
   }
 
-  const aliasOwners = new Map<string, Term[]>();
+  const aliasOwners = new Map<string, { alias: string; terms: Term[] }>();
   const fold = (w: string): string => w.trim().replace(/\s+/g, ' ').toLowerCase();
   for (const { term } of allTerms) {
     // The matcher compares never-words case-insensitively, so an alias that is
@@ -814,15 +814,18 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
       if (COMMON_WORDS.has(key)) {
         push('warn', `alias "${alias}" of "${term.canonical}" is a common English word and will fire on ordinary text`);
       }
-      const list = aliasOwners.get(key) ?? [];
-      list.push(term);
-      aliasOwners.set(key, list);
+      const owned = aliasOwners.get(key) ?? { alias, terms: [] };
+      owned.terms.push(term);
+      aliasOwners.set(key, owned);
     }
   }
-  for (const [alias, owners] of aliasOwners) {
-    const distinct = new Set(owners.map((t) => spellingKey(t.canonical)));
+  for (const { alias, terms } of aliasOwners.values()) {
+    // Each term once (a global and a project copy are one), named as the
+    // user spelled it: the folded keys printed `ashlr.ai` for Ashlr.AI.
+    const distinct = new Map<string, string>();
+    for (const t of terms) if (!distinct.has(spellingKey(t.canonical))) distinct.set(spellingKey(t.canonical), t.canonical);
     if (distinct.size > 1) {
-      push('warn', `alias "${alias}" belongs to several terms: ${[...distinct].join(', ')} (ambiguous)`);
+      push('warn', `alias "${alias}" belongs to several terms: ${[...distinct.values()].join(', ')} (ambiguous)`);
     }
   }
   if (allTerms.length > 0 && !checks.some((c) => c.level === 'fail' && c.message.includes('conflict'))) {

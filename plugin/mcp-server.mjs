@@ -66106,15 +66106,16 @@ async function runDoctorReport(opts, deps = {}) {
       if (COMMON_WORDS.has(key)) {
         push2("warn", `alias "${alias}" of "${term.canonical}" is a common English word and will fire on ordinary text`);
       }
-      const list = aliasOwners.get(key) ?? [];
-      list.push(term);
-      aliasOwners.set(key, list);
+      const owned = aliasOwners.get(key) ?? { alias, terms: [] };
+      owned.terms.push(term);
+      aliasOwners.set(key, owned);
     }
   }
-  for (const [alias, owners] of aliasOwners) {
-    const distinct = new Set(owners.map((t) => spellingKey(t.canonical)));
+  for (const { alias, terms } of aliasOwners.values()) {
+    const distinct = /* @__PURE__ */ new Map();
+    for (const t of terms) if (!distinct.has(spellingKey(t.canonical))) distinct.set(spellingKey(t.canonical), t.canonical);
     if (distinct.size > 1) {
-      push2("warn", `alias "${alias}" belongs to several terms: ${[...distinct].join(", ")} (ambiguous)`);
+      push2("warn", `alias "${alias}" belongs to several terms: ${[...distinct.values()].join(", ")} (ambiguous)`);
     }
   }
   if (allTerms.length > 0 && !checks.some((c) => c.level === "fail" && c.message.includes("conflict"))) {
