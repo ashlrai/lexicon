@@ -34,6 +34,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `lexicon install claude --apply` (and `lexicon setup`) run again from another install location (a checkout, then `npm i -g`; npx, then a global install; a new plugin version) points the lexicon hook it wrote before at the new location instead of adding a second one. Every prompt ran the hook twice and the agent got two correction notes. A hook of your own is never touched.
 - Browser extension, any site: Enter in a rich text box puts its line break at the caret after the rewrite. The rewrite left the selection on the first word it corrected, so the line break landed mid-text (after "ping Ashlr.AI" rather than at the end).
 - Browser extension, any site: a rich text box holding a code block or inline code is corrected on Enter around the code, which goes to the engine blanked out and is left as typed, as on ChatGPT and Claude. The box was skipped entirely, so its prose was never corrected. A box that embeds a code editor (CodeMirror, Monaco, Ace), or with the caret in code, is still left alone.
 - `lexicon export deepgram`: a colon in a name becomes a space (`Win:2` is written `Win 2:1`), so each keyword holds one colon, before its boost; `Win:2:1` could read as the keyword `Win` boosted 2. `docs/EXPORTS.md` says so, and that `whisper-prompt` joins names with `, ` though Whisper never splits the line, so a name holding `, ` still biases the right spelling.

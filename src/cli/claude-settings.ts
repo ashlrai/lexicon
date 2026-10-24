@@ -94,9 +94,28 @@ export function hookConfigFor(
 }
 
 /**
+ * A hook command `lexicon install claude` wrote, from any install location:
+ * `node "<dir>/plugin/hook.mjs"`, `node "<dir>/dist/hooks/user-prompt-submit.js"`
+ * (quoted or not, either separator) or `npx -y @ashlr/lexicon[@<version>] hook`.
+ * Narrower than LEXICON_HOOK_COMMAND, which also matches a user's own script
+ * with "lexicon" in its name: only these are replaced on a reinstall.
+ */
+const INSTALLED_HOOK_COMMAND =
+  /^node\s+(?:"[^"]*|[^\s"]*)(?:[\\/]plugin[\\/]hook\.mjs|[\\/]hooks[\\/]user-prompt-submit\.js)"?$|^npx\s+-y\s+@ashlr\/lexicon(?:@\S+)?\s+hook$/;
+
+export function isInstalledLexiconHook(command: string): boolean {
+  return INSTALLED_HOOK_COMMAND.test(command.trim());
+}
+
+/**
  * Merge a hook running `command` for each of `events` into a Claude settings
  * object. Never mutates the input. Existing hooks (any event) are preserved;
  * an event that already has a hook with an identical command is left alone.
+ * One that has a hook an earlier install wrote from another location (an
+ * upgrade, a move from a checkout to `npm i -g`, npx to a global install;
+ * see isInstalledLexiconHook) gets that hook pointed at `command` instead of a
+ * second one, so every prompt does not run the hook twice; any further copy
+ * of it is removed (with its group when nothing else is left in it).
  */
 export function mergeHookIntoSettings(
   settings: unknown,
@@ -117,13 +136,35 @@ export function mergeHookIntoSettings(
       throw new Error(`settings.hooks.${event} is not an array; refusing to overwrite it`);
     }
     const groups: HookGroup[] = Array.isArray(existing) ? (existing as HookGroup[]) : [];
-    const alreadyPresent = groups.some(
-      (g) => isRecord(g) && Array.isArray(g.hooks) && g.hooks.some((h) => isRecord(h) && h.command === command),
-    );
-    if (alreadyPresent) continue;
-    groups.push({ hooks: [{ type: 'command', command, timeout }] });
-    hooks[event] = groups;
-    changed = true;
+    const ours = (h: unknown): h is HookCommand =>
+      isRecord(h) && typeof h.command === 'string' && (h.command === command || isInstalledLexiconHook(h.command));
+    const found = groups.flatMap((g) => (isRecord(g) && Array.isArray(g.hooks) ? g.hooks.filter(ours) : []));
+    if (found.length === 0) {
+      groups.push({ hooks: [{ type: 'command', command, timeout }] });
+      hooks[event] = groups;
+      changed = true;
+      continue;
+    }
+    // Keep the exact one when there is one (its timeout may be the user's), else repoint the first.
+    const keep = found.find((h) => h.command === command) ?? found[0];
+    if (keep && keep.command !== command) {
+      keep.command = command;
+      keep.timeout = timeout;
+      changed = true;
+    }
+    if (found.length > 1) {
+      const next: HookGroup[] = [];
+      for (const g of groups) {
+        if (!isRecord(g) || !Array.isArray(g.hooks) || !g.hooks.some((h) => ours(h) && h !== keep)) {
+          next.push(g);
+          continue;
+        }
+        const left = g.hooks.filter((h) => !ours(h) || h === keep);
+        if (left.length > 0) next.push({ ...g, hooks: left });
+      }
+      hooks[event] = next;
+      changed = true;
+    }
   }
 
   if (changed) base.hooks = hooks as Record<string, HookGroup[]>;

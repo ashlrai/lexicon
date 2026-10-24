@@ -1334,6 +1334,37 @@ describe('mergeHookIntoSettings', () => {
     expect(existing.hooks.UserPromptSubmit).toHaveLength(1);
   });
 
+  // Catches: only an identical command counted as present, so reinstalling
+  // from another location (a checkout, then npm i -g; npx, then a global
+  // install; a plugin version) added a second lexicon hook and every prompt
+  // ran the hook twice.
+  it('repoints a hook an earlier install wrote from another location instead of adding a second', () => {
+    const user = { type: 'command', command: 'bash ~/bin/my-lexicon-notes.sh' };
+    const existing = {
+      hooks: {
+        UserPromptSubmit: [
+          { hooks: [user] },
+          { hooks: [{ type: 'command', command: 'node /old/checkout/dist/hooks/user-prompt-submit.js', timeout: 5 }] },
+        ],
+        SessionStart: [
+          { hooks: [{ type: 'command', command: 'npx -y @ashlr/lexicon@0.5.1 hook', timeout: 15 }] },
+          { matcher: 'startup', hooks: [{ type: 'command', command: 'node "C:\\old\\plugin\\hook.mjs"' }, { type: 'command', command: 'echo keep' }] },
+        ],
+      },
+    };
+    const { settings, changed } = mergeHookIntoSettings(existing, cmd, 5, ['UserPromptSubmit', 'SessionStart']);
+    expect(changed).toBe(true);
+    expect(settings.hooks?.UserPromptSubmit).toEqual([{ hooks: [user] }, { hooks: [{ type: 'command', command: cmd, timeout: 5 }] }]);
+    expect(settings.hooks?.SessionStart).toEqual([
+      { hooks: [{ type: 'command', command: cmd, timeout: 5 }] },
+      { matcher: 'startup', hooks: [{ type: 'command', command: 'echo keep' }] },
+    ]);
+    // A rerun changes nothing, and the exact command keeps the timeout the user gave it.
+    expect(mergeHookIntoSettings(settings, cmd, 5, ['UserPromptSubmit', 'SessionStart']).changed).toBe(false);
+    const tuned = { hooks: { UserPromptSubmit: [{ hooks: [{ type: 'command', command: cmd, timeout: 9 }] }] } };
+    expect(mergeHookIntoSettings(tuned, cmd).changed).toBe(false);
+  });
+
   it('refuses to clobber a malformed hooks section', () => {
     expect(() => mergeHookIntoSettings({ hooks: 'nope' }, cmd)).toThrow(/hooks/);
     expect(() => mergeHookIntoSettings({ hooks: { UserPromptSubmit: {} } }, cmd)).toThrow(/UserPromptSubmit/);

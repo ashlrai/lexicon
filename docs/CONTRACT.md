@@ -383,7 +383,7 @@ Dependency-free interactive helper over `node:readline`. No ANSI beyond bold/dim
 | re-exported from `commands.ts` | actually defined in |
 | --- | --- |
 | `IO`, `processIO`, `CommonOptions`, `renderTable`, `safe`, `safeLines`, `safeMessage`, `safeError`, `ERROR_LINE_MAX_CHARS`, `ERROR_MAX_LINES` | `src/cli/io.ts` |
-| `HOOK_EVENTS`, `ClaudeSettings`, `HookCommand`, `HookGroup`, `IntegrationPaths`, `hookConfigFor`, `mergeHookIntoSettings`, `resolveIntegrationPaths`, `settingsHasLexiconHook`, `findInstalledLexiconPlugin` | `src/cli/claude-settings.ts` |
+| `HOOK_EVENTS`, `ClaudeSettings`, `HookCommand`, `HookGroup`, `IntegrationPaths`, `hookConfigFor`, `mergeHookIntoSettings`, `isInstalledLexiconHook`, `resolveIntegrationPaths`, `settingsHasLexiconHook`, `findInstalledLexiconPlugin` | `src/cli/claude-settings.ts` |
 | `DoctorAudience`, `DoctorCheck`, `DoctorCliOptions`, `DoctorDeps`, `DoctorLevel`, `DoctorReport`, `DoctorReportOptions`, `checkLoginService`, `renderDoctorReport`, `runDoctor`, `runDoctorReport` | `src/cli/cmd-doctor.ts` |
 | `CLAUDE_MD_SNIPPET`, `InstallClaudeDeps`, `InstallClaudeOptions`, `InstallOutcome`, `runInstallClaude` | `src/cli/cmd-install.ts` |
 
@@ -410,7 +410,7 @@ Everything the CLI prints goes through here, so a handler is testable by passing
 ## src/cli/claude-settings.ts
 Everything the CLI knows about Claude Code's own files, extracted from `commands.ts` and re-exported by it.
 - `HOOK_EVENTS = ['UserPromptSubmit', 'SessionStart']`.
-- `ClaudeSettings`, `HookCommand`, `HookGroup`, `hookConfigFor(...)`, `mergeHookIntoSettings(...)` (idempotent: a second install does not duplicate a hook), `settingsHasLexiconHook(settings, event)`.
+- `ClaudeSettings`, `HookCommand`, `HookGroup`, `hookConfigFor(...)`, `mergeHookIntoSettings(...)` (idempotent: a second install does not duplicate a hook, from the same location or another: a hook an earlier install wrote, `isInstalledLexiconHook(command)` (`node <dir>/plugin/hook.mjs` or `node <dir>/hooks/user-prompt-submit.js`, quoted or not, either separator, or `npx -y @ashlr/lexicon[@<version>] hook`), is pointed at the new command with its timeout instead, any further copy of it is removed with its group when nothing else is left there, and an exact match keeps its timeout; a user's own hook is never touched), `settingsHasLexiconHook(settings, event)`.
 - `findInstalledLexiconPlugin(settings, installedPlugins): string | undefined` so the CLI does not add a hook that the installed plugin already provides.
 - `IntegrationPaths`, `resolveIntegrationPaths(cliDir?)`, `defaultExec(file, args)`.
 

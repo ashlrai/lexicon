@@ -61920,6 +61920,10 @@ function hookConfigFor(command, timeout = 5, events = ["UserPromptSubmit"]) {
   for (const event of events) hooks[event] = [{ hooks: [{ type: "command", command, timeout }] }];
   return { hooks };
 }
+var INSTALLED_HOOK_COMMAND = /^node\s+(?:"[^"]*|[^\s"]*)(?:[\\/]plugin[\\/]hook\.mjs|[\\/]hooks[\\/]user-prompt-submit\.js)"?$|^npx\s+-y\s+@ashlr\/lexicon(?:@\S+)?\s+hook$/;
+function isInstalledLexiconHook(command) {
+  return INSTALLED_HOOK_COMMAND.test(command.trim());
+}
 function mergeHookIntoSettings(settings, command, timeout = 5, events = ["UserPromptSubmit"]) {
   const base = isRecord(settings) ? structuredClone(settings) : {};
   if (base.hooks !== void 0 && !isRecord(base.hooks)) {
@@ -61933,13 +61937,33 @@ function mergeHookIntoSettings(settings, command, timeout = 5, events = ["UserPr
       throw new Error(`settings.hooks.${event} is not an array; refusing to overwrite it`);
     }
     const groups = Array.isArray(existing) ? existing : [];
-    const alreadyPresent = groups.some(
-      (g) => isRecord(g) && Array.isArray(g.hooks) && g.hooks.some((h) => isRecord(h) && h.command === command)
-    );
-    if (alreadyPresent) continue;
-    groups.push({ hooks: [{ type: "command", command, timeout }] });
-    hooks[event] = groups;
-    changed = true;
+    const ours = (h) => isRecord(h) && typeof h.command === "string" && (h.command === command || isInstalledLexiconHook(h.command));
+    const found = groups.flatMap((g) => isRecord(g) && Array.isArray(g.hooks) ? g.hooks.filter(ours) : []);
+    if (found.length === 0) {
+      groups.push({ hooks: [{ type: "command", command, timeout }] });
+      hooks[event] = groups;
+      changed = true;
+      continue;
+    }
+    const keep = found.find((h) => h.command === command) ?? found[0];
+    if (keep && keep.command !== command) {
+      keep.command = command;
+      keep.timeout = timeout;
+      changed = true;
+    }
+    if (found.length > 1) {
+      const next = [];
+      for (const g of groups) {
+        if (!isRecord(g) || !Array.isArray(g.hooks) || !g.hooks.some((h) => ours(h) && h !== keep)) {
+          next.push(g);
+          continue;
+        }
+        const left = g.hooks.filter((h) => !ours(h) || h === keep);
+        if (left.length > 0) next.push({ ...g, hooks: left });
+      }
+      hooks[event] = next;
+      changed = true;
+    }
   }
   if (changed) base.hooks = hooks;
   return { settings: base, changed };
