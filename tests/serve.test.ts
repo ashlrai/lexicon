@@ -226,6 +226,86 @@ describe('serve.json', () => {
     }
   });
 
+  // Catches: a serve.json whose token was unusable (a hand edit, a truncated
+  // copy) was replaced with a fresh token without a word, so every paired
+  // client was answered 401 and nothing said why.
+  it('says when an unusable token is replaced, and why; nothing for a missing or empty file', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-replace-'));
+    try {
+      const gp = path.join(dir, 'lexicon.yaml');
+      const servePath = getServePath({ globalPath: gp });
+      const notices: string[] = [];
+      const hooks = { onTokenReplaced: (m: string) => notices.push(m) };
+      await ensureServeConfig({ globalPath: gp }, hooks);
+      expect(notices).toEqual([]);
+      await fs.writeFile(servePath, '\n');
+      await ensureServeConfig({ globalPath: gp }, hooks);
+      expect(notices).toEqual([]);
+      const before = (await ensureServeConfig({ globalPath: gp }, hooks)).token;
+      expect(notices).toEqual([]);
+
+      await fs.writeFile(servePath, JSON.stringify({ port: 41733, token: 'short' }));
+      const fresh = await ensureServeConfig({ globalPath: gp }, hooks);
+      expect(fresh.token).not.toBe(before);
+      expect(notices).toHaveLength(1);
+      expect(notices[0]).toContain(`${servePath} had no usable token ("token" is not 32 to 128 hex characters`);
+      expect(notices[0]).toContain('lexicon serve --pair');
+      expect(notices[0]).toContain('lexicon serve --show');
+
+      await fs.writeFile(servePath, JSON.stringify({ port: 41733 }));
+      await ensureServeConfig({ globalPath: gp }, hooks);
+      expect(notices[1]).toContain('(it has no "token" key)');
+
+      // The CLI says it on stderr; --show's stdout is unchanged.
+      await fs.writeFile(servePath, JSON.stringify({ port: 41733, token: 42 }));
+      const io = memIO();
+      expect(await runServe({ show: true, globalPath: gp }, io)).toBe(0);
+      expect(io.err.join('')).toContain('lexicon: warning: ');
+      expect(io.err.join('')).toContain('("token" is not a string)');
+      expect(io.out.join('')).not.toContain('warning');
+
+      // So does a starting server, quiet or not.
+      await fs.writeFile(servePath, JSON.stringify({ port: 41733, token: 'nope' }));
+      const lines: string[] = [];
+      const server = createServer({ port: 0, globalPath: gp, quiet: true, log: (l) => lines.push(l) });
+      await server.start();
+      await server.stop();
+      expect(lines.some((l) => l.startsWith('[serve] warning: ') && l.includes('had no usable token'))).toBe(true);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  // Catches: TOKEN_RE took lower-case hex only, so a token hand-edited to
+  // upper case was "no usable token" and replaced, breaking every client
+  // given it. Upper case is kept; the bearer check stays exact.
+  it('keeps an upper-case hex token and still compares it exactly', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-serve-upper-'));
+    try {
+      const gp = path.join(dir, 'lexicon.yaml');
+      await fs.writeFile(gp, 'version: 1\nterms: []\n');
+      const servePath = getServePath({ globalPath: gp });
+      const token = 'AB12'.repeat(8);
+      await fs.writeFile(servePath, JSON.stringify({ port: 41733, token, createdAt: '2026-01-01T00:00:00.000Z' }), { mode: 0o600 });
+      const notices: string[] = [];
+      expect((await readServeConfig({ globalPath: gp }))?.token).toBe(token);
+      expect((await ensureServeConfig({ globalPath: gp }, { onTokenReplaced: (m) => notices.push(m) })).token).toBe(token);
+      expect(notices).toEqual([]);
+      const server = createServer({ port: 0, globalPath: gp, quiet: true, log: () => {} });
+      const info = await server.start();
+      try {
+        expect(info.token).toBe(token);
+        expect((await fetch(`${info.url}/stats`, { headers: { Authorization: `Bearer ${token}` } })).status).toBe(200);
+        expect((await fetch(`${info.url}/stats`, { headers: { Authorization: `Bearer ${token.toLowerCase()}` } })).status).toBe(401);
+      } finally {
+        await server.stop();
+      }
+      expect(JSON.parse(await fs.readFile(servePath, 'utf8')).token).toBe(token);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   // Catches: a serve.json saved with a byte order mark (Windows Notepad,
   // PowerShell Out-File) or with a typo after a hand edit read as missing, so
   // the next start minted a new token over it: allowedOrigins was dropped and

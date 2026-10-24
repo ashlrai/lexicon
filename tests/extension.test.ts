@@ -1231,10 +1231,15 @@ describe('pairing (/pair page content script + background)', () => {
 
     const hostile = await bg.handle({ type: 'pair', baseUrl: 'http://evil.example:41733', token: 'b'.repeat(32) });
     expect(hostile).toMatchObject({ ok: false, error: expect.stringContaining('127.0.0.1 or localhost') });
+    // Catches: an upper-case hex token (a hand-edited serve.json, which lexicon
+    // serve keeps) was refused before it was ever sent.
+    const upper = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733', token: 'B'.repeat(32) });
+    expect(upper).toMatchObject({ ok: false, error: expect.stringContaining('401') });
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     const malformed = await bg.handle({ type: 'pair', baseUrl: 'http://127.0.0.1:41733', token: 'not-hex' });
     expect(malformed).toMatchObject({ ok: false, error: expect.stringContaining('no valid token') });
     // Neither of those touched the network.
-    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
     expect((data.settings as { token: string }).token).toBe('keep-me');
   });
 });

@@ -93,6 +93,17 @@ describe('lexicon stats (CLI)', () => {
     expect(text).toContain('Cold19, and 10 more');
   });
 
+  // Catches: the never-hit list was joined and then cut at the 200-character
+  // display cap, so with longer names the last ones shown were cut off with
+  // an ellipsis while `and N more` counted only the ones past NEVER_HIT_CAP.
+  it('lists every never-hit name it counts as shown, however long the list', () => {
+    const cold: Term[] = Array.from({ length: 25 }, (_, i) => ({ canonical: `Rarely Dictated Name ${String(i).padStart(2, '0')}`, aliases: [] }));
+    const text = renderStats(computeStats(loadedOf(cold)));
+    for (let i = 0; i < NEVER_HIT_CAP; i += 1) expect(text).toContain(`Rarely Dictated Name ${String(i).padStart(2, '0')}`);
+    expect(text).toContain(`Rarely Dictated Name ${String(NEVER_HIT_CAP - 1).padStart(2, '0')}, and 5 more`);
+    expect(text).not.toContain('\u2026');
+  });
+
   it('says so when no hits were recorded', () => {
     const text = renderStats(computeStats(loadedOf([{ canonical: 'Zoë', aliases: [] }])));
     expect(text).toContain('no hits yet');

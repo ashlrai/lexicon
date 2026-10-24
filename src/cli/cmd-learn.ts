@@ -259,7 +259,10 @@ export function renderStats(stats: LexiconStats, note?: string): string {
 
   out.push(`never hit (${stats.neverHitCount})`);
   const more = stats.neverHitCount - stats.neverHit.length;
-  out.push(stats.neverHit.length > 0 ? `  ${safe(stats.neverHit.join(', '))}${more > 0 ? `, and ${more} more` : ''}` : '  (none)');
+  // Each name made safe on its own: the joined list went through the
+  // 200-character display cap, so 20 longer names were cut off mid-list with
+  // an ellipsis and `and N more` then undercounted what was not shown.
+  out.push(stats.neverHit.length > 0 ? `  ${stats.neverHit.map(safe).join(', ')}${more > 0 ? `, and ${more} more` : ''}` : '  (none)');
   out.push('');
 
   out.push('files');

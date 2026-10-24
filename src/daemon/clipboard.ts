@@ -237,7 +237,18 @@ function recordHitsInBackground(result: NormalizeResult, cwd: string, loaded: Lo
 // ---------------------------------------------------------------------------
 // Loop mode
 
-export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Promise<void> {
+/**
+ * What stopped the watching daemon: SIGINT (ctrl-C), SIGTERM, or `signal`
+ * aborting. `runDaemonCommand` turns it into the exit status (130, 143, 0).
+ */
+export type ClipboardDaemonStop = 'SIGINT' | 'SIGTERM' | 'abort';
+
+/** The exit status for how the daemon stopped: 128 plus the signal number, as a forced stop exits, and 0 for an abort. */
+export function daemonStopExitCode(stop: ClipboardDaemonStop): number {
+  return stop === 'SIGINT' ? 130 : stop === 'SIGTERM' ? 143 : 0;
+}
+
+export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Promise<ClipboardDaemonStop> {
   const intervalMs = Math.max(20, opts.intervalMs ?? 250);
   const dryRun = opts.dryRun ?? false;
   const quiet = opts.quiet ?? false;
@@ -248,7 +259,7 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
   const clipboard = await resolveClipboard(opts);
   const { read, write } = clipboard;
 
-  if (opts.signal?.aborted) return;
+  if (opts.signal?.aborted) return 'abort';
 
   let lastSeen: string | undefined; // last raw clipboard value we looked at
   let lastInput: string | undefined; // the input that produced lastWritten
@@ -341,8 +352,11 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
     }
   }
 
-  await new Promise<void>((resolve) => {
+  return await new Promise<ClipboardDaemonStop>((resolve) => {
     let stopped = false;
+    // A graceful ctrl-C exited 0 while a forced one exited 130 (143 for
+    // SIGTERM): the status now follows the signal either way.
+    let stoppedBy: ClipboardDaemonStop = 'abort';
     let timer: NodeJS.Timeout | undefined;
     let inFlight = false;
     // A broken clipboard (no display, tool removed) fails the same way on
@@ -364,18 +378,22 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
     };
     const finish = (): void => {
       dropForce();
-      resolve();
+      resolve(stoppedBy);
     };
 
-    const stop = (): void => {
+    const onAbort = (): void => stop('abort');
+    const onInt = (): void => stop('SIGINT');
+    const onTerm = (): void => stop('SIGTERM');
+    const stop = (by: ClipboardDaemonStop): void => {
       if (stopped) return;
       stopped = true;
+      stoppedBy = by;
       if (timer) clearTimeout(timer);
-      opts.signal?.removeEventListener('abort', stop);
-      process.removeListener('SIGINT', stop);
-      process.removeListener('SIGTERM', stop);
+      opts.signal?.removeEventListener('abort', onAbort);
+      process.removeListener('SIGINT', onInt);
+      process.removeListener('SIGTERM', onTerm);
       if (!inFlight) {
-        resolve();
+        resolve(stoppedBy);
         return;
       }
       process.once('SIGINT', forceInt);
@@ -408,9 +426,9 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
       timer = setTimeout(() => void tick(), intervalMs);
     };
 
-    opts.signal?.addEventListener('abort', stop, { once: true });
-    process.on('SIGINT', stop);
-    process.on('SIGTERM', stop);
+    opts.signal?.addEventListener('abort', onAbort, { once: true });
+    process.on('SIGINT', onInt);
+    process.on('SIGTERM', onTerm);
 
     if (!quiet) {
       out(
@@ -457,6 +475,11 @@ export interface ClipboardOnceResult {
  * print the diff (or "no changes") and return. Exit code semantics for the
  * CLI: 0 unless `--paste` was requested and the keystroke failed.
  */
+/** The refusal of `--once --paste --dry-run`, thrown before the clipboard is read. */
+export const DRY_RUN_PASTE_ERROR =
+  '--paste cannot be combined with --dry-run: a dry run leaves the clipboard uncorrected, so the paste would send the original text; ' +
+  'run: lexicon daemon --once --dry-run to preview, or lexicon daemon --once --paste to correct and paste';
+
 export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise<ClipboardOnceResult> {
   const dryRun = opts.dryRun ?? false;
   const quiet = opts.quiet ?? false;
@@ -464,6 +487,10 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
   const platform = opts.platform ?? process.platform;
   const out = opts.out ?? ((s: string) => void process.stdout.write(s));
   const err = opts.err ?? ((s: string) => void process.stderr.write(s));
+
+  // A dry run leaves the clipboard as it was, so the paste that followed sent
+  // the uncorrected text to the frontmost app, with nothing saying so.
+  if (opts.paste && dryRun) throw new Error(DRY_RUN_PASTE_ERROR);
 
   const { read, write } = await resolveClipboard(opts);
   // A read past the backend's cap (MAX_CLIPBOARD_READ_BYTES) is the same
@@ -595,8 +622,7 @@ export async function runDaemonCommand(opts: DaemonCommandOptions = {}): Promise
     return 0;
   }
 
-  await runClipboardDaemon(opts);
-  return 0;
+  return daemonStopExitCode(await runClipboardDaemon(opts));
 }
 
 const USAGE = 'usage: lexicon daemon [--once [--paste]] [--interval <ms>] [--dry-run] [--quiet] [--backend <name>] [--cwd <dir>] [--which]\n';

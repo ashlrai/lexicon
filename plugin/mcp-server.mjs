@@ -60481,7 +60481,9 @@ function estimateWhisperTokens(text) {
 }
 function exportWhisperPrompt(lexicon, opts = {}, sink) {
   const limit = opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT;
-  const names = canonicalList(sortByImportance(lexicon.terms)).slice(0, Math.max(0, limit)).map((c) => c.canonical.replace(/\s+/g, " ").trim());
+  const all = canonicalList(sortByImportance(lexicon.terms)).map((c) => c.canonical.replace(/\s+/g, " ").trim());
+  const names = all.slice(0, Math.max(0, limit));
+  const pastDefault = opts.limit === void 0 ? all.slice(names.length) : [];
   const kept = [];
   const dropped = [];
   let used = 0;
@@ -60493,6 +60495,11 @@ function exportWhisperPrompt(lexicon, opts = {}, sink) {
     } else {
       dropped.push(name);
     }
+  }
+  if (pastDefault.length > 0) {
+    sink?.notes.push(
+      `left out ${pastDefault.length} name${pastDefault.length === 1 ? "" : "s"} past the ${WHISPER_PROMPT_DEFAULT_LIMIT} a prompt holds by default (the most used kept): ${quotedNames(pastDefault)}`
+    );
   }
   if (dropped.length > 0) {
     sink?.notes.push(
@@ -62755,6 +62762,10 @@ function errorResult(err) {
   return { isError: true, content: [{ type: "text", text: message }] };
 }
 function withLexiconFix(message) {
+  if (/^Cannot read lexicon at /.test(message)) {
+    return `${message}
+Nothing was read or changed. Ask the user to make that path readable, or to point LEXICON_PATH in this server's environment at a file in an existing directory (or unset it), then check it with lexicon_doctor.`;
+  }
   const edit = unreadableLexiconEdit(message);
   if (!edit) return message;
   return `${message}
@@ -62831,7 +62842,7 @@ function filePathsInUse(loaded) {
 function skippedProjectFields(loaded, consequence) {
   const note = skippedProjectNote(loaded, consequence, { who: "the user can ", trust: cliCommand("trust") });
   if (!loaded.skippedProject || note === void 0) return {};
-  return { projectTrust: loaded.projectTrust, skippedProject: loaded.skippedProject.path, note };
+  return { projectTrust: loaded.projectTrust, skippedProject: pathForModel(loaded.skippedProject.path), note };
 }
 
 // src/mcp/server.ts
@@ -65553,6 +65564,12 @@ async function checkLoginService(probe) {
   }
   return { level: "ok", message: `${name} loaded${program2 !== void 0 ? ` (${program2} exists)` : ""}` };
 }
+function unreadableKind(error62) {
+  return /^Cannot read lexicon at /.test(error62) ? "read" : "parse";
+}
+function readFix(scope) {
+  return scope === "global" ? "make that path readable or point LEXICON_PATH at a file in an existing directory (or unset it)" : "make that path readable";
+}
 function parseReason(error62, filePath, max = 110) {
   const marker = `${filePath}: `;
   const at = error62.lastIndexOf(marker);
@@ -65587,7 +65604,15 @@ function summarize(checks, state, audience = "cli") {
   const ready = state.terms > 0 && state.wired && fails.length === 0;
   if (state.unreadable.length > 0) {
     const first = state.unreadable[0];
-    const alsoProject = state.unreadable.length > 1 ? " The project lexicon does not parse either." : "";
+    const second = state.unreadable[1];
+    const alsoProject = second ? second.kind === "read" ? " The project lexicon cannot be read either." : " The project lexicon does not parse either." : "";
+    if (first.kind === "read") {
+      return {
+        ready: false,
+        summary: `The ${first.scope} lexicon cannot be read, so no corrections are happening: ${parseReason(first.error, first.path)}${alsoProject}`,
+        nextStep: mcp ? `Ask the user to ${readFix(first.scope)}, then call lexicon_doctor again (setup_lexicon will not repair this). The path is ${first.path}` : `${readFix(first.scope).replace(/^m/, "M")}, then run: lexicon doctor  (lexicon setup will not repair this). The path is ${first.path}`
+      };
+    }
     return {
       ready: false,
       summary: `The ${first.scope} lexicon exists but does not parse, so no corrections are happening: ${parseReason(first.error, first.path)}${alsoProject}`,
@@ -65675,8 +65700,12 @@ async function runDoctorReport(opts, deps = {}) {
     }
   } catch (err) {
     const error62 = errorMessage(err);
-    unreadable.push({ path: paths.global, scope: "global", error: error62 });
-    push2("fail", `global lexicon does not parse (run: ${editCommand("global")}): ${error62}`);
+    const kind = unreadableKind(error62);
+    unreadable.push({ path: paths.global, scope: "global", error: error62, kind });
+    push2(
+      "fail",
+      kind === "read" ? `global lexicon cannot be read (${readFix("global")}): ${error62}` : `global lexicon does not parse (run: ${editCommand("global")}): ${error62}`
+    );
   }
   if (paths.project) {
     try {
@@ -65697,8 +65726,12 @@ async function runDoctorReport(opts, deps = {}) {
       }
     } catch (err) {
       const error62 = errorMessage(err);
-      unreadable.push({ path: paths.project, scope: "project", error: error62 });
-      push2("fail", `project lexicon does not parse (run: ${editCommand("project")}): ${error62}`);
+      const kind = unreadableKind(error62);
+      unreadable.push({ path: paths.project, scope: "project", error: error62, kind });
+      push2(
+        "fail",
+        kind === "read" ? `project lexicon cannot be read (${readFix("project")}): ${error62}` : `project lexicon does not parse (run: ${editCommand("project")}): ${error62}`
+      );
     }
   } else {
     push2("info", "no project lexicon (.lexicon.yaml) found from " + cwd);
@@ -66128,7 +66161,7 @@ var SERVE_FILE_MODE = 384;
 var SERVE_FILE_NAME = "serve.json";
 var DEFAULT_PORT = 41733;
 var DEFAULT_HOST = "127.0.0.1";
-var TOKEN_RE3 = /^[0-9a-f]{32,128}$/;
+var TOKEN_RE3 = /^[0-9a-fA-F]{32,128}$/;
 function getServePath(opts = {}) {
   return import_node_path25.default.join(import_node_path25.default.dirname(resolvePaths(opts).global), SERVE_FILE_NAME);
 }
@@ -66191,7 +66224,14 @@ async function keepOwnerOnly(file2) {
 function generateToken() {
   return (0, import_node_crypto4.randomBytes)(16).toString("hex");
 }
-async function ensureServeConfig(opts = {}) {
+function tokenProblem(raw) {
+  if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return "it is not a JSON object";
+  const token = raw.token;
+  if (token === void 0) return 'it has no "token" key';
+  if (typeof token !== "string") return '"token" is not a string';
+  return `"token" is not 32 to 128 hex characters (0-9, a-f, A-F)`;
+}
+async function ensureServeConfig(opts = {}, hooks = {}) {
   return withServeConfigLock(async () => {
     const file2 = getServePath(opts);
     let raw;
@@ -66223,6 +66263,11 @@ async function ensureServeConfig(opts = {}) {
       ...origins ? { allowedOrigins: origins } : {}
     };
     await writeServeConfig(config2, opts);
+    if (raw !== void 0) {
+      hooks.onTokenReplaced?.(
+        `${file2} had no usable token (${tokenProblem(raw)}), so a new token was written there; clients paired with the old one are refused until they get it: lexicon serve --pair (browser extension) or lexicon serve --show (copy it)`
+      );
+    }
     return config2;
   }, opts);
 }
@@ -66485,7 +66530,8 @@ async function runServeInstall(opts, io, deps = {}) {
 `);
     return 1;
   }
-  await ensureServeConfig(storeOpts(opts));
+  await ensureServeConfig(storeOpts(opts), { onTokenReplaced: (message) => io.stderr(`lexicon: warning: ${safeMessage(message)}
+`) });
   const serviceEnv = lexiconServerEnv(env, import_node_path26.default.resolve(opts.cwd ?? process.cwd()), SERVE_PASSTHROUGH_ENV);
   if (platform === "darwin") {
     const label = serveLabel(env);

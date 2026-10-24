@@ -1260,6 +1260,36 @@ describe('voice-context and lexicon://me', () => {
       await server.close();
     }
   });
+
+  // Catches: lexicon://json and the tools' `skippedProject` carried the path
+  // raw, so a bidi override or a long directory name chosen by whoever
+  // published the repo reached the model as is (lexicon://me bounded it).
+  it('lexicon://json and list_terms pass the skipped project path through pathForModel', async () => {
+    const nasty = path.join(repo, 'a', 'b', `evil\u202ename${'x'.repeat(200)}`);
+    await fs.mkdir(path.join(nasty, '.git'), { recursive: true });
+    await fs.writeFile(path.join(nasty, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Phantom\n    aliases: [Fantom]\n');
+    const server = createServer({ cwd: nasty });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const json = (await client.readResource({ uri: 'lexicon://json' })).contents.map((c) => ('text' in c ? String(c.text) : '')).join('\n');
+      const tool = (await client.callTool({ name: 'list_terms', arguments: {} })) as ToolResult;
+      const listed = (tool.content ?? []).map((c) => c.text ?? '').join('\n');
+      const expected = pathForModel(path.join(nasty, '.lexicon.yaml'));
+      for (const t of [json, listed]) {
+        const payload = JSON.parse(t) as { skippedProject?: string };
+        expect(payload.skippedProject).toBe(expected);
+        expect(payload.skippedProject).not.toContain('\u202e');
+        expect(t).not.toContain(nasty);
+        expect(t).not.toContain('Fantom');
+      }
+    } finally {
+      await client.close();
+      await server.close();
+    }
+  });
 });
 
 describe('a lexicon file that does not parse', () => {
@@ -1290,6 +1320,37 @@ describe('a lexicon file that does not parse', () => {
       // The onboard prompt reads no lexicon and still works.
       expect((await client.getPrompt({ name: 'onboard' })).messages.length).toBe(1);
     } finally {
+      await client.close();
+      await server.close();
+    }
+  });
+
+  // Catches: a lexicon that could not be read at all (LEXICON_PATH under a
+  // regular file) reached the model as the bare store error, with no fix.
+  it('a lexicon that cannot be read names the path and LEXICON_PATH, not lexicon edit', async () => {
+    const saved = process.env.LEXICON_PATH;
+    const blocker = path.join(repo, 'notes.txt');
+    await fs.writeFile(blocker, 'not a directory\n', 'utf8');
+    process.env.LEXICON_PATH = path.join(blocker, 'lexicon.yaml');
+    const server = createServer({ cwd: repo });
+    const client = new Client({ name: 'test', version: '0' });
+    const [clientTransport, serverTransport] = InMemoryTransport.createLinkedPair();
+    await server.connect(serverTransport);
+    await client.connect(clientTransport);
+    try {
+      const failures: string[] = [];
+      failures.push(await client.readResource({ uri: 'lexicon://json' }).then(() => 'resolved', (e: unknown) => (e as Error).message));
+      const tool = (await client.callTool({ name: 'list_terms', arguments: {} })) as ToolResult;
+      expect(tool.isError).toBe(true);
+      failures.push((tool.content ?? []).map((c) => c.text ?? '').join('\n'));
+      for (const message of failures) {
+        expect(message).toContain('Cannot read lexicon at');
+        expect(message).toContain('Ask the user to make that path readable, or to point LEXICON_PATH');
+        expect(message).toContain('then check it with lexicon_doctor');
+        expect(message).not.toContain('lexicon edit');
+      }
+    } finally {
+      process.env.LEXICON_PATH = saved;
       await client.close();
       await server.close();
     }

@@ -53,7 +53,7 @@ interface Harness {
   out: string[];
   err: string[];
   controller: AbortController;
-  done: Promise<void>;
+  done: Promise<unknown>;
 }
 
 function start(initial: string, opts: { dryRun?: boolean; quiet?: boolean; mirror?: boolean } = {}): Harness {
@@ -334,7 +334,7 @@ describe('runClipboardDaemon', () => {
     expect(core.loadLexicon).toHaveBeenCalledTimes(2);
 
     h.controller.abort();
-    await expect(h.done).resolves.toBeUndefined();
+    await expect(h.done).resolves.toBe('abort');
     const reads = h.read.mock.calls.length;
     await vi.advanceTimersByTimeAsync(1000);
     expect(h.read.mock.calls.length).toBe(reads); // timer cleared
@@ -411,6 +411,42 @@ describe('runClipboardDaemon', () => {
       await done;
       expect(exit).not.toHaveBeenCalled();
       expect(process.listenerCount('SIGINT')).toBe(before);
+    } finally {
+      exit.mockRestore();
+    }
+  });
+
+  // Catches: a graceful ctrl-C (or SIGTERM) exited 0 while the forced second
+  // one exited 130 (143), so the status depended on whether a poll was in flight.
+  it('the exit status follows the signal, graceful or forced: 130 for SIGINT, 143 for SIGTERM, 0 for an abort', async () => {
+    const exit = vi.spyOn(process, 'exit').mockImplementation((() => undefined) as never);
+    try {
+      for (const [sig, code] of [['SIGINT', 130], ['SIGTERM', 143]] as const) {
+        const done = runDaemonCommand({ read: async () => 'x', write: async () => undefined, quiet: true, cwd: '/fake' });
+        await vi.advanceTimersByTimeAsync(10);
+        process.emit(sig);
+        expect(await done).toBe(code);
+        expect(await (async () => {
+          const loop = runClipboardDaemon({ read: async () => 'x', write: async () => undefined, quiet: true, cwd: '/fake' });
+          await vi.advanceTimersByTimeAsync(10);
+          process.emit(sig);
+          return loop;
+        })()).toBe(sig);
+      }
+      // A graceful stop with a poll in flight carries the signal too.
+      let release: (s: string) => void = () => undefined;
+      const read = vi.fn(() => new Promise<string>((r) => (release = r)));
+      const waiting = runDaemonCommand({ read, write: async () => undefined, quiet: true, cwd: '/fake' });
+      await vi.waitFor(() => expect(read).toHaveBeenCalledTimes(1));
+      process.emit('SIGTERM');
+      release('x');
+      expect(await waiting).toBe(143);
+      const controller = new AbortController();
+      const aborted = runDaemonCommand({ read: async () => 'x', write: async () => undefined, quiet: true, cwd: '/fake', signal: controller.signal });
+      await vi.advanceTimersByTimeAsync(10);
+      controller.abort();
+      expect(await aborted).toBe(0);
+      expect(exit).not.toHaveBeenCalled();
     } finally {
       exit.mockRestore();
     }
@@ -666,6 +702,23 @@ describe('runDaemonCommand', () => {
     const { h, read, write, out, err } = onceHarness('meet Ashler');
     expect(await runDaemonCommand({ once: true, read, write, out, err })).toBe(0);
     expect(h.clipboard).toBe('meet Ashlr.AI');
+  });
+
+  // Catches: --dry-run --paste pasted the uncorrected clipboard into the
+  // frontmost app without a word.
+  it('--once --paste --dry-run is refused before the clipboard is read or anything is pasted', async () => {
+    const read = vi.fn(async () => 'meet Ashler');
+    const sendPaste = vi.fn(async () => undefined);
+    const write = vi.fn(async () => undefined);
+    for (const run of [
+      () => runDaemonCommand({ once: true, paste: true, dryRun: true, read, write, sendPaste, platform: 'darwin' }),
+      () => runClipboardOnce({ paste: true, dryRun: true, read, write, sendPaste, platform: 'darwin' }),
+    ]) {
+      await expect(run()).rejects.toThrow('--paste cannot be combined with --dry-run');
+    }
+    expect(read).not.toHaveBeenCalled();
+    expect(write).not.toHaveBeenCalled();
+    expect(sendPaste).not.toHaveBeenCalled();
   });
 
   it('--paste without --once is rejected', async () => {

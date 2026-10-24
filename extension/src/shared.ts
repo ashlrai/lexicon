@@ -18,8 +18,8 @@ export const PAIR_PATH = '/pair';
 export const PAIR_META = { token: 'lexicon-token', port: 'lexicon-port', version: 'lexicon-version' } as const;
 /** Hosts the pairing page may be served from; the background refuses to pair with anything else. */
 export const PAIR_HOSTS: readonly string[] = ['127.0.0.1', 'localhost'];
-/** Token shape written by `lexicon serve` (32..128 hex chars). */
-export const TOKEN_RE = /^[0-9a-f]{32,128}$/;
+/** Token shape `lexicon serve` accepts (32..128 hex chars, either case: serve.json may be hand-edited). */
+export const TOKEN_RE = /^[0-9a-fA-F]{32,128}$/;
 
 /** Which engine corrects text. `api` falls back to `embedded` when /health fails. */
 export type Mode = 'api' | 'embedded';

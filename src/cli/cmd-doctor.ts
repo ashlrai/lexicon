@@ -353,6 +353,25 @@ interface UnreadableLexicon {
   scope: TermScope;
   /** The error from `readLexiconFile`, already naming the file. */
   error: string;
+  /**
+   * `parse` for a file that was read but does not parse or validate (the fix
+   * is `lexicon edit`), `read` for one that could not be read at all (store.ts
+   * `Cannot read lexicon at <path>: ...`, a LEXICON_PATH under a file or a
+   * permission error), where an editor cannot help and the path is the fix.
+   */
+  kind: 'parse' | 'read';
+}
+
+/** Which kind of unreadable a `readLexiconFile` error is. */
+function unreadableKind(error: string): UnreadableLexicon['kind'] {
+  return /^Cannot read lexicon at /.test(error) ? 'read' : 'parse';
+}
+
+/** The fix for a lexicon that cannot be read, scoped: only the global file is chosen by LEXICON_PATH. */
+function readFix(scope: TermScope): string {
+  return scope === 'global'
+    ? 'make that path readable or point LEXICON_PATH at a file in an existing directory (or unset it)'
+    : 'make that path readable';
 }
 
 /**
@@ -459,7 +478,28 @@ function summarize(
   // difference between a dead end and a two-minute fix.
   if (state.unreadable.length > 0) {
     const first = state.unreadable[0];
-    const alsoProject = state.unreadable.length > 1 ? ' The project lexicon does not parse either.' : '';
+    const second = state.unreadable[1];
+    const alsoProject = second
+      ? second.kind === 'read'
+        ? ' The project lexicon cannot be read either.'
+        : ' The project lexicon does not parse either.'
+      : '';
+    // A file that could not be read at all (a LEXICON_PATH under a file, a
+    // permission error) has no parse error to fix: an editor opens an empty
+    // buffer or fails the same way, so the next step is the path itself.
+    if (first.kind === 'read') {
+      return {
+        ready: false,
+        summary:
+          `The ${first.scope} lexicon cannot be read, so no corrections are happening: ` +
+          `${parseReason(first.error, first.path)}${alsoProject}`,
+        nextStep: mcp
+          ? `Ask the user to ${readFix(first.scope)}, then call lexicon_doctor again ` +
+            `(setup_lexicon will not repair this). The path is ${first.path}`
+          : `${readFix(first.scope).replace(/^m/, 'M')}, then run: lexicon doctor  ` +
+            `(lexicon setup will not repair this). The path is ${first.path}`,
+      };
+    }
     return {
       ready: false,
       summary:
@@ -638,10 +678,16 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
     }
   } catch (err) {
     const error = errorMessage(err);
-    unreadable.push({ path: paths.global, scope: 'global', error });
+    const kind = unreadableKind(error);
+    unreadable.push({ path: paths.global, scope: 'global', error, kind });
     // The fix comes before the detail: a rendered check is capped at 200
     // characters, and the parse error plus an absolute path will reach that.
-    push('fail', `global lexicon does not parse (run: ${editCommand('global')}): ${error}`);
+    push(
+      'fail',
+      kind === 'read'
+        ? `global lexicon cannot be read (${readFix('global')}): ${error}`
+        : `global lexicon does not parse (run: ${editCommand('global')}): ${error}`,
+    );
   }
 
   if (paths.project) {
@@ -663,8 +709,14 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
       }
     } catch (err) {
       const error = errorMessage(err);
-      unreadable.push({ path: paths.project, scope: 'project', error });
-      push('fail', `project lexicon does not parse (run: ${editCommand('project')}): ${error}`);
+      const kind = unreadableKind(error);
+      unreadable.push({ path: paths.project, scope: 'project', error, kind });
+      push(
+        'fail',
+        kind === 'read'
+          ? `project lexicon cannot be read (${readFix('project')}): ${error}`
+          : `project lexicon does not parse (run: ${editCommand('project')}): ${error}`,
+      );
     }
   } else {
     push('info', 'no project lexicon (.lexicon.yaml) found from ' + cwd);

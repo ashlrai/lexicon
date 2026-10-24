@@ -9,7 +9,7 @@ import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep 
 import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { defaultProjectPath, projectWriteTrusted, resolvePaths, skippedProjectNote } from '../core/index.js';
+import { defaultProjectPath, pathForModel, projectWriteTrusted, resolvePaths, skippedProjectNote } from '../core/index.js';
 import type { ImportFormat, LoadOptions, LoadedLexicon, TermSuggestion } from '../core/index.js';
 import type { IO } from '../cli/commands.js';
 import { unreadableLexiconEdit } from '../cli/io.js';
@@ -158,11 +158,18 @@ function errorResult(err: unknown): CallToolResult {
 /**
  * A store error for a lexicon file that does not parse or validate, which
  * already names the file, with the fix appended on a second line: the
- * `lexicon edit` command that opens it and `lexicon doctor` to check it.
+ * `lexicon edit` command that opens it and `lexicon doctor` to check it. A
+ * file that cannot be read at all gets the path or LEXICON_PATH fix instead.
  * Any other message is returned unchanged. Tools, resources and prompts all
  * report a broken file this way, so a model reading any of them can relay it.
  */
 export function withLexiconFix(message: string): string {
+  // A file that could not be read at all (store.ts `Cannot read lexicon at
+  // <path>: ...`: a LEXICON_PATH under a file, a permission error) has no
+  // parse error for an editor to fix; the path itself is the fix.
+  if (/^Cannot read lexicon at /.test(message)) {
+    return `${message}\nNothing was read or changed. Ask the user to make that path readable, or to point LEXICON_PATH in this server's environment at a file in an existing directory (or unset it), then check it with lexicon_doctor.`;
+  }
   const edit = unreadableLexiconEdit(message);
   if (!edit) return message;
   return `${message}\nNothing was read or changed. Ask the user to fix that file by running ${cliCommand(edit.replace(/^lexicon /, ''))}, then check it with lexicon_doctor.`;
@@ -303,7 +310,8 @@ export function filePathsInUse(loaded: LoadedLexicon): { global: string; project
 
 /**
  * `{ projectTrust, skippedProject, note }` when a project lexicon exists but
- * was not merged, else `{}`. The path only, never the untrusted file's text.
+ * was not merged, else `{}`. The path only (through `pathForModel`), never the
+ * untrusted file's text.
  */
 export function skippedProjectFields(
   loaded: LoadedLexicon,
@@ -312,5 +320,8 @@ export function skippedProjectFields(
 ): { projectTrust?: LoadedLexicon['projectTrust']; skippedProject?: string; note?: string } {
   const note = skippedProjectNote(loaded, consequence, { who: 'the user can ', trust: cliCommand('trust') });
   if (!loaded.skippedProject || note === undefined) return {};
-  return { projectTrust: loaded.projectTrust, skippedProject: loaded.skippedProject.path, note };
+  // The path goes through pathForModel, as lexicon://me's note does: the
+  // directory is named by whoever published the repo, and JSON escaping
+  // leaves a bidi override, a fake tag or kilobytes of text in it intact.
+  return { projectTrust: loaded.projectTrust, skippedProject: pathForModel(loaded.skippedProject.path), note };
 }
