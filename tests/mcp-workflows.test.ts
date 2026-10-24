@@ -941,6 +941,17 @@ describe('tool and resource descriptions agree with what the code does', () => {
       expect(parsed.skippedProject).toBe(path.join(repo, '.lexicon.yaml'));
       expect(parsed.projectTrust).toBe('untrusted');
       expect(parsed.note).toMatch(/lexicon trust/);
+      // Catches: with the global file empty too, the note named the skipped
+      // file only, so `terms: []` read as a loaded lexicon with nothing to
+      // correct, while lexicon://me and voice-context say there are no terms.
+      expect(parsed.note).toContain('the lexicon has no terms yet, so there are no spellings to apply');
+      const me = ((await client.readResource({ uri: 'lexicon://me' })).contents[0] as { text: string }).text;
+      expect(me).toContain('no terms yet');
+      expect(me).toContain('lexicon trust');
+      await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler'] }, { cwd: repo, scope: 'global' });
+      const withTerms = JSON.parse(((await client.readResource({ uri: 'lexicon://json' })).contents[0] as { text: string }).text) as { note?: string };
+      expect(withTerms.note).toMatch(/lexicon trust/);
+      expect(withTerms.note).not.toContain('no terms yet');
       await fs.rm(path.join(repo, '.lexicon.yaml'));
       const plain = JSON.parse(((await client.readResource({ uri: 'lexicon://json' })).contents[0] as { text: string }).text) as Record<string, unknown>;
       expect(plain).not.toHaveProperty('skippedProject');
