@@ -66114,6 +66114,7 @@ async function runDoctorReport(opts, deps = {}) {
     }
   }
   const aliasOwners = /* @__PURE__ */ new Map();
+  let aliasCanonicalConflicts = 0;
   const fold2 = (w) => w.trim().replace(/\s+/g, " ").toLowerCase();
   for (const { term } of allTerms) {
     const never2 = new Set((term.never ?? []).map(fold2));
@@ -66125,6 +66126,7 @@ async function runDoctorReport(opts, deps = {}) {
       }
       const other = canonicalOwners.get(key);
       if (other && !other.some((o) => o.term === term) && key !== spellingKey(term.canonical)) {
+        aliasCanonicalConflicts++;
         push2("fail", `alias "${alias}" of "${term.canonical}" equals the canonical of "${other[0].term.canonical}" (conflict)`);
       }
       if (COMMON_WORDS.has(key)) {
@@ -66142,7 +66144,7 @@ async function runDoctorReport(opts, deps = {}) {
       push2("warn", `alias "${alias}" belongs to several terms: ${[...distinct.values()].join(", ")} (ambiguous)`);
     }
   }
-  if (allTerms.length > 0 && !checks.some((c) => c.level === "fail" && c.message.includes("conflict"))) {
+  if (allTerms.length > 0 && aliasCanonicalConflicts === 0) {
     push2("ok", "no alias/canonical conflicts");
   }
   const settingsPath = deps.settingsPath ?? import_node_path22.default.join(claudeConfigDir(env, home), "settings.json");

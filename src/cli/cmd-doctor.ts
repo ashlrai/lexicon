@@ -796,6 +796,10 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
   }
 
   const aliasOwners = new Map<string, { alias: string; terms: Term[] }>();
+  // Counted where each conflict is found: the ok line below was suppressed by
+  // any failing check whose text held "conflict", such as a term of that name
+  // defined twice or a parse error quoting the word.
+  let aliasCanonicalConflicts = 0;
   const fold = (w: string): string => w.trim().replace(/\s+/g, ' ').toLowerCase();
   for (const { term } of allTerms) {
     // The matcher compares never-words case-insensitively, so an alias that is
@@ -809,6 +813,7 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
       }
       const other = canonicalOwners.get(key);
       if (other && !other.some((o) => o.term === term) && key !== spellingKey(term.canonical)) {
+        aliasCanonicalConflicts++;
         push('fail', `alias "${alias}" of "${term.canonical}" equals the canonical of "${other[0].term.canonical}" (conflict)`);
       }
       if (COMMON_WORDS.has(key)) {
@@ -828,7 +833,7 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
       push('warn', `alias "${alias}" belongs to several terms: ${[...distinct.values()].join(', ')} (ambiguous)`);
     }
   }
-  if (allTerms.length > 0 && !checks.some((c) => c.level === 'fail' && c.message.includes('conflict'))) {
+  if (allTerms.length > 0 && aliasCanonicalConflicts === 0) {
     push('ok', 'no alias/canonical conflicts');
   }
 
