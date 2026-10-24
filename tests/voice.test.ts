@@ -1813,6 +1813,27 @@ describe('history', () => {
     expect((await fs.readdir(voiceDir(h.globalPath))).filter((n) => n.includes('lock'))).toEqual([]);
   });
 
+  // Catches: any read error, not only a missing file, was taken as an empty history, so the append replaced every earlier entry with one.
+  it('keeps the history when it cannot be read, dropping the new entry instead', async () => {
+    const h = await harness();
+    await appendHistory(h.globalPath, entry(0));
+    await appendHistory(h.globalPath, entry(1));
+    const file = historyPath(h.globalPath);
+    const before = await fs.readFile(file, 'utf8');
+    const realRead = fs.readFile.bind(fs);
+    const spy = vi.spyOn(fs, 'readFile').mockImplementation((async (p: unknown, ...rest: unknown[]) => {
+      if (p === file) throw Object.assign(new Error('EIO: i/o error, read'), { code: 'EIO' });
+      return (realRead as (...a: unknown[]) => Promise<unknown>)(p, ...rest);
+    }) as typeof fs.readFile);
+    try {
+      await appendHistory(h.globalPath, entry(2));
+    } finally {
+      spy.mockRestore();
+    }
+    expect(await fs.readFile(file, 'utf8')).toBe(before);
+    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t0', 't1']);
+  });
+
   // Catches: a truncated last line (a crash or a full disk mid-write) and foreign lines were carried forward forever, and readHistory returned JSON that was not an entry.
   it('drops truncated and foreign lines on the next append, and reads only entries', async () => {
     const h = await harness();

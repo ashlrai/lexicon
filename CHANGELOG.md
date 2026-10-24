@@ -28,6 +28,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- `voice/history.jsonl` survives a read that fails for any reason but a missing file (EIO, EACCES): the new entry is dropped and the file kept. Every read error was taken as an empty history, so the next dictation rewrote the file with its one entry and the rest of the history was gone.
 - `lexicon voice --toggle --seconds <n>` with `n` over 600 stops before recording, saying `--toggle` records at most 600 seconds. The capture was cut to 600 seconds without a word, so everything said after ten minutes was lost.
 - `lexicon setup` with a step that fails part way (an `--export-dir` that cannot be written, a pack that will not install) stops at that step with a card of what the finished steps already wrote, `failedAt` and `error` in the `--json` summary (and in MCP `setup_lexicon`), and a next step to fix the error and run setup again; exit 1. The step's error ended the run on its own, saying nothing of the lexicon, packs and clients already done.
 - `lexicon pack remove` (and serve `DELETE /packs/:name`, and community refs) keeps a term another pack installed in the same file also has, and says so (`kept N another installed pack also has: ...`, `shared` in the result). Removing one pack took the term from a pack that stayed installed, whenever the user had not edited it; it now goes with the last pack that has it.
