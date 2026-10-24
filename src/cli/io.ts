@@ -501,12 +501,16 @@ export function conflictLine(c: LearnConflict): string {
  * throws InvalidArgumentError, so commander names the option (`option
  * '--limit <n>' argument '0' is invalid.`), followed by an example of a good
  * one for that flag (`expected a positive integer, e.g. --limit 50`): the bare
- * "expected a positive integer" did not show what to type.
+ * "expected a positive integer" did not show what to type. Only a string of
+ * digits (surrounding spaces aside) is taken, so `5abc` and `1.5` are refused
+ * rather than read as 5 and 1.
  */
 export function positiveIntOption(flag: string, example: number): (value: string) => number {
   return (value: string): number => {
-    const n = Number.parseInt(value, 10);
-    if (!Number.isFinite(n) || n <= 0) throw new InvalidArgumentError(`expected a positive integer, e.g. ${flag} ${example}`);
+    // Whole digits only: parseInt read `5abc` as 5 and `1.5` as 1.
+    const text = value.trim();
+    const n = /^[0-9]+$/.test(text) ? Number(text) : Number.NaN;
+    if (!Number.isSafeInteger(n) || n <= 0) throw new InvalidArgumentError(`expected a positive integer, e.g. ${flag} ${example}`);
     return n;
   };
 }

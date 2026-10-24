@@ -1136,12 +1136,15 @@ describe('export', () => {
 // Catches: a --json failure from a store error or a refusal with no hint of
 // its own printed { ok: false, error } with no nextStep, while the rest
 // carried one, so a script could not rely on the three keys.
-// Catches: `--limit 0` said only "expected a positive integer", with no example of a value that works.
+// Catches: `--limit 0` said only "expected a positive integer", with no example of a value that works,
+// and `--limit 5abc` / `--limit 1.5` were taken as 5 and 1.
 describe('positiveIntOption', () => {
   it('accepts a positive integer and refuses anything else naming the flag with an example', () => {
     const limit = positiveIntOption('--limit', 50);
     expect(limit('7')).toBe(7);
-    for (const bad of ['0', '-3', 'abc', '']) {
+    expect(limit(' 12 ')).toBe(12);
+    // parseInt read '5abc' as 5 and '1.5' as 1: only a whole number string counts.
+    for (const bad of ['0', '-3', 'abc', '', '5abc', '1.5', '1e3', '0x10', '00', '99999999999999999999']) {
       expect(() => limit(bad), bad).toThrow('expected a positive integer, e.g. --limit 50');
     }
     expect(() => positiveIntOption('--interval', 250)('0')).toThrow('e.g. --interval 250');
