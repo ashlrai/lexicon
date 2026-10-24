@@ -58589,8 +58589,15 @@ function exportClaudeMdWithin(lexicon, maxChars, more) {
   const rows = sortByCategory(lexicon.terms.filter((t) => keep.has(t))).map(claudeMdRow);
   const omitted = total - keep.size;
   const text = renderClaudeMd(rows, more(omitted));
-  return { text: text.length <= maxChars ? text : `${text.slice(0, Math.max(0, maxChars - 4))}...
-`, omitted };
+  return { text: text.length <= maxChars ? text : cutWithin(text, maxChars), omitted };
+}
+function cutWithin(text, maxChars) {
+  const tail = "...\n";
+  if (maxChars <= tail.length) return tail.slice(0, Math.max(0, maxChars));
+  let end = maxChars - tail.length;
+  const before = text.charCodeAt(end - 1);
+  if (before >= 55296 && before <= 56319) end -= 1;
+  return `${text.slice(0, end)}${tail}`;
 }
 function noteFor(term) {
   const parts = [];

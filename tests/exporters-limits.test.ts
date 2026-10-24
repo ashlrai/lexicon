@@ -225,3 +225,19 @@ describe('macos: control characters', () => {
     expect(notes).toEqual(['removed control characters XML cannot hold from 2 entries (a pair left with an empty shortcut or phrase is not written)']);
   });
 });
+
+describe('claude-md within a character budget', () => {
+  // Catches: when header and footer alone passed maxChars the text was cut
+  // at a fixed code unit, which could fall between the halves of a
+  // surrogate pair and leave an unpaired surrogate (not valid UTF-8).
+  it('never splits a surrogate pair when it cuts', async () => {
+    const { exportClaudeMdWithin } = await import('../src/core/exporters/index.js');
+    const l = lex([{ canonical: '😀 Smile', aliases: ['smile'] }]);
+    const more = (): string => `${'😀'.repeat(150)} more`;
+    for (let max = 0; max < 600; max++) {
+      const { text } = exportClaudeMdWithin(l, max, more);
+      expect(text.length, String(max)).toBeLessThanOrEqual(max);
+      expect(text, String(max)).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
+    }
+  });
+});

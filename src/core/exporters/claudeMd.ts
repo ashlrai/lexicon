@@ -66,7 +66,22 @@ export function exportClaudeMdWithin(lexicon: Lexicon, maxChars: number, more: (
   const rows = sortByCategory(lexicon.terms.filter((t) => keep.has(t))).map(claudeMdRow);
   const omitted = total - keep.size;
   const text = renderClaudeMd(rows, more(omitted));
-  return { text: text.length <= maxChars ? text : `${text.slice(0, Math.max(0, maxChars - 4))}...\n`, omitted };
+  return { text: text.length <= maxChars ? text : cutWithin(text, maxChars), omitted };
+}
+
+/**
+ * `text` cut to `maxChars` with `...` and a newline at the end. The cut never
+ * falls inside a surrogate pair: half an emoji or a CJK extension character
+ * is an unpaired surrogate, which is not valid UTF-8 and was written to the
+ * model context as U+FFFD (or refused by a strict encoder).
+ */
+function cutWithin(text: string, maxChars: number): string {
+  const tail = '...\n';
+  if (maxChars <= tail.length) return tail.slice(0, Math.max(0, maxChars));
+  let end = maxChars - tail.length;
+  const before = text.charCodeAt(end - 1);
+  if (before >= 0xd800 && before <= 0xdbff) end -= 1;
+  return `${text.slice(0, end)}${tail}`;
 }
 
 /**
