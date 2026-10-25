@@ -104,7 +104,7 @@ export const INSTALL_SCOPES = ['user', 'project'] as const;
 
 export const IMPORT_FORMAT_VALUES = ['auto', 'wispr', 'superwhisper', 'macos', 'espanso', 'markdown', 'text', 'csv', 'json'] as const satisfies readonly ImportFormat[];
 
-export const SUGGESTION_KINDS = ['alias', 'term', 'never', 'stale'] as const satisfies readonly TermSuggestion['kind'][];
+export const SUGGESTION_KINDS = ['alias', 'term', 'never', 'phonetic', 'stale'] as const satisfies readonly TermSuggestion['kind'][];
 
 // Compile-time check that the tuple still covers every kind the core can produce.
 type _AllKindsCovered = Exclude<TermSuggestion['kind'], (typeof SUGGESTION_KINDS)[number]> extends never ? true : never;

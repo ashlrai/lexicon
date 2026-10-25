@@ -1,7 +1,7 @@
 /**
  * suggestTerms(): what the lexicon should learn next, mined from the voice
  * history (`voice/history.jsonl`, one `{ raw, output }` pair per dictation)
- * and from the lexicon itself. Four kinds of suggestion come out:
+ * and from the lexicon itself. Five kinds of suggestion come out:
  *
  *   alias  a garble that keeps showing up next to a term it sounds like and
  *          is never corrected ("ashlur" -> Ashlr.AI), a guess the matcher
@@ -13,6 +13,9 @@
  *          when a `cwd` is given;
  *   never  an ordinary word (stoplist) that was rewritten to a term by a
  *          phonetic/fuzzy guess: protect it with `never`;
+ *   phonetic  a pronunciation hint for a term with no `phonetic` that
+ *          several distinct garbles reach only by sound or fuzzy match
+ *          (the matcher is guessing at it); held under AUTO_APPLY_CONFIDENCE;
  *   stale  a term older than STALE_AFTER_DAYS with no hits whose spellings
  *          never occur in the history.
  *
@@ -40,7 +43,7 @@ import type { LoadedLexicon, Replacement, Term, TermCategory, TermScope } from '
 // Contract
 // ---------------------------------------------------------------------------
 
-export type SuggestionKind = 'alias' | 'term' | 'never' | 'stale';
+export type SuggestionKind = 'alias' | 'term' | 'never' | 'phonetic' | 'stale';
 
 export interface TermSuggestion {
   kind: SuggestionKind;
@@ -58,6 +61,8 @@ export interface TermSuggestion {
   count: number;
   /** For 'term': aliases to add along with the new term (suggestAliases or the harvest guesses). */
   aliases?: string[];
+  /** For 'phonetic': the proposed pronunciation hint ("KU-ber-ne-tes"). */
+  phonetic?: string;
   /** For 'term' from a harvest: the category the harvester assigned. */
   category?: TermCategory;
   /**
@@ -125,6 +130,19 @@ const ALIAS_MIN_COUNT = 2;
 const PROMOTE_MIN_COUNT = 3;
 /** Times a capitalized name must recur in outputs before it is proposed as a term. */
 const TERM_MIN_COUNT = 3;
+/**
+ * Distinct garbles a term must be reached by guess (phonetic or fuzzy, never
+ * an exact alias) before a pronunciation hint is proposed. Two is the floor:
+ * one garble repeated is alias material (the promotion above covers it), but
+ * two different mishearings of the same name mean the matcher is guessing.
+ * The tests/suggest-terms.test.ts fixture has a term with one garble x3 (no
+ * hint) and one with two garbles (hint).
+ */
+const PHONETIC_MIN_GARBLES = 2;
+/** Total guessed sightings across those garbles. */
+const PHONETIC_MIN_COUNT = 3;
+/** Under AUTO_APPLY_CONFIDENCE: `--yes` and MCP auto-apply never write a hint. */
+const PHONETIC_MAX_CONFIDENCE = 0.75;
 const HARVEST_LIMIT = 10;
 const HARVEST_MIN_COUNT = 5;
 const HARVEST_MAX_CONFIDENCE = 0.7;
@@ -842,6 +860,36 @@ export async function suggestTerms(input: SuggestInput): Promise<TermSuggestion[
       count: b.count,
     });
   }
+  // --- pronunciation hints ------------------------------------------------
+  const guessed = new Map<string, { canonical: string; words: Set<string>; count: number; evidence: string[] }>();
+  for (const b of promoteBuckets.values()) {
+    const key = fold(b.canonical);
+    let g = guessed.get(key);
+    if (!g) {
+      g = { canonical: b.canonical, words: new Set(), count: 0, evidence: [] };
+      guessed.set(key, g);
+    }
+    g.words.add(fold(b.word));
+    g.count += b.count;
+    for (const e of b.evidence) if (g.evidence.length < MAX_EVIDENCE && !g.evidence.includes(e)) g.evidence.push(e);
+  }
+  for (const g of guessed.values()) {
+    if (g.words.size < PHONETIC_MIN_GARBLES || g.count < PHONETIC_MIN_COUNT) continue;
+    const term = lexicon.terms.find((t) => fold(t.canonical) === fold(g.canonical));
+    if (!term || (term.phonetic ?? '').trim() !== '') continue; // never overwrite a hint the user wrote
+    const hint = syllableHint(term.canonical);
+    if (!hint) continue; // no defensible hint: the alias promotions stand on their own
+    suggestions.push({
+      kind: 'phonetic',
+      canonical: term.canonical,
+      phonetic: hint,
+      reason: `${g.words.size} different mishearings reached ${term.canonical} only by guess (${g.count} times); a pronunciation hint helps the matcher`,
+      confidence: round(Math.min(PHONETIC_MAX_CONFIDENCE, 0.5 + 0.05 * Math.min(g.words.size, 5))),
+      evidence: g.evidence,
+      count: g.count,
+    });
+  }
+
   for (const b of historicalBuckets.values()) {
     suggestions.push({
       kind: 'alias',
@@ -925,6 +973,60 @@ export async function suggestTerms(input: SuggestInput): Promise<TermSuggestion[
   const merged = mergeSuggestions(suggestions);
   merged.sort((a, b) => rank(b) - rank(a) || b.confidence - a.confidence || compareText(a.canonical, b.canonical));
   return merged.slice(0, limit).map((s) => withTarget(s, loaded));
+}
+
+const VOWELS = /[aeiouy]/;
+
+/**
+ * A syllable hint in the docs' style ("KU-ber-ne-tes"), derived from the
+ * spelling only, never invented: each word of one or two plain ASCII words of
+ * 3 to 14 letters is split before the last consonant of every consonant run
+ * between vowel groups, and the first syllable is upper-cased. Undefined when
+ * that is not defensible: a run of more than three consonants, a word with no
+ * vowel group (Ashlr), digits or punctuation inside a word, or a single
+ * one-syllable word (nothing to say).
+ */
+export function syllableHint(canonical: string): string | undefined {
+  const words = canonical.trim().split(/\s+/);
+  if (words.length === 0 || words.length > 2) return undefined;
+  const out: string[] = [];
+  let syllables = 0;
+  for (const word of words) {
+    if (!/^[A-Za-z]{3,14}$/.test(word)) return undefined;
+    const w = word.toLowerCase();
+    const parts: string[] = [];
+    let i = 0;
+    let onset = '';
+    while (i < w.length && !VOWELS.test(w[i])) onset += w[i++];
+    if (onset.length > 3) return undefined;
+    while (i < w.length) {
+      let nucleus = '';
+      while (i < w.length && VOWELS.test(w[i])) nucleus += w[i++];
+      let run = '';
+      while (i < w.length && !VOWELS.test(w[i])) run += w[i++];
+      if (run.length > 3) return undefined;
+      if (i >= w.length) {
+        parts.push(onset + nucleus + run);
+        break;
+      }
+      // One consonant starts the next syllable; of a longer run, the last one does.
+      const keep = run.length <= 1 ? '' : run.slice(0, -1);
+      parts.push(onset + nucleus + keep);
+      onset = run.slice(keep.length);
+    }
+    // A final consonant plus silent e joins the syllable before it ("SU-pa-base", not "-ba-se").
+    if (parts.length > 1 && /^[^aeiouy]+e$/.test(parts[parts.length - 1])) {
+      const tail = parts.pop() ?? '';
+      parts[parts.length - 1] += tail;
+    }
+    if (parts.length === 0 || parts.some((p) => !VOWELS.test(p))) return undefined;
+    syllables += parts.length;
+    out.push(parts.join('-'));
+  }
+  if (syllables < 2) return undefined;
+  const joined = out.join(' ');
+  const first = joined.split(/[- ]/)[0];
+  return first.toUpperCase() + joined.slice(first.length);
 }
 
 /**

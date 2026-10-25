@@ -43,6 +43,7 @@ const suggestionSchema = z.object({
   kind: z.enum(SUGGESTION_KINDS),
   canonical: nonBlank(),
   alias: z.string().optional(),
+  phonetic: z.string().optional(),
   aliases: z.array(z.string()).optional(),
   category: z.enum(TERM_CATEGORIES).optional(),
   reason: z.string().optional(),
@@ -207,7 +208,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
       description:
         "Propose new aliases, terms and never-words from the user's voice history, usage and repo. " +
         'Call weekly or when the user asks how to improve corrections; present them and apply accepted ones with apply_suggestion (or add_term). ' +
-        "Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), or 'stale' (a term that never fires), plus reason, confidence and evidence, " +
+        "Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), 'phonetic' (a pronunciation hint in \`phonetic\` for a term the matcher keeps guessing at; never applied unattended), or 'stale' (a term that never fires), plus reason, confidence and evidence, " +
         "and `scope` and `path`: the lexicon file applying it would write (where the term lives, or the global file for a new term). Name that file when you present a suggestion. " +
         'The result is a bare JSON array, best first. An empty array comes with a second text block saying why (no voice history yet, or nothing new in it) and what produces suggestions: relay it.',
       inputSchema: {
@@ -240,7 +241,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
       title: 'Apply suggestions',
       description:
         "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), " +
-        "'never' records the word as never-rewrite on the term, 'stale' removes the term from one lexicon file (the suggestion's `scope`, else project first); " +
+        "'never' records the word as never-rewrite on the term, 'phonetic' sets the term's pronunciation hint only when it has none, 'stale' removes the term from one lexicon file (the suggestion's `scope`, else project first); " +
         'when the term also has a copy in the other file the result lists it in `stillIn` and that copy keeps correcting until removed with its own scope. ' +
         "Pass the suggestion object back as received; one whose `path` is another repo's project lexicon (suggest_terms with `cwd`) is refused, since this server writes only its own. " +
         'When the user accepted several, pass them all at once in `suggestions` instead of `suggestion` (one call, one write per lexicon file): ' +
@@ -283,7 +284,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
 
   type Suggestion = z.infer<typeof suggestionSchema>;
   type PreparedStale = { kind: 'stale'; canonical: string; target: TermScope | undefined; storeOpts: StoreWriteOpts };
-  type PreparedAdd = { kind: 'alias' | 'never' | 'term'; alias: string | undefined; term: Term; storeOpts: StoreWriteOpts };
+  type PreparedAdd = { kind: 'alias' | 'never' | 'phonetic' | 'term'; alias: string | undefined; term: Term; storeOpts: StoreWriteOpts };
   type StoreWriteOpts = { cwd: string; scope?: TermScope };
 
   /** Checks one suggestion and works out what it writes where; throws, writing nothing, when it is refused. */
@@ -294,7 +295,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
     // does: a global copy of a project term loses the merge, so it would
     // never fire. An explicit scope must name a file that holds the term.
     let target = scope ?? suggestion.scope;
-    if (kind === 'alias' || kind === 'never') {
+    if (kind === 'alias' || kind === 'never' || kind === 'phonetic') {
       // Both edit an existing term. When it is gone (removed since
       // suggest_terms ran, or only in a skipped project file) addTerm
       // used to create a new term holding just this word, reported as
@@ -304,7 +305,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
       const existing = loaded.merged.terms.find((t) => spellingKey(t.canonical) === key);
       if (!existing) {
         throw new Error(
-          `no term "${canonical}" in the lexicon, so there is nothing to add this ${kind === 'alias' ? 'alias' : 'never word'} to (it may have been removed since suggest_terms ran); ` +
+          `no term "${canonical}" in the lexicon, so there is nothing to add this ${kind === 'alias' ? 'alias' : kind === 'phonetic' ? 'pronunciation hint' : 'never word'} to (it may have been removed since suggest_terms ran); ` +
             'nothing was written. Call suggest_terms again, or add_term if the user wants the term created.',
         );
       }
@@ -317,7 +318,7 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
       if (target !== undefined && target !== existing.scope && !holders.some((h) => h.scope === target)) {
         const where = holders.map((h) => `${h.scope} lexicon (${h.path})`).join(' and ') || `${existing.scope} lexicon`;
         throw new Error(
-          `"${existing.canonical}" is in the ${where}, not the ${target} one, so this ${kind === 'alias' ? 'alias' : 'never word'} would create a copy of the term there; nothing was written. ` +
+          `"${existing.canonical}" is in the ${where}, not the ${target} one, so this ${kind === 'alias' ? 'alias' : kind === 'phonetic' ? 'pronunciation hint' : 'never word'} would create a copy of the term there; nothing was written. ` +
             `Call apply_suggestion again without scope to write it where the term lives, or add_term with scope "${target}" if the user wants a separate ${target} copy.`,
         );
       }
@@ -339,15 +340,18 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
     const storeOpts: StoreWriteOpts = { cwd: ctx.cwd, ...(target !== undefined ? { scope: target } : {}) };
     if (kind === 'stale') return { kind, canonical, target, storeOpts };
     if (kind === 'alias' && !alias) throw new Error('an "alias" suggestion needs an alias');
+    const phonetic = suggestion.phonetic?.trim();
+    if (kind === 'phonetic' && !phonetic) throw new Error('a "phonetic" suggestion needs `phonetic` (the hint); nothing was written');
     if (kind === 'never' && !alias) throw new Error('a "never" suggestion needs an alias (the word to keep as written)');
     const listed = suggestion.aliases?.map((a) => a.trim()).filter((a) => a !== '') ?? [];
-    const aliases = kind === 'never' ? [] : kind === 'alias' && alias ? [alias] : listed.length > 0 ? listed : alias ? [alias] : suggestAliases(canonical);
+    const aliases = kind === 'never' || kind === 'phonetic' ? [] : kind === 'alias' && alias ? [alias] : listed.length > 0 ? listed : alias ? [alias] : suggestAliases(canonical);
     const term: Term = {
       canonical,
       aliases,
       source: 'user',
       ...(kind === 'term' && suggestion.category !== undefined ? { category: suggestion.category } : {}),
       ...(kind === 'never' && alias ? { never: [alias] } : {}),
+      ...(kind === 'phonetic' && phonetic ? { phonetic } : {}),
       ...(target !== undefined ? { scope: target } : {}),
     };
     return { kind, alias, term, storeOpts };
@@ -383,7 +387,9 @@ export const registerHarvestTools: ToolRegistrar = (server, ctx) => {
         ? `"${alias}" -> "${shown.canonical}" saved`
         : kind === 'never'
           ? `"${alias}" will never be rewritten to "${shown.canonical}"`
-          : saved.created
+          : kind === 'phonetic'
+            ? `"${shown.canonical}" pronunciation hint: ${shown.phonetic ?? term.phonetic ?? ''}${shown.phonetic && shown.phonetic !== term.phonetic ? ' (kept the existing hint)' : ''}`
+            : saved.created
             ? `added "${shown.canonical}" (${aliasCount(shown.aliases.length)})`
             : // A 'term' whose canonical the lexicon already had merges into it; an
               // untrusted file's copy is not read back, so it has no count then.

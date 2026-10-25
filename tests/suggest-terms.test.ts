@@ -1,5 +1,5 @@
 /**
- * suggestTerms(): the four suggestion kinds mined from a fabricated voice
+ * suggestTerms(): the five suggestion kinds mined from a fabricated voice
  * history, ranking, dedupe, evidence sanitization, empty inputs, the
  * performance budget, and `lexicon suggest` (runSuggest) against mocked
  * collaborators.
@@ -947,5 +947,80 @@ describe('constants', () => {
   it('exposes the thresholds other surfaces code against', () => {
     expect(AUTO_APPLY_CONFIDENCE).toBe(0.8);
     expect(STALE_AFTER_DAYS).toBe(30);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// phonetic: a pronunciation hint for a term the matcher keeps guessing at
+// ---------------------------------------------------------------------------
+
+describe('suggestTerms: phonetic hints', () => {
+  const base = (extra: Partial<Term> = {}): Lexicon => ({
+    version: 1,
+    terms: [{ canonical: 'Vercel', aliases: [], hits: 2, createdAt: OLD, scope: 'global', ...extra }],
+  });
+  // Two different mishearings, both reached only by the matcher's guess.
+  const twoGarbles = (): VoiceHistoryEntry[] => [
+    entry('deploy to versal', 'deploy to Vercel'),
+    entry('deploy to versal now', 'deploy to Vercel now'),
+    entry('deploy to vursel', 'deploy to Vercel'),
+    entry('ship it to vursel today', 'ship it to Vercel today'),
+  ];
+
+  it('proposes a syllable hint when several distinct garbles reach a term by guess', async () => {
+    const out = await suggestTerms({ loaded: load(base()), history: twoGarbles(), now: NOW });
+    const s = find(out, 'phonetic', 'Vercel');
+    expect(s?.phonetic).toBe('VER-cel');
+    expect(s?.count).toBe(4);
+    expect(s?.confidence).toBeLessThan(AUTO_APPLY_CONFIDENCE);
+    expect(s?.reason).toContain('2 different mishearings');
+  });
+
+  it('never proposes one for a term that matches by exact alias', async () => {
+    const lexicon = base({ aliases: ['versal', 'vursel'] });
+    const out = await suggestTerms({ loaded: load(lexicon), history: twoGarbles(), now: NOW });
+    expect(find(out, 'phonetic', 'Vercel')).toBeUndefined();
+  });
+
+  it('needs two distinct garbles: one garble repeated is only an alias promotion', async () => {
+    const history = [1, 2, 3].map((n) => entry(`deploy to versal ${n}`, `deploy to Vercel ${n}`));
+    const out = await suggestTerms({ loaded: load(base()), history, now: NOW });
+    expect(find(out, 'phonetic', 'Vercel')).toBeUndefined();
+    expect(find(out, 'alias', 'Vercel', 'versal')).toBeDefined();
+  });
+
+  it('leaves a hint the user wrote alone', async () => {
+    const out = await suggestTerms({ loaded: load(base({ phonetic: 'ver-SELL' })), history: twoGarbles(), now: NOW });
+    expect(find(out, 'phonetic', 'Vercel')).toBeUndefined();
+  });
+
+  it('derives hints from the spelling only, and gives none when not defensible', async () => {
+    const { syllableHint } = await import('../src/core/suggestTerms.js');
+    expect(syllableHint('Kubernetes')).toBe('KU-ber-ne-tes');
+    expect(syllableHint('Supabase')).toBe('SU-pa-base');
+    expect(syllableHint('Vercel')).toBe('VER-cel');
+    expect(syllableHint('Ashlr.AI')).toBeUndefined(); // punctuation
+    expect(syllableHint('Ashlr')).toBeUndefined(); // no defensible split
+    expect(syllableHint('Postgres')).toBeUndefined(); // four-consonant run
+    expect(syllableHint('Locus')).toBe('LO-cus');
+    expect(syllableHint('Quark')).toBeUndefined(); // one syllable: nothing to say
+  });
+
+  it('`suggest --yes` never applies a hint (it stays under AUTO_APPLY_CONFIDENCE)', async () => {
+    const out = await suggestTerms({ loaded: load(base()), history: twoGarbles(), now: NOW });
+    const auto = out.filter((s) => s.confidence >= AUTO_APPLY_CONFIDENCE);
+    expect(auto.some((s) => s.kind === 'phonetic')).toBe(false);
+  });
+});
+
+describe('runSuggest: phonetic', () => {
+  it('--apply writes the hint as the term phonetic, with no aliases', async () => {
+    const hint: TermSuggestion = { kind: 'phonetic', canonical: 'Vercel', phonetic: 'VER-cel', reason: '2 different mishearings reached Vercel only by guess (4 times)', confidence: 0.6, evidence: ['deploy to versal'], count: 4 };
+    const store = mockStore([hint]);
+    const io = makeIO();
+    expect(await runSuggest({ apply: true }, io, { ...store.deps, prompter: lenientPrompter(['y']) })).toBe(0);
+    expect(store.added).toHaveLength(1);
+    expect(store.added[0].term).toMatchObject({ canonical: 'Vercel', aliases: [], phonetic: 'VER-cel' });
+    expect(io.out).toContain('pronounce');
   });
 });

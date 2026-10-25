@@ -75,6 +75,19 @@ listed. Confidence 0.70 when the current matcher would still do it, 0.50 to
 0.65 when only an older version did. Applying adds the word to that term's
 `never` list, which blocks every inexact pass for that pair from then on.
 
+### phonetic: a term the matcher keeps guessing at
+
+Two or more different mishearings (three sightings in all) reached the same
+term only by a phonetic or fuzzy guess, never by an exact alias, and the term
+has no `phonetic` hint yet. One garble repeated is not enough: that is an
+alias promotion. The proposed hint comes from the spelling alone, in the
+style the docs use (`Kubernetes` -> `KU-ber-ne-tes`, `Supabase` ->
+`SU-pa-base`); when the spelling gives no defensible split (`Ashlr.AI`,
+`Postgres`, a one-syllable word) no hint is proposed and the alias
+promotions stand on their own. Confidence is 0.60 to 0.75, under the 0.80
+line, so `--yes` never writes one. Applying sets the term's `phonetic` only
+when it is empty; a hint you wrote is never replaced.
+
 ### stale: a term that never earned its keep
 
 Older than 30 days, zero hits, and none of its spellings (canonical or
@@ -94,7 +107,7 @@ alias) merge into one row with the larger count and the stronger reason.
 `0.80` is the line for unattended use. `--yes` (and any agent applying
 suggestions on its own) takes everything at or above it: promoted guesses,
 well-attested uncorrected garbles and names seen five or more times. Harvest
-candidates and stale removals never reach it.
+candidates, phonetic hints and stale removals never reach it.
 
 ## The weekly routine
 
