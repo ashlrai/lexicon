@@ -6,6 +6,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Added
 
+- `lexicon --ashlr-handshake [--json]` prints the Ashlr companion handshake v1 (name, version, protocols, capabilities, health, files lexicon may edit) as one JSON line, the same shape as locus, ashlr-stack, ashlr-plugin and ashlr-md. See docs/ashlr-handshake.md.
+
+### Added
+
 - `lexicon suggest` proposes a pronunciation hint (kind `phonetic`) for a term that two or more different mishearings reach only by guess. The hint comes from the spelling (`KU-ber-ne-tes`), stays under the 0.80 unattended line, and never replaces a hint you wrote. Also in MCP `suggest_terms` and `apply_suggestion` (#7).
 
 ### Security
