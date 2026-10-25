@@ -1139,6 +1139,14 @@ describe('add / remove / path', () => {
 });
 
 describe('export', () => {
+  it('suggests the closest format for a typo', async () => {
+    const io = makeIO();
+    expect(await runExport('deepgarm', {}, io)).toBe(1);
+    expect(io.err).toContain('unknown export format "deepgarm"');
+    expect(io.err).toContain('Did you mean deepgram? Run: lexicon export deepgram');
+    expect(io.out).toBe('');
+  });
+
   it('lists formats with descriptions and exits 1 for an unknown format', async () => {
     const io = makeIO();
     const code = await runExport('bogus', {}, io);
@@ -1147,6 +1155,7 @@ describe('export', () => {
     expect(io.err).toContain('wispr');
     expect(io.err).toContain('Wispr Flow dictionary CSV');
     expect(io.err).toContain('claude-md');
+    expect(io.err).not.toContain('Did you mean');
     expect(io.out).toBe('');
     expect(core.exportLexiconWithNotes).not.toHaveBeenCalled();
   });
