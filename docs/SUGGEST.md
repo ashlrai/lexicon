@@ -85,8 +85,12 @@ style the docs use (`Kubernetes` -> `KU-ber-ne-tes`, `Supabase` ->
 `SU-pa-base`); when the spelling gives no defensible split (`Ashlr.AI`,
 `Postgres`, a one-syllable word) no hint is proposed and the alias
 promotions stand on their own. Confidence is 0.60 to 0.75, under the 0.80
-line, so `--yes` never writes one. Applying sets the term's `phonetic` only
-when it is empty; a hint you wrote is never replaced.
+line, so `--yes` never writes one. Accept one in `lexicon suggest --apply`
+(answer `y`) or MCP `apply_suggestion`. Applying writes through the same store
+path as every other lexicon edit (the file lock and the atomic replace), and
+sets the term's `phonetic` only when it is empty: a hint you wrote is kept,
+and the run says `kept the existing hint ... (not replaced)` (action
+`skipped` in `--json`). Accepting the same hint again changes nothing.
 
 ### stale: a term that never earned its keep
 

@@ -147,8 +147,18 @@ function addedReport(s: TermSuggestion, result: { term: Term; created: boolean }
       return { text: `alias ${safe(s.alias ?? '')} -> ${safe(result.term.canonical)} in ${safe(file.path)}`, record };
     case 'never':
       return { text: `never ${safe(s.alias ?? '')} for ${safe(result.term.canonical)} in ${safe(file.path)}`, record };
-    case 'phonetic':
+    case 'phonetic': {
+      // The store never replaces a hint (`phonetic ??=`): say so instead of
+      // reporting the user's own hint as if this suggestion had written it.
+      const kept = result.term.phonetic !== undefined && result.term.phonetic !== s.phonetic;
+      if (kept) {
+        return {
+          text: `kept the existing hint ${safe(result.term.phonetic ?? '')} for ${safe(result.term.canonical)} in ${safe(file.path)} (not replaced)`,
+          record: { ...record, action: 'skipped' },
+        };
+      }
       return { text: `phonetic ${safe(result.term.phonetic ?? '')} for ${safe(result.term.canonical)} in ${safe(file.path)}`, record };
+    }
     default:
       return { text: `${result.created ? 'added' : 'merged'} ${safe(result.term.canonical)} in ${safe(file.path)}`, record };
   }

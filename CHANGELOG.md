@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Changed
+
+- `lexicon suggest --apply` reports a pronunciation hint it did not write because the term already has one (`kept the existing hint ... (not replaced)`, action `skipped`) instead of echoing the existing hint as if it had been applied.
+
 ### Added
 
 - `lexicon suggest` proposes a pronunciation hint (kind `phonetic`) for a term that two or more different mishearings reach only by guess. The hint comes from the spelling (`KU-ber-ne-tes`), stays under the 0.80 unattended line, and never replaces a hint you wrote. Also in MCP `suggest_terms` and `apply_suggestion` (#7).
