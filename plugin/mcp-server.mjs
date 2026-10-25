@@ -64428,13 +64428,162 @@ function defaultExec(file2, args, opts = {}) {
   }
 }
 
+// src/cli/companions.ts
+var import_node_child_process4 = __toESM(require_node_child_process());
+var DOCTOR_COMPANIONS = [
+  { name: "locus", command: "locus", repo: "ashlrai/locus" },
+  { name: "ashlr-md", command: "mdopener-mcp", repo: "ashlrai/ashlr-md" }
+];
+var COMPANION_TIMEOUT_MS = 2e3;
+var LOCUS_DOCTOR_FIX_CAPABILITY = "doctor-fix";
+var LOCUS_DOCTOR_FIX_STEP = "locus doctor --fix   # preview safe repairs (writes nothing); add --apply to make them";
+function companionEnv(env = process.env) {
+  const out = {};
+  for (const k of [
+    "PATH",
+    "HOME",
+    "USER",
+    "LANG",
+    "LC_ALL",
+    "TMPDIR",
+    "SYSTEMROOT",
+    "PATHEXT"
+  ]) {
+    const v = env[k];
+    if (v !== void 0) out[k] = v;
+  }
+  out["NO_COLOR"] = "1";
+  return out;
+}
+var makeCompanionRunner = (env = process.env) => (command, timeoutMs) => spawnHandshake(command, timeoutMs, companionEnv(env));
+var defaultCompanionRunner = (command, timeoutMs) => spawnHandshake(command, timeoutMs, companionEnv());
+function spawnHandshake(command, timeoutMs, env) {
+  return new Promise((resolve5) => {
+    let stdout = "";
+    let done = false;
+    const finish = (r) => {
+      if (!done) {
+        done = true;
+        resolve5(r);
+      }
+    };
+    let child;
+    try {
+      child = (0, import_node_child_process4.spawn)(command, ["--ashlr-handshake", "--json"], {
+        env,
+        stdio: ["ignore", "pipe", "ignore"]
+      });
+    } catch {
+      finish({ kind: "missing" });
+      return;
+    }
+    const timer = setTimeout(() => {
+      child.kill("SIGKILL");
+      finish({ kind: "timeout" });
+    }, timeoutMs);
+    child.stdout?.on("data", (d) => {
+      if (stdout.length < 64e3) stdout += String(d);
+    });
+    child.on("error", (err) => {
+      clearTimeout(timer);
+      finish(
+        err.code === "ENOENT" ? { kind: "missing" } : { kind: "ran", code: 1, stdout: "" }
+      );
+    });
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      finish({ kind: "ran", code, stdout });
+    });
+  });
+}
+function companionNextSteps(r) {
+  if (r.name === "locus" && r.state === "degraded" && r.health !== null && r.health !== "ok" && r.capabilities.includes(LOCUS_DOCTOR_FIX_CAPABILITY)) {
+    return [LOCUS_DOCTOR_FIX_STEP];
+  }
+  return [];
+}
+function parseCompanion(c, run) {
+  const base = {
+    name: c.name,
+    command: c.command,
+    version: null,
+    capabilities: [],
+    health: null,
+    next_steps: []
+  };
+  const docs = `https://github.com/${c.repo}#readme`;
+  const unreadable = `\`${c.command} --ashlr-handshake --json\` printed output doctor cannot read`;
+  if (run.kind === "missing")
+    return {
+      ...base,
+      state: "missing",
+      fix: `optional: install ${c.name} (\`${c.command}\`), see ${docs}`
+    };
+  if (run.kind === "timeout")
+    return {
+      ...base,
+      state: "unknown",
+      fix: `\`${c.command} --ashlr-handshake --json\` did not answer in time`
+    };
+  const text = run.stdout.trim();
+  let v;
+  let parsed = true;
+  try {
+    v = JSON.parse(text);
+  } catch {
+    parsed = false;
+  }
+  if (!parsed && !text.startsWith("{")) {
+    return {
+      ...base,
+      state: "outdated",
+      fix: `upgrade ${c.name}: \`${c.command}\` does not answer --ashlr-handshake (see ${docs})`
+    };
+  }
+  if (!parsed || v === null || typeof v !== "object" || Array.isArray(v))
+    return { ...base, state: "unknown", fix: unreadable };
+  const h = v;
+  if (h.kind !== "ashlr.handshake" || h.schema_version !== 1)
+    return { ...base, state: "unknown", fix: unreadable };
+  const health = typeof h.health?.status === "string" ? h.health.status : "unknown";
+  const result = {
+    ...base,
+    state: health === "ok" ? "ready" : "degraded",
+    version: typeof h.version === "string" ? h.version : null,
+    capabilities: Array.isArray(h.capabilities) ? h.capabilities.filter((x) => typeof x === "string") : [],
+    health,
+    fix: health === "ok" ? null : `run \`${c.command} --ashlr-handshake --json\` to see which check is not ok`
+  };
+  result.next_steps = companionNextSteps(result);
+  if (result.next_steps.length > 0)
+    result.fix = "run `locus doctor --fix` to preview safe repairs (writes nothing); add --apply to make them";
+  return result;
+}
+async function detectCompanions(runner = defaultCompanionRunner, companions = DOCTOR_COMPANIONS, timeoutMs = COMPANION_TIMEOUT_MS) {
+  return Promise.all(
+    companions.map(
+      async (c) => parseCompanion(
+        c,
+        await runner(c.command, timeoutMs).catch(
+          () => ({ kind: "missing" })
+        )
+      )
+    )
+  );
+}
+function companionCheckMessage(r) {
+  const caps = r.capabilities.length > 0 ? ` [${r.capabilities.join(", ")}]` : "";
+  const detail = r.state === "ready" ? `${r.version ?? "?"} ready${caps}` : r.state === "degraded" ? `${r.version ?? "?"} health: ${r.health ?? "unknown"}${caps}` : r.state === "outdated" ? "installed, too old for --ashlr-handshake" : r.state === "unknown" ? "installed, handshake unreadable or timed out" : "not installed";
+  return `companion ${r.name} (optional, report-only): ${detail}${r.fix ? `; ${r.fix}` : ""}`;
+}
+
 // src/cli/cmd-doctor.ts
 var import_node_fs24 = __toESM(require_node_fs());
 init_xdg();
 var import_node_path24 = __toESM(require_node_path());
 
 // src/daemon/clipboard-backends.ts
-var import_node_child_process4 = __toESM(require_node_child_process());
+var import_node_child_process5 = __toESM(require_node_child_process());
 init_errors3();
 var CLIPBOARD_BACKEND_NAMES = ["pbcopy", "wl", "xclip", "xsel", "powershell"];
 function utf8LocaleEnv(env = process.env) {
@@ -64489,7 +64638,7 @@ function defaultClipboardExec(cmd, args, stdin, opts = {}) {
   const isWrite = stdin !== void 0;
   const { timeoutMs = CLIPBOARD_EXEC_TIMEOUT_MS, env } = typeof opts === "number" ? { timeoutMs: opts, env: void 0 } : opts;
   return new Promise((resolve5, reject) => {
-    const child = (0, import_node_child_process4.spawn)(cmd, [...args], {
+    const child = (0, import_node_child_process5.spawn)(cmd, [...args], {
       stdio: [isWrite ? "pipe" : "ignore", isWrite ? "ignore" : "pipe", "pipe"],
       windowsHide: true,
       ...env ? { env } : {}
@@ -64829,7 +64978,7 @@ var GGML_MAGIC = Buffer.from([108, 109, 103, 103]);
 var STALE_PART_MS = 10 * 60 * 1e3;
 
 // src/voice/process.ts
-var import_node_child_process5 = __toESM(require_node_child_process());
+var import_node_child_process6 = __toESM(require_node_child_process());
 var import_node_fs19 = __toESM(require_node_fs());
 var MAX_OUTPUT = 16 * 1024 * 1024;
 var WHISPER_BIN_NAMES = ["whisper-cli", "whisper-cpp"];
@@ -65888,7 +66037,7 @@ function quoteArg(s, platform = process.platform) {
 }
 
 // src/cli/setup/detect.ts
-var import_node_child_process6 = __toESM(require_node_child_process());
+var import_node_child_process7 = __toESM(require_node_child_process());
 var import_node_fs23 = __toESM(require_node_fs());
 init_xdg();
 var import_node_path22 = __toESM(require_node_path());
@@ -65993,7 +66142,7 @@ async function readPackageName(cwd) {
     return void 0;
   }
 }
-var defaultSetupExec = (file2, args) => (0, import_node_child_process6.execFileSync)(file2, args, { encoding: "utf8", timeout: 5e3, stdio: ["ignore", "pipe", "ignore"] }).trim();
+var defaultSetupExec = (file2, args) => (0, import_node_child_process7.execFileSync)(file2, args, { encoding: "utf8", timeout: 5e3, stdio: ["ignore", "pipe", "ignore"] }).trim();
 function tryExec2(exec, file2, args) {
   try {
     const out = exec(file2, args).trim();
@@ -66735,6 +66884,8 @@ async function runDoctorReport(opts, deps = {}) {
   if (platform === "darwin") {
     push2("info", "lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)");
   }
+  const companions = await detectCompanions(deps.companionRunner ?? makeCompanionRunner(env));
+  for (const c of companions) push2("info", companionCheckMessage(c));
   if (opts.audience === "mcp") for (const check3 of checks) check3.message = mcpRunHints(check3.message);
   const verdict = summarize(
     checks,
@@ -66765,7 +66916,8 @@ async function runDoctorReport(opts, deps = {}) {
       projectSettingsFiles,
       installedPlugins: installedPluginsPath
     },
-    versions: { lexicon: packageVersion(import.meta.url), node: process.version, platform }
+    versions: { lexicon: packageVersion(import.meta.url), node: process.version, platform },
+    companions
   };
 }
 
@@ -66986,7 +67138,7 @@ init_errors3();
 init_atomic();
 
 // src/cli/cmd-serve.ts
-var import_node_child_process7 = __toESM(require_node_child_process());
+var import_node_child_process8 = __toESM(require_node_child_process());
 var import_node_fs26 = __toESM(require_node_fs());
 var import_node_os5 = __toESM(require_node_os());
 init_xdg();
@@ -67005,7 +67157,7 @@ var defaultServeExec = (cmd, args) => new Promise((resolve5) => {
   let stderr = "";
   let child;
   try {
-    child = (0, import_node_child_process7.spawn)(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
+    child = (0, import_node_child_process8.spawn)(cmd, args, { stdio: ["ignore", "pipe", "pipe"] });
   } catch (err) {
     resolve5({ code: null, stdout: "", stderr: errorMessage(err) });
     return;

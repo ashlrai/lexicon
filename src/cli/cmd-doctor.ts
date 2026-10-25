@@ -5,6 +5,7 @@
  * list of checks. `runDoctorReport` returns the structured report (the MCP
  * `lexicon_doctor` tool returns it verbatim); `runDoctor` renders it.
  */
+import { type CompanionResult, type CompanionRunner, companionCheckMessage, detectCompanions, makeCompanionRunner } from './companions.js';
 import { existsSync, promises as fs } from 'node:fs';
 import { homeDir } from '../util/xdg.js';
 import path from 'node:path';
@@ -256,6 +257,8 @@ export interface DoctorDeps {
   home?: string;
   /** Numeric uid for `launchctl print gui/<uid>/<label>`. Default process.getuid(). */
   uid?: number;
+  /** Runs `<tool> --ashlr-handshake --json` for the companions check (tests inject a stand-in). */
+  companionRunner?: CompanionRunner;
 }
 
 export type DoctorLevel = 'ok' | 'fail' | 'warn' | 'info';
@@ -312,6 +315,8 @@ export interface DoctorReport {
     node: string;
     platform: NodeJS.Platform;
   };
+  /** Companion tools read through `--ashlr-handshake` (additive; info only). */
+  companions?: CompanionResult[];
 }
 
 
@@ -1051,6 +1056,10 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
     push('info', 'lexicon voice records the microphone: the terminal or launcher running it needs Microphone permission (System Settings > Privacy & Security > Microphone)');
   }
 
+  // --- companions (locus, ashlr-md): info only, never warn or fail -------
+  const companions = await detectCompanions(deps.companionRunner ?? makeCompanionRunner(env));
+  for (const c of companions) push('info', companionCheckMessage(c));
+
   // For an agent every check's hint names the tool or the npx form, as
   // `nextStep` does; `lexicon doctor` prints the checks unchanged.
   if (opts.audience === 'mcp') for (const check of checks) check.message = mcpRunHints(check.message);
@@ -1084,5 +1093,6 @@ export async function runDoctorReport(opts: DoctorReportOptions, deps: DoctorDep
       installedPlugins: installedPluginsPath,
     },
     versions: { lexicon: packageVersion(import.meta.url), node: process.version, platform },
+    companions,
   };
 }
