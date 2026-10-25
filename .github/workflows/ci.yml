@@ -94,6 +94,9 @@ jobs:
     name: ${{ matrix.os }} node ${{ matrix.node }}
     needs: plan
     runs-on: ${{ matrix.os }}
+    # Recent main runs finish in 1 to 5 minutes; a hung runner now fails at 20
+    # instead of the 360-minute default.
+    timeout-minutes: 20
     strategy:
       fail-fast: false
       matrix:
