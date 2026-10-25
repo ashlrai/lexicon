@@ -21808,6 +21808,7 @@ function formatCorrectionNote(correction) {
   return `The user is correcting a spelling: ${heard} should be ${meant}. Call the lexicon learn_correction tool with heard: ${heard}, meant: ${meant}. If ${heard} contains words that are not part of the misspelled name, pass only the name. Then continue with the rest of the message.`;
 }
 var HOOK_CORRECTION_BUDGET_MS = 25;
+var CORRECTION_SENTENCES_MIN = 8;
 var CORRECTION_NOTES_MAX = 5;
 var SENTENCE_BREAK_RE = /(?<=[.!?])\s+/;
 function parseCorrections(text, lexicon, limits = {}) {
@@ -21834,7 +21835,7 @@ function parseCorrections(text, lexicon, limits = {}) {
   const perSentence = [];
   for (const sentence of prose.split(SENTENCE_BREAK_RE)) {
     if (!parsed.has(sentence)) {
-      if (limits.shouldStop?.()) break;
+      if (parsed.size >= CORRECTION_SENTENCES_MIN && limits.shouldStop?.()) break;
       parsed.set(sentence, parseCorrection(sentence, opts));
     }
     perSentence.push({ sentence, c: parsed.get(sentence) });
@@ -22366,6 +22367,7 @@ export {
   CORRECTION_LIST_MAX_CHARS,
   CORRECTION_MIN_SIMILARITY,
   CORRECTION_NOTES_MAX,
+  CORRECTION_SENTENCES_MIN,
   DATA_BLOCK_MIN_ROWS,
   HOOK_CORRECTION_BUDGET_MS,
   HOOK_LOCK_TIMEOUT_MS,
