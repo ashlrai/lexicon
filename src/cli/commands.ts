@@ -309,7 +309,7 @@ export async function runInit(opts: InitOptions, io: IO): Promise<number> {
 }
 
 /** Creates `target` with the default settings and the example comment; false when it already exists. */
-async function createLexiconFile(target: string, scope: TermScope): Promise<boolean> {
+export async function createLexiconFile(target: string, scope: TermScope): Promise<boolean> {
   return withLexiconLock(target, async () => {
     if (existsSync(target)) return false;
     const lexicon = emptyLexicon();

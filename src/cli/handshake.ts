@@ -32,7 +32,7 @@ export function buildHandshake(version: string, found: { globalLexicon: boolean 
     command: 'lexicon',
     version,
     protocols: { 'ashlr.handshake': 1, mcp: 1 },
-    capabilities: ['transcript-normalize', 'term-lexicon', 'suggest-terms', 'mcp-server', 'agent-install', 'voice-hooks', 'doctor-json'],
+    capabilities: ['transcript-normalize', 'term-lexicon', 'suggest-terms', 'mcp-server', 'agent-install', 'voice-hooks', 'doctor-json', 'doctor-fix'],
     health: {
       // A fresh install has no lexicon file yet; `lexicon setup` creates it.
       status: 'ok',

@@ -286,7 +286,13 @@ check lexicon files, term conflicts and the Claude Code integration
 Options:
   --json      print the report as JSON ({ ok, ready, summary, nextStep, checks,
               ... } plus error, the first failing check, when ok is false; as
-              the lexicon_doctor MCP tool returns it)
+              the lexicon_doctor MCP tool returns it). With --fix: { mode, plan,
+              outcome }
+  --fix       preview safe repairs (writes nothing): create a missing global
+              lexicon, move aside an unusable trust, hits, pending or index
+              cache file
+  --apply     with --fix: make the repairs, backing up each file first (exit 1
+              if one was skipped)
   -h, --help  display help for command
 ```
 
