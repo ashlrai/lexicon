@@ -5,6 +5,9 @@
  */
 import { Command, CommanderError, InvalidArgumentError } from 'commander';
 import { packageVersion } from '../util/package.js';
+import { existsSync } from 'node:fs';
+import { resolvePaths } from '../core/store.js';
+import { buildHandshake, wantsHandshake } from './handshake.js';
 import { EXPORT_MAX_LIMIT, HARVEST_MAX_LIMIT } from '../core/index.js';
 import { parseBackendName, runDaemonCommand } from '../daemon/clipboard.js';
 import { registerImportCommands } from './cmd-import.js';
@@ -325,6 +328,13 @@ program.hook('preAction', (_program, actionCommand) => {
   const problem = cwdOptionProblem(program.opts<{ cwd?: string }>().cwd);
   if (problem) throw problem;
 });
+
+// Companion handshake (docs/ashlr-handshake.md): before commander, one JSON line.
+if (wantsHandshake(process.argv.slice(2))) {
+  const found = { globalLexicon: existsSync(resolvePaths().global) };
+  process.stdout.write(`${JSON.stringify(buildHandshake(packageVersion(import.meta.url), found))}\n`);
+  process.exit(0);
+}
 
 // `-v` is the version flag in node, npm and most CLIs; commander only knows -V.
 const argv = process.argv.length === 3 && process.argv[2] === '-v' ? [...process.argv.slice(0, 2), '--version'] : process.argv;
