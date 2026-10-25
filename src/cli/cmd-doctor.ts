@@ -722,11 +722,32 @@ export interface DoctorCliOptions extends CommonOptions {
   json?: boolean;
 }
 
+/**
+ * The shared `ashlr.doctor` v1 wrapper (ashlr-stack docs/ashlr-handshake.md,
+ * "Doctor JSON") for `lexicon doctor --json`. Additive: every report field
+ * stays, each check keeps `level` and `message` and gains `status` and
+ * `summary`, and the exit code is unchanged. Any `fail` check is fail, else
+ * any `warn` is warn; `native_status` is `ok` or `failed` from `report.ok`.
+ */
+export function withDoctorEnvelope(report: DoctorReport) {
+  const checks = report.checks.map((c) => ({ ...c, status: c.level, summary: c.message }));
+  const status = checks.some((c) => c.level === 'fail') ? 'fail' : checks.some((c) => c.level === 'warn') ? 'warn' : 'ok';
+  return {
+    ...report,
+    kind: 'ashlr.doctor' as const,
+    schema_version: 1 as const,
+    tool: 'lexicon',
+    status,
+    native_status: report.ok ? 'ok' : 'failed',
+    checks,
+  };
+}
+
 export async function runDoctor(opts: DoctorCliOptions, io: IO, deps: DoctorDeps = {}): Promise<number> {
   const report = await runDoctorReport(opts, deps);
   if (opts.json) {
     // Same exit code as the text report, so `doctor --json` still gates a script.
-    line(io, JSON.stringify(report, null, 2));
+    line(io, JSON.stringify(withDoctorEnvelope(report), null, 2));
     return report.checks.some((c) => c.level === 'fail') ? 1 : 0;
   }
   return renderDoctorReport(report, io);

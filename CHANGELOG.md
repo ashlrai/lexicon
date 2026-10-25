@@ -6,6 +6,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Added
 
+- `lexicon doctor --json` carries the shared `ashlr.doctor` v1 wrapper (`kind`, `schema_version`, `tool`, `status`, `native_status`, `checks`): any `fail` check is fail, else any `warn` is warn; each check keeps `level` and `message` and gains `status` and `summary`. Additive: every existing field and the exit code are unchanged. The MCP `lexicon_doctor` report is unchanged. The vendored handshake contract is re-pinned to the ashlr-stack version with the `doctor` section.
 - Handshake conformance test (`tests/handshake-conformance.test.ts`): validates `lexicon --ashlr-handshake --json` against the Ashlr handshake v1 contract vendored from ashlr-stack (`tests/contract/`, pinned by sha256) and runs `doctor --fix --json` for the advertised `doctor-fix` capability in a fresh HOME, checking that the preview writes nothing.
 - `lexicon doctor` suggests `mdopener-mcp doctor --fix` when ashlr-md reports health other than `ok` and its handshake lists `doctor-fix`, the same capability-only rule locus already had. Probes still run with no secrets in the environment.
 

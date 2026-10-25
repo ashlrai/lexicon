@@ -122,6 +122,7 @@ import {
   runAdd,
   runDoctor as runDoctorRaw,
   runDoctorReport as runDoctorReportRaw,
+  withDoctorEnvelope,
   renderDoctorReport,
   runExport,
   runInstallClaude,
@@ -1825,7 +1826,8 @@ describe('doctor', () => {
     expect(report.paths.global).toBe(state.globalPath);
     expect(typeof report.nextStep).toBe('string');
     expect(io.out).not.toContain('✗');
-    expect(report).toEqual(JSON.parse(JSON.stringify(await runDoctorReport({}, deps))));
+    // `--json` is the MCP report plus the additive ashlr.doctor v1 wrapper.
+    expect(report).toEqual(JSON.parse(JSON.stringify(withDoctorEnvelope(await runDoctorReport({}, deps)))));
   });
 
   // Catches: the ambiguous-alias warning printed the folded keys, `alias "ashler" belongs to several terms: ashlr.ai, ashlar co`.
