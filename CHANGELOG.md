@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Fixed
+
+- The UserPromptSubmit hook could drop the second spelling correction in a short prompt ("it's Ashlr.AI not Ashlar. Also it's Mason Wyatt not mason white.") on a slow machine: the 25 ms wall-clock correction budget was spent before the second sentence was read, so it got no learn_correction line and its words were normalized as dictation. The first 8 distinct sentences are now always read; the budget only bounds longer pastes. Seen as a macOS-only CI failure on main.
+
 ### Changed
 
 - `lexicon suggest --apply` reports a pronunciation hint it did not write because the term already has one (`kept the existing hint ... (not replaced)`, action `skipped`) instead of echoing the existing hint as if it had been applied.

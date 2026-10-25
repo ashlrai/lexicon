@@ -549,6 +549,18 @@ export function formatCorrectionNote(correction: Correction): string {
  */
 export const HOOK_CORRECTION_BUDGET_MS = 25;
 
+/**
+ * Distinct sentences `parseCorrections` always reads before it asks the
+ * budget (`shouldStop`). The budget is wall-clock, so on a slow or cold
+ * runner (first regex compile and JIT; a macOS CI runner took 92 ms for the
+ * whole test) the 25 ms could be spent on the first sentence alone, and
+ * "it's Ashlr.AI not Ashlar. Also it's Mason Wyatt not mason white." lost
+ * its second correction: no learn_correction line, and its words were
+ * normalized as dictation. A dictated prompt's corrections now never depend
+ * on machine speed; the budget still bounds a long paste past this floor.
+ */
+export const CORRECTION_SENTENCES_MIN = 8;
+
 /** Most spelling corrections one prompt gets a learn_correction line for; the rest get one closing line. */
 export const CORRECTION_NOTES_MAX = 5;
 
@@ -592,14 +604,14 @@ export function parseCorrections(text: string, lexicon?: CorrectionLexicon, limi
     add(whole, prose);
     return found;
   }
-  // Each distinct sentence is parsed once, and none after `shouldStop` says
-  // the budget is spent: a 50000-character paste of one sentence repeated
+  // Each distinct sentence is parsed once, and past the first
+  // CORRECTION_SENTENCES_MIN none after `shouldStop` says the budget is spent: a 50000-character paste of one sentence repeated
   // parsed every copy, about 300 ms of a hook meant to take under 200.
   const parsed = new Map<string, Correction | undefined>();
   const perSentence: Array<{ sentence: string; c: Correction | undefined }> = [];
   for (const sentence of prose.split(SENTENCE_BREAK_RE)) {
     if (!parsed.has(sentence)) {
-      if (limits.shouldStop?.()) break;
+      if (parsed.size >= CORRECTION_SENTENCES_MIN && limits.shouldStop?.()) break;
       parsed.set(sentence, parseCorrection(sentence, opts));
     }
     perSentence.push({ sentence, c: parsed.get(sentence) });

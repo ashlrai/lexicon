@@ -373,15 +373,34 @@ describe('runUserPromptSubmitHook', () => {
     // 50000-character paste of one sentence repeated took about 300 ms.
     it('parses each distinct sentence once and stops when the budget says so', async () => {
       const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
-      const names = ['Vercel', 'Supabase', 'Kubernetes', 'Postgres'];
+      const { CORRECTION_SENTENCES_MIN } = await import('../src/hooks/user-prompt-submit.js');
+      const names = ['Vercel', 'Supabase', 'Kubernetes', 'Postgres', 'Anthropic', 'Grafana', 'Datadog', 'Sentry', 'Clerk', 'Resend'];
+      expect(names.length).toBeGreaterThan(CORRECTION_SENTENCES_MIN);
       const prompt = names.map((n) => `it's ${n} not ${n.toLowerCase()}x.`).join(' ');
-      // Spent from the start: only the whole-text pass, which finds the first.
-      expect(parseCorrections(prompt, undefined, { shouldStop: () => true }).map((c) => c.meant)).toEqual(['Vercel']);
+      // Spent from the start: the first CORRECTION_SENTENCES_MIN sentences are still read, no more.
+      expect(parseCorrections(prompt, undefined, { shouldStop: () => true }).map((c) => c.meant)).toEqual(
+        names.slice(0, CORRECTION_SENTENCES_MIN),
+      );
       let checks = 0;
       const repeated = `${"it's Vercel not versel. ".repeat(2000)}it's Supabase not super base.`;
       const found = parseCorrections(repeated, undefined, { shouldStop: () => ((checks += 1), false) });
       expect(found.map((c) => c.meant)).toEqual(['Vercel', 'Supabase']);
-      expect(checks).toBe(2);
+      // Two distinct sentences, both under the floor: the budget is never asked.
+      expect(checks).toBe(0);
+    });
+
+    // Catches: macOS CI (main 12d11d6) lost the second correction because the
+    // 25 ms wall-clock budget was spent before the second sentence on a slow
+    // runner. A budget already spent must not change what a short prompt finds.
+    it('finds every correction in a short prompt even when the budget is already spent', async () => {
+      const { parseCorrections } = await import('../src/hooks/user-prompt-submit.js');
+      const found = parseCorrections("it's Ashlr.AI not Ashlar. Also it's Mason Wyatt not mason white.", undefined, {
+        shouldStop: () => true,
+      });
+      expect(found.map((c) => [c.heard, c.meant])).toEqual([
+        ['Ashlar', 'Ashlr.AI'],
+        ['mason white', 'Mason Wyatt'],
+      ]);
     });
 
     it('passes the loaded lexicon to parseCorrection, so a name it holds is caught by sound', async () => {
