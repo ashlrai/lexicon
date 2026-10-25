@@ -8,6 +8,8 @@ on:
     branches: [main, 'ci/**']
   pull_request:
     branches: [main]
+    # `labeled` so adding `ci:macos` to an open PR starts a run with the macOS row.
+    types: [opened, synchronize, reopened, labeled]
 
 # Superseded branch and PR runs are cancelled. Every push to main gets its own
 # group (keyed by SHA): with one shared main group, a run whose macOS row sat
@@ -29,8 +31,49 @@ jobs:
   # suite (see vitest.config.ts) -- a Windows job on Node 20 would silently skip
   # it and the Windows column would mean less than it appears to.
   # ---------------------------------------------------------------------------
+  # Which rows `test` runs. Pushes: all five, macOS included, as before. Pull
+  # requests: Linux + Windows, plus macOS only when the PR carries the
+  # `ci:macos` label or touches the timing-sensitive paths below (the hook and
+  # its wall-clock budgets, correction parsing, the matcher and normalizer and
+  # their perf tests, and this workflow). #197 was a macOS-only failure of a
+  # wall-clock budget in the hook that no PR row could have caught.
+  plan:
+    runs-on: ubuntu-latest
+    outputs:
+      include: ${{ steps.rows.outputs.include }}
+    steps:
+      - uses: actions/checkout@v7
+        if: github.event_name == 'pull_request'
+        with:
+          fetch-depth: 0
+      - name: Pick rows
+        id: rows
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE: ${{ github.event.pull_request.base.sha }}
+          LABELED: ${{ contains(github.event.pull_request.labels.*.name, 'ci:macos') }}
+        run: |
+          base='{"os":"ubuntu-latest","node":20},{"os":"ubuntu-latest","node":22},{"os":"ubuntu-latest","node":24},{"os":"windows-latest","node":22}'
+          mac=true
+          if [ "$EVENT" = "pull_request" ] && [ "$LABELED" != "true" ]; then
+            # An unreadable diff runs macOS too, like the docs-only check below.
+            if files="$(git diff --name-only "$BASE...HEAD")"; then
+              if ! printf '%s\n' "$files" | grep -Eq '^(src/hooks/|src/core/(learn|matcher|normalize)\.ts$|tests/(hook[^/]*|learn|matcher[^/]*|normalize)\.test\.ts$|\.github/workflows/ci\.yml$)'; then
+                mac=false
+              fi
+            fi
+          fi
+          if [ "$mac" = true ]; then
+            echo "include=[$base,{\"os\":\"macos-latest\",\"node\":22}]" >> "$GITHUB_OUTPUT"
+          else
+            echo "include=[$base]" >> "$GITHUB_OUTPUT"
+          fi
+          echo "macos row: $mac"
+
   test:
     name: ${{ matrix.os }} node ${{ matrix.node }}
+    needs: plan
     runs-on: ${{ matrix.os }}
     strategy:
       fail-fast: false
@@ -38,8 +81,9 @@ jobs:
         # macOS runners bill ~10x Linux and queue ~3 min, so pull requests run
         # the Linux + Windows rows (the fast gate) and the macOS row runs on
         # every push to main and ci/** (and again in release.yml before any
-        # publish). Coverage is unchanged; only when macOS runs moves.
-        include: ${{ fromJSON(github.event_name == 'pull_request' && '[{"os":"ubuntu-latest","node":20},{"os":"ubuntu-latest","node":22},{"os":"ubuntu-latest","node":24},{"os":"windows-latest","node":22}]' || '[{"os":"ubuntu-latest","node":20},{"os":"ubuntu-latest","node":22},{"os":"ubuntu-latest","node":24},{"os":"windows-latest","node":22},{"os":"macos-latest","node":22}]') }}
+        # publish), and on a PR only when `plan` says so (label `ci:macos` or
+        # a timing-sensitive path).
+        include: ${{ fromJSON(needs.plan.outputs.include) }}
     steps:
       # Before checkout, or it has already rewritten the worktree. Git for
       # Windows sets core.autocrlf=true globally, which would hand every
