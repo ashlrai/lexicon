@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Changed
+
+- `lexicon suggest --apply` reports a pronunciation hint it did not write because the term already has one (`kept the existing hint ... (not replaced)`, action `skipped`) instead of echoing the existing hint as if it had been applied.
+
 ### Added
 
 - `lexicon --ashlr-handshake [--json]` prints the Ashlr companion handshake v1 (name, version, protocols, capabilities, health, files lexicon may edit) as one JSON line, the same shape as locus, ashlr-stack, ashlr-plugin and ashlr-md. See docs/ashlr-handshake.md.

@@ -1024,3 +1024,65 @@ describe('runSuggest: phonetic', () => {
     expect(io.out).toContain('pronounce');
   });
 });
+
+describe('runSuggest --apply: phonetic hints through the real store', () => {
+  const hint = (phonetic = 'VER-cel'): TermSuggestion => ({
+    kind: 'phonetic',
+    canonical: 'Vercel',
+    phonetic,
+    reason: '2 different mishearings reached Vercel only by guess (4 times)',
+    confidence: 0.6,
+    evidence: [],
+    count: 4,
+  });
+
+  async function setup(yaml: string): Promise<{ dir: string; file: string }> {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-phonetic-apply-'));
+    const file = path.join(dir, 'lexicon.yaml');
+    await fs.writeFile(file, yaml, 'utf8');
+    return { dir, file };
+  }
+
+  it('writes an accepted hint into the lexicon file', async () => {
+    const { dir, file } = await setup('version: 1\nterms:\n  - canonical: Vercel\n    aliases: []\n');
+    const io = makeIO();
+    const code = await runSuggest({ apply: true, globalPath: file, cwd: dir }, io, { suggest: async () => [hint()], prompter: lenientPrompter(['y']), now: NOW });
+    expect(code).toBe(0);
+    const text = await fs.readFile(file, 'utf8');
+    expect(text).toMatch(/phonetic: VER-cel/);
+    expect(io.out).toContain('phonetic VER-cel for Vercel');
+  });
+
+  it('keeps a hint already present and says so; applying the same hint twice writes it once', async () => {
+    const { dir, file } = await setup('version: 1\nterms:\n  - canonical: Vercel\n    aliases: []\n    phonetic: ver-SELL\n');
+    const io = makeIO();
+    expect(await runSuggest({ apply: true, globalPath: file, cwd: dir }, io, { suggest: async () => [hint()], prompter: lenientPrompter(['y']), now: NOW })).toBe(0);
+    expect(await fs.readFile(file, 'utf8')).toMatch(/phonetic: ver-SELL/);
+    expect(await fs.readFile(file, 'utf8')).not.toMatch(/VER-cel/);
+    expect(io.out).toContain('kept the existing hint ver-SELL');
+
+    const fresh = await setup('version: 1\nterms:\n  - canonical: Vercel\n    aliases: []\n');
+    for (let i = 0; i < 2; i++) {
+      await runSuggest({ apply: true, globalPath: fresh.file, cwd: fresh.dir }, makeIO(), { suggest: async () => [hint()], prompter: lenientPrompter(['y']), now: NOW });
+    }
+    const text = await fs.readFile(fresh.file, 'utf8');
+    expect(text.match(/phonetic:/g)).toHaveLength(1);
+  });
+
+  it('a refused write leaves the file untouched and fails the run', async () => {
+    const { dir, file } = await setup('version: 1\nterms:\n  - canonical: Vercel\n    aliases: []\n');
+    const before = await fs.readFile(file, 'utf8');
+    const io = makeIO();
+    const code = await runSuggest({ apply: true, globalPath: file, cwd: dir }, io, {
+      suggest: async () => [hint()],
+      prompter: lenientPrompter(['y']),
+      addTerms: async () => {
+        throw new ProjectTrustError(file, 'untrusted');
+      },
+      now: NOW,
+    });
+    expect(code).toBe(1);
+    expect(await fs.readFile(file, 'utf8')).toBe(before);
+    expect(io.err).toContain('untrusted');
+  });
+});
