@@ -30,3 +30,7 @@ Rules every implementation follows:
 - **Receipts:** receipt kinds the CLI emits (none yet; reserved for receipt.v1).
 
 Lexicon answers before parsing arguments; the lexicon file is only checked for existence, never read. `~/.config/lexicon/` stands for the directory of `$LEXICON_PATH` or `$XDG_CONFIG_HOME/lexicon` when set.
+
+## Reading other tools: `lexicon doctor`
+
+`lexicon doctor` runs `locus --ashlr-handshake --json` and `mdopener-mcp --ashlr-handshake --json` in parallel, each with a 2 second timeout and an environment of only PATH, HOME, USER, locale and TMPDIR. Each gets one info line: `ready`, `health: <status>`, `installed, too old for --ashlr-handshake` (plain text output), `installed, handshake unreadable or timed out` (`unknown`), or `not installed`. When locus reports health other than `ok` and lists `doctor-fix`, the line suggests `locus doctor --fix`; no hint is ever derived from a version. The lines are informational and never change `ok`, `ready` or the exit code. `--json` adds `companions: [{ name, command, state, version, capabilities, health, fix, next_steps }]`. The same rules apply in `stack doctor --ecosystem` (ashlr-stack) and `ashlr doctor` (ashlr-plugin).

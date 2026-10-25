@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Added
+
+- `lexicon doctor` reads locus and ashlr-md (`mdopener-mcp`) through `--ashlr-handshake --json` and adds one info line each: version and health, or not installed. When locus reports health other than `ok` and lists the `doctor-fix` capability, the line suggests `locus doctor --fix`; the hint keys on the capability only, never on a version. Probes run in parallel with a 2 s timeout and an environment of PATH, HOME, USER, locale and TMPDIR only. A timeout or unreadable handshake reads as `unknown`. The lines never change `ok`, `ready` or the exit code; `--json` and the `lexicon_doctor` MCP tool add a `companions` array. Same rules as `stack doctor --ecosystem` and `ashlr doctor`.
+
 ### Fixed
 
 - The UserPromptSubmit hook could drop the second spelling correction in a short prompt ("it's Ashlr.AI not Ashlar. Also it's Mason Wyatt not mason white.") on a slow machine: the 25 ms wall-clock correction budget was spent before the second sentence was read, so it got no learn_correction line and its words were normalized as dictation. The first 8 distinct sentences are now always read; the budget only bounds longer pastes. Seen as a macOS-only CI failure on main.

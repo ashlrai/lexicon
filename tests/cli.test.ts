@@ -1816,6 +1816,12 @@ describe('doctor', () => {
     const report = JSON.parse(io.out) as { ok: boolean; ready: boolean; summary: string; nextStep: string; checks: { level: string; message: string }[]; paths: { global: string } };
     expect(report.ok).toBe(false);
     expect(report.checks.some((c) => c.level === 'fail' && /equals the canonical of "Ashler"/.test(c.message))).toBe(true);
+    // Companions are additive and info only: PATH is empty, so both are missing and nothing fails because of them.
+    expect((report as unknown as { companions: { name: string; state: string }[] }).companions.map((c) => [c.name, c.state])).toEqual([
+      ['locus', 'missing'],
+      ['ashlr-md', 'missing'],
+    ]);
+    expect(report.checks.filter((c) => c.message.startsWith('companion ')).every((c) => c.level === 'info')).toBe(true);
     expect(report.paths.global).toBe(state.globalPath);
     expect(typeof report.nextStep).toBe('string');
     expect(io.out).not.toContain('✗');
