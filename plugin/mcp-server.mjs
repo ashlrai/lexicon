@@ -62101,6 +62101,9 @@ var KEY_MATCH_SCORE = 0.85;
 var ALIAS_MIN_COUNT = 2;
 var PROMOTE_MIN_COUNT = 3;
 var TERM_MIN_COUNT = 3;
+var PHONETIC_MIN_GARBLES = 2;
+var PHONETIC_MIN_COUNT = 3;
+var PHONETIC_MAX_CONFIDENCE = 0.75;
 var HARVEST_LIMIT = 10;
 var HARVEST_MIN_COUNT = 5;
 var HARVEST_MAX_CONFIDENCE = 0.7;
@@ -62592,6 +62595,34 @@ async function suggestTerms(input2) {
       count: b.count
     });
   }
+  const guessed = /* @__PURE__ */ new Map();
+  for (const b of promoteBuckets.values()) {
+    const key = fold(b.canonical);
+    let g = guessed.get(key);
+    if (!g) {
+      g = { canonical: b.canonical, words: /* @__PURE__ */ new Set(), count: 0, evidence: [] };
+      guessed.set(key, g);
+    }
+    g.words.add(fold(b.word));
+    g.count += b.count;
+    for (const e of b.evidence) if (g.evidence.length < MAX_EVIDENCE2 && !g.evidence.includes(e)) g.evidence.push(e);
+  }
+  for (const g of guessed.values()) {
+    if (g.words.size < PHONETIC_MIN_GARBLES || g.count < PHONETIC_MIN_COUNT) continue;
+    const term = lexicon.terms.find((t) => fold(t.canonical) === fold(g.canonical));
+    if (!term || (term.phonetic ?? "").trim() !== "") continue;
+    const hint = syllableHint(term.canonical);
+    if (!hint) continue;
+    suggestions.push({
+      kind: "phonetic",
+      canonical: term.canonical,
+      phonetic: hint,
+      reason: `${g.words.size} different mishearings reached ${term.canonical} only by guess (${g.count} times); a pronunciation hint helps the matcher`,
+      confidence: round(Math.min(PHONETIC_MAX_CONFIDENCE, 0.5 + 0.05 * Math.min(g.words.size, 5))),
+      evidence: g.evidence,
+      count: g.count
+    });
+  }
   for (const b of historicalBuckets.values()) {
     suggestions.push({
       kind: "alias",
@@ -62670,6 +62701,47 @@ async function suggestTerms(input2) {
   const merged = mergeSuggestions(suggestions);
   merged.sort((a, b) => rank(b) - rank(a) || b.confidence - a.confidence || compareText(a.canonical, b.canonical));
   return merged.slice(0, limit).map((s) => withTarget(s, loaded));
+}
+var VOWELS2 = /[aeiouy]/;
+function syllableHint(canonical) {
+  const words = canonical.trim().split(/\s+/);
+  if (words.length === 0 || words.length > 2) return void 0;
+  const out = [];
+  let syllables = 0;
+  for (const word of words) {
+    if (!/^[A-Za-z]{3,14}$/.test(word)) return void 0;
+    const w = word.toLowerCase();
+    const parts = [];
+    let i = 0;
+    let onset = "";
+    while (i < w.length && !VOWELS2.test(w[i])) onset += w[i++];
+    if (onset.length > 3) return void 0;
+    while (i < w.length) {
+      let nucleus = "";
+      while (i < w.length && VOWELS2.test(w[i])) nucleus += w[i++];
+      let run = "";
+      while (i < w.length && !VOWELS2.test(w[i])) run += w[i++];
+      if (run.length > 3) return void 0;
+      if (i >= w.length) {
+        parts.push(onset + nucleus + run);
+        break;
+      }
+      const keep = run.length <= 1 ? "" : run.slice(0, -1);
+      parts.push(onset + nucleus + keep);
+      onset = run.slice(keep.length);
+    }
+    if (parts.length > 1 && /^[^aeiouy]+e$/.test(parts[parts.length - 1])) {
+      const tail = parts.pop() ?? "";
+      parts[parts.length - 1] += tail;
+    }
+    if (parts.length === 0 || parts.some((p) => !VOWELS2.test(p))) return void 0;
+    syllables += parts.length;
+    out.push(parts.join("-"));
+  }
+  if (syllables < 2) return void 0;
+  const joined2 = out.join(" ");
+  const first = joined2.split(/[- ]/)[0];
+  return first.toUpperCase() + joined2.slice(first.length);
 }
 function withTarget(s, loaded) {
   const key = spellingKey(s.canonical);
@@ -62971,7 +63043,7 @@ function nonBlank() {
 var INSTALL_CLIENT_VALUES = ["claude", "codex", "cursor", "windsurf", "gemini", "vscode", "claude-desktop"];
 var INSTALL_SCOPES = ["user", "project"];
 var IMPORT_FORMAT_VALUES = ["auto", "wispr", "superwhisper", "macos", "espanso", "markdown", "text", "csv", "json"];
-var SUGGESTION_KINDS = ["alias", "term", "never", "stale"];
+var SUGGESTION_KINDS = ["alias", "term", "never", "phonetic", "stale"];
 function log(...args) {
   console.error(`[${SERVER_NAME}]`, ...args);
 }
@@ -63539,6 +63611,7 @@ var suggestionSchema = external_exports.object({
   kind: external_exports.enum(SUGGESTION_KINDS),
   canonical: nonBlank(),
   alias: external_exports.string().optional(),
+  phonetic: external_exports.string().optional(),
   aliases: external_exports.array(external_exports.string()).optional(),
   category: external_exports.enum(TERM_CATEGORIES).optional(),
   reason: external_exports.string().optional(),
@@ -63642,7 +63715,7 @@ var registerHarvestTools = (server, ctx) => {
     "suggest_terms",
     {
       title: "Propose lexicon improvements",
-      description: "Propose new aliases, terms and never-words from the user's voice history, usage and repo. Call weekly or when the user asks how to improve corrections; present them and apply accepted ones with apply_suggestion (or add_term). Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), or 'stale' (a term that never fires), plus reason, confidence and evidence, and `scope` and `path`: the lexicon file applying it would write (where the term lives, or the global file for a new term). Name that file when you present a suggestion. The result is a bare JSON array, best first. An empty array comes with a second text block saying why (no voice history yet, or nothing new in it) and what produces suggestions: relay it.",
+      description: "Propose new aliases, terms and never-words from the user's voice history, usage and repo. Call weekly or when the user asks how to improve corrections; present them and apply accepted ones with apply_suggestion (or add_term). Each suggestion has kind 'alias' (a misspelling to add to an existing term), 'term' (a new name), 'never' (a word wrongly rewritten), 'phonetic' (a pronunciation hint in `phonetic` for a term the matcher keeps guessing at; never applied unattended), or 'stale' (a term that never fires), plus reason, confidence and evidence, and `scope` and `path`: the lexicon file applying it would write (where the term lives, or the global file for a new term). Name that file when you present a suggestion. The result is a bare JSON array, best first. An empty array comes with a second text block saying why (no voice history yet, or nothing new in it) and what produces suggestions: relay it.",
       inputSchema: {
         cwd: nonBlank().optional().describe(`Repository to scan for evidence. Omit for the server working directory (a blank one is refused). Must be inside it, its git root, a client root or ${HARVEST_ROOTS_ENV}.`),
         limit: external_exports.number().int().positive().max(SUGGEST_MAX_LIMIT).optional().describe(`Max suggestions to return (default ${SUGGEST_DEFAULT_LIMIT}, at most ${SUGGEST_MAX_LIMIT}).`)
@@ -63665,7 +63738,7 @@ var registerHarvestTools = (server, ctx) => {
     "apply_suggestion",
     {
       title: "Apply suggestions",
-      description: "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), 'never' records the word as never-rewrite on the term, 'stale' removes the term from one lexicon file (the suggestion's `scope`, else project first); when the term also has a copy in the other file the result lists it in `stillIn` and that copy keeps correcting until removed with its own scope. Pass the suggestion object back as received; one whose `path` is another repo's project lexicon (suggest_terms with `cwd`) is refused, since this server writes only its own. When the user accepted several, pass them all at once in `suggestions` instead of `suggestion` (one call, one write per lexicon file): they are applied in order, the result lists each applied one in `applied` (the single-suggestion result plus its `index`) and each refused one in `failures` (`index`, `kind`, `canonical`, `error`), and a refused one does not stop the rest. A project file that is not trusted yet is written but left untrusted (`trusted: false`): relay `nextStep`.",
+      description: "Apply a suggestion returned by suggest_terms after the user accepted it: 'alias' merges the alias into the term, 'term' adds the term (aliases auto-suggested when none given), 'never' records the word as never-rewrite on the term, 'phonetic' sets the term's pronunciation hint only when it has none, 'stale' removes the term from one lexicon file (the suggestion's `scope`, else project first); when the term also has a copy in the other file the result lists it in `stillIn` and that copy keeps correcting until removed with its own scope. Pass the suggestion object back as received; one whose `path` is another repo's project lexicon (suggest_terms with `cwd`) is refused, since this server writes only its own. When the user accepted several, pass them all at once in `suggestions` instead of `suggestion` (one call, one write per lexicon file): they are applied in order, the result lists each applied one in `applied` (the single-suggestion result plus its `index`) and each refused one in `failures` (`index`, `kind`, `canonical`, `error`), and a refused one does not stop the rest. A project file that is not trusted yet is written but left untrusted (`trusted: false`): relay `nextStep`.",
       inputSchema: {
         suggestion: suggestionSchema.optional().describe("One suggestion, as suggest_terms returned it. Pass this or `suggestions`, not both."),
         suggestions: external_exports.array(suggestionSchema).min(1).max(APPLY_SUGGESTIONS_MAX).optional().describe(`1 to ${APPLY_SUGGESTIONS_MAX} suggestions, as suggest_terms returned them, applied in order. Pass this or \`suggestion\`, not both.`),
@@ -63693,20 +63766,20 @@ var registerHarvestTools = (server, ctx) => {
     const { kind, canonical } = suggestion;
     const alias = suggestion.alias?.trim();
     let target = scope ?? suggestion.scope;
-    if (kind === "alias" || kind === "never") {
+    if (kind === "alias" || kind === "never" || kind === "phonetic") {
       const key = spellingKey(canonical);
       const loaded = await current();
       const existing = loaded.merged.terms.find((t) => spellingKey(t.canonical) === key);
       if (!existing) {
         throw new Error(
-          `no term "${canonical}" in the lexicon, so there is nothing to add this ${kind === "alias" ? "alias" : "never word"} to (it may have been removed since suggest_terms ran); nothing was written. Call suggest_terms again, or add_term if the user wants the term created.`
+          `no term "${canonical}" in the lexicon, so there is nothing to add this ${kind === "alias" ? "alias" : kind === "phonetic" ? "pronunciation hint" : "never word"} to (it may have been removed since suggest_terms ran); nothing was written. Call suggest_terms again, or add_term if the user wants the term created.`
         );
       }
       const holders = termHolders(loaded, canonical);
       if (target !== void 0 && target !== existing.scope && !holders.some((h) => h.scope === target)) {
         const where = holders.map((h) => `${h.scope} lexicon (${h.path})`).join(" and ") || `${existing.scope} lexicon`;
         throw new Error(
-          `"${existing.canonical}" is in the ${where}, not the ${target} one, so this ${kind === "alias" ? "alias" : "never word"} would create a copy of the term there; nothing was written. Call apply_suggestion again without scope to write it where the term lives, or add_term with scope "${target}" if the user wants a separate ${target} copy.`
+          `"${existing.canonical}" is in the ${where}, not the ${target} one, so this ${kind === "alias" ? "alias" : kind === "phonetic" ? "pronunciation hint" : "never word"} would create a copy of the term there; nothing was written. Call apply_suggestion again without scope to write it where the term lives, or add_term with scope "${target}" if the user wants a separate ${target} copy.`
         );
       }
       target ??= existing.scope;
@@ -63722,15 +63795,18 @@ var registerHarvestTools = (server, ctx) => {
     const storeOpts2 = { cwd: ctx.cwd, ...target !== void 0 ? { scope: target } : {} };
     if (kind === "stale") return { kind, canonical, target, storeOpts: storeOpts2 };
     if (kind === "alias" && !alias) throw new Error('an "alias" suggestion needs an alias');
+    const phonetic = suggestion.phonetic?.trim();
+    if (kind === "phonetic" && !phonetic) throw new Error('a "phonetic" suggestion needs `phonetic` (the hint); nothing was written');
     if (kind === "never" && !alias) throw new Error('a "never" suggestion needs an alias (the word to keep as written)');
     const listed = suggestion.aliases?.map((a) => a.trim()).filter((a) => a !== "") ?? [];
-    const aliases = kind === "never" ? [] : kind === "alias" && alias ? [alias] : listed.length > 0 ? listed : alias ? [alias] : suggestAliases(canonical);
+    const aliases = kind === "never" || kind === "phonetic" ? [] : kind === "alias" && alias ? [alias] : listed.length > 0 ? listed : alias ? [alias] : suggestAliases(canonical);
     const term = {
       canonical,
       aliases,
       source: "user",
       ...kind === "term" && suggestion.category !== void 0 ? { category: suggestion.category } : {},
       ...kind === "never" && alias ? { never: [alias] } : {},
+      ...kind === "phonetic" && phonetic ? { phonetic } : {},
       ...target !== void 0 ? { scope: target } : {}
     };
     return { kind, alias, term, storeOpts: storeOpts2 };
@@ -63751,7 +63827,7 @@ var registerHarvestTools = (server, ctx) => {
     const untrusted = writeOpts.leaveUntrusted === true && saved.file.scope === "project";
     const shown = untrusted && !saved.created ? term : saved.term;
     const pending = untrusted ? untrustedWriteFields(saved.file.path, "It") : void 0;
-    const summary = (kind === "alias" ? `"${alias}" -> "${shown.canonical}" saved` : kind === "never" ? `"${alias}" will never be rewritten to "${shown.canonical}"` : saved.created ? `added "${shown.canonical}" (${aliasCount(shown.aliases.length)})` : (
+    const summary = (kind === "alias" ? `"${alias}" -> "${shown.canonical}" saved` : kind === "never" ? `"${alias}" will never be rewritten to "${shown.canonical}"` : kind === "phonetic" ? `"${shown.canonical}" pronunciation hint: ${shown.phonetic ?? term.phonetic ?? ""}${shown.phonetic && shown.phonetic !== term.phonetic ? " (kept the existing hint)" : ""}` : saved.created ? `added "${shown.canonical}" (${aliasCount(shown.aliases.length)})` : (
       // A 'term' whose canonical the lexicon already had merges into it; an
       // untrusted file's copy is not read back, so it has no count then.
       `merged into the existing "${shown.canonical}"${untrusted ? "" : ` (${aliasCount(shown.aliases.length)} now)`}`
@@ -69280,7 +69356,7 @@ var SERVER_INSTRUCTIONS = [
   PROACTIVE_OFFER,
   "setup_lexicon previews by default: call it without apply to get the plan (what it would seed, the starter packs it would offer, the repo names it could harvest, the clients it detected, whether it would install the login service), show the plan to the user, then call again with apply: true, clients: [...], packs: [...], harvest: true and serve: true only for what the user agreed to. Omitted clients install nothing; omitted packs, harvest and serve do nothing.",
   "Starter packs (list_packs: developer, ai, business, voice-tools) give a new user dozens of curated names each (list_packs has the count); offer them once, name what a pack contains, and call add_pack only for the packs the user picked.",
-  "When corrections are not happening, call lexicon_doctor. When the user asks how to improve corrections, call suggest_terms, present the proposals and apply the accepted ones with apply_suggestion.",
+  'When corrections are not happening, call lexicon_doctor. When the user asks how to improve corrections, call suggest_terms, present the proposals (including pronunciation hints, kind "phonetic") and apply the accepted ones with apply_suggestion.',
   "Preview install_client (and dry-run uninstall_client) before applying it, and never trust a project lexicon (trust_project) before showing the user its preview and getting a yes. Never install into a client or create a login service the user did not name."
 ].join("\n");
 function createServer2(opts = {}) {

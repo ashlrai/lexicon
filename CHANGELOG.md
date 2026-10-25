@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Added
+
+- `lexicon suggest` proposes a pronunciation hint (kind `phonetic`) for a term that two or more different mishearings reach only by guess. The hint comes from the spelling (`KU-ber-ne-tes`), stays under the 0.80 unattended line, and never replaces a hint you wrote. Also in MCP `suggest_terms` and `apply_suggestion` (#7).
+
 ### Security
 
 - `lexicon review --project` and `lexicon edit --project` re-pin trust only over the bytes they wrote or checked. They re-hashed the file when re-pinning, so a writer that takes no lock (a `git pull`, a hand edit) landing between the write and the re-pin had its terms trusted as the user's edit; such a file now stays untrusted until `lexicon trust`, and `edit` says it was not re-trusted.

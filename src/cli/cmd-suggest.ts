@@ -65,6 +65,8 @@ function describe(s: TermSuggestion): string {
       return `protect ${bold(safe(s.alias ?? ''))} from ${bold(safe(s.canonical))} (never)`;
     case 'term':
       return `new term ${bold(safe(s.canonical))}${s.aliases?.length ? dim(` (aliases: ${s.aliases.map(safe).join(', ')})`) : ''}`;
+    case 'phonetic':
+      return `pronounce ${bold(safe(s.canonical))} as ${bold(safe(s.phonetic ?? ''))} (phonetic hint)`;
     case 'stale':
       return `remove ${bold(safe(s.canonical))}`;
     default:
@@ -120,6 +122,9 @@ function termFor(s: TermSuggestion): Term | undefined {
       return { canonical: s.canonical, aliases: s.alias ? [s.alias] : [] };
     case 'never':
       return { canonical: s.canonical, aliases: [], never: s.alias ? [s.alias] : [] };
+    case 'phonetic':
+      // The store keeps an existing hint (`phonetic ??=`), so a hint the user wrote is never overwritten.
+      return s.phonetic ? { canonical: s.canonical, aliases: [], phonetic: s.phonetic } : undefined;
     case 'term': {
       const term: Term = { canonical: s.canonical, aliases: s.aliases ?? suggestAliases(s.canonical), source: 'learned' };
       if (s.category) term.category = s.category;
@@ -142,6 +147,8 @@ function addedReport(s: TermSuggestion, result: { term: Term; created: boolean }
       return { text: `alias ${safe(s.alias ?? '')} -> ${safe(result.term.canonical)} in ${safe(file.path)}`, record };
     case 'never':
       return { text: `never ${safe(s.alias ?? '')} for ${safe(result.term.canonical)} in ${safe(file.path)}`, record };
+    case 'phonetic':
+      return { text: `phonetic ${safe(result.term.phonetic ?? '')} for ${safe(result.term.canonical)} in ${safe(file.path)}`, record };
     default:
       return { text: `${result.created ? 'added' : 'merged'} ${safe(result.term.canonical)} in ${safe(file.path)}`, record };
   }
