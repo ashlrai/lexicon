@@ -80,6 +80,50 @@ export const EXPORT_FORMAT_ALIASES: Readonly<Record<string, ExportFormat>> = {
   'wispr-flow-csv': 'wispr',
 };
 
+/** Edit distance between two short strings (insert, delete, substitute). */
+function editDistance(a: string, b: string): number {
+  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
+  for (let i = 1; i <= a.length; i++) {
+    const cur = [i];
+    for (let j = 1; j <= b.length; j++) {
+      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
+    }
+    prev = cur;
+  }
+  return prev[b.length];
+}
+
+/**
+ * The format a mistyped `value` most likely meant (`deepgarm` -> `deepgram`),
+ * or undefined when nothing is close: at most 2 edits, and fewer than half
+ * the typed length, so short noise like `x` suggests nothing. Aliases count
+ * as targets but the canonical format is returned. A tie suggests nothing.
+ */
+export function suggestExportFormat(value: string): ExportFormat | undefined {
+  const typed = value.trim().toLowerCase();
+  if (typed === '' || typed.length > 40) return undefined;
+  const limit = Math.min(2, Math.ceil(typed.length / 2) - 1);
+  if (limit < 1) return undefined;
+  const targets: Array<[string, ExportFormat]> = [
+    ...EXPORT_FORMATS.map((f): [string, ExportFormat] => [f, f]),
+    ...Object.entries(EXPORT_FORMAT_ALIASES),
+  ];
+  let best: ExportFormat | undefined;
+  let bestDistance = limit + 1;
+  let tie = false;
+  for (const [name, format] of targets) {
+    const d = editDistance(typed, name);
+    if (d < bestDistance) {
+      best = format;
+      bestDistance = d;
+      tie = false;
+    } else if (d === bestDistance && format !== best) {
+      tie = true;
+    }
+  }
+  return best !== undefined && !tie ? best : undefined;
+}
+
 /** The format `value` names (case-insensitive, aliases included), or undefined. */
 export function resolveExportFormat(value: string): ExportFormat | undefined {
   const lower = value.trim().toLowerCase();

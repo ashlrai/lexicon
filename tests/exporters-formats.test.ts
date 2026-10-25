@@ -74,3 +74,20 @@ describe('format size limits', () => {
     expect(new Set(out.word_boost).size).toBe(1000);
   });
 });
+
+describe('suggestExportFormat', () => {
+  it('maps close typos to the canonical format', async () => {
+    const { suggestExportFormat } = await import('../src/core/exporters/index.js');
+    expect(suggestExportFormat('deepgarm')).toBe('deepgram');
+    expect(suggestExportFormat('Espanzo')).toBe('espanso');
+    expect(suggestExportFormat('wisprflo')).toBe('wispr');
+    expect(suggestExportFormat('speechmatic')).toBe('speechmatics');
+  });
+  it('suggests nothing for noise, short input, or exact names', async () => {
+    const { suggestExportFormat } = await import('../src/core/exporters/index.js');
+    expect(suggestExportFormat('bogus')).toBeUndefined();
+    expect(suggestExportFormat('x')).toBeUndefined();
+    expect(suggestExportFormat('')).toBeUndefined();
+    expect(suggestExportFormat('a'.repeat(100))).toBeUndefined();
+  });
+});

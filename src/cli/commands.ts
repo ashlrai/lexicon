@@ -72,6 +72,7 @@ import {
   exportLexiconWithNotes,
   selectExportTerms,
   resolveExportFormat,
+  suggestExportFormat,
   harvestReport,
   harvestTruncatedNote,
   loadLexicon,
@@ -1222,6 +1223,8 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
     const error = `unknown export format "${requested}"`;
     if (json) return refuse(io, true, error, exportFormatNextStep());
     io.stderr(`lexicon: unknown export format "${safe(requested)}"\n`);
+    const meant = suggestExportFormat(requested);
+    if (meant !== undefined) io.stderr(`Did you mean ${meant}? Run: lexicon export ${meant}\n`);
     io.stderr(formatList());
     return 1;
   }
