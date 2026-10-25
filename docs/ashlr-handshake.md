@@ -13,7 +13,7 @@ contract is implemented by `locus`, `stack` (ashlr-stack), `ashlr-plugin` and
   "command": "lexicon",
   "version": "0.5.6",
   "protocols": { "ashlr.handshake": 1, "mcp": 1 },
-  "capabilities": ["transcript-normalize", "term-lexicon", "suggest-terms", "mcp-server", "agent-install", "voice-hooks", "doctor-json"],
+  "capabilities": ["transcript-normalize", "term-lexicon", "suggest-terms", "mcp-server", "agent-install", "voice-hooks", "doctor-json", "doctor-fix"],
   "health": { "status": "ok", "checks": [{ "id": "global-lexicon", "status": "ok" }] },
   "edits": ["~/.config/lexicon/", ".lexicon.yaml", ".mcp.json", ".cursor/mcp.json", "~/.claude/settings.json", "~/.cursor/mcp.json", "~/.codex/config.toml"],
   "receipts": []

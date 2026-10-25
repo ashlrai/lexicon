@@ -6,6 +6,8 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Added
 
+- `lexicon doctor --fix` previews safe repairs and `--fix --apply` makes them, with the semantics of `locus doctor --fix` (preview by default, a 0600 backup of every file before it changes, exit 1 when an applied fix was skipped, `--json` for `{ mode, plan, outcome }`, `--apply` without `--fix` refused). It creates a missing global lexicon and moves aside an unusable `trust.json`, `hits.json`, pending corrections queue or index cache. An unparseable lexicon, `serve.json` (pairing token), and the Claude hook and MCP registration stay manual items. The handshake lists the new `doctor-fix` capability, so `stack doctor --fix` can run it. See docs/doctor-fix.md.
+
 - `lexicon doctor` reads locus and ashlr-md (`mdopener-mcp`) through `--ashlr-handshake --json` and adds one info line each: version and health, or not installed. When locus reports health other than `ok` and lists the `doctor-fix` capability, the line suggests `locus doctor --fix`; the hint keys on the capability only, never on a version. Probes run in parallel with a 2 s timeout and an environment of PATH, HOME, USER, locale and TMPDIR only. A timeout or unreadable handshake reads as `unknown`. The lines never change `ok`, `ready` or the exit code; `--json` and the `lexicon_doctor` MCP tool add a `companions` array. Same rules as `stack doctor --ecosystem` and `ashlr doctor`.
 
 ### Fixed

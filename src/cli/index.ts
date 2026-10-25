@@ -48,6 +48,7 @@ import type {
   RemoveOptions,
 } from './commands.js';
 import type { InstallOptions } from './cmd-install.js';
+import { type DoctorFixOptions, refuseApplyWithoutFix, runDoctorFix } from './doctor-fix.js';
 import { CliRefusal, argvRequestsJson, cwdOptionProblem, exampleAfterMissingArgument, fail, jsonFlagsOf, line, optsRequestJson, nonNegativeIntOption, positiveIntOption, refuse, unknownCommandHint, usageErrorJson } from './io.js';
 
 
@@ -200,8 +201,15 @@ program
 program
   .command('doctor')
   .description('check lexicon files, term conflicts and the Claude Code integration')
-  .option('--json', 'print the report as JSON ({ ok, ready, summary, nextStep, checks, ... } plus error, the first failing check, when ok is false; as the lexicon_doctor MCP tool returns it)')
-  .action(async (opts: DoctorCliOptions) => done(await runDoctor(withGlobals(opts), io)));
+  .option('--json', 'print the report as JSON ({ ok, ready, summary, nextStep, checks, ... } plus error, the first failing check, when ok is false; as the lexicon_doctor MCP tool returns it). With --fix: { mode, plan, outcome }')
+  .option('--fix', 'preview safe repairs (writes nothing): create a missing global lexicon, move aside an unusable trust, hits, pending or index cache file')
+  .option('--apply', 'with --fix: make the repairs, backing up each file first (exit 1 if one was skipped)')
+  .action(async (opts: DoctorCliOptions & DoctorFixOptions) => {
+    const o = withGlobals(opts);
+    if (o.apply && !o.fix) return done(refuseApplyWithoutFix(io, o.json));
+    if (o.fix) return done(await runDoctorFix(o, io));
+    return done(await runDoctor(o, io));
+  });
 
 program
   .command('mcp')
