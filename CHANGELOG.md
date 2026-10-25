@@ -10,6 +10,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Added
 
+- **`lexicon export speechmatics`**: a Speechmatics `additional_vocab` list, one `{ "content": canonical, "sounds_like": [aliases] }` per term (no `sounds_like` when a term has none), most used first, at most 1,000 entries with the rest named on stderr. Also in MCP `export_lexicon` and `GET /export/speechmatics`. Sixteen export formats now. Closes #6.
 - `lexicon --ashlr-handshake [--json]` prints the Ashlr companion handshake v1 (name, version, protocols, capabilities, health, files lexicon may edit) as one JSON line, the same shape as locus, ashlr-stack, ashlr-plugin and ashlr-md. See docs/ashlr-handshake.md.
 
 ### Added

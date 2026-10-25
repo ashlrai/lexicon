@@ -7,6 +7,7 @@ import { EXPORT_FORMATS } from '../types.js';
 export { EXPORT_FORMATS } from '../types.js';
 import type { ExportFormat, ExportOptions, Lexicon, Term } from '../types.js';
 import { exportAssemblyai } from './assemblyai.js';
+import { exportSpeechmatics } from './speechmatics.js';
 import { exportAzure } from './azure.js';
 import { exportClaudeMd } from './claudeMd.js';
 export { exportClaudeMdWithin } from './claudeMd.js';
@@ -55,6 +56,7 @@ export const EXPORT_FORMAT_INFO: Record<ExportFormat, { description: string; ext
   'deepgram': { description: 'Deepgram keyterm list (Nova-3) and keywords with boost (Nova-2 and older)', ext: 'json' },
   'espanso': { description: 'espanso match YAML', ext: 'yml' },
   'assemblyai': { description: 'AssemblyAI word_boost JSON', ext: 'json' },
+  'speechmatics': { description: 'Speechmatics additional_vocab JSON (content plus sounds_like aliases)', ext: 'json' },
   'azure': { description: 'Azure Speech phraseList JSON', ext: 'json' },
   'google': { description: 'Google Speech-to-Text adaptation phraseSets JSON', ext: 'json' },
   'openai': { description: 'OpenAI transcription `prompt` field (one line, <= 100 terms)', ext: 'txt' },
@@ -119,6 +121,7 @@ const EXPORTERS: Record<ExportFormat, Exporter> = {
   'deepgram': exportDeepgram,
   'espanso': exportEspanso,
   'assemblyai': exportAssemblyai,
+  'speechmatics': exportSpeechmatics,
   'azure': exportAzure,
   'google': exportGoogle,
   'openai': exportOpenai,

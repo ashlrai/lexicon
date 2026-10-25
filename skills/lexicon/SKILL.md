@@ -171,4 +171,4 @@ note says a project file was skipped as untrusted or changed:
 | Hand the list to another tool | `export_lexicon { format, categories?, limit? }` |
 
 `export_lexicon` formats: `claude-md`, `wispr`, `superwhisper`, `whisper-prompt`, `macos`, `deepgram`,
-`espanso`, `assemblyai`, `azure`, `google`, `openai`, `text`, `markdown`, `csv`, `json`.
+`espanso`, `assemblyai`, `speechmatics`, `azure`, `google`, `openai`, `text`, `markdown`, `csv`, `json`.

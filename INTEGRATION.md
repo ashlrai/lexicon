@@ -51,7 +51,7 @@ primitives Phantom can call, in order of preference:
 
 **Pre-transcription biasing.** Corrections happen after STT by default, but
 `lexicon export` also produces biasing hints that improve the recognizer
-itself: Whisper/OpenAI prompt lists, Deepgram, AssemblyAI, Azure and Google
+itself: Whisper/OpenAI prompt lists, Deepgram, AssemblyAI, Speechmatics, Azure and Google
 vocabularies, Wispr Flow and Superwhisper dictionaries, macOS Text Replacement,
 espanso. For fleet assistants that run their own STT, Phantom can push the
 user's terms into the recognizer before transcription rather than fixing the
@@ -108,7 +108,7 @@ shape for Phantom's config (names illustrative, Phantom's side to finalize):
   never rewrites the prompt or writes to the lexicon file. Fleet-wide prompt
   rewriting belongs in Phantom's own layer, not smuggled through this hook.
 - **Counts are load-bearing.** Docs in this repo state exact numbers (19 MCP
-  tools, 25 CLI commands, 15 export formats, 176 pack terms) and
+  tools, 25 CLI commands, 16 export formats, 176 pack terms) and
   `npm run check:facts` fails the build when prose disagrees with code. Any
   Phantom doc that quotes Lexicon's surface should derive the number, not
   copy it.

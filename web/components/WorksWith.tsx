@@ -86,7 +86,7 @@ const ROWS: Row[] = [
   {
     label: 'dictation and speech engines',
     lead: 'It also exports your words to',
-    // src/core/exporters: 15 formats
+    // src/core/exporters: 16 formats
     items: [
       { name: 'Wispr Flow', mono: 'WF' },
       { name: 'Superwhisper', mono: 'SW' },
@@ -98,7 +98,7 @@ const ROWS: Row[] = [
       { name: 'espanso', mono: 'ES' },
       { name: 'macOS Text Replacement', mono: 'TR' },
     ],
-    note: 'Fifteen export formats in all. Lexicon writes the dictionary, keyword list or prompt each of these accepts, and it never calls their APIs, and eight importers read the dictionaries back out again.',
+    note: 'Sixteen export formats in all. Lexicon writes the dictionary, keyword list or prompt each of these accepts, and it never calls their APIs, and eight importers read the dictionaries back out again.',
   },
 ];
 

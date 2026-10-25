@@ -25,7 +25,7 @@ Decide what to do from the arguments:
 4. **`export <format>`** - call `export_lexicon` with that format and print the
    returned text verbatim inside a fenced code block. Valid formats: `claude-md`,
    `wispr`, `superwhisper`, `whisper-prompt`, `macos`, `deepgram`, `espanso`,
-   `assemblyai`, `azure`, `google`, `openai`, `text`, `markdown`, `csv`, `json`. If the format is missing or unknown, list the valid ones instead.
+   `assemblyai`, `speechmatics`, `azure`, `google`, `openai`, `text`, `markdown`, `csv`, `json`. If the format is missing or unknown, list the valid ones instead.
 
 5. **`remove <canonical>`** - call `remove_term` and confirm whether it was found.
    `remove <alias> from <canonical>` - call `remove_term` with `alias` to drop just
