@@ -8,7 +8,10 @@ on:
     branches: [main, 'ci/**']
   pull_request:
     branches: [main]
-    # `labeled` so adding `ci:macos` to an open PR starts a run with the macOS row.
+    # `labeled` so adding `ci:macos` to an open PR starts a run with the macOS
+    # row. Any other label is a no-op: `plan` skips (so `test` skips too) and
+    # the run gets its own concurrency group, so it cannot cancel the PR's
+    # real run and leave required checks cancelled.
     types: [opened, synchronize, reopened, labeled]
 
 # Superseded branch and PR runs are cancelled. Every push to main gets its own
@@ -17,7 +20,7 @@ on:
 # that one cancelled the run pending before it, so main went hours without a
 # result and some commits were never tested at all.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
+  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'ci:macos' && format('-label-{0}', github.run_id) || '' }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -38,6 +41,7 @@ jobs:
   # their perf tests, and this workflow). #197 was a macOS-only failure of a
   # wall-clock budget in the hook that no PR row could have caught.
   plan:
+    if: github.event.action != 'labeled' || github.event.label.name == 'ci:macos'
     runs-on: ubuntu-latest
     outputs:
       include: ${{ steps.rows.outputs.include }}
