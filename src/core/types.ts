@@ -253,6 +253,7 @@ export const EXPORT_FORMATS = [
   'deepgram',
   'espanso',
   'assemblyai',
+  'speechmatics',
   'azure',
   'google',
   'openai',

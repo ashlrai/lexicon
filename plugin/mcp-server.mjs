@@ -27683,6 +27683,7 @@ var init_types = __esm({
       "deepgram",
       "espanso",
       "assemblyai",
+      "speechmatics",
       "azure",
       "google",
       "openai",
@@ -60370,6 +60371,33 @@ function exportAssemblyai(lexicon, _opts = {}, sink) {
   return JSON.stringify({ word_boost, boost_param: "high" }, null, 2) + "\n";
 }
 
+// src/core/exporters/speechmatics.ts
+var SPEECHMATICS_VOCAB_MAX = 1e3;
+function exportSpeechmatics(lexicon, _opts = {}, sink) {
+  const additional_vocab = [];
+  const overCap = [];
+  for (const { term, canonical } of canonicalList(sortByImportance(lexicon.terms))) {
+    const content = canonical.replace(/\s+/g, " ").trim();
+    if (!content) continue;
+    if (additional_vocab.length >= SPEECHMATICS_VOCAB_MAX) {
+      overCap.push(canonical);
+      continue;
+    }
+    const sounds = [];
+    for (const alias of term.aliases) {
+      const a = alias.normalize("NFC").replace(/\s+/g, " ").trim();
+      if (a && a !== content && !sounds.includes(a)) sounds.push(a);
+    }
+    additional_vocab.push(sounds.length > 0 ? { content, sounds_like: sounds } : { content });
+  }
+  if (overCap.length > 0) {
+    sink?.notes.push(
+      `left out ${overCap.length} term${overCap.length === 1 ? "" : "s"} past Speechmatics' ${SPEECHMATICS_VOCAB_MAX} additional_vocab entries (the most used kept): ${quotedNames(overCap)}`
+    );
+  }
+  return JSON.stringify({ additional_vocab }, null, 2) + "\n";
+}
+
 // src/core/exporters/azure.ts
 var AZURE_PHRASES_MAX = 500;
 function exportAzure(lexicon, _opts = {}, sink) {
@@ -60781,6 +60809,7 @@ var EXPORT_FORMAT_INFO = {
   "deepgram": { description: "Deepgram keyterm list (Nova-3) and keywords with boost (Nova-2 and older)", ext: "json" },
   "espanso": { description: "espanso match YAML", ext: "yml" },
   "assemblyai": { description: "AssemblyAI word_boost JSON", ext: "json" },
+  "speechmatics": { description: "Speechmatics additional_vocab JSON (content plus sounds_like aliases)", ext: "json" },
   "azure": { description: "Azure Speech phraseList JSON", ext: "json" },
   "google": { description: "Google Speech-to-Text adaptation phraseSets JSON", ext: "json" },
   "openai": { description: "OpenAI transcription `prompt` field (one line, <= 100 terms)", ext: "txt" },
@@ -60811,6 +60840,7 @@ var EXPORTERS = {
   "deepgram": exportDeepgram,
   "espanso": exportEspanso,
   "assemblyai": exportAssemblyai,
+  "speechmatics": exportSpeechmatics,
   "azure": exportAzure,
   "google": exportGoogle,
   "openai": exportOpenai,
@@ -63471,7 +63501,7 @@ var registerTermTools = (server, ctx) => {
     "export_lexicon",
     {
       title: "Export the lexicon",
-      description: `Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'azure', 'google', 'csv', or raw 'json'. Aliases: ${EXPORT_ALIAS_NOTE}. The first content block is the export itself, exactly what the CLI export command writes. A second block, only when there is something to say, is a note for you, not part of the export: the format left entries out to stay within its target's limits (named in the note), the export is empty (no terms yet, or none matched \`categories\`), or the repo has an untrusted project .lexicon.yaml whose terms were left out (relay it to the user).`,
+      description: `Export the merged lexicon in a format for another tool: 'claude-md' (markdown for CLAUDE.md / system prompts), 'markdown', 'text', 'wispr', 'superwhisper', 'whisper-prompt', 'openai', 'macos', 'espanso', 'deepgram', 'assemblyai', 'speechmatics', 'azure', 'google', 'csv', or raw 'json'. Aliases: ${EXPORT_ALIAS_NOTE}. The first content block is the export itself, exactly what the CLI export command writes. A second block, only when there is something to say, is a note for you, not part of the export: the format left entries out to stay within its target's limits (named in the note), the export is empty (no terms yet, or none matched \`categories\`), or the repo has an untrusted project .lexicon.yaml whose terms were left out (relay it to the user).`,
       inputSchema: {
         format: external_exports.enum(EXPORT_FORMAT_NAMES),
         categories: external_exports.array(external_exports.enum(TERM_CATEGORIES)).optional().describe("Only include terms in these categories. Omitted: every category."),

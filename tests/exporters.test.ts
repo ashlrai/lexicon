@@ -38,7 +38,7 @@ const ALIAS_COUNT = lexicon.terms.reduce((n, t) => n + t.aliases.length, 0);
 
 describe('exportLexicon', () => {
   it('lists every format with info', () => {
-    expect(EXPORT_FORMATS).toHaveLength(15);
+    expect(EXPORT_FORMATS).toHaveLength(16);
     for (const format of EXPORT_FORMATS) {
       expect(EXPORT_FORMAT_INFO[format].description).toBeTruthy();
       expect(EXPORT_FORMAT_INFO[format].ext).toBeTruthy();
@@ -483,5 +483,52 @@ describe('resolveExportFormat', () => {
     expect(resolveExportFormat('Claude-MD')).toBe('claude-md');
     expect(resolveExportFormat('bogus')).toBeUndefined();
     expect(resolveExportFormat('constructor')).toBeUndefined();
+  });
+});
+
+describe('speechmatics exporter', () => {
+  const small: Lexicon = {
+    version: 1,
+    terms: [
+      { canonical: 'Vercel', aliases: ['Versel', ' ver cell ', 'Versel', 'Vercel'], category: 'brand', hits: 5 },
+      { canonical: 'Mason', aliases: ['Macen'], category: 'person', hits: 2 },
+      { canonical: 'kubectl', aliases: [], category: 'identifier', hits: 1 },
+    ],
+  };
+
+  it('emits additional_vocab with sounds_like aliases, content only when there are none', () => {
+    expect(exportLexicon(small, 'speechmatics')).toBe(
+      `${JSON.stringify(
+        {
+          additional_vocab: [
+            { content: 'Vercel', sounds_like: ['Versel', 'ver cell'] },
+            { content: 'Mason', sounds_like: ['Macen'] },
+            { content: 'kubectl' },
+          ],
+        },
+        null,
+        2,
+      )}\n`,
+    );
+  });
+
+  it('respects categories and limit', () => {
+    const people = JSON.parse(exportLexicon(small, 'speechmatics', { categories: ['person'] }));
+    expect(people).toEqual({ additional_vocab: [{ content: 'Mason', sounds_like: ['Macen'] }] });
+    const top = JSON.parse(exportLexicon(small, 'speechmatics', { limit: 1 }));
+    expect(top.additional_vocab.map((e: { content: string }) => e.content)).toEqual(['Vercel']);
+  });
+
+  it('caps at 1000 entries with a note, and handles an empty lexicon', () => {
+    const many: Lexicon = {
+      version: 1,
+      terms: Array.from({ length: 1002 }, (_, i) => ({ canonical: `T${String(i).padStart(4, '0')}`, aliases: [] })),
+    };
+    const r = exportLexiconWithNotes(many, 'speechmatics');
+    expect(JSON.parse(r.text).additional_vocab).toHaveLength(1000);
+    expect(r.notes).toEqual([
+      `left out 2 terms past Speechmatics' 1000 additional_vocab entries (the most used kept): "T1000" and "T1001"`,
+    ]);
+    expect(JSON.parse(exportLexicon({ version: 1, terms: [] }, 'speechmatics'))).toEqual({ additional_vocab: [] });
   });
 });

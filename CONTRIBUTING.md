@@ -166,7 +166,7 @@ A pack for a profession the four shipped packs do not cover is the most useful t
 3. Register it in `src/core/exporters/index.ts`: add it to `EXPORT_FORMATS`, add a `description` and `ext` entry to `EXPORT_FORMAT_INFO`, and add it to the `EXPORTERS` map that `exportLexicon()` dispatches through. Use `sortByImportance()` from `shared.ts` so term order matches the other exporters.
 4. Add a test in `tests/exporters.test.ts` with a small lexicon and an exact expected string. Cover `categories` and `limit`.
 5. Add the format to `EXPORT_FORMAT_VALUES` in `src/mcp/server.ts` (the build fails until you do) and to the `export_lexicon` description.
-6. Add a row to the export table in `docs/EXPORTS.md`, the format lists in `commands/lexicon.md` and `skills/lexicon/SKILL.md`, the exporters line in `docs/CONTRACT.md` and `EXPORT_CONTENT_TYPES` in `src/serve/server.ts` if the extension is new. Update the format count wherever it is stated ("fifteen"), including `README.md`.
+6. Add a row to the export table in `docs/EXPORTS.md`, the format lists in `commands/lexicon.md` and `skills/lexicon/SKILL.md`, the exporters line in `docs/CONTRACT.md` and `EXPORT_CONTENT_TYPES` in `src/serve/server.ts` if the extension is new. Update the format count wherever it is stated ("sixteen"), including `README.md`.
 
 The CLI (`lexicon export` with no format) picks up new formats from `EXPORT_FORMATS` automatically.
 

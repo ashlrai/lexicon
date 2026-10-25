@@ -147,7 +147,7 @@ untrusted project file is never merged; `/health`, `/normalize`, `/lexicon`, `/s
 The server keeps each `cwd`'s loaded lexicon for 2 s, so an edit made outside it shows within two seconds. A write through the API drops that cache at once: a write to the global lexicon for every `cwd`, a write to a repo's `.lexicon.yaml` only for the `cwd`s that read that file (or, when the write created it, now find it), and a `/normalize` that counts hits only for the `cwd`s whose lexicon holds a term it matched, since nothing else changed.
 
 Export content types: `csv` and `wispr` -> `text/csv`, `json` (also `superwhisper`,
-`deepgram`, `assemblyai`, `azure`, `google`) -> `application/json`,
+`deepgram`, `assemblyai`, `speechmatics`, `azure`, `google`) -> `application/json`,
 `claude-md` and `markdown` -> `text/markdown`, `text`, `whisper-prompt`,
 `openai` -> `text/plain`, `macos` -> `application/xml`, `espanso` ->
 `application/yaml`.

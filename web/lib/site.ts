@@ -10,7 +10,7 @@
  *
  * Every number below is derived from the repo and checked by
  * `node scripts/check-facts.mjs`: twenty-one MCP tools, two resources, two
- * prompts, fifteen export formats, eight importers, 176 terms across the four packs.
+ * prompts, sixteen export formats, eight importers, 176 terms across the four packs.
  */
 
 export const SITE_URL = 'https://lexicon.ashlr.ai';
@@ -70,7 +70,7 @@ export const MCP_TOOLS: { name: string; summary: string }[] = [
   { name: 'add_term', summary: 'Add a canonical spelling, with aliases suggested when omitted.' },
   { name: 'remove_term', summary: 'Remove a term.' },
   { name: 'list_terms', summary: 'List or search the merged lexicon.' },
-  { name: 'export_lexicon', summary: 'Export to any of the fifteen formats.' },
+  { name: 'export_lexicon', summary: 'Export to any of the sixteen formats.' },
   { name: 'learn_correction', summary: 'Record "heard X, meant Y" as a new alias.' },
   { name: 'suggest_canonical', summary: 'Closest existing terms to a garbled word, for "did you mean".' },
   { name: 'lexicon_stats', summary: 'Hits per term, totals, never-hit terms.' },
@@ -176,7 +176,7 @@ export const DOC_LINKS: { label: string; href: string; blurb: string }[] = [
   { label: 'Agent-native usage', href: DOC('docs/AGENT-NATIVE.md'), blurb: 'How an agent is meant to chain the tools.' },
   { label: 'For agents', href: DOC('docs/AGENTS.md'), blurb: 'Install and verify Lexicon on a user’s behalf.' },
   { label: 'FAQ', href: DOC('docs/FAQ.md'), blurb: 'The same answers as this page, as markdown.' },
-  { label: 'Exports and imports', href: DOC('docs/EXPORTS.md'), blurb: 'Fifteen formats out, seven in.' },
+  { label: 'Exports and imports', href: DOC('docs/EXPORTS.md'), blurb: 'Sixteen formats out, seven in.' },
   { label: 'Browser extension', href: DOC('docs/EXTENSION.md'), blurb: 'ChatGPT, Claude, Gemini, Grok, Perplexity, Copilot, Poe.' },
   { label: 'macOS menu bar app', href: DOC('docs/MACOS-APP.md'), blurb: 'Any text field, via the Accessibility API.' },
   { label: 'CLI reference', href: DOC('docs/CLI.md'), blurb: 'All twenty-seven commands.' },
