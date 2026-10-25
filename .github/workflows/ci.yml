@@ -8,11 +8,11 @@ on:
     branches: [main, 'ci/**']
   pull_request:
     branches: [main]
-    # `labeled` so adding `ci:macos` to an open PR starts a run with the macOS
-    # row. Any other label is a no-op: `plan` skips (so `test` skips too) and
-    # the run gets its own concurrency group, so it cannot cancel the PR's
-    # real run and leave required checks cancelled.
-    types: [opened, synchronize, reopened, labeled]
+    # No `labeled`: a run started by a label is the newest CI check suite for
+    # the head commit, and GitHub reads required checks from it, so a label
+    # run that skipped its jobs left the PR BLOCKED (#199). `plan` reads the
+    # PR's labels live instead: add `ci:macos`, then push or use "Re-run all
+    # jobs" on the PR's CI run, and the macOS row is included.
 
 # Superseded branch and PR runs are cancelled. Every push to main gets its own
 # group (keyed by SHA): with one shared main group, a run whose macOS row sat
@@ -20,7 +20,7 @@ on:
 # that one cancelled the run pending before it, so main went hours without a
 # result and some commits were never tested at all.
 concurrency:
-  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}${{ github.event.action == 'labeled' && github.event.label.name != 'ci:macos' && format('-label-{0}', github.run_id) || '' }}
+  group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
@@ -41,8 +41,11 @@ jobs:
   # their perf tests, and this workflow). #197 was a macOS-only failure of a
   # wall-clock budget in the hook that no PR row could have caught.
   plan:
-    if: github.event.action != 'labeled' || github.event.label.name == 'ci:macos'
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+      issues: read
     outputs:
       include: ${{ steps.rows.outputs.include }}
     steps:
@@ -56,8 +59,20 @@ jobs:
         env:
           EVENT: ${{ github.event_name }}
           BASE: ${{ github.event.pull_request.base.sha }}
-          LABELED: ${{ contains(github.event.pull_request.labels.*.name, 'ci:macos') }}
+          GH_TOKEN: ${{ github.token }}
+          REPO: ${{ github.repository }}
+          PR: ${{ github.event.pull_request.number }}
         run: |
+          LABELED=false
+          if [ "$EVENT" = "pull_request" ]; then
+            # Live labels, so a re-run picks up a label added after the push.
+            # An unreadable label list falls back to the event payload's.
+            if labels="$(gh api "repos/$REPO/issues/$PR/labels" --jq '.[].name')"; then
+              printf '%s\n' "$labels" | grep -qx 'ci:macos' && LABELED=true
+            else
+              LABELED='${{ contains(github.event.pull_request.labels.*.name, 'ci:macos') }}'
+            fi
+          fi
           base='{"os":"ubuntu-latest","node":20},{"os":"ubuntu-latest","node":22},{"os":"ubuntu-latest","node":24},{"os":"windows-latest","node":22}'
           mac=true
           if [ "$EVENT" = "pull_request" ] && [ "$LABELED" != "true" ]; then
