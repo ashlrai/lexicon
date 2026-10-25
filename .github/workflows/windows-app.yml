@@ -50,6 +50,13 @@ jobs:
         with:
           dotnet-version: '8.0.x'
 
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('apps/windows/**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
+
       - name: Unit tests
         run: dotnet test tests/LexiconBar.Core.Tests/LexiconBar.Core.Tests.csproj -c Release --nologo
 
@@ -67,6 +74,13 @@ jobs:
       - uses: actions/setup-dotnet@v6
         with:
           dotnet-version: '8.0.x'
+
+      - name: Cache NuGet packages
+        uses: actions/cache@v4
+        with:
+          path: ~/.nuget/packages
+          key: nuget-${{ runner.os }}-${{ hashFiles('apps/windows/**/*.csproj') }}
+          restore-keys: nuget-${{ runner.os }}-
 
       - name: Build (release)
         run: dotnet build LexiconBar.sln -c Release --nologo
