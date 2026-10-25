@@ -11,7 +11,8 @@
  * - a timeout, or JSON that is not a v1 handshake, reads as `unknown`;
  *   plain text (an older build that rejects the flag) reads as `outdated`;
  * - a next step is suggested only when the tool itself advertises the
- *   capability it needs (`locus doctor --fix` needs `doctor-fix`), never
+ *   capability it needs (`locus doctor --fix` and `mdopener-mcp doctor --fix`
+ *   need `doctor-fix`), never
  *   from a version number.
  * Only `--ashlr-handshake --json` is ever run; nothing reads a secret.
  */
@@ -54,11 +55,21 @@ export interface CompanionResult {
 	next_steps: string[];
 }
 
-/** Handshake capability a locus build advertises when `locus doctor --fix` exists. */
-export const LOCUS_DOCTOR_FIX_CAPABILITY = "doctor-fix";
+/** Handshake capability a tool advertises when `<command> doctor --fix` exists. */
+export const DOCTOR_FIX_CAPABILITY = "doctor-fix";
+export const LOCUS_DOCTOR_FIX_CAPABILITY = DOCTOR_FIX_CAPABILITY;
 
-export const LOCUS_DOCTOR_FIX_STEP =
-	"locus doctor --fix   # preview safe repairs (writes nothing); add --apply to make them";
+/** Companions with a dry-run-by-default `doctor --fix`, by name, valued by the command to run. */
+export const DOCTOR_FIX_COMMANDS: ReadonlyMap<string, string> = new Map([
+	["locus", "locus"],
+	["ashlr-md", "mdopener-mcp"],
+]);
+
+export const doctorFixStep = (command: string): string =>
+	`${command} doctor --fix   # preview safe repairs (writes nothing); add --apply to make them`;
+
+export const LOCUS_DOCTOR_FIX_STEP = doctorFixStep("locus");
+export const MDOPENER_DOCTOR_FIX_STEP = doctorFixStep("mdopener-mcp");
 
 /** PATH, HOME, USER, locale and TMPDIR only. */
 export function companionEnv(
@@ -140,14 +151,15 @@ function spawnHandshake(
 export function companionNextSteps(
 	r: Pick<CompanionResult, "name" | "state" | "health" | "capabilities">,
 ): string[] {
+	const command = DOCTOR_FIX_COMMANDS.get(r.name);
 	if (
-		r.name === "locus" &&
+		command !== undefined &&
 		r.state === "degraded" &&
 		r.health !== null &&
 		r.health !== "ok" &&
-		r.capabilities.includes(LOCUS_DOCTOR_FIX_CAPABILITY)
+		r.capabilities.includes(DOCTOR_FIX_CAPABILITY)
 	) {
-		return [LOCUS_DOCTOR_FIX_STEP];
+		return [doctorFixStep(command)];
 	}
 	return [];
 }
@@ -221,8 +233,7 @@ export function parseCompanion(
 	};
 	result.next_steps = companionNextSteps(result);
 	if (result.next_steps.length > 0)
-		result.fix =
-			"run `locus doctor --fix` to preview safe repairs (writes nothing); add --apply to make them";
+		result.fix = `run \`${DOCTOR_FIX_COMMANDS.get(c.name)} doctor --fix\` to preview safe repairs (writes nothing); add --apply to make them`;
 	return result;
 }
 

@@ -11,6 +11,7 @@ import { describe, expect, it } from "vitest";
 import {
 	type CompanionRunner,
 	LOCUS_DOCTOR_FIX_STEP,
+	MDOPENER_DOCTOR_FIX_STEP,
 	companionCheckMessage,
 	companionEnv,
 	defaultCompanionRunner,
@@ -82,20 +83,41 @@ describe("detectCompanions", () => {
 		}
 	});
 
-	it("degraded ashlr-md gets the handshake hint, never a locus hint", async () => {
-		const out = await detectCompanions(async (cmd) =>
-			cmd === "mdopener-mcp"
-				? {
-						kind: "ran",
-						code: 0,
-						stdout: hs("0.4.0", ["mcp-server", "doctor-fix"], "degraded"),
-					}
-				: { kind: "missing" },
+	const md = async (stdout: string) =>
+		(
+			await detectCompanions(async (cmd) =>
+				cmd === "mdopener-mcp"
+					? { kind: "ran", code: 0, stdout }
+					: { kind: "missing" },
+			)
+		)[1];
+
+	it("degraded ashlr-md that lists doctor-fix gets mdopener-mcp doctor --fix, never a locus hint", async () => {
+		const r = await md(hs("0.4.0", ["mcp-server", "doctor-fix"], "degraded"));
+		expect(r).toMatchObject({
+			name: "ashlr-md",
+			state: "degraded",
+			next_steps: [MDOPENER_DOCTOR_FIX_STEP],
+		});
+		expect(companionCheckMessage(r)).toContain(
+			"run `mdopener-mcp doctor --fix`",
 		);
-		expect(out[1]).toMatchObject({ state: "degraded", next_steps: [] });
-		expect(out[1].fix).toBe(
-			"run `mdopener-mcp --ashlr-handshake --json` to see which check is not ok",
-		);
+		expect(r.fix).not.toContain("locus");
+	});
+
+	it("healthy ashlr-md with doctor-fix: nothing extra", async () => {
+		const r = await md(hs("0.4.0", ["doctor-fix"], "ok"));
+		expect(r).toMatchObject({ state: "ready", next_steps: [], fix: null });
+	});
+
+	it("degraded ashlr-md without doctor-fix gets the handshake hint, no guess from version", async () => {
+		for (const v of ["0.1.0", "0.4.0", "9.9.9"]) {
+			const r = await md(hs(v, ["mcp-server"], "degraded"));
+			expect(r).toMatchObject({ state: "degraded", next_steps: [] });
+			expect(r.fix).toBe(
+				"run `mdopener-mcp --ashlr-handshake --json` to see which check is not ok",
+			);
+		}
 	});
 
 	it("unparseable or wrong-shape output reads as unknown; plain text as outdated; timeout as unknown", async () => {
