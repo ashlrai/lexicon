@@ -64435,8 +64435,14 @@ var DOCTOR_COMPANIONS = [
   { name: "ashlr-md", command: "mdopener-mcp", repo: "ashlrai/ashlr-md" }
 ];
 var COMPANION_TIMEOUT_MS = 2e3;
-var LOCUS_DOCTOR_FIX_CAPABILITY = "doctor-fix";
-var LOCUS_DOCTOR_FIX_STEP = "locus doctor --fix   # preview safe repairs (writes nothing); add --apply to make them";
+var DOCTOR_FIX_CAPABILITY = "doctor-fix";
+var DOCTOR_FIX_COMMANDS = /* @__PURE__ */ new Map([
+  ["locus", "locus"],
+  ["ashlr-md", "mdopener-mcp"]
+]);
+var doctorFixStep = (command) => `${command} doctor --fix   # preview safe repairs (writes nothing); add --apply to make them`;
+var LOCUS_DOCTOR_FIX_STEP = doctorFixStep("locus");
+var MDOPENER_DOCTOR_FIX_STEP = doctorFixStep("mdopener-mcp");
 function companionEnv(env = process.env) {
   const out = {};
   for (const k of [
@@ -64497,8 +64503,9 @@ function spawnHandshake(command, timeoutMs, env) {
   });
 }
 function companionNextSteps(r) {
-  if (r.name === "locus" && r.state === "degraded" && r.health !== null && r.health !== "ok" && r.capabilities.includes(LOCUS_DOCTOR_FIX_CAPABILITY)) {
-    return [LOCUS_DOCTOR_FIX_STEP];
+  const command = DOCTOR_FIX_COMMANDS.get(r.name);
+  if (command !== void 0 && r.state === "degraded" && r.health !== null && r.health !== "ok" && r.capabilities.includes(DOCTOR_FIX_CAPABILITY)) {
+    return [doctorFixStep(command)];
   }
   return [];
 }
@@ -64556,7 +64563,7 @@ function parseCompanion(c, run) {
   };
   result.next_steps = companionNextSteps(result);
   if (result.next_steps.length > 0)
-    result.fix = "run `locus doctor --fix` to preview safe repairs (writes nothing); add --apply to make them";
+    result.fix = `run \`${DOCTOR_FIX_COMMANDS.get(c.name)} doctor --fix\` to preview safe repairs (writes nothing); add --apply to make them`;
   return result;
 }
 async function detectCompanions(runner = defaultCompanionRunner, companions = DOCTOR_COMPANIONS, timeoutMs = COMPANION_TIMEOUT_MS) {
