@@ -191,3 +191,7 @@ The CLI (`lexicon export` with no format) picks up new formats from `EXPORT_FORM
 ## Pull requests
 
 Keep them small. One exporter, one importer, one harvester, one matcher change per PR. Include the test. Add a bullet to `CHANGELOG.md` under the `(unreleased)` heading at the top (Added, Changed, Security or Internal). Rebuild the plugin bundles (`npm run build:bundle`) when the change is reachable from the MCP server or the hook, and commit them. Run `npm run docs:cli` after touching a command or flag, and `npm run check:links` after moving or renaming a doc.
+
+### macOS in CI
+
+Pull requests run the Linux and Windows rows. The macOS row runs on every push to `main`, and on a pull request only when it touches a timing-sensitive path (`src/hooks/`, `src/core/learn.ts`, `src/core/matcher.ts`, `src/core/normalize.ts`, their tests, or `.github/workflows/ci.yml`). To run it on any other PR, add the `ci:macos` label. Adding the label does not start a run by itself: push again, or use "Re-run all jobs" on the PR's CI run (`gh run rerun <run-id>`), and the macOS row is included.
