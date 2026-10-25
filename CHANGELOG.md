@@ -6,6 +6,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Added
 
+- Handshake conformance test (`tests/handshake-conformance.test.ts`): validates `lexicon --ashlr-handshake --json` against the Ashlr handshake v1 contract vendored from ashlr-stack (`tests/contract/`, pinned by sha256) and runs `doctor --fix --json` for the advertised `doctor-fix` capability in a fresh HOME, checking that the preview writes nothing.
 - `lexicon doctor` suggests `mdopener-mcp doctor --fix` when ashlr-md reports health other than `ok` and its handshake lists `doctor-fix`, the same capability-only rule locus already had. Probes still run with no secrets in the environment.
 
 - `lexicon doctor --fix` previews safe repairs and `--fix --apply` makes them, with the semantics of `locus doctor --fix` (preview by default, a 0600 backup of every file before it changes, exit 1 when an applied fix was skipped, `--json` for `{ mode, plan, outcome }`, `--apply` without `--fix` refused). It creates a missing global lexicon and moves aside an unusable `trust.json`, `hits.json`, pending corrections queue or index cache. An unparseable lexicon, `serve.json` (pairing token), and the Claude hook and MCP registration stay manual items. The handshake lists the new `doctor-fix` capability, so `stack doctor --fix` can run it. See docs/doctor-fix.md.
