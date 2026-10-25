@@ -207,6 +207,23 @@ lexicon normalize --diff "deploy to head sner with cuban eatties"
 
 The rules in full, including every guard, are in [docs/MATCHING.md](docs/MATCHING.md).
 
+## Repair with doctor --fix
+
+`lexicon doctor --fix` previews repairs for problems `lexicon doctor` reports and writes nothing (exit 0). `lexicon doctor --fix --apply` makes them, backing up each file first. `lexicon doctor --apply` without `--fix` is refused with exit 1. Add `--json` for one `{ mode, plan, outcome }` object. This is in source (main) and not yet in a release; the npm package (0.5.4) does not have it.
+
+```console
+$ lexicon doctor --fix
+doctor --fix (dry run, nothing written):
+  would fix  move aside the trust registry (trust.json), which is not valid JSON (...)
+Run `lexicon doctor --fix --apply` to make these changes (each file is backed up first).
+$ lexicon doctor --fix --apply
+doctor --fix --apply:
+  fixed   move aside the trust registry (trust.json), which is not valid JSON (...)
+          backup: ~/.config/lexicon/trust.json.bak-<UTC stamp>
+```
+
+What it repairs: a missing global lexicon is created empty (as `lexicon init` does), and an unusable `trust.json`, `hits.json`, pending corrections queue or index cache is copied to `<file>.bak-<UTC stamp>` and removed. What stays manual (listed as `manual`, never changed): a lexicon that does not parse (it holds your terms; fix it with `lexicon edit`), `serve.json` (it holds the pairing token), state paths that are a directory or symlink, and the Claude hook and MCP registration (`lexicon install claude --apply`). Details: [docs/doctor-fix.md](./docs/doctor-fix.md). To repair every Ashlr tool at once, see [Repair everything](https://github.com/ashlrai/ashlr-stack/blob/main/docs/getting-started-ecosystem.md#repair-everything) in the Ashlr Stack guide.
+
 ## Documentation
 
 **[The full index is in `docs/`](docs/README.md)**, grouped by task: get started, use it
