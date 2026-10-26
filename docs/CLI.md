@@ -94,6 +94,7 @@ create the lexicon file (global by default) if it does not exist
 
 Options:
   --project   create a project .lexicon.yaml at the git root (or cwd) instead
+  --dry-run   report the file it would create and trust; write nothing
   --json      print { ok: true, scope, path, created } as JSON (plus trust for
               --project)
   -h, --help  display help for command
@@ -117,6 +118,8 @@ Options:
   --project              write to the project lexicon instead of the global one
   --suggest              append auto-generated likely misspellings (automatic
                          when no aliases are given)
+  --dry-run              report the term and aliases it would create or merge;
+                         write nothing
   -i, --interactive      confirm suggested aliases as a checklist, then ask for
                          phonetic hint and category
   --never <word...>      words that must never be rewritten to this term even if
@@ -139,6 +142,7 @@ remove a term (project lexicon first, then global), or one alias of it with
 Options:
   --alias <alias>  remove only this alias from the term and keep the term (exit
                    1 when the term or alias is unknown)
+  --dry-run        report the term or alias it would remove; write nothing
   --project        only look in the project lexicon
   --global         only look in the global lexicon (not with --project)
   --json           print { ok: true, canonical, removed } as JSON (exit 1 when
@@ -222,6 +226,8 @@ Options:
   -i, --interactive  walk candidates one by one: y add, n skip, e edit aliases,
                      c category, a add all, q quit
   --yes              with --add: add every candidate without prompting
+  --dry-run          with --add: report the terms it would add or merge; write
+                     nothing
   --symbols          also propose names seen only as a code symbol (off: they
                      are what you type, not what you say)
   --json             print candidates as JSON (a bare array; with --add it is
@@ -243,6 +249,8 @@ export the merged lexicon for another tool (run without a format to list them)
 
 Options:
   --out <file>                write to a file instead of stdout
+  --dry-run                   with --out: report the export format, terms, bytes
+                              and path; write nothing
   --category <categories...>  only these categories, space- or comma-separated
   --limit <n>                 cap the number of terms, applied after --category,
                               keeping the most hits first (at equal hits brand,
@@ -439,6 +447,8 @@ Arguments:
 Options:
   --list      list trusted project lexicons and whether they still match
   -y, --yes   trust without asking (required off a terminal)
+  --dry-run   show the preview and the pin it would write; ask nothing, pin
+              nothing
   --json      print the result as JSON: ok, then the object MCP trust_project
               returns, with the full preview where MCP has a summary (with
               --list: { ok, registry, trustAll, trusted })
@@ -457,6 +467,7 @@ Arguments:
               .lexicon.yaml for the current directory)
 
 Options:
+  --dry-run   report the registry entry it would remove; write nothing
   --json      print { ok, action, path, removed, registry, summary } as JSON, as
               MCP trust_project returns it plus ok
   -h, --help  display help for command
@@ -477,6 +488,7 @@ Options:
                      not Ashler" (instead of <heard> <meant>, not with them)
   --project          write to the project lexicon (default: the file that
                      already holds the meant term, else the global one)
+  --dry-run          report what would be learned; write nothing
   --json             print the result as JSON
   -h, --help         display help for command
 ```
@@ -657,6 +669,8 @@ Usage: lexicon review [options]
 walk through existing terms and keep, delete or edit each one
 
 Options:
+  --dry-run              walk through the review and report the changes; write
+                         nothing
   --never-hit            only terms that have never fired (0 hits)
   --project              review the project .lexicon.yaml instead of the global
                          file
@@ -677,6 +691,8 @@ open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it
 afterwards
 
 Options:
+  --dry-run   report the file it would create or open; do not launch an editor
+              or write anything
   --project   open the project .lexicon.yaml instead of the global file
   --json      refused (exit 1): edit opens an editor; prints { ok: false, error,
               nextStep } naming add, remove and the MCP tools

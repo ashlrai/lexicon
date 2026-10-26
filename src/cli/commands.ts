@@ -95,6 +95,9 @@ import {
   spellingConflicts,
   suggestAliases,
   trustProject,
+  trustRegistryProblem,
+  TrustRegistryUnreadableError,
+  getTrustPath,
   withLexiconLock,
   spellingKey,
   writeLexiconFile,
@@ -257,6 +260,14 @@ export async function runInit(opts: InitOptions, io: IO): Promise<number> {
     ? (paths.project ?? defaultProjectPath(cwd))
     : paths.global;
   const dry = opts.dryRun === true;
+
+  // Creating a project also promises to trust it. Check before creating
+  // anything, including in a preview, so a broken registry cannot leave a
+  // newly authored file untrusted while the preview claims success.
+  if (scope === 'project' && !existsSync(target)) {
+    const problem = await trustRegistryProblem({ cwd });
+    if (problem !== undefined) throw new TrustRegistryUnreadableError(getTrustPath({ cwd }), problem);
+  }
 
   // The existence check, the write and the appended example are one operation.
   // Apart, two inits race to create the same file and the second overwrites the

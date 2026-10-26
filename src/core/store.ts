@@ -27,7 +27,7 @@ import { checkLexiconEdit } from './edit-check.js';
 import { buildIndex } from './matcher.js';
 import type { MatcherIndex } from './matcher.js';
 import { INDEX_FORMAT_VERSION, deserializeIndex, indexKey, serializeIndex } from './matcher/serialize.js';
-import { isTrusted, refreshTrust, trustProject, untrustedByPath } from './trust.js';
+import { getTrustPath, isTrusted, refreshTrust, trustProject, trustRegistryProblem, TrustRegistryUnreadableError, untrustedByPath } from './trust.js';
 import { recalledParsedHash, rememberParsedBytes, rememberParsedHash, shareParsedHash } from './parsed-hash.js';
 import type { TrustStatus } from './trust.js';
 import { InputError, errorMessage, isEnoent } from '../util/errors.js';
@@ -1067,18 +1067,11 @@ async function prebuildIndexCache(filePath: string, lexicon: Lexicon): Promise<v
  * `pinCommittedHits` runs first, inside that lock, so no writer can raise a
  * counter in the file: counts live in `hits.json`.
  */
-export async function writeLexiconFile(file: LexiconFile): Promise<void> {
-  const header = HEADER_COMMENT.split('\n')
-    .map((line) => (line ? `# ${line}` : '#'))
-    .join('\n');
+export async function writeLexiconFile(file: LexiconFile, opts: { dryRun?: boolean } = {}): Promise<void> {
   await withLexiconLock(file.path, async () => {
-    await pinCommittedHits(file);
-    const ordered = orderLexicon(file.lexicon);
-    const existing = await readLexiconText(file.path).catch(() => undefined);
-    const text =
-      (existing && updateInPlace(existing.text, ordered)) ??
-      `${header}\n\n${stringifyYaml(ordered, { lineWidth: 0 })}`;
-    const readBack = assertReadsBack(text, file.path);
+    const { text, readBack } = await prepareLexiconWrite(file);
+    // Validate the exact proposed bytes without publishing a file or caches.
+    if (opts.dryRun) return;
     await writeFileAtomic(file.path, text, { backup: true });
     // What is on disk now is what this wrote: writeAndTrust pins exactly that.
     if (file.scope === 'project') rememberParsedBytes(file, text);
@@ -1092,7 +1085,21 @@ export async function writeLexiconFile(file: LexiconFile): Promise<void> {
       await prebuildIndexCache(file.path, readBack);
     }
   });
-  file.exists = true;
+  if (!opts.dryRun) file.exists = true;
+}
+
+/** Shared by real and preview writes; the caller holds the lexicon lock. */
+async function prepareLexiconWrite(file: LexiconFile): Promise<{ text: string; readBack: Lexicon }> {
+  await pinCommittedHits(file);
+  const ordered = orderLexicon(file.lexicon);
+  const existing = await readLexiconText(file.path).catch(() => undefined);
+  const header = HEADER_COMMENT.split('\n')
+    .map((line) => (line ? `# ${line}` : '#'))
+    .join('\n');
+  const text =
+    (existing && updateInPlace(existing.text, ordered)) ??
+    `${header}\n\n${stringifyYaml(ordered, { lineWidth: 0 })}`;
+  return { text, readBack: assertReadsBack(text, file.path) };
 }
 
 /**
@@ -1788,7 +1795,14 @@ async function assertProjectWritable(projectPath: string, opts: StoreOptions): P
  * not exist is still writable (the caller is creating it).
  */
 async function assertParsedProjectWritable(file: LexiconFile, opts: StoreOptions): Promise<void> {
-  if (file.scope !== 'project' || !file.exists) return;
+  if (file.scope !== 'project') return;
+  if (!file.exists) {
+    // Creating this file also promises to pin it. Refuse an unusable registry
+    // before writing, and make previews report the same refusal as real adds.
+    const problem = await trustRegistryProblem(opts);
+    if (problem !== undefined) throw new TrustRegistryUnreadableError(getTrustPath(opts), problem);
+    return;
+  }
   const status = await isTrusted(file, opts);
   if (status !== 'trusted') throw new ProjectTrustError(file.path, status);
 }
@@ -2031,8 +2045,13 @@ export async function addTerms(
   });
 }
 
-function writeAddedFile(file: LexiconFile, opts: AddTermOptions): Promise<void> {
-  if (opts.dryRun) return Promise.resolve();
+async function writeAddedFile(file: LexiconFile, opts: AddTermOptions): Promise<void> {
+  if (opts.dryRun) {
+    // A valid incoming term can overflow the merged alias/never or document
+    // limits. Check the same final bytes and committed hits as a real write.
+    await writeLexiconFile(file, { dryRun: true });
+    return;
+  }
   return opts.leaveUntrusted ? writeLexiconFile(file) : writeAndTrust(file, opts);
 }
 

@@ -943,7 +943,7 @@ export async function uninstallRegistryPack(
     if (opts.dryRun) {
       // Nothing is unlinked or re-pinned in a dry run; the removal result
       // (which terms would go, which stay) is the whole plan.
-      return await uninstallLoadedPack(pack, parsed.ref, scoped);
+      return { ...await uninstallLoadedPack(pack, parsed.ref, scoped), registryRemoved: true };
     }
     const before = await Promise.all(files.map(snapshot));
     const pinBefore = scoped.scope === 'project' ? await trustEntryOf(target, scoped) : undefined;
@@ -952,7 +952,7 @@ export async function uninstallRegistryPack(
       delete state.packs[parsed.ref];
       await writeRegistryState(state, scoped);
       try { await fs.unlink(files[1]); } catch { /* Missing cache is harmless. */ }
-      return result;
+      return { ...result, registryRemoved: true };
     } catch (err) {
       try {
         for (let i = files.length - 1; i >= 0; i--) {

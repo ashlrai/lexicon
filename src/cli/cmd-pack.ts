@@ -205,13 +205,13 @@ export async function runPackRemove(name: string, opts: PackRegistryCliOptions, 
     } else {
       result = await uninstallPack(name, { cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...(opts.project ? { scope: 'project' as const } : {}), ...(dry ? { dryRun: true } : {}), ...deps });
     }
-    if (result.files.length === 0) {
+    if (result.files.length === 0 && !result.registryRemoved) {
       // No file listed the pack, so nothing was written. Under --json that
       // was `ok: true` with three empty lists and no word that the pack was
       // not there; it now says so, as the text and `DELETE /packs/:name` do.
       if (opts.json) {
         const summary = `${result.pack.name} is not installed${opts.project ? ' in the project lexicon' : ''}; nothing was removed`;
-        line(io, JSON.stringify(jsonOk({ ...result, notInstalled: true, summary }), null, 2));
+        line(io, JSON.stringify(jsonOk({ ...result, notInstalled: true, summary, ...(dry ? { dryRun: true } : {}) }), null, 2));
         return 0;
       }
       line(io, `${safe(name)} is not installed`);
@@ -221,7 +221,12 @@ export async function runPackRemove(name: string, opts: PackRegistryCliOptions, 
       line(io, JSON.stringify(jsonOk({ ...result, ...(dry ? { dryRun: true } : {}) }), null, 2));
       return 0;
     }
-    line(io, `${dry ? 'would remove' : 'removed'} ${result.removed.length} term${result.removed.length === 1 ? '' : 's'} of ${safe(name)} from ${safe(result.files.join(', '))}${dry ? '; nothing was written' : ''}`);
+    if (result.files.length > 0) {
+      line(io, `${dry ? 'would remove' : 'removed'} ${result.removed.length} term${result.removed.length === 1 ? '' : 's'} of ${safe(name)} from ${safe(result.files.join(', '))}${dry ? '; nothing was written' : ''}`);
+    }
+    if (result.registryRemoved) {
+      line(io, `${dry ? 'would remove' : 'removed'} registry record and cached pack for ${safe(name)}${dry ? '; nothing was written' : ''}`);
+    }
     if (result.kept.length > 0) {
       line(io, `kept ${result.kept.length} you edited (hits, extra aliases or never-words): ${safe(result.kept.join(', '))}`);
     }

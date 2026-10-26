@@ -86,6 +86,8 @@ export interface UninstallPackResult {
   shared: string[];
   /** Every lexicon file that was rewritten. */
   files: string[];
+  /** The scoped registry record and cached pack were removed (or would be in a dry run). */
+  registryRemoved?: boolean;
 }
 
 /**

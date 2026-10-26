@@ -667,7 +667,7 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
         } else {
           file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
         }
-        if (!opts.dryRun) await writeLexiconFile(file);
+        await writeLexiconFile(file, { dryRun: opts.dryRun === true });
       });
     } catch (err) {
       // Thrown, it ended the review with only the error, not saying that
@@ -899,6 +899,13 @@ export async function runEdit(
   }
 
   const editor = editorCommand(env);
+  // A preview must never give the real path to an editor: saving would
+  // bypass every dry-run guard on our own writes, trust and cache refresh.
+  if (opts.dryRun) {
+    if (!existsSync(target)) line(io, `would create ${scope} lexicon: ${safeMessage(target)}`);
+    line(io, `would open ${scope} lexicon: ${safeMessage(target)}; nothing was written`);
+    return 0;
+  }
   // Without a terminal on both ends (a pipe, CI, an agent's shell) a
   // terminal editor waits for keys that never come, so the command hung.
   // Checked before anything is created. A GUI editor opens its own window.
@@ -915,14 +922,9 @@ export async function runEdit(
   // The existence check and the create are one locked step, the way `runInit`
   // does it. Apart, a `lexicon add` landing between them wrote the file this
   // had just decided was missing, and the empty lexicon written here was
-  // renamed straight over the new term. A dry run names the file it would
-  // create instead.
+  // renamed straight over the new term.
   await withLexiconLock(target, async () => {
     if (existsSync(target)) return;
-    if (opts.dryRun) {
-      line(io, `would create ${scope} lexicon: ${safeMessage(target)}`);
-      return;
-    }
     await writeLexiconFile({ path: target, scope, lexicon: emptyLexicon(), exists: false });
     line(io, `created ${scope} lexicon: ${safeMessage(target)}`);
   });
@@ -990,7 +992,7 @@ export async function runEdit(
     return 1;
   }
 
-  if (scope === 'project' && !opts.dryRun) {
+  if (scope === 'project') {
     if (trustedBefore) {
       // The user just edited it themselves; that is the approval `lexicon trust` records.
       // Only the bytes checked above: a file rewritten since then by
@@ -1005,11 +1007,9 @@ export async function runEdit(
       line(io, dim(`project lexicon is not trusted yet; review it and run: lexicon trust`));
     }
   }
-  if (!opts.dryRun) {
-    // The editor wrote the file behind writeLexiconFile's back: refresh the
-    // cached index the hook reads next, through the same trust check.
-    await refreshIndexCache({ scope, path: target }, store);
-  }
+  // The editor wrote the file behind writeLexiconFile's back: refresh the
+  // cached index the hook reads next, through the same trust check.
+  await refreshIndexCache({ scope, path: target }, store);
   return 0;
 }
 
@@ -1029,6 +1029,7 @@ export function registerReviewCommands(program: Command, io: IO): void {
   program
     .command('review')
     .description('walk through existing terms and keep, delete or edit each one')
+    .option('--dry-run', 'walk through the review and report the changes; write nothing')
     .option('--never-hit', 'only terms that have never fired (0 hits)')
     .option('--project', 'review the project .lexicon.yaml instead of the global file')
     .option('--global', 'review the global lexicon (the default)')
@@ -1039,6 +1040,7 @@ export function registerReviewCommands(program: Command, io: IO): void {
   const edit = program
     .command('edit')
     .description('open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards')
+    .option('--dry-run', 'report the file it would create or open; do not launch an editor or write anything')
     .option('--project', 'open the project .lexicon.yaml instead of the global file')
     .option('--json', 'refused (exit 1): edit opens an editor; prints { ok: false, error, nextStep } naming add, remove and the MCP tools')
     .action(async (opts: EditOptions) => done(await runEdit({ ...opts, ...globals() }, io)));

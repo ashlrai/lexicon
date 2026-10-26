@@ -40761,6 +40761,7 @@ var init_enumeration = __esm({
       /** Newline offsets followed by a blank line that is itself newline-terminated. */
       breaks = [];
       cache = /* @__PURE__ */ new Map();
+      canonicalFolds = /* @__PURE__ */ new Map();
       /**
        * True when the canonical stands (in any folded spelling) somewhere in the
        * paragraph around `start..end`, outside the span itself. A paragraph runs
@@ -40773,7 +40774,11 @@ var init_enumeration = __esm({
         const belowAt = lastAtMost(this.breaks, end - 1) + 1;
         const to = belowAt < this.breaks.length ? this.breaks[belowAt] : this.text.length;
         const para = this.paragraph(from, to);
-        const needle = foldPerCodePoint(canonical);
+        let needle = this.canonicalFolds.get(canonical);
+        if (needle === void 0) {
+          needle = foldPerCodePoint(canonical);
+          this.canonicalFolds.set(canonical, needle);
+        }
         if (needle.length === 0) return false;
         let found = para.matches.get(needle);
         if (!found) {
@@ -40794,12 +40799,17 @@ var init_enumeration = __esm({
         if (cached2) return cached2;
         const before = new Uint32Array(to - from + 1);
         const parts = [];
+        const foldedCodePoints = /* @__PURE__ */ new Map();
         let length = 0;
         let i = from;
         while (i < to) {
           const cp = this.text.codePointAt(i);
           const width = cp > 65535 ? 2 : 1;
-          const piece = foldPerCodePoint(String.fromCodePoint(cp));
+          let piece = foldedCodePoints.get(cp);
+          if (piece === void 0) {
+            piece = foldPerCodePoint(String.fromCodePoint(cp));
+            foldedCodePoints.set(cp, piece);
+          }
           before[i - from] = length;
           if (width === 2 && i + 1 - from < before.length) before[i + 1 - from] = length;
           parts.push(piece);
@@ -42238,7 +42248,7 @@ async function trustProject(projectPath, opts = {}) {
     if (existing?.sha256 === sha256) return { ...existing, alreadyPinned: true };
     const entry = { sha256, trustedAt: (/* @__PURE__ */ new Date()).toISOString() };
     registry2.trusted[key] = entry;
-    await writeTrustRegistry(registry2, opts);
+    if (!opts.dryRun) await writeTrustRegistry(registry2, opts);
     return { ...entry, alreadyPinned: false };
   }, opts);
 }
@@ -42252,7 +42262,7 @@ async function refreshTrust(projectPath, opts = {}) {
     if (sha256 === void 0 || sha256 === existing.sha256) return false;
     if (opts.expectedSha256 !== void 0 && sha256 !== opts.expectedSha256) return false;
     registry2.trusted[key] = { sha256, trustedAt: existing.trustedAt };
-    await writeTrustRegistry(registry2, opts);
+    if (!opts.dryRun) await writeTrustRegistry(registry2, opts);
     return true;
   }, opts);
 }
@@ -42268,7 +42278,7 @@ async function restoreTrustEntry(projectPath, entry, opts = {}) {
     if (entry) registry2.trusted[key] = { ...entry };
     else if (key in registry2.trusted) delete registry2.trusted[key];
     else return;
-    await writeTrustRegistry(registry2, opts);
+    if (!opts.dryRun) await writeTrustRegistry(registry2, opts);
   }, opts);
 }
 async function untrustProject(projectPath, opts = {}) {
@@ -42277,7 +42287,7 @@ async function untrustProject(projectPath, opts = {}) {
     const registry2 = await readTrustRegistryForUpdate(opts);
     if (!(key in registry2.trusted)) return false;
     delete registry2.trusted[key];
-    await writeTrustRegistry(registry2, opts);
+    if (!opts.dryRun) await writeTrustRegistry(registry2, opts);
     return true;
   }, opts);
 }
@@ -42829,16 +42839,10 @@ async function prebuildIndexCache(filePath, lexicon) {
   } catch {
   }
 }
-async function writeLexiconFile(file2) {
-  const header = HEADER_COMMENT.split("\n").map((line2) => line2 ? `# ${line2}` : "#").join("\n");
+async function writeLexiconFile(file2, opts = {}) {
   await withLexiconLock(file2.path, async () => {
-    await pinCommittedHits(file2);
-    const ordered = orderLexicon(file2.lexicon);
-    const existing = await readLexiconText(file2.path).catch(() => void 0);
-    const text = (existing && updateInPlace(existing.text, ordered)) ?? `${header}
-
-${(0, import_yaml2.stringify)(ordered, { lineWidth: 0 })}`;
-    const readBack = assertReadsBack(text, file2.path);
+    const { text, readBack } = await prepareLexiconWrite(file2);
+    if (opts.dryRun) return;
     await writeFileAtomic(file2.path, text, { backup: true });
     if (file2.scope === "project") rememberParsedBytes(file2, text);
     if (file2.scope === "global") {
@@ -42847,7 +42851,17 @@ ${(0, import_yaml2.stringify)(ordered, { lineWidth: 0 })}`;
       await prebuildIndexCache(file2.path, readBack);
     }
   });
-  file2.exists = true;
+  if (!opts.dryRun) file2.exists = true;
+}
+async function prepareLexiconWrite(file2) {
+  await pinCommittedHits(file2);
+  const ordered = orderLexicon(file2.lexicon);
+  const existing = await readLexiconText(file2.path).catch(() => void 0);
+  const header = HEADER_COMMENT.split("\n").map((line2) => line2 ? `# ${line2}` : "#").join("\n");
+  const text = (existing && updateInPlace(existing.text, ordered)) ?? `${header}
+
+${(0, import_yaml2.stringify)(ordered, { lineWidth: 0 })}`;
+  return { text, readBack: assertReadsBack(text, file2.path) };
 }
 function updateInPlace(text, ordered) {
   let doc;
@@ -43194,7 +43208,12 @@ async function assertProjectWritable(projectPath, opts) {
   if (status !== "trusted") throw new ProjectTrustError(projectPath, status);
 }
 async function assertParsedProjectWritable(file2, opts) {
-  if (file2.scope !== "project" || !file2.exists) return;
+  if (file2.scope !== "project") return;
+  if (!file2.exists) {
+    const problem = await trustRegistryProblem(opts);
+    if (problem !== void 0) throw new TrustRegistryUnreadableError(getTrustPath(opts), problem);
+    return;
+  }
   const status = await isTrusted(file2, opts);
   if (status !== "trusted") throw new ProjectTrustError(file2.path, status);
 }
@@ -43320,7 +43339,11 @@ async function addTerms(terms, opts = {}) {
     return { file: file2, results };
   });
 }
-function writeAddedFile(file2, opts) {
+async function writeAddedFile(file2, opts) {
+  if (opts.dryRun) {
+    await writeLexiconFile(file2, { dryRun: true });
+    return;
+  }
   return opts.leaveUntrusted ? writeLexiconFile(file2) : writeAndTrust(file2, opts);
 }
 async function writeAndTrust(file2, opts) {
@@ -43338,6 +43361,7 @@ async function removeTerm(canonical, opts = {}) {
       const remaining = file2.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
       if (remaining.length === file2.lexicon.terms.length) return false;
       await assertParsedProjectWritable(file2, opts);
+      if (opts.dryRun) return true;
       file2.lexicon.terms = remaining;
       await writeLexiconFile(file2);
       if (file2.scope === "project") {
@@ -43391,6 +43415,11 @@ async function removeAlias(canonical, alias, opts = {}) {
       if (remaining.length === term.aliases.length) return;
       await assertParsedProjectWritable(file2, opts);
       term.aliases = remaining;
+      if (opts.dryRun) {
+        files.push(file2);
+        firstTerm ??= term;
+        return;
+      }
       await writeLexiconFile(file2);
       if (file2.scope === "project") {
         await refreshTrust(file2.path, { ...opts, expectedSha256: await recalledParsedHash(file2) });
@@ -45947,6 +45976,7 @@ async function writePacksSetting(file2, packs, opts, leaveUntrusted = false) {
   }
   if (Object.keys(settings).length > 0) file2.lexicon.settings = settings;
   else delete file2.lexicon.settings;
+  if (opts.dryRun) return;
   await writeLexiconFile(file2);
   if (file2.scope === "project" && !leaveUntrusted) {
     await refreshTrust(file2.path, { ...opts, expectedSha256: await parsedContentHash(file2) });
@@ -45964,7 +45994,11 @@ async function readTextIfAny(file2) {
 async function installLoadedPack(pack, recordAs, opts = {}) {
   const scope = opts.scope ?? "global";
   const leaveUntrusted = opts.leaveUntrusted === true;
-  const storeOpts2 = { ...opts.cwd !== void 0 ? { cwd: opts.cwd } : {}, ...opts.globalPath !== void 0 ? { globalPath: opts.globalPath } : {} };
+  const storeOpts2 = {
+    ...opts.cwd !== void 0 ? { cwd: opts.cwd } : {},
+    ...opts.globalPath !== void 0 ? { globalPath: opts.globalPath } : {},
+    ...opts.dryRun === true ? { dryRun: true } : {}
+  };
   const targetPath = await resolveScopeWritePath(scope, { ...storeOpts2, leaveUntrusted });
   return withLexiconLock(targetPath, async () => {
     const incoming = pack.lexicon.terms.map((term) => {
@@ -45978,6 +46012,10 @@ async function installLoadedPack(pack, recordAs, opts = {}) {
     const added = results.filter((r) => r.created).length;
     const merged = results.length - added;
     const packs = dedupe([...file2.lexicon.settings?.packs ?? [], recordAs]);
+    if (opts.dryRun) {
+      const alreadyInstalled3 = before !== void 0 && results.every((r) => r.unchanged === true) && packs.length === (file2.lexicon.settings?.packs ?? []).length;
+      return { pack: info(pack), added, merged, path: file2.path, scope, alreadyInstalled: alreadyInstalled3 };
+    }
     await writePacksSetting(file2, packs, storeOpts2, leaveUntrusted);
     const alreadyInstalled2 = before !== void 0 && before === await readTextIfAny(file2.path);
     return { pack: info(pack), added, merged, path: file2.path, scope, alreadyInstalled: alreadyInstalled2 };
@@ -46434,6 +46472,9 @@ async function commitPack(pack, bytes, entry, indexSource, opts, expectedInstall
       throw new Error("installed pack changed after preview; preview and approve it again");
     }
     const files = [target, cachedPackPath(entry.ref, opts), stateFile(opts)];
+    if (opts.dryRun) {
+      return await installLoadedPack(pack, entry.ref, opts);
+    }
     const before = await Promise.all(files.map(snapshot));
     const pinBefore = opts.scope === "project" && !opts.leaveUntrusted ? await trustEntryOf(target, opts) : void 0;
     try {
@@ -67064,20 +67105,29 @@ async function runInit(opts, io) {
   const paths = resolvePaths({ cwd });
   const scope = opts.project ? "project" : "global";
   const target = opts.project ? paths.project ?? defaultProjectPath(cwd) : paths.global;
-  const created = await createLexiconFile(target, scope);
-  if (created && scope === "project") await trustProject(target, { cwd });
-  const trust = scope === "project" ? await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) : void 0;
-  const untrustedStep = trust !== void 0 && trust !== "trusted" ? `${trust === "changed" ? "it has changed since it was trusted" : "it is not trusted yet"}, so its terms are not used; review it and run: lexicon trust` : void 0;
+  const dry = opts.dryRun === true;
+  if (scope === "project" && !(0, import_node_fs25.existsSync)(target)) {
+    const problem = await trustRegistryProblem({ cwd });
+    if (problem !== void 0) throw new TrustRegistryUnreadableError(getTrustPath({ cwd }), problem);
+  }
+  const created = dry ? !(0, import_node_fs25.existsSync)(target) : await createLexiconFile(target, scope);
+  if (created && scope === "project" && !dry) await trustProject(target, { cwd });
+  const trust = scope === "project" ? created ? "trusted" : await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) : void 0;
+  const untrustedStep = !created && trust !== void 0 && trust !== "trusted" ? `${trust === "changed" ? "it has changed since it was trusted" : "it is not trusted yet"}, so its terms are not used; review it and run: lexicon trust` : void 0;
   if (opts.json) {
     line(
       io,
-      JSON.stringify(jsonOk({ scope, path: target, created, ...trust !== void 0 ? { trust } : {}, ...untrustedStep ? { nextStep: untrustedStep } : {} }), null, 2)
+      JSON.stringify(jsonOk({ scope, path: target, created, ...dry ? { dryRun: true } : {}, ...trust !== void 0 ? { trust } : {}, ...untrustedStep ? { nextStep: untrustedStep } : {} }), null, 2)
     );
     return 0;
   }
   if (!created) {
     line(io, `${scope} lexicon already exists: ${safe(target)}`);
     if (untrustedStep) line(io, dim(untrustedStep));
+    return 0;
+  }
+  if (dry) {
+    line(io, `would create ${scope} lexicon: ${safe(target)}${scope === "project" ? " (and trust it)" : ""}`);
     return 0;
   }
   line(io, `created ${scope} lexicon: ${safe(target)}`);

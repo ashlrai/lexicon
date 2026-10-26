@@ -19302,6 +19302,7 @@ var init_enumeration = __esm({
       /** Newline offsets followed by a blank line that is itself newline-terminated. */
       breaks = [];
       cache = /* @__PURE__ */ new Map();
+      canonicalFolds = /* @__PURE__ */ new Map();
       /**
        * True when the canonical stands (in any folded spelling) somewhere in the
        * paragraph around `start..end`, outside the span itself. A paragraph runs
@@ -19314,7 +19315,11 @@ var init_enumeration = __esm({
         const belowAt = lastAtMost(this.breaks, end - 1) + 1;
         const to = belowAt < this.breaks.length ? this.breaks[belowAt] : this.text.length;
         const para = this.paragraph(from, to);
-        const needle = foldPerCodePoint(canonical);
+        let needle = this.canonicalFolds.get(canonical);
+        if (needle === void 0) {
+          needle = foldPerCodePoint(canonical);
+          this.canonicalFolds.set(canonical, needle);
+        }
         if (needle.length === 0) return false;
         let found = para.matches.get(needle);
         if (!found) {
@@ -19335,12 +19340,17 @@ var init_enumeration = __esm({
         if (cached2) return cached2;
         const before = new Uint32Array(to - from + 1);
         const parts = [];
+        const foldedCodePoints = /* @__PURE__ */ new Map();
         let length = 0;
         let i = from;
         while (i < to) {
           const cp = this.text.codePointAt(i);
           const width = cp > 65535 ? 2 : 1;
-          const piece = foldPerCodePoint(String.fromCodePoint(cp));
+          let piece = foldedCodePoints.get(cp);
+          if (piece === void 0) {
+            piece = foldPerCodePoint(String.fromCodePoint(cp));
+            foldedCodePoints.set(cp, piece);
+          }
           before[i - from] = length;
           if (width === 2 && i + 1 - from < before.length) before[i + 1 - from] = length;
           parts.push(piece);
@@ -21570,7 +21580,7 @@ async function queueCorrections(corrections, opts = {}) {
       entries2.sort((a, b) => a.lastSeen < b.lastSeen ? 1 : a.lastSeen > b.lastSeen ? -1 : 0);
       entries2.splice(MAX_PENDING);
       entries2.sort((a, b) => a.firstSeen < b.firstSeen ? -1 : a.firstSeen > b.firstSeen ? 1 : 0);
-      await writePending(file, entries2, rejected);
+      if (!opts.dryRun) await writePending(file, entries2, rejected);
     }
     return { queued, skipped, file };
   }, lockOpts);

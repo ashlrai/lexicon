@@ -1688,10 +1688,14 @@ describe('content: live mode keeps the caret where the user is typing', () => {
     sel.removeAllRanges();
     sel.addRange(r);
     e.dispatchEvent(new Event('input', { bubbles: true }));
-    await wait(60);
-    expect(readText(e)).toBe('ping Ashlr.AI about Kubernetes and');
     const { caretOffset } = await import('../extension/src/editable.js');
-    expect(caretOffset(document, e)).toBe('ping Ashlr.AI about Kubernetes and'.length);
+    // Applying multiple corrections yields between DOM edits. Wait for the
+    // completed rewrite and caret update instead of observing a partial edit
+    // when a busy worker takes longer than an arbitrary 60 ms pause.
+    await vi.waitFor(() => {
+      expect(readText(e)).toBe('ping Ashlr.AI about Kubernetes and');
+      expect(caretOffset(document, e)).toBe('ping Ashlr.AI about Kubernetes and'.length);
+    });
   });
 });
 

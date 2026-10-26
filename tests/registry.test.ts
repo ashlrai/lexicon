@@ -39,6 +39,8 @@ import {
   writeRegistryState,
 } from '../src/core/index.js';
 import type { RegistryIndex, RegistryIndexEntry } from '../src/core/index.js';
+import { runPackRemove } from '../src/cli/cmd-pack.js';
+import { makeIO } from './helpers.js';
 
 const PACK_V1 = `name: cardiology
 title: Cardiology terms
@@ -361,6 +363,39 @@ terms:
 });
 
 describe('install / update / remove round trip', () => {
+  it.each(['deleted', 'unlisted'] as const)('reports registry-only removal when the lexicon is %s, and dry-run preserves it', async (kind) => {
+    const indexPath = writeIndex(dir, [{ file: 'cardiology.yaml', version: '1' }]);
+    const { index, base } = await loadRegistryIndex(indexPath);
+    const entry = entryFor(index);
+    await installRegistryPack(entry, base, indexPath, { globalPath });
+    if (kind === 'deleted') await fs.unlink(globalPath);
+    else await fs.writeFile(globalPath, 'version: 1\nterms: []\n');
+    const cache = cachedPackPath(entry.ref, { globalPath });
+    const beforeState = await readRegistryState({ globalPath });
+    const beforeCache = await fs.readFile(cache, 'utf8');
+    const beforeLexicon = kind === 'deleted' ? undefined : await fs.readFile(globalPath, 'utf8');
+
+    for (const json of [false, true]) {
+      const io = makeIO();
+      expect(await runPackRemove(entry.ref, { globalPath, dryRun: true, json }, io)).toBe(0);
+      if (json) expect(JSON.parse(io.out)).toMatchObject({ ok: true, dryRun: true, registryRemoved: true, files: [] });
+      else expect(io.out).toContain(`would remove registry record and cached pack for ${entry.ref}`);
+      expect(io.out).not.toContain('not installed');
+      expect(await readRegistryState({ globalPath })).toEqual(beforeState);
+      expect(await fs.readFile(cache, 'utf8')).toBe(beforeCache);
+    }
+
+    const io = makeIO();
+    expect(await runPackRemove(entry.ref, { globalPath, json: kind === 'deleted' }, io)).toBe(0);
+    if (kind === 'deleted') expect(JSON.parse(io.out)).toMatchObject({ ok: true, registryRemoved: true, files: [] });
+    else expect(io.out).toContain(`removed registry record and cached pack for ${entry.ref}`);
+    expect(io.out).not.toContain('not installed');
+    expect(await installedRegistryPacks({ globalPath })).toEqual([]);
+    await expect(fs.stat(cache)).rejects.toMatchObject({ code: 'ENOENT' });
+    if (kind === 'deleted') await expect(fs.stat(globalPath)).rejects.toMatchObject({ code: 'ENOENT' });
+    else expect(await fs.readFile(globalPath, 'utf8')).toBe(beforeLexicon);
+  });
+
   it('shares project registry identity across raw and OS-canonical directory aliases', async () => {
     // Windows tmp paths may contain an 8.3 user-directory spelling; async
     // realpath expands it. On macOS this also exercises /var -> /private/var.

@@ -7,7 +7,13 @@ const nodeMajor = Number(process.versions.node.split('.')[0]);
 
 // Wall-clock assertions. They run in their own project (below), never in the
 // parallel pool with the rest of the suite.
-const PERF_FILES = ['tests/matcher-perf.test.ts', 'tests/matcher-linear-perf.test.ts'];
+const PERF_FILES = [
+  'tests/matcher-perf.test.ts',
+  'tests/matcher-linear-perf.test.ts',
+  // This file also measures wall time; run its unchanged scaling bound after
+  // the filesystem and subprocess suites release their workers.
+  'tests/enumeration-paragraph.test.ts',
+];
 
 export default defineConfig({
   // The extension imports examples/lexicon.example.yaml as text (esbuild's
