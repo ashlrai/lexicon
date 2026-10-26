@@ -73,6 +73,61 @@ sh -c 'lexicon daemon --once --quiet && xdotool key ctrl+v'   # X11; drop the xd
 
 Use the absolute path to `lexicon` (`which lexicon`) if the shortcut runner has a minimal PATH.
 
+## Resident expander (opt-in)
+
+`lexicon daemon --expander` starts a separate, long-lived process instead of
+the clipboard watcher. It keeps the lexicon in memory (reloaded when a lexicon
+file or `trust.json` changes) and answers over a local socket, so a shortcut or
+a key-capture helper gets a correction without a Node cold start. Nothing
+starts it but the flag.
+
+```bash
+lexicon daemon --expander                      # $XDG_RUNTIME_DIR/lexicon/expander.sock, else ~/.local/state/lexicon/expander.sock
+lexicon daemon --expander --socket /tmp/lx.sock
+```
+
+The socket is mode 0600 in a 0700 directory: only your user can connect (on
+Windows it is a per-user named pipe). A stale socket left by a crash is
+replaced; a live expander or a path that is not a socket is refused, never
+removed. Typed text is never logged.
+
+The protocol is newline-delimited JSON, one response line per request line,
+in order; an `id` is echoed back.
+
+| Request | Response |
+| --- | --- |
+| `{"op":"ping"}` | `{"ok":true,"version":"...","terms":12}` |
+| `{"op":"normalize","text":"..."}` | `{"ok":true,"output":"...","changed":true,"replacements":[...]}` |
+| `{"op":"clipboard","paste":true}` | `{"ok":true,"changed":true,"written":true,"corrections":1,"pasted":true}` |
+| `{"op":"type","text":"a"}` | `{"ok":true,"action":null}` or an action |
+| `{"op":"key","key":"Backspace"}` | `{"ok":true,"action":null}` or an undo action |
+| `{"op":"reset"}` | `{"ok":true}` |
+
+`clipboard` is `--once [--paste]` in the resident process, so a hotkey can run:
+
+```bash
+echo '{"op":"clipboard","paste":true}' | nc -U ~/.local/state/lexicon/expander.sock
+```
+
+`type`, `key` and `reset` drive the expansion core for a key-capture helper
+(one connection per keyboard). The helper sends each typed character (or a
+chunk a dictation tool injected), `key` for Backspace, Enter, Tab, Escape,
+Delete, the arrows, Home, End, PageUp and PageDown, and `reset` for a click,
+a shortcut or a focus change. An action means: press Backspace `backspaces`
+times (grapheme clusters), then type `insert`.
+
+```json
+{"ok":true,"action":{"kind":"expand","backspaces":7,"insert":"Ashlr.AI ","replacements":[{"original":"Ashler","replacement":"Ashlr.AI","canonical":"Ashlr.AI"}]}}
+```
+
+The core expands only when whitespace finishes a word, only the words just
+finished, and only exact aliases (no phonetic or fuzzy guesses while you
+type). Punctuation does not finish a word, so `foo@ashler.io` and
+`ashler.com` are left alone. Enter, Tab and every navigation key forget the
+buffer instead of expanding, since the field may have been submitted or the
+cursor moved. Backspace straight after an expansion undoes it, and that word
+is not expanded again.
+
 ## See also
 
 - [VOICE.md](VOICE.md) records and transcribes locally, rather than correcting what another tool produced.
