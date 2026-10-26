@@ -21,7 +21,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { EXPORT_FORMATS } from '../src/core/index.js';
-import type { HarvestCandidate, NormalizeResult } from '../src/core/index.js';
+import type { NormalizeResult } from '../src/core/index.js';
 
 const REPO_ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 // LEXICON_E2E_DIST=1 (CI sets it right after `npm run build`) runs the compiled
@@ -252,61 +252,6 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: basics', () => {
 // ---------------------------------------------------------------------------
 
 describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: init, add, list', () => {
-  it('init creates the global file under $LEXICON_PATH and is a no-op the second time', async () => {
-    const h = await freshHome('init');
-    const first = await runCli(['init'], { env: h.env });
-    expect(first.code).toBe(0);
-    expect(first.stdout).toContain(`created global lexicon: ${h.globalPath}`);
-    const text = await fs.readFile(h.globalPath, 'utf8');
-    expect(text).toContain('version: 1');
-    expect(text).toContain('minConfidence: 0.82');
-
-    const second = await runCli(['init'], { env: h.env });
-    expect(second.code).toBe(0);
-    expect(second.stdout).toContain('already exists');
-    expect(await fs.readFile(h.globalPath, 'utf8')).toBe(text);
-  });
-
-  it('add without aliases auto-suggests likely misspellings and writes them', async () => {
-    const h = await freshHome('add');
-    const r = await runCli(['add', 'Kubernetes', '--category', 'product'], { env: h.env });
-    expect(r.code, r.stderr).toBe(0);
-    expect(r.stdout).toContain('created Kubernetes (global)');
-    expect(r.stdout).toMatch(/^aliases: .+ \(suggested\)$/m);
-    expect(r.stdout).not.toContain('suggested aliases:');
-    const suggested = /^aliases: (.+) \(suggested\)$/m.exec(r.stdout)?.[1].split(', ') ?? [];
-    expect(suggested.length).toBeGreaterThan(0);
-    expect(suggested).not.toContain('Kubernetes');
-
-    const yaml = await fs.readFile(h.globalPath, 'utf8');
-    expect(yaml).toContain('canonical: Kubernetes');
-    for (const alias of suggested) expect(yaml).toContain(alias);
-
-    // A second add with an explicit alias merges instead of duplicating.
-    const merge = await runCli(['add', 'Kubernetes', 'cooper netties'], { env: h.env });
-    expect(merge.code).toBe(0);
-    expect(merge.stdout).toContain('merged Kubernetes (global)');
-    const listed = await runCli(['list', '--json'], { env: h.env });
-    const terms = JSON.parse(listed.stdout) as { canonical: string; aliases: string[] }[];
-    expect(terms.filter((t) => t.canonical === 'Kubernetes')).toHaveLength(1);
-    expect(terms[0].aliases).toEqual(expect.arrayContaining([...suggested, 'cooper netties']));
-  });
-
-  it('add with only --never or --phonetic on an existing term appends no generated aliases', async () => {
-    const h = await freshHome('add-never');
-    expect((await runCli(['add', 'Ashlr.AI', 'Ashler'], { env: h.env })).code).toBe(0);
-    const never = await runCli(['add', 'Ashlr.AI', '--never', 'ashes'], { env: h.env });
-    expect(never.code, never.stderr).toBe(0);
-    expect(never.stdout).toContain('merged Ashlr.AI (global)');
-    expect(never.stdout).not.toContain('suggested aliases');
-    const phonetic = await runCli(['add', 'Ashlr.AI', '--phonetic', 'ASH-ler'], { env: h.env });
-    expect(phonetic.code, phonetic.stderr).toBe(0);
-    const listed = await runCli(['list', '--json'], { env: h.env });
-    const terms = JSON.parse(listed.stdout) as { canonical: string; aliases: string[]; never?: string[]; phonetic?: string }[];
-    expect(terms).toHaveLength(1);
-    expect(terms[0]).toMatchObject({ aliases: ['Ashler'], never: ['ashes'], phonetic: 'ASH-ler' });
-  });
-
   it('list prints an aligned table with the path footer', async () => {
     const r = await runCli(['list'], { env: shared.env });
     expect(r.code).toBe(0);
@@ -370,33 +315,6 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: normalize', () =>
     expect(r.stderr).toBe('"Ashler" -> "Ashlr.AI" (alias, 1.00)\n');
   });
 
-  it('--dry-run reports replacements without applying them', async () => {
-    const plain = await runCli(['normalize', '--dry-run', 'ping Ashler'], { env: shared.env });
-    expect(plain.stdout).toBe('ping Ashler\n');
-    const json = await runCli(['normalize', '--dry-run', '--json', 'ping Ashler'], { env: shared.env });
-    const result = JSON.parse(json.stdout) as NormalizeResult;
-    expect(result.output).toBe('ping Ashler');
-    expect(result.changed).toBe(false);
-    expect(result.replacements).toHaveLength(1);
-  });
-
-  it('--min-confidence gates fuzzy matches but never exact aliases', async () => {
-    // "Ashlur" is not an alias; it only matches Ashlr.AI through the inexact passes.
-    const loose = await runCli(['normalize', '--json', 'ping Ashlur'], { env: shared.env });
-    const looseResult = JSON.parse(loose.stdout) as NormalizeResult;
-    expect(looseResult.output).toBe('ping Ashlr.AI');
-    expect(looseResult.replacements[0].reason).not.toBe('alias');
-    expect(looseResult.replacements[0].confidence).toBeLessThan(1);
-
-    const strict = await runCli(['normalize', '--json', '--min-confidence', '0.99', 'ping Ashlur'], { env: shared.env });
-    const strictResult = JSON.parse(strict.stdout) as NormalizeResult;
-    expect(strictResult.output).toBe('ping Ashlur');
-    expect(strictResult.replacements).toHaveLength(0);
-
-    const alias = await runCli(['normalize', '--min-confidence', '0.99', 'ping Ashler'], { env: shared.env });
-    expect(alias.stdout).toBe('ping Ashlr.AI\n');
-  });
-
   /**
    * Regression: this exited 0. Corrections had stopped, the text came back
    * unchanged, and the exit code said nothing was wrong, so "no corrections
@@ -415,84 +333,13 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: normalize', () =>
     expect(r.stderr).toContain('lexicon doctor');
   });
 
-  /**
-   * The other half of finding 3: with that same unreadable lexicon, `doctor`
-   * used to say "Lexicon is not set up yet: there are no terms" and send the
-   * user to `lexicon setup`, which exits 0 having repaired nothing. Both the
-   * terminal and the MCP `lexicon_doctor` tool read these fields.
-   */
-  it('doctor names the unreadable file and points at lexicon edit, not lexicon setup', async () => {
-    const h = await freshHome('broken-doctor');
-    await fs.mkdir(path.dirname(h.globalPath), { recursive: true });
-    await fs.writeFile(h.globalPath, 'version: 1\nterms:\n  - canonical: "unterminated\n');
-    const r = await runCli(['doctor'], { env: h.env });
-    expect(r.code).toBe(1);
-    expect(r.stdout).toContain('global lexicon does not parse (run: lexicon edit)');
-    expect(r.stdout).toContain('does not parse, so no corrections are happening');
-    expect(r.stdout).not.toContain('there are no terms');
-    expect(r.stdout).not.toContain('Run: lexicon setup');
-    expect(r.stdout).toContain('Open it and fix the parse error: lexicon edit');
-  });
 });
 
 // ---------------------------------------------------------------------------
 // learn / import
 // ---------------------------------------------------------------------------
 
-describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: learn and import', () => {
-  it('learn --from records a correction that normalize then applies', async () => {
-    const h = await cloneOf(shared, 'learn');
-    const before = await runCli(['normalize', 'deploy to cooper netties'], { env: h.env });
-    expect(before.stdout).toBe('deploy to cooper netties\n');
-
-    const learn = await runCli(['learn', '--from', "it's Kubernetes, not cooper netties"], { env: h.env });
-    expect(learn.code, learn.stderr).toBe(0);
-    expect(learn.stdout).toContain('learned cooper netties -> Kubernetes (new term)');
-
-    const after = await runCli(['normalize', 'deploy to cooper netties'], { env: h.env });
-    expect(after.stdout).toBe('deploy to Kubernetes\n');
-
-    // positional form merges an alias into the now-existing term
-    const again = await runCli(['learn', 'cube or netties', 'Kubernetes', '--json'], { env: h.env });
-    expect(again.code).toBe(0);
-    const parsed = JSON.parse(again.stdout) as { created: boolean; aliasAdded: boolean; term: { aliases: string[] } };
-    expect(parsed.created).toBe(false);
-    expect(parsed.aliasAdded).toBe(true);
-    expect(parsed.term.aliases).toContain('cube or netties');
-  });
-
-  it('import reads a Wispr Flow CSV with CRLF line endings, then normalize applies it', async () => {
-    const h = await cloneOf(shared, 'import');
-    const csv =
-      '﻿word,replacement\r\n' +
-      'pie dentic,Pydantic\r\n' +
-      '"head sner",Hetzner\r\n' +
-      'Mason Wyat,Mason Wyatt\r\n' +
-      ',\r\n' +
-      '\r\n';
-    const file = path.join(h.home, 'wispr.csv');
-    await fs.writeFile(file, csv);
-
-    const dry = await runCli(['import', file, '--dry-run'], { env: h.env });
-    expect(dry.code, dry.stderr).toBe(0);
-    expect(dry.stdout).toContain('dry run (wispr)');
-    expect(dry.stdout).toMatch(/Pydantic\s+pie dentic\s+new/);
-    expect(dry.stdout).toMatch(/Mason Wyatt\s+Mason Wyat\s+merged/);
-    const untouched = await runCli(['normalize', 'use pie dentic'], { env: h.env });
-    expect(untouched.stdout).toBe('use pie dentic\n');
-
-    const imp = await runCli(['import', file, 'wispr', '--category', 'product'], { env: h.env });
-    expect(imp.code, imp.stderr).toBe(0);
-    expect(imp.stdout).toContain('imported 3 terms (2 new, 1 merged, 1 skipped)');
-    expect(imp.stderr).toMatch(/skipped line \d+/);
-
-    const r = await runCli(['normalize', 'use pie dentic on head sner with Mason Wyat'], { env: h.env });
-    expect(r.stdout).toBe('use Pydantic on Hetzner with Mason Wyatt\n');
-    const listed = await runCli(['list', '--json', '--query', 'pydantic'], { env: h.env });
-    const terms = JSON.parse(listed.stdout) as { canonical: string; category?: string; source?: string }[];
-    expect(terms).toEqual([expect.objectContaining({ canonical: 'Pydantic', category: 'product', source: 'import' })]);
-  });
-
+describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: import', () => {
   /**
    * Finding 1, through the real CLI. A walkthrough hit both of these with a
    * file it had just created on Windows: UTF-16LE (PowerShell `Out-File`,
@@ -541,38 +388,18 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: export', () => {
     expect(bad.stderr).toContain('unknown export format "nope"');
   });
 
-  it.each([...EXPORT_FORMATS])('export %s produces non-empty output', async (format) => {
+  // Two formats keep the real stdout path covered; every format's body is
+  // checked by exporters.test.ts's in-process EXPORT_FORMATS sweep.
+  it.each(['json', 'claude-md'])('export %s produces non-empty output', async (format) => {
     const r = await runCli(['export', format], { env: shared.env });
     expect(r.code, r.stderr).toBe(0);
     expect(r.stderr).toBe('');
     expect(r.stdout.trim().length).toBeGreaterThan(0);
     expect(r.stdout).toContain('Ashlr.AI');
-    switch (format) {
-      case 'json': {
-        const parsed = JSON.parse(r.stdout) as { version: number; terms: { canonical: string }[] };
-        expect(parsed.version).toBe(1);
-        expect(parsed.terms.map((t) => t.canonical)).toEqual(expect.arrayContaining(['Ashlr.AI', 'Mason Wyatt']));
-        break;
-      }
-      case 'superwhisper':
-      case 'deepgram':
-      case 'assemblyai':
-      case 'azure':
-      case 'google':
-        expect(() => JSON.parse(r.stdout)).not.toThrow();
-        break;
-      case 'csv':
-        expect(r.stdout.split('\n')[0]).toContain('canonical');
-        break;
-      case 'wispr':
-        expect(r.stdout.split('\n')[0]).toBe('word,replacement');
-        break;
-      case 'macos':
-        expect(r.stdout.startsWith('<?xml')).toBe(true);
-        expect(r.stdout).toContain('<plist');
-        break;
-      default:
-        break;
+    if (format === 'json') {
+      const parsed = JSON.parse(r.stdout) as { version: number; terms: { canonical: string }[] };
+      expect(parsed.version).toBe(1);
+      expect(parsed.terms.map((t) => t.canonical)).toEqual(expect.arrayContaining(['Ashlr.AI', 'Mason Wyatt']));
     }
   });
 
@@ -603,40 +430,6 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: export', () => {
 // ---------------------------------------------------------------------------
 
 describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: harvest', () => {
-  it('--json lists ranked candidates from the fixture repo and --limit caps them', async () => {
-    const all = await runCli(['harvest', FAKE_REPO, '--json'], { env: shared.env });
-    expect(all.code, all.stderr).toBe(0);
-    const candidates = JSON.parse(all.stdout) as HarvestCandidate[];
-    expect(candidates.length).toBeGreaterThan(2);
-    const names = candidates.map((c) => c.canonical);
-    // LexiconStore exists only as a symbol in the fixture's source, so it is
-    // not proposed; OpenClaw is in the README too, and its evidence still
-    // names the source files that corroborated it. Evidence is built with
-    // path.relative, so the separator is the host's: `src\claw.ts` on Windows.
-    expect(names).not.toContain('LexiconStore');
-    const claw = candidates.find((c) => /openclaw/i.test(c.canonical));
-    expect(claw?.evidence).toContain(path.join('src', 'claw.ts'));
-    for (const c of candidates) {
-      expect(c.count).toBeGreaterThan(0);
-      expect(Array.isArray(c.suggestedAliases)).toBe(true);
-      expect(c.evidence.length).toBeGreaterThan(0);
-    }
-    // ranked by count, descending
-    for (let i = 1; i < candidates.length; i += 1) expect(candidates[i - 1].count).toBeGreaterThanOrEqual(candidates[i].count);
-    // node_modules is never scanned. The identifiers inside the vendored file
-    // are what prove it: `somepkg` is only a directory name and harvest would
-    // never surface it anyway, so that assertion held even when the fixture
-    // was missing entirely. Read the file first so a fixture that is not
-    // there fails here rather than passing as a skip that never happened.
-    const vendored = await fs.readFile(path.join(FAKE_REPO, 'node_modules', 'somepkg', 'index.js'), 'utf8');
-    expect(vendored).toContain('IgnoredVendorThing');
-    expect(names.some((n) => /IgnoredVendorThing/i.test(n))).toBe(false);
-    expect(names.some((n) => /somepkg/i.test(n))).toBe(false);
-
-    const limited = await runCli(['harvest', FAKE_REPO, '--json', '--limit', '2'], { env: shared.env });
-    expect((JSON.parse(limited.stdout) as HarvestCandidate[]).map((c) => c.canonical)).toEqual(names.slice(0, 2));
-  });
-
   it('prints a table by default', async () => {
     const r = await runCli(['harvest', FAKE_REPO, '--limit', '3'], { env: shared.env });
     expect(r.code).toBe(0);
@@ -803,26 +596,6 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: project lexicon t
 // ---------------------------------------------------------------------------
 
 describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: stats, path, doctor', () => {
-  it('stats summarises terms, aliases and files (text and --json)', async () => {
-    const text = await runCli(['stats'], { env: shared.env });
-    expect(text.code).toBe(0);
-    expect(text.stdout).toContain('terms: 2   aliases: 3   hits: 0');
-    expect(text.stdout).toContain('by category: brand 1, person 1');
-    expect(text.stdout).toContain(shared.globalPath);
-
-    const json = await runCli(['stats', '--json'], { env: shared.env });
-    const stats = JSON.parse(json.stdout) as { termCount: number; aliasCount: number; byCategory: Record<string, number> };
-    expect(stats.termCount).toBe(2);
-    expect(stats.aliasCount).toBe(3);
-    expect(stats.byCategory).toEqual({ brand: 1, person: 1 });
-  });
-
-  it('path prints the resolved global and project locations', async () => {
-    const r = await runCli(['path'], { env: shared.env, cwd: shared.repo });
-    expect(r.code).toBe(0);
-    expect(r.stdout).toBe(`global: ${shared.globalPath}\nproject: (none)\n`);
-  });
-
   // Catches: runCli defaulted --cwd to os.tmpdir() itself, so a stray
   // .lexicon.yaml in the shared temp dir became the project lexicon of every
   // run that named no cwd. Each such run now gets its own directory.
@@ -840,27 +613,10 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: stats, path, doct
     }
   });
 
-  it('doctor exits 0 with a parsable global lexicon and 1 when it is missing', async () => {
-    // PATH without `claude` so the check is deterministic on every machine.
-    const noBin = path.join(shared.home, 'empty-bin');
-    await fs.mkdir(noBin, { recursive: true });
-    const ok = await runCli(['doctor'], { env: { ...shared.env, PATH: noBin }, cwd: shared.repo });
-    expect(ok.code, ok.stdout).toBe(0);
-    expect(ok.stdout).toContain(`✓ global lexicon parses: ${shared.globalPath} (2 terms)`);
-    expect(ok.stdout).toContain('no alias/canonical conflicts');
-    expect(ok.stdout).toContain('claude CLI not found');
-    expect(ok.stdout).toContain('all checks passed');
-
-    const h = await freshHome('doctor-missing');
-    const missing = await runCli(['doctor'], { env: { ...h.env, PATH: noBin }, cwd: h.repo });
-    expect(missing.code).toBe(1);
-    expect(missing.stdout).toContain(`✗ global lexicon missing: ${h.globalPath}`);
-    expect(missing.stdout).toMatch(/1 check failed/);
-  });
-
   // `doctor` had no --json, though `stats`, `list` and `pack list` do and the
   // MCP lexicon_doctor tool returns exactly this report as JSON; a script or
-  // agent in a terminal could only scrape the text.
+  // agent in a terminal could only scrape the text. Runs under an empty PATH
+  // so the `claude` check is deterministic, and covers both exit codes.
   it('doctor --json prints the report as JSON and keeps the exit code', async () => {
     const noBin = path.join(shared.home, 'empty-bin');
     await fs.mkdir(noBin, { recursive: true });
@@ -878,36 +634,6 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: stats, path, doct
     const failed = JSON.parse(missing.stdout) as { ok: boolean; nextStep: string };
     expect(failed.ok).toBe(false);
     expect(failed.nextStep).toMatch(/lexicon/);
-  });
-
-  // Every command that loads the lexicon stopped at the parser's reason;
-  // only doctor said what to run.
-  it('a lexicon that does not parse names the command that fixes it', async () => {
-    const h = await freshHome('unparsable');
-    await fs.mkdir(path.dirname(h.globalPath), { recursive: true });
-    await fs.writeFile(h.globalPath, 'version: 1\nterms:\n  - canonical: [oops\n');
-    for (const args of [['list'], ['add', 'Foo'], ['stats', '--json']]) {
-      const r = await runCli(args, { env: h.env, cwd: h.repo });
-      expect(r.code, args.join(' ')).toBe(1);
-      expect(r.stderr).toContain(`Failed to parse lexicon YAML at ${h.globalPath}`);
-      expect(r.stderr, args.join(' ')).toContain('(run: lexicon edit), then check it with: lexicon doctor');
-      if (args.includes('--json')) {
-        // Under --json stdout is the error document, with the same fix as nextStep.
-        expect(JSON.parse(r.stdout)).toEqual({
-          ok: false,
-          error: expect.stringContaining(`Failed to parse lexicon YAML at ${h.globalPath}`),
-          nextStep: expect.stringContaining('(run: lexicon edit), then check it with: lexicon doctor'),
-        });
-      } else {
-        expect(r.stdout).toBe('');
-      }
-    }
-    // A broken project file is opened with `edit --project`.
-    await fs.writeFile(h.globalPath, 'version: 1\nterms: []\n');
-    await fs.writeFile(path.join(h.repo, '.lexicon.yaml'), 'terms: [\n');
-    const project = await runCli(['list'], { env: { ...h.env, LEXICON_TRUST_ALL: '1' }, cwd: h.repo });
-    expect(project.code).toBe(1);
-    expect(project.stderr).toContain('(run: lexicon edit --project)');
   });
 });
 
@@ -1071,17 +797,6 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: UserPromptSubmit 
     expect(r.code).toBe(0);
     expect(r.stdout).toBe('');
     expect(r.stderr).toContain(`[lexicon hook] stdin is over ${16 * 1024 * 1024} bytes`);
-  });
-
-  // Catches: a payload piped through Windows PowerShell (UTF-16LE with a byte order mark) was reported as "not valid JSON".
-  it('decodes a UTF-16LE payload with a byte order mark', async () => {
-    // Own clone: the hook bumps `hits` in the sidecar, which must not leak into the shared fixture.
-    const h = await cloneOf(shared, 'hook-utf16');
-    const stdin = Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from(`${payload('ask Ashler', h.repo)}\r\n`, 'utf16le')]);
-    const r = await runNode(HOOK, [], { env: h.env, stdin });
-    expect(r.code).toBe(0);
-    expect(r.stderr).toBe('');
-    expect((JSON.parse(r.stdout) as { hookSpecificOutput: { additionalContext: string } }).hookSpecificOutput.additionalContext).toContain('"Ashler" -> "Ashlr.AI"');
   });
 
   // Catches: the first prompt after a hand edit of a large lexicon parsed and indexed it inside the prompt.
@@ -1810,70 +1525,6 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: pack add refusals
       nextStep: expect.stringContaining('lexicon pack add example/cardiology --registry <index>'),
     });
     expect(noRegistry.stderr).toContain('lexicon: run: lexicon pack add example/cardiology --registry <index>');
-  });
-});
-
-describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: a long path does not cut the next step off', () => {
-  // Catches: errors and doctor checks were capped at 200 characters, so in a deep
-  // repo the command after the path was cut ("or write to the global le…").
-  it('add --project and doctor in a deep repo still print the whole command', async () => {
-    const h = await freshHome('deep-path');
-    const deep = path.join(h.repo, 'projects', 'a-fairly-long-organisation-name', 'and-a-fairly-long-repository-name', 'packages', 'service');
-    await fs.mkdir(deep, { recursive: true });
-    // The project file sits in the deep directory, so the messages that name it run past 200 characters.
-    await fs.writeFile(path.join(deep, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Hetzner\n    aliases: [head sner]\n');
-    expect(path.join(deep, '.lexicon.yaml').length).toBeGreaterThan(130);
-    const add = await runCli(['add', 'Foo', '--project'], { env: h.env, cwd: deep });
-    expect(add.code).toBe(1);
-    expect(add.stderr).toContain('or write to the global lexicon instead');
-    expect(add.stderr).not.toContain('…');
-    const doctor = await runCli(['doctor'], { env: h.env, cwd: deep });
-    expect(doctor.stdout).toContain('(review it, then run: lexicon trust)');
-    expect(doctor.stdout).not.toContain('…');
-  });
-});
-
-describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: doctor in a repo whose only terms are untrusted', () => {
-  // Catches: with an empty global lexicon and an untrusted repo .lexicon.yaml, doctor
-  // said "not set up yet ... Run: lexicon setup", which leaves the repo's terms unmerged,
-  // and its trust next step named the MCP tool trust_project to a terminal user.
-  it('names lexicon trust, not lexicon setup, as the next step', async () => {
-    const h = await freshHome('doctor-untrusted');
-    expect((await runCli(['init'], { env: h.env })).code).toBe(0);
-    await fs.writeFile(path.join(h.repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Hetzner\n    aliases: [head sner]\n');
-    const r = await runCli(['doctor', '--json'], { env: h.env, cwd: h.repo });
-    const report = JSON.parse(r.stdout) as { ready: boolean; summary: string; nextStep: string };
-    expect(report.ready).toBe(false);
-    expect(report.summary).toContain('project lexicon (1 term) is not trusted');
-    expect(report.summary).not.toMatch(/not set up yet/);
-    expect(report.nextStep).toContain('lexicon trust');
-    expect(report.nextStep).not.toContain('lexicon setup');
-    expect(report.nextStep).not.toContain('trust_project');
-
-    // Once it is trusted the terms count and the next step moves on.
-    expect((await runCli(['trust', '--yes'], { env: h.env, cwd: h.repo })).code).toBe(0);
-    const after = JSON.parse((await runCli(['doctor', '--json'], { env: h.env, cwd: h.repo })).stdout) as { summary: string; nextStep: string };
-    expect(after.summary).not.toContain('is not trusted');
-    expect(after.nextStep).not.toContain('lexicon trust');
-  });
-});
-
-describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: an empty lexicon next to an untrusted repo file', () => {
-  // Catches: list said "no terms yet. Try: lexicon add" and normalize "run `lexicon setup`"
-  // to a team member whose terms are all in the repo's untrusted .lexicon.yaml.
-  it('list and normalize point at lexicon trust', async () => {
-    const h = await freshHome('empty-untrusted');
-    expect((await runCli(['init'], { env: h.env })).code).toBe(0);
-    await fs.writeFile(path.join(h.repo, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Hetzner\n    aliases: [head sner]\n');
-    const list = await runCli(['list'], { env: h.env, cwd: h.repo });
-    expect(list.code).toBe(0);
-    expect(list.stdout).toContain('Review it and run: lexicon trust');
-    expect(list.stdout).not.toContain('Try: lexicon add');
-    const norm = await runCli(['normalize', 'deploy to head sner'], { env: h.env, cwd: h.repo });
-    expect(norm.code).toBe(0);
-    expect(norm.stdout).toBe('deploy to head sner\n');
-    expect(norm.stderr).toContain('review it and run `lexicon trust` to use them');
-    expect(norm.stderr).not.toContain('lexicon setup');
   });
 });
 

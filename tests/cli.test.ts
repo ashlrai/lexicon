@@ -236,6 +236,29 @@ describe('normalize', () => {
     });
   });
 
+  // Catches: an empty lexicon next to an untrusted project file sent the user
+  // to `lexicon setup`, stranding the terms the repo already had.
+  it('on an empty lexicon next to an untrusted project file, names lexicon trust, not setup', async () => {
+    const empty: Lexicon = { version: 1, terms: [] };
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({
+      merged: empty,
+      global: { path: state.globalPath, scope: 'global', lexicon: empty, exists: true },
+      projectTrust: 'untrusted',
+      skippedProject: {
+        path: '/tmp/proj/.lexicon.yaml',
+        scope: 'project',
+        lexicon: { version: 1, terms: [{ canonical: 'Hetzner', aliases: ['head sner'] }] },
+        exists: true,
+      },
+    });
+    const io = makeIO();
+    await runNormalize(['deploy to head sner'], {}, io);
+    expect(io.out).toBe('deploy to head sner\n');
+    expect(io.err).toContain('no trusted terms yet, so this is the built-in example');
+    expect(io.err).toContain('the project lexicon is not trusted, so its terms were not used; review it and run `lexicon trust` to use them');
+    expect(io.err).not.toContain('lexicon setup');
+  });
+
   it('--diff prints the summary on stderr and the text on stdout', async () => {
     const io = makeIO();
     await runNormalize(['meet Ashler'], { diff: true }, io);
@@ -431,6 +454,27 @@ describe('list', () => {
     expect(io.out).not.toContain(ESC);
   });
 
+  // Catches: with an empty lexicon whose only terms sat in the repo's untrusted
+  // project file, list said "no terms yet. Try: lexicon add", stranding them.
+  it('on an empty lexicon next to an untrusted project file, points at lexicon trust', async () => {
+    const empty: Lexicon = { version: 1, terms: [] };
+    vi.mocked(core.loadLexicon).mockResolvedValueOnce({
+      merged: empty,
+      global: { path: state.globalPath, scope: 'global', lexicon: empty, exists: true },
+      projectTrust: 'untrusted',
+      skippedProject: {
+        path: '/tmp/proj/.lexicon.yaml',
+        scope: 'project',
+        lexicon: { version: 1, terms: [{ canonical: 'Hetzner', aliases: ['head sner'] }] },
+        exists: true,
+      },
+    });
+    const io = makeIO();
+    expect(await runList({}, io)).toBe(0);
+    expect(io.out).toContain('no terms applied: the project lexicon is not trusted, so its terms are not loaded. Review it and run: lexicon trust');
+    expect(io.out).not.toContain('Try: lexicon add');
+  });
+
   it('renders a canonical carrying an ANSI sequence without it, keeping the columns aligned', async () => {
     const ESC = String.fromCodePoint(0x1b);
     const hostile: Lexicon = {
@@ -611,6 +655,13 @@ describe('add / remove / path', () => {
     const fresh = makeIO();
     expect(await runAdd('Ashlr.AI', [], { json: true }, fresh)).toBe(0);
     expect(JSON.parse(fresh.out)).toMatchObject({ created: true, suggested: ['Ashler', 'Ashlar', 'Ashlr AI'] });
+  });
+
+  // Catches: `add X --phonetic ASH-ler` on an existing term dropped the hint
+  // before it reached addTerm, where it merges onto the stored term.
+  it('forwards --phonetic to the term addTerm writes', async () => {
+    await runAdd('Ashlr.AI', [], { phonetic: 'ASH-ler' }, makeIO());
+    expect(core.addTerm).toHaveBeenLastCalledWith(expect.objectContaining({ canonical: 'Ashlr.AI', phonetic: 'ASH-ler' }), expect.anything());
   });
 
   // Catches: `add X --suggest --never <w>` put a suggested spelling that is also a never word among the aliases, where the never word blocks it.
@@ -1534,6 +1585,33 @@ describe('--json failure documents', () => {
     const trust = makeIO();
     fail(trust, new core.ProjectTrustError('/tmp/proj/.lexicon.yaml', 'untrusted'), true);
     expect(JSON.parse(trust.out)).toEqual({ ok: false, error: expect.stringContaining('is untrusted'), nextStep: expect.stringContaining('run lexicon trust') });
+  });
+
+  // Catches: an error naming a deep path was cut at 200 characters, so the
+  // command printed after it ("... or write to the global le…") could not be run.
+  it('prints a long error whole: the command after the path is never cut', () => {
+    const deep = path.join(os.tmpdir(), 'projects', 'a-fairly-long-organisation-name', 'and-a-fairly-long-repository-name', 'packages', 'service', '.lexicon.yaml');
+    expect(deep.length).toBeGreaterThan(130);
+    const io = makeIO();
+    fail(io, new core.ProjectTrustError(deep, 'untrusted'), undefined);
+    expect(io.err).toContain('or write to the global lexicon instead');
+    expect(io.err).not.toContain('…');
+  });
+
+  // Catches: the parse error reached the user with no way to fix it; the file's
+  // basename picks the `edit` command that opens it (`--project` for .lexicon.yaml).
+  it('maps a lexicon parse error to lexicon edit, then lexicon doctor, global or project by basename', () => {
+    const io = makeIO();
+    expect(fail(io, new Error('Failed to parse lexicon YAML at /tmp/g/lexicon.yaml: bad indentation'), undefined)).toBe(1);
+    expect(io.err).toContain('lexicon: Failed to parse lexicon YAML at /tmp/g/lexicon.yaml: bad indentation');
+    expect(io.err).toContain('(run: lexicon edit), then check it with: lexicon doctor');
+    const proj = makeIO();
+    fail(proj, new Error('Invalid lexicon at /tmp/r/.lexicon.yaml: terms[0].canonical: Broken is refused'), true);
+    expect(JSON.parse(proj.out)).toMatchObject({
+      ok: false,
+      error: 'Invalid lexicon at /tmp/r/.lexicon.yaml: terms[0].canonical: Broken is refused',
+      nextStep: expect.stringContaining('(run: lexicon edit --project), then check it with: lexicon doctor'),
+    });
   });
 });
 
@@ -2944,6 +3022,25 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
         trust: 'changed',
         nextStep: step,
       });
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  }, 30_000);
+
+  // Catches: `learn --from`, the phrasing the hook suggests (`it's X not Y`),
+  // had to reach parseCorrection through commander; the learned alias is the
+  // one normalize then applies.
+  it('learn --from records a correction that normalize then applies', async () => {
+    const tmp = await fs.realpath(await tempDir('lexicon-cli-learn-'));
+    try {
+      const globalPath = path.join(tmp, 'g', 'lexicon.yaml');
+      const repo = path.join(tmp, 'repo');
+      await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+      const learn = lexicon(['learn', '--from', "it's Kubernetes, not cooper netties", '--cwd', repo], globalPath);
+      expect(learn.status).toBe(0);
+      expect(learn.stdout).toContain('learned cooper netties -> Kubernetes (new term)');
+      const norm = lexicon(['normalize', 'deploy to cooper netties', '--cwd', repo], globalPath);
+      expect(norm.stdout).toBe('deploy to Kubernetes\n');
     } finally {
       await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
