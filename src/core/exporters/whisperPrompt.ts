@@ -31,6 +31,15 @@ export const WHISPER_PROMPT_DEFAULT_LIMIT = 100;
 export const WHISPER_PROMPT_TOKEN_BUDGET = 223;
 
 /**
+ * UTF-8 byte counter without `Buffer`: the site demo bundles this file for
+ * the browser (scripts/build-site.mjs), where `Buffer` is not defined.
+ * `TextEncoder` is a global in Node 11+ and every browser, and encodes a
+ * lone surrogate as U+FFFD just as `Buffer.byteLength` does, so the estimate
+ * is unchanged.
+ */
+const utf8 = new TextEncoder();
+
+/**
  * A high estimate of the Whisper (GPT-2 style byte-level BPE) tokens in
  * `text`, made offline without the vocabulary: a run of ASCII letters counts
  * one token per two letters, rounded up (English words are usually one token
@@ -45,7 +54,7 @@ export function estimateWhisperTokens(text: string): number {
   for (const m of text.matchAll(/ ?[A-Za-z]+|[0-9]|[\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]| |[^\x00-\x7f]/gu)) {
     const piece = m[0];
     if (/[A-Za-z]/.test(piece)) tokens += Math.ceil(piece.trimStart().length / 2);
-    else if (/[^\x00-\x7f]/u.test(piece)) tokens += Buffer.byteLength(piece, 'utf8');
+    else if (/[^\x00-\x7f]/u.test(piece)) tokens += utf8.encode(piece).length;
     else tokens += 1;
   }
   return tokens;
