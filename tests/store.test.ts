@@ -1295,6 +1295,9 @@ describe('global parse failure cache', () => {
       (err: unknown) => err as Error,
     ));
     expect(first.message).toMatch(new RegExp(`^Failed to parse lexicon YAML at ${globalPath.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}: `));
+    // The message a real parse error carries is what the CLI's next-step
+    // derivation pattern-matches; a drift here silently drops `lexicon edit`.
+    expect(unreadableLexiconHint(first.message)).toContain('(run: lexicon edit), then check it with: lexicon doctor');
     const entry = JSON.parse(await fs.readFile(failurePath(), 'utf8')) as { kind: string; reason: string; text: string };
     expect(entry.kind).toBe('yaml');
     expect(entry.text).toBe(await fs.readFile(globalPath, 'utf8'));

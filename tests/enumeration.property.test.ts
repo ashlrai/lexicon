@@ -453,6 +453,11 @@ interface Case {
   readonly canonical: string;
   readonly subject: Subject;
   readonly tier: Tier;
+  /**
+   * The canonical-swapped probe text and the rewrite the matcher proposed for
+   * it, kept from build time so the controls do not have to ask again.
+   */
+  readonly control: { readonly text: string; readonly out: string };
 }
 
 function fill(template: string, c: string, a: string, b: string): string {
@@ -493,7 +498,8 @@ function probe(text: string, canonical: string, subject: Subject, aliases: reado
 }
 
 function makeCase(text: string, label: string, tier: Tier, canonical: string, subject: Subject, aliases: readonly string[]): Case {
-  return { text, label, tier, canonical, subject, aliases: probe(text, canonical, subject, aliases).visible };
+  const p = probe(text, canonical, subject, aliases);
+  return { text, label, tier, canonical, subject, aliases: p.visible, control: { text: p.text, out: p.out } };
 }
 
 function buildQuotingCases(): Case[] {
@@ -598,7 +604,12 @@ function run(cases: readonly Case[], direction: 'quoting' | 'dictation'): Report
   return { checked, skipped, failures };
 }
 
-/** The controls are themselves dictation: canonical absent, so every garble must go. */
+/**
+ * The controls are themselves dictation: canonical absent, so every garble
+ * must go. The probe each case was built with is the same call this would
+ * repeat - the swap is deterministic - so the rewrite it recorded is the
+ * evidence, and a blinded matcher still reports zero visible garbles.
+ */
 function runControls(cases: readonly Case[]): Report {
   const failures: string[] = [];
   let checked = 0;
@@ -608,14 +619,13 @@ function runControls(cases: readonly Case[]): Report {
       skipped++;
       continue;
     }
-    const p = probe(c.text, c.canonical, c.subject, c.aliases);
-    if (p.text === c.text) {
+    if (c.control.text === c.text) {
       skipped++;
       continue;
     }
     checked++;
-    const left = c.aliases.filter((a) => has(p.out, a));
-    if (left.length > 0) failures.push(`[control ${c.label}] refused ${JSON.stringify(left)}: ${JSON.stringify(p.text)} -> ${JSON.stringify(p.out)}`);
+    const left = c.aliases.filter((a) => has(c.control.out, a));
+    if (left.length > 0) failures.push(`[control ${c.label}] refused ${JSON.stringify(left)}: ${JSON.stringify(c.control.text)} -> ${JSON.stringify(c.control.out)}`);
   }
   return { checked, skipped, failures };
 }
@@ -687,6 +697,13 @@ describe('quoting guard, generated round trips', () => {
   const dictation = buildDictationCases();
   const marked = quoting.filter((c) => c.tier === 'marked');
   const prose = quoting.filter((c) => c.tier === 'prose');
+  // Each direction runs once: the matcher is deterministic, so the floors and
+  // the behavior assertions read the same four reports rather than asking the
+  // matcher about the same tens of thousands of cases twice.
+  const markedReport = run(marked, 'quoting');
+  const proseReport = run(prose, 'quoting');
+  const dictationReport = run(dictation, 'dictation');
+  const controlsReport = runControls([...quoting, ...dictation]);
 
   it('draws its phrasings from outside the guard', () => {
     // The defect this file was rewritten to fix: 54 of the predecessor's 56
@@ -716,36 +733,33 @@ describe('quoting guard, generated round trips', () => {
     // Coverage is part of the property. `checked` counts cases the matcher was
     // consulted about, through findReplacements, so a matcher that stopped
     // seeing garbles fails here instead of passing QUOTING vacuously.
-    const m = run(marked, 'quoting');
-    const p = run(prose, 'quoting');
-    expect(m.checked).toBeGreaterThan(9000);
-    expect(p.checked).toBeGreaterThan(18000);
-    expect(m.skipped + p.skipped).toBeLessThan(quoting.length * 0.2);
-    expect(run(dictation, 'dictation').checked).toBeGreaterThan(200);
-    expect(runControls([...quoting, ...dictation]).checked).toBeGreaterThan(28000);
+    expect(markedReport.checked).toBeGreaterThan(9000);
+    expect(proseReport.checked).toBeGreaterThan(18000);
+    expect(markedReport.skipped + proseReport.skipped).toBeLessThan(quoting.length * 0.2);
+    expect(dictationReport.checked).toBeGreaterThan(200);
+    expect(controlsReport.checked).toBeGreaterThan(28000);
   }, PROPERTY_TIMEOUT_MS);
 
   it('QUOTING, marked: a quote, a cell, a list item or an arrow is never flattened', () => {
-    summarize('QUOTING-marked', run(marked, 'quoting'));
+    summarize('QUOTING-marked', markedReport);
   }, PROPERTY_TIMEOUT_MS);
 
   it('QUOTING, prose: free sentences about spelling, measured against a ceiling', () => {
-    const report = run(prose, 'quoting');
-    const rate = report.failures.length / report.checked;
+    const rate = proseReport.failures.length / proseReport.checked;
     if (rate > PROSE_CEILING) {
       throw new Error(
         `prose failure rate ${rate.toFixed(4)} is over the ceiling ${PROSE_CEILING}. ` +
-          `The guard's word list covers less English than it did.\n${describeFailures('QUOTING-prose', report)}`,
+          `The guard's word list covers less English than it did.\n${describeFailures('QUOTING-prose', proseReport)}`,
       );
     }
   }, PROPERTY_TIMEOUT_MS);
 
   it('DICTATION: one word said twice in ordinary prose is corrected', () => {
-    summarize('DICTATION', run(dictation, 'dictation'));
+    summarize('DICTATION', dictationReport);
   }, PROPERTY_TIMEOUT_MS);
 
   it('DICTATION: with no canonical present, every quoting shape is corrected', () => {
-    summarize('DICTATION-no-canonical', runControls([...quoting, ...dictation]));
+    summarize('DICTATION-no-canonical', controlsReport);
   }, PROPERTY_TIMEOUT_MS);
 });
 
