@@ -1,0 +1,9 @@
+# Growth-only CODEOWNERS (Security Hardening Engineer, approved by the Engineering Orchestrator 2026-10-25).
+# Covers CI workflows and the files that make keyed, network or loopback requests.
+# Only add owners here; never remove or narrow an entry.
+/.github/workflows/ @masonwyatt23
+/.github/CODEOWNERS @masonwyatt23
+/src/serve/ @masonwyatt23
+/src/cli/serve-paths.ts @masonwyatt23
+/src/cli/cmd-serve.ts @masonwyatt23
+/scripts/check-crypto.mjs @masonwyatt23
