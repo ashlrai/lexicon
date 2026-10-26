@@ -10,7 +10,6 @@ import { existsSync, fstatSync, ftruncateSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import { homeDir } from '../util/xdg.js';
 import path from 'node:path';
-import { Command, InvalidArgumentError } from 'commander';
 import { createServer, DEFAULT_HOST, DEFAULT_PORT, PAIR_PATH, pairPortNote, ensureServeConfig, getServePath, readServeConfig, isLexiconHealth, isLoopbackHost, probeHealth, serveUrl, FOREIGN_HEALTH_ERROR, SERVE_STATUS_HINTS, unusableServeConfigReason } from '../serve/index.js';
 import { isRecord } from '../util/json.js';
 import { resolveCliEntry } from './cli-entry.js';
@@ -1115,38 +1114,4 @@ export async function runServe(opts: ServeOptions, io: IO, deps: ServeDeps = {})
   }
 }
 
-// ---------------------------------------------------------------------------
-// commander wiring
-// ---------------------------------------------------------------------------
-
-function parsePort(value: string): number {
-  const n = Number.parseInt(value, 10);
-  if (!Number.isInteger(n) || n < 0 || n > 65535 || String(n) !== value.trim()) {
-    throw new InvalidArgumentError('expected a port between 0 and 65535 (0 picks a free port)');
-  }
-  return n;
-}
-
-export function registerServeCommands(program: Command, io: IO): void {
-  const globals = (): { cwd?: string } => {
-    const { cwd } = program.opts<{ cwd?: string }>();
-    return cwd ? { cwd } : {};
-  };
-  const done = (code: number): void => {
-    if (code !== 0) process.exitCode = code;
-  };
-
-  program
-    .command('serve')
-    .description(`run the local HTTP API on http://127.0.0.1:${DEFAULT_PORT} for extensions, Shortcuts, Raycast and desktop apps`)
-    .option('--port <n>', `port to listen on (default ${DEFAULT_PORT}; 0 picks a free port)`, parsePort)
-    .option('--host <host>', 'interface to bind (default 127.0.0.1; anything else is exposed to the network)')
-    .option('--json', 'print the listening info (or the --show, --status, --pair, --install or --uninstall result) as JSON, led by ok (for --status, ok equals up)')
-    .option('--quiet', 'do not log each request; failures and start/stop are still printed (the installed service runs with it; refused with --show, --status, --pair, --install, --uninstall)')
-    .option('--show', 'print the URL and bearer token (for the extension options page) and exit')
-    .option('--status', 'check whether the server is up and exit')
-    .option('--pair', `open http://127.0.0.1:${DEFAULT_PORT}/pair in your browser so the extension pairs itself, and exit`)
-    .option('--install', 'install as a login service (launchd on macOS, systemd --user on Linux, a Scheduled Task on Windows)')
-    .option('--uninstall', 'remove the login service')
-    .action(async (opts: ServeOptions) => done(await runServe({ ...opts, ...globals() }, io)));
-}
+export { registerServeCommands } from './program.js';
