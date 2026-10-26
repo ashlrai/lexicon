@@ -5,6 +5,7 @@ import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import {
   MAX_PENDING,
+  MAX_REJECTED,
   PendingFileError,
   acceptPending,
   addTerm,
@@ -15,6 +16,7 @@ import {
   pendingPathFor,
   queueCorrections,
   readPending,
+  readPendingFile,
   rejectPending,
   withLexiconLock,
 } from '../src/core/index.js';
@@ -122,6 +124,46 @@ describe('pending aliases are queued, never applied', () => {
     expect((await listPending(o)).entries).toEqual([]);
     expect(await fs.readFile(globalPath, 'utf8')).toBe(before);
     expect(await corrected('ping Quibbletron')).toBe('ping Quibbletron');
+  });
+
+  it('a rejected correction is remembered by id and never queued again', async () => {
+    const o = await opts();
+    await queueCorrections([{ heard: 'Quibbletron', meant: 'Ashlr.AI' }], o);
+    await rejectPending({ all: true }, { ...o, now: new Date('2026-10-26T00:00:00.000Z') });
+    const file = pendingPathFor(globalPath);
+    const text = await fs.readFile(file, 'utf8');
+    expect(text).toContain('rejected:');
+    expect(text).toContain(`id: ${pendingId('Quibbletron', 'Ashlr.AI')}`);
+    expect(text).not.toContain('Quibbletron');
+    const again = await queueCorrections([{ heard: ' quibbletron ', meant: 'ashlr.ai' }, { heard: 'versel', meant: 'Vercel' }], o);
+    expect(again.skipped).toBe(1);
+    expect(again.queued.map((e) => e.heard)).toEqual(['versel']);
+    expect((await readPendingFile(file)).rejected).toEqual([{ id: pendingId('Quibbletron', 'Ashlr.AI'), rejectedAt: '2026-10-26T00:00:00.000Z' }]);
+  });
+
+  it('accept keeps the rejected list, and a bad rejected list is a PendingFileError', async () => {
+    const o = await opts();
+    await queueCorrections([{ heard: 'Quibbletron', meant: 'Ashlr.AI' }, { heard: 'Ashler', meant: 'Ashlr.AI' }], o);
+    await rejectPending({ ids: [pendingId('Quibbletron', 'Ashlr.AI')] }, o);
+    await acceptPending({ all: true }, o);
+    const file = pendingPathFor(globalPath);
+    expect((await readPendingFile(file)).rejected).toHaveLength(1);
+    await fs.writeFile(file, 'version: 1\npending: []\nrejected: [nope]\n');
+    await expect(readPending(file)).rejects.toBeInstanceOf(PendingFileError);
+  });
+
+  it('remembers at most MAX_REJECTED rejections, dropping the oldest', async () => {
+    const o = await opts();
+    const file = pendingPathFor(globalPath);
+    const old = Array.from({ length: MAX_REJECTED }, (_, i) => ({ id: `old${String(i).padStart(5, '0')}`, rejectedAt: '2026-01-01T00:00:00.000Z' }));
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, `version: 1\npending: []\nrejected:\n${old.map((r) => `  - id: ${r.id}\n    rejectedAt: "${r.rejectedAt}"`).join('\n')}\n`);
+    await queueCorrections([{ heard: 'Quibbletron', meant: 'Ashlr.AI' }], o);
+    await rejectPending({ all: true }, o);
+    const rejected = (await readPendingFile(file)).rejected;
+    expect(rejected).toHaveLength(MAX_REJECTED);
+    expect(rejected[0].id).toBe('old00001');
+    expect(rejected.at(-1)?.id).toBe(pendingId('Quibbletron', 'Ashlr.AI'));
   });
 
   it('a failed accept stays queued', async () => {
