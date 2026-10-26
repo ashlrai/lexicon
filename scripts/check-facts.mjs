@@ -532,7 +532,7 @@ function scanTargets() {
   const out = [];
   const roots = [
     'README.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md', 'CODE_OF_CONDUCT.md',
-    'CLAUDE.md', 'package.json', '.claude-plugin',
+    'AGENTS.md', 'llms-install.md', 'CLAUDE.md', 'package.json', '.claude-plugin',
     'docs', 'web/app', 'web/components', 'web/lib', 'site', 'extension/src', 'extension/public',
     'examples', 'skills', 'commands', 'bench', 'apps/macos',
   ];
