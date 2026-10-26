@@ -5,8 +5,8 @@
  * runImport so it is unit-testable; registerImportCommands only wires commander.
  */
 import { existsSync, promises as fs } from 'node:fs';
+import { MAX_IMPORT_BYTES } from './import-limit.js';
 import path from 'node:path';
-import type { Command } from 'commander';
 import {
   IMPORT_FORMATS,
   IMPORT_FORMAT_INFO,
@@ -103,12 +103,7 @@ function formatList(): string {
   );
 }
 
-/**
- * Largest input `lexicon import` will read. Every importer is linear, but the
- * input is arbitrary and is parsed in memory; a real dictionary export is a
- * few hundred KB at most.
- */
-export const MAX_IMPORT_BYTES = 8 * 1024 * 1024;
+export { MAX_IMPORT_BYTES };
 
 function tooLarge(what: string, bytes?: number): Error {
   const size = bytes === undefined ? 'exceeds' : `is ${bytes} bytes, over`;
@@ -307,51 +302,40 @@ export function importOptionConflict(formatArg: string | undefined, opts: Import
   return undefined;
 }
 
-export function registerImportCommands(program: Command, io: IO): void {
-  program
-    .command('import')
-    .description('import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub')
-    .argument('[file]', 'file to import, or - for stdin (not used with --guided)')
-    .argument('[format]', `one of: ${IMPORT_FORMATS.join(', ')} (default: auto)`)
-    .option('--format <format>', 'same as the positional format argument')
-    .option('--project', 'write to the project lexicon instead of the global one')
-    .option('--dry-run', 'print what would be added without writing')
-    .option('--source <source>', 'source recorded on each term (default: import)')
-    .option('--category <category>', 'category applied to imported terms that lack one')
-    .option('--guided', 'guided vocabulary import: pick sources (contacts, calendar, github) and approve each candidate before it is written')
-    .option('--sources <list>', 'with --guided: explicit comma-separated sources to harvest (required non-interactively)')
-    .option('--limit <n>', 'with --guided: max candidates to review (default: 50)')
-    .option('-y, --yes', 'with --guided: apply approved candidate ids (requires --sources, --preview-id and --accept)')
-    .option('--preview-id <digest>', 'with --guided --yes: digest returned by the prior JSON preview')
-    .option('--accept <ids>', 'with --guided --yes: comma-separated candidate ids the user approved')
-    .option('--home <dir>', 'with --guided: treat <dir> as the home directory (mainly for tests)')
-    .option('--json', 'print the result as JSON')
-    .action(async (file: string | undefined, formatArg: string | undefined, opts: ImportCliOptions & ImportGuidedOptions) => {
-      const { cwd } = program.opts<{ cwd?: string }>();
-      const conflict = importOptionConflict(formatArg, opts);
-      if (conflict !== undefined) {
-        process.exitCode = refuse(io, opts.json, conflict, 'see the usage: lexicon import --help');
-        return;
-      }
-      const merged: ImportCliOptions & ImportGuidedOptions = {
-        ...opts,
-        ...(formatArg !== undefined ? { format: formatArg } : {}),
-        ...(cwd ? { cwd } : {}),
-      };
-      if (merged.guided) {
-        if (file !== undefined) {
-          process.exitCode = refuse(io, merged.json, '--guided takes no file argument (it harvests from your sources instead)');
-          return;
-        }
-        const code = await runImportGuided(merged, io);
-        if (code !== 0) process.exitCode = code;
-        return;
-      }
-      if (file === undefined) {
-        process.exitCode = refuse(io, merged.json, 'pass a file to import, - for stdin, or --guided for the vocabulary import wizard');
-        return;
-      }
-      const code = await runImport(file, merged, io);
-      if (code !== 0) process.exitCode = code;
-    });
+/** Commander action for `lexicon import`. Loaded only when that command runs. */
+export async function runImportCli(
+  program: { opts(): { cwd?: string } },
+  io: IO,
+  file: string | undefined,
+  formatArg: string | undefined,
+  opts: ImportCliOptions & ImportGuidedOptions,
+): Promise<void> {
+  const { cwd } = program.opts();
+  const conflict = importOptionConflict(formatArg, opts);
+  if (conflict !== undefined) {
+    process.exitCode = refuse(io, opts.json, conflict, 'see the usage: lexicon import --help');
+    return;
+  }
+  const merged: ImportCliOptions & ImportGuidedOptions = {
+    ...opts,
+    ...(formatArg !== undefined ? { format: formatArg } : {}),
+    ...(cwd ? { cwd } : {}),
+  };
+  if (merged.guided) {
+    if (file !== undefined) {
+      process.exitCode = refuse(io, merged.json, '--guided takes no file argument (it harvests from your sources instead)');
+      return;
+    }
+    const code = await runImportGuided(merged, io);
+    if (code !== 0) process.exitCode = code;
+    return;
+  }
+  if (file === undefined) {
+    process.exitCode = refuse(io, merged.json, 'pass a file to import, - for stdin, or --guided for the vocabulary import wizard');
+    return;
+  }
+  const code = await runImport(file, merged, io);
+  if (code !== 0) process.exitCode = code;
 }
+
+export { registerImportCommands } from './program.js';

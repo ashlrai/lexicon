@@ -32,6 +32,12 @@ export function isClipboardBackendName(value: string): value is ClipboardBackend
   return (CLIPBOARD_BACKEND_NAMES as readonly string[]).includes(value);
 }
 
+/** `--backend` value, or an Error message commander turns into a usage error. */
+export function parseBackendName(value: string): ClipboardBackendName {
+  if (isClipboardBackendName(value)) return value;
+  throw new Error(`unknown clipboard backend "${value}"; expected one of: ${CLIPBOARD_BACKEND_NAMES.join(', ')}`);
+}
+
 /**
  * Run `cmd` with `args`, optionally feeding `stdin`, and resolve with stdout.
  * Must reject with an `ExecError` (or an Error carrying `code: 'ENOENT'`) on a

@@ -22,6 +22,7 @@ on:
       - 'apps/windows/**'
       - '.github/workflows/windows-app.yml'
   pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
     paths:
       - 'apps/windows/**'
       - '.github/workflows/windows-app.yml'
@@ -42,6 +43,7 @@ defaults:
 jobs:
   test-portable:
     name: Core tests + cross-build (Linux)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
@@ -67,6 +69,7 @@ jobs:
 
   build-windows:
     name: Publish LexiconBar.exe
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7

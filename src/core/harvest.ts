@@ -148,7 +148,7 @@ const GENERIC_PREFIXES = ['React', 'Http', 'Json', 'HTML', 'Html', 'SVG', 'Svg',
  * harvest --limit` and MCP `harvest_repo` take. A repo's speakable names run
  * to dozens; a limit past this only makes the reply longer.
  */
-export const HARVEST_MAX_LIMIT = 1000;
+export { HARVEST_MAX_LIMIT } from './caps.js';
 
 export const HARVEST_STOPLIST: ReadonlySet<string> = new Set([
   // articles, pronouns, determiners, conjunctions
