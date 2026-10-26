@@ -13,6 +13,7 @@ import {
   ProjectTrustError,
   addTerms,
   defaultProjectPath,
+  listPending,
   loadLexicon,
   removeTerm,
   suggestAliases,
@@ -21,7 +22,7 @@ import {
   termHolders,
   SUGGEST_MAX_LIMIT,
 } from '../core/index.js';
-import type { LoadedLexicon, SuggestInput, Term, TermScope, TermSuggestion } from '../core/index.js';
+import type { LoadedLexicon, PendingAlias, SuggestInput, Term, TermScope, TermSuggestion } from '../core/index.js';
 import { askKey, createPrompter, isInteractive } from './prompt.js';
 import type { Prompter } from './prompt.js';
 import { bold, dim, fail, line, plural, positiveIntOption, refuse, renderTable, safe, safeLines, stillInLine, warnSkippedProject } from './io.js';
@@ -49,6 +50,8 @@ export interface SuggestDeps {
   /** Every add goes through it: a run of consecutive adds to one file is one call (one read, one write). */
   addTerms?: typeof addTerms;
   removeTerm?: typeof removeTerm;
+  /** Reads the pending queue (corrections the prompt hook captured); tests replace it. */
+  listPending?: typeof listPending;
   prompter?: Prompter;
   /** Epoch milliseconds for the stale-term age check. */
   now?: number;
@@ -78,6 +81,21 @@ function showSuggestion(io: IO, s: TermSuggestion, index: number, total: number)
   line(io, `${dim(`[${index + 1}/${total}]`)} ${describe(s)}  ${dim(`${s.kind}, ${s.confidence.toFixed(2)}, seen ${s.count}x`)}`);
   line(io, `  ${safe(s.reason)}`);
   for (const e of s.evidence.slice(0, 3)) line(io, `  ${dim('>')} ${safe(e)}`);
+}
+
+/**
+ * The pending queue section text modes print first: corrections the prompt
+ * hook (or another source) captured but nobody accepted yet, each labeled
+ * with its source. Listing never changes the queue or the lexicon.
+ */
+export function renderPending(entries: readonly PendingAlias[]): string {
+  if (entries.length === 0) return '';
+  const out = [`${bold('pending corrections')} ${dim(`(${entries.length}, captured but not applied)`)}`];
+  for (const e of entries) {
+    out.push(`  ${safe(e.id)}  ${bold(safe(e.heard))} -> ${bold(safe(e.meant))}  ${dim(`from ${safe(e.source)}, seen ${e.count}x`)}`);
+  }
+  out.push(dim('  accept with `lexicon pending accept <id>`, reject with `lexicon pending reject <id>`'));
+  return `${out.join('\n')}\n`;
 }
 
 export function renderSuggestions(suggestions: readonly TermSuggestion[]): string {
@@ -303,6 +321,17 @@ export async function runSuggest(opts: SuggestCliOptions, io: IO, deps: SuggestD
   if (opts.project) {
     const projectPath = loaded.project?.path ?? loaded.skippedProject?.path ?? defaultProjectPath(cwd);
     suggestions = suggestions.map((s) => (s.kind === 'term' ? { ...s, scope: 'project' as const, path: projectPath } : s));
+  }
+
+  // Text modes list the pending queue first; --json keeps its array shape.
+  if (!opts.json) {
+    try {
+      const { entries } = await (deps.listPending ?? listPending)({ globalPath: loaded.global.path });
+      const shown = [...entries].sort((a, b) => b.lastSeen.localeCompare(a.lastSeen));
+      if (shown.length > 0) io.stdout(`${renderPending(shown)}\n`);
+    } catch (err) {
+      io.stderr(`lexicon: could not read the pending queue: ${safeLines(err instanceof Error ? err.message : String(err))}\n`);
+    }
   }
 
   if (opts.json && opts.yes) return applyAllJson(suggestions, loaded, opts, store, writers, io);
