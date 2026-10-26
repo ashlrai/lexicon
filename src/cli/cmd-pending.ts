@@ -4,7 +4,6 @@
  * matching until `lexicon pending accept`. Handlers are exported for tests;
  * registerPendingCommands() only wires commander.
  */
-import type { Command } from 'commander';
 import { PendingFileError, acceptPending, alreadyKnown, listPending, loadLexicon, rejectPending } from '../core/index.js';
 import type { PendingAlias } from '../core/index.js';
 import { jsonOk, line, printJsonError, renderTable, resolveCwd, safe } from './io.js';
@@ -167,46 +166,4 @@ export async function runPendingReject(ids: readonly string[], opts: PendingOpti
   return code;
 }
 
-export function registerPendingCommands(program: Command, io: IO): void {
-  const globals = (): { cwd?: string } => {
-    const { cwd } = program.opts<{ cwd?: string }>();
-    return cwd ? { cwd } : {};
-  };
-  const done = (code: number): void => {
-    if (code !== 0) process.exitCode = code;
-  };
-  // `pending` takes --json too, and commander gives a flag both levels define
-  // to the parent: `pending accept <id> --json` set it on `pending`, so the
-  // subcommand saw none and printed text (or nothing) on stdout.
-  const withParent = (opts: PendingOptions): PendingOptions => ({
-    ...opts,
-    ...(opts.json || pending.opts<PendingOptions>().json ? { json: true } : {}),
-    ...globals(),
-  });
-  const pending = program
-    .command('pending')
-    .description('review aliases noticed in your corrections; nothing is applied until you accept')
-    .option('--json', 'print { ok: true, file, pending } as JSON, each entry with alreadyKnown')
-    .action(async (opts: PendingOptions) => done(await runPendingList({ ...opts, ...globals() }, io)));
-  pending
-    .command('list')
-    .description('list pending aliases')
-    .option('--json', 'print { ok: true, file, pending } as JSON, each entry with alreadyKnown')
-    .action(async (opts: PendingOptions) => done(await runPendingList(withParent(opts), io)));
-  pending
-    .command('accept')
-    .description('learn pending aliases (as lexicon learn does) and remove them from the queue')
-    .argument('[ids...]', 'ids from lexicon pending')
-    .option('--all', 'accept every pending alias')
-    .option('--dry-run', 'report what would be learned and dequeued; write nothing')
-    .option('--json', 'print { ok, file, accepted, failed, unknown } as JSON (ok: false and exit 1 when an id is unknown or not accepted)')
-    .action(async (ids: string[], opts: PendingOptions) => done(await runPendingAccept(ids, withParent(opts), io)));
-  pending
-    .command('reject')
-    .description('drop pending aliases without learning them')
-    .argument('[ids...]', 'ids from lexicon pending')
-    .option('--all', 'reject every pending alias')
-    .option('--dry-run', 'report what would be dequeued; write nothing')
-    .option('--json', 'print { ok, file, rejected, unknown } as JSON (ok: false and exit 1 when an id is unknown)')
-    .action(async (ids: string[], opts: PendingOptions) => done(await runPendingReject(ids, withParent(opts), io)));
-}
+export { registerPendingCommands } from './program.js';
