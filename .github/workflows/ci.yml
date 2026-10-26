@@ -8,11 +8,17 @@ on:
     branches: [main, 'ci/**']
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
     # No `labeled`: a run started by a label is the newest CI check suite for
     # the head commit, and GitHub reads required checks from it, so a label
     # run that skipped its jobs left the PR BLOCKED (#199). `plan` reads the
     # PR's labels live instead: add `ci:macos`, then push or use "Re-run all
     # jobs" on the PR's CI run, and the macOS row is included.
+  # Nightly and manual runs carry the full macOS + Windows matrix (G1):
+  # pushes run Linux only.
+  schedule:
+    - cron: "0 7 * * *"
+  workflow_dispatch:
 
 # Superseded branch and PR runs are cancelled. Every push to main gets its own
 # group (keyed by SHA): with one shared main group, a run whose macOS row sat
@@ -34,13 +40,14 @@ jobs:
   # suite (see vitest.config.ts) -- a Windows job on Node 20 would silently skip
   # it and the Windows column would mean less than it appears to.
   # ---------------------------------------------------------------------------
-  # Which rows `test` runs. Pushes: all five, macOS included, as before. Pull
+  # Which rows `test` runs. Pushes: Linux only; schedule and workflow_dispatch: all five. Pull
   # requests: Linux + Windows, plus macOS only when the PR carries the
   # `ci:macos` label or touches the timing-sensitive paths below (the hook and
   # its wall-clock budgets, correction parsing, the matcher and normalizer and
   # their perf tests, and this workflow). #197 was a macOS-only failure of a
   # wall-clock budget in the hook that no PR row could have caught.
   plan:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -90,6 +97,9 @@ jobs:
             fi
           fi
           mac=true; win=true
+          # G1: pushes (main, ci/**) run Linux only; macOS and Windows run on
+          # schedule, workflow_dispatch, a label, or a platform-path PR change.
+          if [ "$EVENT" = "push" ]; then mac=false; win=false; fi
           if [ "$EVENT" = "pull_request" ]; then
             # An unreadable diff runs both rows.
             if files="$(git diff --name-only "$BASE...HEAD")"; then
