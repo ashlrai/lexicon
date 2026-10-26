@@ -4,32 +4,28 @@
  */
 import { dirname, resolve } from 'node:path';
 import { z } from 'zod';
-import {
-  SUGGEST_DEFAULT_LIMIT,
-  SUGGEST_MAX_LIMIT,
-  HARVEST_MAX_LIMIT,
-  TERM_CATEGORIES,
-  TERM_SCOPES,
-  addTerm,
-  addTerms,
-  defaultProjectPath,
-  harvestReport,
-  harvestTruncatedNote,
-  isProjectTrustError,
-  loadLexicon,
-  loadVoiceHistory,
-  removeTerm,
-  resolvePaths,
-  spellingKey,
-  suggestAliases,
-  suggestTerms,
-  termHolders,
-} from '../../core/index.js';
+import { HARVEST_MAX_LIMIT, SUGGEST_DEFAULT_LIMIT, SUGGEST_MAX_LIMIT } from '../../core/caps.js';
+import { TERM_CATEGORIES, TERM_SCOPES } from '../../core/types.js';
 import type { LexiconFile, LoadedLexicon, Term, TermScope, VoiceHistoryEntry } from '../../core/index.js';
 import { errorMessage } from '../../util/errors.js';
-import { HARVEST_ROOTS_ENV, SUGGESTION_KINDS, containedPath, guarded, log, mcpWriteOpts, nonBlank, readableRoots, shellWord, textResult, untrustedWriteFields, writableProjectFile } from '../shared.js';
+import { HARVEST_ROOTS_ENV, SUGGESTION_KINDS, containedPath, coreFn, guarded, log, mcpWriteOpts, nonBlank, readableRoots, shellWord, textResult, untrustedWriteFields, writableProjectFile } from '../shared.js';
 import { cliCommand } from '../../util/cli-hint.js';
 import type { ToolRegistrar } from '../shared.js';
+
+const addTerm = coreFn('addTerm');
+const addTerms = coreFn('addTerms');
+const defaultProjectPath = coreFn('defaultProjectPath');
+const harvestReport = coreFn('harvestReport');
+const harvestTruncatedNote = coreFn('harvestTruncatedNote');
+const isProjectTrustError = coreFn('isProjectTrustError');
+const loadLexicon = coreFn('loadLexicon');
+const loadVoiceHistory = coreFn('loadVoiceHistory');
+const removeTerm = coreFn('removeTerm');
+const resolvePaths = coreFn('resolvePaths');
+const spellingKey = coreFn('spellingKey');
+const suggestAliases = coreFn('suggestAliases');
+const suggestTerms = coreFn('suggestTerms');
+const termHolders = coreFn('termHolders');
 
 /** The most suggestions one apply_suggestion call takes in `suggestions`. */
 const APPLY_SUGGESTIONS_MAX = 100;

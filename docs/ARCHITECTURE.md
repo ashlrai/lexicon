@@ -56,9 +56,12 @@ src/
     history.ts              voice/history.jsonl (newest 1000 lines)
     voice.ts                runVoice, runVoiceToggle, runVoiceStatus, runVoiceListDevices; exit codes 0/1/2/3
   cli/
-    index.ts                commander wiring (bin: lexicon), 27 commands
+    index.ts                lone version flags (bin: lexicon), otherwise loads run.ts
+    run.ts                  CLI dispatch, handshake, cwd validation and error handling
+    program.ts              lightweight commander wiring; handlers loaded on command execution
+    args.ts                 IO interface, argument parsing and usage-error helpers
     cli-entry.ts            package name, $LEXICON_CLI, resolveCliEntry(): which file the installers point at
-    io.ts                   the IO seam every handler writes through, plus bold/dim/safe/renderTable
+    io.ts                   re-exports args.ts helpers, plus bold/dim/safe/renderTable
     prompt.ts               dependency-free readline prompter used by the interactive commands
     claude-settings.ts      merging hooks into Claude Code's settings.json
     serve-paths.ts          launchd plist and systemd unit paths for lexicon serve --install
@@ -115,7 +118,7 @@ tests/                      vitest, one file per module, e2e.test.ts for subproc
 bench/                      accuracy benchmarks: synthetic corpus and synthesized speech through whisper.cpp
 ```
 
-Rules: ESM with `.js` suffixes on relative imports, NodeNext resolution, no default exports, no `any` in public signatures, Node 20 or newer. Siblings import each other only through `../core/index.js`; `src/util/` is the one documented exception, imported directly by path from every layer because it sits below all of them and imports nothing back. `src/core` never imports from `cli`, `mcp`, `hooks`, `daemon`, `serve` or `voice`. The MCP server imports CLI handlers (`runDoctorReport`, `runInstall`, `runImport`, `runSetup`) statically so the agent-native tools and the terminal share one code path; nothing in the static graph may also be dynamic-imported, or esbuild lazy-wraps the shared subgraph and the plugin bundle fails to load.
+Rules: ESM with `.js` suffixes on relative imports, NodeNext resolution, no default exports, no `any` in public signatures, Node 20 or newer. Cross-module core imports use `../core/index.js`, except dependency-free `core/caps.js` and `core/types.js` metadata needed during startup. `src/util/` is imported directly by path from every layer because it sits below all of them and imports nothing back. Shell quoting lives in `util/shell.ts`, re-exported through the core API. `src/core` never imports from `cli`, `mcp`, `hooks`, `daemon`, `serve` or `voice`. The MCP server loads the core through `shared.ts`'s memoized `loadCore()` and dynamically imports CLI handlers inside tool calls, so the agent-native tools and terminal share one code path without loading those handlers during initialize. `guarded()` awaits the core before a tool body runs; resources and prompts await the server load function. Keep the core barrel and CLI handlers out of the static MCP graph: mixing static and dynamic imports of the heavy graph can make esbuild wrap shared zod classes and break the plugin bundle.
 
 ## Data flow
 

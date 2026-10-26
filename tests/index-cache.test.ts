@@ -181,7 +181,7 @@ describe('indexKey', () => {
 });
 
 /** See the fingerprint test above. */
-const RECORDED = { version: 1, digest: 'b9c8de5747ec3df1b3bf31358fa5a885539badd7c8bc234ccf339b66b702c7d8' };
+const RECORDED = { version: 1, digest: '77e1614e4137435267d8aaab733558ae874a823fe2fef757c6aca0e52c9fd61b' };
 
 describe('loadMatcherIndex', () => {
   let tmp: string;

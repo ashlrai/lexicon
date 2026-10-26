@@ -16,7 +16,11 @@
 import { readFileSync } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { isRecord } from './json.js';
+
+/** A plain object. Inlined so reading the version does not load util/json.ts. */
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value);
+}
 
 export const PACKAGE_NAME = '@ashlr/lexicon';
 

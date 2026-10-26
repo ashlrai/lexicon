@@ -24,6 +24,7 @@ import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { isRecord } from '../util/json.js';
+import { IMPLEMENTED_IMPORT_SOURCES } from './caps.js';
 import { HARVEST_STOPLIST, harvestAliases } from './harvest.js';
 import { addTerm } from './store.js';
 import type { StoreOptions } from './store.js';
@@ -33,7 +34,7 @@ export const IMPORT_SOURCE_IDS = ['contacts', 'calendar', 'github', 'email', 'sl
 export type ImportSourceId = (typeof IMPORT_SOURCE_IDS)[number];
 
 /** Sources the wizard can actually harvest from today. */
-export const IMPLEMENTED_IMPORT_SOURCES: readonly ImportSourceId[] = ['contacts', 'calendar', 'github'];
+export { IMPLEMENTED_IMPORT_SOURCES };
 
 export type ImportExec = (file: string, args: readonly string[]) => string;
 

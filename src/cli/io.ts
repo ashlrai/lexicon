@@ -9,44 +9,45 @@
  * used to carry its own copy of `line`, `safe` and `resolveCwd`.
  */
 import { statSync } from 'node:fs';
-import { InvalidArgumentError } from 'commander';
-import type { Command } from 'commander';
 import path from 'node:path';
 import { TERM_CATEGORIES, commandLine, isProjectTrustError, sanitizeForDisplay, sanitizeForDisplayMax, shellWord, skippedProjectNote } from '../core/index.js';
 import type { LearnConflict, LoadedLexicon, TermCategory, TermHolder } from '../core/index.js';
 import { errorMessage } from '../util/errors.js';
+import { CliRefusal, printJsonError, type IO } from './args.js';
+import { unreadableLexiconEdit } from './lexicon-edit-hint.js';
+
+// Help and usage-error helpers live in args.ts so --help does not load this
+// file's core import. Re-exported so existing `from './io.js'` imports stay.
+export {
+  argvRequestsJson,
+  CliRefusal,
+  DEFAULT_NEXT_STEP,
+  exampleAfterMissingArgument,
+  jsonError,
+  jsonFlagsOf,
+  line,
+  nonNegativeIntOption,
+  optsRequestJson,
+  parsePort,
+  positiveIntOption,
+  printJsonError,
+  processIO,
+  unknownCommandHint,
+  usageErrorJson,
+  wholeNumber,
+  type IO,
+  type JsonError,
+} from './args.js';
+export { unreadableLexiconEdit } from './lexicon-edit-hint.js';
 
 // ---------------------------------------------------------------------------
 // The output sink
 // ---------------------------------------------------------------------------
 
-/**
- * Where a command writes. Handlers take one instead of touching `process`
- * directly, so a test can run a command and read back exactly what it printed.
- */
-export interface IO {
-  stdout(s: string): void;
-  stderr(s: string): void;
-}
-
-export const processIO: IO = {
-  stdout: (s) => {
-    process.stdout.write(s);
-  },
-  stderr: (s) => {
-    process.stderr.write(s);
-  },
-};
-
 /** Options every command accepts. */
 export interface CommonOptions {
   /** Directory used for project-lexicon discovery. Default process.cwd(). */
   cwd?: string;
-}
-
-/** Write one line to stdout. `line(io)` writes a blank one. */
-export function line(io: IO, s = ''): void {
-  io.stdout(`${s}\n`);
 }
 
 export function resolveCwd(opts: CommonOptions): string {
@@ -269,31 +270,9 @@ function ownNextStep(err: unknown): string | undefined {
   return undefined;
 }
 
-/**
- * The stdout document of a `--json` command that failed: `{ ok: false, error,
- * nextStep }`, as `setup --json` prints it. Under --json stdout is the one
- * thing a script reads, so a refusal that only went to stderr left it with an
- * empty document to parse. The text is unsanitized (it is JSON, not a
- * terminal line), like every other `--json` field. `nextStep` is always
- * there: the caller's, else DEFAULT_NEXT_STEP, so a script reads the same
- * three keys from every failure (a store error, an unknown flag, a refusal).
- */
-export interface JsonError {
-  ok: false;
-  error: string;
-  nextStep: string;
-}
-
-/** The `nextStep` of a failure that has no more specific one. */
-export const DEFAULT_NEXT_STEP = 'fix what error names, then run the command again (its --help lists the flags)';
-
 /** The `nextStep` of a write the store refused because the project lexicon is not trusted. */
 export const PROJECT_TRUST_NEXT_STEP =
   'review the project lexicon and run lexicon trust, then run the command again; or write to the global lexicon instead';
-
-export function jsonError(error: string, nextStep?: string): JsonError {
-  return { ok: false, error, nextStep: nextStep || DEFAULT_NEXT_STEP };
-}
 
 /**
  * The stdout document of a `--json` command that succeeded with an object:
@@ -302,37 +281,6 @@ export function jsonError(error: string, nextStep?: string): JsonError {
  */
 export function jsonOk<T extends object>(doc: T): { ok: true } & T {
   return { ok: true, ...doc };
-}
-
-/** Print `jsonError(error, nextStep)` on stdout. */
-export function printJsonError(io: IO, error: string, nextStep?: string): void {
-  io.stdout(`${JSON.stringify(jsonError(error, nextStep), null, 2)}\n`);
-}
-
-/**
- * Whether a command line asked for `--json`: the flag appears before any `--`
- * (after it, `--json` is text for `normalize`, not a flag). index.ts uses it
- * for the errors commander raises before any handler runs, when no command's
- * parsed options exist to read it from. `flags` are the spellings that ask
- * for JSON on that command: `--json`, plus `--full` where it implies --json
- * (`list`, `harvest`).
- */
-export function argvRequestsJson(args: readonly string[], flags: readonly string[] = ['--json']): boolean {
-  const end = args.indexOf('--');
-  const before = end === -1 ? args : args.slice(0, end);
-  return flags.some((flag) => before.includes(flag));
-}
-
-/**
- * A refusal raised before a command runs (see `cwdOptionProblem`): `index.ts`
- * reports it through `refuse`, so it gets the `lexicon:` lines and, under
- * --json, `{ ok: false, error, nextStep }`.
- */
-export class CliRefusal extends Error {
-  constructor(message: string, readonly nextStep?: string) {
-    super(message);
-    this.name = 'CliRefusal';
-  }
 }
 
 /**
@@ -376,53 +324,6 @@ export function cwdOptionProblem(cwd: string | undefined): CliRefusal | undefine
 }
 
 /**
- * The flags that ask `cmd` for a JSON document: `--json`, and `--full` on a
- * command that defines it (`list --full` and `harvest --full` imply --json).
- */
-export function jsonFlagsOf(cmd: { options: readonly { long?: string }[] } | undefined): string[] {
-  return cmd?.options.some((o) => o.long === '--full') ? ['--json', '--full'] : ['--json'];
-}
-
-/** Whether a command's parsed options ask for JSON: `--json`, or `--full`, which implies it. */
-export function optsRequestJson(opts: { json?: unknown; full?: unknown } | undefined): boolean {
-  return opts?.json === true || opts?.full === true;
-}
-
-/**
- * The `--json` document for a commander usage error (an unknown option or
- * command, a missing argument, an invalid option value): commander's message
- * without its `error: ` prefix, and the `--help` command of the command that
- * rejected the line (`lexicon pack add`, or just `lexicon`) as `nextStep`.
- */
-export function usageErrorJson(message: string, commandPath: string): JsonError {
-  const error = message.replace(/^error:\s*/, '').trim() || 'invalid command line';
-  return jsonError(error, `see the usage: ${commandPath} --help`);
-}
-
-/**
- * Names a first-time user tries that are not lexicon commands, mapped to the
- * command that does that job. commander's own suggestion goes by spelling
- * alone, so `status` got `stats` (term counts) instead of `doctor`.
- */
-const OTHER_COMMAND_NAMES: Readonly<Record<string, string>> = {
-  status: 'Did you mean doctor? It checks the setup; stats counts terms and hits',
-  check: 'Did you mean doctor? It checks the lexicon files and the agent integration',
-  version: 'the version is: lexicon --version',
-  config: 'lexicon path prints where the lexicon files are; lexicon edit opens the global one',
-  show: 'Did you mean list? It prints the terms',
-  delete: 'Did you mean remove? e.g. lexicon remove "Ashlr.AI"',
-};
-
-/**
- * The hint for an unknown command `name` that is another tool's name for a
- * lexicon command (`status`, `version`, `config`), or undefined to keep
- * commander's spelling suggestion.
- */
-export function unknownCommandHint(name: string): string | undefined {
-  return Object.hasOwn(OTHER_COMMAND_NAMES, name) ? OTHER_COMMAND_NAMES[name] : undefined;
-}
-
-/**
  * A refusal that is not an exception: the `lexicon: <error>` line (and a
  * `lexicon: <nextStep>` line) on stderr and, under --json, the `JsonError`
  * document on stdout. Exit code 1.
@@ -447,17 +348,6 @@ export function unreadableLexiconHint(message: string): string | undefined {
   }
   const edit = unreadableLexiconEdit(message);
   return edit ? `the command stopped and nothing was changed; fix that file first (run: ${edit}), then check it with: lexicon doctor` : undefined;
-}
-
-/**
- * The `lexicon edit` command that opens the file a store parse/validation
- * error names (`--project` for a `.lexicon.yaml`), or undefined when the
- * message is not one. The MCP server words its own next step around it.
- */
-export function unreadableLexiconEdit(message: string): string | undefined {
-  const m = /^(?:Failed to parse lexicon YAML|Invalid lexicon) at (.+?): /.exec(message);
-  if (!m) return undefined;
-  return path.basename(m[1] ?? '') === '.lexicon.yaml' ? 'lexicon edit --project' : 'lexicon edit';
 }
 
 /** One stderr line when a project lexicon exists but was not merged (untrusted or changed). */
@@ -531,60 +421,4 @@ export function conflictLine(c: LearnConflict): string {
   return c.as === 'alias'
     ? `warn: ${safe(c.spelling)} is also an alias of ${safe(c.canonical)} (${c.scope}), so it may still be corrected to that; to drop it: ${shownCommand(['lexicon', 'remove', c.canonical, '--alias', c.spelling, `--${c.scope}`])}`
     : `warn: ${safe(c.spelling)} is its own term (${c.scope}), so it may still be kept as written; to drop that term: ${shownCommand(['lexicon', 'remove', c.canonical, `--${c.scope}`])}`;
-}
-
-/**
- * A commander option parser for a positive integer flag. A refused value
- * throws InvalidArgumentError, so commander names the option (`option
- * '--limit <n>' argument '0' is invalid.`), followed by an example of a good
- * one for that flag (`expected a positive integer, e.g. --limit 50`): the bare
- * "expected a positive integer" did not show what to type. Only a string of
- * digits (surrounding spaces aside) is taken, so `5abc` and `1.5` are refused
- * rather than read as 5 and 1.
- */
-export function positiveIntOption(flag: string, example: number, max?: number): (value: string) => number {
-  return (value: string): number => {
-    const n = wholeNumber(value);
-    if (n === undefined || n <= 0) throw new InvalidArgumentError(`expected a positive integer, e.g. ${flag} ${example}`);
-    if (max !== undefined && n > max) throw new InvalidArgumentError(`expected a positive integer of at most ${max}, e.g. ${flag} ${example}`);
-    return n;
-  };
-}
-
-/** Like positiveIntOption, but 0 is allowed (an `--offset` that starts at the first item). */
-export function nonNegativeIntOption(flag: string, example: number): (value: string) => number {
-  return (value: string): number => {
-    const n = wholeNumber(value);
-    if (n === undefined) throw new InvalidArgumentError(`expected a whole number (0 or more), e.g. ${flag} ${example}`);
-    return n;
-  };
-}
-
-/**
- * A string of digits (surrounding spaces aside) as a safe integer, else
- * undefined. The rule positiveIntOption and the handlers' own integer options
- * share: parseInt read `5abc` as 5 and `1.5` as 1.
- */
-export function wholeNumber(value: string): number | undefined {
-  const text = value.trim();
-  if (!/^[0-9]+$/.test(text)) return undefined;
-  const n = Number(text);
-  return Number.isSafeInteger(n) ? n : undefined;
-}
-
-/**
- * After a missing-argument error, print `example`; after any other usage
- * error (an unknown option, say), only where the usage is. An example of the
- * right call does not answer `unknown option '--bogus'`.
- */
-export function exampleAfterMissingArgument(cmd: Command, example: string): Command {
-  const names: string[] = [];
-  for (let c: Command | null = cmd; c; c = c.parent) names.unshift(c.name());
-  const usage = `(use ${names.join(' ')} --help for usage)`;
-  const error = cmd.error.bind(cmd);
-  cmd.error = (message, errorOptions) => {
-    cmd.showHelpAfterError(errorOptions?.code === 'commander.missingArgument' ? example : usage);
-    return error(message, errorOptions);
-  };
-  return cmd;
 }

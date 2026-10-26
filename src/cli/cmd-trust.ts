@@ -15,7 +15,6 @@
  */
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
-import type { Command } from 'commander';
 import {
   PROJECT_FILE_NAME,
   getTrustPath,
@@ -317,30 +316,4 @@ async function runTrustList(cwd: string, opts: TrustOptions, io: IO): Promise<nu
   return 0;
 }
 
-export function registerTrustCommands(program: Command, io: IO, deps: TrustDeps = {}): void {
-  const globals = (): { cwd?: string } => {
-    const { cwd } = program.opts<{ cwd?: string }>();
-    return cwd ? { cwd } : {};
-  };
-  const done = (code: number): void => {
-    if (code !== 0) process.exitCode = code;
-  };
-
-  program
-    .command('trust')
-    .description('approve a project .lexicon.yaml so its terms are merged (shows a preview, then asks on a terminal)')
-    .argument('[path]', 'lexicon file or project directory (default: the project .lexicon.yaml for the current directory)')
-    .option('--list', 'list trusted project lexicons and whether they still match')
-    .option('-y, --yes', 'trust without asking (required off a terminal)')
-    .option('--json', 'print the result as JSON: ok, then the object MCP trust_project returns, with the full preview where MCP has a summary (with --list: { ok, registry, trustAll, trusted })')
-    .action(async (target: string | undefined, opts: { list?: boolean; yes?: boolean; json?: boolean }) =>
-      done(await runTrust(target, { ...opts, ...globals() }, io, deps)),
-    );
-
-  program
-    .command('untrust')
-    .description('revoke approval for a project .lexicon.yaml')
-    .argument('[path]', 'lexicon file or project directory (default: the project .lexicon.yaml for the current directory)')
-    .option('--json', 'print { ok, action, path, removed, registry, summary } as JSON, as MCP trust_project returns it plus ok')
-    .action(async (target: string | undefined, opts: { json?: boolean }) => done(await runUntrust(target, { ...opts, ...globals() }, io)));
-}
+export { registerTrustCommands } from './program.js';
