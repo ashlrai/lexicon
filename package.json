@@ -59,10 +59,12 @@
     "docs:cli": "node --import tsx scripts/gen-cli-docs.ts",
     "check:links": "node scripts/check-links.mjs",
     "check:server-json": "node scripts/check-server-json.mjs",
-    "check:facts": "node scripts/check-facts.mjs",
+    "check:facts": "node scripts/check-facts.mjs && node scripts/site-facts.mjs --check",
     "smoke": "node scripts/smoke.mjs",
     "prepublishOnly": "npm run build && npm run build:bundle && npm test",
     "build:site": "node scripts/build-site.mjs",
+    "site:facts": "node scripts/site-facts.mjs",
+    "check:site": "node scripts/site-facts.mjs --check",
     "dev:site": "npm run build:site && node site/serve.mjs",
     "build:extension": "node scripts/build-extension.mjs",
     "bench:compare": "node --import tsx bench/audio/compare.ts"

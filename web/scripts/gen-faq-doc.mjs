@@ -17,6 +17,7 @@
 import { readFileSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { deriveSiteFacts, factsDocument } from '../../scripts/site-facts.mjs';
 
 const webRoot = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const repoRoot = resolve(webRoot, '..');
@@ -48,7 +49,11 @@ const constant = (name) => {
   return m[1];
 };
 
-const FAQ = eval(sliceArray('FAQ'));
+// FAQ answers interpolate commands and counts from FACTS (the same generated
+// document web/lib/generated/facts.json carries), so the eval gets it in scope
+// rather than the slice carrying template literals that never resolve.
+const FACTS = factsDocument(deriveSiteFacts(repoRoot));
+const FAQ = eval(`(() => { const FACTS = ${JSON.stringify(FACTS)}; return ${sliceArray('FAQ')}; })()`);
 const SITE_URL = constant('SITE_URL');
 const REPO = constant('REPO');
 
@@ -74,6 +79,8 @@ ${FAQ.map((f) => `## ${f.q}\n\n${f.a}`).join('\n\n')}
 - [Security](../SECURITY.md): the threat model and the trust gate.
 - [Benchmark](BENCHMARK.md): the measurements, the method and what still fails.
 - Issues and questions: ${REPO}/issues
+
+Back to [the docs index](README.md).
 `;
 
 const existing = (() => {

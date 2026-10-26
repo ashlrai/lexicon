@@ -1,6 +1,7 @@
 import {
   DEMO,
   DESCRIPTION,
+  FACTS,
   FAQ,
   MCP_TOOLS,
   NPM,
@@ -81,11 +82,11 @@ const graph = [
     },
     featureList: [
       'Corrects mis-transcribed proper nouns in dictated text',
-      'MCP server with twenty-one tools, two resources and two prompts',
+      `MCP server with ${FACTS.words.tools} tools, ${FACTS.words.resources} resources and ${FACTS.words.prompts} prompts`,
       'Claude Code plugin with SessionStart and UserPromptSubmit hooks',
       'Browser extension for ChatGPT, Claude, Gemini, Grok, Perplexity, Copilot and Poe',
       'macOS menu bar app that rewrites any focused text field',
-      'Sixteen export formats and seven dictionary importers',
+      `${FACTS.words.exportFormats} export formats and ${FACTS.words.importFormats} dictionary importers`,
       'Runs entirely locally: no account, no telemetry, no network calls beyond loopback',
     ],
     keywords:

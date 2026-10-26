@@ -1,4 +1,5 @@
 import icons from '@/lib/generated/brand-icons.json';
+import { FACTS } from '@/lib/site';
 
 /*
  * Nominative use: this wall says what Lexicon is compatible with, nothing more.
@@ -66,7 +67,7 @@ const ROWS: Row[] = [
       { name: 'OpenAI Codex', mono: 'CX' },
       { name: 'VS Code', mono: 'VS' },
     ],
-    note: 'lexicon install writes the MCP server into each client’s own config file. Any other MCP client works too: lexicon install generic prints the block to paste.',
+    note: 'The installer writes the MCP server into each client’s own config file. Any other MCP client works too: lexicon install generic prints the block to paste.',
   },
   {
     label: 'browser chats',
@@ -86,7 +87,7 @@ const ROWS: Row[] = [
   {
     label: 'dictation and speech engines',
     lead: 'It also exports your words to',
-    // src/core/exporters: 16 formats
+    // src/core/exporters
     items: [
       { name: 'Wispr Flow', mono: 'WF' },
       { name: 'Superwhisper', mono: 'SW' },
@@ -98,7 +99,7 @@ const ROWS: Row[] = [
       { name: 'espanso', mono: 'ES' },
       { name: 'macOS Text Replacement', mono: 'TR' },
     ],
-    note: 'Sixteen export formats in all. Lexicon writes the dictionary, keyword list or prompt each of these accepts, and it never calls their APIs, and eight importers read the dictionaries back out again.',
+    note: `${FACTS.words.exportFormats} export formats in all. Lexicon writes the dictionary, keyword list or prompt each of these accepts, and it never calls their APIs, and ${FACTS.words.importFormats} importers read the dictionaries back out again.`,
   },
 ];
 
