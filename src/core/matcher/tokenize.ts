@@ -367,8 +367,7 @@ function trimTrailingPunct(raw: string): string {
 
 export function tokenize(text: string, skipCode: boolean): Token[] {
   const ranges = skipCode ? collectRanges(text) : [];
-  const tokens: Token[] = [];
-  const draft: Array<Omit<Token, 'joinsNext'>> = [];
+  const tokens: Array<Omit<Token, 'joinsNext'> & { joinsNext: boolean }> = [];
   let rangeIdx = 0;
 
   TOKEN_RE.lastIndex = 0;
@@ -395,23 +394,21 @@ export function tokenize(text: string, skipCode: boolean): Token[] {
     if (POSSESSIVE_RE.test(raw) && raw.length > 2) {
       base = raw.slice(0, -2);
     }
-    draft.push({
+    const previous = tokens[tokens.length - 1];
+    if (previous) previous.joinsNext = /^\s+$/.test(text.slice(previous.end, start));
+    const textLower = foldLower(raw);
+    tokens.push({
       text: raw,
       start,
       end,
       base,
       baseEnd: start + base.length,
-      textLower: foldLower(raw),
-      baseLower: foldLower(base),
+      textLower,
+      baseLower: base === raw ? textLower : foldLower(base),
       skipped,
+      joinsNext: false,
     });
   }
 
-  for (let i = 0; i < draft.length; i++) {
-    const t = draft[i];
-    const next = draft[i + 1];
-    const joinsNext = next !== undefined && /^\s+$/.test(text.slice(t.end, next.start));
-    tokens.push({ ...t, joinsNext });
-  }
   return tokens;
 }

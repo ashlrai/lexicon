@@ -18206,7 +18206,7 @@ function collapse(s) {
   return foldLower(s).replace(/[^\p{L}\p{N}]+/gu, "");
 }
 function squash(s) {
-  return s.replace(/\s+/g, " ").trim();
+  return /\s/.test(s) ? s.replace(/\s+/g, " ").trim() : s;
 }
 function phoneticKey(s) {
   const alpha = alphaOnly(s);
@@ -18461,7 +18461,6 @@ function trimTrailingPunct(raw) {
 function tokenize(text, skipCode) {
   const ranges = skipCode ? collectRanges(text) : [];
   const tokens = [];
-  const draft = [];
   let rangeIdx = 0;
   TOKEN_RE.lastIndex = 0;
   let m;
@@ -18484,22 +18483,20 @@ function tokenize(text, skipCode) {
     if (POSSESSIVE_RE.test(raw) && raw.length > 2) {
       base = raw.slice(0, -2);
     }
-    draft.push({
+    const previous = tokens[tokens.length - 1];
+    if (previous) previous.joinsNext = /^\s+$/.test(text.slice(previous.end, start));
+    const textLower = foldLower(raw);
+    tokens.push({
       text: raw,
       start,
       end,
       base,
       baseEnd: start + base.length,
-      textLower: foldLower(raw),
-      baseLower: foldLower(base),
-      skipped
+      textLower,
+      baseLower: base === raw ? textLower : foldLower(base),
+      skipped,
+      joinsNext: false
     });
-  }
-  for (let i = 0; i < draft.length; i++) {
-    const t = draft[i];
-    const next = draft[i + 1];
-    const joinsNext = next !== void 0 && /^\s+$/.test(text.slice(t.end, next.start));
-    tokens.push({ ...t, joinsNext });
   }
   return tokens;
 }
@@ -18534,14 +18531,14 @@ function push(map, key, value) {
   if (list) list.push(value);
   else map.set(key, [value]);
 }
-function isSpelledOut(norm2) {
-  return norm2.split(" ").every((t) => alphaOnly(t).length <= 2);
-}
 function separatorOffsets(s) {
+  return foldedSeparatorOffsets(foldLower(s));
+}
+function foldedSeparatorOffsets(s) {
   const out = /* @__PURE__ */ new Set();
   let n = 0;
   let gap = false;
-  for (const ch of foldLower(s)) {
+  for (const ch of s) {
     if (ALNUM_RE.test(ch)) {
       if (gap && n > 0) out.add(n);
       gap = false;
@@ -18590,6 +18587,7 @@ function buildIndex(lexicon) {
   const exact = /* @__PURE__ */ new Map();
   const collapsed = /* @__PURE__ */ new Map();
   const phoneticKeys = /* @__PURE__ */ new Map();
+  const primaryKeys = /* @__PURE__ */ new Map();
   const fuzzyBuckets = /* @__PURE__ */ new Map();
   const never2 = [];
   const hasExplicitAliases = [];
@@ -18619,9 +18617,10 @@ function buildIndex(lexicon) {
     for (const { alias, explicit } of candidates) {
       const norm2 = squash(alias);
       if (!norm2) continue;
-      const normLower = foldLower(norm2);
+      const folded = foldDiacritics(norm2);
+      const normLower = folded.toLowerCase();
       const collapsedRaw = norm2.replace(/[^\p{L}\p{N}]+/gu, "");
-      const collapsedLower = collapse(norm2);
+      const collapsedLower = normLower.replace(/[^\p{L}\p{N}]+/gu, "");
       if (!collapsedLower) continue;
       const dedupeKey = `${normLower}\0${explicit ? 1 : 0}`;
       if (seen.has(dedupeKey)) continue;
@@ -18639,7 +18638,7 @@ function buildIndex(lexicon) {
         collapsedRaw,
         collapsed: collapsedLower,
         tokenCount,
-        separators: separatorOffsets(norm2),
+        separators: foldedSeparatorOffsets(normLower),
         explicit
       };
       aliasEntries.push(entry);
@@ -18648,9 +18647,14 @@ function buildIndex(lexicon) {
       push(fuzzyBuckets, tokenCount, entry);
       maxWindow = Math.max(maxWindow, tokenCount);
       maxFuzzyWindow = Math.max(maxFuzzyWindow, tokenCount);
-      const alpha = alphaOnly(norm2);
-      if (alpha.length >= 3 && !isSpelledOut(norm2) && termKeys.size < MAX_PHONETIC_KEYS_PER_TERM) {
-        const key = doubleMetaphone(alpha)[0];
+      const alpha = folded.replace(/[^\p{L}]+/gu, "").toLowerCase();
+      const spelledOut = aliasTokens.every((token) => token.replace(/[^\p{L}]+/gu, "").length <= 2);
+      if (alpha.length >= 3 && !spelledOut && termKeys.size < MAX_PHONETIC_KEYS_PER_TERM) {
+        let key = primaryKeys.get(alpha);
+        if (key === void 0) {
+          key = doubleMetaphone(alpha)[0];
+          primaryKeys.set(alpha, key);
+        }
         if (key.length >= PHONETIC_MIN_KEY) {
           const dedupePhonetic = `${key}\0${alpha.length}`;
           if (!termKeys.has(dedupePhonetic)) {
@@ -19782,7 +19786,7 @@ var INDEX_FORMAT_VERSION, isStr, isInt, isNum, isBool, isArr;
 var init_serialize = __esm({
   "src/core/matcher/serialize.ts"() {
     init_build();
-    INDEX_FORMAT_VERSION = 1;
+    INDEX_FORMAT_VERSION = 2;
     isStr = (v) => typeof v === "string";
     isInt = (v) => typeof v === "number" && Number.isInteger(v) && v >= 0;
     isNum = (v) => typeof v === "number" && Number.isFinite(v);

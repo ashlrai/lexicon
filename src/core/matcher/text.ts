@@ -44,7 +44,8 @@ export function collapse(s: string): string {
 
 /** Whitespace collapsed to single spaces, trimmed. */
 export function squash(s: string): string {
-  return s.replace(/\s+/g, ' ').trim();
+  // Most aliases are single names. Avoid allocating a replacement on that path.
+  return /\s/.test(s) ? s.replace(/\s+/g, ' ').trim() : s;
 }
 
 /** Double-metaphone primary key of the alpha-only form of `s`. '' when nothing is left. */

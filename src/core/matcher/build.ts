@@ -14,7 +14,7 @@ import {
   PHONETIC_MIN_KEY,
   isNonWordToken,
 } from './tuning.js';
-import { alphaOnly, collapse, foldLower, squash } from './text.js';
+import { collapse, foldDiacritics, foldLower, squash } from './text.js';
 
 export interface AliasEntry {
   readonly termIndex: number;
@@ -106,11 +106,6 @@ export function push<K, V>(map: Map<K, V[]>, key: K, value: V): void {
   else map.set(key, [value]);
 }
 
-/** True when every token is one or two letters: an acronym spelled out letter by letter. */
-export function isSpelledOut(norm: string): boolean {
-  return norm.split(' ').every((t) => alphaOnly(t).length <= 2);
-}
-
 const ALNUM_RE = /[\p{L}\p{N}]/u;
 
 /**
@@ -131,10 +126,14 @@ const ALNUM_RE = /[\p{L}\p{N}]/u;
  * `collapse` counts: folding can change a string's length (ss for ß, th for þ).
  */
 export function separatorOffsets(s: string): Set<number> {
+  return foldedSeparatorOffsets(foldLower(s));
+}
+
+function foldedSeparatorOffsets(s: string): Set<number> {
   const out = new Set<number>();
   let n = 0;
   let gap = false;
-  for (const ch of foldLower(s)) {
+  for (const ch of s) {
     if (ALNUM_RE.test(ch)) {
       if (gap && n > 0) out.add(n);
       gap = false;
@@ -215,6 +214,9 @@ export function buildIndex(lexicon: Lexicon): MatcherIndex {
   const exact = new Map<string, AliasEntry[]>();
   const collapsed = new Map<string, AliasEntry[]>();
   const phoneticKeys = new Map<string, PhoneticEntry[]>();
+  // Versioned names and suffixed aliases often share the same letters.
+  // Keep this cache local so unrelated lexicons cannot retain vocabulary.
+  const primaryKeys = new Map<string, string>();
   const fuzzyBuckets = new Map<number, AliasEntry[]>();
   const never: Set<string>[] = [];
   const hasExplicitAliases: boolean[] = [];
@@ -247,9 +249,10 @@ export function buildIndex(lexicon: Lexicon): MatcherIndex {
     for (const { alias, explicit } of candidates) {
       const norm = squash(alias);
       if (!norm) continue;
-      const normLower = foldLower(norm);
+      const folded = foldDiacritics(norm);
+      const normLower = folded.toLowerCase();
       const collapsedRaw = norm.replace(/[^\p{L}\p{N}]+/gu, '');
-      const collapsedLower = collapse(norm);
+      const collapsedLower = normLower.replace(/[^\p{L}\p{N}]+/gu, '');
       if (!collapsedLower) continue;
       // Explicit wins over implicit when the user lists the canonical itself.
       const dedupeKey = `${normLower}\u0000${explicit ? 1 : 0}`;
@@ -269,7 +272,7 @@ export function buildIndex(lexicon: Lexicon): MatcherIndex {
         collapsedRaw,
         collapsed: collapsedLower,
         tokenCount,
-        separators: separatorOffsets(norm),
+        separators: foldedSeparatorOffsets(normLower),
         explicit,
       };
       aliasEntries.push(entry);
@@ -282,9 +285,14 @@ export function buildIndex(lexicon: Lexicon): MatcherIndex {
       // Phonetic key, capped per term. Spelled-out letters ("j w t", "ay ar ar")
       // exist for the exact pass only: their keys are one or two consonants
       // that every second English word shares.
-      const alpha = alphaOnly(norm);
-      if (alpha.length >= 3 && !isSpelledOut(norm) && termKeys.size < MAX_PHONETIC_KEYS_PER_TERM) {
-        const key = doubleMetaphone(alpha)[0];
+      const alpha = folded.replace(/[^\p{L}]+/gu, '').toLowerCase();
+      const spelledOut = aliasTokens.every((token) => token.replace(/[^\p{L}]+/gu, '').length <= 2);
+      if (alpha.length >= 3 && !spelledOut && termKeys.size < MAX_PHONETIC_KEYS_PER_TERM) {
+        let key = primaryKeys.get(alpha);
+        if (key === undefined) {
+          key = doubleMetaphone(alpha)[0];
+          primaryKeys.set(alpha, key);
+        }
         if (key.length >= PHONETIC_MIN_KEY) {
           const dedupePhonetic = `${key}\u0000${alpha.length}`;
           if (!termKeys.has(dedupePhonetic)) {

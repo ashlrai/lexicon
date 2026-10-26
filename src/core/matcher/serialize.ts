@@ -32,7 +32,7 @@ import type { AliasEntry, MatcherIndex, PhoneticEntry } from './build.js';
 import { push, sortFuzzyBuckets } from './build.js';
 
 /** Bump whenever buildIndex (or anything it calls) could produce a different index for the same lexicon. */
-export const INDEX_FORMAT_VERSION = 1;
+export const INDEX_FORMAT_VERSION = 2;
 
 /**
  * Exactly what buildIndex reads from `lexicon`, as one string. Two lexicons

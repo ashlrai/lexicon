@@ -35,3 +35,20 @@ describe('robustness and performance', () => {
     expect(best).toBeLessThan(20);
   });
 });
+
+it('builds a 5000-term vocabulary and tokenizes a large transcript within a generous budget', async () => {
+  const { tokenize } = await import('../src/core/matcher/tokenize.js');
+  const terms: Term[] = Array.from({ length: 5_000 }, (_, i) => ({
+    canonical: `Widgetron${i}.AI`,
+    aliases: [`widget tron ${i}`, `wigetron${i}`, `Wídget${i}`],
+  }));
+  const text = "Widget tron's Wídget42 ships to https://example.com/widget beside `wigetron7`.\n".repeat(2_000);
+  const started = performance.now();
+  const index = buildIndex(lex(terms));
+  const tokens = tokenize(text, true);
+  expect(performance.now() - started).toBeLessThan(10_000);
+  expect(index.exact.get('widget tron 4999')?.[0].term).toBe(terms[4999]);
+  expect(index.aliasEntries.length).toBeGreaterThan(30_000);
+  expect(tokens).toHaveLength(20_000);
+  expect(tokens.filter((token) => token.skipped)).toHaveLength(8_000);
+});
