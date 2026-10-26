@@ -17,15 +17,12 @@ run the script again and the startup numbers will differ.
 | --- | --- | --- | --- |
 | Job measured here | Rewrite a transcript after speech-to-text, using aliases, phonetic match and fuzzy match | Expand an exact trigger the user typed | Transcribe audio, with an optional text prompt that biases the decoder |
 | Source | this repo, plus the published npm package `@ashlr/lexicon` 0.5.4 | [espanso/espanso](https://github.com/espanso/espanso) | [ggml-org/whisper.cpp](https://github.com/ggml-org/whisper.cpp) |
-| Stars | | 14,689 | 54,669 |
 | License | MIT | GPL-3.0 | MIT |
 | Release used | source tree `0.5.6` for the library and the source CLI; npm `0.5.4` for the install path | 2.4.1 (GitHub release published 2026-09-02; `espanso --version` prints `2.4.1`) | binary prints `whisper.cpp version: 1.9.5`. The GitHub release `v1.9.5` (published 2026-10-06) lists no assets. Model file `ggml-tiny.en.bin`, 77,704,715 bytes |
 
-Star counts and license identifiers are `stargazers_count` and `license.spdx_id`
-from `https://api.github.com/repos/espanso/espanso` and
+License identifiers are `license.spdx_id` from
+`https://api.github.com/repos/espanso/espanso` and
 `https://api.github.com/repos/ggml-org/whisper.cpp`, fetched 2026-10-26.
-Lexicon has no star count in this table because the comparison is not about
-popularity of this repo.
 
 Why these two: espanso is the widely used open-source text expander (exact
 trigger in, replacement out), which is the same shape as Lexicon's alias tier
@@ -176,10 +173,12 @@ Lexicon does not do, and these tools do:
   service is running. Lexicon does not. The surfaces that come closest
   (`lexicon daemon`, the macOS menu bar app, the browser extension) are
   separate programs, and the daemon was not what this page timed.
-- espanso's `match list` process is smaller and faster on this run: 34,016 kB
-  and 15.9 ms p50, against 83,440 kB and 157.0 ms p50 for Lexicon
-  `--version`. The library call, once Node is up, is 0.028 ms p50 with a
-  built index.
+- espanso is a native binary, and Lexicon starts Node. For scale only (the
+  two commands do different work, so this is not a like-for-like
+  comparison): espanso `match list` was 34,016 kB and 15.9 ms p50, and the
+  Node process behind Lexicon `--version` was 83,440 kB and 157.0 ms p50.
+  The Lexicon library call, once Node is up, is 0.028 ms p50 with a built
+  index.
 - whisper.cpp turns audio into text. Lexicon does not, except by shelling
   out inside `lexicon voice`. A prompt biases the decoder before the
   transcript exists, which a post-pass cannot do. Stacking them is the

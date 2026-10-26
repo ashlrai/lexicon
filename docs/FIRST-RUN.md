@@ -17,13 +17,7 @@ exist only in this tree are called out as source.
 
 ## Timed path
 
-| step | result |
-| --- | --- |
-| `curl ... \| sh`, stdin is not a TTY | 2.977 s, exit 0. Prints `node v22.23.4 ok`, installs `@ashlr/lexicon@0.5.4` (`added 100 packages in 2s`), then `no terminal to ask the setup questions on; run: lexicon setup` |
-| `npm install -g @ashlr/lexicon@0.5.4` again, empty prefix, empty cache | 2.45 s, 100 packages. Peak RSS of npm: 179,276 kB. This is the install without the script's version lookup |
-| `lexicon setup --yes`, blank `HOME`, current directory is not a git repo, published 0.5.4 | 0.21 s, exit 0, peak RSS 91,376 kB. Creates `~/.config/lexicon/lexicon.yaml`. `termsAdded` is empty. The demo prints `can you check whether the Ashler migration landed yet` corrected to `can you check whether the Ashlr.AI migration landed yet`, and says the built-in example was used |
-| the same setup a second time | exit 0, `termsAdded` still empty |
-| `lexicon setup` with stdin closed, no `--yes` | exit 0. Prints `(no terminal: taking the defaults, as with --yes)` and the same seven steps |
+The install and setup timings are in [BENCHMARKS.md](BENCHMARKS.md#install-and-first-result).
 
 Node was already installed. The 2.977 s figure does not include installing
 Node. A machine that still has to fetch Node is outside this measurement.
@@ -48,8 +42,8 @@ and the built-in-example note.
    Pydantic and SaaS. Hetzner is not in it. `cuban eatties` is not an alias
    of Kubernetes. `cooper netties` is: the alias in the example is
    `Cooper Nettie's`, and it matches as an alias at 1.00, not as a phonetic
-   guess. This PR changes both doc blocks to a sentence the command actually
-   corrects, and a test now runs those sentences (`tests/demo.test.ts`).
+   guess. Both doc blocks now use a sentence the command actually corrects,
+   and `tests/demo.test.ts` runs those sentences.
 
    The sentence that works with no lexicon, measured on this source and on
    0.5.4:
@@ -80,11 +74,10 @@ and the built-in-example note.
    `apt-cache policy nodejs` shows candidate `18.19.1+dfsg-6ubuntu5` and
    nothing newer. The script would then reject that Node
    (`Node 20+ is required`). The nvm line was already the next paragraph.
-   This PR changes the Linux hint in `scripts/install.sh` so it says Ubuntu's
-   apt package is often too old (24.04's candidate is 18.19.1) and points at
-   nvm first. The live URL `https://ashlrai.github.io/lexicon/install.sh` is
-   a copy of that file produced by `npm run build:site`. It still has the
-   old hint until that site is deployed. This PR does not deploy it.
+   The Linux hint in `scripts/install.sh` now says Ubuntu's apt package is
+   often too old and points at nvm first. The live URL
+   `https://ashlrai.github.io/lexicon/install.sh` is a copy of that file
+   produced by `npm run build:site` and changes when the site is deployed.
 
 4. Running `normalize` with the current directory inside this repo prints
    `lexicon: untrusted project lexicon skipped: /workspace/.lexicon.yaml (run: lexicon trust)`
@@ -193,68 +186,14 @@ Tool handlers are written to return `{ isError: true }` instead of throwing,
 so a failure is a tool result. stdout is the protocol stream. Diagnostics
 go to stderr.
 
-## Fixes in this PR
-
-- README and [MATCHING.md](MATCHING.md) examples match the built-in lexicon,
-  including the "no terms yet" notice. A test locks the two sentences.
-- `scripts/install.sh` no longer tells Linux users to `apt install nodejs`
-  first. Ubuntu 24.04's package is Node 18.19.1, and the installer requires
-  Node 20. The hint points at nvm, and mentions `dnf` and NodeSource for
-  other distributions.
-- This page and [BENCHMARKS.md](BENCHMARKS.md). The docs index links both.
-
-No version bump, no workflow change, no new CI job. `src/cli/index.ts` and
-`src/mcp/server.ts` were not edited. Another change is already aimed at
-startup lazy-loading in those files.
-
 ## Follow-ups
 
-Ranked by how much of the product they touch. "Small" is one module and its
-tests. "Medium" crosses several commands. "Large" is a new surface.
+Ranked by how much of the product they touch.
 
-1. **Small.** Put Hetzner back into `DEMO_LEXICON` if the empty-lexicon demo
-   should correct `head sner`. It was removed on purpose (the demo is a
-   miniature, and the example file is not in the published tarball). Doing
-   it means updating the test added here and every doc that pastes a
-   first-run sentence. Not done in this PR because the current five terms
-   already demonstrate alias, phonetic and fuzzy.
-
-2. **Small.** When `lexicon setup` guesses a company from a scoped package
-   name, `@ashlr/lexicon` becomes `Ashlr`, and the demo corrects `Ashler` to
-   `Ashlr`. A dotted brand (`Ashlr.AI`) would make the in-repo first run
-   show the spelling the rest of the docs use. Needs a rule that does not
-   invent dots for scopes that never had them, plus the setup tests.
-
-3. **Medium.** `--dry-run` on `add`, `remove`, `learn`, `init`, `untrust`
-   and built-in `pack add`, with the same `{ ok, plan }` shape `setup` uses.
-   Today an agent can preview `setup`, `import`, `install` and `doctor --fix`,
-   and cannot preview `add`. Each command needs its own plan and a test that
-   the file is unchanged.
-
-4. **Medium, and a behavior change.** Off a TTY, `lexicon trust` pins the
-   project file without a yes. The file header says this is so existing
-   scripts keep working, and that `--yes` would not make an unattended run
-   safer because the caller could pass the flag. The MCP tool already
-   refuses to decide. If the CLI should match the MCP tool for agents,
-   off-TTY trust would exit 2 until `--yes`, and every script that trusts
-   today would need the flag. That is why it is not in this PR.
-
-5. **Medium, already in progress elsewhere.** One run of
-   `node scripts/bench/startup.mjs` on this VM spent 157.0 ms p50 and
-   83,440 kB to print `--version`. A normalize of three terms on that same
-   run was 170.5 ms p50. Almost all of that is process startup.
-   Lazy-loading the CLI and MCP entry points is a separate change. Those
-   two files were left alone here. The command and the sample sizes are in
-   [scripts/bench/README.md](../scripts/bench/README.md).
-
-6. **Large.** A system-wide expander in the espanso sense (a resident
-   process, any focused text field, no agent in the loop) is a different
-   product from the CLI. `lexicon daemon` is the start of it and was not
-   part of this measurement. espanso's list command was 15.9 ms p50 and
-   34,016 kB. Closing that gap is the resident process, not another
-   Node cold start.
-
-7. **Release, out of scope here.** The README install puts 0.5.4 on `PATH`.
-   `doctor --fix`, `doctor --json`, `add --json`, `install --json`,
-   `uninstall` and `pending` are in this tree and not in that package. No
-   version bump in this PR.
+1. Small: add Hetzner back to the empty-lexicon demo ([#217](https://github.com/ashlrai/lexicon/issues/217)).
+2. Small: keep a dotted brand when setup guesses a company from a scoped package ([#218](https://github.com/ashlrai/lexicon/issues/218)).
+3. Medium: `--dry-run` on `add`, `remove`, `learn`, `init`, `untrust` and built-in `pack add` ([#219](https://github.com/ashlrai/lexicon/issues/219)).
+4. Medium: off a TTY, `lexicon trust` requires `--yes` ([#216](https://github.com/ashlrai/lexicon/pull/216)).
+5. Medium: lazy-load the CLI and MCP entry points to cut startup ([#212](https://github.com/ashlrai/lexicon/pull/212)).
+6. Large: a resident system-wide expander as a separate surface ([#220](https://github.com/ashlrai/lexicon/issues/220)).
+7. Release: npm still serves 0.5.4 ([#221](https://github.com/ashlrai/lexicon/issues/221)).

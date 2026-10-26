@@ -24,7 +24,7 @@ node_hint() {
   say "Install Node ${MIN_NODE} or newer first:" >&2
   case "$(uname -s 2>/dev/null || echo unknown)" in
     Darwin)  say "  brew install node          (https://brew.sh)" >&2 ;;
-    Linux)   say "  Ubuntu's apt nodejs package is often older than Node ${MIN_NODE} (24.04's candidate is 18.19.1, which this installer rejects). Prefer nvm, below." >&2
+    Linux)   say "  Ubuntu's apt nodejs package is often older than Node ${MIN_NODE}. Prefer nvm, below." >&2
              say "  Elsewhere: sudo dnf install nodejs, or https://github.com/nodesource/distributions" >&2 ;;
     MINGW*|MSYS*|CYGWIN*) say "  winget install OpenJS.NodeJS.LTS" >&2 ;;
   esac

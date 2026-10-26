@@ -85,7 +85,7 @@ brew install ashlrai/tap/lexicon                               # or Homebrew (ma
 npm i -g @ashlr/lexicon                                        # or npm (Node 20+)
 ```
 
-Then open Claude Code and say a sentence with your company name in it. Done. What that install actually did on a clean Linux VM, including the doc lines that did not match, is in [docs/FIRST-RUN.md](docs/FIRST-RUN.md).
+Then open Claude Code and say a sentence with your company name in it. Done. A timed walkthrough of that install on a clean Linux VM, with notes for agents, is in [docs/FIRST-RUN.md](docs/FIRST-RUN.md).
 
 > npm currently serves `@ashlr/lexicon` 0.5.4 while this source tree is 0.5.6 (check with `npm view @ashlr/lexicon version`). Changes since 0.5.4, such as the `lexicon export` format suggestion below, are not in the published npm package yet.
 
