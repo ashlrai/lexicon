@@ -3,7 +3,7 @@
  * lexicon). Only commander wiring lives here; the behaviour is in
  * ../voice/voice.ts so it can be tested without a microphone.
  */
-import { Command, InvalidArgumentError } from 'commander';
+import type { Command } from 'commander';
 import { EXIT_ERROR, runVoice, runVoiceListDevices, runVoiceStatus, runVoiceToggle } from '../voice/voice.js';
 import type { VoiceOptions } from '../voice/voice.js';
 import type { IO } from './io.js';
@@ -47,31 +47,8 @@ const RECORDING_FLAGS = {
   paste: '--paste',
 } as const;
 
-function positiveNumber(value: string): number {
-  const n = Number(value);
-  if (!Number.isFinite(n) || n <= 0) throw new InvalidArgumentError('expected a positive number of seconds');
-  return n;
-}
-
-export function registerVoiceCommands(program: Command, io: IO): void {
-  program
-    .command('voice')
-    .description('dictate locally: record the microphone, transcribe with whisper.cpp, correct with the lexicon')
-    .option('--toggle', 'hotkey mode: first call starts recording in the background, second call stops and transcribes. the first call records with its --device and --seconds, the second transcribes and delivers with its own --model, --lang, --translate, --no-prompt, --no-history, --copy and --paste, so give both calls the same flags')
-    .option('--status', 'print "recording since <time>" (exit 0) or "idle" (exit 1)')
-    .option('--list-devices', 'print the audio input devices ffmpeg can see')
-    .option('--seconds <n>', 'stop recording after n seconds instead of waiting for Enter (with --toggle, at most 600)', positiveNumber)
-    .option('--device <name|index>', 'input device (default: the system default microphone)')
-    .option('--model <name|path>', 'whisper model: a name like base.en or small.en (auto-downloaded) or a ggml file', 'base.en')
-    .option('--lang <code>', 'spoken language', 'en')
-    .option('--translate', 'translate to English (whisper -tr)')
-    .option('--no-prompt', 'do not pass the lexicon canonicals as the whisper initial prompt')
-    .option('--no-history', 'do not append to voice/history.jsonl')
-    .option('--copy', 'also put the corrected text on the clipboard')
-    .option('--paste', 'copy and paste into the frontmost app (macOS; needs Accessibility permission)')
-    .option('--json', 'print { ok: true, raw, output, replacements, summary, model, seconds, ms } as JSON (with --toggle, a press that starts prints {"status":"recording"}; with --status, { ok: true, recording: true, since, pid } while recording or { ok: false, recording: false } when idle); every failure prints { ok: false, error, nextStep?, code } with code the exit code (over the result when there is text, e.g. nothing heard or a failed --paste)')
-    .option('--quiet', 'no status lines on stderr')
-    .action(async (opts: VoiceCliOptions, cmd: Command) => {
+/** Commander action for `lexicon voice`. Loaded only when that command runs. */
+export async function runVoiceCli(program: Command, io: IO, opts: VoiceCliOptions, cmd: Command): Promise<void> {
       // One mode per call: `--status --toggle` answered the status and dropped
       // the toggle without a word, so a hotkey script never recorded.
       const modes = (['toggle', 'status', 'listDevices'] as const).filter((m) => opts[m] === true).map((m) => MODE_FLAGS[m]);
@@ -120,5 +97,6 @@ export function registerVoiceCommands(program: Command, io: IO): void {
       else if (opts.toggle) code = await runVoiceToggle(voiceOpts, io);
       else code = await runVoice(voiceOpts, io);
       if (code !== 0) process.exitCode = code;
-    });
 }
+
+export { registerVoiceCommands } from './program.js';

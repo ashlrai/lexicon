@@ -2,6 +2,7 @@
  * Export the lexicon to the formats other tools understand (Wispr Flow,
  * Superwhisper, Whisper prompt, macOS text replacement, CLAUDE.md, ...).
  */
+import { EXPORT_ALIAS_ROW_FORMATS, EXPORT_FORMAT_ALIASES, EXPORT_MAX_LIMIT } from '../caps.js';
 import { EXPORT_FORMATS } from '../types.js';
 /** Declared in core/types.ts (next to the ExportFormat union it derives); re-exported here, where callers look for it. */
 export { EXPORT_FORMATS } from '../types.js';
@@ -74,11 +75,7 @@ export function isExportFormat(value: string): value is ExportFormat {
  * parsed from text (CLI, HTTP API, the MCP export_lexicon tool);
  * `EXPORT_FORMATS` stays the canonical list.
  */
-export const EXPORT_FORMAT_ALIASES: Readonly<Record<string, ExportFormat>> = {
-  'wispr-flow': 'wispr',
-  'wisprflow': 'wispr',
-  'wispr-flow-csv': 'wispr',
-};
+export { EXPORT_FORMAT_ALIASES };
 
 /** Edit distance between two short strings (insert, delete, substitute). */
 function editDistance(a: string, b: string): number {
@@ -182,9 +179,7 @@ const EXPORTERS: Record<ExportFormat, Exporter> = {
  * `GET /export/:format?limit=` take: a global and a project file of the
  * schema's 5000 terms each, so any merged lexicon fits under it.
  */
-export const EXPORT_MAX_LIMIT = 10000;
-
-export const EXPORT_ALIAS_ROW_FORMATS: readonly ExportFormat[] = ['csv', 'wispr', 'superwhisper', 'macos', 'espanso'];
+export { EXPORT_ALIAS_ROW_FORMATS, EXPORT_MAX_LIMIT };
 
 /** Whether a term has an alias an alias-row format can write a row for. */
 function hasAliasRow(term: Term): boolean {

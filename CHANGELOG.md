@@ -22,6 +22,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Changed
 
+- `lexicon --version` and `lexicon --help` return before the lexicon core loads. A command loads its handler the first time it runs, and the MCP server loads the core on the first tool, resource, or prompt that reads a lexicon. Version text, help text, and tool results are unchanged.
 - `lexicon suggest --apply` reports a pronunciation hint it did not write because the term already has one (`kept the existing hint ... (not replaced)`, action `skipped`) instead of echoing the existing hint as if it had been applied.
 
 ### Added

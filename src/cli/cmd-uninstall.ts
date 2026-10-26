@@ -14,7 +14,6 @@
  */
 import { promises as fs } from 'node:fs';
 import path from 'node:path';
-import type { Command } from 'commander';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord, readJsonFile, writeJsonFile } from '../util/json.js';
 import { homeDir } from '../util/xdg.js';
@@ -485,19 +484,4 @@ async function uninstallText(client: string | undefined, opts: UninstallOptions,
   return ok ? 0 : 1;
 }
 
-export function registerUninstallCommands(program: Command, io: IO): void {
-  program
-    .command('uninstall')
-    .description('remove the MCP config (and, for claude, the hooks) lexicon install wrote for a client; nothing else is touched')
-    .argument('[client]', `one of: ${INSTALL_CLIENTS.filter((c) => c !== 'generic').join(', ')}`)
-    .option('--dry-run', 'print what would be removed; write nothing')
-    .option('--scope <scope>', 'user|project (project = the repo-level config file), as for install')
-    .option('--project', 'same as --scope project')
-    .option('--home <dir>', 'treat <dir> as the home directory (mainly for tests)')
-    .option('--json', 'print { ok: true, client, scope, dryRun, changes, output } as JSON ({ ok: false, error, nextStep } on a refusal)')
-    .action(async (client: string | undefined, opts: UninstallOptions) => {
-      const { cwd } = program.opts<{ cwd?: string }>();
-      const code = await runUninstall(client, cwd ? { ...opts, cwd } : opts, io);
-      if (code !== 0) process.exitCode = code;
-    });
-}
+export { registerUninstallCommands } from './program.js';

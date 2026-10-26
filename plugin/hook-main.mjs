@@ -6235,6 +6235,29 @@ var init_zod = __esm({
   }
 });
 
+// src/core/caps.ts
+var LIMITS, MAX_CORRECTION_LENGTH, DEFAULT_MIN_CONFIDENCE, INVENTED_BOUNDARY_CONFIDENCE, PROJECT_FILE_NAME;
+var init_caps = __esm({
+  "src/core/caps.ts"() {
+    LIMITS = {
+      /** Max characters in a canonical or alias. */
+      word: 80,
+      /** Max characters in notes / phonetic. */
+      text: 200,
+      /** Max aliases (and `never` words) per term. */
+      aliases: 64,
+      /** Max terms per file. */
+      terms: 5e3,
+      /** Max protectedWords in settings. */
+      protectedWords: 1e3
+    };
+    MAX_CORRECTION_LENGTH = 60;
+    DEFAULT_MIN_CONFIDENCE = 0.82;
+    INVENTED_BOUNDARY_CONFIDENCE = 0.95;
+    PROJECT_FILE_NAME = ".lexicon.yaml";
+  }
+});
+
 // src/core/schema.ts
 function findUnencodableChar(s) {
   const m = UNENCODABLE_RE.exec(s);
@@ -6412,23 +6435,12 @@ ${lines.join("\n")}`);
 function emptyLexicon() {
   return { version: 1, terms: [] };
 }
-var LIMITS, INVISIBLE_RE, CONTROL_RE, CONTROL_RE_G, ANSI_RE, OTHER_RE, UNENCODABLE_RE, UNENCODABLE_RE_G, UNENCODABLE_NOTE, MODEL_PATH_MAX_CHARS, TERM_TEXT_FIELDS, buildCategory, buildScope, buildSource, built, MAX_LISTED_ISSUES;
+var INVISIBLE_RE, CONTROL_RE, CONTROL_RE_G, ANSI_RE, OTHER_RE, UNENCODABLE_RE, UNENCODABLE_RE_G, UNENCODABLE_NOTE, MODEL_PATH_MAX_CHARS, TERM_TEXT_FIELDS, buildCategory, buildScope, buildSource, built, MAX_LISTED_ISSUES;
 var init_schema = __esm({
   "src/core/schema.ts"() {
     init_zod();
+    init_caps();
     init_types();
-    LIMITS = {
-      /** Max characters in a canonical or alias. */
-      word: 80,
-      /** Max characters in notes / phonetic. */
-      text: 200,
-      /** Max aliases (and `never` words) per term. */
-      aliases: 64,
-      /** Max terms per file. */
-      terms: 5e3,
-      /** Max protectedWords in settings. */
-      protectedWords: 1e3
-    };
     INVISIBLE_RE = /[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
     CONTROL_RE = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/;
     CONTROL_RE_G = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g;
@@ -18156,10 +18168,10 @@ function loneTokenMinSim(keyLength) {
 function isNonWordToken(lower) {
   return NO_LETTERS_RE.test(lower) || SPELLED_ABBREVIATION_RE.test(lower);
 }
-var DEFAULT_MIN_CONFIDENCE, MAX_WINDOW, PHONETIC_BASE, PHONETIC_LENGTH_WEIGHT, MAX_PHONETIC_KEYS_PER_TERM, PHONETIC_MIN_KEY, PHONETIC_MIN_WINDOW, ALIASED_PLAIN_WORD_MIN, PHONETIC_LONE_TOKEN_MIN_SIM, VOWEL_RE, PHONETIC_LONE_KEY3_MIN_SIM, PHONETIC_LONE_KEY4_MIN_SIM, INVENTED_BOUNDARY_CONFIDENCE, DOMAIN_SUFFIX, NO_LETTERS_RE, SPELLED_ABBREVIATION_RE, FUNCTION_WORDS;
+var MAX_WINDOW, PHONETIC_BASE, PHONETIC_LENGTH_WEIGHT, MAX_PHONETIC_KEYS_PER_TERM, PHONETIC_MIN_KEY, PHONETIC_MIN_WINDOW, ALIASED_PLAIN_WORD_MIN, PHONETIC_LONE_TOKEN_MIN_SIM, VOWEL_RE, PHONETIC_LONE_KEY3_MIN_SIM, PHONETIC_LONE_KEY4_MIN_SIM, DOMAIN_SUFFIX, NO_LETTERS_RE, SPELLED_ABBREVIATION_RE, FUNCTION_WORDS;
 var init_tuning = __esm({
   "src/core/matcher/tuning.ts"() {
-    DEFAULT_MIN_CONFIDENCE = 0.82;
+    init_caps();
     MAX_WINDOW = 5;
     PHONETIC_BASE = 0.9;
     PHONETIC_LENGTH_WEIGHT = 0.25;
@@ -18171,7 +18183,6 @@ var init_tuning = __esm({
     VOWEL_RE = /^[aeiouy]/;
     PHONETIC_LONE_KEY3_MIN_SIM = 0.8;
     PHONETIC_LONE_KEY4_MIN_SIM = 0.65;
-    INVENTED_BOUNDARY_CONFIDENCE = 0.95;
     DOMAIN_SUFFIX = /^(.{2,}?)\.(ai|io|com|dev|app|co|net|org|sh|xyz|me|so|gg)$/i;
     NO_LETTERS_RE = /^[^\p{L}]+$/u;
     SPELLED_ABBREVIATION_RE = new RegExp("^\\p{L}{1,2}(?:\\.\\p{L}{1,2})+$", "u");
@@ -20251,9 +20262,6 @@ var init_parsed_hash = __esm({
 });
 
 // src/util/json.ts
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 function formatJson(value) {
   return `${JSON.stringify(value, null, 2)}
 `;
@@ -21023,13 +21031,14 @@ function dedupeCaseInsensitive(values) {
   }
   return out;
 }
-var import_node_fs5, import_node_os3, import_node_path4, import_yaml2, PROJECT_FILE_NAME, MAX_LEXICON_BYTES, HEADER_COMMENT, PARSE_CACHE_FILE_NAME, PARSE_CACHE_MIN_BYTES, PARSE_CACHE_VERSION, STALE_GLOBAL_MIN_BYTES, PARSE_FAILURE_FILE_NAME, PARSE_FAILURE_VERSION, CACHE_ENTRIES, PROJECT_PARSE_CACHE_FILE_NAME, PROJECT_PARSE_CACHE_VERSION, INDEX_CACHE_FILE_NAME, INDEX_CACHE_MIN_TERMS, HITS_FILE_NAME, MAX_HITS_BYTES;
+var import_node_fs5, import_node_os3, import_node_path4, import_yaml2, MAX_LEXICON_BYTES, HEADER_COMMENT, PARSE_CACHE_FILE_NAME, PARSE_CACHE_MIN_BYTES, PARSE_CACHE_VERSION, STALE_GLOBAL_MIN_BYTES, PARSE_FAILURE_FILE_NAME, PARSE_FAILURE_VERSION, CACHE_ENTRIES, PROJECT_PARSE_CACHE_FILE_NAME, PROJECT_PARSE_CACHE_VERSION, INDEX_CACHE_FILE_NAME, INDEX_CACHE_MIN_TERMS, HITS_FILE_NAME, MAX_HITS_BYTES;
 var init_store = __esm({
   "src/core/store.ts"() {
     import_node_fs5 = __toESM(require_node_fs());
     import_node_os3 = __toESM(require_node_os());
     import_node_path4 = __toESM(require_node_path());
     import_yaml2 = __toESM(require_dist());
+    init_caps();
     init_schema();
     init_edit_check();
     init_matcher();
@@ -21041,7 +21050,6 @@ var init_store = __esm({
     init_bounded_read();
     init_json();
     init_xdg();
-    PROJECT_FILE_NAME = ".lexicon.yaml";
     MAX_LEXICON_BYTES = 2 * 1024 * 1024;
     HEADER_COMMENT = [
       "Lexicon: personal vocabulary for voice-to-agents.",
@@ -21291,8 +21299,8 @@ function noteFor(term) {
 init_suggest();
 
 // src/core/learn.ts
+init_caps();
 init_matcher();
-var MAX_CORRECTION_LENGTH = 60;
 var MAX_BARE_WORDS = 4;
 var BARE_WORD = `(?!not\\b)(?:[^\\s"\u201C\u201D\`,;:!?.]|\\.(?=\\S))+`;
 var BARE = `${BARE_WORD}(?: ${BARE_WORD}){0,${MAX_BARE_WORDS - 1}}`;
@@ -21593,7 +21601,9 @@ init_registry();
 var import_node_fs10 = __toESM(require_node_fs());
 var import_node_path9 = __toESM(require_node_path());
 var import_node_url2 = __toESM(require_node_url());
-init_json();
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
 var PACKAGE_NAME = "@ashlr/lexicon";
 var UNKNOWN_VERSION = "0.0.0";
 function findPackageRoot(from) {

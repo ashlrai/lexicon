@@ -9,31 +9,30 @@
  * that way -- the file, and the directory it sits in, are attacker-controlled.
  */
 import { z } from 'zod';
-import {
-  PROJECT_FILE_NAME,
-  getTrustPath,
-  hashFile,
-  isTrusted,
-  listTrusted,
-  readLexiconFile,
-  resolvePaths,
-  sanitizeForDisplay,
-  trustAllEnabled,
-  trustProject,
-  untrustProject,
-  isTrustContentChangedError,
-  neutralizeMarkup,
-  parsedContentHash,
-  trustSummaryForModel,
-  trustRegistryProblem,
-} from '../../core/index.js';
+import { PROJECT_FILE_NAME } from '../../core/caps.js';
 import type { LexiconFile } from '../../core/index.js';
-import { HARVEST_ROOTS_ENV, containedPath, guarded, nonBlank, shellWord, textResult, trustPreview } from '../shared.js';
+import { HARVEST_ROOTS_ENV, containedPath, coreFn, guarded, nonBlank, shellWord, textResult, trustPreview } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { errorMessage } from '../../util/errors.js';
 import { existsSync, statSync } from 'node:fs';
 import { basename, dirname, join, resolve } from 'node:path';
 import { cliCommand } from '../../util/cli-hint.js';
+
+const getTrustPath = coreFn('getTrustPath');
+const hashFile = coreFn('hashFile');
+const isTrusted = coreFn('isTrusted');
+const listTrusted = coreFn('listTrusted');
+const readLexiconFile = coreFn('readLexiconFile');
+const resolvePaths = coreFn('resolvePaths');
+const sanitizeForDisplay = coreFn('sanitizeForDisplay');
+const trustAllEnabled = coreFn('trustAllEnabled');
+const trustProject = coreFn('trustProject');
+const untrustProject = coreFn('untrustProject');
+const isTrustContentChangedError = coreFn('isTrustContentChangedError');
+const neutralizeMarkup = coreFn('neutralizeMarkup');
+const parsedContentHash = coreFn('parsedContentHash');
+const trustSummaryForModel = coreFn('trustSummaryForModel');
+const trustRegistryProblem = coreFn('trustRegistryProblem');
 
 /**
  * An explicit path, where a directory means the `.lexicon.yaml` inside it (as

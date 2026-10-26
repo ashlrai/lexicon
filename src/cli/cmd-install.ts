@@ -16,7 +16,6 @@
 import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { Command } from 'commander';
 import { writeFileAtomic } from '../util/atomic.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord, readJsonFile, writeJsonFile } from '../util/json.js';
@@ -47,18 +46,8 @@ import type { ClaudeMcpRegistration, ClaudeRegistrationFiles } from './claude-se
 // Types
 // ---------------------------------------------------------------------------
 
-export const INSTALL_CLIENTS = [
-  'claude',
-  'codex',
-  'cursor',
-  'windsurf',
-  'gemini',
-  'claude-desktop',
-  'vscode',
-  'generic',
-] as const;
-
-export type InstallClient = (typeof INSTALL_CLIENTS)[number];
+export { INSTALL_CLIENTS, type InstallClient } from './client-names.js';
+import { INSTALL_CLIENTS, type InstallClient } from './client-names.js';
 
 export interface InstallOptions extends CommonOptions {
   /** Write the change instead of printing it. */
@@ -976,23 +965,7 @@ async function installText(
   return 0;
 }
 
-export function registerInstallCommands(program: Command, io: IO): void {
-  program
-    .command('install')
-    .description('print (or with --apply, write) the MCP config for an agent client; no client lists them')
-    .argument('[client]', `one of: ${INSTALL_CLIENTS.join(', ')}`)
-    .option('--apply', 'write the config file (merge; existing keys are kept)')
-    .option('--scope <scope>', 'user|project (project = the repo-level config file)')
-    .option('--project', 'same as --scope project')
-    .option('--home <dir>', 'treat <dir> as the home directory (mainly for tests)')
-    .option('--json', 'print { ok: true, client, scope, applied, written, output } as JSON ({ ok: false, error, nextStep } for an unknown client or scope)')
-    .action(async (client: string | undefined, opts: InstallOptions) => {
-      const { cwd } = program.opts<{ cwd?: string }>();
-      const merged: InstallOptions = cwd ? { ...opts, cwd } : opts;
-      const code = await runInstall(client, merged, io);
-      if (code !== 0) process.exitCode = code;
-    });
-}
+export { registerInstallCommands } from './program.js';
 
 // ---------------------------------------------------------------------------
 // install claude: the MCP registration + the settings.json hooks
