@@ -3,10 +3,10 @@
  * load the lexicon core. No timings: a slow machine must not flake this.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync } from 'node:fs';
+import { mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 
 const ROOT = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -57,7 +57,10 @@ function nodeArgs(script: string): string[] {
 }
 
 function run(script: string, args: readonly string[], traceFile?: string, stdin?: string): { code: number | null; stdout: string; stderr: string; urls: string } {
-  const r = spawnSync(process.execPath, ['--import', TRACE, ...nodeArgs(script), ...args], {
+  // A file URL, not a filesystem path. On Windows `node --import C:\...`
+  // is not a valid specifier, so the process exits before the CLI runs and
+  // the hook never creates the trace file.
+  const r = spawnSync(process.execPath, ['--import', pathToFileURL(TRACE).href, ...nodeArgs(script), ...args], {
     cwd: ROOT,
     encoding: 'utf8',
     input: stdin,
@@ -65,18 +68,21 @@ function run(script: string, args: readonly string[], traceFile?: string, stdin?
     env: { ...process.env, ...(traceFile ? { LEXICON_IMPORT_TRACE: traceFile } : {}) },
   });
   const urls = traceFile ? readFileSync(traceFile, 'utf8') : '';
-  return { code: r.status, stdout: r.stdout, stderr: r.stderr, urls };
+  const stderr = [r.error?.message, r.stderr].filter((part) => part).join('\n');
+  return { code: r.status, stdout: r.stdout ?? '', stderr, urls };
 }
 
 function traceFile(): string {
-  return path.join(mkdtempSync(path.join(tmpdir(), 'lexicon-trace-')), 'urls.txt');
+  const file = path.join(mkdtempSync(path.join(tmpdir(), 'lexicon-trace-')), 'urls.txt');
+  writeFileSync(file, '');
+  return file;
 }
 
 describe('CLI startup', () => {
   it('prints the package version for --version, -V and -v', () => {
     for (const flag of ['--version', '-V', '-v']) {
       const r = run(CLI, [flag]);
-      expect(r.code, flag).toBe(0);
+      expect(r.code, `${flag}\n${r.stderr}`).toBe(0);
       expect(r.stdout, flag).toBe(VERSION);
       expect(r.stderr, flag).toBe('');
     }
@@ -85,7 +91,7 @@ describe('CLI startup', () => {
   it('prints the same help for --help and -h', () => {
     for (const flag of ['--help', '-h']) {
       const r = run(CLI, [flag]);
-      expect(r.code, flag).toBe(0);
+      expect(r.code, `${flag}\n${r.stderr}`).toBe(0);
       expect(r.stdout, flag).toBe(HELP);
       expect(r.stderr, flag).toBe('');
     }
