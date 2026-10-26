@@ -7,11 +7,11 @@
  *
  * On a terminal `lexicon trust` asks before it pins the file (default no);
  * `--yes` skips the question. Off a terminal (a script, CI, an agent's shell)
- * there is nobody to ask, so it trusts after printing the preview, as it
- * always has: refusing there would break every script that runs `lexicon
- * trust` today, and `--yes` would not make an unattended run any safer, since
- * whoever can run the command can add the flag. The question protects the
- * person at the keyboard from approving a file they have not looked at.
+ * there is nobody to ask, so it refuses after printing the preview, pins
+ * nothing and exits 1 unless `--yes` was passed: approving a file must be an
+ * explicit act, never the side effect of a missing TTY. There is no
+ * environment-variable bypass. With `--yes` it prints the path and the sha256
+ * it pinned.
  */
 import { existsSync, statSync } from 'node:fs';
 import path from 'node:path';
@@ -183,9 +183,22 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
   // A file that already reads trusted gains nothing from a yes (MCP
   // trust_project does not ask either), and a no would print "declined" for
   // a file that stays trusted.
-  const ask = !opts.yes && before !== 'trusted' && (deps.isInteractive ?? isInteractive)();
+  const interactive = (deps.isInteractive ?? isInteractive)();
+  const ask = !opts.yes && before !== 'trusted' && interactive;
   if (!opts.json) renderPreview(file, io.stdout);
   else if (ask) renderPreview(file, io.stderr);
+  // Off a terminal nobody can answer the question, so only an explicit --yes
+  // pins the file. No environment variable stands in for the flag.
+  if (!opts.yes && before !== 'trusted' && !interactive) {
+    return fail(
+      io,
+      opts.json,
+      'trust',
+      filePath,
+      `no terminal to confirm trusting ${filePath}; nothing was trusted`,
+      `review the preview, then run: lexicon trust ${JSON.stringify(filePath)} --yes`,
+    );
+  }
   if (ask && !(await confirmTrust(filePath, opts, deps))) {
     if (opts.json) {
       // Exit 0 (a no is an answer, not a failure), so ok is true as on every exit-0 document.

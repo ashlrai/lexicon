@@ -438,7 +438,7 @@ Arguments:
 
 Options:
   --list      list trusted project lexicons and whether they still match
-  -y, --yes   trust without asking (off a terminal it never asks)
+  -y, --yes   trust without asking (required off a terminal)
   --json      print the result as JSON: ok, then the object MCP trust_project
               returns, with the full preview where MCP has a summary (with
               --list: { ok, registry, trustAll, trusted })

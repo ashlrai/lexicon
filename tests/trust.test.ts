@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process';
-import { promises as fs, writeFileSync } from 'node:fs';
+import { existsSync, promises as fs, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -476,7 +476,7 @@ describe('lexicon trust / untrust / trust --list (CLI)', () => {
   // printed "re-pinned" (result 're-pinned' under --json), rewrote trustedAt
   // and asked the question again on a terminal, though the pin did not change.
   it('an already trusted file with the same bytes says already trusted, asks nothing and leaves the pin', async () => {
-    expect(await runTrust(undefined, { cwd: cwd() }, makeIO(), { isInteractive: () => false })).toBe(0);
+    expect(await runTrust(undefined, { cwd: cwd(), yes: true }, makeIO(), { isInteractive: () => false })).toBe(0);
     const registryPath = path.join(path.dirname(globalPath), 'trust.json');
     const pinned = await fs.readFile(registryPath, 'utf8');
     const { trustedAt } = (await readTrustRegistry({ globalPath })).trusted[await fs.realpath(projectPath)]!;
@@ -496,17 +496,35 @@ describe('lexicon trust / untrust / trust --list (CLI)', () => {
     // A changed file still says updated: the pin moved.
     await fs.appendFile(projectPath, '# edited\n');
     const edited = makeIO();
-    expect(await runTrust(undefined, { cwd: cwd(), json: true }, edited, { isInteractive: () => false })).toBe(0);
+    expect(await runTrust(undefined, { cwd: cwd(), yes: true, json: true }, edited, { isInteractive: () => false })).toBe(0);
     expect(JSON.parse(edited.out)).toMatchObject({ previousStatus: 'changed', result: 'updated' });
   });
 
-  // The documented non-TTY behaviour: scripts keep working without --yes.
-  it('off a terminal it trusts after the preview without asking', async () => {
+  // Catches: off a terminal, trust pinned the file without anyone approving it.
+  it('off a terminal without --yes it refuses after the preview and writes nothing', async () => {
     const never: Prompter = { ...scripted([]), confirm: async () => { throw new Error('asked off a terminal'); } };
+    const registryPath = path.join(path.dirname(globalPath), 'trust.json');
     const io = makeIO();
-    expect(await runTrust(undefined, { cwd: cwd() }, io, { isInteractive: () => false, createPrompter: () => never })).toBe(0);
+    expect(await runTrust(undefined, { cwd: cwd() }, io, { isInteractive: () => false, createPrompter: () => never })).toBe(1);
     expect(io.out).toContain(`${projectPath}: 1 term`);
-    expect(io.out).toContain(`trusted ${projectPath}`);
+    expect(io.out).not.toContain(`trusted ${projectPath}`);
+    expect(io.err).toContain('no terminal to confirm trusting');
+    expect(io.err).toContain('--yes');
+    expect(await listTrusted({ globalPath })).toEqual([]);
+    expect(existsSync(registryPath)).toBe(false);
+
+    const json = makeIO();
+    expect(await runTrust(undefined, { cwd: cwd(), json: true }, json, { isInteractive: () => false })).toBe(1);
+    expect(JSON.parse(json.out)).toMatchObject({ ok: false, action: 'trust', path: projectPath });
+    expect(await listTrusted({ globalPath })).toEqual([]);
+  });
+
+  it('off a terminal with --yes it pins and prints the path and sha256', async () => {
+    const io = makeIO();
+    expect(await runTrust(undefined, { cwd: cwd(), yes: true }, io, { isInteractive: () => false })).toBe(0);
+    expect(io.out).toContain(`trusted ${projectPath} (sha256 `);
+    expect(io.out).toMatch(/\(sha256 [0-9a-f]{12}\)/);
+    expect(await listTrusted({ globalPath })).toHaveLength(1);
   });
 
   it('refuses when the file changes while the question is open', async () => {
@@ -527,7 +545,7 @@ describe('lexicon trust / untrust / trust --list (CLI)', () => {
   // whatever was on disk when trustProject re-hashed it, not the file it had
   // parsed and previewed, so a file swapped in meanwhile (even one that does
   // not parse) was trusted unseen.
-  it('off a terminal, a file swapped after the preview is not trusted', async () => {
+  it('off a terminal with --yes, a file swapped after the preview is not trusted', async () => {
     const io = makeIO();
     const deps = {
       isInteractive: () => {
@@ -536,7 +554,7 @@ describe('lexicon trust / untrust / trust --list (CLI)', () => {
         return false;
       },
     };
-    expect(await runTrust(undefined, { cwd: cwd() }, io, deps)).toBe(1);
+    expect(await runTrust(undefined, { cwd: cwd(), yes: true }, io, deps)).toBe(1);
     expect(io.err).toContain('changed while it was being trusted');
     expect(await listTrusted({ globalPath })).toEqual([]);
   });
@@ -544,7 +562,7 @@ describe('lexicon trust / untrust / trust --list (CLI)', () => {
   // Catches: trust, untrust and trust --list had no --json while MCP trust_project returns JSON.
   it('--json prints the trust_project shapes', async () => {
     const trusted = makeIO();
-    expect(await runTrust(undefined, { cwd: cwd(), json: true }, trusted, { isInteractive: () => false })).toBe(0);
+    expect(await runTrust(undefined, { cwd: cwd(), yes: true, json: true }, trusted, { isInteractive: () => false })).toBe(0);
     const t = JSON.parse(trusted.out) as Record<string, unknown>;
     expect(t).toMatchObject({
       action: 'trust',
@@ -681,7 +699,7 @@ describe('lexicon trust / untrust --json lead with ok', () => {
   it('ok: true first on every success: trust, declined, --list, untrust', async () => {
     const cwd = path.dirname(projectPath);
     const trusted = makeIO();
-    expect(await runTrust(undefined, { cwd, json: true }, trusted, { isInteractive: () => false })).toBe(0);
+    expect(await runTrust(undefined, { cwd, yes: true, json: true }, trusted, { isInteractive: () => false })).toBe(0);
     expect(first(trusted.out)).toEqual(['ok', true]);
     expect(JSON.parse(trusted.out)).toMatchObject({ action: 'trust', result: 'trusted', status: 'trusted' });
 

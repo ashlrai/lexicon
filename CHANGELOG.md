@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Changed
+
+- `lexicon trust` off a terminal (a script, CI, an agent's shell) no longer pins the file silently: without `--yes` it prints the preview, trusts nothing, names the `lexicon trust <path> --yes` command and exits 1 (`{ ok: false, ... }` under `--json`). No environment variable bypasses this. With `--yes` it pins and prints the path and sha256 as before. A file already trusted at the same bytes still reports `already trusted`. Scripts that ran `lexicon trust` unattended must add `--yes`.
+
 ### Added
 
 - `lexicon pending reject` remembers what you rejected: the pending file gains a `rejected:` list of ids (never the words, capped at 500), and the prompt hook no longer queues a correction you already rejected. `lexicon learn` with the same words still works. Additive file change; an older lexicon that rewrites the file forgets the list.

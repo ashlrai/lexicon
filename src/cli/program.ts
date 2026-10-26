@@ -407,7 +407,7 @@ export function registerTrustCommands(program: Command, io: IO, deps: TrustDeps 
     .description('approve a project .lexicon.yaml so its terms are merged (shows a preview, then asks on a terminal)')
     .argument('[path]', 'lexicon file or project directory (default: the project .lexicon.yaml for the current directory)')
     .option('--list', 'list trusted project lexicons and whether they still match')
-    .option('-y, --yes', 'trust without asking (off a terminal it never asks)')
+    .option('-y, --yes', 'trust without asking (required off a terminal)')
     .option('--json', 'print the result as JSON: ok, then the object MCP trust_project returns, with the full preview where MCP has a summary (with --list: { ok, registry, trustAll, trusted })')
     .action(async (target: string | undefined, opts: { list?: boolean; yes?: boolean; json?: boolean }) => {
       const { runTrust } = await import('./cmd-trust.js');
