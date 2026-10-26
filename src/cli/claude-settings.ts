@@ -10,7 +10,6 @@
  */
 import { existsSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
-import os from 'node:os';
 import { homeDir, usableHome } from '../util/xdg.js';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';

@@ -57,7 +57,6 @@ export interface CompanionResult {
 
 /** Handshake capability a tool advertises when `<command> doctor --fix` exists. */
 export const DOCTOR_FIX_CAPABILITY = "doctor-fix";
-export const LOCUS_DOCTOR_FIX_CAPABILITY = DOCTOR_FIX_CAPABILITY;
 
 /** Companions with a dry-run-by-default `doctor --fix`, by name, valued by the command to run. */
 export const DOCTOR_FIX_COMMANDS: ReadonlyMap<string, string> = new Map([

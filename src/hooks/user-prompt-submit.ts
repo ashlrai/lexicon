@@ -27,7 +27,7 @@
 import { promises as fs, readSync, realpathSync, writeSync } from 'node:fs';
 import { dirname, join, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { codeSpanRanges, collectRanges, diffSummary, exportClaudeMdWithin, exportLexicon, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, pathForModel, phoneticKey, queueCorrections, recordHits, resolvePaths, sanitizeForDisplayMax, similarity } from '../core/index.js';
+import { codeSpanRanges, collectRanges, diffSummary, exportClaudeMdWithin, loadLexicon, loadMatcherIndex, neutralizeForModel, neutralizeMarkup, normalizeWithIndex, parseCorrection, pathForModel, phoneticKey, queueCorrections, recordHits, resolvePaths, sanitizeForDisplayMax, similarity } from '../core/index.js';
 import type { Correction, CorrectionLexicon, LoadedLexicon, NormalizeResult, Replacement } from '../core/index.js';
 import { packageVersion } from '../util/package.js';
 import { cliCommand } from '../util/cli-hint.js';

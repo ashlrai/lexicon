@@ -2,6 +2,7 @@
  * Export the lexicon to the formats other tools understand (Wispr Flow,
  * Superwhisper, Whisper prompt, macOS text replacement, CLAUDE.md, ...).
  */
+import { distance } from 'fastest-levenshtein';
 import { EXPORT_FORMATS } from '../types.js';
 /** Declared in core/types.ts (next to the ExportFormat union it derives); re-exported here, where callers look for it. */
 export { EXPORT_FORMATS } from '../types.js';
@@ -80,19 +81,6 @@ export const EXPORT_FORMAT_ALIASES: Readonly<Record<string, ExportFormat>> = {
   'wispr-flow-csv': 'wispr',
 };
 
-/** Edit distance between two short strings (insert, delete, substitute). */
-function editDistance(a: string, b: string): number {
-  let prev = Array.from({ length: b.length + 1 }, (_, j) => j);
-  for (let i = 1; i <= a.length; i++) {
-    const cur = [i];
-    for (let j = 1; j <= b.length; j++) {
-      cur[j] = Math.min(prev[j] + 1, cur[j - 1] + 1, prev[j - 1] + (a[i - 1] === b[j - 1] ? 0 : 1));
-    }
-    prev = cur;
-  }
-  return prev[b.length];
-}
-
 /**
  * The format a mistyped `value` most likely meant (`deepgarm` -> `deepgram`),
  * or undefined when nothing is close: at most 2 edits, and fewer than half
@@ -112,7 +100,7 @@ export function suggestExportFormat(value: string): ExportFormat | undefined {
   let bestDistance = limit + 1;
   let tie = false;
   for (const [name, format] of targets) {
-    const d = editDistance(typed, name);
+    const d = distance(typed, name);
     if (d < bestDistance) {
       best = format;
       bestDistance = d;

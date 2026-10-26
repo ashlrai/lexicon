@@ -34,7 +34,7 @@ import { InputError, errorMessage, isEnoent } from '../util/errors.js';
 import { blockingFile, withFileLock, writeFileAtomic } from '../util/atomic.js';
 import type { FileLockOptions } from '../util/atomic.js';
 import { isBoundedReadError, readBoundedRegularFile } from '../util/bounded-read.js';
-import { formatJson } from '../util/json.js';
+import { formatJson, isRecord } from '../util/json.js';
 import { globalLexiconPath } from '../util/xdg.js';
 import type {
   Lexicon,
@@ -371,7 +371,7 @@ async function readGlobalLexiconMaybeStale(
   try {
     const cached: unknown = JSON.parse(await fs.readFile(cachePath, 'utf8'));
     if (
-      isPlainObject(cached) &&
+      isRecord(cached) &&
       cached.version === PARSE_CACHE_VERSION &&
       cached.path === key &&
       typeof cached.text === 'string' &&
@@ -379,7 +379,7 @@ async function readGlobalLexiconMaybeStale(
       cached.sum === cacheChecksum(cached.lexicon)
     ) {
       const lexicon: unknown = JSON.parse(cached.lexicon);
-      if (isPlainObject(lexicon) && Array.isArray(lexicon.terms)) {
+      if (isRecord(lexicon) && Array.isArray(lexicon.terms)) {
         const file: LexiconFile = { path: filePath, scope: 'global', lexicon: lexicon as unknown as Lexicon, exists: true };
         if (cached.text === read.text) return { file };
         if (opts.stale && read.text.length >= STALE_GLOBAL_MIN_BYTES) {
@@ -456,7 +456,7 @@ async function readParseFailure(dir: string, key: string, text: string): Promise
   try {
     const cached: unknown = JSON.parse(await fs.readFile(path.join(dir, PARSE_FAILURE_FILE_NAME), 'utf8'));
     if (
-      isPlainObject(cached) &&
+      isRecord(cached) &&
       cached.version === PARSE_FAILURE_VERSION &&
       cached.path === key &&
       cached.text === text &&
@@ -670,7 +670,7 @@ async function readProjectCacheEntry(
 ): Promise<{ id?: string; hit?: { lexicon: Lexicon; sha256: string } }> {
   try {
     const cached: unknown = JSON.parse(await fs.readFile(cachePath, 'utf8'));
-    if (!isPlainObject(cached) || cached.version !== PROJECT_PARSE_CACHE_VERSION || typeof cached.path !== 'string') return {};
+    if (!isRecord(cached) || cached.version !== PROJECT_PARSE_CACHE_VERSION || typeof cached.path !== 'string') return {};
     const id = cached.path;
     if (
       cached.path === key &&
@@ -682,7 +682,7 @@ async function readProjectCacheEntry(
       Buffer.from(cached.text, 'utf8').equals(bytes)
     ) {
       const lexicon: unknown = JSON.parse(cached.lexicon);
-      if (isPlainObject(lexicon) && Array.isArray(lexicon.terms)) return { id, hit: { lexicon: lexicon as unknown as Lexicon, sha256: cached.sha256 } };
+      if (isRecord(lexicon) && Array.isArray(lexicon.terms)) return { id, hit: { lexicon: lexicon as unknown as Lexicon, sha256: cached.sha256 } };
     }
     return { id };
   } catch {
@@ -845,7 +845,7 @@ function indexFromEntry(text: string, head: string, key: string, lexicon: Lexico
   // a different lexicon is told apart before anything is parsed.
   if (!text.startsWith(head)) return undefined;
   const cached: unknown = JSON.parse(text);
-  if (!isPlainObject(cached) || cached.version !== INDEX_FORMAT_VERSION || cached.key !== key) return undefined;
+  if (!isRecord(cached) || cached.version !== INDEX_FORMAT_VERSION || cached.key !== key) return undefined;
   return deserializeIndex(cached.index, lexicon) ?? undefined;
 }
 
@@ -1185,13 +1185,13 @@ async function pinCommittedHits(file: LexiconFile): Promise<void> {
   try {
     const current = await readLexiconFileForWrite(file.path, file.scope);
     for (const term of current.lexicon.terms) {
-      if (term.hits !== undefined) onDisk.set(hitKey(term.canonical), term.hits);
+      if (term.hits !== undefined) onDisk.set(spellingKey(term.canonical), term.hits);
     }
   } catch {
     // Unreadable or absent: nothing on disk to preserve.
   }
   for (const term of file.lexicon.terms) {
-    const committed = onDisk.get(hitKey(term.canonical));
+    const committed = onDisk.get(spellingKey(term.canonical));
     if (committed === undefined) delete term.hits;
     else term.hits = committed;
   }
@@ -1324,25 +1324,13 @@ export function getHitsPath(opts: StoreOptions = {}): string {
 }
 
 /**
- * The key a canonical is counted under. Matches `sameCanonical`: trimmed,
- * lowercased and in NFC. It was lowercased only, so `Café` written
- * precomposed and with a combining accent (one term to every other part of
- * the store) were counted under two keys, and a term whose file spelling
- * changed form lost its count. `hits.json` keys written before are read
- * through the same fold (see validCounts), so they stay valid.
- */
-function hitKey(canonical: string): string {
-  return foldKey(canonical);
-}
-
-/**
  * The form two spellings are compared in across the store: trimmed,
  * lowercased and in NFC, so `Café` (precomposed) and `Cafe` plus U+0301 are
  * one canonical or one alias. For callers outside this module that look a
  * term or an alias up the way the store does (MCP tools, `lexicon doctor`).
  */
 export function spellingKey(spelling: string): string {
-  return foldKey(spelling);
+  return spelling.trim().toLowerCase().normalize('NFC');
 }
 
 /** Absolute path with symlinks resolved when the file exists (macOS /var vs /private/var). */
@@ -1403,20 +1391,20 @@ async function loadHitsRegistry(opts: StoreOptions): Promise<HitsRegistryRead> {
   } catch (e) {
     return { registry: emptyHitsRegistry(), problem: `is not valid JSON (${errorMessage(e)})` };
   }
-  if (!isPlainObject(raw)) return { registry: emptyHitsRegistry(), problem: 'is not a JSON object' };
-  if (raw.projects !== undefined && !isPlainObject(raw.projects)) {
+  if (!isRecord(raw)) return { registry: emptyHitsRegistry(), problem: 'is not a JSON object' };
+  if (raw.projects !== undefined && !isRecord(raw.projects)) {
     return { registry: emptyHitsRegistry(), problem: '"projects" is not an object' };
   }
-  if (raw.global !== undefined && !isPlainObject(raw.global)) {
+  if (raw.global !== undefined && !isRecord(raw.global)) {
     return { registry: emptyHitsRegistry(), problem: '"global" is not an object' };
   }
   const out = emptyHitsRegistry();
-  if (isPlainObject(raw.projects)) {
+  if (isRecord(raw.projects)) {
     for (const [file, counts] of Object.entries(raw.projects)) {
-      if (isPlainObject(counts)) out.projects[file] = validCounts(counts);
+      if (isRecord(counts)) out.projects[file] = validCounts(counts);
     }
   }
-  if (isPlainObject(raw.global)) out.global = validCounts(raw.global);
+  if (isRecord(raw.global)) out.global = validCounts(raw.global);
   return { registry: out };
 }
 
@@ -1451,16 +1439,12 @@ export async function hitsRegistryProblem(opts: StoreOptions = {}): Promise<stri
   return (await loadHitsRegistry(opts)).problem;
 }
 
-function isPlainObject(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
-
 /**
- * The valid counts of one `hits.json` entry, keyed by `hitKey`: positive
+ * The valid counts of one `hits.json` entry, keyed by `spellingKey`: positive
  * safe integers only, so a hand-edited `1e300` (an integer to
  * `Number.isInteger`, and past every count arithmetic can still raise) is
  * dropped rather than shown and summed as a count. A key written
- * before hitKey folded to NFC (a canonical typed with a combining accent) is
+ * before spellingKey folded to NFC (a canonical typed with a combining accent) is
  * folded the same way, and two keys that fold together are added up, so an
  * old file keeps its counts; the next write stores the folded keys.
  */
@@ -1468,7 +1452,7 @@ function validCounts(counts: Record<string, unknown>): Record<string, number> {
   const entry: Record<string, number> = {};
   for (const [canonical, n] of Object.entries(counts)) {
     if (typeof n !== 'number' || !Number.isSafeInteger(n) || n <= 0) continue;
-    const key = hitKey(canonical);
+    const key = spellingKey(canonical);
     // Two keys that fold together cannot add up past what a count can hold.
     entry[key] = Math.min((entry[key] ?? 0) + n, Number.MAX_SAFE_INTEGER);
   }
@@ -1523,7 +1507,7 @@ export async function readProjectHits(
 
 /** What `term` has actually been used: the file's committed floor plus `counts` from `readProjectHits`. */
 export function effectiveHits(term: Term, counts: Record<string, number>): number {
-  return (term.hits ?? 0) + (counts[hitKey(term.canonical)] ?? 0);
+  return (term.hits ?? 0) + (counts[spellingKey(term.canonical)] ?? 0);
 }
 
 /**
@@ -1538,8 +1522,8 @@ async function dropProjectHits(projectPath: string, canonical: string, opts: Sto
     await withFileLock(hitsPath, async () => {
       const registry = await readHitsRegistry(opts, true);
       const entry = registry.projects[key];
-      if (!entry || !(hitKey(canonical) in entry)) return;
-      delete entry[hitKey(canonical)];
+      if (!entry || !(spellingKey(canonical) in entry)) return;
+      delete entry[spellingKey(canonical)];
       await writeFileAtomic(hitsPath, formatJson(registry));
     });
   } catch {
@@ -1553,8 +1537,8 @@ async function dropGlobalHits(canonical: string, opts: StoreOptions): Promise<vo
     const hitsPath = getHitsPath(opts);
     await withFileLock(hitsPath, async () => {
       const registry = await readHitsRegistry(opts, true);
-      if (!registry.global || !(hitKey(canonical) in registry.global)) return;
-      delete registry.global[hitKey(canonical)];
+      if (!registry.global || !(spellingKey(canonical) in registry.global)) return;
+      delete registry.global[spellingKey(canonical)];
       await writeFileAtomic(hitsPath, formatJson(registry));
     });
   } catch {
@@ -1585,9 +1569,9 @@ async function hydrateHits(merged: Lexicon, project: LexiconFile | undefined, op
   // A term the project file owns takes only the project count: `recordHits`
   // credits the project file first, so a global term of the same name was
   // never counted there and must not pick the count up, and the reverse.
-  const owned = new Set(project ? project.lexicon.terms.map((t) => hitKey(t.canonical)) : []);
+  const owned = new Set(project ? project.lexicon.terms.map((t) => spellingKey(t.canonical)) : []);
   for (const term of merged.terms) {
-    const key = hitKey(term.canonical);
+    const key = spellingKey(term.canonical);
     const n = owned.has(key) ? projectCounts[key] : globalCounts[key];
     if (n) term.hits = (term.hits ?? 0) + n;
   }
@@ -1692,11 +1676,11 @@ export function mergeLexicons(global: Lexicon, project?: Lexicon): Lexicon {
     // about 40 ms of every prompt, plus the garbage of the lowercased copies.
     const firstByKey = new Map<string, number>();
     terms.forEach((t, i) => {
-      const k = canonicalKey(t.canonical);
+      const k = spellingKey(t.canonical);
       if (!firstByKey.has(k)) firstByKey.set(k, i);
     });
     for (const pt of project.terms) {
-      const key = canonicalKey(pt.canonical);
+      const key = spellingKey(pt.canonical);
       const idx = firstByKey.get(key) ?? -1;
       const replacement: Term = { ...pt, scope: pt.scope ?? 'project' };
       if (idx === -1) {
@@ -1950,11 +1934,11 @@ function mergeTermInto(file: LexiconFile, incoming: Term, scope: TermScope, opts
 
   // A generated alias that is one of the term's never words would be blocked
   // by it (see assertNoNeverAliasClash), so it is not offered at all.
-  const neverKeys = new Set((incoming.never ?? []).map(foldKey));
+  const neverKeys = new Set((incoming.never ?? []).map(spellingKey));
   const created: Term = {
     ...incoming,
     ...(incoming.aliases.length === 0 && opts.defaultAliases?.length
-      ? { aliases: dedupeAliases(opts.defaultAliases.filter((a) => !neverKeys.has(foldKey(a))), canonical) }
+      ? { aliases: dedupeAliases(opts.defaultAliases.filter((a) => !neverKeys.has(spellingKey(a))), canonical) }
       : {}),
     scope,
     source: incoming.source ?? 'user',
@@ -1999,9 +1983,9 @@ export async function addTerm(
 function assertNoNeverAliasClash(file: LexiconFile, incoming: Term, opts: AddTermOptions): void {
   if (opts.merge === false) return;
   const existing = findTerm(file.lexicon, incoming.canonical);
-  const never = new Set([...(existing?.never ?? []), ...(incoming.never ?? [])].map(foldKey));
-  const aliases = new Set([...(existing?.aliases ?? []), ...incoming.aliases].map(foldKey));
-  const clash = incoming.aliases.find((a) => never.has(foldKey(a))) ?? (incoming.never ?? []).find((w) => aliases.has(foldKey(w)));
+  const never = new Set([...(existing?.never ?? []), ...(incoming.never ?? [])].map(spellingKey));
+  const aliases = new Set([...(existing?.aliases ?? []), ...incoming.aliases].map(spellingKey));
+  const clash = incoming.aliases.find((a) => never.has(spellingKey(a))) ?? (incoming.never ?? []).find((w) => aliases.has(spellingKey(w)));
   if (clash === undefined) return;
   throw new InputError(
     `term not added: "${clash}" would be both an alias and a never word of "${existing?.canonical ?? incoming.canonical}", ` +
@@ -2142,9 +2126,9 @@ export function untrustedAliasHolder(
   alias: string,
 ): { path: string; trust: 'untrusted' | 'changed' } | undefined {
   const skipped = loaded.skippedProject;
-  const drop = foldKey(alias);
+  const drop = spellingKey(alias);
   const term = skipped?.lexicon.terms.find((t) => sameCanonical(t.canonical, canonical));
-  if (!skipped || !drop || !term || !term.aliases.some((a) => foldKey(a) === drop)) return undefined;
+  if (!skipped || !drop || !term || !term.aliases.some((a) => spellingKey(a) === drop)) return undefined;
   return { path: skipped.path, trust: loaded.projectTrust === 'changed' ? 'changed' : 'untrusted' };
 }
 
@@ -2194,7 +2178,7 @@ export async function removeAlias(
       const term = findTerm(file.lexicon, wanted);
       if (!term) return;
       termFound = true;
-      const remaining = term.aliases.filter((a) => foldKey(a) !== foldKey(drop));
+      const remaining = term.aliases.filter((a) => spellingKey(a) !== spellingKey(drop));
       if (remaining.length === term.aliases.length) return;
       await assertParsedProjectWritable(file, opts);
       term.aliases = remaining;
@@ -2252,7 +2236,7 @@ export async function recordHits(
     if (canonicals.length === 0) return;
     const counts = new Map<string, number>();
     for (const c of canonicals) {
-      const key = hitKey(c);
+      const key = spellingKey(c);
       if (!key) continue;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
@@ -2279,7 +2263,7 @@ export async function recordHits(
     if (projectFile) {
       const mine = new Map<string, number>();
       for (const term of projectFile.lexicon.terms) {
-        const key = hitKey(term.canonical);
+        const key = spellingKey(term.canonical);
         const n = counts.get(key);
         if (n === undefined) continue;
         mine.set(key, n);
@@ -2290,7 +2274,7 @@ export async function recordHits(
     }
     if (counts.size > 0) {
       const globalFile = opts.loaded?.global ?? (await readLexiconFile(paths.global, 'global'));
-      const owned = new Set(globalFile.lexicon.terms.map((t) => hitKey(t.canonical)));
+      const owned = new Set(globalFile.lexicon.terms.map((t) => spellingKey(t.canonical)));
       for (const key of [...counts.keys()]) if (!owned.has(key)) counts.delete(key);
     }
     if (!project && counts.size === 0) return;
@@ -2365,29 +2349,14 @@ function candidatePaths(opts: StoreOptions, scope?: TermScope): { path: string; 
   return targets;
 }
 
-/**
- * The key two spellings are compared under: trimmed, lowercased and in NFC, so
- * "Caf\u00e9" typed precomposed and "Cafe\u0301" (NFD, as macOS file names and
- * some keyboards give it) are one spelling. Without NFC an NFD alias of an NFC
- * canonical was kept and lexicon://me showed "Caf\u00e9 | Caf\u00e9".
- */
-function foldKey(s: string): string {
-  return s.trim().toLowerCase().normalize('NFC');
-}
-
-/** What sameCanonical compares: two canonicals are the same term when their keys are equal. */
-function canonicalKey(canonical: string): string {
-  return foldKey(canonical);
-}
-
 function sameCanonical(a: string, b: string): boolean {
-  return canonicalKey(a) === canonicalKey(b);
+  return spellingKey(a) === spellingKey(b);
 }
 
 /** Trim, drop empties and anything equal to the canonical, dedupe case-insensitively and under NFC (first spelling wins). */
 export function dedupeAliases(aliases: string[], canonical: string): string[] {
-  const canon = foldKey(canonical);
-  return dedupeCaseInsensitive(aliases).filter((a) => foldKey(a) !== canon);
+  const canon = spellingKey(canonical);
+  return dedupeCaseInsensitive(aliases).filter((a) => spellingKey(a) !== canon);
 }
 
 function dedupeCaseInsensitive(values: string[]): string[] {
@@ -2396,7 +2365,7 @@ function dedupeCaseInsensitive(values: string[]): string[] {
   for (const raw of values) {
     const value = typeof raw === 'string' ? raw.trim() : '';
     if (!value) continue;
-    const key = foldKey(value);
+    const key = spellingKey(value);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(value);

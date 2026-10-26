@@ -6,10 +6,4 @@
  * offline, see whisperPrompt.ts). The newer models' own prompt limit is not
  * confirmed here, so the smaller Whisper window is kept for them too.
  */
-import type { ExportOptions, Lexicon } from '../types.js';
-import type { ExportSink } from './shared.js';
-import { exportWhisperPrompt } from './whisperPrompt.js';
-
-export function exportOpenai(lexicon: Lexicon, opts: ExportOptions = {}, sink?: ExportSink): string {
-  return exportWhisperPrompt(lexicon, opts, sink);
-}
+export { exportWhisperPrompt as exportOpenai } from './whisperPrompt.js';

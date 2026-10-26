@@ -14,7 +14,6 @@
  * back-compat and forwards here (see index.ts).
  */
 import { existsSync, promises as fs } from 'node:fs';
-import os from 'node:os';
 import path from 'node:path';
 import type { Command } from 'commander';
 import { writeFileAtomic } from '../util/atomic.js';

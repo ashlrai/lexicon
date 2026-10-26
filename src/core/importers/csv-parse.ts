@@ -10,7 +10,7 @@ export interface CsvRecord {
   fields: string[];
 }
 
-export function stripBom(content: string): string {
+function stripBom(content: string): string {
   return content.charCodeAt(0) === 0xfeff ? content.slice(1) : content;
 }
 

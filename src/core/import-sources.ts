@@ -23,6 +23,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readdirSync, readFileSync, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { isRecord } from '../util/json.js';
 import { HARVEST_STOPLIST, harvestAliases } from './harvest.js';
 import { addTerm } from './store.js';
 import type { StoreOptions } from './store.js';
@@ -109,10 +110,6 @@ export function resolveImportSourceDeps(deps: ImportSourceDeps = {}): Required<I
     fileSize: deps.fileSize ?? d.fileSize,
     exec: deps.exec ?? d.exec,
   };
-}
-
-function resolved(deps: ImportSourceDeps = {}): Required<ImportSourceDeps> {
-  return resolveImportSourceDeps(deps);
 }
 
 function tryExec(deps: Required<ImportSourceDeps>, file: string, args: readonly string[]): string | undefined {
@@ -229,7 +226,7 @@ const contactsSource: VocabImportSource = {
   privacy: 'Reads first/last names and organizations from your local macOS Contacts database. Lexicon adds no automatic upload or telemetry. Candidate previews are returned to your CLI/MCP client and may reach its model provider.',
   implemented: true,
   async checkAvailable(deps = {}): Promise<SourceAvailability> {
-    const d = resolved(deps);
+    const d = resolveImportSourceDeps(deps);
     if (d.platform !== 'darwin') return { available: false, reason: 'macOS Contacts only exists on macOS' };
     if (!addressBookDb(d)) return { available: false, reason: 'no AddressBook database found under ~/Library/Application Support/AddressBook' };
     if (tryExec(d, 'sqlite3', ['--version']) === undefined) {
@@ -238,7 +235,7 @@ const contactsSource: VocabImportSource = {
     return { available: true };
   },
   async harvest(deps = {}): Promise<HarvestCandidate[]> {
-    const d = resolved(deps);
+    const d = resolveImportSourceDeps(deps);
     const db = addressBookDb(d);
     if (!db) return [];
     const out = tryExec(d, 'sqlite3', ['-init', '/dev/null', '-readonly', '-separator', '\t', db, CONTACTS_QUERY]);
@@ -378,13 +375,13 @@ const calendarSource: VocabImportSource = {
   privacy: 'Reads event titles, attendee and organizer names from your locally synced calendars (~/Library/Calendars). Lexicon adds no automatic upload or telemetry. Candidate previews are returned to your CLI/MCP client and may reach its model provider.',
   implemented: true,
   async checkAvailable(deps = {}): Promise<SourceAvailability> {
-    const d = resolved(deps);
+    const d = resolveImportSourceDeps(deps);
     if (d.platform !== 'darwin') return { available: false, reason: 'macOS Calendar only exists on macOS' };
     if (!calendarDir(d)) return { available: false, reason: 'no ~/Library/Calendars directory found' };
     return { available: true };
   },
   async harvest(deps = {}): Promise<HarvestCandidate[]> {
-    const d = resolved(deps);
+    const d = resolveImportSourceDeps(deps);
     const dir = calendarDir(d);
     if (!dir) return [];
     const candidates: HarvestCandidate[] = [];
@@ -442,10 +439,6 @@ function ghJson(d: Required<ImportSourceDeps>, args: readonly string[]): unknown
   }
 }
 
-function isRecord(v: unknown): v is Record<string, unknown> {
-  return typeof v === 'object' && v !== null && !Array.isArray(v);
-}
-
 /** A GitHub login is dictated as a word; keep it, but never invent word boundaries for one. */
 function loginCandidate(login: string, evidence: string): HarvestCandidate | undefined {
   const canonical = login.trim();
@@ -466,13 +459,13 @@ const githubSource: VocabImportSource = {
   privacy: 'Calls api.github.com with your existing gh login: your username, org memberships, member logins and repo names. No new OAuth scopes.',
   implemented: true,
   async checkAvailable(deps = {}): Promise<SourceAvailability> {
-    const d = resolved(deps);
+    const d = resolveImportSourceDeps(deps);
     const status = tryExec(d, 'gh', ['auth', 'status']);
     if (status === undefined) return { available: false, reason: 'gh is not installed or not logged in (run gh auth login)' };
     return { available: true };
   },
   async harvest(deps = {}): Promise<HarvestCandidate[]> {
-    const d = resolved(deps);
+    const d = resolveImportSourceDeps(deps);
     const candidates: HarvestCandidate[] = [];
     const user = ghJson(d, ['api', 'user']);
     if (isRecord(user)) {

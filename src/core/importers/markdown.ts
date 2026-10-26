@@ -29,7 +29,7 @@ const SEPARATOR_CELL = /^:?-{3,}:?$/;
 const HEADING = /^(#{1,6})\s+(.*?)\s*#*\s*$/;
 
 /** Split a markdown table row into trimmed cells, honouring `\|` escapes. */
-export function splitTableRow(line: string): string[] | undefined {
+function splitTableRow(line: string): string[] | undefined {
   const text = line.trim();
   if (!text.startsWith('|')) return undefined;
   const cells: string[] = [];
@@ -102,7 +102,7 @@ function splitAliases(cell: string | undefined): string[] {
  * Take a leading category word and a trailing parenthesised hint; the rest is
  * the free-text note.
  */
-export function parseNoteCell(cell: string | undefined): {
+function parseNoteCell(cell: string | undefined): {
   category?: TermCategory;
   phonetic?: string;
   notes?: string;

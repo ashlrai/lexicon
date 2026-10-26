@@ -781,6 +781,21 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: project lexicon t
     const p = await runCli(['path'], { env: h.env, cwd: nested });
     expect(p.stdout).toBe(`global: ${h.globalPath}\nproject: ${projectPath}\n`);
   });
+
+  it.each(['worktree', 'standalone'])('init --project resolves a new file in a %s', async (kind) => {
+    const h = await freshHome(`init-${kind}`);
+    const root = path.join(h.home, kind);
+    const nested = path.join(root, 'src', 'deep');
+    await fs.mkdir(nested, { recursive: true });
+    if (kind === 'worktree') await fs.writeFile(path.join(root, '.git'), 'gitdir: ../repo/.git/worktrees/test\n');
+    const projectPath = path.join(kind === 'worktree' ? root : nested, '.lexicon.yaml');
+    const r = await runCli(['init', '--project'], { env: h.env, cwd: nested });
+    expect(r.code, r.stderr).toBe(0);
+    expect(r.stdout).toContain(`created project lexicon: ${projectPath}`);
+    expect(r.stdout).toContain(`trusted ${projectPath}`);
+    const p = await runCli(['path'], { env: h.env, cwd: nested });
+    expect(p.stdout).toBe(`global: ${h.globalPath}\nproject: ${projectPath}\n`);
+  });
 });
 
 // ---------------------------------------------------------------------------

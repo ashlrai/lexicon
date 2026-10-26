@@ -113,7 +113,6 @@ function invalidFileNextStep(safePath: string): string {
 
 export const registerTrustTools: ToolRegistrar = (server, ctx) => {
   // `ctx.cwd` is read on every call: it follows the client's MCP roots once they arrive.
-  const { load } = ctx;
   server.registerTool(
     'trust_project',
     {

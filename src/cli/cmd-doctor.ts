@@ -558,7 +558,6 @@ function summarize(
   const fails = checks.filter((c) => c.level === 'fail');
   const warns = checks.filter((c) => c.level === 'warn');
   const counts = `${state.terms} term${state.terms === 1 ? '' : 's'}`;
-  const ready = state.terms > 0 && state.wired && fails.length === 0;
 
   // A file that exists but will not parse is not "not set up yet": it has
   // terms, `lexicon setup` cannot repair it, and running setup exits 0 having

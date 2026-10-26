@@ -473,9 +473,7 @@ export function describeCorrection(c: Pick<Correction, 'original' | 'replacement
   return `${c.original} → ${c.replacement}`;
 }
 
-export function errorMessage(err: unknown): string {
-  return err instanceof Error ? err.message : String(err);
-}
+export { errorMessage } from '../../src/util/errors.js';
 
 /** `http://127.0.0.1:41733/pair` for the stored base URL. */
 export function pairUrl(baseUrl: string): string {

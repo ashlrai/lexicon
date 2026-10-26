@@ -13814,7 +13814,7 @@ function check(before, after) {
   topLevelRe.lastIndex = listStart;
   const nextTop = topLevelRe.exec(after);
   const listEnd = nextTop ? nextTop.index : after.length;
-  if (changedEnd <= listStart || p >= listEnd) return checkOutsideList(after, termsKey.index, listStart, listEnd);
+  if (changedEnd <= listStart || p >= listEnd) return checkOutsideList(after, termsKey.index, listEnd);
   if (p < listStart || changedEnd > listEnd) return checkWhole(after);
   const firstItem = /^( *)- /m.exec(after.slice(listStart));
   if (!firstItem) return checkWhole(after);
@@ -13868,7 +13868,7 @@ function schemaIssue(err, termName) {
   const issue2 = message.split("\n").find((l) => l.trim().startsWith("- ")) ?? message;
   return issue2.trim().replace(/^- /, "").replace(/^terms\[(\d+)\]\.?/, (m, k) => `the ${termName(Number(k))}${m.endsWith(".") ? ": " : ""}`);
 }
-function checkOutsideList(after, termsAt, listStart, listEnd) {
+function checkOutsideList(after, termsAt, listEnd) {
   const head = `${after.slice(0, termsAt)}terms: []
 `;
   const skeleton = head + after.slice(listEnd);
@@ -14699,7 +14699,7 @@ var require_mod = __commonJS({
       }
       return score;
     };
-    var distance3 = function(a, b) {
+    var distance4 = function(a, b) {
       if (a.length < b.length) {
         var tmp = b;
         b = a;
@@ -14713,12 +14713,12 @@ var require_mod = __commonJS({
       }
       return myers_x(a, b);
     };
-    exports.distance = distance3;
+    exports.distance = distance4;
     var closest = function(str, arr) {
       var min_distance = Infinity;
       var min_index = 0;
       for (var i = 0; i < arr.length; i++) {
-        var dist = distance3(str, arr[i]);
+        var dist = distance4(str, arr[i]);
         if (dist < min_distance) {
           min_distance = dist;
           min_index = i;
@@ -20503,9 +20503,9 @@ async function readGlobalLexiconMaybeStale(filePath, opts = {}) {
   let previousText = "";
   try {
     const cached2 = JSON.parse(await import_node_fs5.promises.readFile(cachePath, "utf8"));
-    if (isPlainObject2(cached2) && cached2.version === PARSE_CACHE_VERSION && cached2.path === key && typeof cached2.text === "string" && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(cached2.lexicon)) {
+    if (isRecord(cached2) && cached2.version === PARSE_CACHE_VERSION && cached2.path === key && typeof cached2.text === "string" && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(cached2.lexicon)) {
       const lexicon = JSON.parse(cached2.lexicon);
-      if (isPlainObject2(lexicon) && Array.isArray(lexicon.terms)) {
+      if (isRecord(lexicon) && Array.isArray(lexicon.terms)) {
         const file2 = { path: filePath, scope: "global", lexicon, exists: true };
         if (cached2.text === read.text) return { file: file2 };
         if (opts.stale && read.text.length >= STALE_GLOBAL_MIN_BYTES) {
@@ -20539,7 +20539,7 @@ async function readParseFailure(dir, key, text) {
   if (text.length < PARSE_CACHE_MIN_BYTES) return void 0;
   try {
     const cached2 = JSON.parse(await import_node_fs5.promises.readFile(import_node_path4.default.join(dir, PARSE_FAILURE_FILE_NAME), "utf8"));
-    if (isPlainObject2(cached2) && cached2.version === PARSE_FAILURE_VERSION && cached2.path === key && cached2.text === text && (cached2.kind === "yaml" || cached2.kind === "schema") && typeof cached2.reason === "string") {
+    if (isRecord(cached2) && cached2.version === PARSE_FAILURE_VERSION && cached2.path === key && cached2.text === text && (cached2.kind === "yaml" || cached2.kind === "schema") && typeof cached2.reason === "string") {
       return { kind: cached2.kind, reason: cached2.reason };
     }
   } catch {
@@ -20628,11 +20628,11 @@ async function readProjectBytes(filePath, globalPath) {
 async function readProjectCacheEntry(cachePath, key, bytes, text) {
   try {
     const cached2 = JSON.parse(await import_node_fs5.promises.readFile(cachePath, "utf8"));
-    if (!isPlainObject2(cached2) || cached2.version !== PROJECT_PARSE_CACHE_VERSION || typeof cached2.path !== "string") return {};
+    if (!isRecord(cached2) || cached2.version !== PROJECT_PARSE_CACHE_VERSION || typeof cached2.path !== "string") return {};
     const id = cached2.path;
     if (cached2.path === key && cached2.text === text && typeof cached2.sha256 === "string" && /^[0-9a-f]{64}$/.test(cached2.sha256) && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(`${cached2.sha256}${cached2.lexicon}`) && Buffer.from(cached2.text, "utf8").equals(bytes)) {
       const lexicon = JSON.parse(cached2.lexicon);
-      if (isPlainObject2(lexicon) && Array.isArray(lexicon.terms)) return { id, hit: { lexicon, sha256: cached2.sha256 } };
+      if (isRecord(lexicon) && Array.isArray(lexicon.terms)) return { id, hit: { lexicon, sha256: cached2.sha256 } };
     }
     return { id };
   } catch {
@@ -20725,7 +20725,7 @@ async function loadMatcherIndex(loaded, opts = {}) {
 function indexFromEntry(text, head, key, lexicon) {
   if (!text.startsWith(head)) return void 0;
   const cached2 = JSON.parse(text);
-  if (!isPlainObject2(cached2) || cached2.version !== INDEX_FORMAT_VERSION || cached2.key !== key) return void 0;
+  if (!isRecord(cached2) || cached2.version !== INDEX_FORMAT_VERSION || cached2.key !== key) return void 0;
   return deserializeIndex(cached2.index, lexicon) ?? void 0;
 }
 function indexCacheHead(key, project) {
@@ -20756,8 +20756,8 @@ function withLexiconLock(filePath, fn, opts) {
 function getHitsPath(opts = {}) {
   return import_node_path4.default.join(import_node_path4.default.dirname(resolvePaths(opts).global), HITS_FILE_NAME);
 }
-function hitKey(canonical) {
-  return foldKey(canonical);
+function spellingKey(spelling) {
+  return spelling.trim().toLowerCase().normalize("NFC");
 }
 async function canonicalPath2(filePath) {
   const resolved = import_node_path4.default.resolve(filePath);
@@ -20797,20 +20797,20 @@ async function loadHitsRegistry(opts) {
   } catch (e) {
     return { registry: emptyHitsRegistry(), problem: `is not valid JSON (${errorMessage(e)})` };
   }
-  if (!isPlainObject2(raw)) return { registry: emptyHitsRegistry(), problem: "is not a JSON object" };
-  if (raw.projects !== void 0 && !isPlainObject2(raw.projects)) {
+  if (!isRecord(raw)) return { registry: emptyHitsRegistry(), problem: "is not a JSON object" };
+  if (raw.projects !== void 0 && !isRecord(raw.projects)) {
     return { registry: emptyHitsRegistry(), problem: '"projects" is not an object' };
   }
-  if (raw.global !== void 0 && !isPlainObject2(raw.global)) {
+  if (raw.global !== void 0 && !isRecord(raw.global)) {
     return { registry: emptyHitsRegistry(), problem: '"global" is not an object' };
   }
   const out = emptyHitsRegistry();
-  if (isPlainObject2(raw.projects)) {
+  if (isRecord(raw.projects)) {
     for (const [file, counts] of Object.entries(raw.projects)) {
-      if (isPlainObject2(counts)) out.projects[file] = validCounts(counts);
+      if (isRecord(counts)) out.projects[file] = validCounts(counts);
     }
   }
-  if (isPlainObject2(raw.global)) out.global = validCounts(raw.global);
+  if (isRecord(raw.global)) out.global = validCounts(raw.global);
   return { registry: out };
 }
 async function readHitsRegistry(opts, forWrite = false) {
@@ -20820,14 +20820,11 @@ async function readHitsRegistry(opts, forWrite = false) {
   }
   return registry2;
 }
-function isPlainObject2(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 function validCounts(counts) {
   const entry = {};
   for (const [canonical, n] of Object.entries(counts)) {
     if (typeof n !== "number" || !Number.isSafeInteger(n) || n <= 0) continue;
-    const key = hitKey(canonical);
+    const key = spellingKey(canonical);
     entry[key] = Math.min((entry[key] ?? 0) + n, Number.MAX_SAFE_INTEGER);
   }
   return entry;
@@ -20842,9 +20839,9 @@ async function hydrateHits(merged, project, opts) {
   const projectCounts = project ? registry2.projects[await canonicalPath2(project.path)] ?? {} : {};
   const globalCounts = registry2.global ?? {};
   if (Object.keys(projectCounts).length === 0 && Object.keys(globalCounts).length === 0) return;
-  const owned = new Set(project ? project.lexicon.terms.map((t) => hitKey(t.canonical)) : []);
+  const owned = new Set(project ? project.lexicon.terms.map((t) => spellingKey(t.canonical)) : []);
   for (const term of merged.terms) {
-    const key = hitKey(term.canonical);
+    const key = spellingKey(term.canonical);
     const n = owned.has(key) ? projectCounts[key] : globalCounts[key];
     if (n) term.hits = (term.hits ?? 0) + n;
   }
@@ -20910,11 +20907,11 @@ function mergeLexicons(global, project) {
   if (project) {
     const firstByKey = /* @__PURE__ */ new Map();
     terms.forEach((t, i) => {
-      const k = canonicalKey(t.canonical);
+      const k = spellingKey(t.canonical);
       if (!firstByKey.has(k)) firstByKey.set(k, i);
     });
     for (const pt of project.terms) {
-      const key = canonicalKey(pt.canonical);
+      const key = spellingKey(pt.canonical);
       const idx = firstByKey.get(key) ?? -1;
       const replacement = { ...pt, scope: pt.scope ?? "project" };
       if (idx === -1) {
@@ -20947,7 +20944,7 @@ async function recordHits(canonicals, opts = {}) {
     if (canonicals.length === 0) return;
     const counts = /* @__PURE__ */ new Map();
     for (const c of canonicals) {
-      const key = hitKey(c);
+      const key = spellingKey(c);
       if (!key) continue;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
@@ -20967,7 +20964,7 @@ async function recordHits(canonicals, opts = {}) {
     if (projectFile) {
       const mine = /* @__PURE__ */ new Map();
       for (const term of projectFile.lexicon.terms) {
-        const key = hitKey(term.canonical);
+        const key = spellingKey(term.canonical);
         const n = counts.get(key);
         if (n === void 0) continue;
         mine.set(key, n);
@@ -20977,7 +20974,7 @@ async function recordHits(canonicals, opts = {}) {
     }
     if (counts.size > 0) {
       const globalFile = opts.loaded?.global ?? await readLexiconFile(paths.global, "global");
-      const owned = new Set(globalFile.lexicon.terms.map((t) => hitKey(t.canonical)));
+      const owned = new Set(globalFile.lexicon.terms.map((t) => spellingKey(t.canonical)));
       for (const key of [...counts.keys()]) if (!owned.has(key)) counts.delete(key);
     }
     if (!project && counts.size === 0) return;
@@ -21000,15 +20997,9 @@ async function recordHits(canonicals, opts = {}) {
   } catch {
   }
 }
-function foldKey(s) {
-  return s.trim().toLowerCase().normalize("NFC");
-}
-function canonicalKey(canonical) {
-  return foldKey(canonical);
-}
 function dedupeAliases(aliases, canonical) {
-  const canon = foldKey(canonical);
-  return dedupeCaseInsensitive(aliases).filter((a) => foldKey(a) !== canon);
+  const canon = spellingKey(canonical);
+  return dedupeCaseInsensitive(aliases).filter((a) => spellingKey(a) !== canon);
 }
 function dedupeCaseInsensitive(values) {
   const seen = /* @__PURE__ */ new Set();
@@ -21016,7 +21007,7 @@ function dedupeCaseInsensitive(values) {
   for (const raw of values) {
     const value = typeof raw === "string" ? raw.trim() : "";
     if (!value) continue;
-    const key = foldKey(value);
+    const key = spellingKey(value);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(value);
@@ -21194,6 +21185,9 @@ function diffSummary(result) {
 // src/core/index.ts
 init_harvest();
 
+// src/core/exporters/index.ts
+var import_fastest_levenshtein3 = __toESM(require_mod());
+
 // src/core/exporters/shared.ts
 init_collate();
 var CATEGORY_ORDER = {
@@ -21211,17 +21205,14 @@ function categoryRank(category) {
 function isProperNounCategory(category) {
   return category === "brand" || category === "person" || category === "product";
 }
-function compareCanonical(a, b) {
-  return compareText(a, b);
-}
 function sortByImportance(terms) {
   return [...terms].sort(
-    (a, b) => (b.hits ?? 0) - (a.hits ?? 0) || Number(isProperNounCategory(b.category)) - Number(isProperNounCategory(a.category)) || compareCanonical(a.canonical, b.canonical)
+    (a, b) => (b.hits ?? 0) - (a.hits ?? 0) || Number(isProperNounCategory(b.category)) - Number(isProperNounCategory(a.category)) || compareText(a.canonical, b.canonical)
   );
 }
 function sortByCategory(terms) {
   return [...terms].sort(
-    (a, b) => categoryRank(a.category) - categoryRank(b.category) || compareCanonical(a.canonical, b.canonical)
+    (a, b) => categoryRank(a.category) - categoryRank(b.category) || compareText(a.canonical, b.canonical)
   );
 }
 function joinAliasList(aliases) {
