@@ -7,6 +7,7 @@
  * Optional `allowedOrigins` lets the user whitelist extra CORS origins; the
  * three browser-extension schemes are always allowed. `*` is never honoured.
  */
+import { DEFAULT_HOST, DEFAULT_PORT } from './defaults.js';
 import { randomBytes } from 'node:crypto';
 import { isIPv4, isIPv6 } from 'node:net';
 import { promises as fs, readFileSync } from 'node:fs';
@@ -23,8 +24,7 @@ const SERVE_FILE_MODE = 0o600;
 
 export const SERVE_FILE_NAME = 'serve.json';
 /** Fixed default so clients can find the server without discovery. */
-export const DEFAULT_PORT = 41733;
-export const DEFAULT_HOST = '127.0.0.1';
+export { DEFAULT_HOST, DEFAULT_PORT };
 /** Origin schemes that always receive CORS headers (browser extensions only). */
 export const EXTENSION_ORIGIN_PREFIXES: readonly string[] = [
   'chrome-extension://',

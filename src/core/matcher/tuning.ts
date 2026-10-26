@@ -7,9 +7,10 @@
  * prose false-positive rate and the term recall together, so change one at a
  * time and re-run the benchmark.
  */
+import { DEFAULT_MIN_CONFIDENCE, INVENTED_BOUNDARY_CONFIDENCE } from '../caps.js';
 import { STOPLIST } from '../stoplist.js';
 
-export const DEFAULT_MIN_CONFIDENCE = 0.82;
+export { DEFAULT_MIN_CONFIDENCE };
 /** Longest token window we ever consider. */
 export const MAX_WINDOW = 5;
 /** Base confidence of a phonetic hit before the length penalty. */
@@ -136,7 +137,7 @@ export function loneTokenMinSim(keyLength: number): number {
  * is prose and "lexicon store" is a symbol, because nothing in the text does.
  * See docs/MATCHING.md.
  */
-export const INVENTED_BOUNDARY_CONFIDENCE = 0.95;
+export { INVENTED_BOUNDARY_CONFIDENCE };
 
 /** Domain-style suffixes stripped to derive an implicit short alias ("Ashlr.AI" -> "Ashlr"). */
 export const DOMAIN_SUFFIX = /^(.{2,}?)\.(ai|io|com|dev|app|co|net|org|sh|xyz|me|so|gg)$/i;

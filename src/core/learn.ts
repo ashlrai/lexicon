@@ -7,6 +7,7 @@
  * other direction: an unknown garble comes in and we rank the terms it most
  * likely was, so the agent can ask "did you mean Ashlr.AI?".
  */
+import { MAX_CORRECTION_LENGTH } from './caps.js';
 import { STOPLIST, phoneticKey, similarity } from './matcher.js';
 import { addTerm, loadLexicon } from './store.js';
 import { InputError } from '../util/errors.js';
@@ -69,8 +70,7 @@ export interface CanonicalSuggestion {
   confidence: number;
 }
 
-/** Longest string accepted on either side of a correction. */
-export const MAX_CORRECTION_LENGTH = 60;
+export { MAX_CORRECTION_LENGTH };
 /** Most words a bare (unquoted) side may span. Proper nouns are short; this keeps "it's X not Y" from eating a clause. */
 const MAX_BARE_WORDS = 4;
 /** Lowest confidence suggestCanonicalFor reports. */
