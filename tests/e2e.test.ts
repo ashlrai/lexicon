@@ -155,6 +155,10 @@ async function freshHome(label: string): Promise<TestHome> {
   delete env.LEXICON_TRUST_ALL;
   delete env.LEXICON_CWD;
   delete env.NO_COLOR;
+  // Vitest's v8 coverage sets these on the worker. Node then skips the compile
+  // cache the hook test is checking. A user process does not carry them.
+  delete env.NODE_V8_COVERAGE;
+  delete env.NODE_DISABLE_COMPILE_CACHE;
   // Client directory overrides take precedence over --home in install commands.
   delete env.CODEX_HOME;
   delete env.GEMINI_CLI_HOME;

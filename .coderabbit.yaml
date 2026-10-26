@@ -1,0 +1,70 @@
+language: en-US
+reviews:
+  profile: assertive
+  high_level_summary: true
+  poem: false
+  auto_review:
+    enabled: true
+    drafts: false
+    base_branches:
+      - "^main$"
+  path_filters:
+    - "!package-lock.json"
+    - "!web/package-lock.json"
+    - "!**/dist/**"
+    - "!**/dist-firefox/**"
+    - "!plugin/**"
+    - "!docs/CLI.md"
+    - "!coverage/**"
+    - "!**/*.zip"
+  path_instructions:
+    - path: "src/serve/**"
+      instructions: |
+        High scrutiny. Loopback-only rules and secret handling. The server must stay on loopback, the Host guard must keep rejecting DNS rebinding, the bearer token must stay constant-time and mode 0600, and /pair must not answer a non-loopback peer or a web origin.
+    - path: "src/cli/cmd-serve.ts"
+      instructions: |
+        High scrutiny. Loopback-only rules. The default listen address must stay 127.0.0.1, and a non-loopback bind must still warn.
+    - path: "src/cli/serve-paths.ts"
+      instructions: |
+        High scrutiny. Loopback-only rules. These paths name the login service. Do not point it at a non-loopback bind or a world-readable config path.
+    - path: "src/voice/**"
+      instructions: |
+        High scrutiny. Secret handling. Transcripts and recordings stay mode 0600, audio stays on the machine, and history is not uploaded.
+    - path: "src/core/redact.ts"
+      instructions: |
+        High scrutiny. Secret handling. Redaction must keep covering every 8-character window of a secret before text reaches an error, the CLI, or the extension.
+    - path: "scripts/check-crypto.mjs"
+      instructions: |
+        High scrutiny. Keyed path. This is the inventory of classical asymmetric crypto. Do not drop a pattern or skip a directory of shipped code.
+    - path: "extension/**"
+      instructions: |
+        High scrutiny. Secret handling and loopback-only rules. The bearer token stays in extension storage, never in page context. Host permissions stay on the listed chat sites plus loopback. all_urls stays opt-in.
+    - path: "apps/macos/**/SecretFieldHeuristic.swift"
+      instructions: |
+        High scrutiny. Secret handling. Password and secret fields must not be rewritten.
+    - path: "apps/windows/**/SecretFieldHeuristic.cs"
+      instructions: |
+        High scrutiny. Secret handling. Password and secret fields must not be rewritten.
+    - path: "src/core/matcher.ts"
+      instructions: |
+        High scrutiny. Tier-1 path. The exact-alias pass is the first matching tier and it rewrites user text before an agent sees it. Keep overlap order, stoplist behavior, and invented-boundary scoring unless a test shows the new result.
+    - path: "src/core/matcher/**"
+      instructions: |
+        High scrutiny. Tier-1 path. The exact-alias pass is the first matching tier and it rewrites user text before an agent sees it. Keep overlap order, stoplist behavior, and invented-boundary scoring unless a test shows the new result.
+    - path: "src/core/normalize.ts"
+      instructions: |
+        High scrutiny. Tier-1 path. normalize is the front door of the matcher. A failure must still pass the input through unchanged and exit non-zero.
+    - path: "src/core/trust.ts"
+      instructions: |
+        High scrutiny. Tier-1 path. The trust gate decides whether a project lexicon reaches model context. Do not trust a file the user has not reviewed.
+    - path: "src/core/store.ts"
+      instructions: |
+        High scrutiny. Tier-1 path. Project-scope reads and writes go through the trust gate before any merge into model context.
+    - path: "src/hooks/**"
+      instructions: |
+        High scrutiny. Tier-1 path. The hook injects corrections as additionalContext. It must not rewrite the user's prompt or write the lexicon on its own.
+    - path: "src/mcp/tools/trust.ts"
+      instructions: |
+        High scrutiny. Tier-1 path. trust_project must not mark a repository trusted unless the user asked.
+chat:
+  auto_reply: false
