@@ -116,17 +116,14 @@ jobs:
       # id-token for a short-lived publish credential, so no NPM_TOKEN secret
       # is needed once the trusted publisher is configured on npmjs.com
       # (package settings -> Trusted publisher -> ashlrai/lexicon, release.yml).
-      # A configured NPM_TOKEN still works as a fallback.
+      # No long-lived NPM_TOKEN is used; OIDC is the only publish credential.
       - name: Use an npm CLI that supports trusted publishing
         run: npm install -g "npm@^11.5.1" && npm --version
-      - name: Require publish credentials and prove publication absence
+      - name: Require OIDC trusted publishing and prove publication absence
         env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
           GH_TOKEN: ${{ github.token }}
         run: node scripts/release-contract.mjs preflight "$VERSION"
       - name: Publish original qualified npm archive
-        env:
-          NODE_AUTH_TOKEN: ${{ secrets.NPM_TOKEN }}
         run: npm publish "./release/ashlr-lexicon-${VERSION}.tgz" --provenance --access public
       - name: Accept exact npm version and archive integrity
         run: node scripts/release-contract.mjs registry release "$VERSION"

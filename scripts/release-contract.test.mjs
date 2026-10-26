@@ -24,7 +24,7 @@ function fixtures(t) {
   return { dir, staged, release: join(dir, 'release') };
 }
 function complete(t) { const f = fixtures(t); assemble(f.staged, f.release, version); return f; }
-const env = { NODE_AUTH_TOKEN: 'synthetic-npm-token', GH_TOKEN: 'synthetic-github-token', GITHUB_REPOSITORY: 'ashlrai/lexicon' };
+const env = { ACTIONS_ID_TOKEN_REQUEST_URL: 'https://synthetic', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'synthetic', GH_TOKEN: 'synthetic-github-token', GITHUB_REPOSITORY: 'ashlrai/lexicon' };
 
 test('asset inspection refuses empty and oversized files before opening a descriptor', (t) => {
   for (const size of [0, 256 * 1024 * 1024 + 1]) {
@@ -219,9 +219,9 @@ test('trusted publishing OIDC satisfies the credential requirement without NPM_T
   await preflight(version, { ...env, NODE_AUTH_TOKEN: '', ACTIONS_ID_TOKEN_REQUEST_URL: 'https://synthetic', ACTIONS_ID_TOKEN_REQUEST_TOKEN: 'synthetic' }, async () => { calls++; return { status: 404 }; });
   assert.equal(calls, 2);
 });
-test('missing token refuses before any network read or external write', async () => {
+test('missing OIDC refuses before any network read or external write, even with a long-lived token', async () => {
   let calls = 0;
-  await assert.rejects(preflight(version, { ...env, NODE_AUTH_TOKEN: '' }, async () => { calls++; }), /NPM_TOKEN/);
+  await assert.rejects(preflight(version, { ...env, ACTIONS_ID_TOKEN_REQUEST_URL: '', ACTIONS_ID_TOKEN_REQUEST_TOKEN: '', NODE_AUTH_TOKEN: 'synthetic-npm-token' }, async () => { calls++; }), /trusted publishing/);
   assert.equal(calls, 0);
 });
 for (const status of [200, 401, 403, 500]) {
