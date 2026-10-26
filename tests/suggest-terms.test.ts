@@ -1086,3 +1086,47 @@ describe('runSuggest --apply: phonetic hints through the real store', () => {
     expect(io.err).toContain('untrusted');
   });
 });
+
+describe('lexicon suggest lists pending captures first', () => {
+  const entry = (id: string, heard: string, meant: string, source: string, lastSeen: string) => ({
+    id, heard, meant, source, count: 2, firstSeen: '2026-10-01T00:00:00.000Z', lastSeen,
+  });
+
+  it('prints the pending queue before the suggestions, newest first, labeled with its source', async () => {
+    const store = mockStore();
+    const io = makeIO();
+    const listPending = async () => ({
+      file: '/tmp/x/pending-aliases.yaml',
+      entries: [entry('aaaa1111', 'ashler', 'Ashlr', 'prompt-hook', '2026-10-02T00:00:00.000Z'), entry('bbbb2222', 'versal', 'Vercel', 'mcp', '2026-10-05T00:00:00.000Z')],
+    });
+    expect(await runSuggest({}, io, { ...store.deps, listPending })).toBe(0);
+    const out = io.out;
+    expect(out.indexOf('pending corrections')).toBeGreaterThanOrEqual(0);
+    expect(out.indexOf('pending corrections')).toBeLessThan(out.indexOf('kind'));
+    expect(out.indexOf('bbbb2222')).toBeLessThan(out.indexOf('aaaa1111'));
+    expect(out).toContain('from prompt-hook, seen 2x');
+    expect(out).toContain('lexicon pending accept <id>');
+    expect(store.added).toEqual([]);
+  });
+
+  it('keeps --json an array and does not read the queue', async () => {
+    const store = mockStore();
+    const io = makeIO();
+    let read = 0;
+    const listPending = async () => { read += 1; return { file: 'f', entries: [] }; };
+    expect(await runSuggest({ json: true }, io, { ...store.deps, listPending })).toBe(0);
+    expect(Array.isArray(JSON.parse(io.out))).toBe(true);
+    expect(read).toBe(0);
+  });
+
+  it('prints nothing extra for an empty queue and warns, without failing, when it cannot be read', async () => {
+    const store = mockStore();
+    const io = makeIO();
+    expect(await runSuggest({}, io, { ...store.deps, listPending: async () => ({ file: 'f', entries: [] }) })).toBe(0);
+    expect(io.out).not.toContain('pending corrections');
+    const io2 = makeIO();
+    expect(await runSuggest({}, io2, { ...store.deps, listPending: async () => { throw new Error('boom'); } })).toBe(0);
+    expect(io2.err).toContain('could not read the pending queue: boom');
+    expect(io2.out).toContain('kind');
+  });
+});
