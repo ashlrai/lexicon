@@ -722,6 +722,35 @@ describe('runImport', () => {
     expect(MAX_IMPORT_BYTES).toBe(8 * 1024 * 1024);
   });
 
+  // Catches: every other runImport test hands it pre-decoded text, so the
+  // real read path (stat, readFile, decodeImportBytes under the file's own
+  // name) was only covered end to end. A Latin-1 file was what once imported
+  // with exit 0 and wrote "Caf<U+FFFD>" into the lexicon as a canonical.
+  it('reads a real file: UTF-16LE decodes, Latin-1 is refused by its own name before anything writes', async () => {
+    const dir = await fsp.mkdtemp(nodePath.join(os.tmpdir(), 'lexicon-import-enc-'));
+    try {
+      const utf16 = nodePath.join(dir, 'powershell.txt');
+      await fsp.writeFile(utf16, Buffer.concat([Buffer.from([0xff, 0xfe]), Buffer.from('Café: cafe\nHetzner: head sner\n', 'utf16le')]));
+      const io = makeIO();
+      expect(await runImport(utf16, { format: 'text', cwd: dir }, io)).toBe(0);
+      expect(store.addTerm.mock.calls.map((c) => (c[0] as Term).canonical)).toEqual(['Café', 'Hetzner']);
+
+      const latin1 = nodePath.join(dir, 'notepad.txt');
+      await fsp.writeFile(latin1, Buffer.from('Caf\xe9: cafe, caff\n', 'latin1'));
+      store.addTerm.mockClear();
+      const err = await runImport(latin1, { format: 'text', cwd: dir }, makeIO()).then(
+        () => new Error('imported'),
+        (e: unknown) => e as Error,
+      );
+      expect(err.message).toContain(latin1);
+      expect(err.message).toContain('not UTF-8');
+      expect(err.message).not.toContain('lexicon.yaml');
+      expect(store.addTerm).not.toHaveBeenCalled();
+    } finally {
+      await fsp.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('empty input imports nothing and exits 0', async () => {
     const io = makeIO();
     const code = await runImport('x.txt', { format: 'text' }, io, read('# only a comment\n'));
