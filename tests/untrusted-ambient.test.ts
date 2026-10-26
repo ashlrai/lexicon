@@ -179,7 +179,7 @@ async function voiceDeps(transcript: string): Promise<{ deps: Parameters<typeof 
       };
     });
     children.push({ pid, resolve: resolveExit });
-    return { pid, exited, stderr: () => '', kill: (signal) => resolveExit(signal === 'SIGKILL' ? null : 255) };
+    return { pid, exited, stderr: () => '' };
   };
   const out: string[] = [];
   const err: string[] = [];
