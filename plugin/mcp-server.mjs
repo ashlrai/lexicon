@@ -61969,14 +61969,22 @@ function isEntry(v) {
   const e = v;
   return typeof e.id === "string" && typeof e.heard === "string" && typeof e.meant === "string" && typeof e.source === "string" && typeof e.count === "number" && typeof e.firstSeen === "string" && typeof e.lastSeen === "string";
 }
+function isRejected(v) {
+  if (!v || typeof v !== "object") return false;
+  const e = v;
+  return typeof e.id === "string" && typeof e.rejectedAt === "string";
+}
 async function readPending(file2) {
+  return (await readPendingFile(file2)).entries;
+}
+async function readPendingFile(file2) {
   let text;
   try {
     const stat = await import_node_fs8.promises.stat(file2);
     if (stat.size > MAX_PENDING_BYTES) throw new PendingFileError(`${file2} is larger than ${MAX_PENDING_BYTES} bytes`);
     text = await import_node_fs8.promises.readFile(file2, "utf8");
   } catch (err) {
-    if (err.code === "ENOENT") return [];
+    if (err.code === "ENOENT") return { entries: [], rejected: [] };
     throw err;
   }
   let doc;
@@ -61985,14 +61993,18 @@ async function readPending(file2) {
   } catch {
     throw new PendingFileError(`${file2} is not valid YAML`);
   }
-  if (doc === null || doc === void 0) return [];
+  if (doc === null || doc === void 0) return { entries: [], rejected: [] };
   const list = doc.pending;
   if (typeof doc !== "object" || list !== void 0 && !Array.isArray(list)) {
     throw new PendingFileError(`${file2} does not hold a pending list`);
   }
   const entries2 = list ?? [];
   if (!entries2.every(isEntry)) throw new PendingFileError(`${file2} has an entry that is not a pending alias`);
-  return entries2;
+  const rej = doc.rejected;
+  if (rej !== void 0 && (!Array.isArray(rej) || !rej.every(isRejected))) {
+    throw new PendingFileError(`${file2} has a rejected list that is not id and rejectedAt pairs`);
+  }
+  return { entries: entries2, rejected: rej ?? [] };
 }
 
 // src/core/stats.ts

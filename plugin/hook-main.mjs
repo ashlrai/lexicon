@@ -21505,14 +21505,19 @@ function isEntry(v) {
   const e = v;
   return typeof e.id === "string" && typeof e.heard === "string" && typeof e.meant === "string" && typeof e.source === "string" && typeof e.count === "number" && typeof e.firstSeen === "string" && typeof e.lastSeen === "string";
 }
-async function readPending(file) {
+function isRejected(v) {
+  if (!v || typeof v !== "object") return false;
+  const e = v;
+  return typeof e.id === "string" && typeof e.rejectedAt === "string";
+}
+async function readPendingFile(file) {
   let text;
   try {
     const stat = await import_node_fs7.promises.stat(file);
     if (stat.size > MAX_PENDING_BYTES) throw new PendingFileError(`${file} is larger than ${MAX_PENDING_BYTES} bytes`);
     text = await import_node_fs7.promises.readFile(file, "utf8");
   } catch (err) {
-    if (err.code === "ENOENT") return [];
+    if (err.code === "ENOENT") return { entries: [], rejected: [] };
     throw err;
   }
   let doc;
@@ -21521,17 +21526,23 @@ async function readPending(file) {
   } catch {
     throw new PendingFileError(`${file} is not valid YAML`);
   }
-  if (doc === null || doc === void 0) return [];
+  if (doc === null || doc === void 0) return { entries: [], rejected: [] };
   const list = doc.pending;
   if (typeof doc !== "object" || list !== void 0 && !Array.isArray(list)) {
     throw new PendingFileError(`${file} does not hold a pending list`);
   }
   const entries2 = list ?? [];
   if (!entries2.every(isEntry)) throw new PendingFileError(`${file} has an entry that is not a pending alias`);
-  return entries2;
+  const rej = doc.rejected;
+  if (rej !== void 0 && (!Array.isArray(rej) || !rej.every(isRejected))) {
+    throw new PendingFileError(`${file} has a rejected list that is not id and rejectedAt pairs`);
+  }
+  return { entries: entries2, rejected: rej ?? [] };
 }
-async function writePending(file, entries2) {
-  await writeFileAtomic(file, HEADER + (0, import_yaml3.stringify)({ version: 1, pending: entries2 }), { mode: 384 });
+async function writePending(file, entries2, rejected) {
+  const doc = { version: 1, pending: entries2 };
+  if (rejected.length > 0) doc.rejected = rejected;
+  await writeFileAtomic(file, HEADER + (0, import_yaml3.stringify)(doc), { mode: 384 });
 }
 async function queueCorrections(corrections, opts = {}) {
   const file = pendingPath(opts);
@@ -21539,7 +21550,8 @@ async function queueCorrections(corrections, opts = {}) {
   const source = opts.source ?? "manual";
   const lockOpts = opts.lockTimeoutMs !== void 0 ? { timeoutMs: opts.lockTimeoutMs } : void 0;
   return withLexiconLock(file, async () => {
-    const entries2 = await readPending(file);
+    const { entries: entries2, rejected } = await readPendingFile(file);
+    const rejectedIds = new Set(rejected.map((r) => r.id));
     const queued = [];
     let skipped = 0;
     for (const c of corrections) {
@@ -21548,6 +21560,10 @@ async function queueCorrections(corrections, opts = {}) {
         continue;
       }
       const id = pendingId(c.heard, c.meant);
+      if (rejectedIds.has(id)) {
+        skipped++;
+        continue;
+      }
       const hit = entries2.find((e) => e.id === id);
       if (hit) {
         hit.count++;
@@ -21563,7 +21579,7 @@ async function queueCorrections(corrections, opts = {}) {
       entries2.sort((a, b) => a.lastSeen < b.lastSeen ? 1 : a.lastSeen > b.lastSeen ? -1 : 0);
       entries2.splice(MAX_PENDING);
       entries2.sort((a, b) => a.firstSeen < b.firstSeen ? -1 : a.firstSeen > b.firstSeen ? 1 : 0);
-      await writePending(file, entries2);
+      await writePending(file, entries2, rejected);
     }
     return { queued, skipped, file };
   }, lockOpts);
