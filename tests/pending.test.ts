@@ -1,3 +1,4 @@
+import { stringify } from 'yaml';
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import { isHeldLockError } from '../src/util/atomic.js';
@@ -94,14 +95,32 @@ describe('pending aliases are queued, never applied', () => {
 
   it(`keeps at most ${MAX_PENDING} entries, dropping the least recently seen`, async () => {
     const o = await opts();
-    const many = Array.from({ length: MAX_PENDING + 5 }, (_, i) => ({ heard: `garble${i}`, meant: `Name${i}` }));
-    for (let i = 0; i < many.length; i++) {
-      await queueCorrections([many[i]], { ...o, now: new Date(Date.UTC(2026, 0, 1, 0, 0, i)) });
-    }
+    const file = pendingPathFor(globalPath);
+    // The cap lives in the write path, so the file is seeded the way
+    // queueCorrections would have written it: walking MAX_PENDING corrections
+    // through the lock to reach the same state costs about twenty seconds.
+    const seeded = Array.from({ length: MAX_PENDING }, (_, i) => ({
+      id: pendingId(`garble${i}`, `Name${i}`),
+      heard: `garble${i}`,
+      meant: `Name${i}`,
+      source: 'prompt-hook',
+      count: 1,
+      firstSeen: new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString(),
+      lastSeen: new Date(Date.UTC(2026, 0, 1, 0, 0, i)).toISOString(),
+    }));
+    await fs.mkdir(path.dirname(file), { recursive: true });
+    await fs.writeFile(file, stringify({ version: 1, pending: seeded }));
+    // Five corrections newer than every seed push the file over the cap.
+    const many = Array.from({ length: 5 }, (_, i) => ({ heard: `new${i}`, meant: `New${i}` }));
+    await queueCorrections(many, { ...o, now: new Date(Date.UTC(2026, 0, 2, 0, 0, 0)) });
     const { entries } = await listPending(o);
     expect(entries).toHaveLength(MAX_PENDING);
-    expect(entries.some((e) => e.heard === 'garble0')).toBe(false);
-    expect(entries.some((e) => e.heard === `garble${MAX_PENDING + 4}`)).toBe(true);
+    // The least recently seen five are the five oldest seeds; the rest stay.
+    for (let i = 0; i < 5; i++) expect(entries.some((e) => e.heard === `garble${i}`)).toBe(false);
+    expect(entries.some((e) => e.heard === 'garble5')).toBe(true);
+    for (const c of many) expect(entries.some((e) => e.heard === c.heard)).toBe(true);
+    // The file is written in firstSeen order, so the oldest survivor leads.
+    expect(entries[0].heard).toBe('garble5');
   }, 30_000);
 
   it('accept learns the alias (matching changes only now) and removes it from the queue', async () => {
