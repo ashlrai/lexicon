@@ -73,3 +73,51 @@ describe('doctor with a trust registry it cannot use', () => {
     expect(trusted.checks.some((c) => c.message.startsWith('trust registry '))).toBe(false);
   });
 });
+
+describe('doctor in a repo whose only terms are untrusted', () => {
+  // Catches: with an empty global lexicon and an untrusted repo .lexicon.yaml, doctor
+  // said "not set up yet ... Run: lexicon setup", which leaves the repo's terms unmerged,
+  // and its trust next step named the MCP tool trust_project to a terminal user.
+  it('names lexicon trust, not lexicon setup, as the next step, with the file named whole', async () => {
+    const home = mkdtempSync(path.join(os.tmpdir(), 'lexicon-doctor-untrusted-'));
+    dirs.push(home);
+    const cfg = path.join(home, 'cfg');
+    // A deep repo: the untrusted-file check message runs past where a display
+    // cap once cut the command after the path.
+    const repo = path.join(home, 'projects', 'a-fairly-long-organisation-name', 'and-a-fairly-long-repository-name', 'packages', 'service');
+    mkdirSync(cfg);
+    mkdirSync(path.join(repo, '.git'), { recursive: true });
+    const globalPath = path.join(cfg, 'lexicon.yaml');
+    writeFileSync(globalPath, 'version: 1\nterms: []\n');
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    writeFileSync(projectPath, 'version: 1\nterms:\n  - canonical: Hetzner\n    aliases: [head sner]\n');
+    const deps = { home, env: { PATH: '', LEXICON_PATH: globalPath }, platform: 'linux' as const, exec: () => 'no servers' };
+
+    const report = await runDoctorReport({ cwd: repo }, deps);
+    expect(report.ready).toBe(false);
+    expect(report.summary).toContain('project lexicon (1 term) is not trusted');
+    expect(report.summary).not.toMatch(/not set up yet/);
+    expect(report.nextStep).toContain('lexicon trust');
+    expect(report.nextStep).not.toContain('lexicon setup');
+    expect(report.nextStep).not.toContain('trust_project');
+    const check = report.checks.find((c) => /untrusted and not merged/.test(c.message));
+    expect(check?.message).toContain(projectPath);
+    const mcp = await runDoctorReport({ cwd: repo, audience: 'mcp' }, deps);
+    expect(mcp.nextStep).toContain('trust_project');
+    expect(mcp.nextStep).not.toContain('lexicon setup');
+    // The rendered check names the file and its command whole: an ellipsis
+    // cannot be run, and a deep repo path is what pushed it past the old cap.
+    // Untrusted is a warn, not a fail, so the exit code stays 0.
+    const io = makeIO();
+    expect(await runDoctor({ cwd: repo }, io, deps)).toBe(0);
+    expect(io.out).toContain('(review it, then run: lexicon trust)');
+    expect(io.out).not.toContain('…');
+
+    // Once it is trusted the terms count and the next step moves on.
+    await trustProject(projectPath, { cwd: repo, globalPath });
+    const after = await runDoctorReport({ cwd: repo }, deps);
+    expect(after.summary).not.toContain('is not trusted');
+    expect(after.checks).toContainEqual({ level: 'ok', message: 'project lexicon is trusted and merged' });
+    expect(after.nextStep).not.toContain('lexicon trust');
+  });
+});

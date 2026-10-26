@@ -1068,17 +1068,8 @@ async function prebuildIndexCache(filePath: string, lexicon: Lexicon): Promise<v
  * counter in the file: counts live in `hits.json`.
  */
 export async function writeLexiconFile(file: LexiconFile): Promise<void> {
-  const header = HEADER_COMMENT.split('\n')
-    .map((line) => (line ? `# ${line}` : '#'))
-    .join('\n');
   await withLexiconLock(file.path, async () => {
-    await pinCommittedHits(file);
-    const ordered = orderLexicon(file.lexicon);
-    const existing = await readLexiconText(file.path).catch(() => undefined);
-    const text =
-      (existing && updateInPlace(existing.text, ordered)) ??
-      `${header}\n\n${stringifyYaml(ordered, { lineWidth: 0 })}`;
-    const readBack = assertReadsBack(text, file.path);
+    const { text, readBack } = await prepareLexiconWrite(file);
     await writeFileAtomic(file.path, text, { backup: true });
     // What is on disk now is what this wrote: writeAndTrust pins exactly that.
     if (file.scope === 'project') rememberParsedBytes(file, text);
@@ -1093,6 +1084,20 @@ export async function writeLexiconFile(file: LexiconFile): Promise<void> {
     }
   });
   file.exists = true;
+}
+
+/** Shared by real and preview writes; the caller holds the lexicon lock. */
+async function prepareLexiconWrite(file: LexiconFile): Promise<{ text: string; readBack: Lexicon }> {
+  await pinCommittedHits(file);
+  const ordered = orderLexicon(file.lexicon);
+  const existing = await readLexiconText(file.path).catch(() => undefined);
+  const header = HEADER_COMMENT.split('\n')
+    .map((line) => (line ? `# ${line}` : '#'))
+    .join('\n');
+  const text =
+    (existing && updateInPlace(existing.text, ordered)) ??
+    `${header}\n\n${stringifyYaml(ordered, { lineWidth: 0 })}`;
+  return { text, readBack: assertReadsBack(text, file.path) };
 }
 
 /**
@@ -2031,8 +2036,13 @@ export async function addTerms(
   });
 }
 
-function writeAddedFile(file: LexiconFile, opts: AddTermOptions): Promise<void> {
-  if (opts.dryRun) return Promise.resolve();
+async function writeAddedFile(file: LexiconFile, opts: AddTermOptions): Promise<void> {
+  if (opts.dryRun) {
+    // A valid incoming term can overflow the merged alias/never or document
+    // limits. Check the same final bytes and committed hits as a real write.
+    await prepareLexiconWrite(file);
+    return;
+  }
   return opts.leaveUntrusted ? writeLexiconFile(file) : writeAndTrust(file, opts);
 }
 
