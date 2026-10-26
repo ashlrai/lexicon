@@ -337,6 +337,11 @@ Options:
   --quiet           do not print corrections
   --backend <name>  force a clipboard backend: pbcopy|wl|xclip|xsel|powershell
   --which           print the detected clipboard backend and exit
+  --expander        opt in: run the resident expander over a private local
+                    socket (macOS/Linux)
+  --socket <path>   with --expander: socket in a private directory (default
+                    $XDG_RUNTIME_DIR/lexicon/expander.sock, else
+                    $XDG_STATE_HOME/lexicon/expander.sock)
   -h, --help        display help for command
 ```
 

@@ -10,12 +10,13 @@
  *   - Tests that write (learn, import, trust, doctor "changed", install) get
  *     their own HOME from `freshHome()` so they cannot interfere.
  *
- * Runs on CI without a clipboard: the daemon is deliberately not exercised.
+ * Runs on CI without a clipboard: the resident daemon journey uses its socket.
  * Set LEXICON_SKIP_E2E=1 to skip the whole file (see CONTRIBUTING.md).
  */
 import { spawn } from 'node:child_process';
 import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
+import net from 'node:net';
 import nodeModule from 'node:module';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -1539,5 +1540,102 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: setup --yes with 
     expect(r.stdout).toContain('terms added: none');
     expect(r.stdout).toContain('Next: add a name you dictate: lexicon add "Your Co" --suggest');
     expect(r.stdout).not.toContain('one of your names');
+  });
+});
+
+describe.skipIf(process.env.LEXICON_SKIP_E2E)('e2e: resident expander', () => {
+  it('serves a half-closed CLI connection without loading an untrusted project, then stops cleanly', async () => {
+    const h = await cloneOf(shared, 'expander');
+    await fs.writeFile(path.join(h.repo, '.lexicon.yaml'), 'terms: [invalid yaml');
+    if (process.platform === 'win32') {
+      const result = await runCli(['daemon', '--expander'], { env: h.env, cwd: h.repo });
+      expect(result.code).toBe(1);
+      expect(result.stderr).toContain('unavailable on Windows until private named-pipe ACLs can be enforced');
+      return;
+    }
+
+    // A short, dedicated private directory keeps the path under macOS's 103-byte limit.
+    const socketDir = await fs.mkdtemp(path.join(os.tmpdir(), 'lxe-'));
+    created.push(socketDir);
+    const socketPath = path.join(socketDir, 'x.sock');
+    const child = spawn(process.execPath, [...nodeArgs(CLI), 'daemon', '--expander', '--socket', socketPath, '--cwd', h.repo], {
+      cwd: REPO_ROOT,
+      env: h.env,
+      stdio: ['ignore', 'pipe', 'pipe'],
+    });
+    let stdout = '';
+    let stderr = '';
+    child.stdout.setEncoding('utf8');
+    child.stderr.setEncoding('utf8').on('data', (data: string) => { stderr += data; });
+    const closed = new Promise<number | null>((resolve) => child.once('close', resolve));
+    let client: net.Socket | undefined;
+    try {
+      await new Promise<void>((resolve, reject) => {
+        const timer = setTimeout(() => finish(new Error(`expander did not listen: ${stderr}`)), TIMEOUT_MS);
+        const finish = (error?: Error): void => {
+          clearTimeout(timer);
+          child.stdout.off('data', onData);
+          child.off('error', onError);
+          child.off('close', onClose);
+          if (error) reject(error);
+          else resolve();
+        };
+        const onData = (data: string): void => {
+          stdout += data;
+          if (stdout.includes('lexicon expander listening on')) finish();
+        };
+        const onError = (error: Error): void => finish(error);
+        const onClose = (): void => finish(new Error(`expander exited before listening: ${stderr}`));
+        child.stdout.on('data', onData);
+        child.once('error', onError);
+        child.once('close', onClose);
+      });
+
+      client = net.connect(socketPath);
+      const responses = await new Promise<Record<string, unknown>[]>((resolve, reject) => {
+        let text = '';
+        client!.setEncoding('utf8');
+        client!.setTimeout(TIMEOUT_MS, () => client!.destroy(new Error('expander response timed out')));
+        client!.on('data', (data: string) => { text += data; });
+        client!.once('error', reject);
+        client!.once('end', () => {
+          try {
+            resolve(text.trim().split('\n').map((line) => JSON.parse(line) as Record<string, unknown>));
+          } catch (error) {
+            reject(error);
+          }
+        });
+        // Close our write side immediately, as a one-shot shortcut does.
+        client!.end([
+          JSON.stringify({ id: 'normalize', op: 'normalize', text: 'Ashler' }),
+          JSON.stringify({ id: 'type', op: 'type', text: 'Ashler ' }),
+          '',
+        ].join('\n'));
+      });
+      expect(responses).toEqual([
+        expect.objectContaining({ id: 'normalize', ok: true, output: 'Ashlr.AI', changed: true }),
+        expect.objectContaining({ id: 'type', ok: true, action: expect.objectContaining({ kind: 'expand', insert: 'Ashlr.AI ' }) }),
+      ]);
+      child.kill('SIGTERM');
+      const exitCode = await new Promise<number | null>((resolve, reject) => {
+        const timer = setTimeout(() => reject(new Error('expander did not stop after SIGTERM')), TIMEOUT_MS);
+        void closed.then((code) => { clearTimeout(timer); resolve(code); });
+      });
+      expect(exitCode, stderr).toBe(143);
+      expect(existsSync(socketPath)).toBe(false);
+      expect(stderr).toBe('');
+    } finally {
+      client?.destroy();
+      if (child.exitCode === null && child.signalCode === null) child.kill('SIGKILL');
+      await closed;
+    }
+  });
+
+  it('refuses incompatible CLI flags before starting the daemon', async () => {
+    for (const args of [['--socket', 'x.sock'], ['--expander', '--once'], ['--expander', '--paste'], ['--expander', '--which']]) {
+      const result = await runCli(['daemon', ...args], { env: shared.env });
+      expect(result.code, args.join(' ')).toBe(1);
+      expect(result.stderr).toMatch(/works only with --expander|cannot be combined with --expander/);
+    }
   });
 });

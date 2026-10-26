@@ -1669,29 +1669,37 @@ describe('content: undo never overwrites what the user typed since', () => {
 
 describe('content: live mode keeps the caret where the user is typing', () => {
   it('contenteditable: the caret ends after the corrected prefix, not after the first rewrite', async () => {
-    document.body.innerHTML = '<div id="e" contenteditable="true"><p>ping ashler about cooper netties and</p></div>';
-    const e = document.getElementById('e')!;
-    handle = installContent({
-      doc: document,
-      hostname: 'example.org',
-      send: vi.fn(fakeSend),
-      settings: { enabled: true, live: true },
-      liveDebounceMs: 5,
-      precheckDebounceMs: 1000,
-    });
-    e.focus();
-    const text = e.querySelector('p')!.firstChild as Text;
-    const sel = document.getSelection()!;
-    const r = document.createRange();
-    r.setStart(text, text.data.length);
-    r.collapse(true);
-    sel.removeAllRanges();
-    sel.addRange(r);
-    e.dispatchEvent(new Event('input', { bubbles: true }));
-    await wait(60);
-    expect(readText(e)).toBe('ping Ashlr.AI about Kubernetes and');
-    const { caretOffset } = await import('../extension/src/editable.js');
-    expect(caretOffset(document, e)).toBe('ping Ashlr.AI about Kubernetes and'.length);
+    // Drain both rewrites deterministically: the second yields through a zero-delay timer.
+    vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] });
+    try {
+      document.body.innerHTML = '<div id="e" contenteditable="true"><p>ping ashler about cooper netties and</p></div>';
+      const e = document.getElementById('e')!;
+      handle = installContent({
+        doc: document,
+        hostname: 'example.org',
+        send: vi.fn(fakeSend),
+        settings: { enabled: true, live: true },
+        liveDebounceMs: 5,
+        precheckDebounceMs: 1000,
+      });
+      e.focus();
+      const text = e.querySelector('p')!.firstChild as Text;
+      const sel = document.getSelection()!;
+      const r = document.createRange();
+      r.setStart(text, text.data.length);
+      r.collapse(true);
+      sel.removeAllRanges();
+      sel.addRange(r);
+      e.dispatchEvent(new Event('input', { bubbles: true }));
+      await vi.advanceTimersByTimeAsync(60);
+      expect(readText(e)).toBe('ping Ashlr.AI about Kubernetes and');
+      const { caretOffset } = await import('../extension/src/editable.js');
+      expect(caretOffset(document, e)).toBe('ping Ashlr.AI about Kubernetes and'.length);
+    } finally {
+      handle?.destroy();
+      handle = null;
+      vi.useRealTimers();
+    }
   });
 });
 
@@ -1924,25 +1932,32 @@ describe('background: text too large for the server request limit', () => {
   // dropped the health cache and fell back, so each check cost two requests
   // that could never succeed.
   it('checks text over API_MAX_BODY_BYTES with the embedded lexicon without posting it, and says why', async () => {
-    const fetchMock = vi.fn(async (url: string) => {
-      if (url.endsWith('/health')) return json({ ok: true, version: '1', terms: 1 });
-      if (url.endsWith('/normalize')) return json({ error: 'request body exceeds 1048576 bytes' }, 413);
-      return json({ error: 'nope' }, 404);
-    });
-    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: storeWith({ token: 'a'.repeat(64) }), defaultYaml: EXAMPLE_YAML });
-    const big = 'ping ashler ' + 'x'.repeat(API_MAX_BODY_BYTES);
-    for (const dryRun of [true, false, true]) {
-      const reply = (await bg.handle({ type: 'normalize', text: big, dryRun })) as NormalizeReply;
-      expect(reply).toMatchObject({ ok: true, mode: 'embedded' });
-      expect(reply.ok && reply.replacements[0]).toMatchObject({ original: 'ashler', replacement: 'Ashlr.AI' });
-      expect(reply.ok && reply.fallback).toBe(tooLargeForApiMessage(big.length + '{"text":""}'.length + (dryRun ? ',"dryRun":true'.length : 0)));
+    // This checks request-size routing; extension-embedded.test.ts tests budget exhaustion.
+    // Tokenizing the large fixture must not spend a wall-clock matching budget on a busy runner.
+    const clock = vi.spyOn(performance, 'now').mockReturnValue(0);
+    try {
+      const fetchMock = vi.fn(async (url: string) => {
+        if (url.endsWith('/health')) return json({ ok: true, version: '1', terms: 1 });
+        if (url.endsWith('/normalize')) return json({ error: 'request body exceeds 1048576 bytes' }, 413);
+        return json({ error: 'nope' }, 404);
+      });
+      const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: storeWith({ token: 'a'.repeat(64) }), defaultYaml: EXAMPLE_YAML });
+      const big = 'ping ashler ' + 'x'.repeat(API_MAX_BODY_BYTES);
+      for (const dryRun of [true, false, true]) {
+        const reply = (await bg.handle({ type: 'normalize', text: big, dryRun })) as NormalizeReply;
+        expect(reply).toMatchObject({ ok: true, mode: 'embedded' });
+        expect(reply.ok && reply.replacements[0]).toMatchObject({ original: 'ashler', replacement: 'Ashlr.AI' });
+        expect(reply.ok && reply.fallback).toBe(tooLargeForApiMessage(big.length + '{"text":""}'.length + (dryRun ? ',"dryRun":true'.length : 0)));
+      }
+      expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/normalize'))).toHaveLength(0);
+      // One /health for all three: the size skip never discarded the cache.
+      expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/health'))).toHaveLength(1);
+      // Multi-byte text is measured in UTF-8 bytes, as the server counts it.
+      const wide = 'é'.repeat(API_MAX_BODY_BYTES / 2);
+      expect((await bg.handle({ type: 'normalize', text: wide })) as NormalizeReply).toMatchObject({ ok: true, mode: 'embedded', fallback: expect.stringContaining('1 MB') });
+    } finally {
+      clock.mockRestore();
     }
-    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/normalize'))).toHaveLength(0);
-    // One /health for all three: the size skip never discarded the cache.
-    expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/health'))).toHaveLength(1);
-    // Multi-byte text is measured in UTF-8 bytes, as the server counts it.
-    const wide = 'é'.repeat(API_MAX_BODY_BYTES / 2);
-    expect((await bg.handle({ type: 'normalize', text: wide })) as NormalizeReply).toMatchObject({ ok: true, mode: 'embedded', fallback: expect.stringContaining('1 MB') });
   });
 
   it('a server that is down is still reported as down for large text, and text under the limit still goes to the API', async () => {

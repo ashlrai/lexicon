@@ -73,6 +73,77 @@ sh -c 'lexicon daemon --once --quiet && xdotool key ctrl+v'   # X11; drop the xd
 
 Use the absolute path to `lexicon` (`which lexicon`) if the shortcut runner has a minimal PATH.
 
+## Resident expander (opt-in)
+
+`lexicon daemon --expander` starts a separate, long-lived process on macOS or
+Linux instead of the clipboard watcher. It keeps the lexicon in memory (reloaded when a lexicon
+file or `trust.json` changes) and answers over a local socket, so a shortcut or
+a key-capture helper gets a correction without a Node cold start. Nothing
+starts it but the flag.
+If a reload fails, requests return an error until it succeeds, so terms from
+a project whose trust changed cannot remain active through a broken reload.
+
+```bash
+lexicon daemon --expander                      # $XDG_RUNTIME_DIR/lexicon/expander.sock, else ~/.local/state/lexicon/expander.sock
+lexicon daemon --expander --socket "$HOME/.local/state/lexicon/expander.sock"
+```
+
+The socket is mode 0600 in a 0700 directory: only your user can connect.
+The daemon creates a missing directory, but refuses an existing directory
+that is shared, symlinked or owned by another user. Choose a dedicated private
+directory for `--socket`; its existing permissions are never changed.
+Windows expander startup is refused until private named-pipe access is
+enforced; use the clipboard daemon on Windows.
+A stale socket left by a crash is replaced; a live expander or a path that
+is not a socket is refused, never
+removed. Typed text is never logged.
+
+The protocol is newline-delimited JSON, one response line per request line,
+in order; an `id` is echoed back.
+
+Clients may close their write side after sending complete request lines; the
+server finishes those replies before closing its side. Oversized request lines
+and excessive pending work close the connection with an error. Clients must
+read responses as they send requests.
+
+| Request | Response |
+| --- | --- |
+| `{"op":"ping"}` | `{"ok":true,"version":"...","terms":12}` |
+| `{"op":"normalize","text":"..."}` | `{"ok":true,"output":"...","changed":true,"replacements":[...]}` |
+| `{"op":"clipboard","paste":true}` | `{"ok":true,"changed":true,"written":true,"corrections":1,"pasted":true}` |
+| `{"op":"type","text":"a"}` | `{"ok":true,"action":null}` or an action |
+| `{"op":"key","key":"Backspace"}` | `{"ok":true,"action":null}` or an undo action |
+| `{"op":"reset"}` | `{"ok":true}` |
+
+`clipboard` is `--once [--paste]` in the resident process, so a hotkey can run:
+
+```bash
+echo '{"op":"clipboard","paste":true}' | nc -U ~/.local/state/lexicon/expander.sock
+```
+
+`type`, `key` and `reset` drive the expansion core for a key-capture helper
+(one connection per keyboard). The helper sends each typed character (or a
+chunk a dictation tool injected), `key` for Backspace, Enter, Tab, Escape,
+Delete, the arrows, Home, End, PageUp and PageDown, and `reset` for a click,
+a shortcut or a focus change. An action means: press Backspace `backspaces`
+times (grapheme clusters), then type `insert`.
+The helper reports text and Backspace after they have already changed the
+field, performs returned actions without feeding them back as keystrokes,
+and must not send text from password or other secure fields. Starting the
+daemon does not install a keyboard listener or grant accessibility access.
+
+```json
+{"ok":true,"action":{"kind":"expand","backspaces":7,"insert":"Ashlr.AI ","replacements":[{"original":"Ashler","replacement":"Ashlr.AI","canonical":"Ashlr.AI"}]}}
+```
+
+The core expands only when whitespace finishes a word, only the words just
+finished, and only exact aliases (no phonetic or fuzzy guesses while you
+type). Punctuation does not finish a word, so `foo@ashler.io` and
+`ashler.com` are left alone. Enter, Tab and every navigation key forget the
+buffer instead of expanding, since the field may have been submitted or the
+cursor moved. Backspace straight after an expansion undoes it, and that word
+is not expanded again.
+
 ## See also
 
 - [VOICE.md](VOICE.md) records and transcribes locally, rather than correcting what another tool produced.
