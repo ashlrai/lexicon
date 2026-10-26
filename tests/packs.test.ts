@@ -58,10 +58,10 @@ import { registerPackCommands, runPackAdd, runPackList, runPackRemove, runPackSh
 import { Command } from 'commander';
 import { makeIO } from './helpers.js';
 
-const PACK_NAMES = ['ai', 'business', 'developer', 'voice-tools'];
+const PACK_NAMES = ['ai', 'business', 'cloud-devops', 'developer', 'voice-tools'];
 
 /** Minimum sizes the packs promise (docs/PACKS.md). */
-const MIN_TERMS: Record<string, number> = { developer: 50, ai: 30, business: 30, 'voice-tools': 12 };
+const MIN_TERMS: Record<string, number> = { 'cloud-devops': 24, developer: 50, ai: 30, business: 30, 'voice-tools': 12 };
 
 /**
  * Aliases that ARE an ordinary word, on purpose. Each entry is a real STT
@@ -211,6 +211,36 @@ describe('shipped packs', () => {
     expect(aliasesOf(voice, 'Wispr Flow')).toContain('whisper flow');
   });
 
+  it('ships a complementary cloud/DevOps pack with exact alias corrections', async () => {
+    const pack = await loadPack('cloud-devops');
+    expect(pack.terms).toBe(24);
+    expect(pack.aliases).toBe(48);
+    expect(pack.lexicon.terms.find((t) => t.canonical === 'kubectl')?.aliases).toContain('kube control');
+    for (const term of pack.lexicon.terms) {
+      for (const alias of term.aliases) {
+        const result = normalize(alias, pack.lexicon);
+        expect(result.output, `${term.canonical}: ${alias}`).toBe(term.canonical);
+        expect(result.replacements.map((r) => r.reason)).toEqual(['alias']);
+      }
+    }
+    const result = normalize('use kube control with argo see dee and open telemetry', pack.lexicon);
+    expect(result.output).toBe('use kubectl with Argo CD and OpenTelemetry');
+  });
+
+  it.each([
+    'I am ready to customize the deployment.',
+    'A sensible plan includes a route through the cloud.',
+    'The jaguar watched the clouds from the terrace.',
+    'Please open the package and watch the formation.',
+    'We watched a cloud formation drift across the sky.',
+  ])('cloud/DevOps leaves ordinary prose unchanged: %s', async (text) => {
+    const cloud = await loadPack('cloud-devops');
+    const developer = await loadPack('developer');
+    for (const terms of [cloud.lexicon.terms, [...developer.lexicon.terms, ...cloud.lexicon.terms]]) {
+      expect(normalize(text, { version: 1, terms }).output).toBe(text);
+    }
+  });
+
   it('corrects the demo sentence once the developer pack is the lexicon', async () => {
     const dev = await loadPack('developer');
     const result = normalize('deploy to cuban eats on versal with superbase', dev.lexicon);
@@ -319,6 +349,24 @@ describe('installPack / uninstallPack', () => {
       else process.env[key] = value;
     }
     await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  });
+
+  it('installs cloud-devops alongside developer and removes it independently', async () => {
+    await installPack('developer', { cwd, globalPath });
+    const before = await readLexiconFile(globalPath, 'global');
+    const installed = await installPack('cloud-devops', { cwd, globalPath });
+    expect(installed).toMatchObject({ added: 24, merged: 0 });
+    const loaded = await loadLexicon({ cwd, globalPath });
+    expect(normalize('use kube control on e k s with terra form', loaded.merged).output)
+      .toBe('use kubectl on EKS with Terraform');
+    expect(await installPack('cloud-devops', { cwd, globalPath })).toMatchObject({ added: 0, alreadyInstalled: true });
+    const removed = await uninstallPack('cloud-devops', { cwd, globalPath });
+    expect(removed.removed).toHaveLength(24);
+    expect(removed.kept).toEqual([]);
+    expect(removed.shared).toEqual([]);
+    const after = await readLexiconFile(globalPath, 'global');
+    expect(after.lexicon.terms).toEqual(before.lexicon.terms);
+    expect(after.lexicon.settings?.packs).toEqual(['developer']);
   });
 
   it('adds every term with source pack, records the pack in settings, and is idempotent', async () => {

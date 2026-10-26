@@ -1,0 +1,85 @@
+# Complements developer without duplicating its infrastructure terms.
+# Conservative spoken-letter aliases and name splits, not ordinary words.
+name: cloud-devops
+title: Cloud and DevOps
+description: Cloud services, infrastructure automation, continuous delivery and observability. Pair with developer for Kubernetes, Terraform and cloud providers.
+version: 1
+terms:
+  - canonical: EC2
+    category: acronym
+    aliases: [e c two, ee see two]
+  - canonical: S3
+    category: acronym
+    aliases: [s three, ess three]
+  - canonical: EKS
+    category: acronym
+    aliases: [e k s, ee kay ess]
+  - canonical: ECS
+    category: acronym
+    aliases: [e c s, ee see ess]
+  - canonical: IAM
+    category: acronym
+    aliases: [eye a em, eye ay em]
+    never: [I am]
+  - canonical: VPC
+    category: acronym
+    aliases: [v p c, vee pee see]
+  - canonical: RDS
+    category: acronym
+    aliases: [r d s, ar dee ess]
+  - canonical: CloudWatch
+    category: product
+    aliases: [clowd watch, clowdwatch]
+    never: [cloud watch]
+  - canonical: CloudFormation
+    category: product
+    aliases: [clowd formation, clowdformation]
+    never: [cloud formation]
+  - canonical: Route 53
+    category: product
+    aliases: [route fifty three, route fifty-three]
+  - canonical: GKE
+    category: acronym
+    aliases: [g k e, gee kay ee]
+  - canonical: AKS
+    category: acronym
+    aliases: [a k s, ay kay ess]
+  - canonical: kubectl
+    category: product
+    aliases: [kube c t l, kube control]
+  - canonical: Kustomize
+    category: product
+    aliases: [kustomise, kust o mize]
+    never: [customize, customise]
+  - canonical: Argo CD
+    category: product
+    aliases: [argo c d, argo see dee]
+  - canonical: FluxCD
+    category: product
+    aliases: [flux c d, flux see dee]
+  - canonical: Pulumi
+    category: product
+    aliases: [puloomi, poo loo mee]
+  - canonical: Ansible
+    category: product
+    aliases: [ansibel, ansibull]
+    never: [sensible]
+  - canonical: Terragrunt
+    category: product
+    aliases: [terra grunt, tera grunt]
+  - canonical: OpenTofu
+    category: product
+    aliases: [open tofu, open toe foo]
+  - canonical: OpenTelemetry
+    category: product
+    aliases: [open telemetry, opentelemetree]
+  - canonical: OTLP
+    category: acronym
+    aliases: [o t l p, oh tee el pee]
+  - canonical: Jaeger
+    category: product
+    aliases: [yay ger, yaeger]
+    never: [jaguar]
+  - canonical: CI/CD
+    category: acronym
+    aliases: [c i slash c d, see eye slash see dee]

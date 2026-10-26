@@ -82,7 +82,7 @@ src/daemon/      the clipboard watcher and its per-platform backends
 src/serve/       the local HTTP API (`lexicon serve`)
 src/voice/       ffmpeg + whisper.cpp push-to-talk (`lexicon voice`)
 plugin/          committed esbuild bundles of the MCP server and hook that the plugin runs
-packs/           the starter term packs (developer, ai, business, voice-tools)
+packs/           the starter term packs (developer, ai, business, voice-tools, cloud-devops)
 extension/       the browser extension (Manifest V3; built into extension/dist and dist-firefox)
 web/             the Next.js marketing site for lexicon.ashlr.ai (web/lib/generated holds a browser bundle of src/core)
 apps/macos/      LexiconBar, the SwiftPM menu bar app
@@ -148,7 +148,7 @@ To add a journey test:
 
 ## Adding a starter pack
 
-A pack for a profession the four shipped packs do not cover is the most useful thing a newcomer can add. The full recipe, including the one rule that decides the hard cases (never make an ordinary English word an alias on its own), is in [docs/PACKS.md](docs/PACKS.md#adding-a-pack-to-this-repo).
+A pack for a profession the five shipped packs do not cover is the most useful thing a newcomer can add. The full recipe, including the one rule that decides the hard cases (never make an ordinary English word an alias on its own), is in [docs/PACKS.md](docs/PACKS.md#adding-a-pack-to-this-repo).
 
 ## Adding an exporter
 
