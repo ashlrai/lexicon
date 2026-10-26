@@ -45,7 +45,7 @@
     "build": "node scripts/clean-dist.mjs && tsc -p tsconfig.build.json",
     "build:bundle": "node scripts/build-bundle.mjs",
     "prepare": "npm run build && npm run build:bundle",
-    "check:bundle": "npm run build:bundle && git diff --exit-code --stat -- plugin",
+    "check:bundle": "node scripts/check-bundle.mjs",
     "dev": "tsc -p tsconfig.build.json --watch",
     "test": "vitest run",
     "test:e2e": "vitest run tests/e2e.test.ts",
