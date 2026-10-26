@@ -869,6 +869,46 @@ describe('review and edit under --json', () => {
 // ---------------------------------------------------------------------------
 
 describe('edit', () => {
+  it.each([false, true])('dry-run never creates or opens a global lexicon (existing: %s)', async (existing) => {
+    if (existing) {
+      await fs.mkdir(path.dirname(globalPath), { recursive: true });
+      await fs.writeFile(globalPath, 'version: 1\nterms: []\n');
+    }
+    const before = existing ? await fs.readFile(globalPath, 'utf8') : undefined;
+    let spawned = false;
+    const io = makeIO();
+    expect(await runEdit({ globalPath, dryRun: true }, io, async () => {
+      spawned = true;
+      await fs.writeFile(globalPath, 'changed by editor');
+      return 0;
+    }, { EDITOR: 'vim' }, () => false)).toBe(0);
+    expect(spawned).toBe(false);
+    expect(io.out).toContain('would open');
+    if (existing) expect(await fs.readFile(globalPath, 'utf8')).toBe(before);
+    else await expect(fs.stat(path.dirname(globalPath))).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
+  it('dry-run leaves a project lexicon, trust pin and caches unchanged', async () => {
+    await writeLexiconFile({ path: projectPath, scope: 'project', exists: false, lexicon: { version: 1, terms: [] } });
+    await trustProject(projectPath, { cwd: repo, globalPath });
+    const snapshot = async () => {
+      const files = await fs.readdir(tmp, { recursive: true });
+      return Promise.all(files.sort().map(async (file) => {
+        const target = path.join(tmp, file);
+        return [file, (await fs.stat(target)).isFile() ? await fs.readFile(target, 'utf8') : null];
+      }));
+    };
+    const before = await snapshot();
+    let spawned = false;
+    expect(await runEdit({ cwd: repo, project: true, globalPath, dryRun: true }, makeIO(), async () => {
+      spawned = true;
+      await fs.writeFile(projectPath, 'changed by editor');
+      return 0;
+    }, { VISUAL: 'code --wait' })).toBe(0);
+    expect(spawned).toBe(false);
+    expect(await snapshot()).toEqual(before);
+  });
+
   it('editorCommand prefers $VISUAL, splits arguments, and is undefined when unset', () => {
     expect(editorCommand({ VISUAL: 'code --wait', EDITOR: 'vim' })).toEqual({ command: 'code', args: ['--wait'] });
     expect(editorCommand({ EDITOR: 'vim' })).toEqual({ command: 'vim', args: [] });

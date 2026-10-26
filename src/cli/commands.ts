@@ -95,6 +95,9 @@ import {
   spellingConflicts,
   suggestAliases,
   trustProject,
+  trustRegistryProblem,
+  TrustRegistryUnreadableError,
+  getTrustPath,
   withLexiconLock,
   spellingKey,
   writeLexiconFile,
@@ -232,6 +235,8 @@ export interface InitOptions extends CommonOptions {
   project?: boolean;
   /** Print `{ ok: true, scope, path, created, trust? }` (or `{ ok: false, error, nextStep? }`). */
   json?: boolean;
+  /** Report what would be created; write nothing. */
+  dryRun?: boolean;
 }
 
 const EXAMPLE_TERM_COMMENT = `
@@ -254,6 +259,15 @@ export async function runInit(opts: InitOptions, io: IO): Promise<number> {
   const target = opts.project
     ? (paths.project ?? defaultProjectPath(cwd))
     : paths.global;
+  const dry = opts.dryRun === true;
+
+  // Creating a project also promises to trust it. Check before creating
+  // anything, including in a preview, so a broken registry cannot leave a
+  // newly authored file untrusted while the preview claims success.
+  if (scope === 'project' && !existsSync(target)) {
+    const problem = await trustRegistryProblem({ cwd });
+    if (problem !== undefined) throw new TrustRegistryUnreadableError(getTrustPath({ cwd }), problem);
+  }
 
   // The existence check, the write and the appended example are one operation.
   // Apart, two inits race to create the same file and the second overwrites the
@@ -261,29 +275,39 @@ export async function runInit(opts: InitOptions, io: IO): Promise<number> {
   // by nothing but read back without the comment. The lock is re-entrant, so
   // the writeLexiconFile inside takes it again for free.
   // A failure throws to the CLI entry, which prints `{ ok: false, error, nextStep }` under --json.
-  const created = await createLexiconFile(target, scope);
+  const created = dry ? !existsSync(target) : await createLexiconFile(target, scope);
   // The user asked for this file; that is the approval `lexicon trust` records.
-  if (created && scope === 'project') await trustProject(target, { cwd });
+  if (created && scope === 'project' && !dry) await trustProject(target, { cwd });
   // `trust` for a project file only: an existing one may be untrusted, which
-  // is what decides whether its terms are merged.
-  const trust = scope === 'project' ? await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) : undefined;
+  // is what decides whether its terms are merged. A dry run that reports a
+  // file it would create also reports the `trusted` the create gives it.
+  const trust =
+    scope === 'project'
+      ? created
+        ? 'trusted'
+        : await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd })
+      : undefined;
   // An existing project file init did not create may be one the user never
   // reviewed (a cloned repo's) or edited since: its terms are not used until
   // it is trusted, which "already exists" alone did not say.
   const untrustedStep =
-    trust !== undefined && trust !== 'trusted'
+    !created && trust !== undefined && trust !== 'trusted'
       ? `${trust === 'changed' ? 'it has changed since it was trusted' : 'it is not trusted yet'}, so its terms are not used; review it and run: lexicon trust`
       : undefined;
   if (opts.json) {
     line(
       io,
-      JSON.stringify(jsonOk({ scope, path: target, created, ...(trust !== undefined ? { trust } : {}), ...(untrustedStep ? { nextStep: untrustedStep } : {}) }), null, 2),
+      JSON.stringify(jsonOk({ scope, path: target, created, ...(dry ? { dryRun: true } : {}), ...(trust !== undefined ? { trust } : {}), ...(untrustedStep ? { nextStep: untrustedStep } : {}) }), null, 2),
     );
     return 0;
   }
   if (!created) {
     line(io, `${scope} lexicon already exists: ${safe(target)}`);
     if (untrustedStep) line(io, dim(untrustedStep));
+    return 0;
+  }
+  if (dry) {
+    line(io, `would create ${scope} lexicon: ${safe(target)}${scope === 'project' ? ' (and trust it)' : ''}`);
     return 0;
   }
   line(io, `created ${scope} lexicon: ${safe(target)}`);
@@ -326,6 +350,8 @@ export interface AddOptions extends CommonOptions {
   interactive?: boolean;
   /** Print `{ term, path, created, scope, suggested }` as JSON instead of the summary lines. */
   json?: boolean;
+  /** Report what would be written (created, merged, the file); write nothing. */
+  dryRun?: boolean;
   /** Explicit global lexicon path (test hook, no CLI flag). */
   globalPath?: string;
 }
@@ -439,6 +465,7 @@ export async function runAdd(
     scope,
     cwd,
     ...(opts.globalPath ? { globalPath: opts.globalPath } : {}),
+    ...(opts.dryRun ? { dryRun: true } : {}),
     ...(fallbackOnly && suggested.length > 0 ? { defaultAliases: suggested } : {}),
   });
   // An alias another term already holds may keep being corrected to that
@@ -465,6 +492,7 @@ export async function runAdd(
           path: result.file.path,
           created: result.created,
           ...(result.unchanged ? { unchanged: true } : {}),
+          ...(opts.dryRun ? { dryRun: true } : {}),
           scope,
           // The suggestions this call applied: the fallback ones only when it
           // created the term, as the text output marks them. They used to be
@@ -482,6 +510,8 @@ export async function runAdd(
   if (result.unchanged) {
     // The term already had every alias and field given: "merged" read as a change.
     line(io, `${unchangedTermNote(safe(result.term.canonical))} (${scope}: ${safeMessage(result.file.path)})`);
+  } else if (opts.dryRun) {
+    line(io, `would ${result.created ? 'create' : 'merge'} ${bold(safe(result.term.canonical))} (${scope}) in ${safeMessage(result.file.path)}; nothing was written`);
   } else {
     line(io, `${result.created ? green('created') : green('merged')} ${bold(safe(result.term.canonical))} (${scope}) in ${safeMessage(result.file.path)}`);
   }
@@ -497,7 +527,8 @@ export async function runAdd(
   line(io, `aliases: ${saved.length > 0 ? safe(saved.join(', ')) + dim(suggestedNote) : dim('(none)')}`);
   for (const alias of sameAsCanonical) line(io, `note: ${safe(alias)} was not added as an alias of ${safe(result.term.canonical)}: it ${SAME_AS_CANONICAL_REASON}`);
   for (const c of conflicts) line(io, conflictLine(c));
-  if (scope === 'project') line(io, dim(`project lexicon trusted at its new content (${safeMessage(result.file.path)})`));
+  if (scope === 'project' && !opts.dryRun) line(io, dim(`project lexicon trusted at its new content (${safeMessage(result.file.path)})`));
+  if (scope === 'project' && opts.dryRun) line(io, dim(`a real run also re-pins the project lexicon's trust (${safeMessage(result.file.path)})`));
   return 0;
 }
 
@@ -509,6 +540,8 @@ export interface RemoveOptions extends CommonOptions {
   json?: boolean;
   /** Remove only this alias from the term, keeping the term. */
   alias?: string;
+  /** Report what would be removed; write nothing. */
+  dryRun?: boolean;
 }
 
 export async function runRemove(canonical: string, opts: RemoveOptions, io: IO): Promise<number> {
@@ -526,9 +559,10 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
   const loaded = await loadLexicon({ cwd }).catch(() => undefined);
   const holders = loaded ? termHolders(loaded, canonical) : [];
   const untrusted = loaded ? untrustedTermHolder(loaded, canonical) : undefined;
+  const dry = opts.dryRun === true;
   let removed: boolean;
   try {
-    removed = await removeTerm(canonical, scope ? { scope, cwd } : { cwd });
+    removed = await removeTerm(canonical, { ...(scope ? { scope } : {}), cwd, ...(dry ? { dryRun: true } : {}) });
   } catch (err) {
     if (!isProjectTrustError(err)) throw err;
     // Without a scope the untrusted project copy comes first and is refused;
@@ -536,7 +570,7 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     const global = holders.find((h) => h.scope === 'global');
     if (opts.json) {
       const nextStep = global ? `run ${commandLine(['lexicon', 'remove', canonical, '--global'])} to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}` : PROJECT_TRUST_NEXT_STEP;
-      line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...(untrusted ? { untrustedProject: untrusted } : {}) }, null, 2));
+      line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...(dry ? { dryRun: true } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) }, null, 2));
     }
     io.stderr(`lexicon: ${safeMessage(errorMessage(err))}\n`);
     if (global) io.stderr(`lexicon: to remove only the global copy (${safeMessage(global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--global'])}\n`);
@@ -561,7 +595,7 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     (untrusted
       ? `lexicon: it is in the ${untrusted.trust === 'changed' ? 'changed' : 'untrusted'} project lexicon (${safeMessage(untrusted.path)}), which is not loaded or edited; review it and run lexicon trust before removing it there\n`
       : '');
-  const extra = { ...(stillIn.length > 0 ? { stillIn } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
+  const extra = { ...(dry ? { dryRun: true } : {}), ...(stillIn.length > 0 ? { stillIn } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
   if (opts.json) {
     // A miss is a failure document like every other --json refusal: `ok: false` and `error` lead it;
     // a removal leads with `ok: true`.
@@ -574,7 +608,7 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     io.stderr(notFound());
     return 1;
   }
-  line(io, `removed ${bold(safe(removedName))}${from ? ` from ${safeMessage(from.path)}` : ''}`);
+  line(io, `${dry ? 'would remove' : 'removed'} ${bold(safe(removedName))}${from ? ` from ${safeMessage(from.path)}` : ''}`);
   for (const h of stillIn) line(io, stillInLine(removedName, h));
   if (untrusted) line(io, untrustedLine(removedName, untrusted));
   return 0;
@@ -633,10 +667,11 @@ async function runRemoveAlias(
   // Best effort: a lexicon that will not load just loses the report.
   const loaded = await loadLexicon({ cwd }).catch(() => undefined);
   const untrusted = loaded ? untrustedAliasHolder(loaded, canonical, alias) : undefined;
-  const extra = untrusted ? { untrustedProject: untrusted } : {};
+  const dry = opts.dryRun === true;
+  const extra = { ...(dry ? { dryRun: true } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
   let result: RemoveAliasResult;
   try {
-    result = await removeAlias(canonical, alias, scope ? { scope, cwd } : { cwd });
+    result = await removeAlias(canonical, alias, { ...(scope ? { scope } : {}), cwd, ...(dry ? { dryRun: true } : {}) });
   } catch (err) {
     const message = errorMessage(err);
     // Compared as the store compares spellings (spellingKey: trimmed,
@@ -673,7 +708,7 @@ async function runRemoveAlias(
     line(io, JSON.stringify(jsonOk({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra }), null, 2));
     return 0;
   }
-  line(io, `removed alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safeMessage(paths.join(', '))}`);
+  line(io, `${dry ? 'would remove' : 'removed'} alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safeMessage(paths.join(', '))}`);
   line(io, `aliases: ${result.term.aliases.length > 0 ? safe(result.term.aliases.join(', ')) : dim('(none)')}`);
   if (untrusted) line(io, untrustedAliasLine(result.term.canonical, alias, untrusted));
   return 0;
@@ -974,6 +1009,8 @@ export interface HarvestCliOptions extends CommonOptions {
   yes?: boolean;
   /** Also propose names seen only as a PascalCase symbol in source. */
   symbols?: boolean;
+  /** With --add: report what would be added to the project lexicon; write nothing. */
+  dryRun?: boolean;
   /** Explicit global lexicon path (test hook, no CLI flag). */
   globalPath?: string;
 }
@@ -1051,7 +1088,7 @@ export async function runHarvest(
       if (truncatedLine) line(io, safeMessage(truncatedLine));
       return await runHarvestInteractive(
         candidates,
-        { cwd: target, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}), harvest: scan },
+        { cwd: target, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}), ...(opts.dryRun ? { dryRun: true } : {}), harvest: scan },
         io,
         prompter,
       );
@@ -1097,7 +1134,7 @@ export async function runHarvest(
         category: c.category,
         source: c.source,
       }));
-      const { file, results } = await addTerms(terms, { ...store, scope: 'project' });
+      const { file, results } = await addTerms(terms, { ...store, scope: 'project', ...(opts.dryRun ? { dryRun: true } : {}) });
       filePath = file.path;
       for (const r of results) {
         if (r.created) created += 1;
@@ -1123,15 +1160,17 @@ export async function runHarvest(
       return 1;
     }
     const where = filePath ? ` in ${safe(filePath)}` : '';
-    const summary = `added ${created} new term${created === 1 ? '' : 's'}, merged ${merged}${where}`;
+    const summary = opts.dryRun
+      ? `would add ${created} new term${created === 1 ? '' : 's'}, merge ${merged}${where}; nothing was written`
+      : `added ${created} new term${created === 1 ? '' : 's'}, merged ${merged}${where}`;
     if (json) io.stderr(`${summary}\n`);
-    else line(io, green(summary));
+    else line(io, opts.dryRun ? summary : green(summary));
     // addTerm(scope: 'project') registers the file as trusted at its new content.
-    if (filePath && !json) line(io, dim(`project lexicon trusted (${safe(filePath)})`));
+    if (filePath && !json && !opts.dryRun) line(io, dim(`project lexicon trusted (${safe(filePath)})`));
   }
   if (!opts.full && opts.json && opts.add) line(io, JSON.stringify(candidates, null, 2));
   if (opts.full) {
-    const addResult = opts.add ? { added: created + merged, created, merged, ...(filePath ? { path: filePath } : {}) } : {};
+    const addResult = opts.add ? { added: created + merged, created, merged, ...(filePath ? { path: filePath } : {}), ...(opts.dryRun ? { dryRun: true } : {}) } : {};
     const truncated = report.truncated ? { truncated: true as const, note: harvestTruncatedNote(target) } : {};
     line(io, JSON.stringify(jsonOk({ root: target, candidates, count: candidates.length, ...truncated, ...addResult }), null, 2));
   }
@@ -1158,6 +1197,8 @@ export interface ExportCliOptions extends CommonOptions {
    * `--json` the same sentences go to stderr.
    */
   json?: boolean;
+  /** With --out: report what would be written (format, terms, bytes, path); the file is not touched. */
+  dryRun?: boolean;
 }
 
 /** One row of `lexicon export --json` with no format: what `lexicon export` lists. */
@@ -1274,11 +1315,13 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
     const outPath = path.resolve(cwd, opts.out);
     const problem = await exportTargetProblem(outPath, loaded);
     if (problem) return refuse(io, json, problem, 'name another file with --out, or leave --out off to print the export');
-    // Through a temp file and a rename: an export cut short (a full disk, a
-    // killed process) left a truncated file where the last good export was.
-    await writeFileAtomic(outPath, text);
+    if (!opts.dryRun) {
+      // Through a temp file and a rename: an export cut short (a full disk, a
+      // killed process) left a truncated file where the last good export was.
+      await writeFileAtomic(outPath, text);
+    }
     if (json) {
-      line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, path: outPath, ...dropped, ...notes }), null, 2));
+      line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, path: outPath, ...(opts.dryRun ? { dryRun: true } : {}), ...dropped, ...notes }), null, 2));
     } else {
       let counted = plural(terms, 'term');
       if (aliasRows !== undefined && rows !== undefined) {
@@ -1286,7 +1329,7 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
         counted = `${plural(rows, 'row')} from ${plural(terms - without, 'term')}`;
         if (without > 0) counted += `; ${plural(without, 'term')} without an alias wrote no row`;
       }
-      line(io, `wrote ${format} export (${counted}) to ${safeMessage(outPath)}`);
+      line(io, opts.dryRun ? `would write ${format} export (${counted}, ${plural(bytes, 'byte')}) to ${safeMessage(outPath)}` : `wrote ${format} export (${counted}) to ${safeMessage(outPath)}`);
     }
   } else if (json) {
     line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, content: text, ...dropped, ...notes }), null, 2));

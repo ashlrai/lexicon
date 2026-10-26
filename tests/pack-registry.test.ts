@@ -2,7 +2,7 @@
  * `lexicon pack` community commands: search, add (preview + confirm), update,
  * remove, show and validate, against a fixture registry index in a temp dir.
  */
-import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync, existsSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, readFileSync, readdirSync, statSync, rmSync, writeFileSync, existsSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
@@ -68,6 +68,49 @@ afterEach(() => {
 });
 
 const baseOpts = () => ({ globalPath, registry: indexPath });
+
+function snapshotFiles(): Record<string, string> {
+  return Object.fromEntries(readdirSync(dir, { recursive: true }).map(String).sort()
+    .filter((file) => statSync(path.join(dir, file)).isFile())
+    .map((file) => [file, readFileSync(path.join(dir, file), 'utf8')]));
+}
+
+describe('community pack dry-run', () => {
+  it('previews a verified install without approval, lexicon, registry state or cache writes', async () => {
+    const before = snapshotFiles();
+    const io = makeIO();
+    expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), json: true, dryRun: true }, io)).toBe(0);
+    expect(JSON.parse(io.out)).toMatchObject({ ok: true, dryRun: true, added: 1, merged: 0 });
+    expect(snapshotFiles()).toEqual(before);
+    const applied = makeIO();
+    expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), json: true, yes: true }, applied)).toBe(0);
+    expect(JSON.parse(applied.out)).toMatchObject({ ok: true, added: 1, merged: 0 });
+  });
+
+  it('previews an update without changing the installed lexicon, checksum or cached snapshot', async () => {
+    expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), yes: true }, makeIO())).toBe(0);
+    writeIndex('2', `${PACK}  - canonical: Echocardiogram\n    aliases: [echo cardiogram]\n    category: product\n`);
+    const before = snapshotFiles();
+    const io = makeIO();
+    expect(await runPackUpdate([], { ...baseOpts(), json: true, dryRun: true }, io), io.out + io.err).toBe(0);
+    expect(JSON.parse(io.out)).toMatchObject({ ok: true, dryRun: true, updates: [expect.objectContaining({ status: 'updated', dryRun: true, added: 1 })] });
+    expect(snapshotFiles()).toEqual(before);
+    const applied = makeIO();
+    expect(await runPackUpdate([], { ...baseOpts(), json: true, yes: true }, applied)).toBe(0);
+    expect(JSON.parse(applied.out)).toMatchObject({ ok: true, updates: [expect.objectContaining({ status: 'updated', added: 1 })] });
+  });
+
+  it('strict validation makes warnings fail while ordinary validation reports them successfully', async () => {
+    const file = path.join(dir, 'warnings.yaml');
+    writeFileSync(file, PACK.replace('homepage: https://example.com/cardiology\n', ''));
+    const normal = makeIO();
+    expect(await runPackValidate(file, { json: true }, normal)).toBe(0);
+    expect(JSON.parse(normal.out)).toMatchObject({ ok: true, errors: [], warnings: [expect.stringContaining('homepage')] });
+    const strict = makeIO();
+    expect(await runPackValidate(file, { json: true, strict: true }, strict)).toBe(1);
+    expect(JSON.parse(strict.out)).toMatchObject({ ok: false, strict: true, errors: [], warnings: [expect.stringContaining('homepage')] });
+  });
+});
 
 describe('pack search', () => {
   it('needs --registry', async () => {
