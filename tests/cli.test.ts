@@ -1590,10 +1590,14 @@ describe('--json failure documents', () => {
   // Catches: an error naming a deep path was cut at 200 characters, so the
   // command printed after it ("... or write to the global le…") could not be run.
   it('prints a long error whole: the command after the path is never cut', () => {
-    const deep = path.join(os.tmpdir(), 'projects', 'a-fairly-long-organisation-name', 'and-a-fairly-long-repository-name', 'packages', 'service', '.lexicon.yaml');
+    // The nested segments supply the length even when os.tmpdir() is just /tmp.
+    const deep = path.join(os.tmpdir(), ...Array.from({ length: 12 }, () => 'nested-directory'), '.lexicon.yaml');
     expect(deep.length).toBeGreaterThan(130);
+    const error = new core.ProjectTrustError(deep, 'untrusted');
+    expect(error.message.length).toBeGreaterThan(200);
     const io = makeIO();
-    fail(io, new core.ProjectTrustError(deep, 'untrusted'), undefined);
+    expect(fail(io, error, undefined)).toBe(1);
+    expect(io.err).toBe(`lexicon: ${error.message}\n`);
     expect(io.err).toContain('or write to the global lexicon instead');
     expect(io.err).not.toContain('…');
   });

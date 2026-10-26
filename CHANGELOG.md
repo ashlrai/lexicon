@@ -4,6 +4,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Internal
+
+- Make the CLI long-error regression fixture exceed the truncation threshold even with Linux's short temporary directory, and assert the complete error is printed.
+
 ### Changed
 
 - `lexicon trust` off a terminal (a script, CI, an agent's shell) no longer pins the file silently: without `--yes` it prints the preview, trusts nothing, names the `lexicon trust <path> --yes` command and exits 1 (`{ ok: false, ... }` under `--json`). No environment variable bypasses this. With `--yes` it pins and prints the path and sha256 as before. A file already trusted at the same bytes still reports `already trusted`. Scripts that ran `lexicon trust` unattended must add `--yes`.
