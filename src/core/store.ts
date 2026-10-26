@@ -22,6 +22,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { isMap, isScalar, isSeq, parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml';
 import type { Document, YAMLMap } from 'yaml';
+import { PROJECT_FILE_NAME } from './caps.js';
 import { emptyLexicon, parseLexicon, stripInvisible } from './schema.js';
 import { checkLexiconEdit } from './edit-check.js';
 import { buildIndex } from './matcher.js';
@@ -100,7 +101,7 @@ export interface LoadOptions extends StoreOptions {
   staleGlobal?: boolean;
 }
 
-export const PROJECT_FILE_NAME = '.lexicon.yaml';
+export { PROJECT_FILE_NAME };
 
 /**
  * Largest lexicon file we will parse. A project file comes from an arbitrary

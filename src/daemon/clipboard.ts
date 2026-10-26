@@ -20,6 +20,7 @@ import {
   defaultClipboardExec,
   detectClipboardBackend,
   isClipboardBackendName,
+  parseBackendName,
   isClipboardTooLarge,
   powershellShell,
   CLIPBOARD_BACKEND_NAMES,
@@ -600,10 +601,7 @@ export interface DaemonCommandOptions extends ClipboardDaemonOptions, ClipboardO
 }
 
 /** Parse and validate a `--backend` value. */
-export function parseBackendName(value: string): ClipboardBackendName {
-  if (isClipboardBackendName(value)) return value;
-  throw new Error(`unknown clipboard backend "${value}"; expected one of: ${CLIPBOARD_BACKEND_NAMES.join(', ')}`);
-}
+export { parseBackendName };
 
 /** Dispatch for the `daemon` command. Returns the process exit code. */
 export async function runDaemonCommand(opts: DaemonCommandOptions = {}): Promise<number> {
