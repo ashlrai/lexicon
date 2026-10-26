@@ -19433,8 +19433,8 @@ function convertBaseSchema(schema, ctx) {
       });
     }
     ctx.processing.add(refPath);
-    const resolved2 = resolveRef(refPath, ctx);
-    const zodSchema2 = convertSchema(resolved2, ctx);
+    const resolved = resolveRef(refPath, ctx);
+    const zodSchema2 = convertSchema(resolved, ctx);
     ctx.refs.set(refPath, zodSchema2);
     ctx.processing.delete(refPath);
     return zodSchema2;
@@ -24307,17 +24307,17 @@ var require_fast_uri = __commonJS({
       if (baseMalformed || relativeMalformed || baseMalformedPercentEncoding || relativeMalformedPercentEncoding || baseMalformedSchemeSpecific || relativeMalformedSchemeSpecific || baseMalformedHost || relativeMalformedHost || baseMalformedScheme || relativeMalformedScheme) {
         throw new Error(baseParsed.error || relativeParsed.error || "URI is malformed.");
       }
-      const resolved2 = resolveComponent(baseParsed, relativeParsed, schemelessOptions, true);
-      const resolvedSchemeHandler = getSchemeHandler(options && options.scheme || resolved2.scheme);
-      const resolvedHost = resolved2.host;
+      const resolved = resolveComponent(baseParsed, relativeParsed, schemelessOptions, true);
+      const resolvedSchemeHandler = getSchemeHandler(options && options.scheme || resolved.scheme);
+      const resolvedHost = resolved.host;
       const resolvedHostIsIP = resolvedHost !== void 0 && resolvedHost !== "" && (isIPv42(resolvedHost) || normalizeIPv6(resolvedHost).isIPV6);
-      canonicalizeHost(resolved2, options || {}, resolvedSchemeHandler, resolvedHostIsIP);
+      canonicalizeHost(resolved, options || {}, resolvedSchemeHandler, resolvedHostIsIP);
       const encodedASCIIHost = resolvedHost && resolvedHost.indexOf("%") !== -1 && !new RegExp("\\P{ASCII}", "u").test(resolvedHost);
-      if (resolved2.error && !encodedASCIIHost) {
-        throw new Error(resolved2.error);
+      if (resolved.error && !encodedASCIIHost) {
+        throw new Error(resolved.error);
       }
       schemelessOptions.skipEscape = true;
-      return serialize(resolved2, schemelessOptions);
+      return serialize(resolved, schemelessOptions);
     }
     function resolveComponent(base, relative2, options, skipNormalization) {
       const target = {};
@@ -35273,7 +35273,7 @@ function check2(before, after) {
   topLevelRe.lastIndex = listStart;
   const nextTop = topLevelRe.exec(after);
   const listEnd = nextTop ? nextTop.index : after.length;
-  if (changedEnd <= listStart || p >= listEnd) return checkOutsideList(after, termsKey.index, listStart, listEnd);
+  if (changedEnd <= listStart || p >= listEnd) return checkOutsideList(after, termsKey.index, listEnd);
   if (p < listStart || changedEnd > listEnd) return checkWhole(after);
   const firstItem = /^( *)- /m.exec(after.slice(listStart));
   if (!firstItem) return checkWhole(after);
@@ -35327,7 +35327,7 @@ function schemaIssue(err, termName) {
   const issue2 = message.split("\n").find((l) => l.trim().startsWith("- ")) ?? message;
   return issue2.trim().replace(/^- /, "").replace(/^terms\[(\d+)\]\.?/, (m, k) => `the ${termName(Number(k))}${m.endsWith(".") ? ": " : ""}`);
 }
-function checkOutsideList(after, termsAt, listStart, listEnd) {
+function checkOutsideList(after, termsAt, listEnd) {
   const head = `${after.slice(0, termsAt)}terms: []
 `;
   const skeleton = head + after.slice(listEnd);
@@ -36158,7 +36158,7 @@ var require_mod = __commonJS({
       }
       return score;
     };
-    var distance4 = function(a, b) {
+    var distance5 = function(a, b) {
       if (a.length < b.length) {
         var tmp = b;
         b = a;
@@ -36172,12 +36172,12 @@ var require_mod = __commonJS({
       }
       return myers_x(a, b);
     };
-    exports.distance = distance4;
+    exports.distance = distance5;
     var closest = function(str, arr) {
       var min_distance = Infinity;
       var min_index = 0;
       for (var i = 0; i < arr.length; i++) {
-        var dist = distance4(str, arr[i]);
+        var dist = distance5(str, arr[i]);
         if (dist < min_distance) {
           min_distance = dist;
           min_index = i;
@@ -40982,13 +40982,13 @@ function findBest(view, index, opts) {
 }
 function findReplacements(text, index, opts = {}) {
   if (text.length === 0 || index.lexicon.terms.length === 0) return [];
-  const resolved2 = {
+  const resolved = {
     minConfidence: clamp01(opts.minConfidence ?? index.minConfidence),
     phonetic: opts.phonetic ?? index.phonetic,
     fuzzy: opts.fuzzy ?? index.fuzzy,
     skipCode: opts.skipCode ?? index.skipCode
   };
-  const tokens = tokenize(text, resolved2.skipCode);
+  const tokens = tokenize(text, resolved.skipCode);
   const candidates = [];
   const shouldStop = opts.shouldStop;
   for (let i = 0; i < tokens.length; i++) {
@@ -41002,10 +41002,10 @@ function findReplacements(text, index, opts = {}) {
       if (last.skipped) break;
       if (n > 1 && !tokens[j - 1].joinsNext) break;
       const full = makeView(text, tokens, i, j, false, index.protectedWords);
-      let best = gluedAfter(text, full.end) ? void 0 : findBest(full, index, resolved2);
+      let best = gluedAfter(text, full.end) ? void 0 : findBest(full, index, resolved);
       if (last.baseEnd < last.end) {
         const alt = makeView(text, tokens, i, j, true, index.protectedWords);
-        const bestAlt = gluedAfter(text, alt.end) ? void 0 : findBest(alt, index, resolved2);
+        const bestAlt = gluedAfter(text, alt.end) ? void 0 : findBest(alt, index, resolved);
         if (bestAlt && (!best || bestAlt.termIndex === best.termIndex || bestAlt.confidence >= best.confidence)) best = bestAlt;
       }
       if (PLURAL_RE.test(last.text) && last.base === last.text && !(best && best.reason === "alias")) {
@@ -41013,7 +41013,7 @@ function findReplacements(text, index, opts = {}) {
         const swapped = tokens.slice(i, j);
         swapped.push({ ...last, text: stripped, base: stripped, textLower: last.textLower.slice(0, -1), baseLower: last.baseLower.slice(0, -1), end: last.end - 1, baseEnd: last.end - 1 });
         const view = makeView(text, swapped, 0, j - i, false, index.protectedWords);
-        const bestPl = gluedAfter(text, view.end) ? void 0 : findBest(view, index, resolved2);
+        const bestPl = gluedAfter(text, view.end) ? void 0 : findBest(view, index, resolved);
         if (bestPl && (best ? bestPl.termIndex === best.termIndex && bestPl.confidence > best.confidence : bestPl.reason === "alias")) best = bestPl;
       }
       if (best) candidates.push(best);
@@ -42124,11 +42124,11 @@ function getTrustPath(opts = {}) {
   return import_node_path2.default.join(import_node_path2.default.dirname(resolvePaths(opts).global), TRUST_FILE_NAME);
 }
 async function canonicalPath(filePath) {
-  const resolved2 = import_node_path2.default.resolve(filePath);
+  const resolved = import_node_path2.default.resolve(filePath);
   try {
-    return await import_node_fs4.promises.realpath(resolved2);
+    return await import_node_fs4.promises.realpath(resolved);
   } catch {
-    return resolved2;
+    return resolved;
   }
 }
 async function hashFile(filePath) {
@@ -42513,9 +42513,9 @@ async function readGlobalLexiconMaybeStale(filePath, opts = {}) {
   let previousText = "";
   try {
     const cached2 = JSON.parse(await import_node_fs5.promises.readFile(cachePath, "utf8"));
-    if (isPlainObject3(cached2) && cached2.version === PARSE_CACHE_VERSION && cached2.path === key && typeof cached2.text === "string" && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(cached2.lexicon)) {
+    if (isRecord(cached2) && cached2.version === PARSE_CACHE_VERSION && cached2.path === key && typeof cached2.text === "string" && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(cached2.lexicon)) {
       const lexicon = JSON.parse(cached2.lexicon);
-      if (isPlainObject3(lexicon) && Array.isArray(lexicon.terms)) {
+      if (isRecord(lexicon) && Array.isArray(lexicon.terms)) {
         const file3 = { path: filePath, scope: "global", lexicon, exists: true };
         if (cached2.text === read.text) return { file: file3 };
         if (opts.stale && read.text.length >= STALE_GLOBAL_MIN_BYTES) {
@@ -42549,7 +42549,7 @@ async function readParseFailure(dir, key, text) {
   if (text.length < PARSE_CACHE_MIN_BYTES) return void 0;
   try {
     const cached2 = JSON.parse(await import_node_fs5.promises.readFile(import_node_path4.default.join(dir, PARSE_FAILURE_FILE_NAME), "utf8"));
-    if (isPlainObject3(cached2) && cached2.version === PARSE_FAILURE_VERSION && cached2.path === key && cached2.text === text && (cached2.kind === "yaml" || cached2.kind === "schema") && typeof cached2.reason === "string") {
+    if (isRecord(cached2) && cached2.version === PARSE_FAILURE_VERSION && cached2.path === key && cached2.text === text && (cached2.kind === "yaml" || cached2.kind === "schema") && typeof cached2.reason === "string") {
       return { kind: cached2.kind, reason: cached2.reason };
     }
   } catch {
@@ -42638,11 +42638,11 @@ async function readProjectBytes(filePath, globalPath) {
 async function readProjectCacheEntry(cachePath, key, bytes, text) {
   try {
     const cached2 = JSON.parse(await import_node_fs5.promises.readFile(cachePath, "utf8"));
-    if (!isPlainObject3(cached2) || cached2.version !== PROJECT_PARSE_CACHE_VERSION || typeof cached2.path !== "string") return {};
+    if (!isRecord(cached2) || cached2.version !== PROJECT_PARSE_CACHE_VERSION || typeof cached2.path !== "string") return {};
     const id = cached2.path;
     if (cached2.path === key && cached2.text === text && typeof cached2.sha256 === "string" && /^[0-9a-f]{64}$/.test(cached2.sha256) && typeof cached2.lexicon === "string" && cached2.sum === cacheChecksum(`${cached2.sha256}${cached2.lexicon}`) && Buffer.from(cached2.text, "utf8").equals(bytes)) {
       const lexicon = JSON.parse(cached2.lexicon);
-      if (isPlainObject3(lexicon) && Array.isArray(lexicon.terms)) return { id, hit: { lexicon, sha256: cached2.sha256 } };
+      if (isRecord(lexicon) && Array.isArray(lexicon.terms)) return { id, hit: { lexicon, sha256: cached2.sha256 } };
     }
     return { id };
   } catch {
@@ -42735,7 +42735,7 @@ async function loadMatcherIndex(loaded, opts = {}) {
 function indexFromEntry(text, head, key, lexicon) {
   if (!text.startsWith(head)) return void 0;
   const cached2 = JSON.parse(text);
-  if (!isPlainObject3(cached2) || cached2.version !== INDEX_FORMAT_VERSION || cached2.key !== key) return void 0;
+  if (!isRecord(cached2) || cached2.version !== INDEX_FORMAT_VERSION || cached2.key !== key) return void 0;
   return deserializeIndex(cached2.index, lexicon) ?? void 0;
 }
 function indexCacheHead(key, project) {
@@ -42912,12 +42912,12 @@ async function pinCommittedHits(file2) {
   try {
     const current = await readLexiconFileForWrite(file2.path, file2.scope);
     for (const term of current.lexicon.terms) {
-      if (term.hits !== void 0) onDisk.set(hitKey(term.canonical), term.hits);
+      if (term.hits !== void 0) onDisk.set(spellingKey(term.canonical), term.hits);
     }
   } catch {
   }
   for (const term of file2.lexicon.terms) {
-    const committed = onDisk.get(hitKey(term.canonical));
+    const committed = onDisk.get(spellingKey(term.canonical));
     if (committed === void 0) delete term.hits;
     else term.hits = committed;
   }
@@ -42970,18 +42970,15 @@ function stripUndefined(obj) {
 function getHitsPath(opts = {}) {
   return import_node_path4.default.join(import_node_path4.default.dirname(resolvePaths(opts).global), HITS_FILE_NAME);
 }
-function hitKey(canonical) {
-  return foldKey(canonical);
-}
 function spellingKey(spelling) {
-  return foldKey(spelling);
+  return spelling.trim().toLowerCase().normalize("NFC");
 }
 async function canonicalPath2(filePath) {
-  const resolved2 = import_node_path4.default.resolve(filePath);
+  const resolved = import_node_path4.default.resolve(filePath);
   try {
-    return await import_node_fs5.promises.realpath(resolved2);
+    return await import_node_fs5.promises.realpath(resolved);
   } catch {
-    return resolved2;
+    return resolved;
   }
 }
 function emptyHitsRegistry() {
@@ -43014,20 +43011,20 @@ async function loadHitsRegistry(opts) {
   } catch (e) {
     return { registry: emptyHitsRegistry(), problem: `is not valid JSON (${errorMessage(e)})` };
   }
-  if (!isPlainObject3(raw)) return { registry: emptyHitsRegistry(), problem: "is not a JSON object" };
-  if (raw.projects !== void 0 && !isPlainObject3(raw.projects)) {
+  if (!isRecord(raw)) return { registry: emptyHitsRegistry(), problem: "is not a JSON object" };
+  if (raw.projects !== void 0 && !isRecord(raw.projects)) {
     return { registry: emptyHitsRegistry(), problem: '"projects" is not an object' };
   }
-  if (raw.global !== void 0 && !isPlainObject3(raw.global)) {
+  if (raw.global !== void 0 && !isRecord(raw.global)) {
     return { registry: emptyHitsRegistry(), problem: '"global" is not an object' };
   }
   const out = emptyHitsRegistry();
-  if (isPlainObject3(raw.projects)) {
+  if (isRecord(raw.projects)) {
     for (const [file2, counts] of Object.entries(raw.projects)) {
-      if (isPlainObject3(counts)) out.projects[file2] = validCounts(counts);
+      if (isRecord(counts)) out.projects[file2] = validCounts(counts);
     }
   }
-  if (isPlainObject3(raw.global)) out.global = validCounts(raw.global);
+  if (isRecord(raw.global)) out.global = validCounts(raw.global);
   return { registry: out };
 }
 async function readHitsRegistry(opts, forWrite = false) {
@@ -43040,14 +43037,11 @@ async function readHitsRegistry(opts, forWrite = false) {
 async function hitsRegistryProblem(opts = {}) {
   return (await loadHitsRegistry(opts)).problem;
 }
-function isPlainObject3(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 function validCounts(counts) {
   const entry = {};
   for (const [canonical, n] of Object.entries(counts)) {
     if (typeof n !== "number" || !Number.isSafeInteger(n) || n <= 0) continue;
-    const key = hitKey(canonical);
+    const key = spellingKey(canonical);
     entry[key] = Math.min((entry[key] ?? 0) + n, Number.MAX_SAFE_INTEGER);
   }
   return entry;
@@ -43059,8 +43053,8 @@ async function dropProjectHits(projectPath, canonical, opts) {
     await withFileLock(hitsPath, async () => {
       const registry2 = await readHitsRegistry(opts, true);
       const entry = registry2.projects[key];
-      if (!entry || !(hitKey(canonical) in entry)) return;
-      delete entry[hitKey(canonical)];
+      if (!entry || !(spellingKey(canonical) in entry)) return;
+      delete entry[spellingKey(canonical)];
       await writeFileAtomic(hitsPath, formatJson(registry2));
     });
   } catch {
@@ -43071,8 +43065,8 @@ async function dropGlobalHits(canonical, opts) {
     const hitsPath = getHitsPath(opts);
     await withFileLock(hitsPath, async () => {
       const registry2 = await readHitsRegistry(opts, true);
-      if (!registry2.global || !(hitKey(canonical) in registry2.global)) return;
-      delete registry2.global[hitKey(canonical)];
+      if (!registry2.global || !(spellingKey(canonical) in registry2.global)) return;
+      delete registry2.global[spellingKey(canonical)];
       await writeFileAtomic(hitsPath, formatJson(registry2));
     });
   } catch {
@@ -43088,9 +43082,9 @@ async function hydrateHits(merged, project, opts) {
   const projectCounts = project ? registry2.projects[await canonicalPath2(project.path)] ?? {} : {};
   const globalCounts = registry2.global ?? {};
   if (Object.keys(projectCounts).length === 0 && Object.keys(globalCounts).length === 0) return;
-  const owned = new Set(project ? project.lexicon.terms.map((t) => hitKey(t.canonical)) : []);
+  const owned = new Set(project ? project.lexicon.terms.map((t) => spellingKey(t.canonical)) : []);
   for (const term of merged.terms) {
-    const key = hitKey(term.canonical);
+    const key = spellingKey(term.canonical);
     const n = owned.has(key) ? projectCounts[key] : globalCounts[key];
     if (n) term.hits = (term.hits ?? 0) + n;
   }
@@ -43156,11 +43150,11 @@ function mergeLexicons(global, project) {
   if (project) {
     const firstByKey = /* @__PURE__ */ new Map();
     terms.forEach((t, i) => {
-      const k = canonicalKey2(t.canonical);
+      const k = spellingKey(t.canonical);
       if (!firstByKey.has(k)) firstByKey.set(k, i);
     });
     for (const pt of project.terms) {
-      const key = canonicalKey2(pt.canonical);
+      const key = spellingKey(pt.canonical);
       const idx = firstByKey.get(key) ?? -1;
       const replacement = { ...pt, scope: pt.scope ?? "project" };
       if (idx === -1) {
@@ -43279,10 +43273,10 @@ function mergeTermInto(file2, incoming, scope, opts) {
     file2.lexicon.terms[idx] = replaced;
     return { term: replaced, created: false };
   }
-  const neverKeys = new Set((incoming.never ?? []).map(foldKey));
+  const neverKeys = new Set((incoming.never ?? []).map(spellingKey));
   const created = {
     ...incoming,
-    ...incoming.aliases.length === 0 && opts.defaultAliases?.length ? { aliases: dedupeAliases(opts.defaultAliases.filter((a) => !neverKeys.has(foldKey(a))), canonical) } : {},
+    ...incoming.aliases.length === 0 && opts.defaultAliases?.length ? { aliases: dedupeAliases(opts.defaultAliases.filter((a) => !neverKeys.has(spellingKey(a))), canonical) } : {},
     scope,
     source: incoming.source ?? "user",
     createdAt: incoming.createdAt ?? (/* @__PURE__ */ new Date()).toISOString()
@@ -43306,9 +43300,9 @@ async function addTerm(term, opts = {}) {
 function assertNoNeverAliasClash(file2, incoming, opts) {
   if (opts.merge === false) return;
   const existing = findTerm(file2.lexicon, incoming.canonical);
-  const never2 = new Set([...existing?.never ?? [], ...incoming.never ?? []].map(foldKey));
-  const aliases = new Set([...existing?.aliases ?? [], ...incoming.aliases].map(foldKey));
-  const clash = incoming.aliases.find((a) => never2.has(foldKey(a))) ?? (incoming.never ?? []).find((w) => aliases.has(foldKey(w)));
+  const never2 = new Set([...existing?.never ?? [], ...incoming.never ?? []].map(spellingKey));
+  const aliases = new Set([...existing?.aliases ?? [], ...incoming.aliases].map(spellingKey));
+  const clash = incoming.aliases.find((a) => never2.has(spellingKey(a))) ?? (incoming.never ?? []).find((w) => aliases.has(spellingKey(w)));
   if (clash === void 0) return;
   throw new InputError(
     `term not added: "${clash}" would be both an alias and a never word of "${existing?.canonical ?? incoming.canonical}", and a never word stops every correction of that spelling to the term, so the alias would never apply; drop it from one of the two`
@@ -43370,9 +43364,9 @@ function untrustedTermHolder(loaded, canonical) {
 }
 function untrustedAliasHolder(loaded, canonical, alias) {
   const skipped = loaded.skippedProject;
-  const drop = foldKey(alias);
+  const drop = spellingKey(alias);
   const term = skipped?.lexicon.terms.find((t) => sameCanonical(t.canonical, canonical));
-  if (!skipped || !drop || !term || !term.aliases.some((a) => foldKey(a) === drop)) return void 0;
+  if (!skipped || !drop || !term || !term.aliases.some((a) => spellingKey(a) === drop)) return void 0;
   return { path: skipped.path, trust: loaded.projectTrust === "changed" ? "changed" : "untrusted" };
 }
 async function removeAlias(canonical, alias, opts = {}) {
@@ -43393,7 +43387,7 @@ async function removeAlias(canonical, alias, opts = {}) {
       const term = findTerm(file2.lexicon, wanted);
       if (!term) return;
       termFound = true;
-      const remaining = term.aliases.filter((a) => foldKey(a) !== foldKey(drop));
+      const remaining = term.aliases.filter((a) => spellingKey(a) !== spellingKey(drop));
       if (remaining.length === term.aliases.length) return;
       await assertParsedProjectWritable(file2, opts);
       term.aliases = remaining;
@@ -43416,7 +43410,7 @@ async function recordHits(canonicals, opts = {}) {
     if (canonicals.length === 0) return;
     const counts = /* @__PURE__ */ new Map();
     for (const c of canonicals) {
-      const key = hitKey(c);
+      const key = spellingKey(c);
       if (!key) continue;
       counts.set(key, (counts.get(key) ?? 0) + 1);
     }
@@ -43436,7 +43430,7 @@ async function recordHits(canonicals, opts = {}) {
     if (projectFile) {
       const mine = /* @__PURE__ */ new Map();
       for (const term of projectFile.lexicon.terms) {
-        const key = hitKey(term.canonical);
+        const key = spellingKey(term.canonical);
         const n = counts.get(key);
         if (n === void 0) continue;
         mine.set(key, n);
@@ -43446,7 +43440,7 @@ async function recordHits(canonicals, opts = {}) {
     }
     if (counts.size > 0) {
       const globalFile = opts.loaded?.global ?? await readLexiconFile(paths.global, "global");
-      const owned = new Set(globalFile.lexicon.terms.map((t) => hitKey(t.canonical)));
+      const owned = new Set(globalFile.lexicon.terms.map((t) => spellingKey(t.canonical)));
       for (const key of [...counts.keys()]) if (!owned.has(key)) counts.delete(key);
     }
     if (!project && counts.size === 0) return;
@@ -43490,18 +43484,12 @@ function candidatePaths(opts, scope) {
   targets.push({ path: paths.global, scope: "global" });
   return targets;
 }
-function foldKey(s) {
-  return s.trim().toLowerCase().normalize("NFC");
-}
-function canonicalKey2(canonical) {
-  return foldKey(canonical);
-}
 function sameCanonical(a, b) {
-  return canonicalKey2(a) === canonicalKey2(b);
+  return spellingKey(a) === spellingKey(b);
 }
 function dedupeAliases(aliases, canonical) {
-  const canon = foldKey(canonical);
-  return dedupeCaseInsensitive(aliases).filter((a) => foldKey(a) !== canon);
+  const canon = spellingKey(canonical);
+  return dedupeCaseInsensitive(aliases).filter((a) => spellingKey(a) !== canon);
 }
 function dedupeCaseInsensitive(values) {
   const seen = /* @__PURE__ */ new Set();
@@ -43509,7 +43497,7 @@ function dedupeCaseInsensitive(values) {
   for (const raw of values) {
     const value = typeof raw === "string" ? raw.trim() : "";
     if (!value) continue;
-    const key = foldKey(value);
+    const key = spellingKey(value);
     if (seen.has(key)) continue;
     seen.add(key);
     out.push(value);
@@ -43615,7 +43603,7 @@ function suggestAliases(canonical) {
   const words = acronym ? [base] : splitWords(base);
   const spaced = words.join(" ");
   if (!acronym) add(spaced);
-  const stemMatch = DOMAIN_SUFFIX2.exec(base);
+  const stemMatch = DOMAIN_SUFFIX.exec(base);
   const stem = stemMatch ? stemMatch[1] : void 0;
   if (stem) add(stem);
   const vowelTargets = stem ? [stem, spaced] : [spaced];
@@ -43703,11 +43691,11 @@ function confusions(s) {
   tryAdd(s.replace(new RegExp("(\\p{L})\\1", "giu"), "$1"));
   return results;
 }
-var DOMAIN_SUFFIX2, VOWELS, DIGRAPHS;
+var VOWELS, DIGRAPHS;
 var init_suggest = __esm({
   "src/core/suggest.ts"() {
     init_stoplist();
-    DOMAIN_SUFFIX2 = /^(.{2,}?)\.(ai|io|com|dev|app|co|net|org|sh|xyz|me|so|gg)$/i;
+    init_tuning();
     VOWELS = /* @__PURE__ */ new Set(["a", "e", "i", "o", "u", "y"]);
     DIGRAPHS = /* @__PURE__ */ new Set(["sh", "ch", "th", "ph", "wh", "ck", "ng"]);
   }
@@ -47694,14 +47682,14 @@ var require_suggestSimilar = __commonJS({
       const minSimilarity = 0.4;
       candidates.forEach((candidate) => {
         if (candidate.length <= 1) return;
-        const distance4 = editDistance(word, candidate);
+        const distance5 = editDistance(word, candidate);
         const length = Math.max(word.length, candidate.length);
-        const similarity2 = (length - distance4) / length;
+        const similarity2 = (length - distance5) / length;
         if (similarity2 > minSimilarity) {
-          if (distance4 < bestDistance) {
-            bestDistance = distance4;
+          if (distance5 < bestDistance) {
+            bestDistance = distance5;
             similar = [candidate];
-          } else if (distance4 === bestDistance) {
+          } else if (distance5 === bestDistance) {
             similar.push(candidate);
           }
         }
@@ -59754,6 +59742,7 @@ var import_node_child_process2 = __toESM(require_node_child_process());
 var import_node_fs7 = __toESM(require_node_fs());
 var import_node_os4 = __toESM(require_node_os());
 var import_node_path6 = __toESM(require_node_path());
+init_json();
 init_harvest();
 init_store();
 var IMPORT_SOURCE_IDS = ["contacts", "calendar", "github", "email", "slack"];
@@ -59792,9 +59781,6 @@ function resolveImportSourceDeps(deps = {}) {
     fileSize: deps.fileSize ?? d.fileSize,
     exec: deps.exec ?? d.exec
   };
-}
-function resolved(deps = {}) {
-  return resolveImportSourceDeps(deps);
 }
 function tryExec(deps, file2, args) {
   try {
@@ -59880,7 +59866,7 @@ var contactsSource = {
   privacy: "Reads first/last names and organizations from your local macOS Contacts database. Lexicon adds no automatic upload or telemetry. Candidate previews are returned to your CLI/MCP client and may reach its model provider.",
   implemented: true,
   async checkAvailable(deps = {}) {
-    const d = resolved(deps);
+    const d = resolveImportSourceDeps(deps);
     if (d.platform !== "darwin") return { available: false, reason: "macOS Contacts only exists on macOS" };
     if (!addressBookDb(d)) return { available: false, reason: "no AddressBook database found under ~/Library/Application Support/AddressBook" };
     if (tryExec(d, "sqlite3", ["--version"]) === void 0) {
@@ -59889,7 +59875,7 @@ var contactsSource = {
     return { available: true };
   },
   async harvest(deps = {}) {
-    const d = resolved(deps);
+    const d = resolveImportSourceDeps(deps);
     const db = addressBookDb(d);
     if (!db) return [];
     const out = tryExec(d, "sqlite3", ["-init", "/dev/null", "-readonly", "-separator", "	", db, CONTACTS_QUERY]);
@@ -60003,13 +59989,13 @@ var calendarSource = {
   privacy: "Reads event titles, attendee and organizer names from your locally synced calendars (~/Library/Calendars). Lexicon adds no automatic upload or telemetry. Candidate previews are returned to your CLI/MCP client and may reach its model provider.",
   implemented: true,
   async checkAvailable(deps = {}) {
-    const d = resolved(deps);
+    const d = resolveImportSourceDeps(deps);
     if (d.platform !== "darwin") return { available: false, reason: "macOS Calendar only exists on macOS" };
     if (!calendarDir(d)) return { available: false, reason: "no ~/Library/Calendars directory found" };
     return { available: true };
   },
   async harvest(deps = {}) {
-    const d = resolved(deps);
+    const d = resolveImportSourceDeps(deps);
     const dir = calendarDir(d);
     if (!dir) return [];
     const candidates = [];
@@ -60058,9 +60044,6 @@ function ghJson(d, args) {
     return void 0;
   }
 }
-function isRecord2(v) {
-  return typeof v === "object" && v !== null && !Array.isArray(v);
-}
 function loginCandidate(login, evidence) {
   const canonical = login.trim();
   if (!/^[A-Za-z0-9][A-Za-z0-9-]{1,38}$/.test(canonical)) return void 0;
@@ -60079,16 +60062,16 @@ var githubSource = {
   privacy: "Calls api.github.com with your existing gh login: your username, org memberships, member logins and repo names. No new OAuth scopes.",
   implemented: true,
   async checkAvailable(deps = {}) {
-    const d = resolved(deps);
+    const d = resolveImportSourceDeps(deps);
     const status = tryExec(d, "gh", ["auth", "status"]);
     if (status === void 0) return { available: false, reason: "gh is not installed or not logged in (run gh auth login)" };
     return { available: true };
   },
   async harvest(deps = {}) {
-    const d = resolved(deps);
+    const d = resolveImportSourceDeps(deps);
     const candidates = [];
     const user = ghJson(d, ["api", "user"]);
-    if (isRecord2(user)) {
+    if (isRecord(user)) {
       if (typeof user.name === "string" && user.name.trim()) {
         const c = personCandidate(user.name, "import:github", "GitHub profile name");
         if (c) candidates.push(c);
@@ -60099,11 +60082,11 @@ var githubSource = {
       }
     }
     const orgs = ghJson(d, ["api", "user/orgs"]);
-    const orgLogins = Array.isArray(orgs) ? orgs.filter(isRecord2).map((o) => o.login).filter((l) => typeof l === "string") : [];
+    const orgLogins = Array.isArray(orgs) ? orgs.filter(isRecord).map((o) => o.login).filter((l) => typeof l === "string") : [];
     for (const org of orgLogins.slice(0, 20)) {
       const members2 = ghJson(d, ["api", `orgs/${org}/members`, "--paginate"]);
       if (Array.isArray(members2)) {
-        for (const m of members2.filter(isRecord2)) {
+        for (const m of members2.filter(isRecord)) {
           if (typeof m.login === "string") {
             const c = loginCandidate(m.login, `GitHub org ${org} member`);
             if (c) candidates.push(c);
@@ -60112,7 +60095,7 @@ var githubSource = {
       }
       const orgRepos = ghJson(d, ["api", `orgs/${org}/repos`, "--paginate"]);
       if (Array.isArray(orgRepos)) {
-        for (const r of orgRepos.filter(isRecord2)) {
+        for (const r of orgRepos.filter(isRecord)) {
           if (typeof r.name === "string" && r.name.trim()) {
             candidates.push({
               canonical: r.name,
@@ -60128,9 +60111,9 @@ var githubSource = {
     }
     const repos = ghJson(d, ["api", "user/repos", "--paginate"]);
     if (Array.isArray(repos)) {
-      for (const r of repos.filter(isRecord2).slice(0, 200)) {
+      for (const r of repos.filter(isRecord).slice(0, 200)) {
         if (typeof r.name === "string" && r.name.trim()) {
-          const owner = isRecord2(r.owner) && typeof r.owner.login === "string" ? r.owner.login : void 0;
+          const owner = isRecord(r.owner) && typeof r.owner.login === "string" ? r.owner.login : void 0;
           candidates.push({
             canonical: r.name,
             category: "product",
@@ -60244,6 +60227,7 @@ function selectImportCandidates(candidates, approvedIds) {
 }
 
 // src/core/exporters/index.ts
+var import_fastest_levenshtein3 = __toESM(require_mod());
 init_types();
 init_types();
 
@@ -60264,17 +60248,14 @@ function categoryRank2(category) {
 function isProperNounCategory(category) {
   return category === "brand" || category === "person" || category === "product";
 }
-function compareCanonical(a, b) {
-  return compareText(a, b);
-}
 function sortByImportance(terms) {
   return [...terms].sort(
-    (a, b) => (b.hits ?? 0) - (a.hits ?? 0) || Number(isProperNounCategory(b.category)) - Number(isProperNounCategory(a.category)) || compareCanonical(a.canonical, b.canonical)
+    (a, b) => (b.hits ?? 0) - (a.hits ?? 0) || Number(isProperNounCategory(b.category)) - Number(isProperNounCategory(a.category)) || compareText(a.canonical, b.canonical)
   );
 }
 function sortByCategory(terms) {
   return [...terms].sort(
-    (a, b) => categoryRank2(a.category) - categoryRank2(b.category) || compareCanonical(a.canonical, b.canonical)
+    (a, b) => categoryRank2(a.category) - categoryRank2(b.category) || compareText(a.canonical, b.canonical)
   );
 }
 function aliasPairs(lexicon) {
@@ -60730,11 +60711,6 @@ function exportWhisperPrompt(lexicon, opts = {}, sink) {
   return kept.map(listItem).join(", ");
 }
 
-// src/core/exporters/openai.ts
-function exportOpenai(lexicon, opts = {}, sink) {
-  return exportWhisperPrompt(lexicon, opts, sink);
-}
-
 // src/core/exporters/superwhisper.ts
 function exportSuperwhisper(lexicon, _opts = {}, sink) {
   const { kept, dropped } = uniqueTriggers(aliasPairs(lexicon));
@@ -60763,7 +60739,7 @@ function escapeField(field, separators) {
   return out;
 }
 function exportText(lexicon, _opts = {}) {
-  const terms = [...lexicon.terms].sort((a, b) => compareCanonical(a.canonical, b.canonical));
+  const terms = [...lexicon.terms].sort((a, b) => compareText(a.canonical, b.canonical));
   const lines = terms.map((t) => {
     const aliases = t.aliases.map((a) => a.trim()).filter(Boolean);
     const needsEquals = t.canonical.includes(":") || aliases.some((a) => a.includes(","));
@@ -60843,7 +60819,7 @@ var EXPORTERS = {
   "speechmatics": exportSpeechmatics,
   "azure": exportAzure,
   "google": exportGoogle,
-  "openai": exportOpenai,
+  "openai": exportWhisperPrompt,
   "text": exportText,
   "markdown": exportMarkdown
 };
@@ -61655,11 +61631,11 @@ function importLexicon(content, format, opts = {}) {
   if (!isImportFormat(format)) {
     throw new Error(`Unknown import format "${String(format)}". Known: ${IMPORT_FORMATS.join(", ")}`);
   }
-  const resolved2 = format === "auto" ? detectImportFormat(content, opts.filename) : format;
-  const raw = PARSERS[resolved2](content);
+  const resolved = format === "auto" ? detectImportFormat(content, opts.filename) : format;
+  const raw = PARSERS[resolved](content);
   const { terms, skipped } = mergeRows(raw.rows, opts.source);
   assertNoLostCharacters(terms, opts.filename);
-  return { terms, format: resolved2, skipped: [...raw.skipped, ...skipped].sort((a, b) => a.line - b.line) };
+  return { terms, format: resolved, skipped: [...raw.skipped, ...skipped].sort((a, b) => a.line - b.line) };
 }
 function assertNoLostCharacters(terms, filename) {
   for (const term of terms) {
@@ -62121,9 +62097,10 @@ function emptyExportNote(reason, context) {
 // src/core/suggestTerms.ts
 var import_node_path8 = __toESM(require_node_path());
 init_double_metaphone();
-var import_fastest_levenshtein3 = __toESM(require_mod());
+var import_fastest_levenshtein4 = __toESM(require_mod());
 init_harvest();
 init_matcher();
+init_build();
 init_schema();
 init_collate();
 init_store();
@@ -62165,8 +62142,8 @@ function voiceHistoryPath(globalPath) {
   return import_node_path8.default.join(import_node_path8.default.dirname(globalPath), "voice", "history.jsonl");
 }
 async function loadVoiceHistory(globalPath) {
-  const resolved2 = globalPath ?? resolvePaths().global;
-  const text = await readHistoryTail(voiceHistoryPath(resolved2), VOICE_HISTORY_READ_MAX_BYTES);
+  const resolved = globalPath ?? resolvePaths().global;
+  const text = await readHistoryTail(voiceHistoryPath(resolved), VOICE_HISTORY_READ_MAX_BYTES);
   if (text === void 0) return [];
   const out = [];
   for (const line2 of text.split("\n")) {
@@ -62294,11 +62271,6 @@ function tokenize2(text) {
   }
   return toks;
 }
-function pushTo(map2, key, value) {
-  const list = map2.get(key);
-  if (list) list.push(value);
-  else map2.set(key, [value]);
-}
 function buildCatalogue(index) {
   const byKey = /* @__PURE__ */ new Map();
   const byPrefix = /* @__PURE__ */ new Map();
@@ -62310,8 +62282,8 @@ function buildCatalogue(index) {
       const alpha = alphaOnly2(entry.normLower);
       const key = alpha.length >= 3 ? doubleMetaphone(alpha)[0] : "";
       const item = { entry, alpha, key };
-      if (key.length >= 3) pushTo(byKey, key, item);
-      if (alpha.length >= 2) pushTo(byPrefix, alpha.slice(0, 2), item);
+      if (key.length >= 3) push(byKey, key, item);
+      if (alpha.length >= 2) push(byPrefix, alpha.slice(0, 2), item);
       known.add(entry.normLower);
       known.add(entry.collapsed);
       maxCollapsedLength = Math.max(maxCollapsedLength, entry.collapsed.length);
@@ -62359,7 +62331,7 @@ function nearest(cat, windowLower) {
       const max = Math.max(collapsed.length, e.collapsed.length);
       if (!(keyMatch && key.length >= 5) && Math.abs(collapsed.length - e.collapsed.length) > (1 - NEAR_MIN_SCORE) * max) continue;
       let sim = 0;
-      if (1 - Math.ceil((0, import_fastest_levenshtein3.distance)(collapsed, e.collapsed) / 2) / max >= 0.5) {
+      if (1 - Math.ceil((0, import_fastest_levenshtein4.distance)(collapsed, e.collapsed) / 2) / max >= 0.5) {
         sim = Math.max(similarity(windowLower, e.normLower), similarity(collapsed, e.collapsed));
       }
       let score = sim;
@@ -63140,9 +63112,6 @@ function readableRoots(ctx, env = process.env) {
   }
   return [...new Set(dirs.map(realOrResolved))];
 }
-function shellWord2(dir) {
-  return /^[\w@%+=:,./-]+$/.test(dir) ? dir : `'${dir.replace(/'/g, `'\\''`)}'`;
-}
 function isWithin(child, parent) {
   const rel = (0, import_node_path13.relative)(parent, child);
   return rel === "" || !(0, import_node_path13.isAbsolute)(rel) && rel !== ".." && !rel.startsWith(`..${import_node_path13.sep}`);
@@ -63523,20 +63492,20 @@ var registerTermTools = (server, ctx) => {
       }
     },
     async ({ format, categories, limit }) => guarded(async () => {
-      const resolved2 = resolveExportFormat(format);
-      if (!resolved2) throw new Error(`unknown export format "${format}" (one of: ${EXPORT_FORMATS.join(", ")})`);
+      const resolved = resolveExportFormat(format);
+      if (!resolved) throw new Error(`unknown export format "${format}" (one of: ${EXPORT_FORMATS.join(", ")})`);
       const loaded = await load({ parseSkipped: false });
       const opts = {
         ...categories !== void 0 ? { categories } : {},
         ...limit !== void 0 ? { limit } : {}
       };
-      const { text: exported, notes: dropped } = exportLexiconWithNotes(loaded.merged, resolved2, opts);
-      const notes = dropped.map((d) => `The ${resolved2} export ${d}.`);
-      const reason = emptyExportReason(loaded, resolved2, opts);
+      const { text: exported, notes: dropped } = exportLexiconWithNotes(loaded.merged, resolved, opts);
+      const notes = dropped.map((d) => `The ${resolved} export ${d}.`);
+      const reason = emptyExportReason(loaded, resolved, opts);
       if (reason) {
         notes.push(
           emptyExportNote(reason === "only-untrusted" ? "no-terms" : reason, {
-            format: resolved2,
+            format: resolved,
             filter: `categories ${JSON.stringify(categories ?? [])}`,
             steps: {
               "no-terms": "add_term or setup_lexicon adds some.",
@@ -63685,12 +63654,12 @@ var registerHarvestTools = (server, ctx) => {
       }
     },
     async ({ path: path28, limit, minCount, add }) => guarded(async () => {
-      const root = path28 ? containedPath(ctx, path28, (dir) => `harvest ${shellWord2(dir)}`) : ctx.cwd;
+      const root = path28 ? containedPath(ctx, path28, (dir) => `harvest ${posixShellWord(dir)}`) : ctx.cwd;
       if (add) {
         const target = resolvePaths({ cwd: root }).project ?? defaultProjectPath(root);
         if (!writableProjectFile(ctx, target)) {
           throw new Error(
-            `add: true would write ${target}, which is outside the directories this server may write (${readableRoots(ctx).join(", ")}), so nothing was read or written. Call harvest_repo without add for the read-only preview; the user can run ${cliCommand(`harvest ${shellWord2(root)} --add`)} themselves.`
+            `add: true would write ${target}, which is outside the directories this server may write (${readableRoots(ctx).join(", ")}), so nothing was read or written. Call harvest_repo without add for the read-only preview; the user can run ${cliCommand(`harvest ${posixShellWord(root)} --add`)} themselves.`
           );
         }
       }
@@ -63764,7 +63733,7 @@ var registerHarvestTools = (server, ctx) => {
       }
     },
     async ({ cwd: cwdArg, limit }) => guarded(async () => {
-      const root = cwdArg ? containedPath(ctx, cwdArg, (dir) => `suggest --cwd ${shellWord2(dir)}`) : ctx.cwd;
+      const root = cwdArg ? containedPath(ctx, cwdArg, (dir) => `suggest --cwd ${posixShellWord(dir)}`) : ctx.cwd;
       const loaded = await loadLexicon({ cwd: root, parseSkipped: false });
       const history = await loadVoiceHistory(loaded.global.path).catch((err) => {
         log("loadVoiceHistory failed:", errorMessage(err));
@@ -63830,7 +63799,7 @@ var registerHarvestTools = (server, ctx) => {
       const here = resolvePaths({ cwd: ctx.cwd }).project ?? defaultProjectPath(ctx.cwd);
       if ((0, import_node_path14.resolve)(suggestion.path) !== (0, import_node_path14.resolve)(here)) {
         throw new Error(
-          `this suggestion is for the project lexicon ${suggestion.path}, but this server writes the project lexicon at ${here}; nothing was written. The user can apply it in that repo with ${cliCommand(`suggest --cwd ${shellWord2((0, import_node_path14.dirname)(suggestion.path))} --apply`)}, or call apply_suggestion with scope "global" if they want it in the global lexicon instead.`
+          `this suggestion is for the project lexicon ${suggestion.path}, but this server writes the project lexicon at ${here}; nothing was written. The user can apply it in that repo with ${cliCommand(`suggest --cwd ${posixShellWord((0, import_node_path14.dirname)(suggestion.path))} --apply`)}, or call apply_suggestion with scope "global" if they want it in the global lexicon instead.`
         );
       }
     }
@@ -63946,7 +63915,7 @@ init_errors3();
 var import_node_fs14 = __toESM(require_node_fs());
 var import_node_path15 = __toESM(require_node_path());
 function explicitLexiconPath(ctx, path28) {
-  const hint = (target) => `trust ${shellWord2(target)}`;
+  const hint = (target) => `trust ${posixShellWord(target)}`;
   const requested = (0, import_node_path15.resolve)(ctx.cwd, path28);
   if (!(0, import_node_fs14.existsSync)(requested)) {
     if (!(0, import_node_fs14.existsSync)((0, import_node_path15.dirname)(requested))) return containedPath(ctx, path28, hint);
@@ -63958,12 +63927,12 @@ function explicitLexiconPath(ctx, path28) {
   return (0, import_node_fs14.existsSync)(inside) ? containedPath(ctx, inside, hint) : inside;
 }
 function untrustTarget(cwd, path28) {
-  const resolved2 = (0, import_node_path15.resolve)(cwd, path28);
+  const resolved = (0, import_node_path15.resolve)(cwd, path28);
   try {
-    if ((0, import_node_fs14.statSync)(resolved2).isDirectory()) return (0, import_node_path15.join)(resolved2, PROJECT_FILE_NAME);
+    if ((0, import_node_fs14.statSync)(resolved).isDirectory()) return (0, import_node_path15.join)(resolved, PROJECT_FILE_NAME);
   } catch {
   }
-  return resolved2;
+  return resolved;
 }
 async function askUserToTrust(server, safePath2, file2) {
   if (!server.server.getClientCapabilities()?.elicitation) return "unsupported";
@@ -63985,7 +63954,6 @@ function invalidFileNextStep(safePath2) {
   return `Ask the user to fix the file ${fix}, check it with lexicon_doctor, then call trust_project again. Do not open it yourself.`;
 }
 var registerTrustTools = (server, ctx) => {
-  const { load } = ctx;
   server.registerTool(
     "trust_project",
     {
@@ -66580,7 +66548,6 @@ function summarize(checks, state, audience = "cli") {
   const fails = checks.filter((c) => c.level === "fail");
   const warns = checks.filter((c) => c.level === "warn");
   const counts = `${state.terms} term${state.terms === 1 ? "" : "s"}`;
-  const ready = state.terms > 0 && state.wired && fails.length === 0;
   if (state.unreadable.length > 0) {
     const first = state.unreadable[0];
     const second = state.unreadable[1];
@@ -67080,16 +67047,6 @@ function createPrompter(io = {}) {
 }
 
 // src/cli/commands.ts
-var PROJECT_FILE_NAME2 = ".lexicon.yaml";
-function findGitRoot3(start) {
-  let dir = import_node_path25.default.resolve(start);
-  for (; ; ) {
-    if ((0, import_node_fs25.existsSync)(import_node_path25.default.join(dir, ".git"))) return dir;
-    const parent = import_node_path25.default.dirname(dir);
-    if (parent === dir) return void 0;
-    dir = parent;
-  }
-}
 var EXAMPLE_TERM_COMMENT = `
 # Example term. To enable it, replace the empty \`terms: []\` above with:
 #
@@ -67106,7 +67063,7 @@ async function runInit(opts, io) {
   const cwd = resolveCwd(opts);
   const paths = resolvePaths({ cwd });
   const scope = opts.project ? "project" : "global";
-  const target = opts.project ? paths.project ?? import_node_path25.default.join(findGitRoot3(cwd) ?? cwd, PROJECT_FILE_NAME2) : paths.global;
+  const target = opts.project ? paths.project ?? defaultProjectPath(cwd) : paths.global;
   const created = await createLexiconFile(target, scope);
   if (created && scope === "project") await trustProject(target, { cwd });
   const trust = scope === "project" ? await isTrusted({ path: target, scope, lexicon: emptyLexicon(), exists: true }, { cwd }) : void 0;
@@ -69001,22 +68958,22 @@ async function readStdinBytes(maxBytes) {
 }
 async function readInputBytes(file2, cwd) {
   if (file2 === "-") return { bytes: await readStdinBytes(MAX_IMPORT_BYTES) };
-  const resolved2 = import_node_path31.default.resolve(cwd, file2);
+  const resolved = import_node_path31.default.resolve(cwd, file2);
   try {
-    const stat = await import_node_fs30.promises.stat(resolved2);
-    if (stat.isDirectory()) throw new Error(`expected a file, got a directory: ${resolved2}`);
-    if (stat.size > MAX_IMPORT_BYTES) throw tooLarge(resolved2, stat.size);
-    return { bytes: await import_node_fs30.promises.readFile(resolved2), path: resolved2 };
+    const stat = await import_node_fs30.promises.stat(resolved);
+    if (stat.isDirectory()) throw new Error(`expected a file, got a directory: ${resolved}`);
+    if (stat.size > MAX_IMPORT_BYTES) throw tooLarge(resolved, stat.size);
+    return { bytes: await import_node_fs30.promises.readFile(resolved), path: resolved };
   } catch (err) {
     const code = err.code;
-    if (code === "ENOENT") throw new Error(`file not found: ${resolved2}`);
-    if (code === "EISDIR") throw new Error(`expected a file, got a directory: ${resolved2}`);
+    if (code === "ENOENT") throw new Error(`file not found: ${resolved}`);
+    if (code === "EISDIR") throw new Error(`expected a file, got a directory: ${resolved}`);
     throw err;
   }
 }
 async function defaultReadInput(file2, cwd) {
-  const { bytes, path: resolved2 } = await readInputBytes(file2, cwd);
-  return decodeImportBytes(bytes, resolved2 !== void 0 ? { path: resolved2 } : { label: "standard input" }).text;
+  const { bytes, path: resolved } = await readInputBytes(file2, cwd);
+  return decodeImportBytes(bytes, resolved !== void 0 ? { path: resolved } : { label: "standard input" }).text;
 }
 async function runImport(file2, opts, io, readInput = defaultReadInput) {
   const format = opts.format ?? "auto";
@@ -69372,7 +69329,7 @@ var registerPackTools = (server, ctx) => {
           "pass path or content: path is a dictionary file in this workspace, content the dictionary text itself (format defaults to auto); nothing was imported"
         );
       }
-      const file2 = content === void 0 && path28 !== void 0 ? containedPath(ctx, path28, (f) => `import ${shellWord2(f)}`) : path28 ?? "-";
+      const file2 = content === void 0 && path28 !== void 0 ? containedPath(ctx, path28, (f) => `import ${posixShellWord(f)}`) : path28 ?? "-";
       const io = bufferIO();
       const writeOpts = scope === "project" ? await mcpWriteOpts(ctx) : {};
       const code = await runImport(

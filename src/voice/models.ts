@@ -8,7 +8,6 @@
  */
 import { createHash } from 'node:crypto';
 import { closeSync, createWriteStream, openSync, promises as fs, readFileSync, readSync, statSync, writeFileSync } from 'node:fs';
-import os from 'node:os';
 import { homeDir, usableHome } from '../util/xdg.js';
 import path from 'node:path';
 import { Readable } from 'node:stream';

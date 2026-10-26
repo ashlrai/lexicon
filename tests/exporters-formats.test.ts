@@ -76,6 +76,14 @@ describe('format size limits', () => {
 });
 
 describe('suggestExportFormat', () => {
+  it('keeps exact names, alias ties and ambiguous typos distinct', async () => {
+    const { suggestExportFormat } = await import('../src/core/exporters/index.js');
+    expect(suggestExportFormat(' JSON ')).toBe('json');
+    expect(suggestExportFormat('jsonn')).toBe('json');
+    expect(suggestExportFormat('wisprflo')).toBe('wispr');
+    expect(suggestExportFormat('wison')).toBeUndefined(); // Equally close to wispr and json.
+  });
+
   it('maps close typos to the canonical format', async () => {
     const { suggestExportFormat } = await import('../src/core/exporters/index.js');
     expect(suggestExportFormat('deepgarm')).toBe('deepgram');

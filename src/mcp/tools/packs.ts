@@ -10,7 +10,6 @@ import {
   IMPLEMENTED_IMPORT_SOURCES,
   TERM_SCOPES,
   applyImportCandidates,
-  getImportSource,
   harvestImportSources,
   installPack,
   installRegistryPack,

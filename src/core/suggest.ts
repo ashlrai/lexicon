@@ -13,8 +13,8 @@
  */
 
 import { STOPLIST } from './stoplist.js';
+import { DOMAIN_SUFFIX } from './matcher/tuning.js';
 
-const DOMAIN_SUFFIX = /^(.{2,}?)\.(ai|io|com|dev|app|co|net|org|sh|xyz|me|so|gg)$/i;
 const VOWELS = new Set(['a', 'e', 'i', 'o', 'u', 'y']);
 /** Digraphs treated as a single consonant unit when measuring clusters. */
 const DIGRAPHS = new Set(['sh', 'ch', 'th', 'ph', 'wh', 'ck', 'ng']);

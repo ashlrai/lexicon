@@ -32,6 +32,7 @@ import { distance } from 'fastest-levenshtein';
 import { HARVEST_STOPLIST, harvestRepo } from './harvest.js';
 import { STOPLIST, buildIndex, findReplacements, similarity } from './matcher.js';
 import type { AliasEntry, MatcherIndex } from './matcher.js';
+import { push } from './matcher/build.js';
 import { sanitizeForDisplay } from './schema.js';
 import { compareText } from './collate.js';
 import { resolvePaths, spellingKey } from './store.js';
@@ -392,12 +393,6 @@ interface Catalogue {
   readonly nearCache: Map<string, Near | null>;
 }
 
-function pushTo<K, V>(map: Map<K, V[]>, key: K, value: V): void {
-  const list = map.get(key);
-  if (list) list.push(value);
-  else map.set(key, [value]);
-}
-
 function buildCatalogue(index: MatcherIndex): Catalogue {
   const byKey = new Map<string, CatalogueEntry[]>();
   const byPrefix = new Map<string, CatalogueEntry[]>();
@@ -410,8 +405,8 @@ function buildCatalogue(index: MatcherIndex): Catalogue {
       const alpha = alphaOnly(entry.normLower);
       const key = alpha.length >= 3 ? doubleMetaphone(alpha)[0] : '';
       const item: CatalogueEntry = { entry, alpha, key };
-      if (key.length >= 3) pushTo(byKey, key, item);
-      if (alpha.length >= 2) pushTo(byPrefix, alpha.slice(0, 2), item);
+      if (key.length >= 3) push(byKey, key, item);
+      if (alpha.length >= 2) push(byPrefix, alpha.slice(0, 2), item);
       known.add(entry.normLower);
       known.add(entry.collapsed);
       maxCollapsedLength = Math.max(maxCollapsedLength, entry.collapsed.length);

@@ -5,7 +5,7 @@
  */
 import type { Command } from 'commander';
 import { CORRECTION_EXAMPLES, compareText, computeStats, conflictNote, emptyStatsNote, learnCorrection, learnUnchangedNote, loadLexicon, parseCorrection } from '../core/index.js';
-import type { Correction, LexiconStats, LoadedLexicon, TermScope } from '../core/index.js';
+import type { Correction, LexiconStats, TermScope } from '../core/index.js';
 import { conflictLine, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, safeMessage, shownCommand, shownWord, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 

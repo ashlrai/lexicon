@@ -2,8 +2,10 @@
  * Helpers shared by the exporters: deterministic ordering, alias pair
  * expansion and escaping. Internal to exporters/; not re-exported from core.
  */
-import { compareText } from '../collate.js';
+import { compareText as compareCanonical } from '../collate.js';
 import type { Lexicon, Term, TermCategory } from '../types.js';
+
+export { compareCanonical };
 
 /**
  * Where an exporter reports what the text does not say: `notes`, one
@@ -34,17 +36,6 @@ export function categoryRank(category: TermCategory | undefined): number {
 /** True for the categories STT engines get wrong most often. */
 export function isProperNounCategory(category: TermCategory | undefined): boolean {
   return category === 'brand' || category === 'person' || category === 'product';
-}
-
-/**
- * Canonical A to Z, the same on every machine: a fixed `en` collation, then
- * code units for the spellings it calls equal (`Café` precomposed and with a
- * combining accent). `localeCompare` without a locale follows the user's, so
- * under `LANG=sv_SE.UTF-8` `Äpple` sorted after `Zeta`: the same lexicon
- * exported in another order, and `--limit` kept other terms.
- */
-export function compareCanonical(a: string, b: string): number {
-  return compareText(a, b);
 }
 
 /** hits desc, then brand/person/product before the rest, then alphabetical (compareCanonical). */

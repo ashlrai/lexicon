@@ -9,7 +9,7 @@ import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep 
 import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { defaultProjectPath, pathForModel, projectWriteTrusted, resolvePaths, skippedProjectNote } from '../core/index.js';
+import { defaultProjectPath, pathForModel, posixShellWord as shellWord, projectWriteTrusted, resolvePaths, skippedProjectNote } from '../core/index.js';
 import type { ImportFormat, LoadOptions, LoadedLexicon, TermSuggestion } from '../core/index.js';
 import type { IO } from '../cli/commands.js';
 import { unreadableLexiconEdit } from '../cli/io.js';
@@ -122,7 +122,7 @@ interface PackageInfo {
   version: string;
 }
 
-export function findPackage(): PackageInfo | undefined {
+function findPackage(): PackageInfo | undefined {
   const root = findPackageRoot(import.meta.url);
   return root ? { root, version: packageVersion(import.meta.url) } : undefined;
 }
@@ -208,10 +208,7 @@ export function readableRoots(ctx: Pick<ToolContext, 'cwd' | 'roots'>, env: Node
   return [...new Set(dirs.map(realOrResolved))];
 }
 
-/** `dir` as one shell word, for a command the user copies into a terminal. */
-export function shellWord(dir: string): string {
-  return /^[\w@%+=:,./-]+$/.test(dir) ? dir : `'${dir.replace(/'/g, `'\\''`)}'`;
-}
+export { shellWord };
 
 function isWithin(child: string, parent: string): boolean {
   const rel = relative(parent, child);

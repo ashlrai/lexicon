@@ -64,6 +64,7 @@ import {
   conflictNote,
   unchangedTermNote,
   diffSummary,
+  defaultProjectPath,
   emptyExportNote,
   emptyExportReason,
   emptyLexicon,
@@ -114,7 +115,6 @@ import type {
 } from '../core/index.js';
 import {
   bold,
-  CliRefusal,
   conflictLine,
   dim,
   ensureNewline,
@@ -174,18 +174,6 @@ import { writeFileAtomic } from '../util/atomic.js';
 // ---------------------------------------------------------------------------
 // IO + shared helpers
 // ---------------------------------------------------------------------------
-
-const PROJECT_FILE_NAME = '.lexicon.yaml';
-
-function findGitRoot(start: string): string | undefined {
-  let dir = path.resolve(start);
-  for (;;) {
-    if (existsSync(path.join(dir, '.git'))) return dir;
-    const parent = path.dirname(dir);
-    if (parent === dir) return undefined;
-    dir = parent;
-  }
-}
 
 /**
  * An integer option handed to a handler directly (commander already parsed
@@ -264,7 +252,7 @@ export async function runInit(opts: InitOptions, io: IO): Promise<number> {
   const paths = resolvePaths({ cwd });
   const scope: TermScope = opts.project ? 'project' : 'global';
   const target = opts.project
-    ? (paths.project ?? path.join(findGitRoot(cwd) ?? cwd, PROJECT_FILE_NAME))
+    ? (paths.project ?? defaultProjectPath(cwd))
     : paths.global;
 
   // The existence check, the write and the appended example are one operation.

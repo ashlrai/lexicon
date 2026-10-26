@@ -79,7 +79,7 @@ function check(before: string, after: string): string | undefined {
   const nextTop = topLevelRe.exec(after);
   const listEnd = nextTop ? nextTop.index : after.length;
   // An edit wholly outside the list items: check the file without them.
-  if (changedEnd <= listStart || p >= listEnd) return checkOutsideList(after, termsKey.index, listStart, listEnd);
+  if (changedEnd <= listStart || p >= listEnd) return checkOutsideList(after, termsKey.index, listEnd);
   if (p < listStart || changedEnd > listEnd) return checkWhole(after);
   // The first item fixes the list's indent; an empty block list has none.
   const firstItem = /^( *)- /m.exec(after.slice(listStart));
@@ -155,7 +155,7 @@ function schemaIssue(err: unknown, termName: (k: number) => string): string {
  * the file with the items left out (`terms: []` in their place) is parsed and
  * validated, which is as small as the rest of the file.
  */
-function checkOutsideList(after: string, termsAt: number, listStart: number, listEnd: number): string | undefined {
+function checkOutsideList(after: string, termsAt: number, listEnd: number): string | undefined {
   const head = `${after.slice(0, termsAt)}terms: []\n`;
   const skeleton = head + after.slice(listEnd);
   if (skeleton.length > EDIT_CHECK_MAX_CHARS || hasAnchors(skeleton) || hasSecondDocument(skeleton)) return undefined;
