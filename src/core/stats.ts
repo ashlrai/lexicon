@@ -10,6 +10,7 @@
  * `files` lists the lexicons the terms came from; the sidecar holds no terms
  * and is not one of them.
  */
+import { NEVER_HIT_CAP, TOP_TERMS } from './caps.js';
 import { compareText } from './collate.js';
 import type { LoadedLexicon, TermScope } from './types.js';
 
@@ -30,8 +31,7 @@ export interface LexiconStats {
   files: { path: string; scope: TermScope; terms: number }[];
 }
 
-export const TOP_TERMS = 10;
-export const NEVER_HIT_CAP = 20;
+export { NEVER_HIT_CAP, TOP_TERMS };
 
 function bump(record: Record<string, number>, key: string): void {
   record[key] = (record[key] ?? 0) + 1;
