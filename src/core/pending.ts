@@ -4,7 +4,9 @@
  * review instead of being written to the lexicon. Nothing in this file is read
  * by the matcher, so a queued alias changes no transcript until the user
  * accepts it with `lexicon pending accept` (which goes through
- * learnCorrection, the same path as `lexicon learn`). `reject` drops it.
+ * learnCorrection, the same path as `lexicon learn`). `reject` drops it and
+ * remembers its id under `rejected:`, so the hook does not queue the same
+ * correction again (an explicit `lexicon learn` still works).
  *
  * The queue lives next to the global lexicon as `pending-aliases.yaml`, a
  * small reviewable file that can also be read or edited by hand.
@@ -37,6 +39,15 @@ export interface PendingAlias {
   count: number;
   firstSeen: string;
   lastSeen: string;
+}
+
+/** Most rejected ids remembered; past this the oldest rejections are forgotten. */
+export const MAX_REJECTED = 500;
+
+/** A rejected correction: its pendingId and when it was rejected (no words kept). */
+export interface RejectedAlias {
+  id: string;
+  rejectedAt: string;
 }
 
 export class PendingFileError extends Error {}
@@ -99,15 +110,26 @@ function isEntry(v: unknown): v is PendingAlias {
   );
 }
 
+function isRejected(v: unknown): v is RejectedAlias {
+  if (!v || typeof v !== 'object') return false;
+  const e = v as Record<string, unknown>;
+  return typeof e.id === 'string' && typeof e.rejectedAt === 'string';
+}
+
 /** Entries in the pending file; [] when it does not exist. Throws PendingFileError on a bad file. */
 export async function readPending(file: string): Promise<PendingAlias[]> {
+  return (await readPendingFile(file)).entries;
+}
+
+/** Pending entries and remembered rejections. Throws PendingFileError on a bad file. */
+export async function readPendingFile(file: string): Promise<{ entries: PendingAlias[]; rejected: RejectedAlias[] }> {
   let text: string;
   try {
     const stat = await fs.stat(file);
     if (stat.size > MAX_PENDING_BYTES) throw new PendingFileError(`${file} is larger than ${MAX_PENDING_BYTES} bytes`);
     text = await fs.readFile(file, 'utf8');
   } catch (err) {
-    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return [];
+    if ((err as NodeJS.ErrnoException).code === 'ENOENT') return { entries: [], rejected: [] };
     throw err;
   }
   let doc: unknown;
@@ -116,18 +138,24 @@ export async function readPending(file: string): Promise<PendingAlias[]> {
   } catch {
     throw new PendingFileError(`${file} is not valid YAML`);
   }
-  if (doc === null || doc === undefined) return [];
+  if (doc === null || doc === undefined) return { entries: [], rejected: [] };
   const list = (doc as { pending?: unknown }).pending;
   if (typeof doc !== 'object' || (list !== undefined && !Array.isArray(list))) {
     throw new PendingFileError(`${file} does not hold a pending list`);
   }
   const entries = (list ?? []) as unknown[];
   if (!entries.every(isEntry)) throw new PendingFileError(`${file} has an entry that is not a pending alias`);
-  return entries;
+  const rej = (doc as { rejected?: unknown }).rejected;
+  if (rej !== undefined && (!Array.isArray(rej) || !rej.every(isRejected))) {
+    throw new PendingFileError(`${file} has a rejected list that is not id and rejectedAt pairs`);
+  }
+  return { entries, rejected: (rej ?? []) as RejectedAlias[] };
 }
 
-async function writePending(file: string, entries: PendingAlias[]): Promise<void> {
-  await writeFileAtomic(file, HEADER + stringify({ version: 1, pending: entries }), { mode: 0o600 });
+async function writePending(file: string, entries: PendingAlias[], rejected: RejectedAlias[]): Promise<void> {
+  const doc: Record<string, unknown> = { version: 1, pending: entries };
+  if (rejected.length > 0) doc.rejected = rejected;
+  await writeFileAtomic(file, HEADER + stringify(doc), { mode: 0o600 });
 }
 
 export interface QueueOptions extends StoreOptions {
@@ -163,7 +191,8 @@ export async function queueCorrections(
   const source = opts.source ?? 'manual';
   const lockOpts = opts.lockTimeoutMs !== undefined ? { timeoutMs: opts.lockTimeoutMs } : undefined;
   return withLexiconLock(file, async () => {
-    const entries = await readPending(file);
+    const { entries, rejected } = await readPendingFile(file);
+    const rejectedIds = new Set(rejected.map((r) => r.id));
     const queued: PendingAlias[] = [];
     let skipped = 0;
     for (const c of corrections) {
@@ -172,6 +201,11 @@ export async function queueCorrections(
         continue;
       }
       const id = pendingId(c.heard, c.meant);
+      // The user already said no to this exact correction; do not ask again.
+      if (rejectedIds.has(id)) {
+        skipped++;
+        continue;
+      }
       const hit = entries.find((e) => e.id === id);
       if (hit) {
         hit.count++;
@@ -187,7 +221,7 @@ export async function queueCorrections(
       entries.sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : a.lastSeen > b.lastSeen ? -1 : 0));
       entries.splice(MAX_PENDING);
       entries.sort((a, b) => (a.firstSeen < b.firstSeen ? -1 : a.firstSeen > b.firstSeen ? 1 : 0));
-      await writePending(file, entries);
+      await writePending(file, entries, rejected);
     }
     return { queued, skipped, file };
   }, lockOpts);
@@ -216,13 +250,22 @@ function select(entries: PendingAlias[], sel: ResolveSelection): { picked: Pendi
   return { picked, unknown };
 }
 
-/** Drop the selected entries without learning them. */
-export async function rejectPending(sel: ResolveSelection, opts: StoreOptions = {}): Promise<{ rejected: PendingAlias[]; unknown: string[]; file: string }> {
+/** Drop the selected entries without learning them, and remember their ids so they are not queued again. */
+export async function rejectPending(
+  sel: ResolveSelection,
+  opts: StoreOptions & { now?: Date } = {},
+): Promise<{ rejected: PendingAlias[]; unknown: string[]; file: string }> {
   const file = pendingPath(opts);
+  const now = (opts.now ?? new Date()).toISOString();
   return withLexiconLock(file, async () => {
-    const entries = await readPending(file);
+    const { entries, rejected } = await readPendingFile(file);
     const { picked, unknown } = select(entries, sel);
-    if (picked.length > 0) await writePending(file, entries.filter((e) => !picked.includes(e)));
+    if (picked.length > 0) {
+      const ids = new Set(picked.map((e) => e.id));
+      const kept = rejected.filter((r) => !ids.has(r.id));
+      for (const e of picked) kept.push({ id: e.id, rejectedAt: now });
+      await writePending(file, entries.filter((e) => !picked.includes(e)), kept.slice(-MAX_REJECTED));
+    }
     return { rejected: picked, unknown, file };
   });
 }
@@ -261,7 +304,7 @@ export async function acceptPending(
 ): Promise<{ accepted: AcceptedAlias[]; unknown: string[]; file: string }> {
   const file = pendingPath(opts);
   return withLexiconWriteLocks(opts, () => withLexiconLock(file, async () => {
-    const entries = await readPending(file);
+    const { entries, rejected } = await readPendingFile(file);
     const { picked, unknown } = select(entries, sel);
     const accepted: AcceptedAlias[] = [];
     const done = new Set<PendingAlias>();
@@ -274,7 +317,7 @@ export async function acceptPending(
         accepted.push({ entry, error: err instanceof Error ? err.message : String(err) });
       }
     }
-    if (done.size > 0) await writePending(file, entries.filter((e) => !done.has(e)));
+    if (done.size > 0) await writePending(file, entries.filter((e) => !done.has(e)), rejected);
     return { accepted, unknown, file };
   }));
 }
