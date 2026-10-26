@@ -1,0 +1,42 @@
+Usage: lexicon [options] [command]
+
+Personal lexicon for voice-to-agents: fixes the words STT gets wrong before your
+agent sees them.
+
+Options:
+  -V, --version                           output the version number
+  --cwd <dir>                             directory used to find the project .lexicon.yaml; must exist (default: current directory)
+  -h, --help                              display help for command
+
+Commands:
+  init [options]                          create the lexicon file (global by default) if it does not exist
+  add [options] <canonical> [aliases...]  add a term, or merge aliases into an existing one
+  remove|rm [options] <canonical>         remove a term (project lexicon first, then global), or one alias of it with --alias
+  list|ls [options]                       list terms from the merged global + project lexicon
+  normalize [options] [text...]           correct dictated text (from arguments, or stdin when omitted); stdout always round-trips the input, exit 1 if the lexicon could not be read
+  harvest [options] [path]                scan a repository for names worth adding to the lexicon
+  export [options] [format]               export the merged lexicon for another tool (run without a format to list them)
+  path [options]                          print the resolved global and project lexicon paths
+  doctor [options]                        check lexicon files, term conflicts and the Claude Code integration
+  mcp                                     start the stdio MCP server (what `claude mcp add` points at)
+  hook                                    run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON from stdin)
+  daemon [options]                        watch the clipboard (macOS, Linux, Windows) and correct dictated text in place
+  import [options] [file] [format]        import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub
+  install [options] [client]              print (or with --apply, write) the MCP config for an agent client; no client lists them
+  uninstall [options] [client]            remove the MCP config (and, for claude, the hooks) lexicon install wrote for a client; nothing else is touched
+  trust [options] [path]                  approve a project .lexicon.yaml so its terms are merged (shows a preview, then asks on a terminal)
+  untrust [options] [path]                revoke approval for a project .lexicon.yaml
+  learn [options] [words...]              record a spelling correction: what STT heard and what you meant
+  stats [options]                         show term/alias counts, most-used terms and terms that never fired
+  pending [options]                       review aliases noticed in your corrections; nothing is applied until you accept
+  serve [options]                         run the local HTTP API on http://127.0.0.1:41733 for extensions, Shortcuts, Raycast and desktop apps
+  voice [options]                         dictate locally: record the microphone, transcribe with whisper.cpp, correct with the lexicon
+  setup [options]                         guided first-run: seed the lexicon, harvest the repo, install into your agents and dictation app
+  suggest [options]                       suggest aliases, new terms, never-words and stale terms from your voice history
+  review [options]                        walk through existing terms and keep, delete or edit each one
+  edit [options]                          open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards
+  pack                                    starter term packs (developer, ai, business, voice-tools) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate
+  help [command]                          display help for command
+
+Start here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.
+Check an install: lexicon doctor

@@ -9,7 +9,6 @@ import { spawn } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { existsSync, promises as fs, statSync } from 'node:fs';
 import path from 'node:path';
-import type { Command } from 'commander';
 import {
   ProjectTrustError,
   TERM_CATEGORIES,
@@ -1013,44 +1012,4 @@ export async function runEdit(
   return 0;
 }
 
-// ---------------------------------------------------------------------------
-// commander wiring
-// ---------------------------------------------------------------------------
-
-export function registerReviewCommands(program: Command, io: IO): void {
-  const globals = (): { cwd?: string } => {
-    const { cwd } = program.opts<{ cwd?: string }>();
-    return cwd ? { cwd } : {};
-  };
-  const done = (code: number): void => {
-    if (code !== 0) process.exitCode = code;
-  };
-
-  program
-    .command('review')
-    .description('walk through existing terms and keep, delete or edit each one')
-    .option('--dry-run', 'walk through the review and report the changes; write nothing')
-    .option('--never-hit', 'only terms that have never fired (0 hits)')
-    .option('--project', 'review the project .lexicon.yaml instead of the global file')
-    .option('--global', 'review the global lexicon (the default)')
-    .option('--category <category>', 'only this category')
-    .option('--json', 'refused (exit 1): review asks about each term; prints { ok: false, error, nextStep } naming list --json, remove and add, and the MCP tools')
-    .action(async (opts: ReviewOptions) => done(await runReview({ ...opts, ...globals() }, io)));
-
-  const edit = program
-    .command('edit')
-    .description('open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards')
-    .option('--dry-run', 'report the file it would create or open; do not launch an editor or write anything')
-    .option('--project', 'open the project .lexicon.yaml instead of the global file')
-    .option('--json', 'refused (exit 1): edit opens an editor; prints { ok: false, error, nextStep } naming add, remove and the MCP tools')
-    .action(async (opts: EditOptions) => done(await runEdit({ ...opts, ...globals() }, io)));
-  // `lexicon edit Nope` got commander's "Expected 0 arguments but got 1",
-  // which did not say that edit opens the whole file, or what changes one term.
-  const error = edit.error.bind(edit);
-  edit.error = (message, errorOptions) =>
-    error(errorOptions?.code === 'commander.excessArguments' ? EDIT_TAKES_NO_TERM : message, errorOptions);
-}
-
-/** The usage error of `lexicon edit <anything>`. */
-const EDIT_TAKES_NO_TERM =
-  'error: lexicon edit takes no term: it opens the whole lexicon file in $VISUAL/$EDITOR. To change one term: lexicon add <canonical> <alias...>, or lexicon remove <term>';
+export { registerReviewCommands } from './program.js';

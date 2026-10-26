@@ -15,25 +15,11 @@
  * rather than rejected. See SECURITY.md.
  */
 import * as z from 'zod';
+import { LIMITS } from './caps.js';
 import { TERM_CATEGORIES, TERM_SCOPES, TERM_SOURCES } from './types.js';
 import type { Lexicon } from './types.js';
 
-// ---------------------------------------------------------------------------
-// Limits (exported so tests and docs can reference the same numbers)
-// ---------------------------------------------------------------------------
-
-export const LIMITS = {
-  /** Max characters in a canonical or alias. */
-  word: 80,
-  /** Max characters in notes / phonetic. */
-  text: 200,
-  /** Max aliases (and `never` words) per term. */
-  aliases: 64,
-  /** Max terms per file. */
-  terms: 5000,
-  /** Max protectedWords in settings. */
-  protectedWords: 1000,
-} as const;
+export { LIMITS } from './caps.js';
 
 /**
  * Invisible characters that are stripped: zero-width space/non-joiner/joiner
