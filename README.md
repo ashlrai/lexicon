@@ -58,7 +58,7 @@ Two honest notes about that table. Raw whisper.cpp cannot wrongly change prose b
 | TTS audio, whisper.cpp small.en with prompt hints | 76.0% | 95.7% | 0 of 72 |
 | synthetic STT errors (402 sentences, 70 terms) | 5.1% | 96.8% | 0 of 95 |
 
-Latency is about 0.3 ms per sentence. The TTS-audio rows use macOS text-to-speech read into whisper.cpp, so they are cleaner than a phone microphone.
+Latency in that harness is about 0.3 ms per sentence. The TTS-audio rows use macOS text-to-speech read into whisper.cpp, so they are cleaner than a phone microphone. A separate same-VM comparison with espanso and whisper.cpp (install, latency, memory) is in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
 The synthetic 5.1% is not a claim that speech-to-text gets 5% of proper nouns right in general. Every sentence in that corpus was written to contain a mis-hearing, so 5.1% is only the handful that came out right anyway. The honest "before" number is the TTS-audio one, 41.9%.
 
@@ -85,7 +85,7 @@ brew install ashlrai/tap/lexicon                               # or Homebrew (ma
 npm i -g @ashlr/lexicon                                        # or npm (Node 20+)
 ```
 
-Then open Claude Code and say a sentence with your company name in it. Done.
+Then open Claude Code and say a sentence with your company name in it. Done. What that install actually did on a clean Linux VM, including the doc lines that did not match, is in [docs/FIRST-RUN.md](docs/FIRST-RUN.md).
 
 > npm currently serves `@ashlr/lexicon` 0.5.4 while this source tree is 0.5.6 (check with `npm view @ashlr/lexicon version`). Changes since 0.5.4, such as the `lexicon export` format suggestion below, are not in the published npm package yet.
 
@@ -198,11 +198,16 @@ This is not a dictation app. It sits between whatever dictation you already use 
 
 Three tiers over token windows: exact alias first, then double-metaphone phonetic, then Damerau-Levenshtein fuzzy above a confidence floor. Exact hits win the span; matches never overlap. A stoplist of about 3400 common English words, per-term `never` lists, and (with the default `skipCode`) code spans, URLs, emails, paths and glued identifiers are all off limits. That is why zero clean sentences changed in the benchmark. Every replacement reports its `reason` and `confidence`.
 
+With no lexicon of your own, `normalize` uses a built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS) and says so. It does not include Hetzner, so `head sner` is left alone until you add that term.
+
 ```bash
-lexicon normalize --diff "deploy to head sner with cuban eatties"
-# stderr:  "head sner" -> "Hetzner" (alias, 1.00)
-#          "cuban eatties" -> "Kubernetes" (phonetic, 0.86)
-# stdout:  deploy to Hetzner with Kubernetes
+lexicon normalize --diff "ask ashler to deploy kuber netties with post gressql"
+# stderr:  lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS).
+#          lexicon: run `lexicon setup` to build your own; nothing was written.
+#          "ashler" -> "Ashlr.AI" (alias, 1.00)
+#          "kuber netties" -> "Kubernetes" (phonetic, 0.88)
+#          "post gressql" -> "PostgreSQL" (phonetic, 0.88)
+# stdout:  ask Ashlr.AI to deploy Kubernetes with PostgreSQL
 ```
 
 The rules in full, including every guard, are in [docs/MATCHING.md](docs/MATCHING.md).

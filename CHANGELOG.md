@@ -18,6 +18,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- The README and [docs/MATCHING.md](docs/MATCHING.md) example commands claimed `head sner` and `cuban eatties` corrections that the built-in example lexicon does not make. They now show a sentence that command actually corrects, including the "no terms yet" notice. The Linux line in `scripts/install.sh` no longer suggests `sudo apt install nodejs` first: on Ubuntu 24.04 that package is Node 18.19.1, and the installer requires Node 20.
 - The UserPromptSubmit hook could drop the second spelling correction in a short prompt ("it's Ashlr.AI not Ashlar. Also it's Mason Wyatt not mason white.") on a slow machine: the 25 ms wall-clock correction budget was spent before the second sentence was read, so it got no learn_correction line and its words were normalized as dictation. The first 8 distinct sentences are now always read; the budget only bounds longer pastes. Seen as a macOS-only CI failure on main.
 
 ### Changed
