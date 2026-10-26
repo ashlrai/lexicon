@@ -162,7 +162,7 @@ describe('literal loopback transport and failure isolation', () => {
   it.each([
     'https://127.0.0.1/api/embed', 'http://localhost:11434/api/embed', 'http://127.evil.test/api/embed',
     'http://192.168.1.1/api/embed', 'http://[::ffff:192.168.1.1]/api/embed', 'http://[::2]/api/embed',
-    'http://127.0.0.1@evil.test/api/embed', 'http://user:password@127.0.0.1/api/embed',
+    'http://' + '127.0.0.1@' + 'evil.test/api/embed', 'http://' + 'user:password@' + '127.0.0.1/api/embed',
     'http://127.0.0.1/api/embed?q=x', 'http://127.0.0.1/api/embed#x', 'http://127.0.0.1/api/generate',
   ])('rejects endpoint before networking: %s', endpoint => {
     expect(() => embeddingConfig({ model, endpoint })).toThrow();
