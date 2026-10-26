@@ -10,6 +10,7 @@ import { StructuredData } from '@/components/StructuredData';
 import { WorksWith } from '@/components/WorksWith';
 import { clip, shot } from '@/lib/media';
 import {
+  AGENT_ENDPOINTS,
   BENCHMARK,
   DEMO,
   DOC,
@@ -774,6 +775,14 @@ function InstallSection() {
               </p>
             </div>
 
+            <p className="mt-8 text-[0.88rem] leading-relaxed text-paper-3">
+              Every method, what setup writes, and how to verify it:{' '}
+              <a className="link-accent" href="/install">
+                the install and capabilities page
+              </a>
+              .
+            </p>
+
             {/*
               * The two pieces that are not an npm install. Each href is the
               * /releases/latest/download/ form, so it follows whatever the newest
@@ -875,25 +884,18 @@ function ForAgents() {
             </p>
 
             <dl className="mt-9 flex flex-col gap-5">
-              <AgentLink
-                href="/llms.txt"
-                title="/llms.txt"
-                body="A short markdown index of this site: what Lexicon is, who it is for, the install commands, and where everything else lives."
-              />
-              <AgentLink
-                href="/llms-full.txt"
-                title="/llms-full.txt"
-                body="The whole thing in one fetch: the problem, the install, the twenty-one MCP tools, the exports, the measured numbers, the privacy claims and the FAQ."
-              />
-              <AgentLink
-                href="/mcp.json"
-                title="/mcp.json"
-                body="The install manifest. Take the mcpServers key verbatim and merge it into your user's client config; the sibling keys tell you how to get the binary on PATH first and how to check it worked."
-              />
+              {AGENT_ENDPOINTS.map((e) => (
+                <AgentLink
+                  key={e.path}
+                  href={e.path.startsWith('/') ? e.path : `/${e.path}`}
+                  title={e.title}
+                  body={e.blurb}
+                />
+              ))}
               <AgentLink
                 href={DOC('docs/AGENTS.md')}
                 title="docs/AGENTS.md"
-                body="Written to you rather than to a human: the exact commands per client, what to say while you do it, and how to verify the install without guessing."
+                body="Written to you rather than to a human: the exact commands per client, what to say while you do it, and how to verify the install without guessing. Also served from this domain at /AGENTS.md."
               />
             </dl>
 
@@ -1111,8 +1113,17 @@ function Footer() {
           <a className="link-quiet font-mono text-[0.8rem]" href="/mcp.json">
             /mcp.json
           </a>
-          <a className="link-quiet font-mono text-[0.8rem]" href={`${REPO}/blob/main/docs/AGENTS.md`}>
-            docs/AGENTS.md
+          <a className="link-quiet font-mono text-[0.8rem]" href="/capabilities.json">
+            /capabilities.json
+          </a>
+          <a className="link-quiet font-mono text-[0.8rem]" href="/server.json">
+            /server.json
+          </a>
+          <a className="link-quiet font-mono text-[0.8rem]" href="/AGENTS.md">
+            /AGENTS.md
+          </a>
+          <a className="link-quiet font-mono text-[0.8rem]" href="/install">
+            /install
           </a>
         </nav>
 

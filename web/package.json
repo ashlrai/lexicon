@@ -7,14 +7,16 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "prebuild": "node scripts/scan-media.mjs && node scripts/build-demo-bundle.mjs",
-    "predev": "node scripts/scan-media.mjs && node scripts/build-demo-bundle.mjs",
+    "prebuild": "node scripts/scan-media.mjs && node scripts/build-demo-bundle.mjs && node scripts/gen-discovery.mjs",
+    "predev": "node scripts/scan-media.mjs && node scripts/build-demo-bundle.mjs && node scripts/gen-discovery.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "tsc --noEmit",
     "docs:faq": "node scripts/gen-faq-doc.mjs",
-    "check:faq": "node scripts/gen-faq-doc.mjs --check"
+    "check:faq": "node scripts/gen-faq-doc.mjs --check",
+    "check:discovery": "node scripts/check-discovery.mjs",
+    "test": "npm run build && npm run check:discovery"
   },
   "dependencies": {
     "double-metaphone": "^2.0.1",

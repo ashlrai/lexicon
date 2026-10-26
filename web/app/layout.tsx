@@ -1,6 +1,6 @@
 import type { Metadata, Viewport } from 'next';
 import { IBM_Plex_Mono, Instrument_Sans, Newsreader } from 'next/font/google';
-import { DESCRIPTION, SITE_URL, TAGLINE } from '@/lib/site';
+import { ALTERNATE_TYPES, DESCRIPTION, SITE_URL, TAGLINE } from '@/lib/site';
 import './globals.css';
 
 /*
@@ -67,17 +67,11 @@ export const metadata: Metadata = {
   },
   alternates: {
     canonical: '/',
-    types: {
-      // The llms.txt convention: a clean, linkable summary for models, advertised
-      // from the head so a crawler finds it without being told.
-      'text/plain': [
-        { url: '/llms.txt', title: 'Lexicon for language models (index)' },
-        { url: '/llms-full.txt', title: 'Lexicon for language models (full text)' },
-      ],
-      'application/json': [
-        { url: '/mcp.json', title: 'Lexicon MCP server install manifest' },
-      ],
-    },
+    // The llms.txt convention: a clean, linkable summary for models, advertised
+    // from the head so a crawler finds it without being told. ALTERNATE_TYPES is
+    // shared with every page that sets its own canonical, because `alternates`
+    // merges shallowly and a page-level canonical would otherwise drop these.
+    types: ALTERNATE_TYPES,
   },
   robots: {
     index: true,
