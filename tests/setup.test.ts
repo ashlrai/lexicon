@@ -235,6 +235,29 @@ describe('runSetup --yes', () => {
     expect(summary.termsAdded).toEqual(['Mason Wyatt', 'ashlrai']);
   });
 
+  it.each(['Ashlr.AI', { name: 'Ashlr.AI' }])('keeps the matching dotted author brand in the plan and seeded lexicon: %j', async (author) => {
+    await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify({ name: '@ashlr/lexicon', author }));
+    const planned = await run({ yes: true, dryRun: true, clients: 'none', packs: false }, fakes());
+    expect(planned.plan?.wouldSeed).toContain('Ashlr.AI');
+    const { summary } = await run({ yes: true, clients: 'none', packs: false, harvest: false }, fakes());
+    expect(summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+    const file = await readLexiconFile(globalPath, 'global');
+    expect(file.lexicon.terms.find((t) => t.category === 'brand')?.canonical).toBe('Ashlr.AI');
+  });
+
+  it.each([
+    [{ name: '@acme/tools' }, 'Acme'],
+    [{ name: '@acme/tools', author: 'Ashlr.AI' }, 'Acme'],
+    [{ name: '@acme/tools', author: { name: 42 } }, 'Acme'],
+    [{ name: '@acme.ai/tools' }, 'acme.ai'],
+    [{ name: 'tools', author: 'Acme.AI' }, 'ashlrai'],
+    [null, 'ashlrai'],
+  ])('keeps conservative company fallbacks for %j', async (pkg, expected) => {
+    await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify(pkg));
+    const { plan } = await run({ yes: true, dryRun: true, clients: 'none', packs: false }, fakes());
+    expect(plan?.wouldSeed).toEqual(['Mason Wyatt', expected]);
+  });
+
   it('uses --person over git and skips the person term when git has no name', async () => {
     const f = fakes({ exec: () => { throw new Error('no git'); } });
     const { summary, io } = await run({ yes: true, clients: 'none', person: 'Jane Doe', company: 'Acme' }, f);
@@ -1140,6 +1163,12 @@ describe('helpers', () => {
     expect(suggestCompany(undefined, 'ssh://git@gitlab.com/acme/tools/')).toBe('acme');
     expect(suggestCompany(undefined, undefined)).toBeUndefined();
     expect(suggestCompany('plain', 'not a url')).toBeUndefined();
+    expect(suggestCompany('@Ashlr.AI/lexicon', undefined)).toBe('Ashlr.AI');
+    expect(suggestCompany('@acme.ai/tools', undefined)).toBe('acme.ai');
+    expect(suggestCompany('@ashlr/lexicon', undefined, 'Ashlr.AI')).toBe('Ashlr.AI');
+    expect(suggestCompany('@acme/tools', undefined, 'Ashlr.AI')).toBe('Acme');
+    expect(suggestCompany('@acme/tools', undefined, 'Acme')).toBe('Acme');
+    expect(suggestCompany('@acme/tools', undefined, 'Acme.AI <a@example.com>')).toBe('Acme');
   });
 
   it('parseClientList validates and dedupes', () => {

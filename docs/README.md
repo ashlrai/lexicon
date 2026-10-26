@@ -34,7 +34,7 @@ exist on your operating system is [PLATFORMS.md](PLATFORMS.md).
 | [WINDOWS-APP.md](WINDOWS-APP.md) | The tray app: any Windows app, via UI Automation. Built and unit-tested, never yet run on Windows | |
 | [LOCAL-API.md](LOCAL-API.md) | The loopback HTTP API: the browser extension is its main client, then LexiconBar, Shortcuts, Raycast, Alfred and scripts | |
 | [VOICE.md](VOICE.md) | Local push-to-talk dictation with ffmpeg and whisper.cpp | |
-| [DAEMON.md](DAEMON.md) | Any text field on any OS, through the clipboard and a hotkey | |
+| [DAEMON.md](DAEMON.md) | Clipboard correction on macOS, Windows and Linux, plus the opt-in resident expander (`lexicon daemon --expander`) | |
 | [EXPORTS.md](EXPORTS.md) | Wispr Flow, Superwhisper, espanso, Deepgram, Azure, Google and nine more | Reference |
 | [LIBRARY.md](LIBRARY.md) | Your own STT pipeline, by calling `normalize()` | |
 | [AGENTS.md](AGENTS.md) | Written to the agent, not the user: how to install and verify Lexicon on someone's behalf | |

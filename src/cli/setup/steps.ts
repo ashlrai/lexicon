@@ -52,10 +52,9 @@ import {
   lastLine,
   parseClientList,
   parsePackList,
-  readPackageName,
+  readPackageCompany,
   setupHintProblem,
   setupNameProblem,
-  suggestCompany,
   tryExec,
 } from './detect.js';
 
@@ -210,7 +209,7 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   let companySkipped = false;
   const guessCompany = async (): Promise<string | undefined> => {
     if (gated) return undefined;
-    const name = suggestCompany(await readPackageName(ctx.cwd), tryExec(ctx.exec, 'git', ['-C', ctx.cwd, 'remote', 'get-url', 'origin']));
+    const name = await readPackageCompany(ctx.cwd, tryExec(ctx.exec, 'git', ['-C', ctx.cwd, 'remote', 'get-url', 'origin']));
     if (name === undefined) return undefined;
     const problem = setupNameProblem(name);
     if (problem === undefined) return name;

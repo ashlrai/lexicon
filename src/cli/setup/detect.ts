@@ -126,11 +126,18 @@ export function findGitRoot(start: string, exists: (p: string) => boolean): stri
  * A company name guess from the working directory: the scope of the
  * package.json name (`@ashlr/lexicon` -> `Ashlr`), else the org of the git
  * remote (`github.com/ashlrai/lexicon` -> `ashlrai`). Undefined when neither
- * yields anything.
+ * yields anything. A matching dotted author brand takes precedence over the
+ * scope; dotted scopes otherwise keep their spelling.
  */
-export function suggestCompany(packageName: string | undefined, remoteUrl: string | undefined): string | undefined {
+export function suggestCompany(packageName: string | undefined, remoteUrl: string | undefined, brand?: string): string | undefined {
   const scope = packageName?.match(/^@([A-Za-z0-9][\w.-]*)\//)?.[1];
-  if (scope) return scope.charAt(0).toUpperCase() + scope.slice(1);
+  if (scope) {
+    // Only use a dotted author name when its leading segment is this scope.
+    // Metadata supplies the spelling; an ordinary scope never invents a suffix.
+    if (brand && /^[A-Za-z0-9][\w-]*(?:\.[A-Za-z0-9][\w-]*)+$/.test(brand)
+      && brand.split('.')[0].toLowerCase() === scope.toLowerCase()) return brand;
+    return scope.includes('.') ? scope : scope.charAt(0).toUpperCase() + scope.slice(1);
+  }
   if (remoteUrl) {
     // https://github.com/org/repo(.git), git@github.com:org/repo.git, ssh://git@host/org/repo
     const m = remoteUrl.trim().match(/[:/]([A-Za-z0-9][\w.-]*)\/[\w.-]+?(?:\.git)?\/?$/);
@@ -139,13 +146,16 @@ export function suggestCompany(packageName: string | undefined, remoteUrl: strin
   return undefined;
 }
 
-export async function readPackageName(cwd: string): Promise<string | undefined> {
+/** Read the package scope and author spelling, falling back to the remote org. */
+export async function readPackageCompany(cwd: string, remoteUrl: string | undefined): Promise<string | undefined> {
   try {
-    const raw = await fs.readFile(path.join(cwd, 'package.json'), 'utf8');
-    const pkg = JSON.parse(raw) as { name?: unknown };
-    return typeof pkg.name === 'string' ? pkg.name : undefined;
+    const pkg = JSON.parse(await fs.readFile(path.join(cwd, 'package.json'), 'utf8')) as { name?: unknown; author?: unknown };
+    const author = typeof pkg.author === 'string' ? pkg.author
+      : pkg.author && typeof pkg.author === 'object' && 'name' in pkg.author ? pkg.author.name : undefined;
+    return suggestCompany(typeof pkg.name === 'string' ? pkg.name : undefined, remoteUrl,
+      typeof author === 'string' ? author.trim() : undefined);
   } catch {
-    return undefined;
+    return suggestCompany(undefined, remoteUrl);
   }
 }
 

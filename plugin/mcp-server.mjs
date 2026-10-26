@@ -66136,22 +66136,29 @@ function findGitRoot2(start, exists) {
     dir = parent;
   }
 }
-function suggestCompany(packageName, remoteUrl) {
+function suggestCompany(packageName, remoteUrl, brand) {
   const scope = packageName?.match(/^@([A-Za-z0-9][\w.-]*)\//)?.[1];
-  if (scope) return scope.charAt(0).toUpperCase() + scope.slice(1);
+  if (scope) {
+    if (brand && /^[A-Za-z0-9][\w-]*(?:\.[A-Za-z0-9][\w-]*)+$/.test(brand) && brand.split(".")[0].toLowerCase() === scope.toLowerCase()) return brand;
+    return scope.includes(".") ? scope : scope.charAt(0).toUpperCase() + scope.slice(1);
+  }
   if (remoteUrl) {
     const m = remoteUrl.trim().match(/[:/]([A-Za-z0-9][\w.-]*)\/[\w.-]+?(?:\.git)?\/?$/);
     if (m && !/^(users?|orgs?)$/i.test(m[1])) return m[1];
   }
   return void 0;
 }
-async function readPackageName(cwd) {
+async function readPackageCompany(cwd, remoteUrl) {
   try {
-    const raw = await import_node_fs23.promises.readFile(import_node_path22.default.join(cwd, "package.json"), "utf8");
-    const pkg = JSON.parse(raw);
-    return typeof pkg.name === "string" ? pkg.name : void 0;
+    const pkg = JSON.parse(await import_node_fs23.promises.readFile(import_node_path22.default.join(cwd, "package.json"), "utf8"));
+    const author = typeof pkg.author === "string" ? pkg.author : pkg.author && typeof pkg.author === "object" && "name" in pkg.author ? pkg.author.name : void 0;
+    return suggestCompany(
+      typeof pkg.name === "string" ? pkg.name : void 0,
+      remoteUrl,
+      typeof author === "string" ? author.trim() : void 0
+    );
   } catch {
-    return void 0;
+    return suggestCompany(void 0, remoteUrl);
   }
 }
 var defaultSetupExec = (file2, args) => (0, import_node_child_process7.execFileSync)(file2, args, { encoding: "utf8", timeout: 5e3, stdio: ["ignore", "pipe", "ignore"] }).trim();
@@ -67635,7 +67642,7 @@ async function stepLexicon(ctx) {
   let companySkipped = false;
   const guessCompany = async () => {
     if (gated) return void 0;
-    const name = suggestCompany(await readPackageName(ctx.cwd), tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
+    const name = await readPackageCompany(ctx.cwd, tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
     if (name === void 0) return void 0;
     const problem = setupNameProblem(name);
     if (problem === void 0) return name;
