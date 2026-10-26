@@ -73,22 +73,39 @@ jobs:
               LABELED='${{ contains(github.event.pull_request.labels.*.name, 'ci:macos') }}'
             fi
           fi
-          base='{"os":"ubuntu-latest","node":20},{"os":"ubuntu-latest","node":22},{"os":"ubuntu-latest","node":24},{"os":"windows-latest","node":22}'
-          mac=true
-          if [ "$EVENT" = "pull_request" ] && [ "$LABELED" != "true" ]; then
-            # An unreadable diff runs macOS too, like the docs-only check below.
+          base='{"os":"ubuntu-latest","node":20},{"os":"ubuntu-latest","node":22},{"os":"ubuntu-latest","node":24}'
+          win_row='{"os":"windows-latest","node":22}'
+          mac_row='{"os":"macos-latest","node":22}'
+          # Windows row (RQ-CI-FANOUT): pushes always; PRs only with the
+          # `ci:full` or `ci:windows` label or a Windows-relevant change
+          # (paths, spawn and install code, package manifests, this workflow).
+          # None of the Windows or macOS rows is a required check.
+          WIN_LABELED=false
+          if [ "$EVENT" = "pull_request" ]; then
+            if [ -n "${labels:-}" ]; then
+              printf '%s\n' "$labels" | grep -Eqx 'ci:(full|windows)' && WIN_LABELED=true
+              printf '%s\n' "$labels" | grep -qx 'ci:full' && LABELED=true
+            else
+              WIN_LABELED='${{ contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'ci:windows') }}'
+            fi
+          fi
+          mac=true; win=true
+          if [ "$EVENT" = "pull_request" ]; then
+            # An unreadable diff runs both rows.
             if files="$(git diff --name-only "$BASE...HEAD")"; then
-              if ! printf '%s\n' "$files" | grep -Eq '^(src/hooks/|src/core/(learn|matcher|normalize)\.ts$|tests/(hook[^/]*|learn|matcher[^/]*|normalize)\.test\.ts$|\.github/workflows/ci\.yml$)'; then
+              if [ "$LABELED" != "true" ] && ! printf '%s\n' "$files" | grep -Eq '^(src/hooks/|src/core/(learn|matcher|normalize)\.ts$|tests/(hook[^/]*|learn|matcher[^/]*|normalize)\.test\.ts$|\.github/workflows/ci\.yml$)'; then
                 mac=false
+              fi
+              if [ "$WIN_LABELED" != "true" ] && ! printf '%s\n' "$files" | grep -Eiq '(windows|win32|path|spawn|shell|install|service|\.ps1$|\.cmd$|\.bat$)|^bin/|(^|/)package(-lock)?\.json$|^\.github/workflows/ci\.yml$'; then
+                win=false
               fi
             fi
           fi
-          if [ "$mac" = true ]; then
-            echo "include=[$base,{\"os\":\"macos-latest\",\"node\":22}]" >> "$GITHUB_OUTPUT"
-          else
-            echo "include=[$base]" >> "$GITHUB_OUTPUT"
-          fi
-          echo "macos row: $mac"
+          rows="$base"
+          [ "$win" = true ] && rows="$rows,$win_row"
+          [ "$mac" = true ] && rows="$rows,$mac_row"
+          echo "include=[$rows]" >> "$GITHUB_OUTPUT"
+          echo "windows row: $win, macos row: $mac"
 
   test:
     name: ${{ matrix.os }} node ${{ matrix.node }}
