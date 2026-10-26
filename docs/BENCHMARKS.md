@@ -173,8 +173,8 @@ Lexicon does not do, and these tools do:
   service is running. Lexicon does not. The surfaces that come closest
   (`lexicon daemon`, the macOS menu bar app, the browser extension) are
   separate programs, and the daemon was not what this page timed.
-- espanso is a native binary, and Lexicon starts Node. For scale only (the
-  two commands do different work, so this is not a like-for-like
+- espanso is a native binary, and Lexicon starts Node. For scale only (they
+  do different work, so this is not a like-for-like
   comparison): espanso `match list` was 34,016 kB and 15.9 ms p50, and the
   Node process behind Lexicon `--version` was 83,440 kB and 157.0 ms p50.
   The Lexicon library call, once Node is up, is 0.028 ms p50 with a built
