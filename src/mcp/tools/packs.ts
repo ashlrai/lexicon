@@ -6,37 +6,36 @@
 import { z } from 'zod';
 import { createHash, randomUUID } from 'node:crypto';
 import { isRecord } from '../../util/json.js';
-import {
-  IMPLEMENTED_IMPORT_SOURCES,
-  TERM_SCOPES,
-  applyImportCandidates,
-  harvestImportSources,
-  installPack,
-  installRegistryPack,
-  installedPacks,
-  isRegistryRef,
-  importCandidateId,
-  importCandidatePreview,
-  importPreviewDigest,
-  selectImportCandidates,
-  resolvePaths,
-  listImportSources,
-  listPacks,
-  loadRegistryIndex,
-  packAlreadyInstalledNote,
-  findRegistryEntry,
-  downloadPack,
-  findRegistryRecordMismatch,
-  parsePackText,
-  parseRegistryRef,
-  verifyPackChecksum,
-  assertUserRegistry,
-} from '../../core/index.js';
+import { IMPLEMENTED_IMPORT_SOURCES } from '../../core/caps.js';
+import { TERM_SCOPES } from '../../core/types.js';
 import type { HarvestCandidate, ImportSourceId } from '../../core/index.js';
-import { HARVEST_ROOTS_ENV, IMPORT_FORMAT_VALUES, bufferIO, containedPath, guarded, mcpWriteOpts, nonBlank, shellWord, skippedProjectFields, textResult, untrustedWriteFields } from '../shared.js';
+import { HARVEST_ROOTS_ENV, IMPORT_FORMAT_VALUES, bufferIO, containedPath, coreFn, guarded, mcpWriteOpts, nonBlank, shellWord, skippedProjectFields, textResult, untrustedWriteFields } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
-import { MAX_IMPORT_BYTES, runImport } from '../../cli/cmd-import.js';
+import { MAX_IMPORT_BYTES } from '../../cli/import-limit.js';
 import { cliCommand } from '../../util/cli-hint.js';
+
+const applyImportCandidates = coreFn('applyImportCandidates');
+const harvestImportSources = coreFn('harvestImportSources');
+const installPack = coreFn('installPack');
+const installRegistryPack = coreFn('installRegistryPack');
+const installedPacks = coreFn('installedPacks');
+const isRegistryRef = coreFn('isRegistryRef');
+const importCandidateId = coreFn('importCandidateId');
+const importCandidatePreview = coreFn('importCandidatePreview');
+const importPreviewDigest = coreFn('importPreviewDigest');
+const selectImportCandidates = coreFn('selectImportCandidates');
+const resolvePaths = coreFn('resolvePaths');
+const listImportSources = coreFn('listImportSources');
+const listPacks = coreFn('listPacks');
+const loadRegistryIndex = coreFn('loadRegistryIndex');
+const packAlreadyInstalledNote = coreFn('packAlreadyInstalledNote');
+const findRegistryEntry = coreFn('findRegistryEntry');
+const downloadPack = coreFn('downloadPack');
+const findRegistryRecordMismatch = coreFn('findRegistryRecordMismatch');
+const parsePackText = coreFn('parsePackText');
+const parseRegistryRef = coreFn('parseRegistryRef');
+const verifyPackChecksum = coreFn('verifyPackChecksum');
+const assertUserRegistry = coreFn('assertUserRegistry');
 
 /** Candidates one import_vocabulary preview returns, across the sources chosen (also the approvedCandidateIds cap). */
 const IMPORT_PREVIEW_MAX_CANDIDATES = 50;
@@ -307,9 +306,10 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
           });
         }
         const wanted = [...new Set(sources ?? [])];
+        const wantedIds = new Set<string>(wanted);
         const availability: { id: ImportSourceId; label: string; privacy: string; implemented: boolean; available: boolean; reason?: string; chosen: boolean }[] = [];
         for (const source of listImportSources()) {
-          const chosen = wanted.includes(source.id);
+          const chosen = wantedIds.has(source.id);
           const checked = chosen ? await source.checkAvailable() : { available: false, reason: 'not selected; availability was not probed' };
           availability.push({ id: source.id, label: source.label, privacy: source.privacy,
             implemented: source.implemented, ...checked, chosen });
@@ -370,6 +370,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         // A dry run passes it too: runImport then does not read an untrusted
         // project file to label each term new or merged.
         const writeOpts = scope === 'project' ? await mcpWriteOpts(ctx) : {};
+        const { runImport } = await import('../../cli/cmd-import.js');
         const code = await runImport(
           file,
           { cwd: ctx.cwd, format: format ?? 'auto', project: scope === 'project', dryRun: dryRun === true, json: true, ...writeOpts },

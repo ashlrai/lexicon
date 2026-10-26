@@ -7,7 +7,6 @@
  * as `deps` so tests run it against a mocked store.
  */
 import path from 'node:path';
-import type { Command } from 'commander';
 import {
   AUTO_APPLY_CONFIDENCE,
   ProjectTrustError,
@@ -20,12 +19,11 @@ import {
   suggestTerms,
   spellingKey,
   termHolders,
-  SUGGEST_MAX_LIMIT,
 } from '../core/index.js';
 import type { LoadedLexicon, PendingAlias, SuggestInput, Term, TermScope, TermSuggestion } from '../core/index.js';
 import { askKey, createPrompter, isInteractive } from './prompt.js';
 import type { Prompter } from './prompt.js';
-import { bold, dim, fail, line, plural, positiveIntOption, refuse, renderTable, safe, safeLines, stillInLine, warnSkippedProject } from './io.js';
+import { bold, dim, fail, line, plural, refuse, renderTable, safe, safeLines, stillInLine, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 export interface SuggestCliOptions extends CommonOptions {
@@ -509,27 +507,4 @@ async function applyAllJson(
   return 0;
 }
 
-// ---------------------------------------------------------------------------
-// commander wiring
-// ---------------------------------------------------------------------------
-
-export function registerSuggestCommands(program: Command, io: IO): void {
-  const globals = (): { cwd?: string } => {
-    const { cwd } = program.opts<{ cwd?: string }>();
-    return cwd ? { cwd } : {};
-  };
-  const done = (code: number): void => {
-    if (code !== 0) process.exitCode = code;
-  };
-
-  program
-    .command('suggest')
-    .description('suggest aliases, new terms, never-words and stale terms from your voice history')
-    .option('--json', 'print the suggestions as JSON; with --yes, one document naming what was applied and the file each went to')
-    .option('--apply', 'walk the suggestions one by one: y apply, n skip, a apply all remaining, q quit')
-    .option('--yes', `apply every suggestion at or above ${AUTO_APPLY_CONFIDENCE.toFixed(2)} confidence without asking`)
-    .option('--harvest [dir]', 'also harvest a repository for new-term candidates (default: the --cwd directory); an explicit --cwd harvests too')
-    .option('--limit <n>', `max suggestions (default 20, at most ${SUGGEST_MAX_LIMIT})`, positiveIntOption('--limit', 20, SUGGEST_MAX_LIMIT))
-    .option('--project', 'write new terms to the project lexicon instead of the global one')
-    .action(async (opts: SuggestCliOptions) => done(await runSuggest({ ...opts, ...globals() }, io)));
-}
+export { registerSuggestCommands } from './program.js';

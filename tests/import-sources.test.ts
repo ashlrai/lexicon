@@ -269,6 +269,21 @@ describe('github source', () => {
     expect(names).toEqual(expect.arrayContaining(['first-member', 'second-member', 'FirstRepo', 'SecondRepo', 'FirstPersonalRepo', 'SecondPersonalRepo']));
   });
 
+  it('ignores non-object GitHub rows without dropping valid neighboring names', async () => {
+    const base = githubDeps();
+    const mixed = { ...base, exec: (file: string, args: readonly string[]) => {
+      if (args[1] === 'user') return 'null';
+      if (args[1] === 'user/orgs') return JSON.stringify([null, false, 3, 'org', [], { login: 'ashlrai' }]);
+      if (args[1] === 'orgs/ashlrai/members') return JSON.stringify([null, 'member', [], { login: 'valid-member' }]);
+      if (args[1] === 'orgs/ashlrai/repos') return JSON.stringify([null, [], { name: 'ValidOrgRepo' }]);
+      if (args[1] === 'user/repos') return JSON.stringify([null, [], { name: 'ValidPersonalRepo', owner: null }]);
+      return base.exec(file, args);
+    } };
+    const names = (await source.harvest(mixed)).map((c) => c.canonical);
+    expect(names).toEqual(expect.arrayContaining(['valid-member', 'ValidOrgRepo', 'ValidPersonalRepo']));
+    expect(names).toHaveLength(3);
+  });
+
   it('is unavailable without gh auth', async () => {
     const d = deps({ platform: 'linux', exec: () => { throw new Error('not found'); } });
     expect(await source.checkAvailable(d)).toEqual({

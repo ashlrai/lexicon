@@ -5,53 +5,52 @@
  */
 import { z } from 'zod';
 import {
-  EXPORT_FORMATS,
-  EXPORT_FORMAT_ALIASES,
-  MAX_CORRECTION_LENGTH,
-  TERM_CATEGORIES,
-  TERM_SCOPES,
-  addTerm,
-  computeStats,
-  diffSummary,
-  emptyExportNote,
-  emptyExportReason,
-  emptyLexiconNote,
-  emptyStatsNote,
-  exportLexiconWithNotes,
-  learnCorrection,
-  loadMatcherIndex,
-  noTermMatchesNote,
-  offsetPastEndNote,
-  pageTermList,
-  normalizeWithIndex,
-  recordHits,
-  removeAlias,
-  removeTerm,
-  resolveExportFormat,
+  DEFAULT_MIN_CONFIDENCE,
   EXPORT_ALIAS_ROW_FORMATS,
+  EXPORT_FORMAT_ALIASES,
   EXPORT_MAX_LIMIT,
-  conflictNote,
-  reversedCorrectionNote,
-  unchangedTermNote,
-  spellingConflicts,
-  suggestAliases,
-  suggestCanonicalFor,
-  termHolders,
-  untrustedAliasHolder,
-  untrustedTermHolder,
-  isProjectTrustError,
+  INVENTED_BOUNDARY_CONFIDENCE,
   LIMITS,
+  MAX_CORRECTION_LENGTH,
   NEVER_HIT_CAP,
   TOP_TERMS,
-  DEFAULT_MIN_CONFIDENCE,
-  INVENTED_BOUNDARY_CONFIDENCE,
-  spellingKey,
-} from '../../core/index.js';
+} from '../../core/caps.js';
+import { EXPORT_FORMATS, TERM_CATEGORIES, TERM_SCOPES } from '../../core/types.js';
 import type { NormalizeIncomplete, NormalizeResult, Term, TermScope } from '../../core/index.js';
-import { NOT_BLANK_RE, filePathsInUse, guarded, log, mcpWriteOpts, nonBlank, skippedProjectFields, textResult, untrustedWriteFields } from '../shared.js';
+import { NOT_BLANK_RE, coreFn, filePathsInUse, guarded, log, mcpWriteOpts, nonBlank, skippedProjectFields, textResult, untrustedWriteFields } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import { errorMessage, isInputError } from '../../util/errors.js';
 import { cliCommand } from '../../util/cli-hint.js';
+
+const addTerm = coreFn('addTerm');
+const computeStats = coreFn('computeStats');
+const diffSummary = coreFn('diffSummary');
+const emptyExportNote = coreFn('emptyExportNote');
+const emptyExportReason = coreFn('emptyExportReason');
+const emptyLexiconNote = coreFn('emptyLexiconNote');
+const emptyStatsNote = coreFn('emptyStatsNote');
+const exportLexiconWithNotes = coreFn('exportLexiconWithNotes');
+const learnCorrection = coreFn('learnCorrection');
+const loadMatcherIndex = coreFn('loadMatcherIndex');
+const noTermMatchesNote = coreFn('noTermMatchesNote');
+const offsetPastEndNote = coreFn('offsetPastEndNote');
+const pageTermList = coreFn('pageTermList');
+const normalizeWithIndex = coreFn('normalizeWithIndex');
+const recordHits = coreFn('recordHits');
+const removeAlias = coreFn('removeAlias');
+const removeTerm = coreFn('removeTerm');
+const resolveExportFormat = coreFn('resolveExportFormat');
+const conflictNote = coreFn('conflictNote');
+const reversedCorrectionNote = coreFn('reversedCorrectionNote');
+const unchangedTermNote = coreFn('unchangedTermNote');
+const spellingConflicts = coreFn('spellingConflicts');
+const suggestAliases = coreFn('suggestAliases');
+const suggestCanonicalFor = coreFn('suggestCanonicalFor');
+const termHolders = coreFn('termHolders');
+const untrustedAliasHolder = coreFn('untrustedAliasHolder');
+const untrustedTermHolder = coreFn('untrustedTermHolder');
+const isProjectTrustError = coreFn('isProjectTrustError');
+const spellingKey = coreFn('spellingKey');
 
 /**
  * Every name `export_lexicon` accepts: the formats plus the aliases the CLI

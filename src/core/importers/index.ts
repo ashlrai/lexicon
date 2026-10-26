@@ -4,6 +4,7 @@
  * objects. Pure: no IO. The CLI (`lexicon import`) reads the file and writes
  * the terms with addTerm.
  */
+import { IMPORT_FORMATS } from '../caps.js';
 import { parse as parseYaml } from 'yaml';
 import type { Term, TermSource } from '../types.js';
 import { REPLACEMENT_CHAR } from './encoding.js';
@@ -50,17 +51,7 @@ export type ImportFormat =
 
 export type ConcreteImportFormat = Exclude<ImportFormat, 'auto'>;
 
-export const IMPORT_FORMATS: readonly ImportFormat[] = [
-  'auto',
-  'wispr',
-  'superwhisper',
-  'macos',
-  'espanso',
-  'markdown',
-  'text',
-  'csv',
-  'json',
-];
+export { IMPORT_FORMATS };
 
 export const IMPORT_FORMAT_INFO: Record<ImportFormat, { description: string }> = {
   'auto': { description: 'Detect the format from the content (default)' },
