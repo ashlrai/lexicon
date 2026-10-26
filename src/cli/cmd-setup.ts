@@ -42,8 +42,7 @@
 import { homeDir } from '../util/xdg.js';
 import path from 'node:path';
 import { existsSync } from 'node:fs';
-import type { Command } from 'commander';
-import { LIMITS, listPacks } from '../core/index.js';
+import { listPacks } from '../core/index.js';
 import { bold, dim, fail, jsonError, safe, safeMessage, safePath, shownCommand, tildify } from './io.js';
 import { errorMessage } from '../util/errors.js';
 import type { IO } from './io.js';
@@ -432,41 +431,22 @@ export async function runSetup(
   return { code: failed ? 1 : 0, summary: ctx.summary, ...(ctx.plan ? { plan: ctx.plan } : {}) };
 }
 
-export function registerSetupCommands(program: Command, io: IO): void {
-  program
-    .command('setup')
-    .description('guided first-run: seed the lexicon, harvest the repo, install into your agents and dictation app')
-    .option('-y, --yes', 'take every default without prompting')
-    .option('--clients <list>', `comma-separated clients to install into, or none (default: detect; one of ${SETUP_CLIENTS.join(', ')})`)
-    .option('--company <name>', `company or product name to seed (as you want it spelled; one line, at most ${LIMITS.word} characters)`)
-    .option('--person <name>', `your name to seed, one line of at most ${LIMITS.word} characters (default: git user.name, global then this repo, or $GIT_AUTHOR_NAME)`)
-    .option('--phonetic <hint>', 'pronunciation hint for the company term, e.g. ASH-ler')
-    .option('--app <app>', `dictation app to export for: ${SETUP_APPS.join('|')}`)
-    .option('--export-dir <dir>', 'where to write the dictation export (default: ~/Desktop)')
-    .option('--harvest', 'add the repo names to the project lexicon (with --yes it is skipped unless this is passed)')
-    .option('--packs <list>', 'comma-separated starter packs to install, or none (default: a checklist on a terminal, nothing with --yes; one of developer, ai, business, voice-tools)')
-    .option('--no-packs', 'skip the starter packs (no prompt)')
-    .option('--no-harvest', 'skip the repo harvest (no prompt)')
-    .option('--serve', 'install the local API login service (with --yes it is skipped unless this is passed)')
-    .option('--no-serve', 'skip installing the local API login service (no prompt)')
-    .option('--dry-run', 'detect and suggest only; write nothing and print what a run would do')
-    .option('--reseed', 'also seed the guessed person/company (git user.name, package scope) when the lexicon already has terms')
-    .option('--home <dir>', 'treat <dir> as the home directory (mainly for tests)')
-    .option('--json', 'print a machine-readable summary on stdout, led by ok (progress goes to stderr; a refusal prints { ok: false, error, nextStep })')
-    .action(async (opts: SetupOptions) => {
-      const { cwd } = program.opts<{ cwd?: string }>();
-      const merged: SetupOptions = cwd ? { ...opts, cwd } : opts;
-      let code: number;
-      try {
-        ({ code } = await runSetup(merged, io));
-      } catch (err) {
-        if (!opts.json) throw err;
-        // Under --json stdout is the one document a script reads: a refusal
-        // (an unknown --app or client, a step that threw) is `{ ok: false,
-        // error }` there, with the usual stderr line, rather than nothing.
-        io.stdout(`${JSON.stringify(jsonError(errorMessage(err), 'fix what error names, then run lexicon setup --json again (lexicon setup --help lists the flags)'), null, 2)}\n`);
-        code = fail(io, err);
-      }
-      if (code !== 0) process.exitCode = code;
-    });
+/** Commander action for `lexicon setup`. Loaded only when that command runs. */
+export async function runSetupCli(program: { opts(): { cwd?: string } }, io: IO, opts: SetupOptions): Promise<void> {
+  const { cwd } = program.opts();
+  const merged: SetupOptions = cwd ? { ...opts, cwd } : opts;
+  let code: number;
+  try {
+    ({ code } = await runSetup(merged, io));
+  } catch (err) {
+    if (!opts.json) throw err;
+    // Under --json stdout is the one document a script reads: a refusal
+    // (an unknown --app or client, a step that threw) is `{ ok: false,
+    // error }` there, with the usual stderr line, rather than nothing.
+    io.stdout(`${JSON.stringify(jsonError(errorMessage(err), 'fix what error names, then run lexicon setup --json again (lexicon setup --help lists the flags)'), null, 2)}\n`);
+    code = fail(io, err);
+  }
+  if (code !== 0) process.exitCode = code;
 }
+
+export { registerSetupCommands } from './program.js';

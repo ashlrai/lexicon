@@ -14,7 +14,6 @@
 import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import type { Command } from 'commander';
 import {
   applyRegistryUpdate,
   downloadPack,
@@ -42,7 +41,7 @@ import {
 } from '../core/index.js';
 import { findRegistryRecordMismatch, loadLexicon, registryRecordMismatch } from '../core/index.js';
 import type { InstallPackResult, RegistryDeps, RegistryRecordMismatch, RegistryIndexEntry, Term, TermScope, UninstallPackResult } from '../core/index.js';
-import { CliRefusal, PACK_NOT_FOUND_NEXT_STEP, bold, dim, exampleAfterMissingArgument, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, shownCommand, shownWord, safeMessage, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
+import { CliRefusal, PACK_NOT_FOUND_NEXT_STEP, bold, dim, fail, jsonError, jsonOk, line, plural, refuse, renderTable, resolveCwd, safe, shownCommand, shownWord, safeMessage, skippedProjectJson, unreadableLexiconHint, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { createPrompter, isInteractive } from './prompt.js';
@@ -741,90 +740,4 @@ export async function runPackValidate(file: string, opts: PackCliOptions, io: IO
   }
 }
 
-export function registerPackCommands(program: Command, io: IO, deps: PackDeps = {}): void {
-  const globals = (): { cwd?: string } => {
-    const { cwd } = program.opts<{ cwd?: string }>();
-    return cwd ? { cwd } : {};
-  };
-  const done = (code: number): void => {
-    if (code !== 0) process.exitCode = code;
-  };
-
-  const pack = program
-    .command('pack')
-    .description('starter term packs (developer, ai, business, voice-tools) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate')
-    .action(() => {
-      pack.outputHelp();
-    });
-
-  pack
-    .command('list')
-    .alias('ls')
-    .description('list the available packs and which are installed')
-    .option('--json', 'print the packs as JSON')
-    .option('--registry <index>', 'also list the community packs in this registry index')
-    .option('--project', 'list community packs installed in this project')
-    .action(async (opts: PackRegistryCliOptions) => done(await runPackList({ ...opts, ...globals() }, io, deps)));
-
-  exampleAfterMissingArgument(
-    pack
-      .command('add')
-      .description('install one or more packs into the global lexicon (existing terms only gain aliases); <author>/<name> installs a community pack after a preview')
-      .argument('<name...>', 'pack names, e.g. developer ai, or community refs like example/cardiology')
-      .option('--project', 'install into the project .lexicon.yaml instead')
-      .option('--registry <index>', 'registry index for community pack refs (local path, file:// or https:// URL)')
-      .option('-y, --yes', 'accept the community-pack preview without prompting (required off a terminal)')
-      .option('--json', 'print the results as JSON')
-      .action(async (names: string[], opts: PackRegistryCliOptions) => done(await runPackAdd(names, { ...opts, ...globals() }, io, deps))),
-    '(e.g. lexicon pack add developer; lexicon pack list shows the packs; use lexicon pack add --help for usage)',
-  );
-
-  exampleAfterMissingArgument(
-    pack
-      .command('remove')
-      .alias('rm')
-      .description('remove a pack; terms you edited since (hits, extra aliases) are kept')
-      .argument('<name>', 'pack name or community ref (author/name)')
-      .option('--project', 'only look in the project .lexicon.yaml')
-      .option('--registry <index>', 'registry index to re-fetch a community pack whose cache is gone')
-      .option('--json', 'print the result as JSON')
-      .action(async (name: string, opts: PackRegistryCliOptions) => done(await runPackRemove(name, { ...opts, ...globals() }, io, deps))),
-    '(e.g. lexicon pack remove developer; lexicon pack list shows which are installed; use lexicon pack remove --help for usage)',
-  );
-
-  exampleAfterMissingArgument(
-    pack
-      .command('show')
-      .description('print the terms and aliases a pack contains')
-      .argument('<name>', 'pack name or community ref (author/name, needs --registry)')
-      .option('--registry <index>', 'registry index for community pack refs')
-      .option('--json', 'print the pack as JSON')
-      .action(async (name: string, opts: PackRegistryCliOptions) => done(await runPackShow(name, { ...opts, ...globals() }, io, deps))),
-    '(e.g. lexicon pack show developer; lexicon pack list shows the packs; use lexicon pack show --help for usage)',
-  );
-
-  pack
-    .command('search')
-    .description('search community packs in a registry index by name, title, description or author')
-    .argument('<query>', 'what to look for, e.g. cardiology')
-    .option('--registry <index>', 'registry index to search (local path, file:// or https:// URL)')
-    .option('--json', 'print the matches as JSON')
-    .action(async (query: string, opts: PackRegistryCliOptions) => done(await runPackSearch(query, { ...opts, ...globals() }, io, deps)));
-
-  pack
-    .command('update')
-    .description('re-check installed community packs against a fresh index; every changed pack is previewed and confirmed, never silent')
-    .argument('[refs...]', 'community refs to update (default: every installed community pack)')
-    .option('--project', 'update only community packs installed in this project')
-    .option('--registry <index>', 'registry index to check (default: the index each pack was installed from)')
-    .option('-y, --yes', 'apply every available update without prompting (required off a terminal)')
-    .option('--json', 'print the update report as JSON')
-    .action(async (refs: string[], opts: PackRegistryCliOptions) => done(await runPackUpdate(refs, { ...opts, ...globals() }, io, deps)));
-
-  pack
-    .command('validate')
-    .description('check a pack file against the community publish bar (schema, author, the ordinary-word guard)')
-    .argument('<file>', 'pack YAML file to validate')
-    .option('--json', 'print the errors and warnings as JSON')
-    .action(async (file: string, opts: PackCliOptions) => done(await runPackValidate(file, { ...opts, ...globals() }, io)));
-}
+export { registerPackCommands } from './program.js';
