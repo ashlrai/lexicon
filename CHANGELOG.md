@@ -10,6 +10,8 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Added
 
+- `--dry-run` previews init, add, remove, harvest --add, export --out, review and edit without saving changes. Edit reports its target without launching an editor. Pack install, update and removal, trust, untrust, learn and pending accept/reject also support previews that keep lexicon, trust and registry state unchanged.
+
 - `lexicon pending reject` remembers what you rejected: the pending file gains a `rejected:` list of ids (never the words, capped at 500), and the prompt hook no longer queues a correction you already rejected. `lexicon learn` with the same words still works. Additive file change; an older lexicon that rewrites the file forgets the list.
 - `node scripts/bench/startup.mjs` times one CLI cold start (`--version` and `normalize --diff`) and one in-process `normalize`. Stdout is a single JSON document. The Lexicon rows in [docs/BENCHMARKS.md](docs/BENCHMARKS.md) are one run of that command, not a saved baseline. See [scripts/bench/README.md](scripts/bench/README.md).
 - `lexicon suggest` lists the pending corrections queue first (newest first), each with its id, heard -> meant, source (for example `prompt-hook`) and count, plus the `lexicon pending accept/reject <id>` commands. Listing never changes the queue or the lexicon; an unreadable queue is a stderr warning, not a failure. `--json` output is unchanged.

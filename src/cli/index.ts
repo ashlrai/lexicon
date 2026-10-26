@@ -103,6 +103,7 @@ program
   .command('init')
   .description('create the lexicon file (global by default) if it does not exist')
   .option('--project', 'create a project .lexicon.yaml at the git root (or cwd) instead')
+  .option('--dry-run', 'report the file it would create and trust; write nothing')
   .option('--json', 'print { ok: true, scope, path, created } as JSON (plus trust for --project)')
   .action(async (opts: InitOptions) => done(await runInit(withGlobals(opts), io)));
 
@@ -116,6 +117,7 @@ program
   .option('--notes <text>', 'free text shown to the agent')
   .option('--project', 'write to the project lexicon instead of the global one')
   .option('--suggest', 'append auto-generated likely misspellings (automatic when no aliases are given)')
+  .option('--dry-run', 'report the term and aliases it would create or merge; write nothing')
   .option('-i, --interactive', 'confirm suggested aliases as a checklist, then ask for phonetic hint and category')
   .option(
     '--never <word...>',
@@ -133,6 +135,7 @@ program
   .description('remove a term (project lexicon first, then global), or one alias of it with --alias')
   .argument('<canonical>')
   .option('--alias <alias>', 'remove only this alias from the term and keep the term (exit 1 when the term or alias is unknown)')
+  .option('--dry-run', 'report the term or alias it would remove; write nothing')
   .option('--project', 'only look in the project lexicon')
   .option('--global', 'only look in the global lexicon (not with --project)')
   .option('--json', 'print { ok: true, canonical, removed } as JSON (exit 1 when not found, with ok: false and error), plus stillIn when a copy is left in the other lexicon file and untrustedProject when the untrusted project lexicon has one; with --alias also alias, aliases and paths')
@@ -175,6 +178,7 @@ program
   .option('--add', 'add candidates (with suggested aliases) to the project lexicon; on a terminal this walks them one by one')
   .option('-i, --interactive', 'walk candidates one by one: y add, n skip, e edit aliases, c category, a add all, q quit')
   .option('--yes', 'with --add: add every candidate without prompting')
+  .option('--dry-run', 'with --add: report the terms it would add or merge; write nothing')
   .option('--symbols', 'also propose names seen only as a code symbol (off: they are what you type, not what you say)')
   .option('--json', 'print candidates as JSON (a bare array; with --add it is printed after the writes, the add summary goes to stderr, and a failed write prints only { ok: false, error, added, created, merged, path })')
   .option('--full', 'print { ok: true, root, candidates, count } as JSON, the keys MCP harvest_repo returns, plus added, created, merged and path with --add (implies --json)')
@@ -187,6 +191,7 @@ program
   .description('export the merged lexicon for another tool (run without a format to list them)')
   .argument('[format]')
   .option('--out <file>', 'write to a file instead of stdout')
+  .option('--dry-run', 'with --out: report the export format, terms, bytes and path; write nothing')
   .option('--category <categories...>', 'only these categories, space- or comma-separated')
   .option('--limit <n>', `cap the number of terms, applied after --category, keeping the most hits first (at equal hits brand, person and product terms first, then canonical A to Z); csv, wispr, superwhisper, macos and espanso (one row per alias) count only terms that have an alias; at most ${EXPORT_MAX_LIMIT}`, positiveIntOption('--limit', 50, EXPORT_MAX_LIMIT))
   .option('--json', 'print { ok: true, format, terms, bytes, path } after writing --out, or { ok: true, format, terms, bytes, content } with the export as a string without it; { ok: true, formats } with no format (plus rows for the one-row-per-alias formats, dropped (one sentence per kind of entry the format left out to fit its target, also printed on stderr without --json), and projectTrust, skippedProject and note when an untrusted project lexicon was left out)')

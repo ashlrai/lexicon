@@ -21570,7 +21570,7 @@ async function queueCorrections(corrections, opts = {}) {
       entries2.sort((a, b) => a.lastSeen < b.lastSeen ? 1 : a.lastSeen > b.lastSeen ? -1 : 0);
       entries2.splice(MAX_PENDING);
       entries2.sort((a, b) => a.firstSeen < b.firstSeen ? -1 : a.firstSeen > b.firstSeen ? 1 : 0);
-      await writePending(file, entries2, rejected);
+      if (!opts.dryRun) await writePending(file, entries2, rejected);
     }
     return { queued, skipped, file };
   }, lockOpts);

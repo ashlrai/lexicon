@@ -45,6 +45,8 @@ export interface TrustOptions extends CommonOptions {
   json?: boolean;
   /** Trust without asking, even on a terminal. */
   yes?: boolean;
+  /** Report what would be trusted (the preview and the pin it would write); ask nothing, write nothing. */
+  dryRun?: boolean;
 }
 
 /** Test seams for the confirmation step. */
@@ -185,9 +187,32 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
   // trust_project does not ask either), and a no would print "declined" for
   // a file that stays trusted.
   const interactive = (deps.isInteractive ?? isInteractive)();
-  const ask = !opts.yes && before !== 'trusted' && interactive;
+  const ask = !opts.yes && !opts.dryRun && before !== 'trusted' && interactive;
   if (!opts.json) renderPreview(file, io.stdout);
   else if (ask) renderPreview(file, io.stderr);
+  if (opts.dryRun) {
+    // A dry run approves nothing, so there is no question to ask and no --yes
+    // to require off a terminal: it reports the pin a real run would write.
+    const verb = before === 'trusted' ? 're-pinned' : before === 'changed' ? 'updated' : 'trusted';
+    if (opts.json) {
+      printJson(io, jsonOk({
+        action: 'trust',
+        path: filePath,
+        previousStatus: before,
+        status: 'trusted',
+        result: verb,
+        ...(shownSha !== undefined ? { sha256: shownSha.slice(0, 12) } : {}),
+        dryRun: true,
+        registry,
+        ...trustPreview(file),
+        note: 'Merged into the lexicon until its content changes; then it must be trusted again.',
+      }));
+      return 0;
+    }
+    io.stdout(`would ${verb === 're-pinned' ? 're-pin' : verb === 'updated' ? 'update' : 'trust'} ${safePath(filePath)} (sha256 ${shownSha?.slice(0, 12) ?? 'unreadable'}) in ${safePath(registry)}; nothing was pinned\n`);
+    io.stdout(`a real run pins the file${!opts.yes && before !== 'trusted' ? ' after asking for approval' : ''}; run: lexicon trust ${opts.yes ? '--yes ' : ''}${JSON.stringify(filePath)}\n`);
+    return 0;
+  }
   // Off a terminal nobody can answer the question, so only an explicit --yes
   // pins the file. No environment variable stands in for the flag.
   if (!opts.yes && before !== 'trusted' && !interactive) {
@@ -257,13 +282,13 @@ export async function runTrust(target: string | undefined, opts: TrustOptions, i
   return 0;
 }
 
-export async function runUntrust(target: string | undefined, opts: CommonOptions & { json?: boolean }, io: IO): Promise<number> {
+export async function runUntrust(target: string | undefined, opts: CommonOptions & { json?: boolean; dryRun?: boolean }, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
   const filePath = resolveTarget(target, cwd);
   if (!filePath) return fail(io, opts.json, 'untrust', undefined, `no project .lexicon.yaml found from ${cwd}`, 'pass the path of the .lexicon.yaml to untrust (lexicon trust --list shows the trusted ones)');
   let removed: boolean;
   try {
-    removed = await untrustProject(filePath, { cwd });
+    removed = await untrustProject(filePath, { cwd, ...(opts.dryRun ? { dryRun: true } : {}) });
   } catch (err) {
     if (isTrustRegistryUnreadableError(err)) return registryFail(io, opts.json, 'untrust', filePath, err);
     throw err;
@@ -274,8 +299,11 @@ export async function runUntrust(target: string | undefined, opts: CommonOptions
       action: 'untrust',
       path: filePath,
       removed,
+      ...(opts.dryRun ? { dryRun: true } : {}),
       registry: getTrustPath({ cwd }),
-      summary: removed ? `untrusted ${filePath}; it will no longer be merged` : `${filePath} was not trusted; nothing to do`,
+      summary: removed
+        ? `${opts.dryRun ? 'would untrust' : 'untrusted'} ${filePath}; it ${opts.dryRun ? 'would' : 'will'} no longer be merged`
+        : `${filePath} was not trusted; nothing to do`,
     }));
     return 0;
   }
@@ -283,7 +311,7 @@ export async function runUntrust(target: string | undefined, opts: CommonOptions
     io.stdout(`${safePath(filePath)} was not trusted; nothing to do\n`);
     return 0;
   }
-  io.stdout(`untrusted ${safePath(filePath)}; it will no longer be merged\n`);
+  io.stdout(`${opts.dryRun ? 'would untrust' : 'untrusted'} ${safePath(filePath)}; it ${opts.dryRun ? 'would' : 'will'} no longer be merged\n`);
   return 0;
 }
 
@@ -332,8 +360,9 @@ export function registerTrustCommands(program: Command, io: IO, deps: TrustDeps 
     .argument('[path]', 'lexicon file or project directory (default: the project .lexicon.yaml for the current directory)')
     .option('--list', 'list trusted project lexicons and whether they still match')
     .option('-y, --yes', 'trust without asking (required off a terminal)')
+    .option('--dry-run', 'show the preview and the pin it would write; ask nothing, pin nothing')
     .option('--json', 'print the result as JSON: ok, then the object MCP trust_project returns, with the full preview where MCP has a summary (with --list: { ok, registry, trustAll, trusted })')
-    .action(async (target: string | undefined, opts: { list?: boolean; yes?: boolean; json?: boolean }) =>
+    .action(async (target: string | undefined, opts: { list?: boolean; yes?: boolean; dryRun?: boolean; json?: boolean }) =>
       done(await runTrust(target, { ...opts, ...globals() }, io, deps)),
     );
 
@@ -341,6 +370,7 @@ export function registerTrustCommands(program: Command, io: IO, deps: TrustDeps 
     .command('untrust')
     .description('revoke approval for a project .lexicon.yaml')
     .argument('[path]', 'lexicon file or project directory (default: the project .lexicon.yaml for the current directory)')
+    .option('--dry-run', 'report the registry entry it would remove; write nothing')
     .option('--json', 'print { ok, action, path, removed, registry, summary } as JSON, as MCP trust_project returns it plus ok')
-    .action(async (target: string | undefined, opts: { json?: boolean }) => done(await runUntrust(target, { ...opts, ...globals() }, io)));
+    .action(async (target: string | undefined, opts: { json?: boolean; dryRun?: boolean }) => done(await runUntrust(target, { ...opts, ...globals() }, io)));
 }
