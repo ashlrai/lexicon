@@ -21,9 +21,8 @@ import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
 import { CallToolRequestSchema, ErrorCode, McpError, RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
-import { exportClaudeMdWithin, exportLexicon, loadLexicon, neutralizeMarkup, noTermsYet, pathForModel, selectExportTerms } from '../core/index.js';
 import type { LoadOptions, LoadedLexicon } from '../core/index.js';
-import { SERVER_NAME, log, readPackageVersion, skippedProjectFields, withLexiconFix } from './shared.js';
+import { SERVER_NAME, core, loadCore, log, readPackageVersion, skippedProjectFields, withLexiconFix } from './shared.js';
 import { errorMessage } from '../util/errors.js';
 import { TOOL_REGISTRARS } from './tools/index.js';
 import { toolAnnotations } from './annotations.js';
@@ -147,6 +146,7 @@ function moreTermsLine(omitted: number): string {
  * tag; it keeps the length, so the cap still holds).
  */
 function lexiconForModel(loaded: LoadedLexicon): string {
+  const { exportClaudeMdWithin, exportLexicon, neutralizeMarkup } = core();
   const full = exportLexicon(loaded.merged, 'claude-md');
   const text = full.length <= MODEL_CONTEXT_MAX_CHARS ? full : exportClaudeMdWithin(loaded.merged, MODEL_CONTEXT_MAX_CHARS, moreTermsLine).text;
   return neutralizeMarkup(text);
@@ -184,7 +184,7 @@ function lexiconJsonWithin(merged: LoadedLexicon['merged'], extra: { note?: stri
   const capped = (keep: number): string => {
     const omitted = total - keep;
     const note = [extra.note, jsonOmittedNote(omitted, total)].filter((n): n is string => n !== undefined).join(' ');
-    return render(selectExportTerms(merged, { limit: keep }), { omittedTerms: omitted, note });
+    return render(core().selectExportTerms(merged, { limit: keep }), { omittedTerms: omitted, note });
   };
   // The most terms that fit: the text grows with every term kept.
   let lo = 0;
@@ -206,9 +206,12 @@ const VOICE_CONTEXT_INSTRUCTION =
  * terms: an empty table under "apply these spellings" read as a lexicon that
  * was loaded and simply had nothing to correct.
  */
-const EMPTY_LEXICON_NOTE =
-  `Note: ${noTermsYet({ lower: true, so: 'there are no spellings to apply and dictated names are not being corrected' })}. ` +
-  'If the user dictates, offer once to set it up (the onboard prompt, or setup_lexicon, which previews before it writes).';
+function emptyLexiconNote(): string {
+  return (
+    `Note: ${core().noTermsYet({ lower: true, so: 'there are no spellings to apply and dictated names are not being corrected' })}. ` +
+    'If the user dictates, offer once to set it up (the onboard prompt, or setup_lexicon, which previews before it writes).'
+  );
+}
 
 /** The `onboard` prompt: a user-role script that drives the model through first-run setup. */
 const ONBOARD_PROMPT = [
@@ -270,6 +273,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   const load = async (loadOpts: Pick<LoadOptions, 'parseSkipped'> = {}): Promise<LoadedLexicon> => {
     // A call that races the first roots/list answer waits for it (bounded by the timeout).
     if (rootsPending) await rootsPending;
+    const { loadLexicon } = await loadCore();
     return loadLexicon({ cwd, ...loadOpts });
   };
 
@@ -421,7 +425,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       // Both when both apply: a skipped project file and no terms at all
       // (lexicon://me and voice-context say both too).
       const skipped = skippedProjectFields(loaded);
-      const empty = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE.replace(/^Note: /, '') : undefined;
+      const empty = loaded.merged.terms.length === 0 ? emptyLexiconNote().replace(/^Note: /, '') : undefined;
       const note = [skipped.note, empty].filter((n): n is string => n !== undefined).join(' ');
       const extra = note ? { ...skipped, note } : skipped;
       // The merged view, `scope` and `hits` included (the json export leaves
@@ -453,7 +457,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       // repo's own spellings are missing and why.
       const snippet = lexiconForModel(loaded).trimEnd() + skippedProjectSuffix(loaded);
       // Nothing to apply: say so instead of asking the model to apply an empty table.
-      const instruction = loaded.merged.terms.length === 0 ? EMPTY_LEXICON_NOTE : VOICE_CONTEXT_INSTRUCTION;
+      const instruction = loaded.merged.terms.length === 0 ? emptyLexiconNote() : VOICE_CONTEXT_INSTRUCTION;
       return {
         messages: [
           {
@@ -491,13 +495,13 @@ export function createServer(opts: ServerOptions = {}): McpServer {
  */
 function skippedProjectSuffix(loaded: LoadedLexicon): string {
   if (!loaded.skippedProject) return '';
-  const where = pathForModel(loaded.skippedProject.path);
+  const where = core().pathForModel(loaded.skippedProject.path);
   return `\n\nNote: this repo has an ${loaded.projectTrust === 'changed' ? 'edited' : 'untrusted'} project lexicon at ${where} that was not loaded. The user can review it and run ${cliCommand('trust')}.`;
 }
 
-/** `EMPTY_LEXICON_NOTE` after a blank line when the merged lexicon has no terms, else ''. */
+/** The empty-lexicon note after a blank line when the merged lexicon has no terms, else ''. */
 function emptyLexiconSuffix(loaded: LoadedLexicon): string {
-  return loaded.merged.terms.length === 0 ? `\n${EMPTY_LEXICON_NOTE}\n` : '';
+  return loaded.merged.terms.length === 0 ? `\n${emptyLexiconNote()}\n` : '';
 }
 
 export async function main(): Promise<void> {

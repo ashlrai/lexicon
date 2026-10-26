@@ -26,6 +26,7 @@
  * a window resembling some alias or that differ from their output, and
  * every per-window computation is cached by window text.
  */
+import { AUTO_APPLY_CONFIDENCE, SUGGEST_DEFAULT_LIMIT, SUGGEST_MAX_LIMIT } from './caps.js';
 import path from 'node:path';
 import { doubleMetaphone } from 'double-metaphone';
 import { distance } from 'fastest-levenshtein';
@@ -97,12 +98,8 @@ export interface SuggestInput {
   now?: number;
 }
 
-export const SUGGEST_DEFAULT_LIMIT = 20;
-/** The most suggestions `lexicon suggest --limit` and MCP `suggest_terms` take. */
-export const SUGGEST_MAX_LIMIT = 500;
+export { AUTO_APPLY_CONFIDENCE, SUGGEST_DEFAULT_LIMIT, SUGGEST_MAX_LIMIT };
 export const STALE_AFTER_DAYS = 30;
-/** `--yes` and MCP auto-apply use this: suggestions at or above it are safe to apply unattended. */
-export const AUTO_APPLY_CONFIDENCE = 0.8;
 
 const MAX_EVIDENCE = 5;
 const EVIDENCE_MAX_CHARS = 120;
