@@ -31,7 +31,7 @@
  *    one that is not an exception, and index.ts does it for a thrown error.
  *
  * 4. SUCCESS. Human output goes to stdout via `line(io, ...)`; `--json` prints
- *    `JSON.stringify(value, null, 2)` and nothing else. Warnings that do not
+ *    `JSON.stringify(value)` and nothing else. Warnings that do not
  *    fail the command (a skipped project lexicon) go to stderr.
  *
  * 5. UNTRUSTED TEXT. Anything not from a string literal in this repo -- paths,
@@ -297,7 +297,7 @@ export async function runInit(opts: InitOptions, io: IO): Promise<number> {
   if (opts.json) {
     line(
       io,
-      JSON.stringify(jsonOk({ scope, path: target, created, ...(dry ? { dryRun: true } : {}), ...(trust !== undefined ? { trust } : {}), ...(untrustedStep ? { nextStep: untrustedStep } : {}) }), null, 2),
+      JSON.stringify(jsonOk({ scope, path: target, created, ...(dry ? { dryRun: true } : {}), ...(trust !== undefined ? { trust } : {}), ...(untrustedStep ? { nextStep: untrustedStep } : {}) })),
     );
     return 0;
   }
@@ -501,8 +501,6 @@ export async function runAdd(
           ...(conflicts.length > 0 ? { conflicts, note: conflictNote(conflicts) } : result.unchanged ? { note: unchangedTermNote(result.term.canonical) } : {}),
           ...(droppedAliases.length > 0 ? { droppedAliases } : {}),
         }),
-        null,
-        2,
       ),
     );
     return 0;
@@ -570,7 +568,7 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     const global = holders.find((h) => h.scope === 'global');
     if (opts.json) {
       const nextStep = global ? `run ${commandLine(['lexicon', 'remove', canonical, '--global'])} to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}` : PROJECT_TRUST_NEXT_STEP;
-      line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...(dry ? { dryRun: true } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) }, null, 2));
+      line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...(dry ? { dryRun: true } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) }));
     }
     io.stderr(`lexicon: ${safeMessage(errorMessage(err))}\n`);
     if (global) io.stderr(`lexicon: to remove only the global copy (${safeMessage(global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--global'])}\n`);
@@ -600,7 +598,7 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     // A miss is a failure document like every other --json refusal: `ok: false` and `error` lead it;
     // a removal leads with `ok: true`.
     const failure = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ''}`, missStep);
-    line(io, JSON.stringify(removed ? jsonOk({ canonical: removedName, removed, ...extra }) : { ...failure, canonical, removed, ...extra }, null, 2));
+    line(io, JSON.stringify(removed ? jsonOk({ canonical: removedName, removed, ...extra }) : { ...failure, canonical, removed, ...extra }));
     if (!removed) io.stderr(notFound());
     return removed ? 0 : 1;
   }
@@ -691,7 +689,7 @@ async function runRemoveAlias(
         : isInputError(err) && !untrusted
           ? (emptyLexiconRemoveStep(loaded) ?? aliasMissStep(loaded, scope, canonical))
           : undefined;
-    if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere), canonical, alias, removed: false, ...extra }, null, 2));
+    if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere), canonical, alias, removed: false, ...extra }));
     io.stderr(`lexicon: ${safeMessage(message)}\n`);
     if (elsewhere) io.stderr(`lexicon: ${safeMessage(elsewhere)}\n`);
     if (isProjectTrustError(err)) {
@@ -705,7 +703,7 @@ async function runRemoveAlias(
   }
   const paths = result.files.map((f) => f.path);
   if (opts.json) {
-    line(io, JSON.stringify(jsonOk({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra }), null, 2));
+    line(io, JSON.stringify(jsonOk({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra })));
     return 0;
   }
   line(io, `${dry ? 'would remove' : 'removed'} alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safeMessage(paths.join(', '))}`);
@@ -797,11 +795,11 @@ export async function runList(opts: ListOptions, io: IO): Promise<number> {
       ...skipped,
       ...(emptyNote ? { note: emptyNote } : {}),
     };
-    line(io, JSON.stringify(jsonOk(payload), null, 2));
+    line(io, JSON.stringify(jsonOk(payload)));
     return 0;
   }
   if (opts.json) {
-    line(io, JSON.stringify(terms, null, 2));
+    line(io, JSON.stringify(terms));
     return 0;
   }
 
@@ -915,7 +913,7 @@ export async function runNormalize(
         'pass it as arguments: lexicon normalize "ping ashler", or pipe it in: echo "ping ashler" | lexicon normalize\n',
     );
     // Pretty-printed like every other normalize --json document.
-    if (opts.json) line(io, JSON.stringify(jsonOk({ input: '', output: '', replacements: [], changed: false }), null, 2));
+    if (opts.json) line(io, JSON.stringify(jsonOk({ input: '', output: '', replacements: [], changed: false })));
     return 0;
   }
 
@@ -959,7 +957,7 @@ export async function runNormalize(
       // ones: otherwise a script reading only stdout cannot tell corrections
       // from the built-in example, or an unchanged result from a skipped file.
       // `ok: true` first, as on every other --json success; the rest is the NormalizeResult.
-      line(io, JSON.stringify(jsonOk({ ...result, ...(useExample ? { example: true } : {}), ...skippedProjectJson(loaded) }), null, 2));
+      line(io, JSON.stringify(jsonOk({ ...result, ...(useExample ? { example: true } : {}), ...skippedProjectJson(loaded) })));
       return 0;
     }
     emit(result.output);
@@ -978,7 +976,7 @@ export async function runNormalize(
       // `{ ok: false, error, nextStep }` and then the unchanged NormalizeResult,
       // so a script reading `output` still gets the input back.
       const nextStep = unreadableLexiconHint(message) ?? 'no corrections were applied and the text is unchanged; run: lexicon doctor';
-      line(io, JSON.stringify({ ...jsonError(message, nextStep), input: text, output: text, replacements: [], changed: false }, null, 2));
+      line(io, JSON.stringify({ ...jsonError(message, nextStep), input: text, output: text, replacements: [], changed: false }));
     } else {
       emit(text);
     }
@@ -1068,7 +1066,7 @@ export async function runHarvest(
       const status = await isTrusted({ path: projectPath, scope: 'project', lexicon: emptyLexicon(), exists: true }, store);
       if (status !== 'trusted') {
         const message = new ProjectTrustError(projectPath, status).message;
-        if (json) line(io, JSON.stringify({ ...jsonError(message, `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again`), added: false, path: projectPath, projectTrust: status }, null, 2));
+        if (json) line(io, JSON.stringify({ ...jsonError(message, `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again`), added: false, path: projectPath, projectTrust: status }));
         io.stderr(`lexicon: ${safeMessage(message)}\n`);
         return 1;
       }
@@ -1101,7 +1099,7 @@ export async function runHarvest(
     // Printed once the add (if any) is done, below: stdout under --json is
     // one document, so a write that fails partway prints only the failure.
   } else if (opts.json) {
-    line(io, JSON.stringify(candidates, null, 2));
+    line(io, JSON.stringify(candidates));
   } else if (candidates.length === 0) {
     line(io, dim(noHarvestCandidatesLine(scan)));
   } else {
@@ -1152,7 +1150,7 @@ export async function runHarvest(
         // The one --json document for a write that failed: the error and the
         // counts (0: the batch writes all or none), never the candidate array.
         const where = filePath ? { path: filePath } : {};
-        line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where }, null, 2));
+        line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where }));
       }
       io.stderr(`lexicon: ${safeMessage(message)}\n`);
       if (hint) io.stderr(`lexicon: ${hint}\n`);
@@ -1168,11 +1166,11 @@ export async function runHarvest(
     // addTerm(scope: 'project') registers the file as trusted at its new content.
     if (filePath && !json && !opts.dryRun) line(io, dim(`project lexicon trusted (${safe(filePath)})`));
   }
-  if (!opts.full && opts.json && opts.add) line(io, JSON.stringify(candidates, null, 2));
+  if (!opts.full && opts.json && opts.add) line(io, JSON.stringify(candidates));
   if (opts.full) {
     const addResult = opts.add ? { added: created + merged, created, merged, ...(filePath ? { path: filePath } : {}), ...(opts.dryRun ? { dryRun: true } : {}) } : {};
     const truncated = report.truncated ? { truncated: true as const, note: harvestTruncatedNote(target) } : {};
-    line(io, JSON.stringify(jsonOk({ root: target, candidates, count: candidates.length, ...truncated, ...addResult }), null, 2));
+    line(io, JSON.stringify(jsonOk({ root: target, candidates, count: candidates.length, ...truncated, ...addResult })));
   }
   return 0;
 }
@@ -1240,7 +1238,7 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
       return code;
     }
     if (json) {
-      line(io, JSON.stringify(jsonOk({ formats: formatListJson() }), null, 2));
+      line(io, JSON.stringify(jsonOk({ formats: formatListJson() })));
       return 0;
     }
     line(io, 'usage: lexicon export <format> [--out <file>] [--category <c...>] [--limit <n>] [--json]');
@@ -1321,7 +1319,7 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
       await writeFileAtomic(outPath, text);
     }
     if (json) {
-      line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, path: outPath, ...(opts.dryRun ? { dryRun: true } : {}), ...dropped, ...notes }), null, 2));
+      line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, path: outPath, ...(opts.dryRun ? { dryRun: true } : {}), ...dropped, ...notes })));
     } else {
       let counted = plural(terms, 'term');
       if (aliasRows !== undefined && rows !== undefined) {
@@ -1332,7 +1330,7 @@ export async function runExport(requested: string | undefined, opts: ExportCliOp
       line(io, opts.dryRun ? `would write ${format} export (${counted}, ${plural(bytes, 'byte')}) to ${safeMessage(outPath)}` : `wrote ${format} export (${counted}) to ${safeMessage(outPath)}`);
     }
   } else if (json) {
-    line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, content: text, ...dropped, ...notes }), null, 2));
+    line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, content: text, ...dropped, ...notes })));
   } else {
     io.stdout(text);
   }
@@ -1395,7 +1393,7 @@ export interface PathOptions extends CommonOptions {
 export async function runPath(opts: PathOptions, io: IO): Promise<number> {
   const paths = resolvePaths({ cwd: resolveCwd(opts) });
   if (opts.json) {
-    line(io, JSON.stringify(jsonOk({ global: paths.global, project: paths.project ?? null }), null, 2));
+    line(io, JSON.stringify(jsonOk({ global: paths.global, project: paths.project ?? null })));
     return 0;
   }
   line(io, `global: ${safe(paths.global)}`);
