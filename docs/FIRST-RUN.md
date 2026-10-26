@@ -239,11 +239,13 @@ tests. "Medium" crosses several commands. "Large" is a new surface.
    off-TTY trust would exit 2 until `--yes`, and every script that trusts
    today would need the flag. That is why it is not in this PR.
 
-5. **Medium, already in progress elsewhere.** The source CLI spends 158 ms
-   p50 and 85,684 kB to print `--version`. A normalize of three terms is
-   166 ms p50. Almost all of that is process startup. Lazy-loading the CLI
-   and MCP entry points is a separate change. Those two files were left
-   alone here.
+5. **Medium, already in progress elsewhere.** One run of
+   `node scripts/bench/startup.mjs` on this VM spent 157.0 ms p50 and
+   83,440 kB to print `--version`. A normalize of three terms on that same
+   run was 170.5 ms p50. Almost all of that is process startup.
+   Lazy-loading the CLI and MCP entry points is a separate change. Those
+   two files were left alone here. The command and the sample sizes are in
+   [scripts/bench/README.md](../scripts/bench/README.md).
 
 6. **Large.** A system-wide expander in the espanso sense (a resident
    process, any focused text field, no agent in the loop) is a different

@@ -4,8 +4,12 @@ A same-machine comparison of Lexicon with two open-source tools that cover
 adjacent parts of the same job: fixing the words speech-to-text gets wrong.
 The accuracy study (corpora, the 91.0% figure, failing cases) stays in
 [BENCHMARK.md](BENCHMARK.md). This page is install time, latency, memory, and
-a small fixed task set. Every number below was measured on this VM on
-2026-10-26 unless a source is named.
+a small fixed task set. Every number below is from one manual run on
+this VM on 2026-10-26. The Lexicon CLI and library rows are one run of
+`node scripts/bench/startup.mjs` ([usage](../scripts/bench/README.md)).
+The install, espanso, whisper.cpp, and task-set rows are separate manual
+commands, named in the table. None of these timings is a committed baseline:
+run the script again and the startup numbers will differ.
 
 ## What each tool is
 
@@ -40,6 +44,9 @@ after the tables.
 
 ## Install and first result
 
+One manual run each. The command is the first column. These rows are not
+`scripts/bench/startup.mjs`.
+
 | step | wall time | what came back |
 | --- | --- | --- |
 | `curl -fsSL https://ashlrai.github.io/lexicon/install.sh \| sh`, no TTY, Node already on `PATH` | 2.977 s | exit 0, `installed lexicon 0.5.4`, then `no terminal to ask the setup questions on; run: lexicon setup` |
@@ -61,25 +68,36 @@ are in [FIRST-RUN.md](FIRST-RUN.md).
 
 ## Core operation
 
+Lexicon source CLI and library rows: one run of `node scripts/bench/startup.mjs`
+on 2026-10-26. The script's JSON for that run is what this table rounds.
+Sample sizes are the script defaults (1 warmup then 11 `--version` runs, 1
+warmup then 21 `normalize` runs, 20 warmup then 300 library calls). The CLI
+runs used an empty temporary home, `LEXICON_PATH` unset, and that home as the
+working directory. Peak RSS is `/usr/bin/time -v` on one extra run.
+
+The published 0.5.4 row is a different manual command, not the script:
+`lexicon normalize "tell Ashler to ship it"` with an empty home, 1 warmup
+then 21 runs. espanso and whisper.cpp are the manual commands in the last
+two rows.
+
 | tool | command | n | p50 | min | p95 or max | peak RSS |
 | --- | --- | --- | --- | --- | --- | --- |
-| Lexicon source CLI | `normalize --diff` of a sentence the built-in example corrects | 21 | 166 ms | 158 ms | p95 188 ms | 85,792 kB |
-| Lexicon source CLI | `--version` | 11 | 158 ms | | | 85,684 kB |
-| Lexicon 0.5.4 CLI | `normalize` of `tell Ashler to ship it`, empty lexicon | 21 | 148 ms | 141 ms | p95 191 ms | 83,876 kB |
-| Lexicon library | `normalize()` on `bench/lexicon.yaml` (70 terms), which builds the index every call | 300 | 0.829 ms | 0.623 ms | p95 1.328 ms | in-process |
-| Lexicon library | `normalizeWithIndex()` on the same sentence and a prebuilt index | 300 | 0.026 ms | 0.024 ms | p95 0.038 ms | in-process |
-| espanso 2.4.1 | `match list` with two triggers | 21 | 15.9 ms | 14.5 ms | p95 17.5 ms | 34,016 kB |
-| whisper.cpp 1.9.5, `tiny.en` | `whisper-cli -m ggml-tiny.en.bin -f prose.wav -nt -np` | 5 | 435 ms | 410 ms | max 462 ms | 177,872 kB |
+| Lexicon source CLI | `normalize --diff` of `ask ashler to deploy kuber netties with post gressql` | 21 | 170.5 ms | 163.1 ms | p95 181.3 ms | 86,364 kB |
+| Lexicon source CLI | `--version` | 11 | 157.0 ms | 154.4 ms | p95 165.5 ms | 83,440 kB |
+| Lexicon 0.5.4 CLI | `normalize` of `tell Ashler to ship it`, empty lexicon (manual, not the script) | 21 | 148.3 ms | 140.6 ms | p95 191.4 ms | 83,876 kB |
+| Lexicon library | `normalize()` on `bench/lexicon.yaml` (70 terms), which builds the index every call | 300 | 0.862 ms | 0.645 ms | p95 1.397 ms | in-process |
+| Lexicon library | `normalizeWithIndex()` on the same sentence and a prebuilt index | 300 | 0.028 ms | 0.026 ms | p95 0.039 ms | in-process |
+| espanso 2.4.1 | `match list` with two triggers (manual) | 21 | 15.9 ms | 14.5 ms | p95 17.5 ms | 34,016 kB |
+| whisper.cpp 1.9.5, `tiny.en` | `whisper-cli -m ggml-tiny.en.bin -f prose.wav -nt -np` (manual) | 5 | 435 ms | 410 ms | max 462 ms | 177,872 kB |
 
-The library timings discarded 20 warmup calls, then recorded 300. The sentence
-was `tell Ashler to ship it`. `normalize()` calls `buildIndex` on every call
-(`src/core/normalize.ts`), so the 0.829 ms figure is index build plus match.
-The match alone, against an index the caller kept, is the 0.026 ms row.
+`normalize()` calls `buildIndex` on every call (`src/core/normalize.ts`), so
+the 0.862 ms figure is index build plus match. The match alone, against an
+index the caller kept, is the 0.028 ms row.
 
-The CLI rows are dominated by starting Node. `--version`, which does no
-matching, is 158 ms p50 and 85,684 kB. A normalize that hits three terms is
-166 ms p50. That gap, about 8 ms, is the work past process startup on this
-sentence.
+On this run, `--version` (no matching) is 157.0 ms p50 and 83,440 kB.
+`normalize --diff` of a sentence with three replacements is 170.5 ms p50.
+The difference of those two medians is 13.5 ms. That is the work past
+process startup for this sentence, on this run.
 
 espanso's `match exec` (actually expanding a trigger) exited 1 with
 `Worker process is not running, please start Espanso first.` Starting the
@@ -158,9 +176,10 @@ Lexicon does not do, and these tools do:
   service is running. Lexicon does not. The surfaces that come closest
   (`lexicon daemon`, the macOS menu bar app, the browser extension) are
   separate programs, and the daemon was not what this page timed.
-- espanso's `match list` process is smaller and faster here: 34,016 kB and
-  15.9 ms, against about 84 MB and about 150 ms to start the Lexicon CLI.
-  The library call, once Node is up, is 0.026 ms p50 with a built index.
+- espanso's `match list` process is smaller and faster on this run: 34,016 kB
+  and 15.9 ms p50, against 83,440 kB and 157.0 ms p50 for Lexicon
+  `--version`. The library call, once Node is up, is 0.028 ms p50 with a
+  built index.
 - whisper.cpp turns audio into text. Lexicon does not, except by shelling
   out inside `lexicon voice`. A prompt biases the decoder before the
   transcript exists, which a post-pass cannot do. Stacking them is the
@@ -184,11 +203,23 @@ These tools do not do, and Lexicon does:
 
 ## Reproduce
 
-The Lexicon rows need a build (`npm run build`) and, for the library timing,
-`bench/lexicon.yaml`. Discard one process warmup for the CLI, and about 20
-calls for `normalize()`, or the first calls dominate. Peak RSS is
-`/usr/bin/time -v`. espanso 2.4.1 here was the X11 AppImage extracted with
-`--appimage-extract`, run with `HOME` pointed at a directory that already
-contains `config/default.yml` and `match/base.yml`. whisper.cpp was
-`whisper-cli` from the Ubuntu x64 binary build that prints version 1.9.5,
-model `ggml-tiny.en.bin`, audio from `espeak-ng -s 140 -w`.
+Lexicon CLI and library rows:
+
+```bash
+npm run build
+node scripts/bench/startup.mjs
+```
+
+Usage, sample sizes, and what the JSON fields are:
+[scripts/bench/README.md](../scripts/bench/README.md). The numbers above are
+the one run taken for this page, not a checked-in result file.
+
+espanso 2.4.1 here was the X11 AppImage extracted with `--appimage-extract`,
+then one manual timing of `match list` (1 warmup, then 21 runs) with `HOME`
+pointed at a directory that already contains `config/default.yml` and
+`match/base.yml`. Peak RSS was `/usr/bin/time -v` on one extra `match list`.
+whisper.cpp was one manual timing of `whisper-cli` from the Ubuntu x64
+binary build that prints version 1.9.5, model `ggml-tiny.en.bin`, audio from
+`espeak-ng -s 140 -w` of `I will ship the update tomorrow` (1 warmup, then
+5 runs). The 0.5.4 CLI row is one manual timing of the `lexicon` binary
+`npm install -g` put on `PATH`.
