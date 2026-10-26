@@ -686,6 +686,11 @@ async function commitPack(
       throw new Error('installed pack changed after preview; preview and approve it again');
     }
     const files = [target, cachedPackPath(entry.ref, opts), stateFile(opts)];
+    if (opts.dryRun) {
+      // The install alone is the plan: the cache file and the registry state
+      // are not written either, so there is nothing to snapshot or roll back.
+      return await installLoadedPack(pack, entry.ref, opts);
+    }
     const before = await Promise.all(files.map(snapshot));
     const pinBefore = opts.scope === 'project' && !opts.leaveUntrusted ? await trustEntryOf(target, opts) : undefined;
     try {
@@ -935,6 +940,11 @@ export async function uninstallRegistryPack(
       pack = validatedPack(bytes, entry);
     }
     const files = [target, cachedPackPath(parsed.ref, scoped), stateFile(scoped)];
+    if (opts.dryRun) {
+      // Nothing is unlinked or re-pinned in a dry run; the removal result
+      // (which terms would go, which stay) is the whole plan.
+      return await uninstallLoadedPack(pack, parsed.ref, scoped);
+    }
     const before = await Promise.all(files.map(snapshot));
     const pinBefore = scoped.scope === 'project' ? await trustEntryOf(target, scoped) : undefined;
     try {

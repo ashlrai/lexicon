@@ -341,7 +341,7 @@ export async function trustProject(
     if (existing?.sha256 === sha256) return { ...existing, alreadyPinned: true };
     const entry: TrustEntry = { sha256, trustedAt: new Date().toISOString() };
     registry.trusted[key] = entry;
-    await writeTrustRegistry(registry, opts);
+    if (!opts.dryRun) await writeTrustRegistry(registry, opts);
     return { ...entry, alreadyPinned: false };
   }, opts);
 }
@@ -367,7 +367,7 @@ export async function refreshTrust(
     // 'changed', rather than having their bytes pinned as the user's edit.
     if (opts.expectedSha256 !== undefined && sha256 !== opts.expectedSha256) return false;
     registry.trusted[key] = { sha256, trustedAt: existing.trustedAt };
-    await writeTrustRegistry(registry, opts);
+    if (!opts.dryRun) await writeTrustRegistry(registry, opts);
     return true;
   }, opts);
 }
@@ -397,7 +397,7 @@ export async function restoreTrustEntry(projectPath: string, entry: TrustEntry |
     if (entry) registry.trusted[key] = { ...entry };
     else if (key in registry.trusted) delete registry.trusted[key];
     else return;
-    await writeTrustRegistry(registry, opts);
+    if (!opts.dryRun) await writeTrustRegistry(registry, opts);
   }, opts);
 }
 
@@ -408,7 +408,7 @@ export async function untrustProject(projectPath: string, opts: StoreOptions = {
     const registry = await readTrustRegistryForUpdate(opts);
     if (!(key in registry.trusted)) return false;
     delete registry.trusted[key];
-    await writeTrustRegistry(registry, opts);
+    if (!opts.dryRun) await writeTrustRegistry(registry, opts);
     return true;
   }, opts);
 }

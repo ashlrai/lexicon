@@ -54,6 +54,19 @@ export interface StoreOptions {
   env?: NodeJS.ProcessEnv;
   /** Home directory for the XDG fallback. Default os.homedir(). */
   home?: string;
+  /**
+   * Compute what a write would do without doing it (the CLI `--dry-run`).
+   * Every read and check still runs -- the parse, the trust gate, the
+   * never-alias clash -- and the result is what a real call would have
+   * produced; only the persistence is skipped (the lexicon file, the trust
+   * registry, the pending file, the registry state and cache, the hits
+   * sidecars and the index refresh). A refused write (an untrusted project
+   * file, a missing term) fails the dry run the same way, so a plan is
+   * always something the real command could have done. Read-side caches a
+   * parse populates anyway (parse cache, spill entries) are not suppressed:
+   * they are what any load does, not what the command is about.
+   */
+  dryRun?: boolean;
 }
 
 export interface LoadOptions extends StoreOptions {
@@ -2019,6 +2032,7 @@ export async function addTerms(
 }
 
 function writeAddedFile(file: LexiconFile, opts: AddTermOptions): Promise<void> {
+  if (opts.dryRun) return Promise.resolve();
   return opts.leaveUntrusted ? writeLexiconFile(file) : writeAndTrust(file, opts);
 }
 
@@ -2058,6 +2072,7 @@ export async function removeTerm(
       const remaining = file.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
       if (remaining.length === file.lexicon.terms.length) return false;
       await assertParsedProjectWritable(file, opts);
+      if (opts.dryRun) return true;
       file.lexicon.terms = remaining;
       await writeLexiconFile(file);
       if (file.scope === 'project') {
@@ -2182,6 +2197,11 @@ export async function removeAlias(
       if (remaining.length === term.aliases.length) return;
       await assertParsedProjectWritable(file, opts);
       term.aliases = remaining;
+      if (opts.dryRun) {
+        files.push(file);
+        firstTerm ??= term;
+        return;
+      }
       await writeLexiconFile(file);
       // The user's own edit must not flip an already-trusted file to 'changed'.
       if (file.scope === 'project') {

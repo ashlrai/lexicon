@@ -50,6 +50,8 @@ import type { Prompter } from './prompt.js';
 
 export interface PackCliOptions extends CommonOptions {
   json?: boolean;
+  /** `pack validate`: warnings count as errors, so the exit code is 1. */
+  strict?: boolean;
   /** Install into / remove from the project .lexicon.yaml instead of the global file. */
   project?: boolean;
   /** Override the global lexicon path (mainly for tests). */
@@ -62,6 +64,8 @@ export interface PackRegistryCliOptions extends PackCliOptions {
   registry?: string;
   /** Accept the preview without prompting (required off a terminal). */
   yes?: boolean;
+  /** Compute and show the change a write would make; ask nothing, write nothing. */
+  dryRun?: boolean;
 }
 
 export interface PackDeps {
@@ -193,12 +197,13 @@ export async function runPackList(opts: PackRegistryCliOptions, io: IO, deps: Pa
 export async function runPackRemove(name: string, opts: PackRegistryCliOptions, io: IO, deps: PackDeps = {}): Promise<number> {
   const cwd = resolveCwd(opts);
   try {
+    const dry = opts.dryRun === true;
     let result: UninstallPackResult;
     if (isRegistryRef(name)) {
       const ref = parseRegistryRef(name).ref;
-      result = await uninstallRegistryPack(ref, opts.registry, { cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...(opts.project ? { scope: 'project' as const } : {}) }, deps.registry);
+      result = await uninstallRegistryPack(ref, opts.registry, { cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...(opts.project ? { scope: 'project' as const } : {}), ...(dry ? { dryRun: true } : {}) }, deps.registry);
     } else {
-      result = await uninstallPack(name, { cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...(opts.project ? { scope: 'project' as const } : {}), ...deps });
+      result = await uninstallPack(name, { cwd, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...(opts.project ? { scope: 'project' as const } : {}), ...(dry ? { dryRun: true } : {}), ...deps });
     }
     if (result.files.length === 0) {
       // No file listed the pack, so nothing was written. Under --json that
@@ -213,10 +218,10 @@ export async function runPackRemove(name: string, opts: PackRegistryCliOptions, 
       return 0;
     }
     if (opts.json) {
-      line(io, JSON.stringify(jsonOk(result), null, 2));
+      line(io, JSON.stringify(jsonOk({ ...result, ...(dry ? { dryRun: true } : {}) }), null, 2));
       return 0;
     }
-    line(io, `removed ${result.removed.length} term${result.removed.length === 1 ? '' : 's'} of ${safe(name)} from ${safe(result.files.join(', '))}`);
+    line(io, `${dry ? 'would remove' : 'removed'} ${result.removed.length} term${result.removed.length === 1 ? '' : 's'} of ${safe(name)} from ${safe(result.files.join(', '))}${dry ? '; nothing was written' : ''}`);
     if (result.kept.length > 0) {
       line(io, `kept ${result.kept.length} you edited (hits, extra aliases or never-words): ${safe(result.kept.join(', '))}`);
     }
@@ -435,6 +440,31 @@ async function runPackAddRegistry(
   verifyPackChecksum(bytes, entry.checksum, entry.ref);
   const pack = parsePackText(bytes.toString('utf8'), entry.url, entry.name);
 
+  if (opts.dryRun) {
+    // A dry run approves nothing, so there is no question to ask: the preview
+    // terms are shown and installRegistryPack computes the change it would
+    // write (added, merged, the target file) without writing it.
+    if (!opts.json) {
+      line(io, bold(`community pack ${safe(entry.ref)}`));
+      line(io, `  ${safe(entry.title)}${entry.author ? ` by ${safe(entry.author)}` : ''}${entry.homepage ? ` (${safe(entry.homepage)})` : ''}`);
+      line(io, `  version ${safe(entry.version || '(unversioned)')}, checksum ${safe(entry.checksum.slice(0, 12))}...`);
+      line(io);
+      printPackTerms(io, pack);
+      line(io);
+    }
+    const result = await installRegistryPack(entry, base, opts.registry as string, {
+      cwd,
+      scope,
+      approvedBytes: bytes,
+      dryRun: true,
+      ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}),
+      ...(parsed.version !== undefined ? { pinnedVersion: parsed.version } : {}),
+    }, deps.registry);
+    if (!opts.json) {
+      line(io, result.alreadyInstalled ? alreadyInstalledLine(result.ref, result) : `would install ${safe(result.ref)} (${safe(entry.title)}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}; nothing was written`);
+    }
+    return { kind: 'installed', result };
+  }
   if (opts.json && !opts.yes) {
     return {
       kind: 'preview',
@@ -486,6 +516,8 @@ interface CommunityInstallJson {
   merged: number;
   path: string;
   scope: string;
+  /** Present when the run was a --dry-run preview: nothing was written. */
+  dryRun?: boolean;
 }
 
 /** The `--json` entry of the ref a `pack add` run stopped at: `{ ref, ok: false, error, nextStep? }`. */
@@ -514,7 +546,8 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
   // install, or a community preview) accumulates here and is printed once: a
   // single community ref as its object, anything else as one array in
   // argument order.
-  const results: (InstallPackResult | CommunityInstallJson | CommunityPreviewJson)[] = [];
+  const dry = opts.dryRun === true;
+  const results: ((InstallPackResult & { dryRun?: boolean }) | CommunityInstallJson | CommunityPreviewJson)[] = [];
   let vendored = 0;
   const installed: string[] = [];
   const declined: string[] = [];
@@ -549,11 +582,11 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
         } else {
           const result = outcome.result;
           installed.push(result.ref);
-          results.push({ preview: false, ref: result.ref, added: result.added, merged: result.merged, path: result.path, scope: result.scope });
+          results.push({ preview: false, ref: result.ref, added: result.added, merged: result.merged, path: result.path, scope: result.scope, ...(dry ? { dryRun: true } : {}) });
         }
       } else {
-        const result = await installPack(name, { cwd, scope, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...deps });
-        results.push(result);
+        const result = await installPack(name, { cwd, scope, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...(dry ? { dryRun: true } : {}), ...deps });
+        results.push(dry ? { ...result, dryRun: true } : result);
         installed.push(result.pack.name);
         if (!result.alreadyInstalled) vendored += 1;
         if (!opts.json) {
@@ -561,7 +594,7 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
             io,
             result.alreadyInstalled
               ? alreadyInstalledLine(result.pack.name, result)
-              : `installed ${safe(result.pack.name)} (${safe(result.pack.title)}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}`,
+              : `${dry ? 'would install' : 'installed'} ${safe(result.pack.name)} (${safe(result.pack.title)}): ${result.added} added, ${result.merged} merged into ${safe(result.path)}${dry ? '; nothing was written' : ''}`,
           );
         }
       }
@@ -574,10 +607,10 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
     line(io, JSON.stringify(single ? jsonOk(results[0] as CommunityInstallJson | CommunityPreviewJson) : results, null, 2));
     return 0;
   }
-  if (vendored > 0) line(io, TERMS_LIVE);
+  if (vendored > 0 && !dry) line(io, TERMS_LIVE);
   // With several refs, one line that adds them up, so a decline is not read as "nothing was written" when another ref was.
   if (names.length > 1 && declined.length > 0) {
-    line(io, `${plural(installed.length, 'pack')} installed${installed.length > 0 ? ` (${installed.map(safe).join(', ')})` : ''}; declined: ${declined.map(safe).join(', ')}`);
+    line(io, `${plural(installed.length, 'pack')} ${dry ? 'would install' : 'installed'}${installed.length > 0 ? ` (${installed.map(safe).join(', ')})` : ''}; declined: ${declined.map(safe).join(', ')}`);
   }
   return unconfirmed > 0 ? 1 : 0;
 }
@@ -594,7 +627,7 @@ function failPackAdd(
   io: IO,
   opts: PackRegistryCliOptions,
   names: readonly string[],
-  results: (InstallPackResult | CommunityInstallJson | CommunityPreviewJson)[],
+  results: ((InstallPackResult & { dryRun?: boolean }) | CommunityInstallJson | CommunityPreviewJson)[],
   at: number,
   err: unknown,
 ): number {
@@ -623,7 +656,8 @@ function failPackAdd(
 /** `lexicon pack update [ref...]`: re-check installed community packs against a fresh index. Never silent: every changed pack is previewed and confirmed. */
 export async function runPackUpdate(refs: readonly string[], opts: PackRegistryCliOptions, io: IO, deps: PackDeps = {}): Promise<number> {
   const cwd = resolveCwd(opts);
-  const storeOpts = { cwd, scope: scopeOf(opts), ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
+  const dry = opts.dryRun === true;
+  const storeOpts = { cwd, scope: scopeOf(opts), ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...(dry ? { dryRun: true } : {}) };
   try {
     // Group by index so packs installed from different registries each get a fresh read of their own.
     const state = await readRegistryState(storeOpts);
@@ -644,7 +678,7 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
       else line(io, JSON.stringify(jsonOk({ updates: [] }), null, 2));
       return 0;
     }
-    const reports: { ref: string; status: string; from?: string; to?: string; added?: number | string[]; merged?: number; dropped?: string[]; error?: string }[] = [];
+    const reports: { ref: string; status: string; from?: string; to?: string; added?: number | string[]; merged?: number; dropped?: string[]; error?: string; dryRun?: boolean }[] = [];
     let unconfirmed = 0;
     for (const [source, group] of byIndex) {
       const previews = await previewRegistryUpdates(group, source, storeOpts, deps.registry);
@@ -675,11 +709,17 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
           line(io, JSON.stringify(preview.terms, null, 2));
           if (preview.changed?.length) line(io, JSON.stringify({ changed: preview.changed }, null, 2));
         }
-        if (opts.json && !opts.yes) {
+        // Under --json without --yes an 'available' update is reported as a
+        // preview and nothing is attempted; a dry run goes one step further
+        // and computes the write it would make (below).
+        if (opts.json && !opts.yes && !dry) {
           reports.push({ ...preview, status: 'preview' });
           continue;
         }
-        const consent = await confirmCommunityWrite(io, `apply the ${preview.ref} update?`, yesCommand('update', preview.ref, opts), opts, deps);
+        // A dry run approves nothing, so there is no question to ask: the
+        // update is applied with dryRun and the report says what a real run
+        // would write.
+        const consent = dry ? ('yes' as const) : await confirmCommunityWrite(io, `apply the ${preview.ref} update?`, yesCommand('update', preview.ref, opts), opts, deps);
         if (consent !== 'yes') {
           // No terminal to ask on: the update needed a consent the run could
           // not get, so the run exits 1 once every pack is reported, as
@@ -691,16 +731,16 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
         }
         const applied = await applyRegistryUpdate(preview, source, storeOpts, deps.registry);
         if (applied.status === 'updated' && !opts.json) {
-          line(io, `  updated ${safe(applied.ref)}: ${applied.added} added, ${applied.merged} merged`);
+          line(io, `  ${dry ? 'would update' : 'updated'} ${safe(applied.ref)}: ${applied.added} added, ${applied.merged} merged${dry ? '; nothing was written' : ''}`);
         } else if (!opts.json) {
           line(io, `  ${safe(applied.ref)}: ${applied.status}${applied.error ? `: ${safeMessage(applied.error)}` : ''}`);
         }
-        reports.push(applied);
+        reports.push(dry ? { ...applied, dryRun: true } : applied);
       }
     }
     const failed = reports.some((report) => report.status === 'failed' || report.status === 'not-installed');
     // The report is the failure document too, so `ok` follows the exit code.
-    if (opts.json) line(io, JSON.stringify({ ok: !failed, updates: reports }, null, 2));
+    if (opts.json) line(io, JSON.stringify({ ok: !failed, updates: reports, ...(dry ? { dryRun: true } : {}) }, null, 2));
     return failed || unconfirmed > 0 ? 1 : 0;
   } catch (err) {
     return fail(io, err, opts.json);
@@ -711,7 +751,7 @@ export async function runPackUpdate(refs: readonly string[], opts: PackRegistryC
 const PACK_FILE_NOT_FOUND_NEXT_STEP =
   'check the path (a relative one resolves against the current directory); validate takes a pack YAML file, so to see the packs you can add run lexicon pack list';
 
-/** `lexicon pack validate <file>`: the publish-time review bar for a community pack. Exit 1 on errors, 0 with warnings listed. */
+/** `lexicon pack validate <file>`: the publish-time review bar for a community pack. Exit 1 on errors (and, with `--strict`, on warnings too), 0 otherwise. */
 export async function runPackValidate(file: string, opts: PackCliOptions, io: IO): Promise<number> {
   const cwd = resolveCwd(opts);
   try {
@@ -727,15 +767,17 @@ export async function runPackValidate(file: string, opts: PackCliOptions, io: IO
     // file name, so validate the content as written (my-pack.yaml, foo.yml).
     const pack = parsePackText(text, abs);
     const { errors, warnings } = validateCommunityPack(pack);
+    const failed = errors.length > 0 || (opts.strict === true && warnings.length > 0);
     if (opts.json) {
-      line(io, JSON.stringify({ ok: errors.length === 0, file: abs, pack: pack.name, errors, warnings }, null, 2));
+      line(io, JSON.stringify({ ok: !failed, file: abs, pack: pack.name, errors, warnings, ...(opts.strict ? { strict: true } : {}) }, null, 2));
     } else {
       line(io, `${safe(pack.name)}: ${safe(pack.title)} (${plural(pack.lexicon.terms.length, 'term')}, ${pack.aliases === 1 ? '1 alias' : `${pack.aliases} aliases`})`);
       for (const w of warnings) line(io, `  warning: ${safe(w)}`);
       for (const e of errors) line(io, `  error: ${safe(e)}`);
-      if (errors.length === 0 && warnings.length === 0) line(io, dim('  valid: ready to list in a registry index.'));
+      if (!failed && warnings.length === 0) line(io, dim('  valid: ready to list in a registry index.'));
+      if (opts.strict && warnings.length > 0 && errors.length === 0) line(io, dim(`  ${plural(warnings.length, 'warning')} counts as an error under --strict`));
     }
-    return errors.length > 0 ? 1 : 0;
+    return failed ? 1 : 0;
   } catch (err) {
     return fail(io, err, opts.json);
   }
@@ -774,6 +816,7 @@ export function registerPackCommands(program: Command, io: IO, deps: PackDeps = 
       .option('--project', 'install into the project .lexicon.yaml instead')
       .option('--registry <index>', 'registry index for community pack refs (local path, file:// or https:// URL)')
       .option('-y, --yes', 'accept the community-pack preview without prompting (required off a terminal)')
+      .option('--dry-run', 'compute and show the install each pack would make; ask nothing, write nothing')
       .option('--json', 'print the results as JSON')
       .action(async (names: string[], opts: PackRegistryCliOptions) => done(await runPackAdd(names, { ...opts, ...globals() }, io, deps))),
     '(e.g. lexicon pack add developer; lexicon pack list shows the packs; use lexicon pack add --help for usage)',
@@ -787,6 +830,7 @@ export function registerPackCommands(program: Command, io: IO, deps: PackDeps = 
       .argument('<name>', 'pack name or community ref (author/name)')
       .option('--project', 'only look in the project .lexicon.yaml')
       .option('--registry <index>', 'registry index to re-fetch a community pack whose cache is gone')
+      .option('--dry-run', 'report which terms would be removed and kept; write nothing')
       .option('--json', 'print the result as JSON')
       .action(async (name: string, opts: PackRegistryCliOptions) => done(await runPackRemove(name, { ...opts, ...globals() }, io, deps))),
     '(e.g. lexicon pack remove developer; lexicon pack list shows which are installed; use lexicon pack remove --help for usage)',
@@ -818,6 +862,7 @@ export function registerPackCommands(program: Command, io: IO, deps: PackDeps = 
     .option('--project', 'update only community packs installed in this project')
     .option('--registry <index>', 'registry index to check (default: the index each pack was installed from)')
     .option('-y, --yes', 'apply every available update without prompting (required off a terminal)')
+    .option('--dry-run', 'compute each available update and report what it would write; ask nothing, write nothing')
     .option('--json', 'print the update report as JSON')
     .action(async (refs: string[], opts: PackRegistryCliOptions) => done(await runPackUpdate(refs, { ...opts, ...globals() }, io, deps)));
 
@@ -825,6 +870,7 @@ export function registerPackCommands(program: Command, io: IO, deps: PackDeps = 
     .command('validate')
     .description('check a pack file against the community publish bar (schema, author, the ordinary-word guard)')
     .argument('<file>', 'pack YAML file to validate')
+    .option('--strict', 'treat warnings as errors (exit 1 when any are reported)')
     .option('--json', 'print the errors and warnings as JSON')
     .action(async (file: string, opts: PackCliOptions) => done(await runPackValidate(file, { ...opts, ...globals() }, io)));
 }

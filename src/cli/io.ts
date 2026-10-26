@@ -304,6 +304,15 @@ export function jsonOk<T extends object>(doc: T): { ok: true } & T {
   return { ok: true, ...doc };
 }
 
+/**
+ * `{ dryRun: true }` to spread into a success or failure document when the
+ * command only planned the change it describes: a script can tell `removed`
+ * that did not happen from one that did.
+ */
+export function dryField(dryRun: boolean | undefined): Record<string, unknown> {
+  return dryRun === true ? { dryRun: true } : {};
+}
+
 /** Print `jsonError(error, nextStep)` on stdout. */
 export function printJsonError(io: IO, error: string, nextStep?: string): void {
   io.stdout(`${JSON.stringify(jsonError(error, nextStep), null, 2)}\n`);

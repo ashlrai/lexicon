@@ -6,7 +6,7 @@
 import type { Command } from 'commander';
 import { CORRECTION_EXAMPLES, compareText, computeStats, conflictNote, emptyStatsNote, learnCorrection, learnUnchangedNote, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, TermScope } from '../core/index.js';
-import { conflictLine, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, safeMessage, shownCommand, shownWord, skippedProjectJson, warnSkippedProject } from './io.js';
+import { conflictLine, dryField, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, safeMessage, shownCommand, shownWord, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** On stderr: it follows an error, and stdout must stay parseable under --json. */
@@ -58,6 +58,8 @@ export interface LearnOptions extends CommonOptions {
   /** A natural-language correction to parse instead of positional heard/meant. */
   from?: string;
   json?: boolean;
+  /** Report what would be learned (created or alias added, and the file); write nothing. */
+  dryRun?: boolean;
 }
 
 /**
@@ -98,7 +100,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
   const option = optionLikeWord(words);
   if (option !== undefined) {
     const error = `unknown option '${option}'; nothing was learned`;
-    const nextStep = 'see the usage: lexicon learn --help (learn takes --from, --project and --json)';
+    const nextStep = 'see the usage: lexicon learn --help (learn takes --from, --project, --dry-run and --json)';
     if (opts.json) printJsonError(io, error, nextStep);
     io.stderr(`lexicon: unknown option '${safe(option)}'; nothing was learned\n`);
     io.stderr(`lexicon: ${nextStep}\n`);
@@ -169,7 +171,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
 
   const scope: TermScope | undefined = opts.project ? 'project' : undefined;
   try {
-    const result = await learnCorrection(correction, { cwd, ...(scope !== undefined ? { scope } : {}) });
+    const result = await learnCorrection(correction, { cwd, ...(scope !== undefined ? { scope } : {}), ...(opts.dryRun ? { dryRun: true } : {}) });
     if (opts.json) {
       // The keys MCP learn_correction returns, plus heard and meant. `file`
       // keeps only its path and scope: the whole file's terms do not belong
@@ -194,6 +196,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
             file: { path: file.path, scope: file.scope },
             heard: correction.heard,
             meant: correction.meant,
+            ...dryField(opts.dryRun),
             ...(unchanged ? { unchanged: true } : {}),
             ...(notes.length > 0 ? { note: notes.join(' ') } : {}),
           }),
@@ -206,6 +209,8 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
     if (!result.created && !result.aliasAdded) {
       // It said "learned X -> Y (already known)", which reads as a write.
       line(io, `${learnUnchangedNote(safe(correction.heard), safe(result.term.canonical), { meant: safe(correction.meant), scope: result.file.scope })} (${result.file.scope}: ${safeMessage(result.file.path)})`);
+    } else if (opts.dryRun) {
+      line(io, `would learn ${safe(correction.heard)} -> ${safe(result.term.canonical)} (${result.created ? 'new term' : 'alias added'}) in ${safeMessage(result.file.path)}; nothing was written`);
     } else {
       line(io, `learned ${safe(correction.heard)} -> ${safe(result.term.canonical)} (${result.created ? 'new term' : 'alias added'}) in ${safeMessage(result.file.path)}`);
     }
@@ -317,6 +322,7 @@ export function registerLearnCommands(program: Command, io: IO): void {
     .argument('[words...]', '<heard> <meant>, or a sentence like "Ashler -> Ashlr.AI"')
     .option('--from <sentence>', 'parse a natural-language correction, e.g. "it\'s Ashlr.AI not Ashler" (instead of <heard> <meant>, not with them)')
     .option('--project', 'write to the project lexicon (default: the file that already holds the meant term, else the global one)')
+    .option('--dry-run', 'report what would be learned; write nothing')
     .option('--json', 'print the result as JSON')
     // A bare "->" would otherwise be rejected as an unknown option; let it through
     // as a word so `lexicon learn Ashler -> Ashlr.AI` works without `--`.

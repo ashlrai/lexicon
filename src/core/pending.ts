@@ -221,7 +221,7 @@ export async function queueCorrections(
       entries.sort((a, b) => (a.lastSeen < b.lastSeen ? 1 : a.lastSeen > b.lastSeen ? -1 : 0));
       entries.splice(MAX_PENDING);
       entries.sort((a, b) => (a.firstSeen < b.firstSeen ? -1 : a.firstSeen > b.firstSeen ? 1 : 0));
-      await writePending(file, entries, rejected);
+      if (!opts.dryRun) await writePending(file, entries, rejected);
     }
     return { queued, skipped, file };
   }, lockOpts);
@@ -264,7 +264,7 @@ export async function rejectPending(
       const ids = new Set(picked.map((e) => e.id));
       const kept = rejected.filter((r) => !ids.has(r.id));
       for (const e of picked) kept.push({ id: e.id, rejectedAt: now });
-      await writePending(file, entries.filter((e) => !picked.includes(e)), kept.slice(-MAX_REJECTED));
+      if (!opts.dryRun) await writePending(file, entries.filter((e) => !picked.includes(e)), kept.slice(-MAX_REJECTED));
     }
     return { rejected: picked, unknown, file };
   });
@@ -317,7 +317,7 @@ export async function acceptPending(
         accepted.push({ entry, error: err instanceof Error ? err.message : String(err) });
       }
     }
-    if (done.size > 0) await writePending(file, entries.filter((e) => !done.has(e)), rejected);
+    if (done.size > 0 && !opts.dryRun) await writePending(file, entries.filter((e) => !done.has(e)), rejected);
     return { accepted, unknown, file };
   }));
 }

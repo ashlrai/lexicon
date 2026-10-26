@@ -297,6 +297,7 @@ async function writePacksSetting(file: LexiconFile, packs: string[], opts: Store
   }
   if (Object.keys(settings).length > 0) file.lexicon.settings = settings as LexiconFile['lexicon']['settings'];
   else delete file.lexicon.settings;
+  if (opts.dryRun) return;
   await writeLexiconFile(file);
   if (file.scope === 'project' && !leaveUntrusted) {
     await refreshTrust(file.path, { ...opts, expectedSha256: await parsedContentHash(file) });
@@ -332,8 +333,11 @@ export async function installLoadedPack(
 ): Promise<InstallPackResult> {
   const scope: TermScope = opts.scope ?? 'global';
   const leaveUntrusted = opts.leaveUntrusted === true;
-  const storeOpts: StoreOptions = { ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}), ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
-
+  const storeOpts: StoreOptions = {
+    ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+    ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}),
+    ...(opts.dryRun === true ? { dryRun: true } : {}),
+  };
   // One lock around the whole install, not one per term. `addTerms` takes
   // the same lock and the lock is re-entrant, so this costs nothing extra and
   // closes the window that mattered: `file` below is the snapshot `addTerms`
@@ -361,6 +365,13 @@ export async function installLoadedPack(
     const added = results.filter((r) => r.created).length;
     const merged = results.length - added;
     const packs = dedupe([...(file.lexicon.settings?.packs ?? []), recordAs]);
+    if (opts.dryRun) {
+      // No bytes were written, so the before/after byte compare cannot speak:
+      // "already installed" is what it would have meant, every term unchanged
+      // and the pack already recorded.
+      const alreadyInstalled = before !== undefined && results.every((r) => r.unchanged === true) && packs.length === (file.lexicon.settings?.packs ?? []).length;
+      return { pack: info(pack), added, merged, path: file.path, scope, alreadyInstalled };
+    }
     await writePacksSetting(file, packs, storeOpts, leaveUntrusted);
     const alreadyInstalled = before !== undefined && before === (await readTextIfAny(file.path));
     return { pack: info(pack), added, merged, path: file.path, scope, alreadyInstalled };
@@ -455,7 +466,11 @@ export async function uninstallLoadedPack(
   recordAs: string,
   opts: StoreOptions & PackOptions & { scope?: TermScope } = {},
 ): Promise<UninstallPackResult> {
-  const storeOpts: StoreOptions = { ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}), ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}) };
+  const storeOpts: StoreOptions = {
+    ...(opts.cwd !== undefined ? { cwd: opts.cwd } : {}),
+    ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}),
+    ...(opts.dryRun === true ? { dryRun: true } : {}),
+  };
   const packTerms = new Map(pack.lexicon.terms.map((t) => [lower(t.canonical), t]));
   const paths = resolvePaths(storeOpts);
   const targets: { path: string; scope: TermScope }[] = [];
@@ -498,7 +513,7 @@ export async function uninstallLoadedPack(
         if (status !== 'trusted') throw new ProjectTrustError(file.path, status);
       }
       file.lexicon.terms = remaining;
-      await writePacksSetting(file, (file.lexicon.settings?.packs ?? []).filter((p) => p !== recordAs), storeOpts);
+      if (!opts.dryRun) await writePacksSetting(file, (file.lexicon.settings?.packs ?? []).filter((p) => p !== recordAs), storeOpts);
       written.push(file.path);
     });
   }

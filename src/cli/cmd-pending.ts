@@ -13,12 +13,14 @@ import type { CommonOptions, IO } from './io.js';
 export interface PendingOptions extends CommonOptions {
   json?: boolean;
   all?: boolean;
+  /** Report what accept/reject would do; the queue and the lexicon are not written. */
+  dryRun?: boolean;
   /** Explicit global lexicon path (tests); the pending file sits next to it. */
   globalPath?: string;
 }
 
-function storeOpts(opts: PendingOptions): { cwd: string; globalPath?: string } {
-  return { cwd: resolveCwd(opts), ...(opts.globalPath ? { globalPath: opts.globalPath } : {}) };
+function storeOpts(opts: PendingOptions): { cwd: string; globalPath?: string; dryRun?: boolean } {
+  return { cwd: resolveCwd(opts), ...(opts.globalPath ? { globalPath: opts.globalPath } : {}), ...(opts.dryRun ? { dryRun: true } : {}) };
 }
 
 function failPending(io: IO, err: unknown, json?: boolean): number {
@@ -94,6 +96,7 @@ export async function runPendingAccept(ids: readonly string[], opts: PendingOpti
           ok: code === 0,
           ...partialFailure(failed.map((a) => `${a.entry.id} not accepted: ${a.error}`), res.unknown),
           file: res.file,
+          ...(opts.dryRun ? { dryRun: true } : {}),
           accepted: res.accepted.filter((a) => !a.error).map((a) => ({ id: a.entry.id, heard: a.entry.heard, meant: a.entry.meant, canonical: a.result!.term.canonical, path: a.result!.file.path })),
           failed: failed.map((a) => ({ id: a.entry.id, error: a.error })),
           unknown: res.unknown,
@@ -106,8 +109,9 @@ export async function runPendingAccept(ids: readonly string[], opts: PendingOpti
   if (!opts.json && res.accepted.length === 0 && res.unknown.length === 0) line(io, emptyQueueLine('accept', res.file));
   for (const a of res.accepted) {
     if (a.error) io.stderr(`lexicon: ${a.entry.id} not accepted: ${safe(a.error)} (it stays pending)\n`);
-    else if (!opts.json) line(io, `accepted ${a.entry.id}: ${safe(a.entry.heard)} -> ${safe(a.result!.term.canonical)} in ${safe(a.result!.file.path)}`);
+    else if (!opts.json) line(io, `${opts.dryRun ? 'would accept' : 'accepted'} ${a.entry.id}: ${safe(a.entry.heard)} -> ${safe(a.result!.term.canonical)} in ${safe(a.result!.file.path)}`);
   }
+  if (opts.dryRun && !opts.json && res.accepted.some((a) => !a.error)) line(io, 'nothing was written; run without --dry-run to accept');
   // On stderr under --json too, as every other refusal is.
   for (const id of res.unknown) io.stderr(`lexicon: ${unknownPendingLine(id)}\n`);
   return code;
@@ -152,11 +156,12 @@ export async function runPendingReject(ids: readonly string[], opts: PendingOpti
   if (opts.json) {
     line(
       io,
-      JSON.stringify({ ok: code === 0, ...partialFailure([], res.unknown), file: res.file, rejected: res.rejected.map((e) => e.id), unknown: res.unknown }, null, 2),
+      JSON.stringify({ ok: code === 0, ...partialFailure([], res.unknown), file: res.file, ...(opts.dryRun ? { dryRun: true } : {}), rejected: res.rejected.map((e) => e.id), unknown: res.unknown }, null, 2),
     );
   } else {
     if (res.rejected.length === 0 && res.unknown.length === 0) line(io, emptyQueueLine('reject', res.file));
-    for (const e of res.rejected) line(io, `rejected ${e.id}: ${safe(e.heard)} -> ${safe(e.meant)} (not learned)`);
+    for (const e of res.rejected) line(io, `${opts.dryRun ? 'would reject' : 'rejected'} ${e.id}: ${safe(e.heard)} -> ${safe(e.meant)} (not learned)`);
+    if (opts.dryRun && res.rejected.length > 0) line(io, 'nothing was written; run without --dry-run to reject');
   }
   for (const id of res.unknown) io.stderr(`lexicon: ${unknownPendingLine(id)}\n`);
   return code;
@@ -193,6 +198,7 @@ export function registerPendingCommands(program: Command, io: IO): void {
     .description('learn pending aliases (as lexicon learn does) and remove them from the queue')
     .argument('[ids...]', 'ids from lexicon pending')
     .option('--all', 'accept every pending alias')
+    .option('--dry-run', 'report what would be learned and dequeued; write nothing')
     .option('--json', 'print { ok, file, accepted, failed, unknown } as JSON (ok: false and exit 1 when an id is unknown or not accepted)')
     .action(async (ids: string[], opts: PendingOptions) => done(await runPendingAccept(ids, withParent(opts), io)));
   pending
@@ -200,6 +206,7 @@ export function registerPendingCommands(program: Command, io: IO): void {
     .description('drop pending aliases without learning them')
     .argument('[ids...]', 'ids from lexicon pending')
     .option('--all', 'reject every pending alias')
+    .option('--dry-run', 'report what would be dequeued; write nothing')
     .option('--json', 'print { ok, file, rejected, unknown } as JSON (ok: false and exit 1 when an id is unknown)')
     .action(async (ids: string[], opts: PendingOptions) => done(await runPendingReject(ids, withParent(opts), io)));
 }

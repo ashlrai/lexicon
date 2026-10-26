@@ -86,6 +86,8 @@ export interface HarvestScanContext {
 export interface HarvestInteractiveOptions extends InteractiveOptions {
   /** The scan the candidates came from; without it an empty walk says only that there was nothing to review. */
   harvest?: HarvestScanContext;
+  /** Report what each answer would write; nothing is written. */
+  dryRun?: boolean;
 }
 
 /**
@@ -184,11 +186,12 @@ export async function runHarvestInteractive(
   let addAll = false;
   let quit = false;
 
+  const dry = opts.dryRun === true;
   const toTerm = (c: HarvestCandidate): Term => ({ canonical: c.canonical, aliases: c.suggestedAliases, category: c.category, source: c.source });
   const report = (result: { term: Term; created: boolean }): void => {
     if (result.created) created += 1;
     else merged += 1;
-    line(io, `  ${result.created ? 'added' : 'merged'} ${bold(safe(result.term.canonical))}`);
+    line(io, `  ${dry ? 'would add' : result.created ? 'added' : 'merged'} ${bold(safe(result.term.canonical))}`);
   };
   /**
    * A write that failed for any other reason (a full disk, a read-only or
@@ -209,7 +212,7 @@ export async function runHarvestInteractive(
 
   const add = async (c: HarvestCandidate): Promise<boolean> => {
     try {
-      const result = await addTerm(toTerm(c), { ...store, scope: 'project' });
+      const result = await addTerm(toTerm(c), { ...store, scope: 'project', ...(dry ? { dryRun: true } : {}) });
       filePath = result.file.path;
       report(result);
       return true;
@@ -228,7 +231,7 @@ export async function runHarvestInteractive(
   let rest: { term: Term; created: boolean }[] = [];
   const addRest = async (from: number): Promise<boolean> => {
     try {
-      const batch = await addTerms(work.slice(from).map(toTerm), { ...store, scope: 'project' });
+      const batch = await addTerms(work.slice(from).map(toTerm), { ...store, scope: 'project', ...(dry ? { dryRun: true } : {}) });
       filePath = batch.file.path;
       report(batch.results[0]);
       rest = batch.results.slice(1);
@@ -316,8 +319,8 @@ export async function runHarvestInteractive(
   }
 
   const where = filePath ? ` in ${safe(filePath)}` : '';
-  line(io, `added ${plural(created, 'new term')}, merged ${merged}, skipped ${skipped}${where}`);
-  if (filePath) line(io, dim(`project lexicon trusted (${safe(filePath)})`));
+  line(io, dry ? `would add ${plural(created, 'new term')}, merge ${merged}, skip ${skipped}${where}; nothing was written` : `added ${plural(created, 'new term')}, merged ${merged}, skipped ${skipped}${where}`);
+  if (filePath && !dry) line(io, dim(`project lexicon trusted (${safe(filePath)})`));
   // One way on, and only when there is something new to look at.
   if (created + merged > 0) line(io, dim(NEXT_LIST));
   return writeError === undefined ? 0 : 1;
@@ -338,6 +341,8 @@ export interface ReviewOptions extends InteractiveOptions {
   category?: string;
   /** Refused: review is interactive. Prints `{ ok: false, error, nextStep }` naming the non-interactive commands. */
   json?: boolean;
+  /** Walk the terms but write nothing: the summary says what the answers would have changed. */
+  dryRun?: boolean;
 }
 
 /**
@@ -662,7 +667,7 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
         } else {
           file.lexicon.terms = file.lexicon.terms.filter((t) => !deleted.has(t));
         }
-        await writeLexiconFile(file);
+        if (!opts.dryRun) await writeLexiconFile(file);
       });
     } catch (err) {
       // Thrown, it ended the review with only the error, not saying that
@@ -694,7 +699,7 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
     // is none); writeLexiconFile already refreshed it for a global file.
     // Pinned to the bytes this write produced, so a lock-less writer (a git
     // pull, a hand edit) landing since is left 'changed', not blessed.
-    if (file.scope === 'project') {
+    if (file.scope === 'project' && !opts.dryRun) {
       await refreshTrust(file.path, { ...store, expectedSha256: await parsedContentHash(file) });
       await refreshIndexCache(file, store);
     }
@@ -704,7 +709,10 @@ export async function runReview(opts: ReviewOptions, io: IO, prompter?: Prompter
   // A quit used to report only the terms answered, so "kept 1, removed 0"
   // after `q` on term 2 of 40 said nothing of the other 39.
   const rest = notReviewed > 0 ? `, ${notReviewed} not reviewed (left as they were)` : '';
-  line(io, `kept ${kept}, removed ${deleted.size}, edited ${edited}${rest}${changed ? `. Wrote ${safe(file.path)}` : ' (nothing written)'}`);
+  line(
+    io,
+    `kept ${kept}, removed ${deleted.size}, edited ${edited}${rest}${changed ? (opts.dryRun ? `. Would write ${safe(file.path)}` : `. Wrote ${safe(file.path)}`) : ' (nothing written)'}`,
+  );
   if (changed) line(io, dim(NEXT_LIST));
   return 0;
 }
@@ -718,6 +726,8 @@ export interface EditOptions extends InteractiveOptions {
   project?: boolean;
   /** Refused: edit opens an editor. Prints `{ ok: false, error, nextStep }` naming the non-interactive commands. */
   json?: boolean;
+  /** Lexicon itself writes nothing: a missing file is not created, and a project file is not re-trusted or re-indexed after the edit. */
+  dryRun?: boolean;
 }
 
 /** Runs `command args... filePath` attached to the terminal and resolves with its exit code. */
@@ -905,9 +915,14 @@ export async function runEdit(
   // The existence check and the create are one locked step, the way `runInit`
   // does it. Apart, a `lexicon add` landing between them wrote the file this
   // had just decided was missing, and the empty lexicon written here was
-  // renamed straight over the new term.
+  // renamed straight over the new term. A dry run names the file it would
+  // create instead.
   await withLexiconLock(target, async () => {
     if (existsSync(target)) return;
+    if (opts.dryRun) {
+      line(io, `would create ${scope} lexicon: ${safeMessage(target)}`);
+      return;
+    }
     await writeLexiconFile({ path: target, scope, lexicon: emptyLexicon(), exists: false });
     line(io, `created ${scope} lexicon: ${safeMessage(target)}`);
   });
@@ -975,7 +990,7 @@ export async function runEdit(
     return 1;
   }
 
-  if (scope === 'project') {
+  if (scope === 'project' && !opts.dryRun) {
     if (trustedBefore) {
       // The user just edited it themselves; that is the approval `lexicon trust` records.
       // Only the bytes checked above: a file rewritten since then by
@@ -990,9 +1005,11 @@ export async function runEdit(
       line(io, dim(`project lexicon is not trusted yet; review it and run: lexicon trust`));
     }
   }
-  // The editor wrote the file behind writeLexiconFile's back: refresh the
-  // cached index the hook reads next, through the same trust check.
-  await refreshIndexCache({ scope, path: target }, store);
+  if (!opts.dryRun) {
+    // The editor wrote the file behind writeLexiconFile's back: refresh the
+    // cached index the hook reads next, through the same trust check.
+    await refreshIndexCache({ scope, path: target }, store);
+  }
   return 0;
 }
 
