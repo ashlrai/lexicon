@@ -213,7 +213,7 @@ treated as the user's own words).
 
 - **Trust registry.** A project lexicon is not merged until the user runs
   `lexicon trust` (after seeing a preview; on a terminal it then asks, default
-  no, unless `--yes` is passed; off a terminal it does not ask, see
+  no, unless `--yes` is passed; off a terminal it refuses without `--yes`, see
   [docs/TRUST.md](docs/TRUST.md)). Approvals live in
   `<config dir>/trust.json` next to the global lexicon, keyed by absolute path.
   The hooks, MCP server, CLI, local API, voice and daemon all go through

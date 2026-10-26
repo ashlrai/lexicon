@@ -2898,7 +2898,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       expect(await fs.readFile(projectPath, 'utf8')).toBe(HOSTILE);
       await expect(fs.stat(path.join(tmp, 'config', 'trust.json'))).rejects.toThrow();
 
-      const trusted = lexicon(['trust', '--cwd', repo], globalPath);
+      const trusted = lexicon(['trust', '--yes', '--cwd', repo], globalPath);
       expect(trusted.status).toBe(0);
       const added = lexicon(['add', 'Foo', '--project', '--cwd', repo], globalPath);
       expect(added.status).toBe(0);
@@ -3329,7 +3329,7 @@ describe('lexicon add --project against an unreviewed project lexicon (subproces
       await fs.mkdir(path.join(repo, '.git'), { recursive: true });
       await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n');
 
-      const trusted = lexicon(['trust', repo, '--cwd', tmp], globalPath);
+      const trusted = lexicon(['trust', repo, '--yes', '--cwd', tmp], globalPath);
       expect(trusted.stderr).not.toContain('EISDIR');
       expect(trusted.status).toBe(0);
       expect(trusted.stdout).toContain(`trusted ${projectPath}`);
