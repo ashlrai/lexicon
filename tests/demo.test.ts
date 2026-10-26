@@ -120,6 +120,25 @@ describe('lexicon normalize with nothing set up', () => {
     expect(io.err).toContain('nothing was written');
   });
 
+  // Keep these sentences in sync with the README "How it works" block and
+  // docs/MATCHING.md. Both are what a person with no lexicon is told to paste.
+  it('corrects the sentences the README and MATCHING.md tell a new user to paste', async () => {
+    const readme = makeIO();
+    const readmeCode = await runNormalize(['ask ashler to deploy kuber netties with post gressql'], { cwd, diff: true }, readme);
+    expect(readmeCode).toBe(0);
+    expect(readme.out).toBe('ask Ashlr.AI to deploy Kubernetes with PostgreSQL\n');
+    expect(readme.err).toContain('"ashler" -> "Ashlr.AI" (alias, 1.00)');
+    expect(readme.err).toContain('"kuber netties" -> "Kubernetes" (phonetic, 0.88)');
+    expect(readme.err).toContain('"post gressql" -> "PostgreSQL" (phonetic, 0.88)');
+
+    const matching = makeIO();
+    const matchingCode = await runNormalize(['ask ashler to deploy kuber netties and kubernetees'], { cwd, diff: true }, matching);
+    expect(matchingCode).toBe(0);
+    expect(matching.out).toBe('ask Ashlr.AI to deploy Kubernetes and Kubernetes\n');
+    expect(matching.err).toContain('"kuber netties" -> "Kubernetes" (phonetic, 0.88)');
+    expect(matching.err).toContain('"kubernetees" -> "Kubernetes" (fuzzy, 0.91)');
+  });
+
   it('leaves piped input byte-exact: a pipeline must not be rewritten by terms the user never chose', async () => {
     const io = makeIO();
     const code = await runNormalize([], { cwd }, io, async () => 'ping ashler and pass the sass');

@@ -13,6 +13,7 @@ The short pitch, the benchmark headline and the install commands are in the
 | Page | What it covers | Also listed under |
 |---|---|---|
 | [QUICKSTART.md](QUICKSTART.md) | Nothing to working corrections in Claude Code in five minutes, with what each setup step writes | |
+| [FIRST-RUN.md](FIRST-RUN.md) | A timed pass through the README install on one Linux VM: friction, wrong doc lines, agent-use audit | |
 | [CLIENTS.md](CLIENTS.md) | Installing into Claude Code (plugin, hooks, headless) and every other agent client. Read this one second | Use it with |
 | [FAQ.md](FAQ.md) | The questions people ask before installing | |
 | [PACKS.md](PACKS.md) | The four starter packs, what is in each, and how install and remove behave | |
@@ -45,6 +46,7 @@ exist on your operating system is [PLATFORMS.md](PLATFORMS.md).
 | [MATCHING.md](MATCHING.md) | The three matching tiers and every guard against a false positive |
 | [TRUST.md](TRUST.md) | Why a project `.lexicon.yaml` is off until you approve it |
 | [BENCHMARK.md](BENCHMARK.md) | The accuracy measurements: corpora, method, results, and what still fails |
+| [BENCHMARKS.md](BENCHMARKS.md) | Install time, latency and memory next to espanso and whisper.cpp, measured on one Linux VM |
 | [RESEARCH.md](RESEARCH.md) | Why this layer exists at all, the market read, and the kill criteria |
 | [GROWING.md](GROWING.md) | The four ways terms get in after the first one: a starter pack, your repo, your corrections, your voice history |
 | [SUGGEST.md](SUGGEST.md) | What `lexicon suggest` mines from your voice history, and how it scores |

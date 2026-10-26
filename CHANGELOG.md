@@ -11,6 +11,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 ### Added
 
 - `lexicon pending reject` remembers what you rejected: the pending file gains a `rejected:` list of ids (never the words, capped at 500), and the prompt hook no longer queues a correction you already rejected. `lexicon learn` with the same words still works. Additive file change; an older lexicon that rewrites the file forgets the list.
+- `node scripts/bench/startup.mjs` times one CLI cold start (`--version` and `normalize --diff`) and one in-process `normalize`. Stdout is a single JSON document. The Lexicon rows in [docs/BENCHMARKS.md](docs/BENCHMARKS.md) are one run of that command, not a saved baseline. See [scripts/bench/README.md](scripts/bench/README.md).
 - `lexicon suggest` lists the pending corrections queue first (newest first), each with its id, heard -> meant, source (for example `prompt-hook`) and count, plus the `lexicon pending accept/reject <id>` commands. Listing never changes the queue or the lexicon; an unreadable queue is a stderr warning, not a failure. `--json` output is unchanged.
 - `lexicon doctor --json` carries the shared `ashlr.doctor` v1 wrapper (`kind`, `schema_version`, `tool`, `status`, `native_status`, `checks`): any `fail` check is fail, else any `warn` is warn; each check keeps `level` and `message` and gains `status` and `summary`. Additive: every existing field and the exit code are unchanged. The MCP `lexicon_doctor` report is unchanged. The vendored handshake contract is re-pinned to the ashlr-stack version with the `doctor` section.
 - Handshake conformance test (`tests/handshake-conformance.test.ts`): validates `lexicon --ashlr-handshake --json` against the Ashlr handshake v1 contract vendored from ashlr-stack (`tests/contract/`, pinned by sha256) and runs `doctor --fix --json` for the advertised `doctor-fix` capability in a fresh HOME, checking that the preview writes nothing.
@@ -22,6 +23,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- The README and [docs/MATCHING.md](docs/MATCHING.md) example commands claimed `head sner` and `cuban eatties` corrections that the built-in example lexicon does not make. They now show a sentence that command actually corrects, including the "no terms yet" notice. The Linux line in `scripts/install.sh` no longer suggests `sudo apt install nodejs` first: on Ubuntu 24.04 that package is Node 18.19.1, and the installer requires Node 20.
 - The UserPromptSubmit hook could drop the second spelling correction in a short prompt ("it's Ashlr.AI not Ashlar. Also it's Mason Wyatt not mason white.") on a slow machine: the 25 ms wall-clock correction budget was spent before the second sentence was read, so it got no learn_correction line and its words were normalized as dictation. The first 8 distinct sentences are now always read; the budget only bounds longer pastes. Seen as a macOS-only CI failure on main.
 
 ### Changed

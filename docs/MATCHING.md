@@ -65,14 +65,18 @@ It ends at the first non-blank line indented less than that; a blank line inside
 
 Every replacement carries `reason` (`alias`, `phonetic`, `fuzzy`) and `confidence`. `--dry-run` (CLI and MCP) returns the candidates without applying them.
 
+With no lexicon of your own the command below uses the built-in example and says so on stderr. Hetzner is not in that example (`head sner` is unchanged until you add it, or until you point `LEXICON_PATH` at a file that has it, such as `examples/lexicon.example.yaml`).
+
 ```bash
-lexicon normalize --diff "deploy to head sner with cooper netties and kubernetees"
+lexicon normalize --diff "ask ashler to deploy kuber netties and kubernetees"
 # stderr:
-#   "head sner" -> "Hetzner" (alias, 1.00)
-#   "cooper netties" -> "Kubernetes" (phonetic, 0.85)
+#   lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS).
+#   lexicon: run `lexicon setup` to build your own; nothing was written.
+#   "ashler" -> "Ashlr.AI" (alias, 1.00)
+#   "kuber netties" -> "Kubernetes" (phonetic, 0.88)
 #   "kubernetees" -> "Kubernetes" (fuzzy, 0.91)
 # stdout:
-#   deploy to Hetzner with Kubernetes and Kubernetes
+#   ask Ashlr.AI to deploy Kubernetes and Kubernetes
 ```
 
 `--diff` goes to stderr so stdout stays pipeable, and still does with `--json`. `--dry-run` prints the same summary to stderr and leaves stdout as the input. `--min-confidence 0.9`, `--no-phonetic` and `--no-fuzzy` override the file settings for one run. If the lexicon fails to load, `normalize` prints the reason to stderr, passes the text through stdout byte-exactly so a pipeline never loses input, and exits 1. The exit code is the only channel left: without it "no corrections were applied" and "nothing needed correcting" look identical.
