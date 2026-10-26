@@ -65,6 +65,8 @@ export interface ClipboardOnceOptions extends ClipboardCommonOptions {
   paste?: boolean;
   /** Keystroke sender used by `paste`. Default: osascript. Injectable for tests. */
   sendPaste?: () => Promise<void>;
+  /** Lexicon loader. Default: loadLexicon for `cwd`; the resident expander passes its cached load. */
+  lexicon?: () => Promise<LoadedLexicon>;
 }
 
 /** Skip clipboard payloads larger than this (bytes of UTF-16 units, i.e. string length). */
@@ -100,16 +102,6 @@ export function lexiconFilesStamp(cwd: string): string {
     }
   });
   return `${paths.project ?? ''}|${stamps.join('|')}`;
-}
-
-/** macOS `pbpaste` (kept for callers of the old API; prefers the backend module). */
-export function pbpaste(): Promise<string> {
-  return createClipboardBackend('pbcopy').read();
-}
-
-/** macOS `pbcopy` (kept for callers of the old API; prefers the backend module). */
-export function pbcopy(text: string): Promise<void> {
-  return createClipboardBackend('pbcopy').write(text);
 }
 
 function timestamp(): string {
@@ -531,7 +523,7 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
     if (!quiet) out(`no changes (${why})\n`);
   } else {
     // Only the merged terms are used: an untrusted project file is never parsed.
-    const loaded = await loadLexicon({ cwd, parseSkipped: false });
+    const loaded = opts.lexicon ? await opts.lexicon() : await loadLexicon({ cwd, parseSkipped: false });
     const normalized = normalize(text, loaded.merged);
     result.changed = normalized.changed;
     result.corrections = normalized.replacements.length;
@@ -601,6 +593,10 @@ export interface DaemonCommandOptions extends ClipboardDaemonOptions, ClipboardO
   once?: boolean;
   /** Print the detected backend and exit. */
   which?: boolean;
+  /** Run the resident expander (./expander-server.ts) instead of the clipboard watcher. */
+  expander?: boolean;
+  /** With `expander`: the socket (named pipe on Windows) to listen on. */
+  socketPath?: string;
 }
 
 /** Parse and validate a `--backend` value. */
@@ -615,6 +611,20 @@ export async function runDaemonCommand(opts: DaemonCommandOptions = {}): Promise
   const err = opts.err ?? ((s: string) => void process.stderr.write(s));
   const platform = opts.platform ?? process.platform;
   const env = opts.env ?? process.env;
+
+  if (opts.socketPath !== undefined && !opts.expander) {
+    throw new Error('--socket works only with --expander; run: lexicon daemon --expander --socket <path>');
+  }
+  if (opts.expander) {
+    const clash = opts.once ? '--once' : opts.paste ? '--paste' : opts.which ? '--which' : undefined;
+    if (clash) {
+      // The resident process does both through its socket: {"op":"clipboard","paste":true}.
+      throw new Error(`${clash} cannot be combined with --expander; the expander's "clipboard" request corrects (and pastes) without a new process`);
+    }
+    // Loaded on demand: the clipboard commands never pay for the server module.
+    const { runExpanderServer } = await import('./expander-server.js');
+    return daemonStopExitCode(await runExpanderServer(opts));
+  }
 
   if (opts.which) {
     try {
@@ -645,9 +655,9 @@ export async function runDaemonCommand(opts: DaemonCommandOptions = {}): Promise
   return daemonStopExitCode(await runClipboardDaemon(opts));
 }
 
-const USAGE = 'usage: lexicon daemon [--once [--paste]] [--interval <ms>] [--dry-run] [--quiet] [--backend <name>] [--cwd <dir>] [--which]\n';
+const USAGE = 'usage: lexicon daemon [--once [--paste]] [--interval <ms>] [--dry-run] [--quiet] [--backend <name>] [--cwd <dir>] [--which] [--expander [--socket <path>]]\n';
 
-/** Minimal standalone entry: `node dist/daemon/clipboard.js [--once] [--paste] [--interval ms] [--dry-run] [--quiet] [--backend name] [--cwd dir] [--which]`. */
+/** Minimal standalone entry: `node dist/daemon/clipboard.js [--once] [--paste] [--interval ms] [--dry-run] [--quiet] [--backend name] [--cwd dir] [--which] [--expander [--socket path]]`. */
 export async function main(argv: readonly string[] = process.argv.slice(2)): Promise<void> {
   const opts: DaemonCommandOptions = {};
   for (let i = 0; i < argv.length; i += 1) {
@@ -657,6 +667,14 @@ export async function main(argv: readonly string[] = process.argv.slice(2)): Pro
     else if (arg === '--once') opts.once = true;
     else if (arg === '--paste') opts.paste = true;
     else if (arg === '--which') opts.which = true;
+    else if (arg === '--expander') opts.expander = true;
+    else if (arg === '--socket' || arg.startsWith('--socket=')) {
+      const value = arg === '--socket' ? argv[++i] : arg.slice('--socket='.length);
+      if (value === undefined || value.trim() === '' || (arg === '--socket' && value.startsWith('-'))) {
+        throw new Error('--socket expects a path; run: lexicon daemon --expander --socket <path>');
+      }
+      opts.socketPath = value;
+    }
     else if (arg === '--backend') {
       const value = argv[++i];
       if (value === undefined) throw new Error('--backend expects a name');
