@@ -4,8 +4,8 @@
  * Split out so ./detect.ts and ./steps.ts can share them without importing
  * the command module that uses them.
  */
-import { INSTALL_CLIENTS } from '../cmd-install.js';
-import type { InstallClient, InstallOptions } from '../cmd-install.js';
+import { SETUP_APPS, SETUP_CLIENTS, type SetupApp, type SetupClient } from '../client-names.js';
+import type { InstallOptions } from '../cmd-install.js';
 import type { ServeDeps, ServeOptions } from '../cmd-serve.js';
 import type { Prompter } from '../prompt.js';
 import type { CommonOptions, IO } from '../io.js';
@@ -24,13 +24,7 @@ import type {
 // Types
 // ---------------------------------------------------------------------------
 
-/** Clients `setup` knows how to detect and install (everything but `generic`). */
-export const SETUP_CLIENTS = INSTALL_CLIENTS.filter((c): c is Exclude<InstallClient, 'generic'> => c !== 'generic');
-export type SetupClient = (typeof SETUP_CLIENTS)[number];
-
-/** Dictation apps `setup` can export for, with the export format behind each. */
-export const SETUP_APPS = ['wispr', 'superwhisper', 'macos', 'none'] as const;
-export type SetupApp = (typeof SETUP_APPS)[number];
+export { SETUP_APPS, SETUP_CLIENTS, type SetupApp, type SetupClient };
 
 export const HARVEST_LIMIT = 10;
 /**

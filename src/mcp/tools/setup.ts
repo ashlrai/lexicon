@@ -14,29 +14,13 @@ import {
 } from '../shared.js';
 import type { ToolRegistrar } from '../shared.js';
 import type { SetupOptions } from '../../cli/cmd-setup.js';
-import { LIMITS } from '../../core/index.js';
+import { LIMITS } from '../../core/caps.js';
 import { isRecord } from '../../util/json.js';
 import { errorMessage } from '../../util/errors.js';
-import { runDoctorReport } from '../../cli/commands.js';
-import { reloadStepFor, runInstall } from '../../cli/cmd-install.js';
 import type { InstallOutcome } from '../../cli/cmd-install.js';
-import { runSetup } from '../../cli/cmd-setup.js';
-import { runUninstall } from '../../cli/cmd-uninstall.js';
-import { setupNameProblem } from '../../cli/setup/detect.js';
-import { serveInstallBlocker } from '../../cli/cmd-serve.js';
 import { cliCommand } from '../../util/cli-hint.js';
 import { join } from 'node:path';
-import {
-  DEFAULT_PORT,
-  FOREIGN_HEALTH_ERROR,
-  SERVE_STATUS_HINTS,
-  getServePath,
-  isLexiconHealth,
-  probeHealth,
-  readServeConfig,
-  serveUrl,
-  unusableServeConfigReason,
-} from '../../serve/config.js';
+import { DEFAULT_PORT } from '../../serve/defaults.js';
 
 /**
  * The API this user's `lexicon serve` listens on: the port in serve.json
@@ -45,6 +29,7 @@ import {
  * itself. Read-only: never creates serve.json.
  */
 async function serveTarget(): Promise<{ base: string; token?: string; notConfigured: { configured?: false; configPath?: string; note?: string } }> {
+  const { readServeConfig, getServePath, unusableServeConfigReason, serveUrl } = await import('../../serve/config.js');
   const config = await readServeConfig();
   const port = config !== undefined && config.port > 0 ? config.port : DEFAULT_PORT;
   // As `lexicon serve --status --json` says it: without this a serve.json
@@ -79,7 +64,11 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         'detail or you need to diagnose something `nextStep` does not cover; warns are usually optional extras, not problems.',
       inputSchema: {},
     },
-    async () => guarded(async () => textResult(await runDoctorReport({ cwd: ctx.cwd, audience: 'mcp' }))),
+    async () =>
+      guarded(async () => {
+        const { runDoctorReport } = await import('../../cli/commands.js');
+        return textResult(await runDoctorReport({ cwd: ctx.cwd, audience: 'mcp' }));
+      }),
   );
 
   server.registerTool(
@@ -104,6 +93,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
     },
     async ({ client, apply, scope }) =>
       guarded(async () => {
+        const { reloadStepFor, runInstall } = await import('../../cli/cmd-install.js');
         const io = bufferIO();
         const cliDir = cliDirForInstall();
         // The same `written` list `lexicon install --json` returns, so an agent
@@ -174,6 +164,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
     },
     async ({ client, apply, scope }) =>
       guarded(async () => {
+        const { runUninstall } = await import('../../cli/cmd-uninstall.js');
         const io = bufferIO();
         const applied = apply === true;
         const code = await runUninstall(
@@ -277,6 +268,8 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
     },
     async ({ company, person, clients, packs, harvest, serve, apply }) =>
       guarded(async () => {
+        const { setupNameProblem } = await import('../../cli/setup/detect.js');
+        const { runSetup } = await import('../../cli/cmd-setup.js');
         // The plan seeded a 100-character company without a word, then the
         // apply refused it with errors about generated aliases the agent never
         // passed. Check both names against the term caps up front, for both.
@@ -356,6 +349,8 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
     },
     async () =>
       guarded(async () => {
+        const { FOREIGN_HEALTH_ERROR, SERVE_STATUS_HINTS, isLexiconHealth, probeHealth } = await import('../../serve/config.js');
+        const { serveInstallBlocker } = await import('../../cli/cmd-serve.js');
         const { base, token, notConfigured } = await serveTarget();
         const url = `${base}/health`;
         const probe = await probeHealth(base, token !== undefined ? { token } : {});

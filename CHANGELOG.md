@@ -6,6 +6,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Changed
 
+- `lexicon --version` and `lexicon --help` return before the lexicon core loads. A command loads its handler the first time it runs, and the MCP server loads the core on the first tool, resource, or prompt that reads a lexicon. Version text, help text, and tool results are unchanged.
 - `lexicon trust` off a terminal (a script, CI, an agent's shell) no longer pins the file silently: without `--yes` it prints the preview, trusts nothing, names the `lexicon trust <path> --yes` command and exits 1 (`{ ok: false, ... }` under `--json`). No environment variable bypasses this. With `--yes` it pins and prints the path and sha256 as before. A file already trusted at the same bytes still reports `already trusted`. Scripts that ran `lexicon trust` unattended must add `--yes`.
 
 ### Added

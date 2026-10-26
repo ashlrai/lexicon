@@ -9,13 +9,47 @@ import { basename, delimiter, dirname, isAbsolute, join, relative, resolve, sep 
 import { z } from 'zod';
 import type { CallToolResult } from '@modelcontextprotocol/sdk/types.js';
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
-import { defaultProjectPath, pathForModel, posixShellWord as shellWord, projectWriteTrusted, resolvePaths, skippedProjectNote } from '../core/index.js';
 import type { ImportFormat, LoadOptions, LoadedLexicon, TermSuggestion } from '../core/index.js';
 import type { IO } from '../cli/commands.js';
-import { unreadableLexiconEdit } from '../cli/io.js';
+import { unreadableLexiconEdit } from '../cli/lexicon-edit-hint.js';
 import { errorMessage } from '../util/errors.js';
 import { findPackageRoot, packageVersion } from '../util/package.js';
 import { cliCommand } from '../util/cli-hint.js';
+import { posixShellWord as shellWord } from '../util/shell.js';
+
+/**
+ * The lexicon core (yaml, the matcher, every exporter). Loaded on the first
+ * tool, resource or prompt that reads a lexicon, not when the server starts.
+ * One dynamic import, never a static one: the plugin bundle shares zod with
+ * the MCP SDK, and a module that is both static and dynamic makes esbuild
+ * wrap that shared graph so zod's classes fail to construct.
+ */
+type Core = typeof import('../core/index.js');
+let coreMod: Core | undefined;
+let coreLoading: Promise<Core> | undefined;
+
+export function loadCore(): Promise<Core> {
+  coreLoading ??= import('../core/index.js').then((mod) => {
+    coreMod = mod;
+    return mod;
+  });
+  return coreLoading;
+}
+
+/** The loaded core. Call only after `await loadCore()` (guarded does that). */
+export function core(): Core {
+  if (coreMod === undefined) throw new Error('loadCore() must be awaited before core()');
+  return coreMod;
+}
+
+/**
+ * A core function resolved on first call, so a tool module can name it at
+ * import time without loading the core. The type is the real export, so call
+ * sites stay checked.
+ */
+export function coreFn<K extends keyof Core>(name: K): Core[K] {
+  return ((...args: never[]) => (core()[name] as (...a: never[]) => unknown)(...args)) as Core[K];
+}
 
 /**
  * Everything a tool handler needs from the server it is registered on. `load`
@@ -52,10 +86,13 @@ export type ToolRegistrar = (server: McpServer, ctx: ToolContext) => void;
 
 export const SERVER_NAME = 'lexicon';
 
-// All CLI handlers the agent-native tools reuse are imported statically: a
-// dynamic `import()` of a module that is also in the static graph makes
-// esbuild lazy-wrap the shared subgraph (zod included) and the plugin bundle
-// then fails at load ("Class2 is not a constructor").
+/**
+ * CLI handlers the agent-native tools reuse are imported with `import()`
+ * inside the handler, and those modules are not imported statically anywhere
+ * in the MCP graph. A dynamic import of a module that is also static makes
+ * esbuild lazy-wrap the shared subgraph (zod included) and the plugin bundle
+ * then fails at load ("Class2 is not a constructor").
+ */
 
 /** An `IO` sink that captures what a CLI handler would have printed, so a tool can return it. */
 export function bufferIO(): IO & { out: () => string; err: () => string } {
@@ -199,7 +236,7 @@ function realOrResolved(dir: string): string {
  */
 export function readableRoots(ctx: Pick<ToolContext, 'cwd' | 'roots'>, env: NodeJS.ProcessEnv = process.env): string[] {
   const dirs = [ctx.cwd, ...ctx.roots];
-  const project = resolvePaths({ cwd: ctx.cwd }).project;
+  const project = core().resolvePaths({ cwd: ctx.cwd }).project;
   if (project) dirs.push(dirname(project));
   for (const raw of (env[HARVEST_ROOTS_ENV] ?? '').split(delimiter)) {
     const dir = raw.trim();
@@ -248,7 +285,7 @@ export function containedPath(ctx: Pick<ToolContext, 'cwd' | 'roots'>, path: str
  * a new one at its git root, can be above every root.
  */
 export function writableProjectFile(ctx: Pick<ToolContext, 'cwd' | 'roots'>, file: string, env: NodeJS.ProcessEnv = process.env): boolean {
-  const own = resolvePaths({ cwd: ctx.cwd }).project ?? defaultProjectPath(ctx.cwd);
+  const own = core().resolvePaths({ cwd: ctx.cwd }).project ?? core().defaultProjectPath(ctx.cwd);
   if (realOrResolved(file) === realOrResolved(own)) return true;
   const roots = readableRoots(ctx, env);
   const real = existsSync(file) ? realOrResolved(file) : join(realOrResolved(dirname(file)), basename(file));
@@ -264,6 +301,7 @@ export function writableProjectFile(ctx: Pick<ToolContext, 'cwd' | 'roots'>, fil
  * its pin refreshed. A global write ignores the option.
  */
 export async function mcpWriteOpts(ctx: Pick<ToolContext, 'cwd'>): Promise<{ leaveUntrusted?: true }> {
+  const { projectWriteTrusted } = await loadCore();
   return (await projectWriteTrusted({ cwd: ctx.cwd })) ? {} : { leaveUntrusted: true };
 }
 
@@ -285,6 +323,7 @@ export function untrustedWriteFields(path: string, what: string, plural = false)
 /** Runs a tool body and converts any thrown error into an isError result. */
 export async function guarded(fn: () => Promise<CallToolResult> | CallToolResult): Promise<CallToolResult> {
   try {
+    await loadCore();
     return await fn();
   } catch (err) {
     return errorResult(err);
@@ -294,8 +333,11 @@ export async function guarded(fn: () => Promise<CallToolResult> | CallToolResult
 /**
  * Compact, display-safe view of a project lexicon for the trust dialogue
  * (defined in core so `lexicon trust --json` returns the same rows).
+ * Resolved after loadCore, which guarded awaits before the handler runs.
  */
-export { trustPreview } from '../core/index.js';
+export function trustPreview(file: Parameters<Core['trustPreview']>[0]): ReturnType<Core['trustPreview']> {
+  return core().trustPreview(file);
+}
 
 export function filePathsInUse(loaded: LoadedLexicon): { global: string; project?: string } {
   return {
@@ -314,10 +356,10 @@ export function skippedProjectFields(
   /** One more sentence for the note: what the skipped file means for this result. */
   consequence?: string,
 ): { projectTrust?: LoadedLexicon['projectTrust']; skippedProject?: string; note?: string } {
-  const note = skippedProjectNote(loaded, consequence, { who: 'the user can ', trust: cliCommand('trust') });
+  const note = core().skippedProjectNote(loaded, consequence, { who: 'the user can ', trust: cliCommand('trust') });
   if (!loaded.skippedProject || note === undefined) return {};
   // The path goes through pathForModel, as lexicon://me's note does: the
   // directory is named by whoever published the repo, and JSON escaping
   // leaves a bidi override, a fake tag or kilobytes of text in it intact.
-  return { projectTrust: loaded.projectTrust, skippedProject: pathForModel(loaded.skippedProject.path), note };
+  return { projectTrust: loaded.projectTrust, skippedProject: core().pathForModel(loaded.skippedProject.path), note };
 }
