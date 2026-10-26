@@ -60,6 +60,8 @@ interface DaemonCliOptions {
   paste?: boolean;
   which?: boolean;
   backend?: ClipboardBackendName;
+  expander?: boolean;
+  socket?: string;
 }
 
 const program = new Command();
@@ -244,6 +246,8 @@ program
     }
   })
   .option('--which', 'print the detected clipboard backend and exit')
+  .option('--expander', 'opt in: run the resident expander instead, answering keystrokes and corrections over a local socket')
+  .option('--socket <path>', 'with --expander: the socket to listen on (default $XDG_RUNTIME_DIR/lexicon/expander.sock)')
   .action(async (opts: DaemonCliOptions) => {
     const { cwd } = withGlobals({});
     done(
@@ -254,6 +258,8 @@ program
         once: opts.once ?? false,
         paste: opts.paste ?? false,
         which: opts.which ?? false,
+        expander: opts.expander ?? false,
+        ...(opts.socket !== undefined ? { socketPath: opts.socket } : {}),
         ...(opts.backend ? { backend: opts.backend } : {}),
         ...(cwd ? { cwd } : {}),
       }),
