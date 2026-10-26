@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ErrorCode, McpError, RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import { exportClaudeMdWithin, exportLexicon, loadLexicon, neutralizeMarkup, noTermsYet, pathForModel, selectExportTerms } from '../core/index.js';
 import type { LoadOptions, LoadedLexicon } from '../core/index.js';
 import { SERVER_NAME, log, readPackageVersion, skippedProjectFields, withLexiconFix } from './shared.js';
@@ -318,11 +318,33 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   // agent did not ask for. A strict object refuses the unknown key by name and
   // advertises `additionalProperties: false` in tools/list.
   const registerTool = server.registerTool.bind(server);
-  const gatedRegisterTool = (name: string, config: unknown, cb: (...args: unknown[]) => unknown): unknown =>
-    registerTool(name, withAnnotations(name, strictInput(config)) as never, (async (...args: unknown[]) => {
+  const registeredTools = new Set<string>();
+  // The SDK installs its tools/call handler lazily during the first registration.
+  // Validate the envelope outside its execution-error catch: malformed requests
+  // and unknown tools are protocol errors, unlike a known tool's invalid inputs.
+  const setRequestHandler = server.server.setRequestHandler.bind(server.server);
+  server.server.setRequestHandler = (schema, handler) => {
+    if ((schema as unknown) === CallToolRequestSchema) {
+      setRequestHandler(z.object({ method: z.literal('tools/call') }).passthrough(), async (request, extra) => {
+        const parsed = CallToolRequestSchema.safeParse(request);
+        if (!parsed.success) throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${parsed.error.message}`);
+        if (!registeredTools.has(parsed.data.params.name)) {
+          throw new McpError(ErrorCode.InvalidParams, `Unknown tool: ${parsed.data.params.name}`);
+        }
+        return handler(parsed.data as never, extra);
+      });
+    } else {
+      setRequestHandler(schema, handler);
+    }
+  };
+  const gatedRegisterTool = (name: string, config: unknown, cb: (...args: unknown[]) => unknown): unknown => {
+    const tool = registerTool(name, withAnnotations(name, strictInput(config)) as never, (async (...args: unknown[]) => {
       if (rootsPending) await rootsPending;
       return cb(...args);
     }) as never);
+    registeredTools.add(name);
+    return tool;
+  };
   server.registerTool = gatedRegisterTool as typeof server.registerTool;
 
   // `cwd` is a getter so every handler reads the directory as it is now.
@@ -338,6 +360,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     normalizeMaxChars: opts.normalizeMaxChars ?? MCP_NORMALIZE_MAX_CHARS,
   };
   for (const register of TOOL_REGISTRARS) register(server, ctx);
+  server.server.setRequestHandler = setRequestHandler;
 
   // Resources and prompts have no isError result: a thrown error becomes the
   // JSON-RPC error message. For a lexicon file that does not parse, that was
