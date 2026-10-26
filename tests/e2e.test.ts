@@ -855,7 +855,7 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: stats, path, doct
     expect(report.ok).toBe(true);
     expect(typeof report.summary).toBe('string');
     expect(report.nextStep).not.toBe('');
-    expect(report.checks).toContainEqual({ level: 'ok', message: `global lexicon parses: ${shared.globalPath} (2 terms)` });
+    expect(report.checks).toContainEqual(expect.objectContaining({ level: 'ok', message: `global lexicon parses: ${shared.globalPath} (2 terms)` }));
 
     const h = await freshHome('doctor-json-missing');
     const missing = await runCli(['doctor', '--json'], { env: { ...h.env, PATH: noBin }, cwd: h.repo });

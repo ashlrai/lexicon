@@ -10,9 +10,9 @@ import { mkdtempSync, readFileSync, readdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { type Contract, checkGatedRun, checkHandshake, gatedFor } from './contract/handshake-conformance.js';
+import { type Contract, checkDoctor, checkGatedRun, checkHandshake, gatedFor } from './contract/handshake-conformance.js';
 
-const PINNED_SHA256 = 'e4fa6e79ae7523fb11c44fc16843f0edf385f6c8e4c164409a62d05a76e0ac95';
+const PINNED_SHA256 = '1f6679138a048f6882eb33f84ab2894b54e51898f887a5cb9c19cc9731c5c171';
 const contractPath = path.join('tests', 'contract', 'ashlr-handshake.v1.json');
 const raw = readFileSync(contractPath);
 const contract = JSON.parse(raw.toString('utf8')) as Contract;
@@ -45,5 +45,25 @@ describe('handshake contract v1 conformance', () => {
       expect(checkGatedRun(cap, g, out.status, out.stdout)).toEqual([]);
       if (g.read_only) expect(readdirSync(home)).toEqual([]);
     }
+  }, 30_000);
+
+  it('`lexicon doctor --json` carries the ashlr.doctor v1 wrapper, keeps its fields and exit code', () => {
+    const home = mkdtempSync(path.join(os.tmpdir(), 'lexicon-doctor-'));
+    const r = spawnSync(process.execPath, ['--import', 'tsx', path.join('src', 'cli', 'index.ts'), 'doctor', '--json'], {
+      encoding: 'utf8',
+      cwd: process.cwd(),
+      env: { PATH: process.env.PATH, HOME: home, LEXICON_PATH: path.join(home, 'none', 'lexicon.yaml') },
+    });
+    const d = JSON.parse(r.stdout);
+    expect(checkDoctor(d, contract)).toEqual([]);
+    expect(d).toMatchObject({ kind: 'ashlr.doctor', tool: 'lexicon' });
+    for (const k of ['ok', 'ready', 'summary', 'nextStep', 'paths', 'versions']) expect(d).toHaveProperty(k);
+    for (const c of d.checks) {
+      expect(c.status).toBe(c.level);
+      expect(c.summary).toBe(c.message);
+    }
+    const anyFail = d.checks.some((c: { level: string }) => c.level === 'fail');
+    expect(d.status).toBe(anyFail ? 'fail' : d.checks.some((c: { level: string }) => c.level === 'warn') ? 'warn' : 'ok');
+    expect(r.status).toBe(anyFail ? 1 : 0);
   }, 30_000);
 });

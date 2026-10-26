@@ -161,7 +161,7 @@ export {
   settingsHasLexiconHook,
 } from './claude-settings.js';
 export type { ClaudeSettings, HookCommand, HookGroup, IntegrationPaths } from './claude-settings.js';
-export { checkLoginService, renderDoctorReport, runDoctor, runDoctorReport } from './cmd-doctor.js';
+export { checkLoginService, renderDoctorReport, runDoctor, runDoctorReport, withDoctorEnvelope } from './cmd-doctor.js';
 export type { DoctorAudience, DoctorCheck, DoctorCliOptions, DoctorDeps, DoctorLevel, DoctorReport, DoctorReportOptions } from './cmd-doctor.js';
 export { CLAUDE_MD_SNIPPET, runInstallClaude } from './cmd-install.js';
 export type { InstallClaudeDeps, InstallClaudeOptions, InstallOutcome } from './cmd-install.js';
