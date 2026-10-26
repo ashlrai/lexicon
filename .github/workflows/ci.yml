@@ -8,6 +8,7 @@ on:
     branches: [main, 'ci/**']
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
     # No `labeled`: a run started by a label is the newest CI check suite for
     # the head commit, and GitHub reads required checks from it, so a label
     # run that skipped its jobs left the PR BLOCKED (#199). `plan` reads the
@@ -41,6 +42,7 @@ jobs:
   # their perf tests, and this workflow). #197 was a macOS-only failure of a
   # wall-clock budget in the hook that no PR row could have caught.
   plan:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
     permissions:
       contents: read
