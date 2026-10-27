@@ -4,7 +4,7 @@
 
 ## The gap
 
-Four curated packs ship with the package. Issue #4 asks for profession
+Five curated packs ship with the package. Issue #4 asks for profession
 packs (law, medicine, finance, design, academia, construction, real estate),
 and the recipe in `docs/PACKS.md` makes writing one a good first issue. But
 every pack anyone writes still funnels through this repo's `packs/`
@@ -37,7 +37,7 @@ trust.
   checksum; `version` becomes meaningful for updates.
 - `src/cli/cmd-pack.ts`: `pack search`, `pack add <author>/<name>`,
   `pack update`, and pinning (`lexicon pack add community/cardiology@2`).
-- MCP: `list_packs` gains a `registry?` source alongside the vendored four.
+- MCP: `list_packs` gains a `registry?` source alongside the vendored five.
 - `docs/PACKS.md`: the publishing recipe, the review bar for community
   packs, and the trust story below.
 
@@ -46,7 +46,7 @@ trust.
 Installed pack terms land in the user's lexicon file, which reaches model
 context on every hooked prompt. A malicious pack is a prompt-injection
 delivery vehicle with a friendly name. So community packs cannot install
-like the vendored four do. Minimum viable trust story:
+like the vendored five do. Minimum viable trust story:
 
 - Checksums pinned at install; updates re-approved, never silent.
 - Author identity that means something (GitHub identity at least; signatures

@@ -17,7 +17,7 @@ One source of truth, three scopes:
 - **Project** `.lexicon.yaml` at a git root: per-repo terms, merged only when
   trusted (`lexicon trust`). Phantom must surface the trust preview and never
   auto-trust on the user's behalf; a hostile repo's terms reach model context.
-- **Packs** (`packs/*.yaml`, installed via `lexicon pack add`): 176 curated
+- **Packs** (`packs/*.yaml`, installed via `lexicon pack add`): 200 curated
   starter terms across developer tooling, AI, business and dictation apps.
   Phantom can offer these as a checklist during onboarding, the way
   `lexicon setup` does.
@@ -108,7 +108,7 @@ shape for Phantom's config (names illustrative, Phantom's side to finalize):
   never rewrites the prompt or writes to the lexicon file. Fleet-wide prompt
   rewriting belongs in Phantom's own layer, not smuggled through this hook.
 - **Counts are load-bearing.** Docs in this repo state exact numbers (19 MCP
-  tools, 25 CLI commands, 16 export formats, 176 pack terms) and
+  tools, 25 CLI commands, 16 export formats, 200 pack terms) and
   `npm run check:facts` fails the build when prose disagrees with code. Any
   Phantom doc that quotes Lexicon's surface should derive the number, not
   copy it.

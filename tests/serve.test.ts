@@ -3263,7 +3263,7 @@ describe('packs and aliases routes', () => {
     const res = await api2('GET', '/packs');
     expect(res.status).toBe(200);
     const body = (await res.json()) as { packs: { name: string; title: string; terms: number; aliases: number; installed: boolean; path: string }[]; installed: string[] };
-    expect(body.packs.map((p) => p.name)).toEqual(['ai', 'business', 'developer', 'voice-tools']);
+    expect(body.packs.map((p) => p.name)).toEqual(['ai', 'business', 'cloud-devops', 'developer', 'voice-tools']);
     expect(body.packs.every((p) => p.installed === false && p.terms > 0 && p.aliases > 0 && p.path.endsWith('.yaml'))).toBe(true);
     expect(body.installed).toEqual([]);
     expect((await api2('POST', '/packs', {})).status).toBe(405);
