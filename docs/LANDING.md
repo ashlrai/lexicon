@@ -17,13 +17,16 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-`predev` and `prebuild` both run `scripts/build-demo-bundle.mjs` first, so the
-demo bundle is always current. Other scripts:
+`predev` and `prebuild` both run `scripts/build-demo-bundle.mjs` and
+`scripts/gen-discovery.mjs` first, so the demo bundle and the generated
+discovery data are always current. Other scripts:
 
 ```sh
-npm run build        # production build (regenerates the demo bundle first)
+npm run build        # production build (regenerates generated data first)
 npm start            # serve the production build
 npm run lint         # tsc --noEmit
+npm run check:discovery  # validate the built site: JSON-LD, llms.txt, sitemap,
+                         # canonical + h1 per page, machine payloads
 ```
 
 The page reads `../src/core`, `../packs` and `../examples`. It has to be run
@@ -43,6 +46,7 @@ into `web/lib/generated/` (gitignored, rebuilt on every build):
 | `lexicon-core.d.ts` | Hand-written types for the above, so the app type-checks. |
 | `demo-lexicon.json` | The four starter packs (176 terms) plus the `Ashlr.AI` entry from `examples/lexicon.example.yaml`, parsed from the same YAML the CLI ships. |
 | `brand-icons.json` | Monochrome SVG paths from `simple-icons` for the "works with" wall. |
+| `discovery.json` | From `scripts/gen-discovery.mjs`: every docs file's H1, first paragraph and section headings, the README's section map, `server.json` verbatim and `docs/AGENTS.md`. This is what makes /llms.txt, /llms-full.txt, /server.json, /.well-known/mcp/server.json and /AGENTS.md generated rather than copied. |
 
 This mirrors `scripts/build-site.mjs` at the repo root, which does the same job
 for the GitHub Pages demo. Three things are worth knowing:

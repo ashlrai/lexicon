@@ -7,7 +7,9 @@
  * Lexicon for its user never has to follow a link at all. Both are plain text
  * on purpose. The convention is documented at https://llmstxt.org.
  */
+import { DISCOVERY } from './discovery';
 import {
+  AGENT_ENDPOINTS,
   BENCHMARK,
   CLIENTS,
   DEMO,
@@ -29,6 +31,36 @@ import {
 } from './site';
 
 const CONFIG_JSON = JSON.stringify(MCP_SERVER_CONFIG, null, 2);
+
+/*
+ * The docs list is generated, not maintained. DOC_LINKS chooses the order and
+ * the blurbs for the pages a person should meet first; every other doc in
+ * docs/ follows alphabetically with its own H1 as the link text and its first
+ * paragraph as the blurb, all of it read from the files themselves at build
+ * time by scripts/gen-discovery.mjs. A doc that is renamed or retitled
+ * changes what this file says without anyone touching it.
+ */
+const CURATED_ORDER = new Map(
+  DOC_LINKS.map((d, i) => [d.href.replace(`${REPO}/blob/main/`, ''), i] as const),
+);
+const CURATED_BLURB = new Map(
+  DOC_LINKS.map((d) => [d.href.replace(`${REPO}/blob/main/`, ''), d.blurb] as const),
+);
+
+const DOCS_INDEX = [...DISCOVERY.docs].sort((a, b) => {
+  const ca = CURATED_ORDER.get(a.file);
+  const cb = CURATED_ORDER.get(b.file);
+  if (ca !== undefined && cb !== undefined) return ca - cb;
+  if (ca !== undefined) return -1;
+  if (cb !== undefined) return 1;
+  return a.file.localeCompare(b.file);
+});
+
+function docLine(file: string, title: string, blurb: string): string {
+  const curated = CURATED_BLURB.get(file);
+  const text = curated ?? blurb;
+  return `- [${title}](${DOC(file)})${text ? `: ${text}` : ''}`;
+}
 
 export function llmsTxt(): string {
   return `# Lexicon
@@ -55,13 +87,16 @@ ${CONFIG_JSON.split('\n').map((l) => `    ${l}`).join('\n')}
 ## Start here
 
 - [Full text for models](${SITE_URL}/llms-full.txt): everything below, in one fetch.
-- [Machine-readable install manifest](${SITE_URL}/mcp.json): the MCP config block, the tool list and the per-client commands as JSON.
-- [Landing page](${SITE_URL}): what it does, with a live in-browser demo of the matcher.
+- [Install and capabilities](${SITE_URL}/install): every install method, what setup writes, how to verify.
 - [Interactive demo](${DEMO}): paste a mis-transcribed sentence, watch it get fixed.
+
+## Machine-readable endpoints
+
+${AGENT_ENDPOINTS.map((e) => `- [${e.title}](${SITE_URL}${e.path}): ${e.blurb}`).join('\n')}
 
 ## Docs
 
-${DOC_LINKS.map((d) => `- [${d.label}](${d.href}): ${d.blurb}`).join('\n')}
+${DOCS_INDEX.map((d) => docLine(d.file, d.title, d.blurb)).join('\n')}
 
 ## Source and packages
 
@@ -157,7 +192,10 @@ Config block for any MCP client:
 
 ${CONFIG_JSON}
 
-Also served as JSON at ${SITE_URL}/mcp.json.
+Also served as JSON at ${SITE_URL}/mcp.json. The same machine-readable surface
+is listed at ${SITE_URL}/install and ${SITE_URL}/capabilities.json, and the
+MCP registry manifest is mirrored at ${SITE_URL}/server.json and
+${SITE_URL}/.well-known/mcp/server.json.
 
 Clients that \`lexicon install <client> --apply\` configures automatically, each
 writing that client's own config file: ${CLIENTS.join(', ')}. For anything else,
@@ -281,9 +319,28 @@ with a sentence containing a known alias and check \`changed\`.
 
 ${DOWNLOADS.map((d) => `- ${d.label}: ${d.href}\n  ${d.note}`).join('\n')}
 
+--------------------------------------------------------------------------------
+## README map
+
+The repository README, by section heading:
+
+${DISCOVERY.readme.sections.map((s) => `- [${s.heading}](${REPO}/blob/main/README.md#${s.anchor})`).join('\n')}
+
+## Documentation map
+
+Every file in docs/, titled by its own heading. The indented names are the
+sections inside each document, so you can fetch the right one first.
+
+${DOCS_INDEX.map(
+  (d) =>
+    `- [${d.title}](${DOC(d.file)}) (\`${d.file}\`)` +
+    (d.sections.length ? `\n  sections: ${d.sections.join(' | ')}` : ''),
+).join('\n')}
+
 ## Links
 
 ${DOC_LINKS.map((d) => `- ${d.label}: ${d.href}`).join('\n')}
+${AGENT_ENDPOINTS.map((e) => `- ${e.title}: ${SITE_URL}${e.path}`).join('\n')}
 - Repository: ${REPO}
 - npm: ${NPM}
 - Interactive demo: ${DEMO}

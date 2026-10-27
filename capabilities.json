@@ -1,0 +1,49 @@
+{
+  "$comment": "Capabilities summary for Lexicon, so a checkout is self-describing. The generated, always-current manifest is served at https://lexicon.ashlr.ai/capabilities.json; this file is the stable pointer copy and deliberately carries no version or counts.",
+  "name": "lexicon",
+  "displayName": "Lexicon",
+  "description": "Personal lexicon for voice-to-agents. Maps canonical spellings to what speech-to-text actually writes and rewrites transcripts before an agent sees them.",
+  "license": "MIT",
+  "homepage": "https://lexicon.ashlr.ai",
+  "repository": "https://github.com/ashlrai/lexicon",
+  "packageName": "@ashlr/lexicon",
+  "capabilities": [
+    "normalize a dictated transcript and report every correction",
+    "learn a 'heard X, meant Y' correction as an alias",
+    "add a term with generated misspelling candidates",
+    "run guided or non-interactive first-time setup",
+    "install or preview the MCP server registration per client",
+    "export and import dictation-app dictionaries",
+    "harvest proper nouns from a repository",
+    "serve a loopback HTTP API on 127.0.0.1"
+  ],
+  "install": {
+    "recommended": "curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh",
+    "noGlobalInstall": "npx @ashlr/lexicon@latest setup",
+    "homebrew": "brew install ashlrai/tap/lexicon",
+    "npm": "npm i -g @ashlr/lexicon",
+    "afterInstall": "lexicon setup",
+    "nonInteractive": "lexicon setup --yes"
+  },
+  "mcpServer": {
+    "name": "lexicon",
+    "transport": "stdio",
+    "command": "lexicon-mcp",
+    "manifest": "server.json"
+  },
+  "endpoints": {
+    "llmsTxt": "https://lexicon.ashlr.ai/llms.txt",
+    "llmsFullTxt": "https://lexicon.ashlr.ai/llms-full.txt",
+    "mcpJson": "https://lexicon.ashlr.ai/mcp.json",
+    "capabilitiesJson": "https://lexicon.ashlr.ai/capabilities.json",
+    "serverJson": "https://lexicon.ashlr.ai/server.json",
+    "agentsMd": "https://lexicon.ashlr.ai/AGENTS.md",
+    "install": "https://lexicon.ashlr.ai/install"
+  },
+  "docs": {
+    "forAgents": "docs/AGENTS.md",
+    "quickstart": "docs/QUICKSTART.md",
+    "mcp": "docs/MCP.md",
+    "index": "docs/README.md"
+  }
+}

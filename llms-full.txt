@@ -1,0 +1,30 @@
+# Lexicon: the words your dictation keeps getting wrong
+
+The full text of the site's model-facing documentation is generated from this
+repository at build time and served at:
+
+- <https://lexicon.ashlr.ai/llms-full.txt> - the maintained copy. Fetch that.
+
+## What is here instead
+
+This file exists so a checkout is not a dead end. The same content, kept in
+sync by hand:
+
+- [README.md](README.md): what it is, the demo, install, measured results.
+- [docs/AGENTS.md](docs/AGENTS.md): the install-and-verify checklist for agents.
+- [docs/MCP.md](docs/MCP.md): every MCP tool, resource and prompt.
+- [docs/EXPORTS.md](docs/EXPORTS.md): the export formats and importers.
+- [docs/BENCHMARK.md](docs/BENCHMARK.md): the measurements and the method.
+- [SECURITY.md](SECURITY.md): what is local and how project files are gated.
+- [docs/CLIENTS.md](docs/CLIENTS.md): per-client install detail.
+- [docs/CLI.md](docs/CLI.md): the full command reference.
+- [docs/FAQ.md](docs/FAQ.md): the frequently asked questions.
+
+## Endpoints on the site
+
+- <https://lexicon.ashlr.ai/llms.txt>: the index.
+- <https://lexicon.ashlr.ai/llms-full.txt>: everything in one fetch.
+- <https://lexicon.ashlr.ai/mcp.json>: the MCP install manifest.
+- <https://lexicon.ashlr.ai/capabilities.json>: capabilities as JSON.
+- <https://lexicon.ashlr.ai/server.json>: the MCP registry manifest.
+- <https://lexicon.ashlr.ai/install>: the install and capabilities page.

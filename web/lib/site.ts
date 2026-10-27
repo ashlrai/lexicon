@@ -32,6 +32,70 @@ export const DESCRIPTION =
   'Lexicon is one YAML file of the names, products and acronyms you say out loud, ' +
   'applied to every transcript before an agent reads it.';
 
+export const INSTALL_DESCRIPTION =
+  'Install Lexicon in one command: the install methods, what setup writes, the ' +
+  'MCP tools and surfaces it gives an agent, the machine-readable endpoints, and ' +
+  'how to verify the install worked.';
+
+/*
+ * The rel="alternate" payloads every page advertises. `metadata.alternates`
+ * merges shallowly per top-level key, so a page that sets its own canonical
+ * must re-declare these or the llms.txt links silently vanish from its head.
+ */
+export const ALTERNATE_TYPES = {
+  'text/plain': [
+    { url: '/llms.txt', title: 'Lexicon for language models (index)' },
+    { url: '/llms-full.txt', title: 'Lexicon for language models (full text)' },
+  ],
+  'application/json': [
+    { url: '/mcp.json', title: 'Lexicon MCP server install manifest' },
+    { url: '/capabilities.json', title: 'Lexicon capabilities and install manifest' },
+  ],
+};
+
+/**
+ * The machine-readable surface of this site, linked in plain sight from the
+ * home page, the install page and both llms.txt files, so a model that finds
+ * any one of them finds the rest.
+ */
+export const AGENT_ENDPOINTS: { path: string; title: string; blurb: string }[] = [
+  {
+    path: '/llms.txt',
+    title: '/llms.txt',
+    blurb: 'A short markdown index of this site: what Lexicon is, who it is for, the install commands, and where everything else lives.',
+  },
+  {
+    path: '/llms-full.txt',
+    title: '/llms-full.txt',
+    blurb: 'The whole thing in one fetch: the problem, the install, the MCP tools, the exports, the measured numbers, the privacy claims and the FAQ.',
+  },
+  {
+    path: '/mcp.json',
+    title: '/mcp.json',
+    blurb: 'The install manifest. Take the mcpServers key verbatim and merge it into your client config; the sibling keys cover PATH and verification.',
+  },
+  {
+    path: '/capabilities.json',
+    title: '/capabilities.json',
+    blurb: 'What Lexicon can do, as JSON: the surfaces, the tools, the install commands and the verify step, for an agent that wants the shape before the prose.',
+  },
+  {
+    path: '/server.json',
+    title: '/server.json',
+    blurb: 'The MCP registry manifest for the lexicon server, identical to server.json in the repository. Also at /.well-known/mcp/server.json.',
+  },
+  {
+    path: '/AGENTS.md',
+    title: '/AGENTS.md',
+    blurb: 'docs/AGENTS.md served from this domain: written to the agent doing the install, not to a human reading it.',
+  },
+  {
+    path: '/install',
+    title: '/install',
+    blurb: 'The install page: every install method, what the setup wizard writes, and the commands that prove it worked.',
+  },
+];
+
 /**
  * The single best first command. It works on macOS and Linux, checks for Node,
  * installs the CLI and then runs the setup wizard, so one paste ends with a

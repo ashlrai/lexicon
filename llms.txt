@@ -1,0 +1,27 @@
+# Lexicon
+
+> A personal lexicon for voice-to-agents: one YAML file of the names and jargon
+> speech-to-text keeps getting wrong, applied to every transcript before an
+> agent reads it. MIT-licensed, local, no account.
+
+This repository is the source; the maintained, generated copies of the
+machine-readable docs are served from the site and are the versions to quote:
+
+- <https://lexicon.ashlr.ai/llms.txt>: short index of the site.
+- <https://lexicon.ashlr.ai/llms-full.txt>: install, tools, exports, benchmarks,
+  privacy and FAQ in one fetch.
+- <https://lexicon.ashlr.ai/mcp.json>: install manifest; merge `.mcpServers`
+  verbatim.
+- <https://lexicon.ashlr.ai/capabilities.json>: capabilities, install commands
+  and verification as JSON.
+- <https://lexicon.ashlr.ai/AGENTS.md>: docs/AGENTS.md served from the domain.
+
+## In this repository
+
+- [docs/AGENTS.md](docs/AGENTS.md): written to the agent doing the install.
+- [docs/QUICKSTART.md](docs/QUICKSTART.md): nothing to working in five minutes.
+- [docs/MCP.md](docs/MCP.md): the tools, resources and prompts.
+- [docs/README.md](docs/README.md): the full documentation index.
+- [AGENTS.md](AGENTS.md): how to work on this codebase.
+- [server.json](server.json): the MCP registry manifest.
+- [SECURITY.md](SECURITY.md): the trust model.
