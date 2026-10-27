@@ -1323,7 +1323,7 @@ describe('limits and errors', () => {
     // Catches: the 404 said only "no route for POST /normalise", so a client
     // that guessed a path had to go read the docs for the real ones.
     expect(body.error).toBe(
-      'no route for POST /normalise (routes: GET /health, GET /pair, POST /normalize, POST /learn, POST /add, ' +
+      'no route for POST /normalise (routes: GET /health, GET /info, GET /pair, POST /normalize, POST /learn, POST /add, ' +
         'GET /lexicon, GET /stats, GET /packs, POST /packs/:name, DELETE /packs/:name, GET /aliases, GET /export/:format)',
     );
   });

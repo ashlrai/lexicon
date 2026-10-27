@@ -60877,6 +60877,31 @@ var init_demo = __esm({
   }
 });
 
+// src/serve/info.ts
+var SERVER_FEATURES, ServerInfoSchema;
+var init_info = __esm({
+  "src/serve/info.ts"() {
+    init_zod();
+    SERVER_FEATURES = [
+      "normalize",
+      "learn",
+      "add",
+      "lexicon",
+      "stats",
+      "packs",
+      "aliases",
+      "export",
+      "pair"
+    ];
+    ServerInfoSchema = external_exports.object({
+      version: external_exports.string().trim().min(1),
+      host: external_exports.string().trim().min(1),
+      port: external_exports.number().int().min(1).max(65535),
+      features: external_exports.array(external_exports.string().trim().min(1))
+    }).strict();
+  }
+});
+
 // src/core/index.ts
 var core_exports3 = {};
 __export(core_exports3, {
@@ -60935,11 +60960,13 @@ __export(core_exports3, {
   REGISTRY_FETCH_TIMEOUT_MS: () => REGISTRY_FETCH_TIMEOUT_MS,
   REGISTRY_REF_RE: () => REGISTRY_REF_RE,
   REPLACEMENT_CHAR: () => REPLACEMENT_CHAR,
+  SERVER_FEATURES: () => SERVER_FEATURES,
   STALE_AFTER_DAYS: () => STALE_AFTER_DAYS,
   STALE_GLOBAL_MIN_BYTES: () => STALE_GLOBAL_MIN_BYTES,
   STOPLIST: () => STOPLIST,
   SUGGEST_DEFAULT_LIMIT: () => SUGGEST_DEFAULT_LIMIT,
   SUGGEST_MAX_LIMIT: () => SUGGEST_MAX_LIMIT,
+  ServerInfoSchema: () => ServerInfoSchema,
   TERM_CATEGORIES: () => TERM_CATEGORIES,
   TERM_SCOPES: () => TERM_SCOPES,
   TERM_SOURCES: () => TERM_SOURCES,
@@ -61200,6 +61227,7 @@ var init_core3 = __esm({
     init_registry();
     init_demo();
     init_shell2();
+    init_info();
   }
 });
 
@@ -69007,6 +69035,12 @@ function createServer(opts = {}) {
     if (!await authorized(req.headers.authorization)) {
       throw tokenRequired();
     }
+    if (pathname === "/info") {
+      if (method !== "GET") throw notGet();
+      strictQuery(url2, "GET /info", []);
+      const info2 = { version: version2, host, port: boundPort, features: [...SERVER_FEATURES] };
+      return json2(200, info2);
+    }
     if (pathname === "/normalize") {
       if (method !== "POST") throw wrongMethod(["POST"]);
       const raw = await readJson(req, MAX_BODY_BYTES, "/normalize");
@@ -69256,6 +69290,7 @@ ${body}`
 var import_node_crypto6, import_node_fs25, import_node_http, import_node_net2, import_node_path24, MAX_BODY_BYTES, MAX_SERVE_CONFIG_BYTES, MAX_CONCURRENT_REQUESTS, LEXICON_RELOAD_MS, NORMALIZE_BUDGET_MS, REQUEST_TIMEOUT_MS, HEADERS_TIMEOUT_MS, PAIR_PATH, PAIR_META, PAIR_INSTALL_HINT_MS, PAIR_HEADERS, MAX_CACHED_CWDS, EXPORT_CONTENT_TYPES, TERM_CATEGORIES2, TERM_SCOPES2, CwdField, NormalizeBody, LearnBody, AddBody, PackBody, ROUTES, BODY_SHAPES, BUSY_RETRY_AFTER_S, TOKEN_SOURCES, PACK_ROUTE_RE, EXPORT_ROUTE_RE, BROKEN_LEXICON_ANONYMOUS, HttpError, EXPORT_NOTE_HEADER;
 var init_server3 = __esm({
   "src/serve/server.ts"() {
+    init_info();
     import_node_crypto6 = __toESM(require_node_crypto());
     import_node_fs25 = __toESM(require_node_fs());
     import_node_http = __toESM(require_node_http());
@@ -69331,6 +69366,7 @@ var init_server3 = __esm({
     }).strict();
     ROUTES = [
       "GET /health",
+      "GET /info",
       "GET /pair",
       "POST /normalize",
       "POST /learn",
@@ -69373,6 +69409,7 @@ var init_serve = __esm({
   "src/serve/index.ts"() {
     init_config();
     init_server3();
+    init_info();
   }
 });
 
