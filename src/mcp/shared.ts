@@ -182,7 +182,7 @@ export function cliDirForInstall(): string | undefined {
 }
 
 export function textResult(payload: unknown): CallToolResult {
-  const text = typeof payload === 'string' ? payload : JSON.stringify(payload, null, 2);
+  const text = typeof payload === 'string' ? payload : JSON.stringify(payload);
   return { isError: false, content: [{ type: 'text', text }] };
 }
 
