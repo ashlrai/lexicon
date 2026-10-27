@@ -1,0 +1,10 @@
+[
+  {},
+  {"version":"", "host":"127.0.0.1", "port":41733, "features":[]},
+  {"version":"1.0.0", "host":"", "port":41733, "features":[]},
+  {"version":"1.0.0", "host":"127.0.0.1", "port":0, "features":[]},
+  {"version":"1.0.0", "host":"127.0.0.1", "port":65536, "features":[]},
+  {"version":"1.0.0", "host":"127.0.0.1", "port":1.5, "features":[]},
+  {"version":"1.0.0", "host":"127.0.0.1", "port":41733, "features":[false]},
+  {"version":"1.0.0", "host":"127.0.0.1", "port":41733, "features":[], "token":"must-not-leak"}
+]

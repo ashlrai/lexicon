@@ -46,7 +46,7 @@ src/
     clipboard-backends.ts   pbcopy (macOS), wl / xclip / xsel (Linux), powershell (Windows) + PATH detection
   serve/
     config.ts               serve.json: port, bearer token (0600), allowedOrigins; isOriginAllowed()
-    server.ts               createServer(): node:http, 11 endpoints, auth, CORS, body caps, per-cwd lexicon cache
+    server.ts               createServer(): node:http, 12 endpoints, auth, CORS, body caps, per-cwd lexicon cache
   voice/
     process.ts              locate ffmpeg / whisper-cli, exec and detached spawn, install hints
     devices.ts              audio input device listing (avfoundation, pulse/alsa, dshow)
