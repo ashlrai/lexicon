@@ -15,6 +15,7 @@ import {
   DOC,
   DOC_LINKS,
   DOWNLOADS,
+  FACTS,
   FAQ,
   INSTALL_COMMANDS,
   MCP_PROMPTS,
@@ -135,7 +136,7 @@ no build step):
 What \`lexicon setup\` does, in order: creates ~/.config/lexicon/lexicon.yaml;
 asks how the user's own name and their company or product should be spelled, and
 generates the aliases speech-to-text is likely to produce for each; offers the
-four starter packs (176 curated terms); offers to harvest proper nouns from the
+${FACTS.words.packs} starter packs (${FACTS.counts.packTerms} curated terms); offers to harvest proper nouns from the
 repository the user is standing in; registers the MCP server (and, for Claude
 Code, the hooks) in every agent client it detects; optionally installs the
 loopback API as a login service; optionally exports into the user's dictation
@@ -143,7 +144,7 @@ app. Every step is safe to rerun and nothing is duplicated.
 
 Non-interactive: \`lexicon setup --yes\` creates the lexicon and installs into
 every detected client. The three steps that write a lot or install a service
-stay opt-in: add \`--packs developer,ai,voice-tools\`, \`--harvest\` and
+stay opt-in: add \`--packs ${FACTS.packs.names.slice(0, 3).join(',')}\`, \`--harvest\` and
 \`--serve\`. \`--dry-run\` prints the plan and writes nothing. \`--json\` prints a
 machine-readable summary. \`--clients none\` installs into nothing.
 
@@ -216,30 +217,29 @@ optional per-project \`.lexicon.yaml\` at a repository root.
 
 ## Exports and imports
 
-Sixteen export formats: wispr, superwhisper, macos, espanso, whisper-prompt,
-openai, deepgram, assemblyai, speechmatics, azure, google, claude-md, markdown, text, csv,
-json. Eight importers read back: wispr, superwhisper, macos, espanso, markdown, text, csv,
-json. So an existing Wispr Flow or Superwhisper dictionary comes over in one
+${FACTS.words.exportFormats} export formats: ${FACTS.exportFormats.join(', ')}.
+${FACTS.words.importFormats} importers read back: ${FACTS.importFormats.join(', ')}.
+So an existing Wispr Flow or Superwhisper dictionary comes over in one
 command, and the same words go back out into whichever engine's own biasing
 parameter accepts them.
 
 ## Measured results
 
-whisper.cpp base.en, proper-noun recall 41.9% -> 82.8%. small.en with the
-lexicon also passed as a Whisper initial prompt, 76.0% -> 95.7%. Zero of 72
+whisper.cpp base.en, proper-noun recall ${FACTS.bench.audio.raw.base} -> ${FACTS.bench.audio.lexicon.base}. small.en with the
+lexicon also passed as a Whisper initial prompt, ${FACTS.bench.audio.raw.promptSmall} -> ${FACTS.bench.audio.lexicon.promptSmall}. ${FACTS.bench.compare.cleanProse.hit === 0 ? 'Zero' : FACTS.bench.compare.cleanProse.hit} of ${FACTS.bench.compare.cleanProse.total}
 ordinary prose sentences changed. About 0.3 ms to normalize one sentence. The
-audio rows use macOS text-to-speech across three voices, which is far cleaner
+audio rows use macOS text-to-speech across ${FACTS.words.benchVoices} voices, which is far cleaner
 than a real microphone, so expect lower raw recall on real speech. Method, corpus
 and remaining failures: ${BENCHMARK}
 
-Against the alternatives, on the same 330 clips through the same recognizer
-(small.en) with the same seventy-term lexicon in every row, only the fixing
-strategy changing: raw whisper.cpp 45.9%, exact-string substitution of the kind
-macOS Text Replacement does 62.0%, the same plus a casing rule per term 71.3%,
-whisper.cpp's own --prompt hint list 76.0%, Lexicon 91.0%. Exact substitution
+Against the alternatives, on the same ${FACTS.counts.benchClips} clips through the same recognizer
+(small.en) with the same ${FACTS.words.benchTerms}-term lexicon in every row, only the fixing
+strategy changing: raw whisper.cpp ${FACTS.bench.compare.raw}, exact-string substitution of the kind
+macOS Text Replacement does ${FACTS.bench.compare.exact}, the same plus a casing rule per term ${FACTS.bench.compare.exactCasing},
+whisper.cpp's own --prompt hint list ${FACTS.bench.compare.prompt}, Lexicon ${FACTS.bench.compare.lexicon}. Exact substitution
 cannot reach a mis-hearing nobody wrote down in advance, which is what the
 phonetic and fuzzy tiers are for. The --prompt list is a complement rather than
-a rival, and stacks with the lexicon to 95.7%. The raw row cannot wrongly change clean
+a rival, and stacks with the lexicon to ${FACTS.bench.audio.lexicon.promptSmall}. The raw row cannot wrongly change clean
 prose because nothing runs, which is the absence of the feature and not a safety
 advantage. The --prompt row is unmeasured rather than zero: it biases the
 recognizer itself, so anything it changes is already in the transcript this
@@ -259,7 +259,9 @@ ${DOC('SECURITY.md')}
 - The browser extension installs from the release zip; it is not in the Chrome
   Web Store or on Firefox Add-ons yet.
 - The macOS app is ad-hoc signed, not notarized.
-- Windows and Linux have the CLI, the MCP server and the extension, but no tray app.
+- Windows and Linux have the CLI, the MCP server and the extension; in-place
+  correction is macOS-only for now (the Windows tray app is written and
+  unit-tested but unverified on real hardware; see docs/PLATFORMS.md).
 - Voice modes with no text box cannot be corrected.
 
 --------------------------------------------------------------------------------

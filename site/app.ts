@@ -271,7 +271,6 @@ const ui = {
   copyExport: $<HTMLButtonElement>('copy-export'),
   downloadExport: $<HTMLButtonElement>('download-export'),
   exportPreview: $<HTMLPreElement>('export-preview'),
-  copyInstall: $<HTMLButtonElement>('copy-install'),
 };
 
 // ---------------------------------------------------------------------------
@@ -681,13 +680,8 @@ function init(): void {
     downloadText(`lexicon-${format}.${ext}`, ui.exportPreview.textContent ?? '', `${mime};charset=utf-8`);
   });
 
-  // Header install snippet
-  ui.copyInstall.addEventListener('click', async () => {
-    const ok = await copyText('npm i -g @ashlr/lexicon');
-    flash(ui.copyInstall, ok ? 'Copied' : 'Copy failed');
-  });
-
-  // Install section: any button with data-copy copies that text.
+  // Install snippets: any button with data-copy copies that text, including the
+  // header one; the commands live in the generated data-copy attributes.
   for (const button of document.querySelectorAll<HTMLButtonElement>('button[data-copy]')) {
     button.addEventListener('click', async () => {
       const ok = await copyText(button.dataset.copy ?? '');

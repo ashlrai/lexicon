@@ -7,14 +7,16 @@
   "license": "MIT",
   "type": "module",
   "scripts": {
-    "prebuild": "node scripts/scan-media.mjs && node scripts/build-demo-bundle.mjs",
-    "predev": "node scripts/scan-media.mjs && node scripts/build-demo-bundle.mjs",
+    "prebuild": "node scripts/gen-facts.mjs && node scripts/scan-media.mjs && node scripts/build-demo-bundle.mjs",
+    "predev": "node scripts/gen-facts.mjs && node scripts/scan-media.mjs && node scripts/build-demo-bundle.mjs",
+    "prelint": "node scripts/gen-facts.mjs && node scripts/scan-media.mjs && node scripts/build-demo-bundle.mjs",
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
     "lint": "tsc --noEmit",
     "docs:faq": "node scripts/gen-faq-doc.mjs",
-    "check:faq": "node scripts/gen-faq-doc.mjs --check"
+    "check:faq": "node scripts/gen-faq-doc.mjs --check",
+    "check:facts": "node scripts/gen-facts.mjs --check"
   },
   "dependencies": {
     "double-metaphone": "^2.0.1",

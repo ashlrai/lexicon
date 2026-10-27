@@ -39,7 +39,7 @@ async function googleFont(family: string, weight: number): Promise<ArrayBuffer |
     const css = await fetch(url, {
       headers: {
         'User-Agent':
-          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_6_8) AppleWebKit/533.21.1 (KHTML, like Gecko) Version/5.0.5 Safari/533.21.1',
+          'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_6_8) AppleWebKit/533.21.1 (KHTML, like Gecko) Version/5.0.5 Safari/533.21.1', // site-facts:ignore (a crawler UA string, not a Lexicon version)
       },
     }).then((r) => (r.ok ? r.text() : ''));
     const src = /src: url\((.+?)\) format\('(?:opentype|truetype)'\)/.exec(css)?.[1];

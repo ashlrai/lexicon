@@ -3,7 +3,7 @@
  * Builds the static demo site (https://ashlrai.github.io/lexicon/):
  *
  *   site/dist/app.js      <- site/app.ts (esbuild, browser, esm, minified)
- *   site/dist/index.html  <- site/index.html (copied)
+ *   site/dist/index.html  <- site/index.html (site:* marker regions re-rendered)
  *   site/dist/styles.css  <- site/styles.css (copied)
  *   site/dist/install.sh  <- scripts/install.sh (copied; the curl | sh one-liner)
  *
@@ -16,9 +16,10 @@
  * lexicon can never drift from the documented example.
  */
 import { build } from 'esbuild';
-import { copyFileSync, mkdirSync, readFileSync, statSync } from 'node:fs';
+import { copyFileSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { applySiteMarkers, deriveSiteFacts } from './site-facts.mjs';
 
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..');
 const outdir = resolve(root, 'site/dist');
@@ -47,9 +48,19 @@ if (nodeBuiltins) {
   throw new Error(`site bundle imports Node builtins (${list}); only import browser-safe core modules from site/app.ts`);
 }
 
-for (const name of ['index.html', 'styles.css']) {
-  copyFileSync(resolve(root, 'site', name), resolve(outdir, name));
+// index.html carries generated regions (<!-- site:begin ... --> markers):
+// install commands and the benchmark numbers are re-rendered from the repo's
+// source of truth here, so the shipped page is right even if the source file
+// drifted. `node scripts/site-facts.mjs --check` keeps the source file honest.
+{
+  const facts = deriveSiteFacts(root);
+  const marked = applySiteMarkers(readFileSync(resolve(root, 'site/index.html'), 'utf8'), facts);
+  for (const p of marked.problems) {
+    throw new Error(`site/index.html:${p.line}  ${p.message}`);
+  }
+  writeFileSync(resolve(outdir, 'index.html'), marked.text);
 }
+copyFileSync(resolve(root, 'site', 'styles.css'), resolve(outdir, 'styles.css'));
 // The install one-liner: curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
 copyFileSync(resolve(root, 'scripts', 'install.sh'), resolve(outdir, 'install.sh'));
 // Tell GitHub Pages not to run Jekyll over the output.

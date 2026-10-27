@@ -11,10 +11,13 @@ import { WorksWith } from '@/components/WorksWith';
 import { clip, shot } from '@/lib/media';
 import { useCases, useCasePath } from '@/lib/use-cases';
 import {
+  AUDIO_STATS,
   BENCHMARK,
+  COMPARISON,
   DEMO,
   DOC,
   DOWNLOADS,
+  FACTS,
   INSTALL_COMMANDS,
   MCP_SERVER_CONFIG,
   PRIMARY_COMMAND,
@@ -292,7 +295,7 @@ function Demo() {
           <p className="max-w-[46ch] text-[0.95rem] leading-relaxed text-paper-2">
             This is not a mock-up. The page compiles Lexicon’s{' '}
             <code className="font-mono text-[0.88em] text-paper">src/core</code> to a browser
-            bundle, loads the 176 curated starter terms, and runs the same matcher the CLI runs.
+            bundle, loads the {FACTS.counts.packTerms} curated starter terms, and runs the same matcher the CLI runs.
             Type anything. Nothing you write is sent anywhere.
           </p>
         </div>
@@ -418,7 +421,7 @@ function Surfaces() {
           <Surface
             label="agents"
             title="Before the prompt is read"
-            body="An MCP server with twenty-one tools, plus a Claude Code plugin whose SessionStart and UserPromptSubmit hooks correct the prompt on its way in. Your agent never sees the wrong spelling."
+            body={`An MCP server with ${FACTS.words.tools} tools, plus a Claude Code plugin whose SessionStart and UserPromptSubmit hooks correct the prompt on its way in. Your agent never sees the wrong spelling.`}
           >
             <Flow
               rows={[
@@ -631,28 +634,6 @@ function Composer() {
 
 /* ------------------------------------------------------------------ numbers */
 
-const STATS: { before: string; after: string; label: string }[] = [
-  { before: '41.9%', after: '82.8%', label: 'proper-noun recall, whisper.cpp base.en' },
-  { before: '76.0%', after: '95.7%', label: 'small.en, lexicon passed as a Whisper prompt' },
-];
-
-/*
- * The comparison a reader runs in their head anyway. Same 330 clips, same
- * recognizer, same 70-term lexicon in every row; only the fixing strategy
- * changes. Regenerate with `npm run bench:compare`, which re-scores the cached
- * transcripts rather than running whisper again, so the rows stay comparable.
- * The prose column is unmeasured for the top two rows rather than zero: raw
- * whisper runs nothing, and --prompt biases the recognizer, so anything it
- * changes is already in the transcript this metric scores. The note says so.
- */
-const COMPARISON: { how: string; recovered: string; prose: string; ours?: boolean }[] = [
-  { how: 'nothing, raw whisper.cpp', recovered: '45.9%', prose: 'nothing runs' },
-  { how: 'exact-string substitution, the macOS Text Replacement approach', recovered: '62.0%', prose: '0 of 72' },
-  { how: 'the same, plus a casing rule per term', recovered: '71.3%', prose: '0 of 72' },
-  { how: 'whisper.cpp’s own --prompt hint list', recovered: '76.0%', prose: 'nothing runs' },
-  { how: 'Lexicon', recovered: '91.0%', prose: '0 of 72', ours: true },
-];
-
 function Numbers() {
   return (
     <section id="numbers" className="border-t border-rule-soft bg-ink-2/40 scroll-mt-14">
@@ -661,7 +642,7 @@ function Numbers() {
         <h2 className="h2 max-w-[20ch]">Measured, with the caveats attached.</h2>
 
         <div className="mt-11 grid gap-px overflow-hidden rounded-lg border border-rule bg-rule sm:grid-cols-2 lg:grid-cols-4">
-          {STATS.map((s) => (
+          {AUDIO_STATS.map((s) => (
             <div key={s.label} className="bg-ink px-5 py-7">
               <p className="flex items-baseline gap-2 font-mono tabular-nums">
                 <span className="text-[1.15rem] text-paper-3">{s.before}</span>
@@ -673,7 +654,8 @@ function Numbers() {
           ))}
           <div className="bg-ink px-5 py-7">
             <p className="font-mono text-[1.9rem] font-medium leading-none tabular-nums text-paper">
-              0<span className="text-[1.15rem] text-paper-3"> / 72</span>
+              {FACTS.bench.compare.cleanProse.hit}
+              <span className="text-[1.15rem] text-paper-3"> / {FACTS.bench.compare.cleanProse.total}</span>
             </p>
             <p className="mt-3.5 text-[0.82rem] leading-relaxed text-paper-2">
               ordinary prose sentences changed
@@ -692,8 +674,9 @@ function Numbers() {
         <div className="mt-14">
           <h3 className="text-[1.05rem] text-paper">Against the alternatives</h3>
           <p className="mt-2 max-w-[62ch] text-[0.85rem] leading-relaxed text-paper-3">
-            The same 330 clips through the same recognizer, with the same seventy-term lexicon in
-            every row. The only thing that changes is how the proper nouns get fixed.
+            The same {FACTS.counts.benchClips} clips through the same recognizer, with the same{' '}
+            {FACTS.words.benchTerms}-term lexicon in every row. The only thing that changes is how
+            the proper nouns get fixed.
           </p>
 
           <div className="mt-6 overflow-hidden rounded-lg border border-rule">
@@ -734,10 +717,13 @@ function Numbers() {
           <p className="mt-4 max-w-[78ch] text-[0.85rem] leading-relaxed text-paper-3">
             Exact substitution recovers the spellings someone already wrote down and nothing else.
             It cannot reach a mistake you have not heard yet, which is what the phonetic and fuzzy
-            tiers are for: they recover 31 of the 279 names on their own, about eleven points, and
+            tiers are for: they recover {FACTS.bench.compare.inexactTiers.terms} of the{' '}
+            {FACTS.bench.compare.inexactTiers.slots} names on their own, about{' '}
+            {FACTS.bench.compare.inexactTiers.points} points, and
             the rest of the distance is case-insensitive matching and tolerance for how the
             recognizer splits a name into words. The prompt hint list is a complement rather than a
-            rival, and stacked with the lexicon it reaches 95.7%. The last column is blank for the
+            rival, and stacked with the lexicon it reaches {FACTS.bench.audio.lexicon.promptSmall}.
+            The last column is blank for the
             top two rows because it is unmeasured, not zero: raw whisper runs nothing, while the
             prompt biases the recognizer itself, so anything it changes is already in the
             transcript before the measurement begins.
@@ -747,16 +733,21 @@ function Numbers() {
         <div className="mt-8 grid max-w-[78ch] gap-4 text-[0.85rem] leading-relaxed text-paper-3">
           <p>
             <span className="text-paper-2">How the audio rows were produced.</span> macOS
-            text-to-speech, three voices, 110 sentences each, read into whisper.cpp. That is far
-            cleaner than a phone microphone (no room, no disfluency, no accent variation), so
-            expect lower raw recall on real speech. The “0 of 72” row counts ordinary prose only;
-            six sentences in the corpus are deliberately adversarial and are excluded.
+            text-to-speech, {FACTS.words.benchVoices} voices, {FACTS.bench.audio.sentencesPerVoice}{' '}
+            sentences each, read into whisper.cpp. That is far cleaner than a phone microphone (no
+            room, no disfluency, no accent variation), so expect lower raw recall on real speech.
+            The “{FACTS.bench.compare.cleanProse.hit} of {FACTS.bench.compare.cleanProse.total}” row
+            counts ordinary prose only; six sentences in the corpus are deliberately adversarial
+            and are excluded.
           </p>
           <p>
-            <span className="text-paper-2">And the synthetic corpus.</span> On 402 cases sampled
-            from known speech-to-text failures, term recall goes 5.1% to 96.8% with 0 of 95 clean
-            sentences changed. The 5.1% baseline is low by construction, because the corpus is
-            built from failures, so it is not a general accuracy figure for any recognizer.
+            <span className="text-paper-2">And the synthetic corpus.</span> On{' '}
+            {FACTS.bench.synthetic.cases} cases sampled from known speech-to-text failures, term
+            recall goes {FACTS.bench.synthetic.recallBefore} to{' '}
+            {FACTS.bench.synthetic.recallAfter} with {FACTS.bench.synthetic.proseChanged} of{' '}
+            {FACTS.bench.synthetic.proseTotal} clean sentences changed. The{' '}
+            {FACTS.bench.synthetic.recallBefore} baseline is low by construction, because the corpus
+            is built from failures, so it is not a general accuracy figure for any recognizer.
           </p>
           <p>
             <a className="link-accent" href={`${BENCHMARK}#method`}>
@@ -794,8 +785,8 @@ function InstallSection() {
                 finish.
               </p>
               <p>
-                <span className="font-mono text-paper">lexicon pack add developer</span>: 155
-                curated terms across four packs.
+                <span className="font-mono text-paper">lexicon pack add developer</span>:{' '}
+                {FACTS.counts.packTerms} curated terms across {FACTS.words.packs} packs.
               </p>
               <p>
                 <span className="font-mono text-paper">lexicon export wispr</span>: push the same
@@ -912,7 +903,7 @@ function ForAgents() {
               <AgentLink
                 href="/llms-full.txt"
                 title="/llms-full.txt"
-                body="The whole thing in one fetch: the problem, the install, the twenty-one MCP tools, the exports, the measured numbers, the privacy claims and the FAQ."
+                body={`The whole thing in one fetch: the problem, the install, the ${FACTS.words.tools} MCP tools, the exports, the measured numbers, the privacy claims and the FAQ.`}
               />
               <AgentLink
                 href="/mcp.json"
