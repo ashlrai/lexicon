@@ -2,6 +2,8 @@
 
 How to cut a release of `@ashlr/lexicon`. One tag drives everything: npm, the GitHub release and its download assets, and the Homebrew formula bump that follows.
 
+The version being cut is `package.json`'s `version`: <!-- fresh:begin pin:version -->0.5.6<!-- fresh:end -->. Every doc block between `fresh:begin` and `fresh:end` HTML-comment markers (the README release badge and git-tag pin, this number, the CHANGELOG release table) is regenerated from `package.json` and the dated CHANGELOG sections by `npm run fresh:sync`; `npm run fresh:check` fails on drift, so a release can gate on it the way the `docs` CI job gates on `check:facts`.
+
 ## 1. Bump the version
 
 Eleven files carry the version and must agree, in the ten rows below: `package.json` and `package-lock.json` share a row because `npm version` writes both, and the other nine rows are one file each. `npm version` handles that first row; the rest are edited by hand in the same commit. This table has been wrong four times now, and every time it shipped a skewed release, so treat anything not on it as a bug in this page rather than a file that does not matter. It said nine at 0.5.2 and ten at 0.5.3, and both times the miscount was counting rows and calling them files. `grep -rnE "0\.5\.[0-9]|v0\.5" --exclude-dir=node_modules --exclude-dir=.git --exclude-dir=dist --exclude-dir=.next .` before you commit, with the old version's pattern, is the check that catches a new carrier. Do not trust the count in this sentence over that grep.
@@ -12,7 +14,7 @@ Eleven files carry the version and must agree, in the ten rows below: `package.j
 | `.claude-plugin/plugin.json` | `version` |
 | `.claude-plugin/marketplace.json` | `plugins[0].version` |
 | `server.json` | `version` and `packages[0].version` (the MCP Registry reads both) |
-| `README.md` | the `github:ashlrai/lexicon#vX.Y.Z` install pin. It names a tag that must exist, so it cannot be left at whatever it said when it was written; `check:facts` fails the build on a stale one, which is why it is here rather than in your head |
+| `README.md` | the `github:ashlrai/lexicon#vX.Y.Z` install pin. It names a tag that must exist, so it cannot be left at whatever it said when it was written; `check:facts` fails the build on a stale one, which is why it is here rather than in your head. It sits in a `pin:github` block, so `npm run fresh:sync` writes it -- no hand edit |
 | `apps/windows/Directory.Build.props` | `<Version>`, the assembly version of the Windows tray app. Nothing derives it from `package.json` |
 | `web/lib/site.ts` | `VERSION`, the constant the landing page renders. Nothing derives it from `package.json`, and it is the one that shipped wrong: the site said 0.5.0 while the package said 0.5.2 and npm served 0.5.1. `check:facts` reads any declared `VERSION` constant now and fails on a stale one |
 | `docs/CLI.md` | not edited by hand: `npm run docs:cli` regenerates it and it carries the version in its header. The CI `docs` job runs the generator and diffs the result, so a skipped regeneration fails the build |
