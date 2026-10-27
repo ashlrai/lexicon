@@ -9,11 +9,8 @@ on:
   pull_request:
     branches: [main]
     types: [opened, synchronize, reopened, ready_for_review]
-    # No `labeled`: a run started by a label is the newest CI check suite for
-    # the head commit, and GitHub reads required checks from it, so a label
-    # run that skipped its jobs left the PR BLOCKED (#199). `plan` reads the
-    # PR's labels live instead: add `ci:macos`, then push or use "Re-run all
-    # jobs" on the PR's CI run, and the macOS row is included.
+    # No `labeled`: label runs became the newest check suite and left PRs
+    # BLOCKED (#199). PRs run Linux rows only.
   # Merge queue (once the ruleset enables it): full matrix on the queued commit.
   merge_group:
   # Nightly and manual runs carry the full macOS + Windows matrix (G1):
@@ -54,8 +51,6 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       contents: read
-      pull-requests: read
-      issues: read
     outputs:
       include: ${{ steps.rows.outputs.include }}
     steps:
@@ -64,46 +59,18 @@ jobs:
         shell: bash
         env:
           EVENT: ${{ github.event_name }}
-          GH_TOKEN: ${{ github.token }}
-          REPO: ${{ github.repository }}
-          PR: ${{ github.event.pull_request.number }}
+          REF: ${{ github.ref }}
         run: |
-          LABELED=false
-          if [ "$EVENT" = "pull_request" ]; then
-            # Live labels, so a re-run picks up a label added after the push.
-            # An unreadable label list falls back to the event payload's.
-            if labels="$(gh api "repos/$REPO/issues/$PR/labels" --jq '.[].name')"; then
-              printf '%s\n' "$labels" | grep -qx 'ci:macos' && LABELED=true
-            else
-              LABELED='${{ contains(github.event.pull_request.labels.*.name, 'ci:macos') }}'
-            fi
-          fi
           base='{"os":"ubuntu-latest","node":20},{"os":"ubuntu-latest","node":22},{"os":"ubuntu-latest","node":24}'
           win_row='{"os":"windows-latest","node":22}'
           mac_row='{"os":"macos-latest","node":22}'
-          # Windows row (RQ-CI-FANOUT): pushes always; PRs only with the
-          # `ci:full` or `ci:windows` label or a Windows-relevant change
-          # (paths, spawn and install code, package manifests, this workflow).
-          # None of the Windows or macOS rows is a required check.
-          WIN_LABELED=false
-          if [ "$EVENT" = "pull_request" ]; then
-            if [ -n "${labels:-}" ]; then
-              printf '%s\n' "$labels" | grep -Eqx 'ci:(full|windows)' && WIN_LABELED=true
-              printf '%s\n' "$labels" | grep -qx 'ci:full' && LABELED=true
-            else
-              WIN_LABELED='${{ contains(github.event.pull_request.labels.*.name, 'ci:full') || contains(github.event.pull_request.labels.*.name, 'ci:windows') }}'
-            fi
-          fi
+          # Runner capacity P0 (EO, Oct 26; Free plan: 20 jobs, 5 macOS):
+          # PRs and ci/** pushes run Linux rows only. macOS and Windows rows
+          # (none is a required check) run on merge_group, push to main
+          # (until the merge queue lands), nightly and manual runs.
           mac=true; win=true
-          # G1: pushes (main, ci/**) run Linux only; macOS and Windows run on
-          # schedule, workflow_dispatch, a label, or a platform-path PR change.
-          if [ "$EVENT" = "push" ]; then mac=false; win=false; fi
-          # Strip plan (EO 21:15 Oct 26): PRs run Linux only unless labelled
-          # (ci:macos, ci:windows, ci:full). macOS and Windows run on
-          # merge_group, nightly and manual runs.
-          if [ "$EVENT" = "pull_request" ]; then
-            [ "$LABELED" = "true" ] || mac=false
-            [ "$WIN_LABELED" = "true" ] || win=false
+          if [ "$EVENT" = "pull_request" ] || { [ "$EVENT" = "push" ] && [ "$REF" != "refs/heads/main" ]; }; then
+            mac=false; win=false
           fi
           rows="$base"
           [ "$win" = true ] && rows="$rows,$win_row"
@@ -121,11 +88,8 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS runners bill ~10x Linux and queue ~3 min, so pull requests run
-        # the Linux + Windows rows (the fast gate) and the macOS row runs on
-        # every push to main and ci/** (and again in release.yml before any
-        # publish), and on a PR only when `plan` says so (label `ci:macos` or
-        # a timing-sensitive path).
+        # PRs run the three Linux rows. macOS and Windows rows run on
+        # merge_group, push to main, nightly and manual runs (see plan).
         include: ${{ fromJSON(needs.plan.outputs.include) }}
     steps:
       # Before checkout, or it has already rewritten the worktree. Git for

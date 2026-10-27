@@ -26,6 +26,10 @@ on:
     paths:
       - 'apps/windows/**'
       - '.github/workflows/windows-app.yml'
+  # Runner capacity P0 (Oct 26): Publish LexiconBar.exe (windows-latest)
+  # runs on push to main, nightly and on demand; PRs keep the Linux job.
+  schedule:
+    - cron: "50 7 * * *"
   workflow_dispatch:
 
 permissions:
@@ -69,7 +73,7 @@ jobs:
 
   build-windows:
     name: Publish LexiconBar.exe
-    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
+    if: github.event_name != 'pull_request'
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v7
