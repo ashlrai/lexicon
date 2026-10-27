@@ -6,6 +6,7 @@
  */
 import { IMPORT_FORMATS } from '../caps.js';
 import { parse as parseYaml } from 'yaml';
+import { guardYamlImport } from './yaml-guard.js';
 import type { Term, TermSource } from '../types.js';
 import { REPLACEMENT_CHAR } from './encoding.js';
 import { parseCsvImport, isLexiconCsvHeader } from './csv.js';
@@ -113,6 +114,7 @@ export function detectImportFormat(content: string, filename?: string): Concrete
       jsonError = err instanceof Error ? err.message : String(err);
       // A YAML flow mapping (`{version: 1, terms: [...]}`) is a lexicon file too.
       try {
+        guardYamlImport(trimmed);
         const yaml: unknown = parseYaml(trimmed, { prettyErrors: false });
         if (looksLikeLexiconJson(yaml)) return 'json';
       } catch {
