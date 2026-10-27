@@ -57212,7 +57212,7 @@ function estimateWhisperTokens(text) {
   for (const m of text.matchAll(/ ?[A-Za-z]+|[0-9]|[\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]| |[^\x00-\x7f]/gu)) {
     const piece = m[0];
     if (/[A-Za-z]/.test(piece)) tokens += Math.ceil(piece.trimStart().length / 2);
-    else if (/[^\x00-\x7f]/u.test(piece)) tokens += Buffer.byteLength(piece, "utf8");
+    else if (/[^\x00-\x7f]/u.test(piece)) tokens += utf8.encode(piece).length;
     else tokens += 1;
   }
   return tokens;
@@ -57264,12 +57264,13 @@ function exportWhisperPrompt(lexicon, opts = {}, sink) {
   if (sink) sink.names = kept.length;
   return kept.map(listItem).join(", ");
 }
-var WHISPER_PROMPT_DEFAULT_LIMIT, WHISPER_PROMPT_TOKEN_BUDGET;
+var WHISPER_PROMPT_DEFAULT_LIMIT, WHISPER_PROMPT_TOKEN_BUDGET, utf8;
 var init_whisperPrompt = __esm({
   "src/core/exporters/whisperPrompt.ts"() {
     init_shared();
     WHISPER_PROMPT_DEFAULT_LIMIT = 100;
     WHISPER_PROMPT_TOKEN_BUDGET = 223;
+    utf8 = new TextEncoder();
   }
 });
 
