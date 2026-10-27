@@ -9,6 +9,7 @@ import { Frame, Shot } from '@/components/Shot';
 import { StructuredData } from '@/components/StructuredData';
 import { WorksWith } from '@/components/WorksWith';
 import { clip, shot } from '@/lib/media';
+import { useCases, useCasePath } from '@/lib/use-cases';
 import {
   BENCHMARK,
   DEMO,
@@ -88,6 +89,7 @@ export default async function Page() {
         <Hero stars={starCount} />
         <Problem />
         <Demo />
+        <UseCases />
         <Coverage />
         <Surfaces />
         <Numbers />
@@ -115,8 +117,11 @@ function Header({ stars }: { stars: number | null }) {
           </span>
         </a>
         <nav className="flex items-center gap-1 sm:gap-2">
-          <a href="#demo" className="micro px-2 py-1 transition-colors hover:text-paper">
+          <a href="#demo" className="micro hidden px-2 py-1 transition-colors hover:text-paper sm:inline">
             Demo
+          </a>
+          <a href="#use-cases" className="micro px-2 py-1 transition-colors hover:text-paper">
+            Guides
           </a>
           <a href="#numbers" className="micro hidden px-2 py-1 transition-colors hover:text-paper sm:inline">
             Numbers
@@ -140,6 +145,30 @@ function Header({ stars }: { stars: number | null }) {
 }
 
 /* --------------------------------------------------------------------- hero */
+
+function UseCases() {
+  return (
+    <section id="use-cases" className="scroll-mt-14 border-t border-rule-soft">
+      <div className="shell py-16 sm:py-24">
+        <span className="entry-label">practical guides</span>
+        <h2 className="h2 max-w-[24ch]">Start with the words you keep correcting.</h2>
+        <div className="mt-9 grid gap-5 lg:grid-cols-3">
+          {useCases.map((guide) => (
+            <a key={guide.slug} href={useCasePath(guide.slug)} className="panel p-6 transition-colors hover:border-blue-dim">
+              <h3 className="display text-2xl text-blue">{guide.title}</h3>
+              <p className="mt-4 text-sm leading-relaxed text-paper-2">{guide.description}</p>
+              <span className="mt-6 block text-sm text-blue">Read the guide →</span>
+            </a>
+          ))}
+        </div>
+        <p className="mt-6 text-sm text-paper-2">
+          Continue with the <a className="link-accent" href={DOC('docs/README.md')}>documentation</a>
+          {' '}or <a className="link-accent" href="#install">install Lexicon</a>.
+        </p>
+      </div>
+    </section>
+  );
+}
 
 function Hero({ stars }: { stars: number | null }) {
   return (
