@@ -165,15 +165,9 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
     {
       title: 'Normalize dictated text',
       description:
-        "Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. " +
-        'WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with ' +
-        "little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a " +
-        "real name but not quite ('Ashler', \"Cooper Nettie's\", 'pie dentic'). One garbled proper noun is reason enough. You do not need " +
-        'the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. ' +
-        'WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit ' +
-        'counter. Use the `output` field as the message you act on, and mention the correction only if it changes what you are about to do. ' +
-        "WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails (unless the lexicon's settings.skipCode is false), and it never invents a " +
-        'term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. ' +
+        "Correct dictated names, brands, acronyms and identifiers using the user's lexicon. Call before acting on a message with garbled proper nouns, spoken filler or run-on sentences; no permission needed. " +
+        'Use `output` as the message; mention corrections only when they affect your action. Only per-term hit counters change. ' +
+        "Protects code, paths, URLs and emails (unless the lexicon's settings.skipCode is false). Never invents terms; call suggest_canonical for remaining garbled names. " +
         `Text over ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters is refused, nothing checked. Below that, only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. ` +
         'Returns { output, changed, replacements, summary }, plus a `note` when `text` is empty or only whitespace; when `changed` is false the text was already correct and you should carry on silently ' +
         '(except with dryRun: true, where nothing is applied, so `output` is the input and `changed` is false even when `replacements` lists corrections: read `replacements` for what a real call would fix), ' +
@@ -268,21 +262,13 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
     {
       title: 'Add a lexicon term',
       description:
-        "Teach the lexicon a name, so dictation is corrected to it from now on. " +
-        'WHEN TO CALL: when the user names something they want spelled a particular way, or during setup for each extra name they give ' +
-        'you. For the one specific case of the user correcting a spelling that came out wrong, prefer learn_correction: it finds the ' +
-        'right term for you. Do not add a name the user did not ask you to remember. ' +
-        "WHAT IT CHANGES: writes one term to the user's lexicon file (global by default, or the repo's .lexicon.yaml with " +
-        "scope: 'project'). It merges rather than clobbers: an existing term with the same canonical keeps its own spelling and " +
-        'only gains the new aliases. A project file that is not trusted yet is written but left untrusted (the result says `trusted: false`): ' +
-        'relay `nextStep`, since the term applies only after the user runs ' + cliCommand('trust') + '. ' +
-        'WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling ' +
-        'exactly as the user writes it. Omit `aliases` on a new term and likely STT misspellings are generated for you when any can be ' +
-        'found, which beats inventing your own; show the user what was generated so they can veto one, and when the result has no aliases ' +
-        'propose some or ask the user. Pass `aliases: []` to add the term with no aliases and none generated. On an existing term, omitted aliases add none, ' +
-        'so passing only never, phonetic, category or notes changes just that. When another term already holds one of the aliases, ' +
-        'the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term. ' +
-        'A field over the lexicon caps given on each argument is an error naming that field, and nothing is written.',
+        "Remember a spelling only when the user asks. Prefer learn_correction for a correction to a misheard name. " +
+        "Writes one term, globally by default or to .lexicon.yaml with scope: 'project'. Existing terms keep their canonical spelling and gain aliases; other terms are untouched. " +
+        'An untrusted project file stays untrusted: relay `trusted: false` and `nextStep`; terms apply after the user runs ' + cliCommand('trust') + '. ' +
+        'Omitted aliases auto-generate likely STT misspellings for new terms only (possibly none); show them for approval or ask for aliases when none are found. ' +
+        'Explicit `aliases: []` generates none. On existing terms, omitted aliases add none, so other fields can be updated alone. ' +
+        'Alias collisions return `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; conflicting terms are untouched. ' +
+        'Invalid fields or exceeded argument caps are errors naming the field; nothing is written.',
       inputSchema: {
         canonical: nonBlank().describe(
           `The correct spelling, exactly as the user wants it written; must not be blank. At most ${LIMITS.word} characters once surrounding whitespace is trimmed (the lexicon file schema's cap, also enforced by the CLI); a longer one is refused and nothing is written.`,
