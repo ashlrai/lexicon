@@ -10,8 +10,14 @@ on:
       - 'apps/macos/**'
       - 'scripts/build-macos-app.sh'
       - '.github/workflows/macos-app.yml'
-  # Runner capacity P0 (Oct 26): no macOS runner on PRs. Builds on push to
-  # main for these paths, nightly and on demand.
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+    paths:
+      - 'apps/macos/**'
+      - 'scripts/build-macos-app.sh'
+      - '.github/workflows/macos-app.yml'
+  # Nightly too (runner capacity P0, Oct 26); PRs keep their path filter
+  # until lexicon has a merge queue.
   schedule:
     - cron: "40 7 * * *"
   workflow_dispatch:
@@ -26,6 +32,7 @@ concurrency:
 
 jobs:
   build:
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: macos-latest
     steps:
       - uses: actions/checkout@v7
