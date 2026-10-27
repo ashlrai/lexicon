@@ -16,6 +16,10 @@ on:
       - 'apps/macos/**'
       - 'scripts/build-macos-app.sh'
       - '.github/workflows/macos-app.yml'
+  # Nightly too (runner capacity P0, Oct 26); PRs keep their path filter
+  # until lexicon has a merge queue.
+  schedule:
+    - cron: "40 7 * * *"
   workflow_dispatch:
 
 permissions:

@@ -26,6 +26,10 @@ on:
     paths:
       - 'apps/windows/**'
       - '.github/workflows/windows-app.yml'
+  # Nightly too (runner capacity P0, Oct 26); PRs keep their path filter
+  # until lexicon has a merge queue.
+  schedule:
+    - cron: "50 7 * * *"
   workflow_dispatch:
 
 permissions:
