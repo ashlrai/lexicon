@@ -102,6 +102,21 @@ describe('whisper-prompt and openai: the prompt window Whisper reads', () => {
     expect(estimateWhisperTokens('Ashlr.AI')).toBeGreaterThanOrEqual(4);
     expect(exportLexicon(lex(Array.from({ length: 100 }, (_, i) => ({ canonical: `東京${i}`, aliases: [] }))), 'whisper-prompt').split(', ').length).toBeLessThan(40);
   });
+
+  // Catches: the byte count came from Buffer.byteLength, a node-only global
+  // that throws ReferenceError in the browser bundle site/app.ts builds.
+  // TextEncoder counts the same bytes and exists on both sides.
+  it('counts a non-ASCII character as its UTF-8 byte length, as Buffer.byteLength did', () => {
+    // 2-byte, 3-byte, 4-byte (a surrogate pair matched as one code point) and
+    // a lone surrogate both implementations encode as U+FFFD.
+    for (const ch of ['é', 'ß', '東', '樂', 'Å', '😀', '\ud83d']) {
+      expect(estimateWhisperTokens(ch), JSON.stringify(ch)).toBe(Buffer.byteLength(ch, 'utf8'));
+    }
+    // Mixed text still splits the same way: ASCII letters halve, the rest
+    // count bytes.
+    expect(estimateWhisperTokens('Tōkyō')).toBe(1 + 2 + 1 + 2);
+    expect(estimateWhisperTokens('a😀b')).toBe(1 + 4 + 1);
+  });
 });
 
 describe('google and azure: phrase-set limits', () => {
