@@ -3,6 +3,7 @@
  * the alias, `replace` the canonical. Entries with `vars`, `regex` triggers or
  * multi-line replacements are templates, not dictionary words: skipped.
  */
+import { guardYamlImport } from './yaml-guard.js';
 import { LineCounter, parseDocument, isSeq, isMap } from 'yaml';
 import { isRecord, rowFor } from './shared.js';
 import type { RawImport } from './shared.js';
@@ -13,6 +14,7 @@ export function looksLikeEspanso(content: string): boolean {
 
 export function parseEspansoImport(content: string): RawImport {
   const text = content.replace(/^﻿/, '');
+  guardYamlImport(text);
   const lineCounter = new LineCounter();
   const doc = parseDocument(text, { lineCounter });
   if (doc.errors.length > 0) {
