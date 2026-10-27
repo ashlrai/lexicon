@@ -14,6 +14,8 @@ on:
     # run that skipped its jobs left the PR BLOCKED (#199). `plan` reads the
     # PR's labels live instead: add `ci:macos`, then push or use "Re-run all
     # jobs" on the PR's CI run, and the macOS row is included.
+  # Merge queue (once the ruleset enables it): full matrix on the queued commit.
+  merge_group:
   # Nightly and manual runs carry the full macOS + Windows matrix (G1):
   # pushes run Linux only.
   schedule:
@@ -27,7 +29,8 @@ on:
 # result and some commits were never tested at all.
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref == 'refs/heads/main' && github.sha || github.ref }}
-  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
+  # Never cancel main or merge_group runs (each queue entry has its own ref).
+  cancel-in-progress: ${{ github.event_name == 'pull_request' || (github.event_name == 'push' && github.ref != 'refs/heads/main') }}
 
 permissions:
   contents: read
@@ -56,16 +59,11 @@ jobs:
     outputs:
       include: ${{ steps.rows.outputs.include }}
     steps:
-      - uses: actions/checkout@v7
-        if: github.event_name == 'pull_request'
-        with:
-          fetch-depth: 0
       - name: Pick rows
         id: rows
         shell: bash
         env:
           EVENT: ${{ github.event_name }}
-          BASE: ${{ github.event.pull_request.base.sha }}
           GH_TOKEN: ${{ github.token }}
           REPO: ${{ github.repository }}
           PR: ${{ github.event.pull_request.number }}
@@ -100,16 +98,12 @@ jobs:
           # G1: pushes (main, ci/**) run Linux only; macOS and Windows run on
           # schedule, workflow_dispatch, a label, or a platform-path PR change.
           if [ "$EVENT" = "push" ]; then mac=false; win=false; fi
+          # Strip plan (EO 21:15 Oct 26): PRs run Linux only unless labelled
+          # (ci:macos, ci:windows, ci:full). macOS and Windows run on
+          # merge_group, nightly and manual runs.
           if [ "$EVENT" = "pull_request" ]; then
-            # An unreadable diff runs both rows.
-            if files="$(git diff --name-only "$BASE...HEAD")"; then
-              if [ "$LABELED" != "true" ] && ! printf '%s\n' "$files" | grep -Eq '^(src/hooks/|src/core/(learn|matcher|normalize)\.ts$|tests/(hook[^/]*|learn|matcher[^/]*|normalize)\.test\.ts$|\.github/workflows/ci\.yml$)'; then
-                mac=false
-              fi
-              if [ "$WIN_LABELED" != "true" ] && ! printf '%s\n' "$files" | grep -Eiq '(windows|win32|path|spawn|shell|install|service|\.ps1$|\.cmd$|\.bat$)|^bin/|(^|/)package(-lock)?\.json$|^\.github/workflows/ci\.yml$'; then
-                win=false
-              fi
-            fi
+            [ "$LABELED" = "true" ] || mac=false
+            [ "$WIN_LABELED" = "true" ] || win=false
           fi
           rows="$base"
           [ "$win" = true ] && rows="$rows,$win_row"
@@ -517,3 +511,24 @@ jobs:
           out="$(XDG_CONFIG_HOME=relative/dir node dist/cli/index.js path)"
           echo "$out"
           echo "$out" | grep -q "$HOME/.config/lexicon/lexicon.yaml"
+
+  # Single aggregate for the merge queue. Fails unless plan and every test
+  # row succeeded (failure, cancelled or skipped all fail). Draft PRs skip
+  # plan, so this reports failure on drafts until ready_for_review reruns.
+  gate:
+    name: CI Gate
+    if: always()
+    needs: [plan, test]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    permissions: {}
+    steps:
+      - name: Require every needed job
+        env:
+          PLAN: ${{ needs.plan.result }}
+          TEST: ${{ needs.test.result }}
+        run: |
+          if [ "$PLAN" != success ] || [ "$TEST" != success ]; then
+            echo "::error::CI Gate: plan=$PLAN test=$TEST"; exit 1
+          fi
+          echo "CI Gate passed"
