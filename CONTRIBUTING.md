@@ -68,6 +68,8 @@ CI runs `npm run typecheck`, `npm run build`, `npm run check:bundle`, `npm test`
 
 `check:facts` derives the real numbers rather than trusting the prose: it asks the built MCP server for its tools, resources and prompts over stdio, parses `lexicon --help` for the command count, and reads `EXPORT_FORMATS`, `IMPORT_FORMATS`, `packs/*.yaml` and `STOPLIST`. It then scans the markdown, the landing page and the manifests for a contradicting claim. A line whose number it misreads can opt out with a trailing `check-facts:ignore` comment; `node scripts/check-facts.mjs --list` prints the ground truth.
 
+Doc text that *is* a release fact -- a version badge, a pinned install command, the release table, a `#vX.Y.Z` example pin -- lives between `<!-- fresh:begin name -->` and `<!-- fresh:end -->` markers instead of being checked after the fact. `npm run fresh:sync` regenerates those blocks from `package.json` and the dated CHANGELOG sections, and `npm run fresh:check` (`node scripts/freshness/check.mjs --list` shows the block names) exits 1 on drift. Wrap a versioned snippet in markers rather than writing the number bare.
+
 Manual stdio check of the MCP server: `node dist/mcp/server.js`. Interactive check: `npx @modelcontextprotocol/inspector node dist/mcp/server.js`.
 
 ## Repo layout
