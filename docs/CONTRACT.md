@@ -219,6 +219,57 @@ Starter term packs: the curated lexicons in `packs/*.yaml` at the package root, 
 - `diffSummary(result: NormalizeResult): string` one line per replacement: `"Ashler" -> "Ashlr.AI" (alias, 1.00)`.
 - `timeBudgetIncomplete(totalChars: number, budgetMs: number): NormalizeIncomplete` = `{ reasons: ['time'], totalChars, note }`, the note naming the budget: what a caller returns when its `shouldStop` budget ran out.
 
+## src/match/ (optional local embedding fallback)
+
+Node-only async whole-term matching, exported by `src/core/index.ts` and the
+package root with a lazy HTTP transport, keeping HTTP initialization out of existing
+CLI, MCP and hook startup. Existing `normalize()` and its callers remain synchronous and do
+not consult a model. No CLI command, config setting or hook activates this API.
+
+- `matchTerm(heard: string, lexicon: Lexicon, options?: SemanticMatchOptions): Promise<TermMatchResult>` resolves a single dictated name of at most 80 characters. Existing whole-span alias, phonetic and fuzzy results win. A canonical no-op or partial baseline hit prevents fallback. This API returns a candidate; it never rewrites text or writes files. Pass a trusted/merged lexicon from `loadLexicon()`.
+- `SemanticMatchOptions` extends `NormalizeOptions` with `signal?: AbortSignal` and `semantic?: { enabled?: boolean; model: string; endpoint?: string; timeoutMs?: number; minSimilarity?: number; minMargin?: number }`. Only `enabled: true` permits model IO. `dryRun` has no additional effect because this API never applies changes. `skipCode: false` cannot relax the semantic gates. Explicit semantic enablement is independent of the phonetic/fuzzy switches.
+- `TermMatch { canonical; reason: MatchReason | 'embedding'; confidence }`. An embedding confidence is cosine similarity, **not** a calibrated probability. The original `MatchReason` and transcript result contracts are unchanged.
+- `TermMatchResult { match?: TermMatch; semantic: 'disabled' | 'not-needed' | 'no-match' | 'matched' | 'unavailable' | 'limited' }`. `not-needed` means core resolved the term; `matched` means embedding fallback resolved it. Model failures and cancellation abstain with `unavailable`; invalid enabled-model configuration throws. `limited` means input or the candidate batch exceeds the bounds; competitors are never silently truncated.
+- `foldLower(text): string`, now also exported by the core facade, is the existing matcher fold (including non-decomposing letters such as `ø`, `ß` and `ł`). Semantic safety gates use this same fold.
+
+The optional transport speaks Ollama's
+[`/api/embed`](https://docs.ollama.com/api/embed) protocol. It uses direct
+`node:http` requests to literal `127.0.0.1` or `[::1]`, with no DNS, proxy,
+credentials, redirects, environment configuration, downloads or persistent
+cache. The endpoint defaults to `http://127.0.0.1:11434/api/embed`. Before
+sending vocabulary it checks `/api/show` for a local embedding model and
+refuses remote model metadata, including cloud models hidden behind local
+aliases. The model server is part of the trusted local boundary; this client
+cannot constrain that server's own network activity or detect dishonest
+metadata. Configure Ollama for local-only operation when stronger process
+isolation is needed.
+
+The shared metadata-and-inference deadline defaults to 2000 ms and must be
+1..10000 ms. Batches contain at most 128 strings, responses at most 4 MiB and
+vectors at most 4096 dimensions. Partial, non-finite, zero-norm or inconsistent
+vectors fail the whole batch. The model is released after inference.
+
+Fallback accepts at most four letter-only words, each at least three letters,
+and excludes stoplist/protected words, `never` spellings, case-sensitive terms,
+identifiers and canonical fragments. Eligible spellings must share their first
+folded letter and have edit similarity >= 0.5. The maximum cosine per canonical
+competes against other canonicals. Acceptance requires cosine >= 0.85 and the
+effective `minConfidence`, with a runner-up margin >= 0.05. Callers can raise
+the cosine and margin thresholds, but cannot weaken those floors. These guards
+favor abstention over semantic synonym replacement.
+
+```ts
+import { matchTerm } from '@ashlr/lexicon';
+
+const result = await matchTerm('Kubernetics', lexicon, {
+  semantic: { enabled: true, model: 'bge-m3:latest', timeoutMs: 10000 },
+});
+// Show result.match to the caller for review; no transcript was rewritten.
+```
+
+Measured precision/recall and reproducible local-model provenance live in
+[`tests/fixtures/semantic/README.md`](../tests/fixtures/semantic/README.md).
+
 ## src/core/suggest.ts
 - `compareText(a: string, b: string): number` (collate.ts): a fixed `en` collation, then code units, so an order never follows the user's locale. `computeStats`' `topTerms`, `suggestCanonicalFor`, `harvestRepo` (its candidates and the order it walks a directory), `suggestTerms`, `listTrusted` (by path), the registry index (`loadRegistryIndex`, by ref), `searchRegistryIndex` and `lexicon stats`' category and source lines sort or break ties with it, and the exporters' `compareCanonical` is it.
 - `suggestAliases(canonical: string): string[]` generates likely STT misspellings (never a single STOPLIST word, which would be rewritten wherever it is said, except an acronym's pronounced form such as `sass`): split camel/dots ("Ashlr.AI" -> "Ashlr AI", "Ashler", "Ashlar"), vowel insertions for consonant clusters, drop dots/hyphens, common phoneme confusions. Deterministic, <= 8 results, never returns the canonical itself.

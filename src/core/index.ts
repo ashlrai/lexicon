@@ -29,3 +29,6 @@ export * from './packs.js';
 export * from './registry.js';
 export * from './demo.js';
 export * from './shell.js';
+export { matchTerm } from '../match/index.js';
+export type { SemanticMatchOptions, TermMatch, TermMatchResult } from '../match/index.js';
+export { foldLower } from './matcher/text.js';
