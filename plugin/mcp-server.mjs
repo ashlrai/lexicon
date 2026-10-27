@@ -61252,7 +61252,7 @@ function cliDirForInstall() {
   return pkg ? (0, import_node_path13.join)(pkg.root, "dist", "cli") : void 0;
 }
 function textResult(payload) {
-  const text = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+  const text = typeof payload === "string" ? payload : JSON.stringify(payload);
   return { isError: false, content: [{ type: "text", text }] };
 }
 function errorResult(err) {
@@ -61462,7 +61462,7 @@ var init_terms = __esm({
         "normalize_transcript",
         {
           title: "Normalize dictated text",
-          description: `Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a real name but not quite ('Ashler', "Cooper Nettie's", 'pie dentic'). One garbled proper noun is reason enough. You do not need the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit counter. Use the \`output\` field as the message you act on, and mention the correction only if it changes what you are about to do. WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails (unless the lexicon's settings.skipCode is false), and it never invents a term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. Text over ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters is refused, nothing checked. Below that, only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. Returns { output, changed, replacements, summary }, plus a \`note\` when \`text\` is empty or only whitespace; when \`changed\` is false the text was already correct and you should carry on silently (except with dryRun: true, where nothing is applied, so \`output\` is the input and \`changed\` is false even when \`replacements\` lists corrections: read \`replacements\` for what a real call would fix), unless the result also carries \`skippedProject\`: then this repo has a project lexicon that is not trusted yet, so tell the user once that ` + cliCommand("trust") + " would enable it.",
+          description: `Correct dictated names, brands, acronyms and identifiers using the user's lexicon. Call before acting on a message with garbled proper nouns, spoken filler or run-on sentences; no permission needed. Use \`output\` as the message; mention corrections only when they affect your action. Only per-term hit counters change. Protects code, paths, URLs and emails (unless the lexicon's settings.skipCode is false). Never invents terms; call suggest_canonical for remaining garbled names. Text over ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters is refused, nothing checked. Below that, only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. Returns { output, changed, replacements, summary }, plus a \`note\` when \`text\` is empty or only whitespace; when \`changed\` is false the text was already correct and you should carry on silently (except with dryRun: true, where nothing is applied, so \`output\` is the input and \`changed\` is false even when \`replacements\` lists corrections: read \`replacements\` for what a real call would fix), unless the result also carries \`skippedProject\`: then this repo has a project lexicon that is not trusted yet, so tell the user once that ` + cliCommand("trust") + " would enable it.",
           inputSchema: {
             text: external_exports.string().max(MCP_NORMALIZE_INPUT_MAX_CHARS, {
               error: `text is longer than ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters, so nothing was checked; call again with it in pieces of at most ${MCP_NORMALIZE_MAX_CHARS} characters (only that many are checked per call)`
@@ -61525,7 +61525,7 @@ var init_terms = __esm({
         "add_term",
         {
           title: "Add a lexicon term",
-          description: "Teach the lexicon a name, so dictation is corrected to it from now on. WHEN TO CALL: when the user names something they want spelled a particular way, or during setup for each extra name they give you. For the one specific case of the user correcting a spelling that came out wrong, prefer learn_correction: it finds the right term for you. Do not add a name the user did not ask you to remember. WHAT IT CHANGES: writes one term to the user's lexicon file (global by default, or the repo's .lexicon.yaml with scope: 'project'). It merges rather than clobbers: an existing term with the same canonical keeps its own spelling and only gains the new aliases. A project file that is not trusted yet is written but left untrusted (the result says `trusted: false`): relay `nextStep`, since the term applies only after the user runs " + cliCommand("trust") + ". WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling exactly as the user writes it. Omit `aliases` on a new term and likely STT misspellings are generated for you when any can be found, which beats inventing your own; show the user what was generated so they can veto one, and when the result has no aliases propose some or ask the user. Pass `aliases: []` to add the term with no aliases and none generated. On an existing term, omitted aliases add none, so passing only never, phonetic, category or notes changes just that. When another term already holds one of the aliases, the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term. A field over the lexicon caps given on each argument is an error naming that field, and nothing is written.",
+          description: "Remember a spelling only when the user asks. Prefer learn_correction for a correction to a misheard name. Writes one term, globally by default or to .lexicon.yaml with scope: 'project'. Existing terms keep their canonical spelling and gain aliases; other terms are untouched. An untrusted project file stays untrusted: relay `trusted: false` and `nextStep`; terms apply after the user runs " + cliCommand("trust") + ". Omitted aliases auto-generate likely STT misspellings for new terms only (possibly none); show them for approval or ask for aliases when none are found. Explicit `aliases: []` generates none. On existing terms, omitted aliases add none, so other fields can be updated alone. Alias collisions return `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; conflicting terms are untouched. Invalid fields or exceeded argument caps are errors naming the field; nothing is written.",
           inputSchema: {
             canonical: nonBlank().describe(
               `The correct spelling, exactly as the user wants it written; must not be blank. At most ${LIMITS.word} characters once surrounding whitespace is trimmed (the lexicon file schema's cap, also enforced by the CLI); a longer one is refused and nothing is written.`
@@ -73179,7 +73179,7 @@ async function runInit(opts, io) {
   if (opts.json) {
     line(
       io,
-      JSON.stringify(jsonOk({ scope, path: target, created, ...dry ? { dryRun: true } : {}, ...trust !== void 0 ? { trust } : {}, ...untrustedStep ? { nextStep: untrustedStep } : {} }), null, 2)
+      JSON.stringify(jsonOk({ scope, path: target, created, ...dry ? { dryRun: true } : {}, ...trust !== void 0 ? { trust } : {}, ...untrustedStep ? { nextStep: untrustedStep } : {} }))
     );
     return 0;
   }
@@ -73320,9 +73320,7 @@ async function runAdd(canonical, aliasArgs, opts, io, prompter) {
           suggested: !fallbackOnly || result.created ? suggested : [],
           ...conflicts.length > 0 ? { conflicts, note: conflictNote(conflicts) } : result.unchanged ? { note: unchangedTermNote(result.term.canonical) } : {},
           ...droppedAliases.length > 0 ? { droppedAliases } : {}
-        }),
-        null,
-        2
+        })
       )
     );
     return 0;
@@ -73363,7 +73361,7 @@ async function runRemove(canonical, opts, io) {
     const global = holders.find((h) => h.scope === "global");
     if (opts.json) {
       const nextStep = global ? `run ${commandLine(["lexicon", "remove", canonical, "--global"])} to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}` : PROJECT_TRUST_NEXT_STEP;
-      line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...dry ? { dryRun: true } : {}, ...untrusted ? { untrustedProject: untrusted } : {} }, null, 2));
+      line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...dry ? { dryRun: true } : {}, ...untrusted ? { untrustedProject: untrusted } : {} }));
     }
     io.stderr(`lexicon: ${safeMessage(errorMessage(err))}
 `);
@@ -73384,7 +73382,7 @@ async function runRemove(canonical, opts, io) {
   const extra = { ...dry ? { dryRun: true } : {}, ...stillIn.length > 0 ? { stillIn } : {}, ...untrusted ? { untrustedProject: untrusted } : {} };
   if (opts.json) {
     const failure2 = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ""}`, missStep);
-    line(io, JSON.stringify(removed ? jsonOk({ canonical: removedName, removed, ...extra }) : { ...failure2, canonical, removed, ...extra }, null, 2));
+    line(io, JSON.stringify(removed ? jsonOk({ canonical: removedName, removed, ...extra }) : { ...failure2, canonical, removed, ...extra }));
     if (!removed) io.stderr(notFound());
     return removed ? 0 : 1;
   }
@@ -73427,7 +73425,7 @@ async function runRemoveAlias(canonical, alias, opts, scope, cwd, io) {
     ) === true;
     const other = scope === "project" ? loaded?.global : scope === "global" ? loaded?.project : void 0;
     const elsewhere = isInputError(err) && other && holdsAlias2(other) ? `it is an alias of "${canonical}" in the ${other.scope} lexicon (${other.path}); run with --${other.scope} to remove it there, or with neither flag to remove it from every file whose copy has it` : isInputError(err) && !untrusted ? emptyLexiconRemoveStep(loaded) ?? aliasMissStep(loaded, scope, canonical) : void 0;
-    if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere), canonical, alias, removed: false, ...extra }, null, 2));
+    if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere), canonical, alias, removed: false, ...extra }));
     io.stderr(`lexicon: ${safeMessage(message)}
 `);
     if (elsewhere) io.stderr(`lexicon: ${safeMessage(elsewhere)}
@@ -73445,7 +73443,7 @@ async function runRemoveAlias(canonical, alias, opts, scope, cwd, io) {
   }
   const paths = result.files.map((f) => f.path);
   if (opts.json) {
-    line(io, JSON.stringify(jsonOk({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra }), null, 2));
+    line(io, JSON.stringify(jsonOk({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra })));
     return 0;
   }
   line(io, `${dry ? "would remove" : "removed"} alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safeMessage(paths.join(", "))}`);
@@ -73496,11 +73494,11 @@ async function runList(opts, io) {
       ...skipped,
       ...emptyNote ? { note: emptyNote } : {}
     };
-    line(io, JSON.stringify(jsonOk(payload), null, 2));
+    line(io, JSON.stringify(jsonOk(payload)));
     return 0;
   }
   if (opts.json) {
-    line(io, JSON.stringify(terms, null, 2));
+    line(io, JSON.stringify(terms));
     return 0;
   }
   if (terms.length === 0 && matched > 0) {
@@ -73565,7 +73563,7 @@ async function runNormalize(args, opts, io, readInput = readStdin) {
       `lexicon: no text to correct (${fromArgs ? "the argument was empty" : "stdin was empty"}); pass it as arguments: lexicon normalize "ping ashler", or pipe it in: echo "ping ashler" | lexicon normalize
 `
     );
-    if (opts.json) line(io, JSON.stringify(jsonOk({ input: "", output: "", replacements: [], changed: false }), null, 2));
+    if (opts.json) line(io, JSON.stringify(jsonOk({ input: "", output: "", replacements: [], changed: false })));
     return 0;
   }
   try {
@@ -73583,7 +73581,7 @@ async function runNormalize(args, opts, io, readInput = readStdin) {
       if (summary) io.stderr(ensureNewline(safeLines(summary)));
     }
     if (opts.json) {
-      line(io, JSON.stringify(jsonOk({ ...result, ...useExample ? { example: true } : {}, ...skippedProjectJson(loaded) }), null, 2));
+      line(io, JSON.stringify(jsonOk({ ...result, ...useExample ? { example: true } : {}, ...skippedProjectJson(loaded) })));
       return 0;
     }
     emit(result.output);
@@ -73594,7 +73592,7 @@ async function runNormalize(args, opts, io, readInput = readStdin) {
     io.stderr("lexicon: no corrections were applied and the text is unchanged (run: lexicon doctor)\n");
     if (opts.json) {
       const nextStep = unreadableLexiconHint(message) ?? "no corrections were applied and the text is unchanged; run: lexicon doctor";
-      line(io, JSON.stringify({ ...jsonError(message, nextStep), input: text, output: text, replacements: [], changed: false }, null, 2));
+      line(io, JSON.stringify({ ...jsonError(message, nextStep), input: text, output: text, replacements: [], changed: false }));
     } else {
       emit(text);
     }
@@ -73633,7 +73631,7 @@ async function runHarvest(root, opts, io, deps = {}) {
       const status = await isTrusted({ path: projectPath, scope: "project", lexicon: emptyLexicon(), exists: true }, store);
       if (status !== "trusted") {
         const message = new ProjectTrustError(projectPath, status).message;
-        if (json2) line(io, JSON.stringify({ ...jsonError(message, `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again`), added: false, path: projectPath, projectTrust: status }, null, 2));
+        if (json2) line(io, JSON.stringify({ ...jsonError(message, `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again`), added: false, path: projectPath, projectTrust: status }));
         io.stderr(`lexicon: ${safeMessage(message)}
 `);
         return 1;
@@ -73660,7 +73658,7 @@ async function runHarvest(root, opts, io, deps = {}) {
   }
   if (opts.full || opts.json && opts.add) {
   } else if (opts.json) {
-    line(io, JSON.stringify(candidates, null, 2));
+    line(io, JSON.stringify(candidates));
   } else if (candidates.length === 0) {
     line(io, dim(noHarvestCandidatesLine(scan)));
   } else {
@@ -73701,7 +73699,7 @@ async function runHarvest(root, opts, io, deps = {}) {
       const hint = unreadableLexiconHint(message);
       if (json2) {
         const where2 = filePath ? { path: filePath } : {};
-        line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where2 }, null, 2));
+        line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where2 }));
       }
       io.stderr(`lexicon: ${safeMessage(message)}
 `);
@@ -73717,11 +73715,11 @@ async function runHarvest(root, opts, io, deps = {}) {
     else line(io, opts.dryRun ? summary : green(summary));
     if (filePath && !json2 && !opts.dryRun) line(io, dim(`project lexicon trusted (${safe(filePath)})`));
   }
-  if (!opts.full && opts.json && opts.add) line(io, JSON.stringify(candidates, null, 2));
+  if (!opts.full && opts.json && opts.add) line(io, JSON.stringify(candidates));
   if (opts.full) {
     const addResult = opts.add ? { added: created + merged, created, merged, ...filePath ? { path: filePath } : {}, ...opts.dryRun ? { dryRun: true } : {} } : {};
     const truncated = report2.truncated ? { truncated: true, note: harvestTruncatedNote(target) } : {};
-    line(io, JSON.stringify(jsonOk({ root: target, candidates, count: candidates.length, ...truncated, ...addResult }), null, 2));
+    line(io, JSON.stringify(jsonOk({ root: target, candidates, count: candidates.length, ...truncated, ...addResult })));
   }
   return 0;
 }
@@ -73752,7 +73750,7 @@ async function runExport(requested, opts, io) {
       return code;
     }
     if (json2) {
-      line(io, JSON.stringify(jsonOk({ formats: formatListJson() }), null, 2));
+      line(io, JSON.stringify(jsonOk({ formats: formatListJson() })));
       return 0;
     }
     line(io, "usage: lexicon export <format> [--out <file>] [--category <c...>] [--limit <n>] [--json]");
@@ -73817,7 +73815,7 @@ async function runExport(requested, opts, io) {
       await writeFileAtomic(outPath, text);
     }
     if (json2) {
-      line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, path: outPath, ...opts.dryRun ? { dryRun: true } : {}, ...dropped, ...notes }), null, 2));
+      line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, path: outPath, ...opts.dryRun ? { dryRun: true } : {}, ...dropped, ...notes })));
     } else {
       let counted = plural2(terms, "term");
       if (aliasRows !== void 0 && rows !== void 0) {
@@ -73828,7 +73826,7 @@ async function runExport(requested, opts, io) {
       line(io, opts.dryRun ? `would write ${format} export (${counted}, ${plural2(bytes, "byte")}) to ${safeMessage(outPath)}` : `wrote ${format} export (${counted}) to ${safeMessage(outPath)}`);
     }
   } else if (json2) {
-    line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, content: text, ...dropped, ...notes }), null, 2));
+    line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, content: text, ...dropped, ...notes })));
   } else {
     io.stdout(text);
   }
@@ -73867,7 +73865,7 @@ async function exportTargetProblem(outPath, loaded) {
 async function runPath(opts, io) {
   const paths = resolvePaths({ cwd: resolveCwd(opts) });
   if (opts.json) {
-    line(io, JSON.stringify(jsonOk({ global: paths.global, project: paths.project ?? null }), null, 2));
+    line(io, JSON.stringify(jsonOk({ global: paths.global, project: paths.project ?? null })));
     return 0;
   }
   line(io, `global: ${safe(paths.global)}`);
