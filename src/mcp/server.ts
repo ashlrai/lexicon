@@ -20,7 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js';
 import { StdioServerTransport } from '@modelcontextprotocol/sdk/server/stdio.js';
-import { RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
+import { CallToolRequestSchema, ErrorCode, McpError, RootsListChangedNotificationSchema } from '@modelcontextprotocol/sdk/types.js';
 import type { LoadOptions, LoadedLexicon } from '../core/index.js';
 import { SERVER_NAME, core, loadCore, log, readPackageVersion, skippedProjectFields, withLexiconFix } from './shared.js';
 import { errorMessage } from '../util/errors.js';
@@ -322,11 +322,33 @@ export function createServer(opts: ServerOptions = {}): McpServer {
   // agent did not ask for. A strict object refuses the unknown key by name and
   // advertises `additionalProperties: false` in tools/list.
   const registerTool = server.registerTool.bind(server);
-  const gatedRegisterTool = (name: string, config: unknown, cb: (...args: unknown[]) => unknown): unknown =>
-    registerTool(name, withAnnotations(name, strictInput(config)) as never, (async (...args: unknown[]) => {
+  const registeredTools = new Set<string>();
+  // The SDK installs its tools/call handler lazily during the first registration.
+  // Validate the envelope outside its execution-error catch: malformed requests
+  // and unknown tools are protocol errors, unlike a known tool's invalid inputs.
+  const setRequestHandler = server.server.setRequestHandler.bind(server.server);
+  server.server.setRequestHandler = (schema, handler) => {
+    if ((schema as unknown) === CallToolRequestSchema) {
+      setRequestHandler(z.object({ method: z.literal('tools/call') }).passthrough(), async (request, extra) => {
+        const parsed = CallToolRequestSchema.safeParse(request);
+        if (!parsed.success) throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${parsed.error.message}`);
+        if (!registeredTools.has(parsed.data.params.name)) {
+          throw new McpError(ErrorCode.InvalidParams, `Unknown tool: ${parsed.data.params.name}`);
+        }
+        return handler(parsed.data as never, extra);
+      });
+    } else {
+      setRequestHandler(schema, handler);
+    }
+  };
+  const gatedRegisterTool = (name: string, config: unknown, cb: (...args: unknown[]) => unknown): unknown => {
+    const tool = registerTool(name, withAnnotations(name, strictInput(config)) as never, (async (...args: unknown[]) => {
       if (rootsPending) await rootsPending;
       return cb(...args);
     }) as never);
+    registeredTools.add(name);
+    return tool;
+  };
   server.registerTool = gatedRegisterTool as typeof server.registerTool;
 
   // `cwd` is a getter so every handler reads the directory as it is now.
@@ -342,6 +364,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     normalizeMaxChars: opts.normalizeMaxChars ?? MCP_NORMALIZE_MAX_CHARS,
   };
   for (const register of TOOL_REGISTRARS) register(server, ctx);
+  server.server.setRequestHandler = setRequestHandler;
 
   // Resources and prompts have no isError result: a thrown error becomes the
   // JSON-RPC error message. For a lexicon file that does not parse, that was
@@ -381,12 +404,13 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     },
   );
 
-  server.registerResource(
-    'Lexicon JSON',
-    'lexicon://json',
+  for (const glossary of [false, true]) server.registerResource(
+    glossary ? 'Agent glossary' : 'Lexicon JSON',
+    glossary ? 'lexicon://glossary' : 'lexicon://json',
     {
-      title: 'Lexicon JSON',
+      title: glossary ? 'Agent glossary' : 'Lexicon JSON',
       description:
+        (glossary ? 'Read-only team glossary for coding agents: activePacks lists installed global and trusted project packs; terms contains the current canonical spellings, aliases and notes, including custom terms. Read on demand to use the team vocabulary. ' : '') +
         'The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`. With no terms at all, `note` says so (after the skipped-file sentence, when there is one) and how to set the lexicon up. ' +
         `The text is capped at ${LEXICON_JSON_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept, \`omittedTerms\` counts the rest and \`note\` says so; export_lexicon (format json) and list_terms (with a query, or offset and limit to page) reach them.`,
       mimeType: 'application/json',
@@ -407,7 +431,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       const extra = note ? { ...skipped, note } : skipped;
       // The merged view, `scope` and `hits` included (the json export leaves
       // them out), capped at LEXICON_JSON_MAX_CHARS like lexicon://me.
-      const text = lexiconJsonWithin(loaded.merged, extra);
+      const text = lexiconJsonWithin(loaded.merged, glossary ? { ...extra, activePacks: core().installedPacks(loaded) } : extra);
       return {
         contents: [{ uri: uri.href, mimeType: 'application/json', text }],
       };

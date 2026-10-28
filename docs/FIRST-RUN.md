@@ -94,6 +94,8 @@ and the built-in-example note.
    example (`Ashler` to `Ashlr.AI`). The README install does not tell you to
    run it inside this repo. Recorded because a contributor following the
    README from a checkout sees the weaker demo.
+   Fixed in source: setup now uses the dotted spelling from a matching package
+   author (`Ashlr.AI` here). Without that evidence, the scope stays `Ashlr`.
 
 6. When npm's global prefix is not writable, the script exits 1. Measured:
    `EACCES` creating `/usr/lib/node_modules`, with Node v22.23.4. The script
