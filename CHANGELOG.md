@@ -2,6 +2,24 @@
 
 All notable changes to `@ashlr/lexicon` are recorded here. The format follows Keep a Changelog. Versions follow semver.
 
+<!-- fresh:begin table:releases -->
+| Version | Released |
+|---|---|
+| 0.5.6 | 2026-10-18 |
+| 0.5.5 | 2026-10-14 |
+| 0.5.4 | 2026-09-21 |
+| 0.5.3 | 2026-09-20 |
+| 0.5.2 | 2026-09-20 |
+| 0.5.1 | 2026-09-20 |
+| 0.5.0 | 2026-09-20 |
+| 0.4.0 | 2026-09-20 |
+| 0.3.2 | 2026-09-20 |
+| 0.3.1 | 2026-09-19 |
+| 0.3.0 | 2026-09-19 |
+| 0.2.0 | 2026-09-19 |
+| 0.1.0 | 2026-09-19 |
+<!-- fresh:end -->
+
 ## Unreleased
 
 ### Changed
@@ -11,6 +29,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Added
 
+- `npm run fresh:sync` and `npm run fresh:check` (`scripts/freshness/`): doc blocks between `fresh:begin name` / `fresh:end` HTML-comment markers -- release badges, pinned install snippets, the release table above, `#vX.Y.Z` example pins -- are regenerated from `package.json`'s version and the dated sections of this changelog, and the check exits 1 on drift or a malformed marker. The markers are seeded in README.md, llms-install.md, docs/RELEASING.md, examples/README.md and this file.
 - `--dry-run` previews init, add, remove, harvest --add, export --out, review and edit without saving changes. Edit reports its target without launching an editor. Pack install, update and removal, trust, untrust, learn and pending accept/reject also support previews that keep lexicon, trust and registry state unchanged.
 
 - `lexicon pending reject` remembers what you rejected: the pending file gains a `rejected:` list of ids (never the words, capped at 500), and the prompt hook no longer queues a correction you already rejected. `lexicon learn` with the same words still works. Additive file change; an older lexicon that rewrites the file forgets the list.
