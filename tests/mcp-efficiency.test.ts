@@ -14,6 +14,21 @@ function withoutDescriptions(value: unknown): unknown {
   return value;
 }
 
+function stableFixture(value: unknown, dir: string): unknown {
+  return JSON.parse(JSON.stringify(value, (_key, v: unknown) => typeof v === 'string'
+    ? v.split(dir + '/').join('<fixture>/').split(dir + '\\').join('<fixture>/').split(dir).join('<fixture>')
+      .replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, '2026-01-01T00:00:00.000Z')
+    : v));
+}
+
+it.each(['/tmp/fixture', 'C:\\Users\\runner\\Temp\\fixture'])(
+  'stabilizes parsed paths before JSON escaping for %s', (dir) => {
+    const separator = dir.startsWith('/') ? '/' : '\\';
+    expect(stableFixture({ path: dir + separator + 'lexicon.yaml', nested: [dir] }, dir))
+      .toEqual({ path: '<fixture>/lexicon.yaml', nested: ['<fixture>'] });
+  },
+);
+
 it('preserves discovery schemas, annotations and parsed common command results', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-efficiency-'));
   const previous = process.env.LEXICON_PATH;
@@ -26,7 +41,7 @@ it('preserves discovery schemas, annotations and parsed common command results',
     const bytes = Buffer.byteLength(text);
     measurements[label] = { bytes, estimatedTokens: Math.ceil(bytes / 4) };
   };
-  const stable = (value: unknown): unknown => JSON.parse(JSON.stringify(value).split(dir).join('<fixture>').replace(/\d{4}-\d{2}-\d{2}T[\d:.]+Z/g, '2026-01-01T00:00:00.000Z'));
+  const stable = (value: unknown): unknown => stableFixture(value, dir);
   try {
     await server.connect(st);
     await client.connect(ct);
