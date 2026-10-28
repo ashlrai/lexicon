@@ -63,9 +63,10 @@ export interface StoreOptions {
    * registry, the pending file, the registry state and cache, the hits
    * sidecars and the index refresh). A refused write (an untrusted project
    * file, a missing term) fails the dry run the same way, so a plan is
-   * always something the real command could have done. Read-side caches a
-   * parse populates anyway (parse cache, spill entries) are not suppressed:
-   * they are what any load does, not what the command is about.
+   * always something the real command could have done. Reads also leave parse
+   * caches, cached failures and spill entries unchanged. Previews validate
+   * their read snapshot without creating lock files or parent directories;
+   * a subsequent real write still locks and revalidates current content.
    */
   dryRun?: boolean;
 }
@@ -1613,7 +1614,10 @@ async function hydrateHits(merged: Lexicon, project: LexiconFile | undefined, op
  */
 export async function loadLexicon(opts: LoadOptions = {}): Promise<LoadedLexicon> {
   const paths = resolvePaths(opts);
-  const read = await readGlobalLexiconMaybeStale(paths.global, opts.staleGlobal ? { stale: true } : {});
+  const read = await readGlobalLexiconMaybeStale(paths.global, {
+    ...(opts.staleGlobal && !opts.dryRun ? { stale: true } : {}),
+    ...(opts.dryRun ? { writeBack: false } : {}),
+  });
   const global = read.file;
   if (read.stale) {
     return { ...(await loadLexiconWith(global, paths, opts)), globalStale: true, ...(read.staleProblem !== undefined ? { globalStaleProblem: read.staleProblem } : {}) };
@@ -1664,8 +1668,8 @@ async function loadLexiconWith(global: LexiconFile, paths: { global: string; pro
   }
 
   projectTrust ??= await isTrusted(project, opts);
-  if (projectTrust === 'trusted' && fresh) await writeProjectParseCache(project, fresh.text, paths.global, read?.mainId);
-  else if (projectTrust === 'trusted' && read?.fromSpill) {
+  if (!opts.dryRun && projectTrust === 'trusted' && fresh) await writeProjectParseCache(project, fresh.text, paths.global, read?.mainId);
+  else if (!opts.dryRun && projectTrust === 'trusted' && read?.fromSpill) {
     await promoteCacheEntry(path.join(path.dirname(paths.global), PROJECT_PARSE_CACHE_FILE_NAME), path.resolve(paths.project), read.mainId);
   }
   if (projectTrust === 'trusted' || opts.includeUntrusted) {
@@ -1980,14 +1984,15 @@ export async function addTerm(
   // Read, edit and write inside one lock: a concurrent add that read the same
   // file before this one wrote would otherwise rename its own copy over the
   // top and take the new term with it.
-  return withLexiconLock(targetPath, async () => {
+  const apply = async () => {
     const file = await readLexiconFileForWrite(targetPath, scope);
     if (!opts.leaveUntrusted) await assertParsedProjectWritable(file, opts);
     assertNoNeverAliasClash(file, incoming, opts);
     const result = mergeTermInto(file, incoming, scope, opts);
     await writeAddedFile(file, opts);
     return { file, ...result };
-  });
+  };
+  return opts.dryRun ? apply() : withLexiconLock(targetPath, apply);
 }
 
 /**
@@ -2028,13 +2033,14 @@ export async function addTerms(
   const scope: TermScope = opts.scope ?? 'global';
   const targetPath = await resolveScopeWritePath(scope, opts);
   const incoming = terms.map(prepareIncoming);
-  return withLexiconLock(targetPath, async () => {
+  const apply = async () => {
     const file = await readLexiconFileForWrite(targetPath, scope);
     if (!opts.leaveUntrusted) await assertParsedProjectWritable(file, opts);
     const results = incoming.map((t) => mergeTermInto(file, t, scope, opts));
     if (results.length > 0) await writeAddedFile(file, opts);
     return { file, results };
-  });
+  };
+  return opts.dryRun ? apply() : withLexiconLock(targetPath, apply);
 }
 
 async function writeAddedFile(file: LexiconFile, opts: AddTermOptions): Promise<void> {
@@ -2077,7 +2083,7 @@ export async function removeTerm(
   opts: StoreOptions & { scope?: TermScope } = {},
 ): Promise<boolean> {
   for (const target of candidatePaths(opts, opts.scope)) {
-    const removed = await withLexiconLock(target.path, async () => {
+    const apply = async () => {
       const file = await readLexiconFileForWrite(target.path, target.scope);
       if (!file.exists) return false;
       const remaining = file.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
@@ -2097,7 +2103,8 @@ export async function removeTerm(
         await dropGlobalHits(canonical, opts);
       }
       return true;
-    });
+    };
+    const removed = await (opts.dryRun ? apply() : withLexiconLock(target.path, apply));
     if (removed) return true;
   }
   return false;
@@ -2198,7 +2205,7 @@ export async function removeAlias(
   let firstTerm: Term | undefined;
   const files: LexiconFile[] = [];
   for (const target of candidatePaths(opts, opts.scope)) {
-    await withLexiconLock(target.path, async () => {
+    const apply = async () => {
       const file = await readLexiconFileForWrite(target.path, target.scope);
       if (!file.exists) return;
       const term = findTerm(file.lexicon, wanted);
@@ -2221,7 +2228,8 @@ export async function removeAlias(
       }
       files.push(file);
       firstTerm ??= term;
-    });
+    };
+    await (opts.dryRun ? apply() : withLexiconLock(target.path, apply));
   }
   if (firstTerm) return { term: firstTerm, files };
   const where = opts.scope ? `the ${opts.scope} lexicon` : 'the global or project lexicon';
