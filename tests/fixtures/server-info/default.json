@@ -1,0 +1,6 @@
+{
+  "version": "9.9.9",
+  "host": "127.0.0.1",
+  "port": 41733,
+  "features": ["normalize", "learn", "add", "lexicon", "stats", "packs", "aliases", "export", "pair"]
+}

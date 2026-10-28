@@ -5,8 +5,9 @@
 import { existsSync, promises as fs, readdirSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { describe, expect, it } from 'vitest';
-import { defaultExec, defaultSpawn } from '../src/voice/process.js';
+import { describe, expect, it, vi } from 'vitest';
+import { defaultExec, defaultIsAlive, defaultKill, defaultSpawn } from '../src/voice/process.js';
+import { stopRecorder } from '../src/voice/recorder.js';
 
 const node = process.execPath;
 
@@ -39,6 +40,25 @@ describe('defaultExec timeout', () => {
 });
 
 describe('defaultSpawn', () => {
+  it('stops an attached recorder through the PID seam and retains its stderr', async () => {
+    const child = defaultSpawn(node, ['-e', 'process.stderr.write("ready\\n"); setTimeout(() => {}, 20000)'], { detached: false });
+    try {
+      const pid = child.pid;
+      if (pid === undefined) throw new Error('child did not start');
+      // Wait until Node is running, so SIGINT cannot race process startup.
+      await vi.waitFor(() => expect(child.stderr()).toBe('ready\n'), { timeout: 5_000 });
+      expect(defaultIsAlive(pid)).toBe(true);
+      const stopped = await stopRecorder({ pid, isAlive: defaultIsAlive, kill: defaultKill, platform: process.platform });
+      await child.exited;
+      expect(stopped.killed).toBe(false);
+      expect(defaultIsAlive(pid)).toBe(false);
+      expect(child.stderr()).toBe('ready\n');
+    } finally {
+      if (child.pid !== undefined && defaultIsAlive(child.pid)) defaultKill(child.pid, 'SIGKILL');
+      await child.exited;
+    }
+  });
+
   const hasProcFd = process.platform === 'linux' && existsSync('/proc/self/fd');
   // Catches: the parent kept the detached recorder's log descriptor open, one per start.
   it.skipIf(!hasProcFd)('closes its copy of a detached child\'s log descriptor, and the child still writes the log', async () => {

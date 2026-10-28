@@ -46,7 +46,7 @@ src/
     clipboard-backends.ts   pbcopy (macOS), wl / xclip / xsel (Linux), powershell (Windows) + PATH detection
   serve/
     config.ts               serve.json: port, bearer token (0600), allowedOrigins; isOriginAllowed()
-    server.ts               createServer(): node:http, 11 endpoints, auth, CORS, body caps, per-cwd lexicon cache
+    server.ts               createServer(): node:http, 12 endpoints, auth, CORS, body caps, per-cwd lexicon cache
   voice/
     process.ts              locate ffmpeg / whisper-cli, exec and detached spawn, install hints
     devices.ts              audio input device listing (avfoundation, pulse/alsa, dshow)
@@ -296,7 +296,7 @@ The hooks run on every prompt and every session start in Claude Code, so they ar
 | `lexicon daemon` | 250ms poll, negligible CPU when idle | one clipboard read per poll (`pbpaste`, `wl-paste`, `xclip -o`, `xsel` or a PowerShell process); skips normalize when text is unchanged |
 | `lexicon voice` | about one second hotkey round trip with `base.en` | Transcription is 0.2 to 0.35 s for a short clip on Apple silicon with Metal (`base.en` / `small.en`), plus ffmpeg start-up and the stop grace; `normalize()` is under 5 ms |
 | `harvestRepo()` | bounded by caps | 5000 files, 512KB per file, 5s git timeout, skips `node_modules`, `dist`, `.git`, `vendor`, `build` |
-| `lexicon import` | linear in input size | 8 MB cap checked before the file is read whole; every parser is a single-pass scanner |
+| `lexicon import` | linear in input size | 8 MB cap checked before the file is read whole; YAML imports reject flow nesting beyond 128 levels and adjacent quoted scalars before building a syntax tree; the other parsers use single-pass scanners |
 | `suggestTerms()` | under 100 ms for 1000 history lines and 200 terms | one pass over history with the prebuilt index; evidence capped at 5 lines of 120 characters |
 
 The hook always exits 0. A thrown error prints to stderr and produces no context; it never blocks a prompt. The CLI `normalize` command keeps half of that rule and drops the other half: on a lexicon load error it warns on stderr and passes the text through stdout unchanged, so a pipeline never loses input, but it exits 1. A hook cannot report a failure without breaking the prompt; a command can, and exit 0 made a lexicon that had stopped correcting anything indistinguishable from one with nothing to correct.
