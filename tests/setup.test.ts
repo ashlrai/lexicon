@@ -144,6 +144,35 @@ describe('runSetup --yes', () => {
     expect(io.err).toBe('');
   });
 
+  it.each([
+    ['@ashlr/lexicon', 'Ashlr.AI', 'Ashlr.AI'],
+    ['@ashlr/lexicon', { name: 'Ashlr.AI', email: 'hello@example.com' }, 'Ashlr.AI'],
+    ['@ashlr.ai/lexicon', { name: 'Ashlr.AI' }, 'Ashlr.AI'],
+    ['@acme/tools', 'Other.AI', 'Acme'],
+    ['@acme/tools', undefined, 'Acme'],
+    ['@acme/tools', { name: 42 }, 'Acme'],
+  ])('previews and seeds the package brand for %s with author %j', async (name, author, expected) => {
+    await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify({ name, author }));
+    const opts = { yes: true, clients: 'none', packs: 'none' };
+    const preview = await run({ ...opts, dryRun: true }, fakes());
+    expect(preview.code).toBe(0);
+    expect(preview.plan?.wouldSeed).toContain(expected);
+    expect(existsSync(globalPath)).toBe(false);
+
+    const applied = await run(opts, fakes());
+    expect(applied.code).toBe(0);
+    expect(applied.summary.termsAdded).toContain(expected);
+    const file = await readLexiconFile(globalPath, 'global');
+    expect(file.lexicon.terms.filter((term) => term.category === 'brand').map((term) => term.canonical)).toEqual([expected]);
+    if (expected === 'Ashlr.AI') {
+      expect(applied.summary.demo?.corrected).toContain('Ashlr.AI');
+      expect(applied.summary.demo?.usedExample).toBe(false);
+    }
+    const repeated = await run(opts, fakes());
+    expect(repeated.code).toBe(0);
+    expect(repeated.summary.termsAdded).toEqual([]);
+  });
+
   it('is idempotent: a second run adds nothing and reports no new terms', async () => {
     const f = fakes();
     await run({ yes: true, clients: 'claude', company: 'Ashlr.AI' }, f);
@@ -1133,6 +1162,26 @@ describe('detectClients', () => {
 });
 
 describe('helpers', () => {
+  it.each([
+    ['@ashlr/lexicon', 'Ashlr.AI', 'Ashlr.AI'],
+    ['@ashlr/lexicon', '  Ashlr.AI  ', 'Ashlr.AI'],
+    ['@ashlr.ai/lexicon', 'Ashlr.AI', 'Ashlr.AI'],
+    ['@Ashlr.AI/lexicon', undefined, 'Ashlr.AI'],
+    ['@ashlr.ai/lexicon', undefined, 'Ashlr.ai'],
+    ['@ashlr/lexicon', undefined, 'Ashlr'],
+    ['@acme/tools', 'Acme', 'Acme'],
+    ['@acme-inc/tools', undefined, 'Acme-inc'],
+    ['@acme/tools', 'Other.AI', 'Acme'],
+    ['@ash/lexicon', 'Ashlr.AI', 'Ash'],
+    ['@ashlr/lexicon', 'Ashlr..AI', 'Ashlr'],
+    ['@ashlr/lexicon', 'Ashlr.AI.', 'Ashlr'],
+    ['@ashlr/lexicon', 'Ashlr.AI\nInjected', 'Ashlr'],
+    ['plain', 'Plain.AI', 'remote'],
+    [undefined, 'Ashlr.AI', 'remote'],
+  ])('suggestCompany preserves evidenced dotted brands: %s, %s', (name, author, expected) => {
+    expect(suggestCompany(name, 'https://github.com/remote/repo.git', author)).toBe(expected);
+  });
+
   it('suggestCompany prefers the package scope, then the remote org', () => {
     expect(suggestCompany('@ashlr/lexicon', 'https://github.com/ashlrai/lexicon.git')).toBe('Ashlr');
     expect(suggestCompany('lexicon', 'https://github.com/ashlrai/lexicon.git')).toBe('ashlrai');

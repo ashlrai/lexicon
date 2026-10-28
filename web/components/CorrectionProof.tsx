@@ -102,77 +102,84 @@ export function CorrectionProof() {
     };
   }, []);
 
-  if (!animating) return <StaticProof />;
-
   const marksVisible = phase === 'fixing';
 
   return (
-    <figure className="panel m-0 overflow-hidden">
-      <figcaption className="panel-head">
-        <span className="micro">dictated · 2.4s of audio</span>
-        <span className="micro flex items-center gap-2 text-right">
-          <Pulse live={phase !== 'clean'} />
-          {STATUS[phase]}
-        </span>
-      </figcaption>
-
-      <div className="flex min-h-[9.5rem] items-center px-5 py-8 sm:min-h-[10.5rem] sm:px-8">
-        <p
-          aria-live="off"
-          className="font-mono text-[clamp(1rem,0.62rem+1.7vw,1.5rem)] leading-[2.15] tracking-[-0.01em]"
-        >
-          {LINE.map((word, i) => {
-            const visible = i < shown;
-            const order = FIXES.indexOf(i);
-            const isFixed = order > -1 && order < fixed;
-            const flagged = !!word.fix && !isFixed && (phase === 'flagged' || phase === 'fixing');
-
-            return (
-              <span key={i}>
-                <span
-                  className={`tok ${visible ? 'word-in' : 'invisible'}`}
-                  style={{ animationDelay: '0ms' }}
-                >
-                  {word.fix ? (
-                    <>
-                      <span className="tok-swap">
-                        <span
-                          className={`tok-raw ${flagged ? 'tok-flagged' : ''}`}
-                          style={{ opacity: isFixed ? 0 : 1 }}
-                        >
-                          {word.raw}
-                        </span>
-                        <span className="tok-fix" style={{ opacity: isFixed ? 1 : 0 }}>
-                          {word.fix}
-                        </span>
-                      </span>
-                      {isFixed && marksVisible ? <span className="tok-wash tok-wash-on" /> : null}
-                      {word.respell ? (
-                        <span
-                          className={`tok-annot ${isFixed && marksVisible ? 'tok-annot-on' : ''}`}
-                          aria-hidden="true"
-                        >
-                          \{word.respell}\
-                        </span>
-                      ) : null}
-                    </>
-                  ) : (
-                    <span className="text-paper-2">{word.raw}</span>
-                  )}
-                </span>
-                {i < LINE.length - 1 ? ' ' : ''}
-              </span>
-            );
-          })}
-        </p>
+    <div className="relative" data-correction-proof>
+      {/* Keep the same two-row footprint before and after hydration. The static
+          copy also remains the accessible description of the visual animation. */}
+      <div className={animating ? 'opacity-0' : undefined}>
+        <StaticProof />
       </div>
+      {animating ? (
+        <figure aria-hidden="true" className="panel absolute inset-0 m-0 flex flex-col overflow-hidden">
+          <figcaption className="panel-head">
+            <span className="micro">example transcript</span>
+            <span className="micro flex items-center gap-2 text-right">
+              <Pulse live={phase !== 'clean'} />
+              {STATUS[phase]}
+            </span>
+          </figcaption>
 
-      <div className="border-t border-rule-soft px-5 py-3 sm:px-8">
-        <span className="micro">
-          {phase === 'clean' ? 'what your agent receives' : 'what the microphone produced'}
-        </span>
-      </div>
-    </figure>
+          <div className="flex min-h-0 flex-1 items-center px-5 py-8 sm:px-8">
+            <p
+              aria-live="off"
+              className="font-mono text-[clamp(1rem,0.62rem+1.7vw,1.5rem)] leading-[2.15] tracking-[-0.01em]"
+            >
+              {LINE.map((word, i) => {
+                const visible = i < shown;
+                const order = FIXES.indexOf(i);
+                const isFixed = order > -1 && order < fixed;
+                const flagged = !!word.fix && !isFixed && (phase === 'flagged' || phase === 'fixing');
+
+                return (
+                  <span key={i}>
+                    <span
+                      className={`tok ${visible ? 'word-in' : 'invisible'}`}
+                      style={{ animationDelay: '0ms' }}
+                    >
+                      {word.fix ? (
+                        <>
+                          <span className="tok-swap">
+                            <span
+                              className={`tok-raw ${flagged ? 'tok-flagged' : ''}`}
+                              style={{ opacity: isFixed ? 0 : 1 }}
+                            >
+                              {word.raw}
+                            </span>
+                            <span className="tok-fix" style={{ opacity: isFixed ? 1 : 0 }}>
+                              {word.fix}
+                            </span>
+                          </span>
+                          {isFixed && marksVisible ? <span className="tok-wash tok-wash-on" /> : null}
+                          {word.respell ? (
+                            <span
+                              className={`tok-annot ${isFixed && marksVisible ? 'tok-annot-on' : ''}`}
+                              aria-hidden="true"
+                            >
+                              \{word.respell}\
+                            </span>
+                          ) : null}
+                        </>
+                      ) : (
+                        <span className="text-paper-2">{word.raw}</span>
+                      )}
+                    </span>
+                    {i < LINE.length - 1 ? ' ' : ''}
+                  </span>
+                );
+              })}
+            </p>
+          </div>
+
+          <div className="border-t border-rule-soft px-5 py-3 sm:px-8">
+            <span className="micro">
+              {phase === 'clean' ? 'what your agent receives' : 'what the microphone produced'}
+            </span>
+          </div>
+        </figure>
+      ) : null}
+    </div>
   );
 }
 
@@ -181,7 +188,7 @@ function StaticProof() {
   return (
     <figure className="panel m-0 overflow-hidden">
       <figcaption className="panel-head">
-        <span className="micro">dictated · 2.4s of audio</span>
+        <span className="micro">example transcript</span>
         <span className="micro">3 terms flagged</span>
       </figcaption>
 

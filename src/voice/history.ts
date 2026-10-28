@@ -6,6 +6,7 @@
  * last HISTORY_READ_MAX_BYTES are ever read.
  * The file holds everything the user dictated, so it is written 0600 inside
  * the 0700 voice directory (see recorder.ts).
+ * Readers use core's loadVoiceHistory, the same path as lexicon suggest.
  */
 import path from 'node:path';
 import { VOICE_HISTORY_READ_MAX_BYTES } from '../core/index.js';
@@ -114,25 +115,5 @@ export async function appendHistory(globalPath: string, entry: HistoryEntry, max
     );
   } catch {
     // best-effort
-  }
-}
-
-/**
- * Read the history (most recent last): at most the last HISTORY_READ_MAX_BYTES of
- * the file and HISTORY_MAX_LINES entries; lines that are malformed or not an
- * entry are skipped.
- */
-export async function readHistory(globalPath: string): Promise<HistoryEntry[]> {
-  try {
-    const text = (await readRegularFileTail(historyPath(globalPath), HISTORY_READ_MAX_BYTES)) ?? '';
-    const out: HistoryEntry[] = [];
-    for (const line of text.split('\n')) {
-      if (!line) continue;
-      const entry = entryOf(line);
-      if (entry) out.push(entry);
-    }
-    return out.length > HISTORY_MAX_LINES ? out.slice(out.length - HISTORY_MAX_LINES) : out;
-  } catch {
-    return [];
   }
 }
