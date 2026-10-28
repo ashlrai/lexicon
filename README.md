@@ -13,6 +13,7 @@ lands: MCP, Claude Code, the browser, macOS.
 
 [![CI](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml/badge.svg)](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/%40ashlr%2Flexicon)](https://www.npmjs.com/package/@ashlr/lexicon)
+<!-- fresh:begin badge:release -->[![release](https://img.shields.io/badge/release-v0.5.6-blue)](https://github.com/ashlrai/lexicon/releases)<!-- fresh:end -->
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node >=20](https://img.shields.io/node/v/%40ashlr%2Flexicon)](package.json)
 
@@ -169,7 +170,7 @@ This is not a dictation app. It sits between whatever dictation you already use 
 
 ## What you get
 
-- **Twenty-one MCP tools**, two resources and two prompts, for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop. Your agent can run its own setup: `setup_lexicon`, `lexicon_doctor`, `install_client`, `trust_project`, `import_dictionary`, `import_vocabulary` and `suggest_terms` mean "set up my lexicon" works without a terminal. The tools that change your machine preview first: `setup_lexicon` and `install_client` return a plan and write nothing until the agent passes `apply: true`, `uninstall_client` (the `lexicon uninstall` counterpart) is a dry run until `apply: true`, `trust_project` asks you directly (an MCP elicitation prompt the agent cannot answer) before pinning a file, `import_dictionary` takes `dryRun`, and `import_vocabulary` reads only explicitly selected sources, then requires a saved preview token and approved candidate ids with `apply: true`.
+- **Twenty-one MCP tools**, three resources and two prompts, for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop. Your agent can run its own setup: `setup_lexicon`, `lexicon_doctor`, `install_client`, `trust_project`, `import_dictionary`, `import_vocabulary` and `suggest_terms` mean "set up my lexicon" works without a terminal. The tools that change your machine preview first: `setup_lexicon` and `install_client` return a plan and write nothing until the agent passes `apply: true`, `uninstall_client` (the `lexicon uninstall` counterpart) is a dry run until `apply: true`, `trust_project` asks you directly (an MCP elicitation prompt the agent cannot answer) before pinning a file, `import_dictionary` takes `dryRun`, and `import_vocabulary` reads only explicitly selected sources, then requires a saved preview token and approved candidate ids with `apply: true`.
 - **A Claude Code plugin**: MCP server, `SessionStart` and `UserPromptSubmit` hooks, a `lexicon` skill and a `/lexicon` command. Installs from this repo's marketplace with no build step.
 - **A CLI with 27 commands**, from `lexicon add` to `lexicon voice`.
 - **176 starter terms** in four packs (developer, AI, business, voice tools), one command each, plus community packs from registry indexes (`lexicon pack search cardiology --registry <index>`): checksums pinned at install, every install and update previewed before it writes.
@@ -249,7 +250,7 @@ Also at the root: [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDU
 
 ## Downloads
 
-Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches the browser extension for Chrome/Edge/Brave and for Firefox, `LexiconBar.app.zip` for macOS, the npm tarball for offline installs, and `SHA256SUMS`. The Homebrew formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap). After 0.5.6 is published, `npm i -g github:ashlrai/lexicon#v0.5.6` installs that tag straight from GitHub and builds on install.
+Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches the browser extension for Chrome/Edge/Brave and for Firefox, `LexiconBar.app.zip` for macOS, the npm tarball for offline installs, and `SHA256SUMS`. The Homebrew formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap). After 0.5.6 is published, <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.6`<!-- fresh:end --> installs that tag straight from GitHub and builds on install.
 
 ## Roadmap and non-goals
 

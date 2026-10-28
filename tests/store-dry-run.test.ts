@@ -3,7 +3,8 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { addTerm, addTerms } from '../src/core/store.js';
+import { addTerm, addTerms, loadLexicon } from '../src/core/store.js';
+import { trustProject } from '../src/core/trust.js';
 import { LIMITS } from '../src/core/schema.js';
 import type { Term } from '../src/core/types.js';
 
@@ -71,5 +72,53 @@ describe('store dry-run final validation', () => {
     await expect(fs.stat(globalPath)).rejects.toMatchObject({ code: 'ENOENT' });
     const applied = await addTerm(incoming, { globalPath });
     expect(applied.term.hits).toBeUndefined();
+  });
+});
+
+describe('dry-run reads preserve caches', () => {
+  async function snapshot(): Promise<Record<string, string>> {
+    const entries: Record<string, string> = {};
+    for (const name of (await fs.readdir(dir, { recursive: true })).sort()) {
+      const file = path.join(dir, name);
+      const stat = await fs.stat(file);
+      entries[name] = stat.isDirectory() ? 'directory' : `${stat.mtimeMs}:${(await fs.readFile(file)).toString('hex')}`;
+    }
+    return entries;
+  }
+
+  it('does not cache a parse failure', async () => {
+    await fs.writeFile(globalPath, 'version: 1\nterms: [\n# ' + 'padding '.repeat(1200));
+    const before = await snapshot();
+    await expect(loadLexicon({ cwd: dir, globalPath, dryRun: true })).rejects.toThrow('Failed to parse');
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('reads current content without overwriting a stale global cache or deleting cached failures', async () => {
+    const text = (canonical: string) => JSON.stringify({ version: 1, terms: [{ canonical, aliases: [] }] }) + '\n' + ' '.repeat(70000);
+    await fs.writeFile(globalPath, text('BeforeName'));
+    await loadLexicon({ cwd: dir, globalPath });
+    await fs.writeFile(globalPath, text('AfterName'));
+    await fs.writeFile(path.join(dir, 'parse-failure.json'), '{}');
+    const before = await snapshot();
+    const loaded = await loadLexicon({ cwd: dir, globalPath, dryRun: true, staleGlobal: true });
+    expect(loaded.merged.terms[0].canonical).toBe('AfterName');
+    expect(loaded.globalStale).toBeUndefined();
+    expect(await snapshot()).toEqual(before);
+  });
+
+  it('does not promote a trusted project spill entry', async () => {
+    const projects = [path.join(dir, 'first'), path.join(dir, 'second')];
+    for (const cwd of projects) {
+      await fs.mkdir(path.join(cwd, '.git'), { recursive: true });
+      const file = path.join(cwd, '.lexicon.yaml');
+      await fs.writeFile(file, 'version: 1\nterms: []\n');
+      await trustProject(file, { cwd, globalPath });
+      await loadLexicon({ cwd, globalPath });
+    }
+    const before = await snapshot();
+    expect(Object.keys(before).some((name) => /^project-parse-cache\.[0-9a-f]+\.json$/.test(name))).toBe(true);
+    const loaded = await loadLexicon({ cwd: projects[0], globalPath, dryRun: true });
+    expect(loaded.projectTrust).toBe('trusted');
+    expect(await snapshot()).toEqual(before);
   });
 });

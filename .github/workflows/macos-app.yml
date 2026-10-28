@@ -3,19 +3,12 @@
 # Node test matrix does not wait on a macOS runner.
 name: macOS app
 
+# Desktop app builds run with the scheduled full suite (6 AM and 6 PM ET) and
+# on dispatch, not on PRs or pushes. A red scheduled run files a P0
+# FIX-MAIN issue (fix-main.yml).
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'apps/macos/**'
-      - 'scripts/build-macos-app.sh'
-      - '.github/workflows/macos-app.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - 'apps/macos/**'
-      - 'scripts/build-macos-app.sh'
-      - '.github/workflows/macos-app.yml'
+  schedule:
+    - cron: "0 10 * * *"
   workflow_dispatch:
 
 permissions:
@@ -30,6 +23,7 @@ jobs:
   build:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
