@@ -20,10 +20,9 @@ import { emptyLexicon } from '../src/core/schema.js';
 import type { Term } from '../src/core/types.js';
 import { runInit } from '../src/cli/commands.js';
 import { runEdit } from '../src/cli/cmd-review.js';
+import { bundleChildEntry } from './helpers.js';
 
 const REPO_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const PACKS_MODULE = new URL('../src/core/packs.ts', import.meta.url).href;
-const STORE_MODULE = new URL('../src/core/store.ts', import.meta.url).href;
 
 const dirs: string[] = [];
 afterEach(async () => {
@@ -47,14 +46,14 @@ interface ChildResult {
 }
 
 /**
- * Run a script in a real, separate process. Only a second process can show
- * that a lock works between processes; an in-process test would pass on the
- * promise queue alone, which is how the defect below survived a suite that
- * already had a twelve-writer case.
+ * Run a bundled script in a real, separate process. Only a second process can
+ * show that a lock works between processes; an in-process test would pass on
+ * the promise queue alone, which is how the defect below survived a suite
+ * that already had a twelve-writer case.
  */
 function runChild(script: string, args: readonly string[]): Promise<ChildResult> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', 'tsx', script, ...args], {
+    const child = spawn(process.execPath, [script, ...args], {
       cwd: REPO_ROOT,
       env: { ...process.env, LEXICON_PATH: '', XDG_CONFIG_HOME: '' },
     });
@@ -159,26 +158,27 @@ describe('uninstallPack reads and writes inside the lock', () => {
    * theoretical. Two arrival times, because the window has a start and an end.
    */
   it('keeps a term another process adds while the pack is being removed', async () => {
-    const uninstallScript = path.join((await scratch()).dir, 'uninstall.mts');
-    await fs.writeFile(
-      uninstallScript,
+    const dir = (await scratch()).dir;
+    // The pack dir comes in on argv: bundled into a temp dir, the entry's
+    // import.meta.url no longer sits under the repo for the pack root walk.
+    const uninstallScript = await bundleChildEntry(
       [
-        `import { uninstallPack } from ${JSON.stringify(PACKS_MODULE)};`,
-        'const [globalPath] = process.argv.slice(2);',
-        "const r = await uninstallPack('developer', { globalPath, scope: 'global', cwd: process.cwd() });",
+        `import { uninstallPack } from './src/core/packs.js';`,
+        'const [globalPath, packsDir] = process.argv.slice(2);',
+        "const r = await uninstallPack('developer', { globalPath, scope: 'global', cwd: process.cwd(), dir: packsDir });",
         "process.stdout.write('removed=' + r.removed.length);",
       ].join('\n'),
+      path.join(dir, 'uninstall.mjs'),
     );
-    const addScript = path.join(path.dirname(uninstallScript), 'add.mts');
-    await fs.writeFile(
-      addScript,
+    const addScript = await bundleChildEntry(
       [
-        `import { addTerm } from ${JSON.stringify(STORE_MODULE)};`,
+        `import { addTerm } from './src/core/store.js';`,
         'const [globalPath, canonical, delayMs] = process.argv.slice(2);',
         'await new Promise((r) => setTimeout(r, Number(delayMs)));',
         "await addTerm({ canonical, aliases: [] }, { globalPath, scope: 'global', cwd: process.cwd() });",
         "process.stdout.write('added ' + canonical);",
       ].join('\n'),
+      path.join(dir, 'add.mjs'),
     );
 
     const pack = await loadPack('developer');
@@ -195,7 +195,7 @@ describe('uninstallPack reads and writes inside the lock', () => {
       await writeLexiconFile({ path: globalPath, scope: 'global', lexicon, exists: false });
 
       const [uninstalled, added] = await Promise.all([
-        runChild(uninstallScript, [globalPath]),
+        runChild(uninstallScript, [globalPath, path.join(REPO_ROOT, 'packs')]),
         runChild(addScript, [globalPath, 'Racer', delayMs]),
       ]);
 

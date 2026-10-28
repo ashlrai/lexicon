@@ -80,6 +80,7 @@ import {
 } from '../src/core/store.js';
 import { getTrustPath, hashFile, isTrusted, readTrustRegistry, trustProject, untrustProject } from '../src/core/trust.js';
 import { BACKUP_SUFFIX, LOCK_SUFFIX, isFileLockError, withFileLock } from '../src/util/atomic.js';
+import { bundleChildEntry } from './helpers.js';
 import { usableHome, xdgConfigHome, xdgDataHome, xdgStateHome } from '../src/util/xdg.js';
 import { unreadableLexiconHint } from '../src/cli/io.js';
 
@@ -1794,7 +1795,6 @@ describe('effectiveHits', () => {
 // ---------------------------------------------------------------------------
 
 const REPO_ROOT = path.resolve(fileURLToPath(new URL('..', import.meta.url)));
-const STORE_MODULE = new URL('../src/core/store.ts', import.meta.url).href;
 
 /**
  * Temp files left beside `target`. `<target>.tmp` alone stopped being the
@@ -1818,11 +1818,13 @@ async function deadPid(): Promise<number> {
 /**
  * Run `addTerm` in a real, separate process, the way `lexicon add` does. Only a
  * second process can show that the lock works between processes; an in-process
- * test would pass on a promise queue alone.
+ * test would pass on a promise queue alone. `script` is a bundled entry built
+ * by `bundleChildEntry`: a bare `node` starts it in milliseconds, where the
+ * `--import tsx` form spent seconds per child doing the transform.
  */
 function addTermInChild(script: string, globalPath: string, canonical: string): Promise<string> {
   return new Promise((resolve, reject) => {
-    const child = spawn(process.execPath, ['--import', 'tsx', script, globalPath, canonical], {
+    const child = spawn(process.execPath, [script, globalPath, canonical], {
       cwd: REPO_ROOT,
       env: { ...process.env, LEXICON_PATH: '', XDG_CONFIG_HOME: '' },
     });
@@ -1837,15 +1839,26 @@ function addTermInChild(script: string, globalPath: string, canonical: string): 
 
 describe('concurrent writers', () => {
   it('keeps every term when twelve separate processes add at once', async () => {
-    const script = path.join(tmp, 'add-one.mts');
-    await fs.writeFile(
-      script,
+    const script = await bundleChildEntry(
       [
-        `import { addTerm } from ${JSON.stringify(STORE_MODULE)};`,
+        `import { addTerm } from './src/core/store.js';`,
+        `import { isHeldLockError } from './src/util/atomic.js';`,
         'const [globalPath, canonical] = process.argv.slice(2);',
-        'await addTerm({ canonical, aliases: [] }, { cwd: process.cwd(), globalPath });',
+        // A held lock is the one lock failure a retry can get past: the writer
+        // ahead is alive and finishing. Twelve starters arriving together can
+        // outwait the lock timeout on a slow runner, which loses nothing but
+        // fails the run.
+        'for (let attempt = 0; ; attempt++) {',
+        '  try {',
+        '    await addTerm({ canonical, aliases: [] }, { cwd: process.cwd(), globalPath });',
+        '    break;',
+        '  } catch (err) {',
+        '    if (!isHeldLockError(err) || attempt >= 11) throw err;',
+        '  }',
+        '}',
         "process.stdout.write('created ' + canonical);",
       ].join('\n'),
+      path.join(tmp, 'add-one.mjs'),
     );
 
     const names = Array.from({ length: 12 }, (_, i) => `Term${i + 1}`);
