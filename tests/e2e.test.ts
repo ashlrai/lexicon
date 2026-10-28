@@ -18,7 +18,7 @@ import { existsSync, promises as fs } from 'node:fs';
 import os from 'node:os';
 import nodeModule from 'node:module';
 import path from 'node:path';
-import { fileURLToPath } from 'node:url';
+import { fileURLToPath, pathToFileURL } from 'node:url';
 import { afterAll, beforeAll, describe, expect, it, vi } from 'vitest';
 import { EXPORT_FORMATS } from '../src/core/index.js';
 import type { NormalizeResult } from '../src/core/index.js';
@@ -36,6 +36,10 @@ const MCP_SERVER = entry('mcp', 'server');
 /** node's argv for a script: JavaScript runs as is, TypeScript through the tsx loader. */
 const nodeArgs = (script: string): string[] => (/\.[cm]?js$/.test(script) ? [script] : ['--import', 'tsx', script]);
 const FAKE_REPO = path.join(REPO_ROOT, 'tests', 'fixtures', 'fake-repo');
+// The --help sweep driver, run once for every registered command in one
+// process; the program it loads follows FROM_DIST like the entries above.
+const HELP_SWEEP = path.join(REPO_ROOT, 'tests', 'helpers', 'help-sweep.ts');
+const HELP_SWEEP_PROGRAM = pathToFileURL(entry('cli', 'program')).href;
 const TIMEOUT_MS = 20_000;
 
 // Some journeys spawn a dozen processes; give every test the same generous budget.
@@ -118,6 +122,27 @@ async function runCli(args: readonly string[], opts: RunOptions = {}): Promise<R
   // that did not ask for a project: a run without a cwd gets its own.
   const full = [...args, '--cwd', opts.cwd ?? (await isolatedCwd())];
   return runNode(CLI, full, { ...opts, cwd: REPO_ROOT });
+}
+
+/**
+ * `lexicon <cmd> --help` for every command in one spawned helper. A spawn per
+ * command was about thirty cold `node` starts, the most spawn-dense sweep in
+ * the file: under full-suite load it could outrun the 30 s test budget, and
+ * on Windows (PARALLEL = 1) the spawns ran serially. The helper builds the
+ * same program once per command and reports each exit code and streams as one
+ * JSON line, so the assertions on them stay exactly as they were; the spawned
+ * `lexicon --help` above still covers the bin entry end to end.
+ */
+async function helpSweep(commands: readonly string[], opts: RunOptions): Promise<[string, RunResult][]> {
+  const cwd = await isolatedCwd();
+  const r = await runNode(HELP_SWEEP, [HELP_SWEEP_PROGRAM, cwd, ...commands], { env: opts.env });
+  expect(r.code, r.stderr).toBe(0);
+  const results: [string, RunResult][] = [];
+  for (const line of r.stdout.split('\n').filter((l) => l.length > 0)) {
+    const { cmd, code, stdout, stderr } = JSON.parse(line) as { cmd: string; code: number; stdout: string; stderr: string };
+    results.push([cmd, { code, stdout, stderr }]);
+  }
+  return results;
 }
 
 interface TestHome {
@@ -221,15 +246,7 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: basics', () => {
       .map((l) => l.trim().split(/\s|\|/)[0])
       .filter((c) => c && c !== 'help');
     expect(commands).toContain('normalize');
-    const queue = [...commands];
-    const results: [string, RunResult][] = [];
-    await Promise.all(
-      Array.from({ length: PARALLEL }, async () => {
-        for (let cmd = queue.shift(); cmd !== undefined; cmd = queue.shift()) {
-          results.push([cmd, await runCli([cmd, '--help'], { env: shared.env })]);
-        }
-      }),
-    );
+    const results = await helpSweep(commands, { env: shared.env });
     expect(results.map(([cmd]) => cmd).sort()).toEqual([...commands].sort());
     for (const [cmd, r] of results) {
       expect(r.code, `${cmd} --help: ${r.stderr}`).toBe(0);
