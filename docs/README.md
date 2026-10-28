@@ -13,7 +13,7 @@ The short pitch, the benchmark headline and the install commands are in the
 | Page | What it covers | Also listed under |
 |---|---|---|
 | [QUICKSTART.md](QUICKSTART.md) | Nothing to working corrections in Claude Code in five minutes, with what each setup step writes | |
-| [FIRST-RUN.md](FIRST-RUN.md) | A timed pass through the README install on one Linux VM: friction, wrong doc lines, agent-use audit | |
+| [FIRST-RUN.md](FIRST-RUN.md) | First run on a Linux VM: what the install did, doc fixes, agent-use audit | |
 | [CLIENTS.md](CLIENTS.md) | Installing into Claude Code (plugin, hooks, headless) and every other agent client. Read this one second | Use it with |
 | [FAQ.md](FAQ.md) | The questions people ask before installing | |
 | [PACKS.md](PACKS.md) | The five starter packs, what is in each, and how install and remove behave | |
