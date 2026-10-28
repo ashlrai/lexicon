@@ -1,0 +1,47 @@
+# Starter pack: architecture and building design. `lexicon pack add architecture`.
+# Spelled-out acronyms and split product names only; ordinary words such as
+# "cad", "revert" and "sketch" are deliberately not aliases.
+name: architecture
+title: Architecture and building design
+description: CAD and BIM tools, drawing formats and building design acronyms.
+version: 1
+terms:
+  - canonical: AutoCAD
+    category: product
+    aliases: [auto cad, auto c a d]
+  - canonical: Revit
+    category: product
+    aliases: [rev it, reh vit]
+  - canonical: Archicad
+    category: product
+    aliases: [archi cad, archi c a d]
+  - canonical: SketchUp
+    category: product
+    aliases: [sketch upp, sketch u p]
+  - canonical: Vectorworks
+    category: product
+    aliases: [vector wurks, vector werks]
+    never: [vector works]
+  - canonical: Bluebeam
+    category: product
+    aliases: [blue beem, bloobeam]
+    never: [blue beam]
+  - canonical: Navisworks
+    category: product
+    aliases: [navis works, navissworks]
+  - canonical: BIM
+    category: acronym
+    aliases: [b i m, bee eye em]
+  - canonical: CAD
+    category: acronym
+    aliases: [c a d, see ay dee]
+    never: [cad]
+  - canonical: DWG
+    category: acronym
+    aliases: [d w g, dee double you gee]
+  - canonical: DXF
+    category: acronym
+    aliases: [d x f, dee ex eff]
+  - canonical: IFC
+    category: acronym
+    aliases: [i f c, eye eff see]

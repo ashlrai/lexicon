@@ -148,7 +148,7 @@ To add a journey test:
 
 ## Adding a starter pack
 
-A pack for a profession the four shipped packs do not cover is the most useful thing a newcomer can add. The full recipe, including the one rule that decides the hard cases (never make an ordinary English word an alias on its own), is in [docs/PACKS.md](docs/PACKS.md#adding-a-pack-to-this-repo).
+A pack for a profession the shipped packs do not cover is the most useful thing a newcomer can add. The full recipe, including the one rule that decides the hard cases (never make an ordinary English word an alias on its own), is in [docs/PACKS.md](docs/PACKS.md#adding-a-pack-to-this-repo).
 
 ## Adding an exporter
 

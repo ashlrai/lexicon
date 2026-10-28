@@ -263,7 +263,7 @@ function Demo() {
           <p className="max-w-[46ch] text-[0.95rem] leading-relaxed text-paper-2">
             This is not a mock-up. The page compiles Lexicon’s{' '}
             <code className="font-mono text-[0.88em] text-paper">src/core</code> to a browser
-            bundle, loads the 176 curated starter terms, and runs the same matcher the CLI runs.
+            bundle, loads the 188 curated starter terms, and runs the same matcher the CLI runs.
             Type anything. Nothing you write is sent anywhere.
           </p>
         </div>
@@ -765,8 +765,8 @@ function InstallSection() {
                 finish.
               </p>
               <p>
-                <span className="font-mono text-paper">lexicon pack add developer</span>: 155
-                curated terms across four packs.
+                <span className="font-mono text-paper">lexicon pack add architecture</span>: 12
+                architecture terms, with 188 curated terms across five packs.
               </p>
               <p>
                 <span className="font-mono text-paper">lexicon export wispr</span>: push the same

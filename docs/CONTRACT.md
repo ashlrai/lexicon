@@ -27,7 +27,7 @@ src/mcp/           server, shared, tools/{index,terms,harvest,trust,setup,packs}
 Data and other trees, none of which `src/` imports at build time:
 
 ```text
-packs/             the four starter-pack YAML lexicons (developer, ai, business, voice-tools), read at runtime by src/core/packs.ts
+packs/             the five starter-pack YAML lexicons (developer, ai, business, voice-tools, architecture), read at runtime by src/core/packs.ts
 plugin/            committed esbuild bundles of src/mcp/server.ts and src/hooks/user-prompt-submit.ts
 extension/src/     browser extension; its core.ts bundles the browser-safe slice of src/core   <- core (build time only)
 web/               Next.js marketing site for lexicon.ashlr.ai; web/lib/generated holds a browser bundle of src/core   <- core (build time only)

@@ -58,10 +58,10 @@ import { registerPackCommands, runPackAdd, runPackList, runPackRemove, runPackSh
 import { Command } from 'commander';
 import { makeIO } from './helpers.js';
 
-const PACK_NAMES = ['ai', 'business', 'developer', 'voice-tools'];
+const PACK_NAMES = ['ai', 'architecture', 'business', 'developer', 'voice-tools'];
 
 /** Minimum sizes the packs promise (docs/PACKS.md). */
-const MIN_TERMS: Record<string, number> = { developer: 50, ai: 30, business: 30, 'voice-tools': 12 };
+const MIN_TERMS: Record<string, number> = { developer: 50, ai: 30, architecture: 12, business: 30, 'voice-tools': 12 };
 
 /**
  * Aliases that ARE an ordinary word, on purpose. Each entry is a real STT
@@ -211,6 +211,22 @@ describe('shipped packs', () => {
     expect(aliasesOf(voice, 'Wispr Flow')).toContain('whisper flow');
   });
 
+  it('ships architecture vocabulary and corrects a drawing handoff without changing prose', async () => {
+    const pack = await loadPack('architecture');
+    expect(pack).toMatchObject({ terms: 12, aliases: 24 });
+    expect(pack.lexicon.terms.find((term) => term.canonical === 'AutoCAD')?.aliases).toContain('auto cad');
+    const result = normalize('export the d w g from auto cad for the b i m model', pack.lexicon);
+    expect(result.output).toBe('export the DWG from AutoCAD for the BIM model');
+    expect(result.replacements.map((replacement) => replacement.reason)).toEqual(['alias', 'alias', 'alias']);
+    for (const prose of [
+      'the cad will revert to the original sketch',
+      'revise the blue beam and vector diagram',
+      'the architect reviews the building model and drawing format',
+    ]) {
+      expect(normalize(prose, pack.lexicon).output).toBe(prose);
+    }
+  });
+
   it('corrects the demo sentence once the developer pack is the lexicon', async () => {
     const dev = await loadPack('developer');
     const result = normalize('deploy to cuban eats on versal with superbase', dev.lexicon);
@@ -353,6 +369,18 @@ describe('installPack / uninstallPack', () => {
     const loaded = await loadLexicon({ cwd, globalPath });
     expect(normalize('deploy to cuban eats on versal with superbase', loaded.merged).output).toBe('deploy to Kubernetes on Vercel with Supabase');
     expect(normalize('ask and tropic about em see pee', loaded.merged).output).toBe('ask Anthropic about MCP');
+  });
+
+  it('installs and removes architecture corrections through the stored lexicon', async () => {
+    await installPack('architecture', { cwd, globalPath });
+    const loaded = await loadLexicon({ cwd, globalPath });
+    expect(installedPacks(loaded)).toEqual(['architecture']);
+    expect(normalize('export d x f from archi cad', loaded.merged).output).toBe('export DXF from Archicad');
+    expect(await installPack('architecture', { cwd, globalPath })).toMatchObject({ added: 0, merged: 12 });
+    await uninstallPack('architecture', { cwd, globalPath });
+    const removed = await loadLexicon({ cwd, globalPath });
+    expect(installedPacks(removed)).toEqual([]);
+    expect(normalize('export d x f from archi cad', removed.merged).changed).toBe(false);
   });
 
   it('installs a pack with a bounded number of YAML parses, not a read and write per term', async () => {
