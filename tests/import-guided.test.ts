@@ -3,13 +3,14 @@
  * temp global lexicon. The github source is faked at the exec seam; nothing
  * touches the real machine.
  */
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { runImportGuided } from '../src/cli/cmd-import-guided.js';
 import type { ImportGuidedDeps } from '../src/cli/cmd-import-guided.js';
-import type { ImportSourceDeps } from '../src/core/index.js';
+import { getImportSource } from '../src/core/index.js';
+import type { HarvestCandidate, ImportSourceDeps } from '../src/core/index.js';
 import { makeIO, scripted } from './helpers.js';
 
 function githubExec(file: string, args: readonly string[]): string {
@@ -33,6 +34,7 @@ beforeEach(() => {
 });
 
 afterEach(() => {
+  vi.restoreAllMocks();
   rmSync(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
@@ -248,6 +250,71 @@ describe('runImportGuided', () => {
     expect(text).toContain('import:github');
     expect(io.out).toContain('1 new');
     expect(io.out).toContain('4 skipped');
+  });
+
+  it('shows mixed-source duplicate evidence in full before any approval', async () => {
+    const candidate = (source: HarvestCandidate['source'], evidence: string[], count = 1): HarvestCandidate => ({
+      canonical: 'Mason Wyatt', category: 'person', source, evidence, count,
+      suggestedAliases: ['Mason Whyatt'],
+    });
+    vi.spyOn(getImportSource('calendar'), 'checkAvailable').mockResolvedValue({ available: true });
+    vi.spyOn(getImportSource('calendar'), 'harvest').mockResolvedValue([
+      candidate('import:calendar', ['calendar attendee', 'calendar organizer', 'calendar title', 'fourth calendar origin']),
+    ]);
+    vi.spyOn(getImportSource('github'), 'harvest').mockResolvedValue([
+      candidate('import:github', ['GitHub profile name']),
+      { ...candidate('import:github', ['GitHub repo']), canonical: 'Lexicon' },
+    ]);
+    const io = makeIO();
+    const previewIO = makeIO();
+    expect(await runImportGuided({ globalPath, sources: 'calendar,github', json: true }, previewIO, fakeDeps())).toBe(0);
+    const preview = JSON.parse(previewIO.out);
+    expect(preview.candidates).toHaveLength(2);
+    expect(preview.candidates[0]).toMatchObject({
+      canonical: 'Mason Wyatt', source: 'import:calendar', count: 2,
+      evidence: ['calendar attendee', 'calendar organizer', 'calendar title', 'fourth calendar origin', 'GitHub profile name'],
+      aliases: ['Mason Whyatt'],
+    });
+    const p = scripted([[2, 3], 'a']);
+    const ask = p.ask.bind(p);
+    p.ask = async (...args) => {
+      expect(io.out).toContain('fourth calendar origin');
+      expect(io.out).toContain('GitHub profile name');
+      expect(io.out).toContain('Lexicon');
+      expect(io.out).toContain('seen 2x');
+      expect(io.out).toContain('Duplicate names are combined');
+      expect(existsSync(globalPath)).toBe(false);
+      return ask(...args);
+    };
+    expect(await runImportGuided({ globalPath }, io, fakeDeps({
+      isInteractive: () => true, createPrompter: () => p,
+    }))).toBe(0);
+    expect(io.out).toContain('2 new');
+    const text = readFileSync(globalPath, 'utf8');
+    expect(text.match(/canonical: Mason Wyatt/g)).toHaveLength(1);
+  });
+
+  it.each(['q', 'n'])('declining every candidate with %s leaves an existing lexicon unchanged', async (answer) => {
+    const original = '# keep this comment\nversion: 1\nterms: []\n';
+    writeFileSync(globalPath, original);
+    const p = scripted([[3], ...Array(5).fill(answer)]);
+    expect(await runImportGuided({ globalPath }, makeIO(), fakeDeps({
+      isInteractive: () => true, createPrompter: () => p,
+    }))).toBe(0);
+    expect(readFileSync(globalPath, 'utf8')).toBe(original);
+  });
+
+  it.each([false, true])('empty previews do not prompt for terms or write (json=%s)', async (json) => {
+    vi.spyOn(getImportSource('github'), 'harvest').mockResolvedValue([]);
+    const io = makeIO();
+    const p = scripted([[1]]);
+    expect(await runImportGuided({ globalPath, sources: 'github', json }, io, fakeDeps({
+      isInteractive: () => true, createPrompter: () => p,
+    }))).toBe(0);
+    if (json) expect(JSON.parse(io.out).candidates).toEqual([]);
+    else expect(io.out).toContain('no candidates found');
+    expect(p.asked.filter((q) => q.includes('add?'))).toEqual([]);
+    expect(existsSync(globalPath)).toBe(false);
   });
 
   it('reports unavailable sources and exits cleanly when none are usable', async () => {

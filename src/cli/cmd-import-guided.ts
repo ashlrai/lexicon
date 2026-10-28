@@ -22,6 +22,7 @@ import {
   harvestImportSources,
   isTrusted,
   importCandidateId,
+  importCandidatePreview,
   importPreviewDigest,
   selectImportCandidates,
   listImportSources,
@@ -92,8 +93,8 @@ function parseSourceList(value: string | undefined): ImportSourceId[] {
 }
 
 function showImportCandidate(io: IO, c: HarvestCandidate, index: number, total: number): void {
-  line(io, `${dim(`[${index + 1}/${total}]`)} ${bold(safe(c.canonical))}  ${dim(`${c.category}, seen ${c.count}x, from ${c.source}`)}`);
-  line(io, `  evidence: ${c.evidence.length > 0 ? safe(c.evidence.slice(0, 3).join(', ')) : dim('(none)')}`);
+  line(io, `${dim(`[${index + 1}/${total}]`)} ${bold(safe(c.canonical))}  ${dim(`${c.category}, seen ${c.count}x, source tag ${safe(c.source)}`)}`);
+  line(io, `  evidence: ${c.evidence.length > 0 ? safe(c.evidence.join(', ')) : dim('(none)')}`);
   line(io, `  aliases:  ${c.suggestedAliases.length > 0 ? safe(c.suggestedAliases.join(', ')) : dim('(none)')}`);
 }
 
@@ -226,12 +227,7 @@ export async function runImportGuided(
   const candidates = await harvestImportSources(chosen, sdeps, { limit });
   report.candidates = candidates.map((c) => ({
     id: importCandidateId(c),
-    canonical: c.canonical,
-    category: c.category,
-    source: c.source,
-    aliases: c.suggestedAliases,
-    evidence: c.evidence,
-    count: c.count,
+    ...importCandidatePreview(c),
   }));
 
   const paths = resolvePaths(storeOpts);
@@ -250,9 +246,18 @@ export async function runImportGuided(
       io.stdout(`${JSON.stringify(jsonOk(report), null, 2)}\n`);
     } else {
       line(io, bold(`dry run: ${candidates.length} candidate${candidates.length === 1 ? '' : 's'} (nothing written)`));
+      line(io, dim('Duplicate names are combined case-insensitively; counts, evidence and aliases are merged.'));
       candidates.forEach((c, i) => showImportCandidate(io, c, i, candidates.length));
     }
     return 0;
+  }
+
+  if (interactive) {
+    line(io, bold('Review all candidates before approving terms:'));
+    line(io, dim('Duplicate names are combined case-insensitively into one candidate; counts, evidence and aliases are merged.'));
+    line(io, dim('The source tag is the retained tag; evidence lists the origins of merged candidates.'));
+    candidates.forEach((c, i) => showImportCandidate(io, c, i, candidates.length));
+    line(io);
   }
 
   // Approve-each screen, the same y/n/e/c/a/q shape as the repo harvest review.
