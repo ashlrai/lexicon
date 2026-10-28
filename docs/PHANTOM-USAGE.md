@@ -24,3 +24,11 @@ None of these calls uses a provider key:
 ## LiteLLM
 
 Not applicable. Lexicon sends no model requests, so a LiteLLM proxy has nothing to route for it. If your agent uses LiteLLM, follow the agent's or gateway's own guidance.
+
+## See also
+
+- [INTEGRATION.md](../INTEGRATION.md) - the wider contract Phantom would integrate against (the lexicon file, the trust gate, the normalize entry points).
+- [LOCAL-API.md](LOCAL-API.md) - the loopback API behind the `serve.json` token.
+- [SECURITY.md](../SECURITY.md) - the threat model both of those live under.
+
+Back to [the docs index](README.md).

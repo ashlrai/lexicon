@@ -276,9 +276,18 @@ Lexicon is one of the open-source tools from [Ashlr](https://ashlr.ai), a forwar
 - **[Ashlr Stack](https://stack.ashlr.ai)** (`stack`): provisions services and stores their keys in Phantom Secrets.
 - **[ashlr-plugin](https://plugin.ashlr.ai/)** (`ashlr-plugin`): token-efficiency tools for Claude Code and Codex.
 
-**Phantom:** [INTEGRATION.md](./INTEGRATION.md) is a sketch, written from Lexicon's side, of the contract Phantom would integrate against (the lexicon file, the trust gate, the normalize entry points). It changes nothing in Phantom core.
+### Working with Phantom
 
-**Post-quantum readiness:** [docs/PQ-READINESS.md](./docs/PQ-READINESS.md) records what Lexicon does with cryptography today (SHA-256 and SHA-512 hashes for integrity; no encryption, key exchange or signing in the shipped source) and what a migration would touch. It makes no claim that Lexicon is quantum-safe.
+Lexicon needs nothing from Phantom to run, and the two already meet in a working session:
+
+- **`phantom exec` leaves Lexicon alone.** [Phantom Secrets](https://phm.dev/secrets) starts an agent as `phantom exec -- <cmd>` (for example `phantom exec -- claude`) with `phm_` placeholders in place of real provider keys, swapped back in by a local proxy on the way out. Lexicon reads no provider key variable, so inside that session its hook, MCP server and CLI behave exactly as they do outside it: it never sees a placeholder and needs no `phm_` value of its own. The one token Lexicon keeps, the `serve.json` bearer for its loopback API, is a local token Phantom does not manage. Details: [docs/PHANTOM-USAGE.md](docs/PHANTOM-USAGE.md).
+- **`lexicon doctor` sees it.** An info-level line reports whether the `phantom` CLI is on PATH and whether it is running inside a `phantom exec` session, beside the same report for [Locus](https://github.com/ashlrai/locus) and [Ashlr MD](https://md.ashlr.ai) read through their `--ashlr-handshake` output. Every companion check is value-free (it confirms a marker or a version, never a secret) and report-only (it cannot change `ok`, `ready` or the exit code). These lines are in source (main) and not yet in a release.
+
+The deeper contract is [INTEGRATION.md](./INTEGRATION.md): a sketch, written from Lexicon's side, of how Phantom would consume the lexicon (the shared YAML file, the trust gate Phantom must not bypass, the `normalize()` / MCP / loopback-HTTP entry points, and the boundary that Lexicon builds no hosted sync). It changes nothing in Phantom core.
+
+### Post-quantum readiness
+
+[docs/PQ-READINESS.md](./docs/PQ-READINESS.md) records what Lexicon does with cryptography today (SHA-256 and SHA-512 hashes for integrity; no encryption, key exchange or signing in the shipped source) and what a migration would touch. It makes no claim that Lexicon is quantum-safe.
 
 ## Contributing
 
