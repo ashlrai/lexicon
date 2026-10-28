@@ -11,6 +11,8 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Added
 
+- `node scripts/affected-tests.mjs <base-ref>` selects Vitest files from a merge-base diff, skips documentation-only changes, and requests the full suite for config, lockfile and unmapped changes.
+
 - `--dry-run` previews init, add, remove, harvest --add, export --out, review and edit without saving changes. Edit reports its target without launching an editor. Pack install, update and removal, trust, untrust, learn and pending accept/reject also support previews that keep lexicon, trust and registry state unchanged.
 
 - `lexicon pending reject` remembers what you rejected: the pending file gains a `rejected:` list of ids (never the words, capped at 500), and the prompt hook no longer queues a correction you already rejected. `lexicon learn` with the same words still works. Additive file change; an older lexicon that rewrites the file forgets the list.
