@@ -1,0 +1,1066 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`assemblyai export snapshots > category filter and importance limit 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "word_boost": [
+    "A&B <Tools>",
+    "Ashlr.AI",
+    "Zoë Martin"
+  ],
+  "boost_param": "high"
+}
+",
+}
+`;
+
+exports[`assemblyai export snapshots > complete vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "word_boost": [
+    "NoAliases",
+    "kubectl",
+    "A&B <Tools>",
+    "Ashlr.AI",
+    "Zoë Martin",
+    "=SUM(1,2)",
+    "Path\\\\|Kit",
+    "Uncategorized"
+  ],
+  "boost_param": "high"
+}
+",
+}
+`;
+
+exports[`assemblyai export snapshots > empty vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "word_boost": [],
+  "boost_param": "high"
+}
+",
+}
+`;
+
+exports[`azure export snapshots > category filter and importance limit 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "phraseList": [
+    "A&B <Tools>",
+    "Ashlr.AI",
+    "Zoë Martin"
+  ]
+}
+",
+}
+`;
+
+exports[`azure export snapshots > complete vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "phraseList": [
+    "NoAliases",
+    "kubectl",
+    "A&B <Tools>",
+    "Ashlr.AI",
+    "Zoë Martin",
+    "=SUM(1,2)",
+    "Path\\\\|Kit",
+    "Uncategorized"
+  ]
+}
+",
+}
+`;
+
+exports[`azure export snapshots > empty vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "phraseList": []
+}
+",
+}
+`;
+
+exports[`claude-md export snapshots > category filter and importance limit 1`] = `
+{
+  "notes": [],
+  "text": "## Voice lexicon
+
+The user dictates with speech-to-text. When a transcript contains one of these spellings, they mean the canonical term. Always write the canonical form.
+
+| Canonical | Sounds like / STT writes | Note |
+| --- | --- | --- |
+| Ashlr.AI | Ashler, "Ashley, our AI" | brand My company (voice tools) (ASH-ler) |
+| Zoë Martin | Zoe Martin | person |
+| A&B <Tools> | A and B, A "bee" | product |
+
+If a word looks like a garbled proper noun and is not listed, ask rather than guess.
+",
+}
+`;
+
+exports[`claude-md export snapshots > complete vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "## Voice lexicon
+
+The user dictates with speech-to-text. When a transcript contains one of these spellings, they mean the canonical term. Always write the canonical form.
+
+| Canonical | Sounds like / STT writes | Note |
+| --- | --- | --- |
+| Ashlr.AI | Ashler, "Ashley, our AI" | brand My company (voice tools) (ASH-ler) |
+| Zoë Martin | Zoe Martin | person |
+| A&B <Tools> | A and B, A "bee" | product |
+| NoAliases |  | acronym |
+| kubectl | cube control, kube cuddle | identifier |
+| =SUM(1,2) | +sum | other |
+| Path\\​\\|Kit | path\\|kit, {{path}} | other Keep the pipe \\| and slash \\ |
+| Uncategorized | un categorised |  |
+
+If a word looks like a garbled proper noun and is not listed, ask rather than guess.
+",
+}
+`;
+
+exports[`claude-md export snapshots > empty vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "## Voice lexicon
+
+The user dictates with speech-to-text. When a transcript contains one of these spellings, they mean the canonical term. Always write the canonical form.
+
+| Canonical | Sounds like / STT writes | Note |
+| --- | --- | --- |
+
+If a word looks like a garbled proper noun and is not listed, ask rather than guess.
+",
+}
+`;
+
+exports[`csv export snapshots > category filter and importance limit 1`] = `
+{
+  "notes": [],
+  "rows": 5,
+  "text": "canonical,alias,category,phonetic
+Ashlr.AI,Ashler,brand,ASH-ler
+Ashlr.AI,"Ashley, our AI",brand,ASH-ler
+Zoë Martin,Zoe Martin,person,
+A&B <Tools>,A and B,product,
+A&B <Tools>,"A ""bee""",product,
+",
+}
+`;
+
+exports[`csv export snapshots > complete vocabulary 1`] = `
+{
+  "notes": [
+    "wrote 2 values a spreadsheet would run as a formula with a leading ' so it shows as text (lexicon import keeps the '): "=SUM(1,2)" and "+sum"",
+  ],
+  "rows": 11,
+  "text": "canonical,alias,category,phonetic
+Uncategorized,un categorised,,
+kubectl,cube control,identifier,
+kubectl,kube cuddle,identifier,
+Ashlr.AI,Ashler,brand,ASH-ler
+Ashlr.AI,"Ashley, our AI",brand,ASH-ler
+Zoë Martin,Zoe Martin,person,
+A&B <Tools>,A and B,product,
+A&B <Tools>,"A ""bee""",product,
+Path\\|Kit,path|kit,other,
+Path\\|Kit,{{path}},other,
+"'=SUM(1,2)","'+sum",other,
+",
+}
+`;
+
+exports[`csv export snapshots > empty vocabulary 1`] = `
+{
+  "notes": [],
+  "rows": 0,
+  "text": "canonical,alias,category,phonetic
+",
+}
+`;
+
+exports[`deepgram export snapshots > category filter and importance limit 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "keyterm": [
+    "A&B <Tools>",
+    "Ashlr.AI",
+    "Zoë Martin"
+  ],
+  "keywords": [
+    "A&B <Tools>:2",
+    "Ashlr.AI:2",
+    "Zoë Martin:2"
+  ]
+}
+",
+}
+`;
+
+exports[`deepgram export snapshots > complete vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "keyterm": [
+    "NoAliases",
+    "kubectl",
+    "A&B <Tools>",
+    "Ashlr.AI",
+    "Zoë Martin",
+    "=SUM(1,2)",
+    "Path\\\\|Kit",
+    "Uncategorized"
+  ],
+  "keywords": [
+    "NoAliases:1",
+    "kubectl:1",
+    "A&B <Tools>:2",
+    "Ashlr.AI:2",
+    "Zoë Martin:2",
+    "=SUM(1,2):1",
+    "Path\\\\|Kit:1",
+    "Uncategorized:1"
+  ]
+}
+",
+}
+`;
+
+exports[`deepgram export snapshots > empty vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "keyterm": [],
+  "keywords": []
+}
+",
+}
+`;
+
+exports[`espanso export snapshots > category filter and importance limit 1`] = `
+{
+  "notes": [],
+  "rows": 5,
+  "text": "matches:
+  - trigger: "Ashler"
+    replace: "Ashlr.AI"
+    word: true
+    propagate_case: false
+  - trigger: "Ashley, our AI"
+    replace: "Ashlr.AI"
+    word: true
+    propagate_case: false
+  - trigger: "Zoe Martin"
+    replace: "Zoë Martin"
+    word: true
+    propagate_case: false
+  - trigger: "A and B"
+    replace: "A&B <Tools>"
+    word: true
+    propagate_case: false
+  - trigger: "A \\"bee\\""
+    replace: "A&B <Tools>"
+    word: true
+    propagate_case: false
+",
+}
+`;
+
+exports[`espanso export snapshots > complete vocabulary 1`] = `
+{
+  "notes": [],
+  "rows": 11,
+  "text": "matches:
+  - trigger: "un categorised"
+    replace: "Uncategorized"
+    word: true
+    propagate_case: false
+  - trigger: "cube control"
+    replace: "kubectl"
+    word: true
+    propagate_case: false
+  - trigger: "kube cuddle"
+    replace: "kubectl"
+    word: true
+    propagate_case: false
+  - trigger: "Ashler"
+    replace: "Ashlr.AI"
+    word: true
+    propagate_case: false
+  - trigger: "Ashley, our AI"
+    replace: "Ashlr.AI"
+    word: true
+    propagate_case: false
+  - trigger: "Zoe Martin"
+    replace: "Zoë Martin"
+    word: true
+    propagate_case: false
+  - trigger: "A and B"
+    replace: "A&B <Tools>"
+    word: true
+    propagate_case: false
+  - trigger: "A \\"bee\\""
+    replace: "A&B <Tools>"
+    word: true
+    propagate_case: false
+  - trigger: "path|kit"
+    replace: "Path\\\\|Kit"
+    word: true
+    propagate_case: false
+  - trigger: "{{path}}"
+    replace: "Path\\\\|Kit"
+    word: true
+    propagate_case: false
+  - trigger: "+sum"
+    replace: "=SUM(1,2)"
+    word: true
+    propagate_case: false
+",
+}
+`;
+
+exports[`espanso export snapshots > empty vocabulary 1`] = `
+{
+  "notes": [],
+  "rows": 0,
+  "text": "matches: []
+",
+}
+`;
+
+exports[`google export snapshots > category filter and importance limit 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "adaptation": {
+    "phraseSets": [
+      {
+        "phrases": [
+          {
+            "value": "A&B <Tools>",
+            "boost": 20
+          },
+          {
+            "value": "Ashlr.AI",
+            "boost": 20
+          },
+          {
+            "value": "Zoë Martin",
+            "boost": 20
+          }
+        ]
+      }
+    ]
+  }
+}
+",
+}
+`;
+
+exports[`google export snapshots > complete vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "adaptation": {
+    "phraseSets": [
+      {
+        "phrases": [
+          {
+            "value": "NoAliases",
+            "boost": 10
+          },
+          {
+            "value": "kubectl",
+            "boost": 10
+          },
+          {
+            "value": "A&B <Tools>",
+            "boost": 20
+          },
+          {
+            "value": "Ashlr.AI",
+            "boost": 20
+          },
+          {
+            "value": "Zoë Martin",
+            "boost": 20
+          },
+          {
+            "value": "=SUM(1,2)",
+            "boost": 10
+          },
+          {
+            "value": "Path\\\\|Kit",
+            "boost": 10
+          },
+          {
+            "value": "Uncategorized",
+            "boost": 10
+          }
+        ]
+      }
+    ]
+  }
+}
+",
+}
+`;
+
+exports[`google export snapshots > empty vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "adaptation": {
+    "phraseSets": [
+      {
+        "phrases": []
+      }
+    ]
+  }
+}
+",
+}
+`;
+
+exports[`json export snapshots > category filter and importance limit 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "version": 1,
+  "settings": {
+    "protectedWords": [
+      "ordinary"
+    ],
+    "minConfidence": 0.9
+  },
+  "terms": [
+    {
+      "canonical": "Ashlr.AI",
+      "aliases": [
+        "Ashler",
+        "Ashley, our AI"
+      ],
+      "category": "brand",
+      "phonetic": "ASH-ler",
+      "notes": "My company (voice tools)",
+      "source": "user",
+      "createdAt": "2026-01-02T03:04:05.000Z",
+      "never": [
+        "ash"
+      ]
+    },
+    {
+      "canonical": "Zoë Martin",
+      "aliases": [
+        "Zoe Martin"
+      ],
+      "category": "person"
+    },
+    {
+      "canonical": "A&B <Tools>",
+      "aliases": [
+        "A and B",
+        "A \\"bee\\""
+      ],
+      "category": "product"
+    }
+  ]
+}
+",
+}
+`;
+
+exports[`json export snapshots > complete vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "version": 1,
+  "settings": {
+    "protectedWords": [
+      "ordinary"
+    ],
+    "minConfidence": 0.9
+  },
+  "terms": [
+    {
+      "canonical": "Uncategorized",
+      "aliases": [
+        "un categorised"
+      ]
+    },
+    {
+      "canonical": "kubectl",
+      "aliases": [
+        "cube control",
+        "kube cuddle"
+      ],
+      "category": "identifier"
+    },
+    {
+      "canonical": "Ashlr.AI",
+      "aliases": [
+        "Ashler",
+        "Ashley, our AI"
+      ],
+      "category": "brand",
+      "phonetic": "ASH-ler",
+      "notes": "My company (voice tools)",
+      "source": "user",
+      "createdAt": "2026-01-02T03:04:05.000Z",
+      "never": [
+        "ash"
+      ]
+    },
+    {
+      "canonical": "Zoë Martin",
+      "aliases": [
+        "Zoe Martin"
+      ],
+      "category": "person"
+    },
+    {
+      "canonical": "A&B <Tools>",
+      "aliases": [
+        "A and B",
+        "A \\"bee\\""
+      ],
+      "category": "product"
+    },
+    {
+      "canonical": "NoAliases",
+      "aliases": [],
+      "category": "acronym"
+    },
+    {
+      "canonical": "Path\\\\|Kit",
+      "aliases": [
+        "path|kit",
+        "{{path}}"
+      ],
+      "category": "other",
+      "notes": "Keep the pipe | and slash \\\\",
+      "caseSensitive": true
+    },
+    {
+      "canonical": "=SUM(1,2)",
+      "aliases": [
+        "+sum"
+      ],
+      "category": "other"
+    }
+  ]
+}
+",
+}
+`;
+
+exports[`json export snapshots > empty vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "version": 1,
+  "terms": []
+}
+",
+}
+`;
+
+exports[`macos export snapshots > category filter and importance limit 1`] = `
+{
+  "notes": [],
+  "rows": 5,
+  "text": "<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+	<dict>
+		<key>phrase</key>
+		<string>Ashlr.AI</string>
+		<key>shortcut</key>
+		<string>Ashler</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>Ashlr.AI</string>
+		<key>shortcut</key>
+		<string>Ashley, our AI</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>Zoë Martin</string>
+		<key>shortcut</key>
+		<string>Zoe Martin</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>A&amp;B &lt;Tools&gt;</string>
+		<key>shortcut</key>
+		<string>A and B</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>A&amp;B &lt;Tools&gt;</string>
+		<key>shortcut</key>
+		<string>A &quot;bee&quot;</string>
+	</dict>
+</array>
+</plist>
+",
+}
+`;
+
+exports[`macos export snapshots > complete vocabulary 1`] = `
+{
+  "notes": [],
+  "rows": 11,
+  "text": "<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+	<dict>
+		<key>phrase</key>
+		<string>Uncategorized</string>
+		<key>shortcut</key>
+		<string>un categorised</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>kubectl</string>
+		<key>shortcut</key>
+		<string>cube control</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>kubectl</string>
+		<key>shortcut</key>
+		<string>kube cuddle</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>Ashlr.AI</string>
+		<key>shortcut</key>
+		<string>Ashler</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>Ashlr.AI</string>
+		<key>shortcut</key>
+		<string>Ashley, our AI</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>Zoë Martin</string>
+		<key>shortcut</key>
+		<string>Zoe Martin</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>A&amp;B &lt;Tools&gt;</string>
+		<key>shortcut</key>
+		<string>A and B</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>A&amp;B &lt;Tools&gt;</string>
+		<key>shortcut</key>
+		<string>A &quot;bee&quot;</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>Path\\|Kit</string>
+		<key>shortcut</key>
+		<string>path|kit</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>Path\\|Kit</string>
+		<key>shortcut</key>
+		<string>{{path}}</string>
+	</dict>
+	<dict>
+		<key>phrase</key>
+		<string>=SUM(1,2)</string>
+		<key>shortcut</key>
+		<string>+sum</string>
+	</dict>
+</array>
+</plist>
+",
+}
+`;
+
+exports[`macos export snapshots > empty vocabulary 1`] = `
+{
+  "notes": [],
+  "rows": 0,
+  "text": "<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<array>
+</array>
+</plist>
+",
+}
+`;
+
+exports[`markdown export snapshots > category filter and importance limit 1`] = `
+{
+  "notes": [],
+  "text": "- **Ashlr.AI** (brand): Ashler, "Ashley, our AI"
+- **Zoë Martin** (person): Zoe Martin
+- **A&B <Tools>** (product): A and B, A "bee"
+",
+}
+`;
+
+exports[`markdown export snapshots > complete vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "- **Ashlr.AI** (brand): Ashler, "Ashley, our AI"
+- **Zoë Martin** (person): Zoe Martin
+- **A&B <Tools>** (product): A and B, A "bee"
+- **NoAliases** (acronym)
+- **kubectl** (identifier): cube control, kube cuddle
+- **=SUM(1,2)** (other): +sum
+- **Path\\|Kit** (other): path|kit, {{path}}
+- **Uncategorized**: un categorised
+",
+}
+`;
+
+exports[`markdown export snapshots > empty vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "",
+}
+`;
+
+exports[`openai export snapshots > category filter and importance limit 1`] = `
+{
+  "names": 3,
+  "notes": [],
+  "text": "A&B <Tools>, Ashlr.AI, Zoë Martin",
+}
+`;
+
+exports[`openai export snapshots > complete vocabulary 1`] = `
+{
+  "names": 8,
+  "notes": [],
+  "text": "NoAliases, kubectl, A&B <Tools>, Ashlr.AI, Zoë Martin, "=SUM(1,2)", Path\\|Kit, Uncategorized",
+}
+`;
+
+exports[`openai export snapshots > empty vocabulary 1`] = `
+{
+  "names": 0,
+  "notes": [],
+  "text": "",
+}
+`;
+
+exports[`speechmatics export snapshots > category filter and importance limit 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "additional_vocab": [
+    {
+      "content": "A&B <Tools>",
+      "sounds_like": [
+        "A and B",
+        "A \\"bee\\""
+      ]
+    },
+    {
+      "content": "Ashlr.AI",
+      "sounds_like": [
+        "Ashler",
+        "Ashley, our AI"
+      ]
+    },
+    {
+      "content": "Zoë Martin",
+      "sounds_like": [
+        "Zoe Martin"
+      ]
+    }
+  ]
+}
+",
+}
+`;
+
+exports[`speechmatics export snapshots > complete vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "additional_vocab": [
+    {
+      "content": "NoAliases"
+    },
+    {
+      "content": "kubectl",
+      "sounds_like": [
+        "cube control",
+        "kube cuddle"
+      ]
+    },
+    {
+      "content": "A&B <Tools>",
+      "sounds_like": [
+        "A and B",
+        "A \\"bee\\""
+      ]
+    },
+    {
+      "content": "Ashlr.AI",
+      "sounds_like": [
+        "Ashler",
+        "Ashley, our AI"
+      ]
+    },
+    {
+      "content": "Zoë Martin",
+      "sounds_like": [
+        "Zoe Martin"
+      ]
+    },
+    {
+      "content": "=SUM(1,2)",
+      "sounds_like": [
+        "+sum"
+      ]
+    },
+    {
+      "content": "Path\\\\|Kit",
+      "sounds_like": [
+        "path|kit",
+        "{{path}}"
+      ]
+    },
+    {
+      "content": "Uncategorized",
+      "sounds_like": [
+        "un categorised"
+      ]
+    }
+  ]
+}
+",
+}
+`;
+
+exports[`speechmatics export snapshots > empty vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "{
+  "additional_vocab": []
+}
+",
+}
+`;
+
+exports[`superwhisper export snapshots > category filter and importance limit 1`] = `
+{
+  "notes": [],
+  "rows": 5,
+  "text": "[
+  {
+    "original": "Ashler",
+    "replacement": "Ashlr.AI"
+  },
+  {
+    "original": "Ashley, our AI",
+    "replacement": "Ashlr.AI"
+  },
+  {
+    "original": "Zoe Martin",
+    "replacement": "Zoë Martin"
+  },
+  {
+    "original": "A and B",
+    "replacement": "A&B <Tools>"
+  },
+  {
+    "original": "A \\"bee\\"",
+    "replacement": "A&B <Tools>"
+  }
+]
+",
+}
+`;
+
+exports[`superwhisper export snapshots > complete vocabulary 1`] = `
+{
+  "notes": [],
+  "rows": 11,
+  "text": "[
+  {
+    "original": "un categorised",
+    "replacement": "Uncategorized"
+  },
+  {
+    "original": "cube control",
+    "replacement": "kubectl"
+  },
+  {
+    "original": "kube cuddle",
+    "replacement": "kubectl"
+  },
+  {
+    "original": "Ashler",
+    "replacement": "Ashlr.AI"
+  },
+  {
+    "original": "Ashley, our AI",
+    "replacement": "Ashlr.AI"
+  },
+  {
+    "original": "Zoe Martin",
+    "replacement": "Zoë Martin"
+  },
+  {
+    "original": "A and B",
+    "replacement": "A&B <Tools>"
+  },
+  {
+    "original": "A \\"bee\\"",
+    "replacement": "A&B <Tools>"
+  },
+  {
+    "original": "path|kit",
+    "replacement": "Path\\\\|Kit"
+  },
+  {
+    "original": "{{path}}",
+    "replacement": "Path\\\\|Kit"
+  },
+  {
+    "original": "+sum",
+    "replacement": "=SUM(1,2)"
+  }
+]
+",
+}
+`;
+
+exports[`superwhisper export snapshots > empty vocabulary 1`] = `
+{
+  "notes": [],
+  "rows": 0,
+  "text": "[]
+",
+}
+`;
+
+exports[`text export snapshots > category filter and importance limit 1`] = `
+{
+  "notes": [],
+  "text": "A&B <Tools>: A and B, A "bee"
+Ashlr.AI = Ashler | Ashley, our AI
+Zoë Martin: Zoe Martin
+",
+}
+`;
+
+exports[`text export snapshots > complete vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "\\=SUM(1,2): +sum
+A&B <Tools>: A and B, A "bee"
+Ashlr.AI = Ashler | Ashley, our AI
+kubectl: cube control, kube cuddle
+NoAliases
+Path\\\\|Kit: path|kit, {{path}}
+Uncategorized: un categorised
+Zoë Martin: Zoe Martin
+",
+}
+`;
+
+exports[`text export snapshots > empty vocabulary 1`] = `
+{
+  "notes": [],
+  "text": "",
+}
+`;
+
+exports[`whisper-prompt export snapshots > category filter and importance limit 1`] = `
+{
+  "names": 3,
+  "notes": [],
+  "text": "A&B <Tools>, Ashlr.AI, Zoë Martin",
+}
+`;
+
+exports[`whisper-prompt export snapshots > complete vocabulary 1`] = `
+{
+  "names": 8,
+  "notes": [],
+  "text": "NoAliases, kubectl, A&B <Tools>, Ashlr.AI, Zoë Martin, "=SUM(1,2)", Path\\|Kit, Uncategorized",
+}
+`;
+
+exports[`whisper-prompt export snapshots > empty vocabulary 1`] = `
+{
+  "names": 0,
+  "notes": [],
+  "text": "",
+}
+`;
+
+exports[`wispr export snapshots > category filter and importance limit 1`] = `
+{
+  "notes": [],
+  "rows": 5,
+  "text": "word,replacement
+Ashler,Ashlr.AI
+"Ashley, our AI",Ashlr.AI
+Zoe Martin,Zoë Martin
+A and B,A&B <Tools>
+"A ""bee""",A&B <Tools>
+",
+}
+`;
+
+exports[`wispr export snapshots > complete vocabulary 1`] = `
+{
+  "notes": [
+    "left out 1 pair a spreadsheet would run as a formula (a cell starting with = + - @, after any spaces, or with a tab or a carriage return): "+sum -> =SUM(1,2)"",
+  ],
+  "rows": 10,
+  "text": "word,replacement
+un categorised,Uncategorized
+cube control,kubectl
+kube cuddle,kubectl
+Ashler,Ashlr.AI
+"Ashley, our AI",Ashlr.AI
+Zoe Martin,Zoë Martin
+A and B,A&B <Tools>
+"A ""bee""",A&B <Tools>
+path|kit,Path\\|Kit
+{{path}},Path\\|Kit
+",
+}
+`;
+
+exports[`wispr export snapshots > empty vocabulary 1`] = `
+{
+  "notes": [],
+  "rows": 0,
+  "text": "word,replacement
+",
+}
+`;

@@ -5,7 +5,9 @@
     "types": [],
     "noEmit": true,
     "declaration": false,
-    "sourceMap": false
+    "sourceMap": false,
+    "noImplicitAny": true,
+    "rootDir": ".."
   },
   "include": ["./*.ts", "./*.d.ts"]
 }

@@ -1,20 +1,10 @@
 import type { MetadataRoute } from 'next';
-import { SITE_URL } from '@/lib/site';
+import { sitemapEntries } from '../lib/sitemap.js';
 
-/*
- * One page, so one entry. The text endpoints (/llms.txt, /llms-full.txt,
- * /mcp.json) are deliberately absent: a sitemap is a list of documents a search
- * engine should index and rank, and those three are machine payloads that would
- * only dilute it. They are discoverable from <link rel="alternate"> in the head
- * and from the page itself.
- */
+// Resolve Git during the build, while the checkout is available. Machine
+// payloads remain discoverable through alternates rather than the sitemap.
+export const dynamic = 'force-static';
+
 export default function sitemap(): MetadataRoute.Sitemap {
-  return [
-    {
-      url: SITE_URL,
-      lastModified: new Date(),
-      changeFrequency: 'weekly',
-      priority: 1,
-    },
-  ];
+  return sitemapEntries();
 }

@@ -6,4 +6,6 @@
 /src/serve/ @masonwyatt23
 /src/cli/serve-paths.ts @masonwyatt23
 /src/cli/cmd-serve.ts @masonwyatt23
+/src/cli/program.ts @masonwyatt23
+/src/cli/args.ts @masonwyatt23
 /scripts/check-crypto.mjs @masonwyatt23
