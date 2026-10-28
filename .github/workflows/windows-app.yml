@@ -15,16 +15,12 @@
 #   verified by a person on a real machine or not at all. See docs/WINDOWS-APP.md.
 name: Windows app
 
+# Desktop app builds run with the scheduled full suite (6 AM and 6 PM ET) and
+# on dispatch, not on PRs or pushes. A red scheduled run files a P0
+# FIX-MAIN issue (fix-main.yml).
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'apps/windows/**'
-      - '.github/workflows/windows-app.yml'
-  pull_request:
-    paths:
-      - 'apps/windows/**'
-      - '.github/workflows/windows-app.yml'
+  schedule:
+    - cron: "0 10 * * *"
   workflow_dispatch:
 
 permissions:
@@ -42,7 +38,9 @@ defaults:
 jobs:
   test-portable:
     name: Core tests + cross-build (Linux)
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
@@ -67,7 +65,9 @@ jobs:
 
   build-windows:
     name: Publish LexiconBar.exe
+    if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 

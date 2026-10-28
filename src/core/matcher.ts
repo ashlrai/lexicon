@@ -224,6 +224,31 @@ function inventsBoundary(view: WindowView, e: AliasEntry): boolean {
   return false;
 }
 
+const phoneticLengths = new WeakMap<readonly PhoneticEntry[], readonly PhoneticEntry[]>();
+
+/** Internal length index; weak ownership lets replaced pack indexes be collected. */
+export function phoneticCandidates(entries: readonly PhoneticEntry[], length: number, minConfidence: number): readonly PhoneticEntry[] {
+  const ratio = 1 - (1 - minConfidence / PHONETIC_BASE) / PHONETIC_LENGTH_WEIGHT;
+  if (entries.length < 64 || ratio <= 0) return entries;
+  let sorted = phoneticLengths.get(entries);
+  if (!sorted) {
+    sorted = [...entries].sort((a, b) => a.length - b.length);
+    phoneticLengths.set(entries, sorted);
+  }
+  const lowerBound = (length: number): number => {
+    let lo = 0, hi = sorted.length;
+    while (lo < hi) {
+      const mid = (lo + hi) >>> 1;
+      if (sorted[mid].length < length) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  // One character of slack protects floating-point boundaries; the caller
+  // retains the exact confidence check and term-order tie breaking.
+  return sorted.slice(lowerBound(Math.floor(ratio * length) - 1), lowerBound(Math.ceil(length / ratio) + 2));
+}
+
 function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<NormalizeOptions, 'dryRun' | 'shouldStop'>>): Candidate | undefined {
   // Held in an object read through a getter: TS does not invalidate narrowing of
   // a local across the closure calls below, so a plain `let best` narrows to never.
@@ -299,7 +324,7 @@ function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<Nor
       const key = doubleMetaphone(alpha)[0];
       const entries = key.length >= PHONETIC_MIN_KEY ? index.phoneticKeys.get(key) : undefined;
       if (entries) {
-        for (const e of entries) {
+        for (const e of phoneticCandidates(entries, alpha.length, opts.minConfidence)) {
           // Phonetic keys cannot honour case; case-sensitive terms are exact/fuzzy only.
           if (e.term.caseSensitive) continue;
           // A numeral or a spelled-out abbreviation at either end costs the

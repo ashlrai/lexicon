@@ -705,11 +705,6 @@ export async function inspectWav(wav: string): Promise<WavCheck> {
   }
 }
 
-/** True when the capture is a WAV with audio in it. See `inspectWav` for why. */
-export async function wavHasAudio(wav: string): Promise<boolean> {
-  return (await inspectWav(wav)).ok;
-}
-
 /**
  * A recorder's WAV filename is `recording-<iso>.wav`, which is unique to the
  * capture and appears in ffmpeg's own command line. Matching on the basename

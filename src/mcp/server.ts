@@ -404,12 +404,13 @@ export function createServer(opts: ServerOptions = {}): McpServer {
     },
   );
 
-  server.registerResource(
-    'Lexicon JSON',
-    'lexicon://json',
+  for (const glossary of [false, true]) server.registerResource(
+    glossary ? 'Agent glossary' : 'Lexicon JSON',
+    glossary ? 'lexicon://glossary' : 'lexicon://json',
     {
-      title: 'Lexicon JSON',
+      title: glossary ? 'Agent glossary' : 'Lexicon JSON',
       description:
+        (glossary ? 'Read-only team glossary for coding agents: activePacks lists installed global and trusted project packs; terms contains the current canonical spellings, aliases and notes, including custom terms. Read on demand to use the team vocabulary. ' : '') +
         'The merged lexicon as raw JSON: the global file plus the project .lexicon.yaml when it is trusted. An untrusted (or changed) project file is left out; the JSON then adds `projectTrust`, `skippedProject` (its path, never its contents) and `note`. With no terms at all, `note` says so (after the skipped-file sentence, when there is one) and how to set the lexicon up. ' +
         `The text is capped at ${LEXICON_JSON_MAX_CHARS} characters: past that the most used terms (then brand, person and product names) are kept, \`omittedTerms\` counts the rest and \`note\` says so; export_lexicon (format json) and list_terms (with a query, or offset and limit to page) reach them.`,
       mimeType: 'application/json',
@@ -430,7 +431,7 @@ export function createServer(opts: ServerOptions = {}): McpServer {
       const extra = note ? { ...skipped, note } : skipped;
       // The merged view, `scope` and `hits` included (the json export leaves
       // them out), capped at LEXICON_JSON_MAX_CHARS like lexicon://me.
-      const text = lexiconJsonWithin(loaded.merged, extra);
+      const text = lexiconJsonWithin(loaded.merged, glossary ? { ...extra, activePacks: core().installedPacks(loaded) } : extra);
       return {
         contents: [{ uri: uri.href, mimeType: 'application/json', text }],
       };

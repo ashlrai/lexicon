@@ -73,10 +73,10 @@ export function correctionFromArgs(words: readonly string[], from: string | unde
 }
 
 /** `parseCorrection` of `source` with the loaded lexicon; undefined when it reads nothing or the lexicon will not load. */
-async function correctionWithLexicon(source: string, cwd: string): Promise<Correction | undefined> {
+async function correctionWithLexicon(source: string, cwd: string, dryRun?: boolean): Promise<Correction | undefined> {
   if (parseCorrection(source, { allowUnrelated: true }) === undefined) return undefined;
   try {
-    const loaded = await loadLexicon({ cwd, parseSkipped: false });
+    const loaded = await loadLexicon({ cwd, ...(dryRun ? { dryRun: true } : {}), parseSkipped: false });
     return parseCorrection(source, { lexicon: loaded.merged });
   } catch {
     return undefined;
@@ -119,7 +119,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
   if (!correction && (opts.from !== undefined || (words.length > 0 && words.length !== 2))) {
     // A name the lexicon already holds, written by sound ("it's Niamh not
     // Neve" with Niamh a term): parseCorrection takes it with the lexicon.
-    correction = await correctionWithLexicon(opts.from ?? words.join(' '), cwd);
+    correction = await correctionWithLexicon(opts.from ?? words.join(' '), cwd, opts.dryRun);
   }
   if (!correction && opts.from === undefined && words.length === 1 && words[0].trim() !== '') {
     // One word is one spelling, not a sentence that failed to parse: it said

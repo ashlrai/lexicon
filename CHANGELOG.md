@@ -2,15 +2,36 @@
 
 All notable changes to `@ashlr/lexicon` are recorded here. The format follows Keep a Changelog. Versions follow semver.
 
+<!-- fresh:begin table:releases -->
+| Version | Released |
+|---|---|
+| 0.5.6 | 2026-10-18 |
+| 0.5.5 | 2026-10-14 |
+| 0.5.4 | 2026-09-21 |
+| 0.5.3 | 2026-09-20 |
+| 0.5.2 | 2026-09-20 |
+| 0.5.1 | 2026-09-20 |
+| 0.5.0 | 2026-09-20 |
+| 0.4.0 | 2026-09-20 |
+| 0.3.2 | 2026-09-20 |
+| 0.3.1 | 2026-09-19 |
+| 0.3.0 | 2026-09-19 |
+| 0.2.0 | 2026-09-19 |
+| 0.1.0 | 2026-09-19 |
+<!-- fresh:end -->
+
 ## Unreleased
 
 ### Changed
+
+- Large phonetic pack lookups use a length index to skip impossible candidates while preserving matching results.
 
 - `lexicon --version` and `lexicon --help` return before the lexicon core loads. A command loads its handler the first time it runs, and the MCP server loads the core on the first tool, resource, or prompt that reads a lexicon. Version text, help text, and tool results are unchanged.
 - `lexicon trust` off a terminal (a script, CI, an agent's shell) no longer pins the file silently: without `--yes` it prints the preview, trusts nothing, names the `lexicon trust <path> --yes` command and exits 1 (`{ ok: false, ... }` under `--json`). No environment variable bypasses this. With `--yes` it pins and prints the path and sha256 as before. A file already trusted at the same bytes still reports `already trusted`. Scripts that ran `lexicon trust` unattended must add `--yes`.
 
 ### Added
 
+- `npm run fresh:sync` and `npm run fresh:check` (`scripts/freshness/`): doc blocks between `fresh:begin name` / `fresh:end` HTML-comment markers -- release badges, pinned install snippets, the release table above, `#vX.Y.Z` example pins -- are regenerated from `package.json`'s version and the dated sections of this changelog, and the check exits 1 on drift or a malformed marker. The markers are seeded in README.md, llms-install.md, docs/RELEASING.md, examples/README.md and this file.
 - `--dry-run` previews init, add, remove, harvest --add, export --out, review and edit without saving changes. Edit reports its target without launching an editor. Pack install, update and removal, trust, untrust, learn and pending accept/reject also support previews that keep lexicon, trust and registry state unchanged.
 
 - `lexicon pending reject` remembers what you rejected: the pending file gains a `rejected:` list of ids (never the words, capped at 500), and the prompt hook no longer queues a correction you already rejected. `lexicon learn` with the same words still works. Additive file change; an older lexicon that rewrites the file forgets the list.

@@ -397,7 +397,7 @@ lose a month.
 The landing page must not blur this line, so it is stated once, precisely.
 
 **Shipped, working, in the public repository today:** the matcher; the CLI (25
-commands); the MCP server (twenty-one tools, two resources, two prompts); the
+commands); the MCP server (twenty-one tools, three resources, two prompts); the
 Claude Code plugin with `SessionStart` and `UserPromptSubmit` hooks; the
 browser extension; the macOS menu bar app; the loopback HTTP API; the clipboard
 daemon; local voice via ffmpeg and whisper.cpp; four starter packs (176 terms);
