@@ -8,8 +8,7 @@ name: macOS app
 # FIX-MAIN issue (fix-main.yml).
 on:
   schedule:
-    - cron: "55 10 * * *"
-    - cron: "55 22 * * *"
+    - cron: "0 10 * * *"
   workflow_dispatch:
 
 permissions:
@@ -24,6 +23,7 @@ jobs:
   build:
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: macos-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
