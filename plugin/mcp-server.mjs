@@ -43971,7 +43971,7 @@ var require_lexer = __commonJS({
     var flowIndicatorChars = new Set(",[]{}");
     var invalidAnchorChars = new Set(" ,[]{}\n\r	");
     var isNotAnchorChar = (ch) => !ch || invalidAnchorChars.has(ch);
-    var Lexer = class {
+    var Lexer2 = class {
       constructor() {
         this.atEnd = false;
         this.blockScalarIndent = -1;
@@ -44534,7 +44534,7 @@ var require_lexer = __commonJS({
         return yield* this.pushToIndex(i, false);
       }
     };
-    exports.Lexer = Lexer;
+    exports.Lexer = Lexer2;
   }
 });
 
@@ -57212,7 +57212,7 @@ function estimateWhisperTokens(text) {
   for (const m of text.matchAll(/ ?[A-Za-z]+|[0-9]|[\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]| |[^\x00-\x7f]/gu)) {
     const piece = m[0];
     if (/[A-Za-z]/.test(piece)) tokens += Math.ceil(piece.trimStart().length / 2);
-    else if (/[^\x00-\x7f]/u.test(piece)) tokens += Buffer.byteLength(piece, "utf8");
+    else if (/[^\x00-\x7f]/u.test(piece)) tokens += utf8.encode(piece).length;
     else tokens += 1;
   }
   return tokens;
@@ -57264,12 +57264,13 @@ function exportWhisperPrompt(lexicon, opts = {}, sink) {
   if (sink) sink.names = kept.length;
   return kept.map(listItem).join(", ");
 }
-var WHISPER_PROMPT_DEFAULT_LIMIT, WHISPER_PROMPT_TOKEN_BUDGET;
+var WHISPER_PROMPT_DEFAULT_LIMIT, WHISPER_PROMPT_TOKEN_BUDGET, utf8;
 var init_whisperPrompt = __esm({
   "src/core/exporters/whisperPrompt.ts"() {
     init_shared();
     WHISPER_PROMPT_DEFAULT_LIMIT = 100;
     WHISPER_PROMPT_TOKEN_BUDGET = 223;
+    utf8 = new TextEncoder();
   }
 });
 
@@ -57486,6 +57487,28 @@ var init_exporters = __esm({
       "text": exportText,
       "markdown": exportMarkdown
     };
+  }
+});
+
+// src/core/importers/yaml-guard.ts
+function guardYamlImport(content) {
+  let depth = 0;
+  let quoted = false;
+  for (const token of new import_yaml4.Lexer().lex(content)) {
+    if (token === "[" || token === "{") {
+      if (++depth > 128) throw new Error("YAML import exceeds the maximum flow nesting depth of 128");
+    } else if (token === "]" || token === "}") {
+      depth = Math.max(0, depth - 1);
+    }
+    const nextQuoted = token.startsWith('"') || token.startsWith("'");
+    if (quoted && nextQuoted) throw new Error("YAML import has adjacent quoted scalars without a separator");
+    quoted = nextQuoted;
+  }
+}
+var import_yaml4;
+var init_yaml_guard = __esm({
+  "src/core/importers/yaml-guard.ts"() {
+    import_yaml4 = __toESM(require_dist2());
   }
 });
 
@@ -57727,21 +57750,22 @@ function looksLikeEspanso(content) {
 }
 function parseEspansoImport(content) {
   const text = content.replace(/^﻿/, "");
-  const lineCounter = new import_yaml4.LineCounter();
-  const doc = (0, import_yaml4.parseDocument)(text, { lineCounter });
+  guardYamlImport(text);
+  const lineCounter = new import_yaml5.LineCounter();
+  const doc = (0, import_yaml5.parseDocument)(text, { lineCounter });
   if (doc.errors.length > 0) {
     throw new Error(`espanso: invalid YAML (${doc.errors[0].message.split("\n")[0]})`);
   }
   const root = doc.contents;
-  const matches = (0, import_yaml4.isMap)(root) ? root.get("matches", true) : void 0;
-  if (!(0, import_yaml4.isSeq)(matches)) {
+  const matches = (0, import_yaml5.isMap)(root) ? root.get("matches", true) : void 0;
+  if (!(0, import_yaml5.isSeq)(matches)) {
     throw new Error("espanso: expected a top-level `matches:` list");
   }
   const out = { rows: [], skipped: [] };
   matches.items.forEach((node2, i) => {
-    const offset = (0, import_yaml4.isMap)(node2) && node2.range ? node2.range[0] : void 0;
+    const offset = (0, import_yaml5.isMap)(node2) && node2.range ? node2.range[0] : void 0;
     const line2 = offset === void 0 ? i + 1 : lineCounter.linePos(offset).line;
-    const entry = (0, import_yaml4.isMap)(node2) ? node2.toJSON() : node2;
+    const entry = (0, import_yaml5.isMap)(node2) ? node2.toJSON() : node2;
     if (!isRecord2(entry)) {
       out.skipped.push({ line: line2, reason: "match is not a mapping" });
       return;
@@ -57786,10 +57810,11 @@ function parseEspansoImport(content) {
   });
   return out;
 }
-var import_yaml4;
+var import_yaml5;
 var init_espanso2 = __esm({
   "src/core/importers/espanso.ts"() {
-    import_yaml4 = __toESM(require_dist2());
+    init_yaml_guard();
+    import_yaml5 = __toESM(require_dist2());
     init_shared2();
   }
 });
@@ -57801,7 +57826,8 @@ function looksLikeLexiconJson(value) {
 function parseJsonImport(content) {
   let raw;
   try {
-    raw = (0, import_yaml5.parse)(content.replace(/^﻿/, ""), { prettyErrors: false });
+    guardYamlImport(content);
+    raw = (0, import_yaml6.parse)(content.replace(/^﻿/, ""), { prettyErrors: false });
   } catch (err) {
     throw new Error(`json: invalid JSON/YAML (${err instanceof Error ? err.message : String(err)})`);
   }
@@ -57813,10 +57839,11 @@ function parseJsonImport(content) {
   });
   return { rows, skipped: [] };
 }
-var import_yaml5;
+var import_yaml6;
 var init_json3 = __esm({
   "src/core/importers/json.ts"() {
-    import_yaml5 = __toESM(require_dist2());
+    import_yaml6 = __toESM(require_dist2());
+    init_yaml_guard();
     init_schema();
     init_shared2();
   }
@@ -58245,7 +58272,8 @@ function detectImportFormat(content, filename) {
     } catch (err) {
       jsonError2 = err instanceof Error ? err.message : String(err);
       try {
-        const yaml = (0, import_yaml6.parse)(trimmed, { prettyErrors: false });
+        guardYamlImport(trimmed);
+        const yaml = (0, import_yaml7.parse)(trimmed, { prettyErrors: false });
         if (looksLikeLexiconJson(yaml)) return "json";
       } catch {
       }
@@ -58337,11 +58365,12 @@ function mergeRows(rows, source) {
   }
   return { terms: [...byKey.values()], skipped };
 }
-var import_yaml6, IMPORT_FORMAT_INFO, PARSERS;
+var import_yaml7, IMPORT_FORMAT_INFO, PARSERS;
 var init_importers = __esm({
   "src/core/importers/index.ts"() {
     init_caps();
-    import_yaml6 = __toESM(require_dist2());
+    import_yaml7 = __toESM(require_dist2());
+    init_yaml_guard();
     init_encoding();
     init_csv2();
     init_csv_parse();
@@ -58799,7 +58828,7 @@ async function readPendingFile(file2) {
   }
   let doc;
   try {
-    doc = (0, import_yaml7.parse)(text);
+    doc = (0, import_yaml8.parse)(text);
   } catch {
     throw new PendingFileError(`${file2} is not valid YAML`);
   }
@@ -58819,7 +58848,7 @@ async function readPendingFile(file2) {
 async function writePending(file2, entries2, rejected) {
   const doc = { version: 1, pending: entries2 };
   if (rejected.length > 0) doc.rejected = rejected;
-  await writeFileAtomic(file2, HEADER + (0, import_yaml7.stringify)(doc), { mode: 384 });
+  await writeFileAtomic(file2, HEADER + (0, import_yaml8.stringify)(doc), { mode: 384 });
 }
 async function queueCorrections(corrections, opts = {}) {
   const file2 = pendingPath(opts);
@@ -58917,13 +58946,13 @@ async function acceptPending(sel, opts = {}, learn = learnCorrection) {
     return { accepted, unknown: unknown2, file: file2 };
   }));
 }
-var import_node_crypto2, import_node_fs9, import_node_path9, import_yaml7, PENDING_FILE_NAME, MAX_PENDING, MAX_PENDING_BYTES, MAX_REJECTED, PendingFileError, HEADER;
+var import_node_crypto2, import_node_fs9, import_node_path9, import_yaml8, PENDING_FILE_NAME, MAX_PENDING, MAX_PENDING_BYTES, MAX_REJECTED, PendingFileError, HEADER;
 var init_pending = __esm({
   "src/core/pending.ts"() {
     import_node_crypto2 = __toESM(require_node_crypto());
     import_node_fs9 = __toESM(require_node_fs());
     import_node_path9 = __toESM(require_node_path());
-    import_yaml7 = __toESM(require_dist2());
+    import_yaml8 = __toESM(require_dist2());
     init_atomic();
     init_learn();
     init_store();
@@ -59923,7 +59952,7 @@ function resolvedDeps(deps) {
 function parseIndexYaml(text, source) {
   let raw;
   try {
-    raw = (0, import_yaml8.parse)(text, { prettyErrors: false });
+    raw = (0, import_yaml9.parse)(text, { prettyErrors: false });
   } catch (err) {
     throw new Error(`invalid registry index at ${sourceLabel(source)}: ${errorMessage(err)}`);
   }
@@ -60406,13 +60435,13 @@ function validateCommunityPack(pack) {
   }
   return { errors, warnings };
 }
-var import_node_crypto3, import_node_fs10, import_node_path11, import_yaml8, REGISTRY_REF_RE, RegistryIndexEntrySchema, RegistryIndexSchema, MAX_REGISTRY_FILE_BYTES, REGISTRY_FETCH_TIMEOUT_MS, RegistryPackStateSchema, REGISTRIES_ENV;
+var import_node_crypto3, import_node_fs10, import_node_path11, import_yaml9, REGISTRY_REF_RE, RegistryIndexEntrySchema, RegistryIndexSchema, MAX_REGISTRY_FILE_BYTES, REGISTRY_FETCH_TIMEOUT_MS, RegistryPackStateSchema, REGISTRIES_ENV;
 var init_registry = __esm({
   "src/core/registry.ts"() {
     import_node_crypto3 = __toESM(require_node_crypto());
     import_node_fs10 = __toESM(require_node_fs());
     import_node_path11 = __toESM(require_node_path());
-    import_yaml8 = __toESM(require_dist2());
+    import_yaml9 = __toESM(require_dist2());
     init_zod();
     init_harvest();
     init_collate();
@@ -60541,7 +60570,7 @@ async function loadPackFile(file2, expectedName) {
 function parsePackText(text, file2, expectedName) {
   let raw;
   try {
-    raw = (0, import_yaml9.parse)(text, { prettyErrors: false });
+    raw = (0, import_yaml10.parse)(text, { prettyErrors: false });
   } catch (err) {
     throw new Error(`Invalid pack at ${file2}: ${errorMessage(err)}`);
   }
@@ -60711,13 +60740,13 @@ async function uninstallLoadedPack(pack, recordAs, opts = {}) {
 async function uninstallPack(name, opts = {}) {
   return uninstallLoadedPack(await loadPack(name, opts), name, opts);
 }
-var import_node_fs11, import_node_path12, import_node_url2, import_yaml9, PACKS_DIR_NAME, PACK_NAME_RE, DEFAULT_PACKS, PackNotFoundError, PACKAGE_NAME2, PackFileSchema;
+var import_node_fs11, import_node_path12, import_node_url2, import_yaml10, PACKS_DIR_NAME, PACK_NAME_RE, DEFAULT_PACKS, PackNotFoundError, PACKAGE_NAME2, PackFileSchema;
 var init_packs = __esm({
   "src/core/packs.ts"() {
     import_node_fs11 = __toESM(require_node_fs());
     import_node_path12 = __toESM(require_node_path());
     import_node_url2 = __toESM(require_node_url());
-    import_yaml9 = __toESM(require_dist2());
+    import_yaml10 = __toESM(require_dist2());
     init_zod();
     init_schema();
     init_store();
@@ -60848,6 +60877,31 @@ var init_demo = __esm({
   }
 });
 
+// src/serve/info.ts
+var SERVER_FEATURES, ServerInfoSchema;
+var init_info = __esm({
+  "src/serve/info.ts"() {
+    init_zod();
+    SERVER_FEATURES = [
+      "normalize",
+      "learn",
+      "add",
+      "lexicon",
+      "stats",
+      "packs",
+      "aliases",
+      "export",
+      "pair"
+    ];
+    ServerInfoSchema = external_exports.object({
+      version: external_exports.string().trim().min(1),
+      host: external_exports.string().trim().min(1),
+      port: external_exports.number().int().min(1).max(65535),
+      features: external_exports.array(external_exports.string().trim().min(1))
+    }).strict();
+  }
+});
+
 // src/core/index.ts
 var core_exports3 = {};
 __export(core_exports3, {
@@ -60906,11 +60960,13 @@ __export(core_exports3, {
   REGISTRY_FETCH_TIMEOUT_MS: () => REGISTRY_FETCH_TIMEOUT_MS,
   REGISTRY_REF_RE: () => REGISTRY_REF_RE,
   REPLACEMENT_CHAR: () => REPLACEMENT_CHAR,
+  SERVER_FEATURES: () => SERVER_FEATURES,
   STALE_AFTER_DAYS: () => STALE_AFTER_DAYS,
   STALE_GLOBAL_MIN_BYTES: () => STALE_GLOBAL_MIN_BYTES,
   STOPLIST: () => STOPLIST,
   SUGGEST_DEFAULT_LIMIT: () => SUGGEST_DEFAULT_LIMIT,
   SUGGEST_MAX_LIMIT: () => SUGGEST_MAX_LIMIT,
+  ServerInfoSchema: () => ServerInfoSchema,
   TERM_CATEGORIES: () => TERM_CATEGORIES,
   TERM_SCOPES: () => TERM_SCOPES,
   TERM_SOURCES: () => TERM_SOURCES,
@@ -61171,6 +61227,7 @@ var init_core3 = __esm({
     init_registry();
     init_demo();
     init_shell2();
+    init_info();
   }
 });
 
@@ -61224,7 +61281,7 @@ function cliDirForInstall() {
   return pkg ? (0, import_node_path13.join)(pkg.root, "dist", "cli") : void 0;
 }
 function textResult(payload) {
-  const text = typeof payload === "string" ? payload : JSON.stringify(payload, null, 2);
+  const text = typeof payload === "string" ? payload : JSON.stringify(payload);
   return { isError: false, content: [{ type: "text", text }] };
 }
 function errorResult(err) {
@@ -61434,7 +61491,7 @@ var init_terms = __esm({
         "normalize_transcript",
         {
           title: "Normalize dictated text",
-          description: `Fix the proper nouns speech-to-text got wrong, using this user's personal lexicon of names, brands, acronyms and identifiers. WHEN TO CALL: on any user message that looks dictated, before you act on it. Signs a message was dictated: run-on sentences with little punctuation, spoken filler ('um', 'so yeah'), homophone errors, no code or paths, or a capitalized word that is nearly a real name but not quite ('Ashler', "Cooper Nettie's", 'pie dentic'). One garbled proper noun is reason enough. You do not need the user to say they dictated it, and you do not need permission: this reads a file the user wrote and returns text. WHAT IT CHANGES: nothing the user can see. It does not edit their message, any file, or the lexicon; it only bumps a per-term hit counter. Use the \`output\` field as the message you act on, and mention the correction only if it changes what you are about to do. WHAT IT WILL NOT DO: it never rewrites text inside code blocks, inline code, file paths, URLs or emails (unless the lexicon's settings.skipCode is false), and it never invents a term that is not in the lexicon. If a word still looks garbled after this, call suggest_canonical rather than guessing. Text over ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters is refused, nothing checked. Below that, only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. Returns { output, changed, replacements, summary }, plus a \`note\` when \`text\` is empty or only whitespace; when \`changed\` is false the text was already correct and you should carry on silently (except with dryRun: true, where nothing is applied, so \`output\` is the input and \`changed\` is false even when \`replacements\` lists corrections: read \`replacements\` for what a real call would fix), unless the result also carries \`skippedProject\`: then this repo has a project lexicon that is not trusted yet, so tell the user once that ` + cliCommand("trust") + " would enable it.",
+          description: `Correct dictated names, brands, acronyms and identifiers using the user's lexicon. Call before acting on a message with garbled proper nouns, spoken filler or run-on sentences; no permission needed. Use \`output\` as the message; mention corrections only when they affect your action. Only per-term hit counters change. Protects code, paths, URLs and emails (unless the lexicon's settings.skipCode is false). Never invents terms; call suggest_canonical for remaining garbled names. Text over ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters is refused, nothing checked. Below that, only the first ${MCP_NORMALIZE_MAX_CHARS} characters are checked and matching stops after ${MCP_NORMALIZE_BUDGET_MS} ms; when either limit is hit the result carries \`incomplete\` { reasons, checkedChars?, totalChars, note } and the unchecked text is returned as it was. Returns { output, changed, replacements, summary }, plus a \`note\` when \`text\` is empty or only whitespace; when \`changed\` is false the text was already correct and you should carry on silently (except with dryRun: true, where nothing is applied, so \`output\` is the input and \`changed\` is false even when \`replacements\` lists corrections: read \`replacements\` for what a real call would fix), unless the result also carries \`skippedProject\`: then this repo has a project lexicon that is not trusted yet, so tell the user once that ` + cliCommand("trust") + " would enable it.",
           inputSchema: {
             text: external_exports.string().max(MCP_NORMALIZE_INPUT_MAX_CHARS, {
               error: `text is longer than ${MCP_NORMALIZE_INPUT_MAX_CHARS} characters, so nothing was checked; call again with it in pieces of at most ${MCP_NORMALIZE_MAX_CHARS} characters (only that many are checked per call)`
@@ -61497,7 +61554,7 @@ var init_terms = __esm({
         "add_term",
         {
           title: "Add a lexicon term",
-          description: "Teach the lexicon a name, so dictation is corrected to it from now on. WHEN TO CALL: when the user names something they want spelled a particular way, or during setup for each extra name they give you. For the one specific case of the user correcting a spelling that came out wrong, prefer learn_correction: it finds the right term for you. Do not add a name the user did not ask you to remember. WHAT IT CHANGES: writes one term to the user's lexicon file (global by default, or the repo's .lexicon.yaml with scope: 'project'). It merges rather than clobbers: an existing term with the same canonical keeps its own spelling and only gains the new aliases. A project file that is not trusted yet is written but left untrusted (the result says `trusted: false`): relay `nextStep`, since the term applies only after the user runs " + cliCommand("trust") + ". WHAT IT WILL NOT DO: it installs nothing, touches no other term, and does not guess the canonical -- pass the spelling exactly as the user writes it. Omit `aliases` on a new term and likely STT misspellings are generated for you when any can be found, which beats inventing your own; show the user what was generated so they can veto one, and when the result has no aliases propose some or ask the user. Pass `aliases: []` to add the term with no aliases and none generated. On an existing term, omitted aliases add none, so passing only never, phonetic, category or notes changes just that. When another term already holds one of the aliases, the result carries `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; it never edits that term. A field over the lexicon caps given on each argument is an error naming that field, and nothing is written.",
+          description: "Remember a spelling only when the user asks. Prefer learn_correction for a correction to a misheard name. Writes one term, globally by default or to .lexicon.yaml with scope: 'project'. Existing terms keep their canonical spelling and gain aliases; other terms are untouched. An untrusted project file stays untrusted: relay `trusted: false` and `nextStep`; terms apply after the user runs " + cliCommand("trust") + ". Omitted aliases auto-generate likely STT misspellings for new terms only (possibly none); show them for approval or ask for aliases when none are found. Explicit `aliases: []` generates none. On existing terms, omitted aliases add none, so other fields can be updated alone. Alias collisions return `conflicts` (each { canonical, scope, as, spelling }) and a `note` with the remove_term call; conflicting terms are untouched. Invalid fields or exceeded argument caps are errors naming the field; nothing is written.",
           inputSchema: {
             canonical: nonBlank().describe(
               `The correct spelling, exactly as the user wants it written; must not be blank. At most ${LIMITS.word} characters once surrounding whitespace is trimmed (the lexicon file schema's cap, also enforced by the CLI); a longer one is refused and nothing is written.`
@@ -68978,6 +69035,12 @@ function createServer(opts = {}) {
     if (!await authorized(req.headers.authorization)) {
       throw tokenRequired();
     }
+    if (pathname === "/info") {
+      if (method !== "GET") throw notGet();
+      strictQuery(url2, "GET /info", []);
+      const info2 = { version: version2, host, port: boundPort, features: [...SERVER_FEATURES] };
+      return json2(200, info2);
+    }
     if (pathname === "/normalize") {
       if (method !== "POST") throw wrongMethod(["POST"]);
       const raw = await readJson(req, MAX_BODY_BYTES, "/normalize");
@@ -69227,6 +69290,7 @@ ${body}`
 var import_node_crypto6, import_node_fs25, import_node_http, import_node_net2, import_node_path24, MAX_BODY_BYTES, MAX_SERVE_CONFIG_BYTES, MAX_CONCURRENT_REQUESTS, LEXICON_RELOAD_MS, NORMALIZE_BUDGET_MS, REQUEST_TIMEOUT_MS, HEADERS_TIMEOUT_MS, PAIR_PATH, PAIR_META, PAIR_INSTALL_HINT_MS, PAIR_HEADERS, MAX_CACHED_CWDS, EXPORT_CONTENT_TYPES, TERM_CATEGORIES2, TERM_SCOPES2, CwdField, NormalizeBody, LearnBody, AddBody, PackBody, ROUTES, BODY_SHAPES, BUSY_RETRY_AFTER_S, TOKEN_SOURCES, PACK_ROUTE_RE, EXPORT_ROUTE_RE, BROKEN_LEXICON_ANONYMOUS, HttpError, EXPORT_NOTE_HEADER;
 var init_server3 = __esm({
   "src/serve/server.ts"() {
+    init_info();
     import_node_crypto6 = __toESM(require_node_crypto());
     import_node_fs25 = __toESM(require_node_fs());
     import_node_http = __toESM(require_node_http());
@@ -69302,6 +69366,7 @@ var init_server3 = __esm({
     }).strict();
     ROUTES = [
       "GET /health",
+      "GET /info",
       "GET /pair",
       "POST /normalize",
       "POST /learn",
@@ -69344,6 +69409,7 @@ var init_serve = __esm({
   "src/serve/index.ts"() {
     init_config();
     init_server3();
+    init_info();
   }
 });
 
@@ -73163,7 +73229,7 @@ async function runInit(opts, io) {
   if (opts.json) {
     line(
       io,
-      JSON.stringify(jsonOk({ scope, path: target, created, ...dry ? { dryRun: true } : {}, ...trust !== void 0 ? { trust } : {}, ...untrustedStep ? { nextStep: untrustedStep } : {} }), null, 2)
+      JSON.stringify(jsonOk({ scope, path: target, created, ...dry ? { dryRun: true } : {}, ...trust !== void 0 ? { trust } : {}, ...untrustedStep ? { nextStep: untrustedStep } : {} }))
     );
     return 0;
   }
@@ -73304,9 +73370,7 @@ async function runAdd(canonical, aliasArgs, opts, io, prompter) {
           suggested: !fallbackOnly || result.created ? suggested : [],
           ...conflicts.length > 0 ? { conflicts, note: conflictNote(conflicts) } : result.unchanged ? { note: unchangedTermNote(result.term.canonical) } : {},
           ...droppedAliases.length > 0 ? { droppedAliases } : {}
-        }),
-        null,
-        2
+        })
       )
     );
     return 0;
@@ -73347,7 +73411,7 @@ async function runRemove(canonical, opts, io) {
     const global = holders.find((h) => h.scope === "global");
     if (opts.json) {
       const nextStep = global ? `run ${commandLine(["lexicon", "remove", canonical, "--global"])} to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}` : PROJECT_TRUST_NEXT_STEP;
-      line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...dry ? { dryRun: true } : {}, ...untrusted ? { untrustedProject: untrusted } : {} }, null, 2));
+      line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...dry ? { dryRun: true } : {}, ...untrusted ? { untrustedProject: untrusted } : {} }));
     }
     io.stderr(`lexicon: ${safeMessage(errorMessage(err))}
 `);
@@ -73368,7 +73432,7 @@ async function runRemove(canonical, opts, io) {
   const extra = { ...dry ? { dryRun: true } : {}, ...stillIn.length > 0 ? { stillIn } : {}, ...untrusted ? { untrustedProject: untrusted } : {} };
   if (opts.json) {
     const failure2 = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ""}`, missStep);
-    line(io, JSON.stringify(removed ? jsonOk({ canonical: removedName, removed, ...extra }) : { ...failure2, canonical, removed, ...extra }, null, 2));
+    line(io, JSON.stringify(removed ? jsonOk({ canonical: removedName, removed, ...extra }) : { ...failure2, canonical, removed, ...extra }));
     if (!removed) io.stderr(notFound());
     return removed ? 0 : 1;
   }
@@ -73411,7 +73475,7 @@ async function runRemoveAlias(canonical, alias, opts, scope, cwd, io) {
     ) === true;
     const other = scope === "project" ? loaded?.global : scope === "global" ? loaded?.project : void 0;
     const elsewhere = isInputError(err) && other && holdsAlias2(other) ? `it is an alias of "${canonical}" in the ${other.scope} lexicon (${other.path}); run with --${other.scope} to remove it there, or with neither flag to remove it from every file whose copy has it` : isInputError(err) && !untrusted ? emptyLexiconRemoveStep(loaded) ?? aliasMissStep(loaded, scope, canonical) : void 0;
-    if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere), canonical, alias, removed: false, ...extra }, null, 2));
+    if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere), canonical, alias, removed: false, ...extra }));
     io.stderr(`lexicon: ${safeMessage(message)}
 `);
     if (elsewhere) io.stderr(`lexicon: ${safeMessage(elsewhere)}
@@ -73429,7 +73493,7 @@ async function runRemoveAlias(canonical, alias, opts, scope, cwd, io) {
   }
   const paths = result.files.map((f) => f.path);
   if (opts.json) {
-    line(io, JSON.stringify(jsonOk({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra }), null, 2));
+    line(io, JSON.stringify(jsonOk({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra })));
     return 0;
   }
   line(io, `${dry ? "would remove" : "removed"} alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safeMessage(paths.join(", "))}`);
@@ -73480,11 +73544,11 @@ async function runList(opts, io) {
       ...skipped,
       ...emptyNote ? { note: emptyNote } : {}
     };
-    line(io, JSON.stringify(jsonOk(payload), null, 2));
+    line(io, JSON.stringify(jsonOk(payload)));
     return 0;
   }
   if (opts.json) {
-    line(io, JSON.stringify(terms, null, 2));
+    line(io, JSON.stringify(terms));
     return 0;
   }
   if (terms.length === 0 && matched > 0) {
@@ -73549,7 +73613,7 @@ async function runNormalize(args, opts, io, readInput = readStdin) {
       `lexicon: no text to correct (${fromArgs ? "the argument was empty" : "stdin was empty"}); pass it as arguments: lexicon normalize "ping ashler", or pipe it in: echo "ping ashler" | lexicon normalize
 `
     );
-    if (opts.json) line(io, JSON.stringify(jsonOk({ input: "", output: "", replacements: [], changed: false }), null, 2));
+    if (opts.json) line(io, JSON.stringify(jsonOk({ input: "", output: "", replacements: [], changed: false })));
     return 0;
   }
   try {
@@ -73567,7 +73631,7 @@ async function runNormalize(args, opts, io, readInput = readStdin) {
       if (summary) io.stderr(ensureNewline(safeLines(summary)));
     }
     if (opts.json) {
-      line(io, JSON.stringify(jsonOk({ ...result, ...useExample ? { example: true } : {}, ...skippedProjectJson(loaded) }), null, 2));
+      line(io, JSON.stringify(jsonOk({ ...result, ...useExample ? { example: true } : {}, ...skippedProjectJson(loaded) })));
       return 0;
     }
     emit(result.output);
@@ -73578,7 +73642,7 @@ async function runNormalize(args, opts, io, readInput = readStdin) {
     io.stderr("lexicon: no corrections were applied and the text is unchanged (run: lexicon doctor)\n");
     if (opts.json) {
       const nextStep = unreadableLexiconHint(message) ?? "no corrections were applied and the text is unchanged; run: lexicon doctor";
-      line(io, JSON.stringify({ ...jsonError(message, nextStep), input: text, output: text, replacements: [], changed: false }, null, 2));
+      line(io, JSON.stringify({ ...jsonError(message, nextStep), input: text, output: text, replacements: [], changed: false }));
     } else {
       emit(text);
     }
@@ -73617,7 +73681,7 @@ async function runHarvest(root, opts, io, deps = {}) {
       const status = await isTrusted({ path: projectPath, scope: "project", lexicon: emptyLexicon(), exists: true }, store);
       if (status !== "trusted") {
         const message = new ProjectTrustError(projectPath, status).message;
-        if (json2) line(io, JSON.stringify({ ...jsonError(message, `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again`), added: false, path: projectPath, projectTrust: status }, null, 2));
+        if (json2) line(io, JSON.stringify({ ...jsonError(message, `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again`), added: false, path: projectPath, projectTrust: status }));
         io.stderr(`lexicon: ${safeMessage(message)}
 `);
         return 1;
@@ -73644,7 +73708,7 @@ async function runHarvest(root, opts, io, deps = {}) {
   }
   if (opts.full || opts.json && opts.add) {
   } else if (opts.json) {
-    line(io, JSON.stringify(candidates, null, 2));
+    line(io, JSON.stringify(candidates));
   } else if (candidates.length === 0) {
     line(io, dim(noHarvestCandidatesLine(scan)));
   } else {
@@ -73685,7 +73749,7 @@ async function runHarvest(root, opts, io, deps = {}) {
       const hint = unreadableLexiconHint(message);
       if (json2) {
         const where2 = filePath ? { path: filePath } : {};
-        line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where2 }, null, 2));
+        line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where2 }));
       }
       io.stderr(`lexicon: ${safeMessage(message)}
 `);
@@ -73701,11 +73765,11 @@ async function runHarvest(root, opts, io, deps = {}) {
     else line(io, opts.dryRun ? summary : green(summary));
     if (filePath && !json2 && !opts.dryRun) line(io, dim(`project lexicon trusted (${safe(filePath)})`));
   }
-  if (!opts.full && opts.json && opts.add) line(io, JSON.stringify(candidates, null, 2));
+  if (!opts.full && opts.json && opts.add) line(io, JSON.stringify(candidates));
   if (opts.full) {
     const addResult = opts.add ? { added: created + merged, created, merged, ...filePath ? { path: filePath } : {}, ...opts.dryRun ? { dryRun: true } : {} } : {};
     const truncated = report2.truncated ? { truncated: true, note: harvestTruncatedNote(target) } : {};
-    line(io, JSON.stringify(jsonOk({ root: target, candidates, count: candidates.length, ...truncated, ...addResult }), null, 2));
+    line(io, JSON.stringify(jsonOk({ root: target, candidates, count: candidates.length, ...truncated, ...addResult })));
   }
   return 0;
 }
@@ -73736,7 +73800,7 @@ async function runExport(requested, opts, io) {
       return code;
     }
     if (json2) {
-      line(io, JSON.stringify(jsonOk({ formats: formatListJson() }), null, 2));
+      line(io, JSON.stringify(jsonOk({ formats: formatListJson() })));
       return 0;
     }
     line(io, "usage: lexicon export <format> [--out <file>] [--category <c...>] [--limit <n>] [--json]");
@@ -73801,7 +73865,7 @@ async function runExport(requested, opts, io) {
       await writeFileAtomic(outPath, text);
     }
     if (json2) {
-      line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, path: outPath, ...opts.dryRun ? { dryRun: true } : {}, ...dropped, ...notes }), null, 2));
+      line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, path: outPath, ...opts.dryRun ? { dryRun: true } : {}, ...dropped, ...notes })));
     } else {
       let counted = plural2(terms, "term");
       if (aliasRows !== void 0 && rows !== void 0) {
@@ -73812,7 +73876,7 @@ async function runExport(requested, opts, io) {
       line(io, opts.dryRun ? `would write ${format} export (${counted}, ${plural2(bytes, "byte")}) to ${safeMessage(outPath)}` : `wrote ${format} export (${counted}) to ${safeMessage(outPath)}`);
     }
   } else if (json2) {
-    line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, content: text, ...dropped, ...notes }), null, 2));
+    line(io, JSON.stringify(jsonOk({ format, terms, ...rowsField, bytes, content: text, ...dropped, ...notes })));
   } else {
     io.stdout(text);
   }
@@ -73851,7 +73915,7 @@ async function exportTargetProblem(outPath, loaded) {
 async function runPath(opts, io) {
   const paths = resolvePaths({ cwd: resolveCwd(opts) });
   if (opts.json) {
-    line(io, JSON.stringify(jsonOk({ global: paths.global, project: paths.project ?? null }), null, 2));
+    line(io, JSON.stringify(jsonOk({ global: paths.global, project: paths.project ?? null })));
     return 0;
   }
   line(io, `global: ${safe(paths.global)}`);
