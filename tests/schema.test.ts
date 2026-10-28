@@ -74,6 +74,16 @@ describe('parseLexicon', () => {
     expect(() => parseLexicon({ terms: [{ canonical: 'X', aliases: [null] }] })).toThrow(/terms\[0\]\.aliases\[0\]/);
   });
 
+  it('passes non-record preprocess inputs through to the schemas, which reject them with the path', () => {
+    // A term that is a number or a string, settings that is a string or an
+    // array: nullKeysAsAbsent only rewrites plain objects, so these still
+    // fail on shape, not on the null-key rule.
+    expect(() => parseLexicon({ terms: [42] })).toThrow(/terms\[0\]/);
+    expect(() => parseLexicon({ terms: ['x'] })).toThrow(/terms\[0\]/);
+    expect(() => parseLexicon({ settings: 'yes' })).toThrow(/settings/);
+    expect(() => parseLexicon({ settings: [] })).toThrow(/settings/);
+  });
+
   it('treats null/undefined (empty YAML file) as an empty lexicon', () => {
     expect(parseLexicon(null)).toEqual(emptyLexicon());
     expect(parseLexicon(undefined)).toEqual(emptyLexicon());
@@ -252,6 +262,10 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(() => parseLexicon({ terms: [], settings: { packs: ['\uD800'] } })).toThrow(/settings\.packs\[0\]: must not contain U\+D800/);
     // Through YAML, as a hand-edited file spells them.
     expect(() => parseLexicon(parseYaml('terms:\n  - canonical: Ashlr.AI\n    aliases: ["\\uFFFE"]\n'))).toThrow(/aliases\[0\]: must not contain U\+FFFE/);
+    // A non-string entry inside a checked list is still reported at its own
+    // index by the field schemas, not by the term-level unencodable check.
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', aliases: [5] }] })).toThrow(/terms\[0\]\.aliases\[0\]/);
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', never: [{ deep: true }] }] })).toThrow(/terms\[0\]\.never\[0\]/);
     // A surrogate pair (an emoji) and the noncharacters XML allows are fine.
     const ok = parseLexicon({ terms: [{ canonical: 'Rocket \u{1F680}', aliases: ['\uFFFD', '\uFDD0'] }] });
     expect(ok.terms[0].canonical).toBe('Rocket \u{1F680}');

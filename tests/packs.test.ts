@@ -487,6 +487,19 @@ describe('installPack / uninstallPack', () => {
     expect(after.lexicon.terms).toHaveLength((await loadPack('voice-tools')).terms);
   });
 
+  it('drops an explicit empty list left in settings when the packs entry is rewritten', async () => {
+    // A hand-edited file can hold an explicit empty list (the parser keeps
+    // it; only the writer declines to add new ones). The packs rewrite
+    // prunes empty values, so a settings left with nothing to say is gone.
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nsettings:\n  packs: [ai]\n  protectedWords: []\nterms: []\n');
+    expect((await readLexiconFile(globalPath, 'global')).lexicon.settings).toMatchObject({ packs: ['ai'], protectedWords: [] });
+
+    await uninstallPack('ai', { cwd, globalPath });
+    const after = await readLexiconFile(globalPath, 'global');
+    expect(after.lexicon.settings).toBeUndefined();
+  });
+
   it('keeps a project pack term this user has actually used, though the file shows no hits', async () => {
     const repo = path.join(home, 'repo-used');
     await fs.mkdir(path.join(repo, '.git'), { recursive: true });

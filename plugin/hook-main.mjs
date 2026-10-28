@@ -6258,6 +6258,15 @@ var init_caps = __esm({
   }
 });
 
+// src/util/record.ts
+function isRecord(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+var init_record = __esm({
+  "src/util/record.ts"() {
+  }
+});
+
 // src/core/schema.ts
 function findUnencodableChar(s) {
   const m = UNENCODABLE_RE.exec(s);
@@ -6343,7 +6352,7 @@ function refuseUnencodable(term, ctx) {
 }
 function nullKeysAsAbsent(keep) {
   return (raw) => {
-    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return raw;
+    if (!isRecord(raw)) return raw;
     let out;
     for (const [key, value] of Object.entries(raw)) {
       if (value !== null || keep.includes(key)) continue;
@@ -6441,6 +6450,7 @@ var init_schema = __esm({
     init_zod();
     init_caps();
     init_types();
+    init_record();
     INVISIBLE_RE = /[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
     CONTROL_RE = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/;
     CONTROL_RE_G = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/g;
@@ -20282,9 +20292,6 @@ var init_parsed_hash = __esm({
 });
 
 // src/util/json.ts
-function isRecord(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 function formatJson(value) {
   return `${JSON.stringify(value, null, 2)}
 `;
@@ -20293,6 +20300,7 @@ var import_node_fs3;
 var init_json = __esm({
   "src/util/json.ts"() {
     import_node_fs3 = __toESM(require_node_fs());
+    init_record();
   }
 });
 

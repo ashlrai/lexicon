@@ -23,7 +23,7 @@ import { parseLexicon } from './schema.js';
 import { ProjectTrustError, addTerms, effectiveHits, readHitsFor, readLexiconFile, refreshIndexCache, resolveScopeWritePath, resolvePaths, withLexiconLock, writeLexiconFile } from './store.js';
 import type { StoreOptions } from './store.js';
 import { isTrusted, parsedContentHash, refreshTrust } from './trust.js';
-import type { Lexicon, LexiconFile, LoadedLexicon, Term, TermScope } from './types.js';
+import type { Lexicon, LexiconFile, LexiconSettings, LoadedLexicon, Term, TermScope } from './types.js';
 import { errorMessage, isEnoent } from '../util/errors.js';
 import { isRecord } from '../util/json.js';
 
@@ -293,11 +293,12 @@ export function installedPacks(loaded: LoadedLexicon): string[] {
  * would bless a changed file).
  */
 async function writePacksSetting(file: LexiconFile, packs: string[], opts: StoreOptions, leaveUntrusted = false): Promise<void> {
-  const settings: Record<string, unknown> = { ...(file.lexicon.settings ?? {}), packs };
-  for (const [key, value] of Object.entries(settings)) {
+  const settings: LexiconSettings = { ...(file.lexicon.settings ?? {}), packs };
+  for (const key of Object.keys(settings) as (keyof LexiconSettings)[]) {
+    const value = settings[key];
     if (value === undefined || (Array.isArray(value) && value.length === 0)) delete settings[key];
   }
-  if (Object.keys(settings).length > 0) file.lexicon.settings = settings as LexiconFile['lexicon']['settings'];
+  if (Object.keys(settings).length > 0) file.lexicon.settings = settings;
   else delete file.lexicon.settings;
   if (opts.dryRun) return;
   await writeLexiconFile(file);

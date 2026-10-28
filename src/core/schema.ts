@@ -18,6 +18,7 @@ import * as z from 'zod';
 import { LIMITS } from './caps.js';
 import { TERM_CATEGORIES, TERM_SCOPES, TERM_SOURCES } from './types.js';
 import type { Lexicon } from './types.js';
+import { isRecord } from '../util/record.js';
 
 export { LIMITS } from './caps.js';
 
@@ -273,7 +274,7 @@ function refuseUnencodable(term: Record<string, unknown>, ctx: z.RefinementCtx):
   for (const field of TERM_TEXT_FIELDS) {
     const value = term[field];
     const entries: Array<[string, (string | number)[]]> = Array.isArray(value)
-      ? value.map((v, i) => [String(v), [field, i]])
+      ? value.map((v: unknown, i) => [String(v), [field, i]])
       : typeof value === 'string'
         ? [[value, [field]]]
         : [];
@@ -318,11 +319,11 @@ const buildSource = () => z.enum(TERM_SOURCES);
  */
 function nullKeysAsAbsent(keep: readonly string[]): (raw: unknown) => unknown {
   return (raw) => {
-    if (raw === null || typeof raw !== 'object' || Array.isArray(raw)) return raw;
+    if (!isRecord(raw)) return raw;
     let out: Record<string, unknown> | undefined;
     for (const [key, value] of Object.entries(raw)) {
       if (value !== null || keep.includes(key)) continue;
-      out ??= { ...(raw as Record<string, unknown>) };
+      out ??= { ...raw };
       delete out[key];
     }
     return out ?? raw;
