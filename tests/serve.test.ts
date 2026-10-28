@@ -197,6 +197,34 @@ afterAll(async () => {
 // serve.json
 // ---------------------------------------------------------------------------
 
+describe('bind selection', () => {
+  it('binds to IPv4 loopback when no host is specified', async () => {
+    expect(info.host).toBe('127.0.0.1');
+    expect(info.url).toBe(`http://127.0.0.1:${info.port}`);
+    expect((await fetch(`${info.url}/health`)).status).toBe(200);
+  });
+
+  it('reports a collision and can fall back to an ephemeral loopback port', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-bind-'));
+    const globalPath = path.join(dir, 'lexicon.yaml');
+    const occupied = createServer({ port: info.port, globalPath, quiet: true });
+    const fallback = createServer({ port: 0, globalPath, quiet: true });
+    try {
+      await expect(occupied.start()).rejects.toThrow('already in use');
+      const started = await fallback.start();
+      expect(started.host).toBe('127.0.0.1');
+      expect(started.port).toBeGreaterThan(0);
+      expect(started.port).not.toBe(info.port);
+      expect((await readServeConfig({ globalPath }))?.port).toBe(started.port);
+      expect((await fetch(`${started.url}/health`)).status).toBe(200);
+    } finally {
+      await occupied.stop();
+      await fallback.stop();
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+});
+
 describe('serve.json', () => {
   it('is created next to the global lexicon with mode 0600 and a 32-hex token', async () => {
     const servePath = getServePath({ globalPath: env.globalPath });
