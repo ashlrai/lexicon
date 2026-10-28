@@ -474,11 +474,11 @@ const CLAIMS = [
   {
     fact: 'pack terms',
     patterns: [
-      new RegExp(`\\b${NUM}\\s+(?:curated\\s+|starter\\s+|pack\\s+)?terms\\s+across\\s+(?:the\\s+)?(?:all\\s+)?(?:four\\s+)?packs\\b`, 'i'),
+      new RegExp(`\\b${NUM}\\s+(?:curated\\s+|starter\\s+|pack\\s+)?terms\\s+across\\s+(?:the\\s+)?(?:all\\s+)?(?:(?:${WORD_ALT})\\s+)?packs\\b`, 'i'),
       new RegExp(`\\bpacks?\\s+(?:ship|carry|hold|contain|add)\\s+${NUM}\\s+terms\\b`, 'i'),
       new RegExp(`\\b${NUM}\\s+curated\\s+terms\\b`, 'i'),
     ],
-    // "Twenty-two terms across the four packs carry a `never` list" counts a
+    // "Twenty-nine terms across the five packs carry a `never` list" counts a
     // subset, not the packs.
     skipLine: /\bnever\b/i,
   },

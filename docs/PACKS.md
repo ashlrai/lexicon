@@ -1,6 +1,6 @@
 # Starter packs
 
-Four curated term files ship with the package, in [`packs/`](../packs). They are the words a new user would otherwise type by hand on day one: 176 terms and 376 aliases across developer tooling, AI, business and dictation apps.
+Five curated term files ship with the package, in [`packs/`](../packs). They are the words a new user would otherwise type by hand on day one: 196 terms and 416 aliases across developer tooling, AI, business, cloud and DevOps, and dictation apps.
 
 ```bash
 lexicon pack list                    # what exists, and which you have
@@ -13,11 +13,12 @@ lexicon pack remove business         # take one back out
 | Pack | Terms | Aliases | What is in it |
 |---|---|---|---|
 | `developer` | 82 | 199 | Infrastructure, languages, frameworks, hosting and the everyday SaaS a software team says out loud (Kubernetes, PostgreSQL, Nginx, Hetzner, Vercel, pnpm) |
-| `ai` | 45 | 99 | Labs, models, frameworks, coding agents and the vocabulary of working with LLMs (Anthropic, Claude Code, Ollama, LangChain, RAG) |
+| `ai` | 45 | 98 | Labs, models, frameworks, coding agents and the vocabulary of working with LLMs (Anthropic, Claude Code, Ollama, LangChain, RAG) |
 | `business` | 35 | 58 | Metrics, acronyms, fundraising terms and the SaaS a founder talks to every day (SaaS, ARR, cap table, Rippling) |
 | `voice-tools` | 14 | 21 | Dictation apps, speech models and meeting recorders (Wispr Flow, Superwhisper, whisper.cpp, Granola) |
+| `cloud-devops` | 20 | 40 | Cloud providers, infrastructure automation, delivery and observability (EC2, S3, EKS, IAM, kubectl, Argo CD) |
 
-`lexicon setup` offers the packs as a checklist with `developer`, `ai` and `voice-tools` checked and `business` offered unchecked, because most of it is acronyms that speech-to-text already gets right. `--packs a,b` or `--no-packs` decides it without a prompt; under `--yes` nothing is installed unless you pass `--packs`, because a pack is a hundred-odd global terms.
+`lexicon setup` offers the packs as a checklist with `developer`, `ai` and `voice-tools` checked and `business` and `cloud-devops` offered unchecked, because most of them are acronyms that speech-to-text already gets right. `--packs a,b` or `--no-packs` decides it without a prompt; under `--yes` nothing is installed unless you pass `--packs`, because a pack is a hundred-odd global terms.
 
 Your agent can do the same: the MCP tool `list_packs` reports the packs and which are installed.
 
@@ -33,13 +34,13 @@ Project-scope installs go through the [trust gate](TRUST.md) like every other wr
 
 Aliases are what speech-to-text engines actually write for these names, not guesses at what they might. Where the TTS-audio benchmark recorded a spelling it is in the pack ("cuban eats" for Kubernetes, "and Tropic" for Anthropic, "Olima" for Ollama, "whisper flow" for Wispr Flow); the rest are the plausible splits and phoneme swaps from the synthetic corpus ("dock her", "engine x", "post gress").
 
-One rule decides the hard cases: **an ordinary English word is never an alias on its own.** Vercel is left without "vessel", Deel without "deal", Brex without "bricks", and Claude without "cloud", because "the cloud" and "close the deal" are sentences people say. `SaaS -> sass` is the single exception, and it carries `never: [sauce]` so the term cannot eat the other one. Twenty-two terms across the four packs carry a `never` list for the same reason.
+One rule decides the hard cases: **an ordinary English word is never an alias on its own.** Vercel is left without "vessel", Deel without "deal", Brex without "bricks", and Claude without "cloud", because "the cloud" and "close the deal" are sentences people say. `SaaS -> sass` is the single exception, and it carries `never: [sauce]` so the term cannot eat the other one. Twenty-nine terms across the five packs carry a `never` list for the same reason.
 
 This is the same precision rule the benchmark measures: zero of 95 clean synthetic sentences and zero of 72 clean spoken sentences were changed. See [BENCHMARK.md](BENCHMARK.md).
 
 ## Community packs
 
-The four above are curated and ship with the package. Everything else lives in community registries: an index file anyone can host (a YAML file in a git repo is enough), listing packs as `<author>/<name>`. `registry/index.example.yaml` in this repo documents the index format.
+The five above are curated and ship with the package. Everything else lives in community registries: an index file anyone can host (a YAML file in a git repo is enough), listing packs as `<author>/<name>`. `registry/index.example.yaml` in this repo documents the index format.
 
 ```bash
 lexicon pack search cardiology --registry https://example.com/packs/index.yaml
@@ -50,7 +51,7 @@ lexicon pack remove example/cardiology                               # no --regi
 lexicon pack validate ./my-pack.yaml                                 # the publish bar, before you list it
 ```
 
-A community pack installs through the same merge rules as the vendored four, with three extra guarantees, because installed terms reach model context on every hooked prompt:
+A community pack installs through the same merge rules as the vendored five, with three extra guarantees, because installed terms reach model context on every hooked prompt:
 
 - **https only.** An index and its pack files are fetched over `https://` (plain `http://` only from this machine, `localhost` or `127.0.0.1`), a redirect to plain `http://` elsewhere is refused, and every index or pack file over 2 MB is refused. The index is what vouches for each pack's checksum, so over plain http anyone on the path could swap both.
 - **Checksums pinned at install.** The index carries a sha256 of each pack file; the download is verified before it is read, and the checksum is pinned in `<global-lexicon-dir>/registry/registry.json`. `pack update` re-checks it.

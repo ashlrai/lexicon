@@ -6,7 +6,7 @@
  * else and never bypassed.
  *
  * Community packs (`<author>/<name>`, from a registry index via `--registry`)
- * install through the same `addTerm` loop as the vendored four, but with the
+ * install through the same `addTerm` loop as the vendored five, but with the
  * trust story the registry demands: checksums pinned at install, a full term
  * preview before the first write (confirmed, never silent), and updates that
  * are re-approved one by one.

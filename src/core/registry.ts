@@ -12,7 +12,7 @@
  * The trust story, stated plainly: installed pack terms land in the user's
  * lexicon file, which reaches model context on every hooked prompt, so a
  * malicious pack is a prompt-injection delivery vehicle with a friendly name.
- * Community packs therefore do not install like the vendored four:
+ * Community packs therefore do not install like the vendored five:
  *
  *   - Checksums are pinned at install time in `registry.json` beside the
  *     global lexicon; `pack update` re-checks them and an update is
