@@ -783,7 +783,9 @@ describe('the repo, as a corpus', () => {
   const ROOT = fileURLToPath(new URL('..', import.meta.url));
 
   function repoMarkdown(): string[] {
-    return execFileSync('git', ['ls-files', '*.md'], { cwd: ROOT, encoding: 'utf8' }).trim().split('\n').filter(Boolean);
+    // -z so the paths arrive unquoted: core.quotePath would otherwise hand back
+    // the quoted spelling of any path with a byte outside printable ASCII.
+    return execFileSync('git', ['ls-files', '-z', '--', '*.md'], { cwd: ROOT, encoding: 'utf8' }).split('\0').filter(Boolean);
   }
 
   const QUOTE_PAIRS: ReadonlyArray<readonly [string, string]> = [
@@ -800,27 +802,121 @@ describe('the repo, as a corpus', () => {
     return QUOTE_PAIRS.some(([open, close]) => before === open && after === close);
   }
 
-  it('never flattens a quoted spelling in the project\'s own documentation', () => {
-    const lexicon = parseLexicon(YAML.parse(readFileSync(join(ROOT, '.lexicon.yaml'), 'utf8')));
-    const index = buildIndex(lexicon);
+  /**
+   * The bounds the guard's ParagraphIndex draws for a span, computed the same
+   * way: a paragraph runs from just after the nearest blank line above to the
+   * newline that ends the line before the nearest blank line below, a line
+   * being blank when it holds nothing but spaces, tabs and carriage returns.
+   * The `'\n\n'` search this replaces matched one byte pattern, so a checkout
+   * with CRLF endings (the repository pins no line endings, and Git for
+   * Windows rewrites them by default) or a blank line holding stray spaces
+   * read as no break at all: the paragraph silently became the whole file,
+   * the canonical was always "in" it, and quoted mentions the guard had
+   * legitimately left alone were reported as flattened - the flake, produced
+   * by the probe's view of the file rather than by the guard.
+   */
+  function paragraphBounds(text: string): (start: number, end: number) => readonly [number, number] {
+    const blankEnds: number[] = [];
+    const breaks: number[] = [];
+    let lineStart = 0;
+    let prevNewline = -1;
+    for (let i = text.indexOf('\n'); i >= 0; i = text.indexOf('\n', i + 1)) {
+      let blank = true;
+      for (let k = lineStart; k < i; k++) {
+        const c = text.charCodeAt(k);
+        if (c !== 0x20 && c !== 0x09 && c !== 0x0d) {
+          blank = false;
+          break;
+        }
+      }
+      if (blank) {
+        if (i > 0) blankEnds.push(i);
+        if (prevNewline >= 0) breaks.push(prevNewline);
+      }
+      prevNewline = i;
+      lineStart = i + 1;
+    }
+    return (start, end) => {
+      let from = 0;
+      let to = text.length;
+      for (let i = blankEnds.length - 1; i >= 0; i--) {
+        if (blankEnds[i] <= start - 1) {
+          from = blankEnds[i] + 1;
+          break;
+        }
+      }
+      for (const b of breaks) {
+        if (b > end - 1) {
+          to = b;
+          break;
+        }
+      }
+      return [from, to];
+    };
+  }
+
+  function scanCorpus(files: string[], index: MatcherIndex): { proposed: number; flattened: string[] } {
     const flattened: string[] = [];
     let proposed = 0;
-    for (const file of repoMarkdown()) {
+    for (const file of files) {
       const text = readFileSync(join(ROOT, file), 'utf8');
+      const bounds = paragraphBounds(text);
       for (const r of findReplacements(text, index)) {
         proposed++;
         if (!tightQuoted(text, r.start, r.end)) continue;
         // The guard's own precondition: the canonical has to be standing in the
         // same paragraph, or there is nothing here it could have known.
-        const from = text.lastIndexOf('\n\n', r.start) + 1;
-        const to = text.indexOf('\n\n', r.end) === -1 ? text.length : text.indexOf('\n\n', r.end);
+        const [from, to] = bounds(r.start, r.end);
         const rest = text.slice(from, r.start) + text.slice(r.end, to);
         if (!hasCanonical(rest, r.replacement)) continue;
         const line = text.slice(0, r.start).split('\n').length;
         flattened.push(`${file}:${line}  ${JSON.stringify(r.original)} -> ${JSON.stringify(r.replacement)} [${r.reason}]`);
       }
     }
-    expect(proposed).toBeGreaterThan(0);
-    expect(flattened).toEqual([]);
+    return { proposed, flattened };
+  }
+
+  it('draws paragraph bounds the way the guard does', () => {
+    // The two shapes '\n\n' could not see: CRLF blank lines, and blank lines
+    // holding spaces. In both the paragraph used to widen to the whole file,
+    // which is what put these mentions "in" a paragraph with the canonical.
+    const restOf = (text: string, needle: string): string => {
+      const start = text.indexOf(needle);
+      const [from, to] = paragraphBounds(text)(start, start + needle.length);
+      return text.slice(from, start) + text.slice(start + needle.length, to);
+    };
+    for (const eol of ['\n', '\r\n']) {
+      expect(
+        hasCanonical(restOf(`Ashlr.AI is the spelling.${eol}${eol}The agent searches for "Ashler" here.`, '"Ashler"'), 'Ashlr.AI'),
+      ).toBe(false);
+      expect(
+        hasCanonical(restOf(`Ashlr.AI is the spelling.${eol}   ${eol}The agent searches for "Ashler" here.`, '"Ashler"'), 'Ashlr.AI'),
+      ).toBe(false);
+      expect(hasCanonical(restOf(`Say "Ashler"; the docs say Ashlr.AI.${eol}${eol}Elsewhere.`, '"Ashler"'), 'Ashlr.AI')).toBe(true);
+    }
+  }, PROPERTY_TIMEOUT_MS);
+
+  it('never flattens a quoted spelling in the project\'s own documentation', () => {
+    const lexicon = parseLexicon(YAML.parse(readFileSync(join(ROOT, '.lexicon.yaml'), 'utf8')));
+    const index = buildIndex(lexicon);
+    // The file list comes from the index and the contents from the worktree,
+    // so a file the index just listed can already be gone when readFileSync
+    // reaches it: a checkout, a rebase or another process moving the tree
+    // under the corpus. Re-enumerate and take the pass again rather than
+    // assert on a half-old, half-new set; if the tree keeps moving, the error
+    // still propagates.
+    let report: { proposed: number; flattened: string[] } | undefined;
+    let lastErr: unknown;
+    for (let attempt = 0; attempt < 3 && report === undefined; attempt++) {
+      try {
+        report = scanCorpus(repoMarkdown(), index);
+      } catch (err) {
+        lastErr = err;
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') throw err;
+      }
+    }
+    if (report === undefined) throw lastErr;
+    expect(report.proposed).toBeGreaterThan(0);
+    expect(report.flattened).toEqual([]);
   }, PROPERTY_TIMEOUT_MS);
 });
