@@ -51227,6 +51227,25 @@ function inventsBoundary(view, e) {
   for (const off of separatorOffsets(view.norm)) if (!e.separators.has(off)) return true;
   return false;
 }
+function phoneticCandidates(entries2, length, minConfidence) {
+  const ratio = 1 - (1 - minConfidence / PHONETIC_BASE) / PHONETIC_LENGTH_WEIGHT;
+  if (entries2.length < 64 || ratio <= 0) return entries2;
+  let sorted = phoneticLengths.get(entries2);
+  if (!sorted) {
+    sorted = [...entries2].sort((a, b) => a.length - b.length);
+    phoneticLengths.set(entries2, sorted);
+  }
+  const lowerBound = (length2) => {
+    let lo = 0, hi = sorted.length;
+    while (lo < hi) {
+      const mid = lo + hi >>> 1;
+      if (sorted[mid].length < length2) lo = mid + 1;
+      else hi = mid;
+    }
+    return lo;
+  };
+  return sorted.slice(lowerBound(Math.floor(ratio * length) - 1), lowerBound(Math.ceil(length / ratio) + 2));
+}
 function findBest(view, index, opts) {
   const state = { best: void 0 };
   const current = () => state.best;
@@ -51280,7 +51299,7 @@ function findBest(view, index, opts) {
       const key = doubleMetaphone(alpha)[0];
       const entries2 = key.length >= PHONETIC_MIN_KEY ? index.phoneticKeys.get(key) : void 0;
       if (entries2) {
-        for (const e of entries2) {
+        for (const e of phoneticCandidates(entries2, alpha.length, opts.minConfidence)) {
           if (e.term.caseSensitive) continue;
           if (view.edgeNonWordStart && !e.startsNonWord) continue;
           if (view.edgeNonWordEnd && !e.endsNonWord) continue;
@@ -51410,7 +51429,7 @@ function clamp01(n) {
   if (Number.isNaN(n)) return DEFAULT_MIN_CONFIDENCE;
   return Math.min(1, Math.max(0, n));
 }
-var import_fastest_levenshtein2, REASON_RANK, GLUE_BEFORE, GLUE_AFTER, PLAIN_WORD_RE, PLURAL_RE, ENDS_IN_INITIALISM, SENTENCE_FOLLOWS;
+var import_fastest_levenshtein2, REASON_RANK, GLUE_BEFORE, GLUE_AFTER, PLAIN_WORD_RE, PLURAL_RE, phoneticLengths, ENDS_IN_INITIALISM, SENTENCE_FOLLOWS;
 var init_matcher = __esm({
   "src/core/matcher.ts"() {
     init_double_metaphone();
@@ -51430,6 +51449,7 @@ var init_matcher = __esm({
     GLUE_AFTER = /* @__PURE__ */ new Set(["/", "\\", "_"]);
     PLAIN_WORD_RE = new RegExp("^\\p{Ll}+(?:-\\p{Ll}+)*$", "u");
     PLURAL_RE = new RegExp("^\\p{L}{3,}(?<![sS])s$", "u");
+    phoneticLengths = /* @__PURE__ */ new WeakMap();
     ENDS_IN_INITIALISM = new RegExp("(?:^|[^\\p{L}\\p{N}])(?:\\p{L}\\.)+\\p{L}$", "u");
     SENTENCE_FOLLOWS = /^(?:\s*$|\s*\n|\s+[\p{Lu}\p{N}"“'‘(\[]|["”'’])/u;
   }
@@ -61067,6 +61087,7 @@ __export(core_exports3, {
   pendingId: () => pendingId,
   pendingPath: () => pendingPath,
   pendingPathFor: () => pendingPathFor,
+  phoneticCandidates: () => phoneticCandidates,
   phoneticKey: () => phoneticKey,
   posixShellWord: () => posixShellWord,
   powerShellWord: () => powerShellWord,
