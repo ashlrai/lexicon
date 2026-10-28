@@ -510,6 +510,7 @@ class ParagraphIndex {
   /** Newline offsets followed by a blank line that is itself newline-terminated. */
   private readonly breaks: number[] = [];
   private readonly cache = new Map<number, FoldedParagraph>();
+  private readonly canonicalFolds = new Map<string, string>();
 
   constructor(private readonly text: string) {
     let lineStart = 0;
@@ -537,7 +538,11 @@ class ParagraphIndex {
     const to = belowAt < this.breaks.length ? this.breaks[belowAt] : this.text.length;
 
     const para = this.paragraph(from, to);
-    const needle = foldPerCodePoint(canonical);
+    let needle = this.canonicalFolds.get(canonical);
+    if (needle === undefined) {
+      needle = foldPerCodePoint(canonical);
+      this.canonicalFolds.set(canonical, needle);
+    }
     if (needle.length === 0) return false;
     let found = para.matches.get(needle);
     if (!found) {
@@ -562,12 +567,20 @@ class ParagraphIndex {
     if (cached) return cached;
     const before = new Uint32Array(to - from + 1);
     const parts: string[] = [];
+    // A paragraph repeats a small alphabet. Folding each occurrence creates
+    // temporary strings and reruns the Unicode regexp; reuse the independent
+    // code-point fold while keeping the UTF-16 offset map unchanged.
+    const foldedCodePoints = new Map<number, string>();
     let length = 0;
     let i = from;
     while (i < to) {
       const cp = this.text.codePointAt(i)!;
       const width = cp > 0xffff ? 2 : 1;
-      const piece = foldPerCodePoint(String.fromCodePoint(cp));
+      let piece = foldedCodePoints.get(cp);
+      if (piece === undefined) {
+        piece = foldPerCodePoint(String.fromCodePoint(cp));
+        foldedCodePoints.set(cp, piece);
+      }
       before[i - from] = length;
       if (width === 2 && i + 1 - from < before.length) before[i + 1 - from] = length;
       parts.push(piece);

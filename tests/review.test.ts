@@ -868,6 +868,29 @@ describe('review and edit under --json', () => {
 // edit
 // ---------------------------------------------------------------------------
 
+describe('review dry-run validation', () => {
+  it('rejects the same invalid final document as a real review without changing the file', async () => {
+    await addTerm({ canonical: 'QuasarBridge', aliases: ['quasar bridge'] }, { globalPath });
+    const original = await fs.readFile(globalPath, 'utf8');
+    for (const dryRun of [true, false]) {
+      const io = makeIO();
+      expect(await runReview({ globalPath, dryRun }, io, scripted(['n', 'x'.repeat(201), 'k']))).toBe(1);
+      expect(io.err).toContain('must be at most 200 characters');
+      expect(await fs.readFile(globalPath, 'utf8')).toBe(original);
+    }
+  });
+
+  it('reports valid edits without saving the dictionary or its backup', async () => {
+    await addTerm({ canonical: 'QuasarBridge', aliases: ['quasar bridge'] }, { globalPath });
+    const original = await fs.readFile(globalPath, 'utf8');
+    const io = makeIO();
+    expect(await runReview({ globalPath, dryRun: true }, io, scripted(['n', 'new note', 'k']))).toBe(0);
+    expect(io.out).toContain('Would write');
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(original);
+    await expect(fs.stat(`${globalPath}.bak`)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+});
+
 describe('edit', () => {
   it.each([false, true])('dry-run never creates or opens a global lexicon (existing: %s)', async (existing) => {
     if (existing) {

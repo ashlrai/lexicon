@@ -36,6 +36,18 @@ describe('declineCollapsedMentions: paragraph-wide quote anchor', () => {
     expect(declineCollapsedMentions(elsewhere.text, elsewhere.spans)).toHaveLength(50);
   });
 
+  it.each([
+    { canonical: 'İris.AI', spelling: 'iris AI', alias: 'Irris' },
+    { canonical: '𝔄shlr.AI', spelling: '𝔄shlr AI', alias: '𝔄shler' },
+  ])('preserves Unicode folding and UTF-16 offsets for $canonical across paragraph caches', ({ canonical, spelling, alias }) => {
+    const text = `🚀 ${spelling} ships. Something else entirely. "${alias}" remains quoted.\n\nAnother paragraph says "${alias}" aloud.`;
+    const starts = [text.indexOf(`"${alias}"`) + 1, text.lastIndexOf(`"${alias}"`) + 1];
+    const spans = starts.map((start) => ({ start, end: start + alias.length, original: alias, replacement: canonical }));
+    // The first paragraph's folded spelling anchors only its own quoted alias.
+    // The second lookup reuses the canonical fold against a different paragraph.
+    expect(declineCollapsedMentions(text, spans)).toEqual([spans[1]]);
+  });
+
   it('stays near-linear in the number of quoted mentions in one paragraph', () => {
     const small = quotedParagraph(4000, 'Something else entirely. ');
     const large = quotedParagraph(16000, 'Something else entirely. ');
