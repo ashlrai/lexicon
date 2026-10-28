@@ -1,6 +1,6 @@
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, mkdirSync, rmSync, writeFileSync } from 'node:fs';
-import { devNull, tmpdir } from 'node:os';
+import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
 import { sitemapEntries } from '../web/lib/sitemap.js';
@@ -11,13 +11,14 @@ import { useCases, useCasePath } from '../web/lib/use-cases.js';
 const directories: string[] = [];
 const gitEnv = {
   ...process.env,
-  GIT_CONFIG_GLOBAL: devNull,
   GIT_CONFIG_NOSYSTEM: '1',
 };
 
 function fixture(initialize = true): string {
   const root = mkdtempSync(join(tmpdir(), 'lexicon-sitemap-'));
   directories.push(root);
+  // Use a real empty file: Node's Windows null device is not a Git config path.
+  writeFileSync(join(root, 'gitconfig'), '');
   if (initialize) git(root, ['init', '--quiet']);
   return root;
 }
@@ -25,8 +26,8 @@ function fixture(initialize = true): string {
 function git(root: string, args: string[], date?: string): void {
   execFileSync('git', args, {
     cwd: root,
-    env: { ...gitEnv, ...(date ? { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } : {}) },
-    stdio: 'ignore',
+    env: { ...gitEnv, GIT_CONFIG_GLOBAL: join(root, 'gitconfig'), ...(date ? { GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date } : {}) },
+    stdio: 'pipe',
   });
 }
 
