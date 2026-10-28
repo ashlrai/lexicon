@@ -1,0 +1,1210 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`preserves discovery schemas, annotations and parsed common command results > cli/add 1`] = `
+{
+  "created": true,
+  "ok": true,
+  "path": "<fixture>/lexicon.yaml",
+  "scope": "global",
+  "suggested": [],
+  "term": {
+    "aliases": [
+      "Ashler",
+    ],
+    "canonical": "Ashlr.AI",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "scope": "global",
+    "source": "user",
+  },
+}
+`;
+
+exports[`preserves discovery schemas, annotations and parsed common command results > cli/list 1`] = `
+[
+  {
+    "aliases": [
+      "Ashler",
+    ],
+    "canonical": "Ashlr.AI",
+    "createdAt": "2026-01-01T00:00:00.000Z",
+    "scope": "global",
+    "source": "user",
+  },
+]
+`;
+
+exports[`preserves discovery schemas, annotations and parsed common command results > cli/normalize 1`] = `
+{
+  "changed": false,
+  "input": "Ashler builds tools",
+  "ok": true,
+  "output": "Ashler builds tools",
+  "replacements": [
+    {
+      "canonical": "Ashlr.AI",
+      "confidence": 1,
+      "end": 6,
+      "original": "Ashler",
+      "reason": "alias",
+      "replacement": "Ashlr.AI",
+      "start": 0,
+    },
+  ],
+}
+`;
+
+exports[`preserves discovery schemas, annotations and parsed common command results > cli/path 1`] = `
+{
+  "global": "<fixture>/lexicon.yaml",
+  "ok": true,
+  "project": null,
+}
+`;
+
+exports[`preserves discovery schemas, annotations and parsed common command results > discovery contract 1`] = `
+{
+  "tools": [
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "dryRun": {
+            "type": "boolean",
+          },
+          "minConfidence": {
+            "maximum": 1,
+            "minimum": 0,
+            "type": "number",
+          },
+          "text": {
+            "maxLength": 1000000,
+            "type": "string",
+          },
+        },
+        "required": [
+          "text",
+        ],
+        "type": "object",
+      },
+      "name": "normalize_transcript",
+      "title": "Normalize dictated text",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "aliases": {
+            "items": {
+              "type": "string",
+            },
+            "type": "array",
+          },
+          "canonical": {
+            "minLength": 1,
+            "pattern": "[^\\s\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u08E2\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF\\uFFF9-\\uFFFB]",
+            "type": "string",
+          },
+          "category": {
+            "enum": [
+              "brand",
+              "person",
+              "product",
+              "acronym",
+              "identifier",
+              "place",
+              "other",
+            ],
+            "type": "string",
+          },
+          "never": {
+            "items": {
+              "type": "string",
+            },
+            "type": "array",
+          },
+          "notes": {
+            "type": "string",
+          },
+          "phonetic": {
+            "type": "string",
+          },
+          "scope": {
+            "enum": [
+              "global",
+              "project",
+            ],
+            "type": "string",
+          },
+        },
+        "required": [
+          "canonical",
+        ],
+        "type": "object",
+      },
+      "name": "add_term",
+      "title": "Add a lexicon term",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "alias": {
+            "minLength": 1,
+            "pattern": "[^\\s\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u08E2\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF\\uFFF9-\\uFFFB]",
+            "type": "string",
+          },
+          "canonical": {
+            "minLength": 1,
+            "pattern": "[^\\s\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u08E2\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF\\uFFF9-\\uFFFB]",
+            "type": "string",
+          },
+          "scope": {
+            "enum": [
+              "global",
+              "project",
+            ],
+            "type": "string",
+          },
+        },
+        "required": [
+          "canonical",
+        ],
+        "type": "object",
+      },
+      "name": "remove_term",
+      "title": "Remove a lexicon term or one of its aliases",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "category": {
+            "enum": [
+              "brand",
+              "person",
+              "product",
+              "acronym",
+              "identifier",
+              "place",
+              "other",
+            ],
+            "type": "string",
+          },
+          "limit": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer",
+          },
+          "offset": {
+            "maximum": 9007199254740991,
+            "minimum": 0,
+            "type": "integer",
+          },
+          "query": {
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "list_terms",
+      "title": "List lexicon terms",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "categories": {
+            "items": {
+              "enum": [
+                "brand",
+                "person",
+                "product",
+                "acronym",
+                "identifier",
+                "place",
+                "other",
+              ],
+              "type": "string",
+            },
+            "type": "array",
+          },
+          "format": {
+            "enum": [
+              "wispr",
+              "superwhisper",
+              "whisper-prompt",
+              "macos",
+              "claude-md",
+              "csv",
+              "json",
+              "deepgram",
+              "espanso",
+              "assemblyai",
+              "speechmatics",
+              "azure",
+              "google",
+              "openai",
+              "text",
+              "markdown",
+              "wispr-flow",
+              "wisprflow",
+              "wispr-flow-csv",
+            ],
+            "type": "string",
+          },
+          "limit": {
+            "exclusiveMinimum": 0,
+            "maximum": 10000,
+            "type": "integer",
+          },
+        },
+        "required": [
+          "format",
+        ],
+        "type": "object",
+      },
+      "name": "export_lexicon",
+      "title": "Export the lexicon",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "heard": {
+            "minLength": 1,
+            "pattern": "[^\\s\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u08E2\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF\\uFFF9-\\uFFFB]",
+            "type": "string",
+          },
+          "meant": {
+            "minLength": 1,
+            "pattern": "[^\\s\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u08E2\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF\\uFFF9-\\uFFFB]",
+            "type": "string",
+          },
+          "scope": {
+            "enum": [
+              "global",
+              "project",
+            ],
+            "type": "string",
+          },
+        },
+        "required": [
+          "heard",
+          "meant",
+        ],
+        "type": "object",
+      },
+      "name": "learn_correction",
+      "title": "Learn from a spelling correction",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "heard": {
+            "minLength": 1,
+            "pattern": "[^\\s\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u08E2\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF\\uFFF9-\\uFFFB]",
+            "type": "string",
+          },
+        },
+        "required": [
+          "heard",
+        ],
+        "type": "object",
+      },
+      "name": "suggest_canonical",
+      "title": "Suggest the canonical form of a garbled word",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object",
+      },
+      "name": "lexicon_stats",
+      "title": "Lexicon usage statistics",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "add": {
+            "type": "boolean",
+          },
+          "limit": {
+            "exclusiveMinimum": 0,
+            "maximum": 1000,
+            "type": "integer",
+          },
+          "minCount": {
+            "exclusiveMinimum": 0,
+            "maximum": 9007199254740991,
+            "type": "integer",
+          },
+          "path": {
+            "minLength": 1,
+            "pattern": "[^\\s\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u08E2\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF\\uFFF9-\\uFFFB]",
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "harvest_repo",
+      "title": "Harvest names from a repository",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "cwd": {
+            "minLength": 1,
+            "pattern": "[^\\s\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u08E2\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF\\uFFF9-\\uFFFB]",
+            "type": "string",
+          },
+          "limit": {
+            "exclusiveMinimum": 0,
+            "maximum": 500,
+            "type": "integer",
+          },
+        },
+        "type": "object",
+      },
+      "name": "suggest_terms",
+      "title": "Propose lexicon improvements",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "scope": {
+            "enum": [
+              "global",
+              "project",
+            ],
+            "type": "string",
+          },
+          "suggestion": {
+            "additionalProperties": false,
+            "properties": {
+              "alias": {
+                "type": "string",
+              },
+              "aliases": {
+                "items": {
+                  "type": "string",
+                },
+                "type": "array",
+              },
+              "canonical": {
+                "minLength": 1,
+                "pattern": "[^\\s\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u08E2\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF\\uFFF9-\\uFFFB]",
+                "type": "string",
+              },
+              "category": {
+                "enum": [
+                  "brand",
+                  "person",
+                  "product",
+                  "acronym",
+                  "identifier",
+                  "place",
+                  "other",
+                ],
+                "type": "string",
+              },
+              "confidence": {
+                "type": "number",
+              },
+              "count": {
+                "type": "number",
+              },
+              "evidence": {
+                "items": {
+                  "type": "string",
+                },
+                "type": "array",
+              },
+              "kind": {
+                "enum": [
+                  "alias",
+                  "term",
+                  "never",
+                  "phonetic",
+                  "stale",
+                ],
+                "type": "string",
+              },
+              "path": {
+                "type": "string",
+              },
+              "phonetic": {
+                "type": "string",
+              },
+              "reason": {
+                "type": "string",
+              },
+              "scope": {
+                "enum": [
+                  "global",
+                  "project",
+                ],
+                "type": "string",
+              },
+            },
+            "required": [
+              "kind",
+              "canonical",
+            ],
+            "type": "object",
+          },
+          "suggestions": {
+            "items": {
+              "additionalProperties": false,
+              "properties": {
+                "alias": {
+                  "type": "string",
+                },
+                "aliases": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "canonical": {
+                  "minLength": 1,
+                  "pattern": "[^\\s\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u08E2\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF\\uFFF9-\\uFFFB]",
+                  "type": "string",
+                },
+                "category": {
+                  "enum": [
+                    "brand",
+                    "person",
+                    "product",
+                    "acronym",
+                    "identifier",
+                    "place",
+                    "other",
+                  ],
+                  "type": "string",
+                },
+                "confidence": {
+                  "type": "number",
+                },
+                "count": {
+                  "type": "number",
+                },
+                "evidence": {
+                  "items": {
+                    "type": "string",
+                  },
+                  "type": "array",
+                },
+                "kind": {
+                  "enum": [
+                    "alias",
+                    "term",
+                    "never",
+                    "phonetic",
+                    "stale",
+                  ],
+                  "type": "string",
+                },
+                "path": {
+                  "type": "string",
+                },
+                "phonetic": {
+                  "type": "string",
+                },
+                "reason": {
+                  "type": "string",
+                },
+                "scope": {
+                  "enum": [
+                    "global",
+                    "project",
+                  ],
+                  "type": "string",
+                },
+              },
+              "required": [
+                "kind",
+                "canonical",
+              ],
+              "type": "object",
+            },
+            "maxItems": 100,
+            "minItems": 1,
+            "type": "array",
+          },
+        },
+        "type": "object",
+      },
+      "name": "apply_suggestion",
+      "title": "Apply suggestions",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "action": {
+            "enum": [
+              "status",
+              "trust",
+              "untrust",
+            ],
+            "type": "string",
+          },
+          "path": {
+            "minLength": 1,
+            "pattern": "[^\\s\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u08E2\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF\\uFFF9-\\uFFFB]",
+            "type": "string",
+          },
+        },
+        "required": [
+          "action",
+        ],
+        "type": "object",
+      },
+      "name": "trust_project",
+      "title": "Inspect or approve a project lexicon",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object",
+      },
+      "name": "lexicon_doctor",
+      "title": "Is the lexicon set up, and if not what fixes it",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "apply": {
+            "type": "boolean",
+          },
+          "client": {
+            "enum": [
+              "claude",
+              "codex",
+              "cursor",
+              "windsurf",
+              "gemini",
+              "vscode",
+              "claude-desktop",
+            ],
+            "type": "string",
+          },
+          "scope": {
+            "enum": [
+              "user",
+              "project",
+            ],
+            "type": "string",
+          },
+        },
+        "required": [
+          "client",
+        ],
+        "type": "object",
+      },
+      "name": "install_client",
+      "title": "Register the lexicon MCP server in an agent client",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": true,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "apply": {
+            "type": "boolean",
+          },
+          "client": {
+            "enum": [
+              "claude",
+              "codex",
+              "cursor",
+              "windsurf",
+              "gemini",
+              "vscode",
+              "claude-desktop",
+            ],
+            "type": "string",
+          },
+          "scope": {
+            "enum": [
+              "user",
+              "project",
+            ],
+            "type": "string",
+          },
+        },
+        "required": [
+          "client",
+        ],
+        "type": "object",
+      },
+      "name": "uninstall_client",
+      "title": "Remove the lexicon MCP server from an agent client",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "apply": {
+            "type": "boolean",
+          },
+          "clients": {
+            "items": {
+              "enum": [
+                "claude",
+                "codex",
+                "cursor",
+                "windsurf",
+                "gemini",
+                "vscode",
+                "claude-desktop",
+              ],
+              "type": "string",
+            },
+            "type": "array",
+          },
+          "company": {
+            "type": "string",
+          },
+          "harvest": {
+            "type": "boolean",
+          },
+          "packs": {
+            "items": {
+              "pattern": "^[a-z0-9-]+$",
+              "type": "string",
+            },
+            "type": "array",
+          },
+          "person": {
+            "type": "string",
+          },
+          "serve": {
+            "type": "boolean",
+          },
+        },
+        "type": "object",
+      },
+      "name": "setup_lexicon",
+      "title": "One-shot onboarding (preview, then apply)",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": true,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {},
+        "type": "object",
+      },
+      "name": "serve_status",
+      "title": "Local API status",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": true,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "registry": {
+            "minLength": 1,
+            "pattern": "[^\\s\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u08E2\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF\\uFFF9-\\uFFFB]",
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "list_packs",
+      "title": "List the starter term packs",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "confirm": {
+            "type": "boolean",
+          },
+          "name": {
+            "minLength": 1,
+            "pattern": "[^\\s\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u08E2\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF\\uFFF9-\\uFFFB]",
+            "type": "string",
+          },
+          "previewDigest": {
+            "pattern": "^[a-f0-9]{64}$",
+            "type": "string",
+          },
+          "registry": {
+            "minLength": 1,
+            "pattern": "[^\\s\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u08E2\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF\\uFFF9-\\uFFFB]",
+            "type": "string",
+          },
+          "scope": {
+            "enum": [
+              "global",
+              "project",
+            ],
+            "type": "string",
+          },
+        },
+        "required": [
+          "name",
+        ],
+        "type": "object",
+      },
+      "name": "add_pack",
+      "title": "Install a starter term pack",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": false,
+        "openWorldHint": true,
+        "readOnlyHint": false,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "apply": {
+            "type": "boolean",
+          },
+          "approvedCandidateIds": {
+            "items": {
+              "pattern": "^[a-f0-9]{64}$",
+              "type": "string",
+            },
+            "maxItems": 50,
+            "type": "array",
+          },
+          "previewToken": {
+            "pattern": "^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$",
+            "type": "string",
+          },
+          "scope": {
+            "enum": [
+              "global",
+              "project",
+            ],
+            "type": "string",
+          },
+          "sources": {
+            "items": {
+              "enum": [
+                "contacts",
+                "calendar",
+                "github",
+              ],
+              "type": "string",
+            },
+            "type": "array",
+          },
+        },
+        "type": "object",
+      },
+      "name": "import_vocabulary",
+      "title": "Import proper nouns from the user's own sources (preview, then apply)",
+    },
+    {
+      "_meta": undefined,
+      "annotations": {
+        "destructiveHint": false,
+        "idempotentHint": true,
+        "openWorldHint": false,
+        "readOnlyHint": false,
+      },
+      "execution": {
+        "taskSupport": "forbidden",
+      },
+      "inputSchema": {
+        "$schema": "http://json-schema.org/draft-07/schema#",
+        "additionalProperties": false,
+        "properties": {
+          "content": {
+            "minLength": 1,
+            "pattern": "[^\\s\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u08E2\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF\\uFFF9-\\uFFFB]",
+            "type": "string",
+          },
+          "dryRun": {
+            "type": "boolean",
+          },
+          "format": {
+            "enum": [
+              "auto",
+              "wispr",
+              "superwhisper",
+              "macos",
+              "espanso",
+              "markdown",
+              "text",
+              "csv",
+              "json",
+            ],
+            "type": "string",
+          },
+          "path": {
+            "minLength": 1,
+            "pattern": "[^\\s\\u00AD\\u0600-\\u0605\\u061C\\u06DD\\u070F\\u08E2\\u180E\\u200B-\\u200F\\u202A-\\u202E\\u2060-\\u2064\\u2066-\\u206F\\uFEFF\\uFFF9-\\uFFFB]",
+            "type": "string",
+          },
+          "scope": {
+            "enum": [
+              "global",
+              "project",
+            ],
+            "type": "string",
+          },
+        },
+        "type": "object",
+      },
+      "name": "import_dictionary",
+      "title": "Import an existing dictionary",
+    },
+  ],
+}
+`;
+
+exports[`preserves discovery schemas, annotations and parsed common command results > mcp/lexicon_stats 1`] = `
+{
+  "content": [
+    {
+      "text": {
+        "aliasCount": 1,
+        "byCategory": {
+          "uncategorized": 1,
+        },
+        "bySource": {
+          "user": 1,
+        },
+        "files": [
+          {
+            "path": "<fixture>/lexicon.yaml",
+            "scope": "global",
+            "terms": 1,
+          },
+        ],
+        "neverHit": [
+          "Ashlr.AI",
+        ],
+        "neverHitCount": 1,
+        "termCount": 1,
+        "topTerms": [],
+        "totalHits": 0,
+      },
+      "type": "text",
+    },
+  ],
+  "isError": false,
+}
+`;
+
+exports[`preserves discovery schemas, annotations and parsed common command results > mcp/list_terms 1`] = `
+{
+  "content": [
+    {
+      "text": {
+        "counts": {
+          "global": 1,
+          "matched": 1,
+          "project": 0,
+          "total": 1,
+        },
+        "paths": {
+          "global": "<fixture>/lexicon.yaml",
+        },
+        "terms": [
+          {
+            "aliases": [
+              "Ashler",
+            ],
+            "canonical": "Ashlr.AI",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "scope": "global",
+            "source": "user",
+          },
+        ],
+      },
+      "type": "text",
+    },
+  ],
+  "isError": false,
+}
+`;
+
+exports[`preserves discovery schemas, annotations and parsed common command results > mcp/list_terms/page 1`] = `
+{
+  "content": [
+    {
+      "text": {
+        "counts": {
+          "global": 1,
+          "matched": 1,
+          "project": 0,
+          "total": 1,
+        },
+        "page": {
+          "limit": 1,
+          "offset": 0,
+          "returned": 1,
+        },
+        "paths": {
+          "global": "<fixture>/lexicon.yaml",
+        },
+        "terms": [
+          {
+            "aliases": [
+              "Ashler",
+            ],
+            "canonical": "Ashlr.AI",
+            "createdAt": "2026-01-01T00:00:00.000Z",
+            "scope": "global",
+            "source": "user",
+          },
+        ],
+      },
+      "type": "text",
+    },
+  ],
+  "isError": false,
+}
+`;
+
+exports[`preserves discovery schemas, annotations and parsed common command results > mcp/normalize_transcript 1`] = `
+{
+  "content": [
+    {
+      "text": {
+        "changed": false,
+        "output": "Ashler builds tools",
+        "replacements": [
+          {
+            "canonical": "Ashlr.AI",
+            "confidence": 1,
+            "end": 6,
+            "original": "Ashler",
+            "reason": "alias",
+            "replacement": "Ashlr.AI",
+            "start": 0,
+          },
+        ],
+        "summary": ""Ashler" -> "Ashlr.AI" (alias, 1.00)",
+      },
+      "type": "text",
+    },
+  ],
+  "isError": false,
+}
+`;
