@@ -114,9 +114,9 @@ jobs:
             fi
           fi
           mac=true; win=true
-          # No merge queue yet (Security G1, Oct 26): PRs keep the path rule
-          # below; macOS and Windows also run on every push to main, on
-          # merge_group, nightly and manual runs. ci/** pushes run Linux only.
+          # plan only runs on schedule and workflow_dispatch (see its if:),
+          # where macOS and Windows always run. The push and pull_request
+          # branches below are dormant: PRs and merge_group run CI Gate only.
           if [ "$EVENT" = "push" ] && [ "$REF" != "refs/heads/main" ]; then mac=false; win=false; fi
           if [ "$EVENT" = "pull_request" ]; then
             # An unreadable diff runs both rows.
@@ -145,11 +145,10 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        # macOS runners bill ~10x Linux and queue ~3 min, so pull requests run
-        # the Linux + Windows rows (the fast gate) and the macOS row runs on
-        # every push to main and ci/** (and again in release.yml before any
-        # publish), and on a PR only when `plan` says so (label `ci:macos` or
-        # a timing-sensitive path).
+        # macOS runners bill ~10x Linux and queue ~3 min, so the macOS and
+        # Windows rows run only on the 6 AM / 6 PM ET schedule and on
+        # workflow_dispatch (and again in release.yml before any publish),
+        # never on pull_request or merge_group.
         include: ${{ fromJSON(needs.plan.outputs.include) }}
     steps:
       # Before checkout, or it has already rewritten the worktree. Git for
