@@ -354,7 +354,7 @@ export async function installLoadedPack(
   // per-term loop was quadratic in the file size and an 82-term pack took
   // seconds. One read and one write give the same document.
   const targetPath = await resolveScopeWritePath(scope, { ...storeOpts, leaveUntrusted });
-  return withLexiconLock(targetPath, async () => {
+  const apply = async () => {
     const incoming = pack.lexicon.terms.map((term) => {
       const t: Term = { ...term, aliases: [...term.aliases], source: 'pack' };
       if (term.never) t.never = [...term.never];
@@ -378,7 +378,8 @@ export async function installLoadedPack(
     await writePacksSetting(file, packs, storeOpts, leaveUntrusted);
     const alreadyInstalled = before !== undefined && before === (await readTextIfAny(file.path));
     return { pack: info(pack), added, merged, path: file.path, scope, alreadyInstalled };
-  });
+  };
+  return opts.dryRun ? apply() : withLexiconLock(targetPath, apply);
 }
 
 /**

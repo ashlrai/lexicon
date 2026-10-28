@@ -1,6 +1,6 @@
 /** CLI previews must be reachable through commander and preserve user files. */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -47,6 +47,50 @@ function preview(args: string[]) {
   expect(result.status, result.stderr).toBe(0);
   return JSON.parse(result.stdout) as Record<string, unknown>;
 }
+
+/** Include directories and timestamps: rewriting identical bytes is still a write. */
+function snapshot(): Record<string, unknown> {
+  return Object.fromEntries(readdirSync(home, { recursive: true, encoding: 'utf8' }).sort().map((name) => {
+    const file = path.join(home, name);
+    const stat = statSync(file);
+    return [name, stat.isDirectory() ? 'directory' : { bytes: readFileSync(file).toString('hex'), mtime: stat.mtimeMs, mode: stat.mode }];
+  }));
+}
+
+const mutations = [
+  ['init'],
+  ['add', 'Ashlr.AI', 'Ashley our AI'],
+  ['remove', 'Ashlr.AI'],
+  ['learn', 'Ashlar', 'Ashlr.AI'],
+  ['remove', 'Ashlr.AI', '--alias', 'Ashler'],
+  ['untrust', '.lexicon.yaml'],
+  ['pack', 'add', 'developer'],
+];
+
+describe('dry-run-everywhere filesystem guarantee', () => {
+  it.each(mutations.map((args) => [args.join(' '), args] as const))('%s preserves a cold cache and every existing file', (_name, args) => {
+    seedGlobal();
+    // Above the global parse cache threshold, without populating any cache.
+    writeFileSync(globalPath, seed + '\n# ' + 'padding '.repeat(1200) + '\n');
+    writeFileSync(path.join(repo, '.lexicon.yaml'), seed);
+    const trusted = lexicon(['trust', '--yes']);
+    expect(trusted.status, trusted.stderr).toBe(0);
+    const before = snapshot();
+    const plan = preview([...args]);
+    expect(plan).toMatchObject(args[0] === 'pack'
+      ? [{ dryRun: true, added: expect.any(Number), path: globalPath }]
+      : { ok: true, dryRun: true });
+    expect(snapshot()).toEqual(before);
+  });
+
+  it.each(mutations.map((args) => [args.join(' '), args] as const))('%s creates no files in a fresh home', (_name, args) => {
+    const before = snapshot();
+    const result = lexicon([...args, '--dry-run', '--json']);
+    expect(result.status, result.stderr).toBe(args[0] === 'remove' ? 1 : 0);
+    expect(JSON.parse(result.stdout)).toMatchObject(args[0] === 'pack' ? [{ dryRun: true }] : { dryRun: true });
+    expect(snapshot()).toEqual(before);
+  });
+});
 
 describe('CLI dry-run previews', () => {
   it('advertises the preview flag on every newly supported command', () => {

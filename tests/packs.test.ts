@@ -58,10 +58,10 @@ import { registerPackCommands, runPackAdd, runPackList, runPackRemove, runPackSh
 import { Command } from 'commander';
 import { makeIO } from './helpers.js';
 
-const PACK_NAMES = ['ai', 'business', 'developer', 'voice-tools'];
+const PACK_NAMES = ['ai', 'business', 'cloud-devops', 'developer', 'voice-tools'];
 
 /** Minimum sizes the packs promise (docs/PACKS.md). */
-const MIN_TERMS: Record<string, number> = { developer: 50, ai: 30, business: 30, 'voice-tools': 12 };
+const MIN_TERMS: Record<string, number> = { developer: 50, 'cloud-devops': 20, ai: 30, business: 30, 'voice-tools': 12 };
 
 /**
  * Aliases that ARE an ordinary word, on purpose. Each entry is a real STT
@@ -109,6 +109,25 @@ const STOPLIST_PHRASE_ALLOWLIST: Record<string, string[]> = {
 // ---------------------------------------------------------------------------
 
 describe('shipped packs', () => {
+  it('installs cloud/DevOps vocabulary and corrects a deployment sentence without changing prose', async () => {
+    const pack = await loadPack('cloud-devops');
+    expect(pack.terms).toBe(20);
+    expect(pack.lexicon.terms.find((term) => term.canonical === 'kubectl')?.aliases).toContain('kube control');
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-devops-'));
+    try {
+      const opts = { globalPath: path.join(dir, 'lexicon.yaml'), cwd: dir };
+      expect((await installPack('cloud-devops', opts)).added).toBe(20);
+      expect((await installPack('cloud-devops', opts)).alreadyInstalled).toBe(true);
+      const { merged: lexicon } = await loadLexicon(opts);
+      expect(normalize('deploy with kube control and argo c d using open tofu', lexicon).output)
+        .toBe('deploy with kubectl and Argo CD using OpenTofu');
+      const prose = 'take the helm and keep the cloud under control';
+      expect(normalize(prose, lexicon).output).toBe(prose);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('protects ordinary vellum prose while correcting spelled-out vLLM', async () => {
     const pack = await loadPack('ai');
     const prose = 'print the invitation on vellum';
