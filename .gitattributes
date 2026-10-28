@@ -1,0 +1,5 @@
+# Union-merge changelog entries: parallel release notes never conflict.
+# Matches CHANGELOG.md at any depth. Git's own union driver is built in, so no
+# merge.* config is needed; note that GitHub's server-side merge ignores
+# attributes and may still flag the file on the web UI.
+CHANGELOG.md merge=union

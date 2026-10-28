@@ -18922,17 +18922,30 @@ function declineCollapsedMentions(text, spans) {
       if (spans[i].end <= to) here.push(i);
     }
     if (here.length === 0) continue;
+    let soloResult = null;
+    const soloPoints = [];
     const byResult = /* @__PURE__ */ new Map();
     for (const index of here) {
       const span = spans[index];
+      const point = { start: span.start, end: span.end, index, anchor: foldSpelling(span.original) === foldSpelling(span.replacement) };
+      if (byResult.size === 0 && (soloResult === null || span.replacement === soloResult)) {
+        soloResult = span.replacement;
+        soloPoints.push(point);
+        continue;
+      }
+      if (soloResult !== null) {
+        byResult.set(soloResult, soloPoints);
+        soloResult = null;
+      }
       let group = byResult.get(span.replacement);
       if (!group) {
         group = [];
         byResult.set(span.replacement, group);
       }
-      group.push({ start: span.start, end: span.end, index, anchor: foldSpelling(span.original) === foldSpelling(span.replacement) });
+      group.push(point);
     }
-    for (const [result, points] of byResult) {
+    const groups = byResult.size > 0 ? byResult : soloResult === null ? [] : [[soloResult, soloPoints]];
+    for (const [result, points] of groups) {
       let bare = occurrences.get(result);
       if (!bare) {
         bare = wordOccurrences(text, result);
@@ -21203,7 +21216,7 @@ var init_packs = __esm({
       title: string2().trim().min(1).max(80),
       description: string2().trim().max(300).default(""),
       version: literal(1).default(1),
-      /** Community packs name their author; the vendored four leave it empty. */
+      /** Community packs name their author; the vendored five leave it empty. */
       author: string2().trim().max(40).default(""),
       homepage: string2().trim().max(200).default(""),
       terms: array(unknown()).min(1, "a pack needs at least one term")

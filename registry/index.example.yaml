@@ -28,5 +28,5 @@ packs:
     version: "1"
     terms: 3
     aliases: 8
-    checksum: f4469b3efced0482aebc1a87b3ca556112a89869085dcea3e347272c5e779da1
+    checksum: 340dd548745eed41ebcf0901518ccde2e4d610b52a922a274cac7315c0455526
     url: ./packs/cardiology.yaml

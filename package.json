@@ -58,6 +58,7 @@
     "bench:hook": "node bench/hook-latency.mjs",
     "docs:cli": "node --import tsx scripts/gen-cli-docs.ts",
     "check:links": "node scripts/check-links.mjs",
+    "resolve:conflicts": "node scripts/resolve-merge-conflicts.mjs",
     "check:server-json": "node scripts/check-server-json.mjs",
     "check:facts": "node scripts/check-facts.mjs",
     "fresh:check": "node scripts/freshness/check.mjs",

@@ -17,8 +17,8 @@ One source of truth, three scopes:
 - **Project** `.lexicon.yaml` at a git root: per-repo terms, merged only when
   trusted (`lexicon trust`). Phantom must surface the trust preview and never
   auto-trust on the user's behalf; a hostile repo's terms reach model context.
-- **Packs** (`packs/*.yaml`, installed via `lexicon pack add`): 176 curated
-  starter terms across developer tooling, AI, business and dictation apps.
+- **Packs** (`packs/*.yaml`, installed via `lexicon pack add`): 196 curated
+  starter terms across developer tooling, AI, business, cloud and DevOps, and dictation apps.
   Phantom can offer these as a checklist during onboarding, the way
   `lexicon setup` does.
 

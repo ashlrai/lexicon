@@ -16,7 +16,7 @@ The short pitch, the benchmark headline and the install commands are in the
 | [FIRST-RUN.md](FIRST-RUN.md) | A timed pass through the README install on one Linux VM: friction, wrong doc lines, agent-use audit | |
 | [CLIENTS.md](CLIENTS.md) | Installing into Claude Code (plugin, hooks, headless) and every other agent client. Read this one second | Use it with |
 | [FAQ.md](FAQ.md) | The questions people ask before installing | |
-| [PACKS.md](PACKS.md) | The four starter packs, what is in each, and how install and remove behave | |
+| [PACKS.md](PACKS.md) | The five starter packs, what is in each, and how install and remove behave | |
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Reference |
 | [PLATFORMS.md](PLATFORMS.md) | What works on macOS, Windows and Linux, what is tested in CI, and what is not there at all | |
 

@@ -1,5 +1,5 @@
 # Example community pack: the shape `lexicon pack validate` expects.
-# `author` is required for community packs; the vendored four leave it empty.
+# `author` is required for community packs; the vendored five leave it empty.
 name: cardiology
 title: Cardiology terms
 description: Common cardiology drugs, procedures and devices with the misspellings STT produces for them.

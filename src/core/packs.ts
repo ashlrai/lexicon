@@ -1,6 +1,6 @@
 /**
  * Starter term packs: curated lexicons shipped in `packs/*.yaml` at the
- * package root (developer, ai, business, voice-tools) that a new user installs
+ * package root (developer, ai, business, voice-tools, cloud-devops) that a new user installs
  * with one command instead of typing dozens of names. A pack is a plain lexicon
  * file plus `name`, `title` and `description`; its terms are added with
  * `addTerm` and `source: 'pack'`, so a term the user already has keeps its own
@@ -30,7 +30,7 @@ import { isRecord } from '../util/json.js';
 export const PACKS_DIR_NAME = 'packs';
 /** Lowercase letters, digits and dashes only: a file name and nothing else. */
 export const PACK_NAME_RE = /^[a-z0-9][a-z0-9-]{0,63}$/;
-/** Packs `lexicon setup` checks by default; the rest (business) are offered unchecked. */
+/** Packs `lexicon setup` checks by default; the rest (business, cloud-devops) are offered unchecked. */
 export const DEFAULT_PACKS: readonly string[] = ['developer', 'ai', 'voice-tools'];
 
 export interface PackInfo {
@@ -38,7 +38,7 @@ export interface PackInfo {
   title: string;
   description: string;
   version: 1;
-  /** Pack author (community packs); empty for the vendored four. */
+  /** Pack author (community packs); empty for the vendored five. */
   author: string;
   /** Author homepage (community packs); empty when unset. */
   homepage: string;
@@ -125,7 +125,7 @@ const PackFileSchema = z.object({
   title: z.string().trim().min(1).max(80),
   description: z.string().trim().max(300).default(''),
   version: z.literal(1).default(1),
-  /** Community packs name their author; the vendored four leave it empty. */
+  /** Community packs name their author; the vendored five leave it empty. */
   author: z.string().trim().max(40).default(''),
   homepage: z.string().trim().max(200).default(''),
   terms: z.array(z.unknown()).min(1, 'a pack needs at least one term'),
@@ -320,7 +320,7 @@ async function readTextIfAny(file: string): Promise<string | undefined> {
 
 /**
  * Install an already-loaded pack. `recordAs` is the name recorded in the
- * file's `settings.packs`: the plain pack name for the vendored four, the
+ * file's `settings.packs`: the plain pack name for the vendored five, the
  * `author/name` ref for registry packs. See `installPack` for the semantics;
  * this is the half the registry reuses after downloading and verifying a
  * community pack file.
