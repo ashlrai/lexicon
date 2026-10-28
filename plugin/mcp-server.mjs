@@ -74752,10 +74752,30 @@ function createServer2(opts = {}) {
     });
   }
   const registerTool = server.registerTool.bind(server);
-  const gatedRegisterTool = (name, config2, cb) => registerTool(name, withAnnotations(name, strictInput(config2)), (async (...args) => {
-    if (rootsPending) await rootsPending;
-    return cb(...args);
-  }));
+  const registeredTools = /* @__PURE__ */ new Set();
+  const setRequestHandler = server.server.setRequestHandler.bind(server.server);
+  server.server.setRequestHandler = (schema, handler) => {
+    if (schema === CallToolRequestSchema) {
+      setRequestHandler(external_exports.object({ method: external_exports.literal("tools/call") }).passthrough(), async (request, extra) => {
+        const parsed = CallToolRequestSchema.safeParse(request);
+        if (!parsed.success) throw new McpError(ErrorCode.InvalidParams, `Invalid tools/call request: ${parsed.error.message}`);
+        if (!registeredTools.has(parsed.data.params.name)) {
+          throw new McpError(ErrorCode.InvalidParams, `Unknown tool: ${parsed.data.params.name}`);
+        }
+        return handler(parsed.data, extra);
+      });
+    } else {
+      setRequestHandler(schema, handler);
+    }
+  };
+  const gatedRegisterTool = (name, config2, cb) => {
+    const tool = registerTool(name, withAnnotations(name, strictInput(config2)), (async (...args) => {
+      if (rootsPending) await rootsPending;
+      return cb(...args);
+    }));
+    registeredTools.add(name);
+    return tool;
+  };
   server.registerTool = gatedRegisterTool;
   const ctx = {
     get cwd() {
@@ -74769,6 +74789,7 @@ function createServer2(opts = {}) {
     normalizeMaxChars: opts.normalizeMaxChars ?? MCP_NORMALIZE_MAX_CHARS
   };
   for (const register of TOOL_REGISTRARS) register(server, ctx);
+  server.server.setRequestHandler = setRequestHandler;
   const loadForContext = async () => {
     try {
       return await load({ parseSkipped: false });
