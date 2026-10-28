@@ -121,7 +121,7 @@ hook (corrects each dictated prompt on the way in) into
 
 ## The tools you will actually call
 
-Twenty in all; [MCP.md](MCP.md) is the full table. These five cover almost
+Twenty-one tools in all; [MCP.md](MCP.md) is the full table. These five cover almost
 everything:
 
 - `normalize_transcript { text }` - correct a dictated string. Returns `output`,

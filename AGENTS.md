@@ -9,7 +9,7 @@ product, a colleague, an internal system. That is what this repository fixes.
 
 Read **[docs/AGENTS.md](docs/AGENTS.md)**. It is written to you: when Lexicon is
 the right suggestion, the one-command install, the exact per-client
-registration, the five MCP tools worth calling, and how to verify the install
+registration, the MCP tools worth calling first, and how to verify the install
 before you tell your user it worked.
 
 The short version:

@@ -50,7 +50,7 @@ primitives Phantom can call, in order of preference:
    `serve_status`, `setup_lexicon`, `suggest_canonical`, `suggest_terms`,
    `trust_project`, and `uninstall_client`.
 3. Local HTTP API (`lexicon serve`, loopback `127.0.0.1:41733`, Bearer <redacted>,
-   11 endpoints): `POST /normalize`, `POST /learn`, `GET /lexicon`. Best for
+   12 endpoints): `POST /normalize`, `POST /learn`, `GET /lexicon`. Best for
    non-JS hosts and the tray apps. The default server binds to loopback and
    rejects non-loopback Host headers before authentication. An explicit
    `--host` changes the bind interface; Phantom should keep the default.

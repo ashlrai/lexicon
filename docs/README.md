@@ -37,6 +37,7 @@ exist on your operating system is [PLATFORMS.md](PLATFORMS.md).
 | [DAEMON.md](DAEMON.md) | Any text field on any OS, through the clipboard and a hotkey | |
 | [EXPORTS.md](EXPORTS.md) | Wispr Flow, Superwhisper, espanso, Deepgram, Azure, Google and nine more | Reference |
 | [LIBRARY.md](LIBRARY.md) | Your own STT pipeline, by calling `normalize()` | |
+| [PHANTOM-USAGE.md](PHANTOM-USAGE.md) | Agents running under Phantom Secrets' `phantom exec`: what changes (nothing) and what does not | |
 | [AGENTS.md](AGENTS.md) | Written to the agent, not the user: how to install and verify Lexicon on someone's behalf | |
 
 ## Understand how it works
@@ -103,6 +104,8 @@ and lose nothing.
 ## Also at the repository root
 
 [README.md](../README.md) ·
+[AGENTS.md](../AGENTS.md) ·
+[INTEGRATION.md](../INTEGRATION.md) (the Phantom contract) ·
 [CONTRIBUTING.md](../CONTRIBUTING.md) ·
 [SECURITY.md](../SECURITY.md) ·
 [CODE_OF_CONDUCT.md](../CODE_OF_CONDUCT.md) ·

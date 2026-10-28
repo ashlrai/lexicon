@@ -5,7 +5,7 @@
 ## The gap
 
 `lexicon setup` seeds the lexicon three ways today: the user's name and
-company (typed in), the four starter packs (checklist), and the current repo
+company (typed in), the five starter packs (checklist), and the current repo
 (harvest). That covers day one. But most people's proper nouns live
 elsewhere: the colleagues they email, the clients on their calendar, the
 repos in their GitHub orgs, the channels in their Slack workspace. Every one
