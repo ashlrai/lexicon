@@ -70307,7 +70307,7 @@ __export(detect_exports, {
   lastLine: () => lastLine,
   parseClientList: () => parseClientList,
   parsePackList: () => parsePackList,
-  readPackageName: () => readPackageName,
+  readPackageIdentity: () => readPackageIdentity,
   setupHintProblem: () => setupHintProblem,
   setupNameProblem: () => setupNameProblem,
   suggestCompany: () => suggestCompany,
@@ -70387,22 +70387,33 @@ function findGitRoot2(start, exists) {
     dir = parent;
   }
 }
-function suggestCompany(packageName, remoteUrl) {
+function suggestCompany(packageName, remoteUrl, author) {
   const scope = packageName?.match(/^@([A-Za-z0-9][\w.-]*)\//)?.[1];
-  if (scope) return scope.charAt(0).toUpperCase() + scope.slice(1);
+  if (scope) {
+    const brand = author?.trim();
+    if (brand && /^[A-Za-z0-9][\w-]*(?:\.[A-Za-z0-9][\w-]*)+$/.test(brand) && [brand.toLowerCase(), brand.split(".")[0].toLowerCase()].includes(scope.toLowerCase())) return brand;
+    return scope.charAt(0).toUpperCase() + scope.slice(1);
+  }
   if (remoteUrl) {
     const m = remoteUrl.trim().match(/[:/]([A-Za-z0-9][\w.-]*)\/[\w.-]+?(?:\.git)?\/?$/);
     if (m && !/^(users?|orgs?)$/i.test(m[1])) return m[1];
   }
   return void 0;
 }
-async function readPackageName(cwd) {
+async function readPackageIdentity(cwd) {
   try {
     const raw = await import_node_fs27.promises.readFile(import_node_path27.default.join(cwd, "package.json"), "utf8");
     const pkg = JSON.parse(raw);
-    return typeof pkg.name === "string" ? pkg.name : void 0;
+    if (!pkg || typeof pkg !== "object") return {};
+    const name = "name" in pkg ? pkg.name : void 0;
+    const author = "author" in pkg ? pkg.author : void 0;
+    const authorName = author && typeof author === "object" && "name" in author ? author.name : author;
+    return {
+      ...typeof name === "string" ? { name } : {},
+      ...typeof authorName === "string" ? { author: authorName } : {}
+    };
   } catch {
-    return void 0;
+    return {};
   }
 }
 function tryExec2(exec, file2, args) {
@@ -70565,7 +70576,8 @@ async function stepLexicon(ctx) {
   let companySkipped = false;
   const guessCompany = async () => {
     if (gated) return void 0;
-    const name = suggestCompany(await readPackageName(ctx.cwd), tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]));
+    const pkg = await readPackageIdentity(ctx.cwd);
+    const name = suggestCompany(pkg.name, tryExec2(ctx.exec, "git", ["-C", ctx.cwd, "remote", "get-url", "origin"]), pkg.author);
     if (name === void 0) return void 0;
     const problem = setupNameProblem(name);
     if (problem === void 0) return name;
