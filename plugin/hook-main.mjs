@@ -18721,13 +18721,35 @@ var init_build = __esm({
 function isTightQuoted(text, start, end) {
   const before = text[start - 1] ?? "";
   const after = text[end] ?? "";
-  return QUOTE_PAIRS.some(([open2, close]) => before === open2 && after === close);
+  for (const [open2, close] of QUOTE_PAIRS) {
+    if (before === open2 && after === close) return true;
+  }
+  return false;
 }
 function isWordChar(ch) {
-  return ch !== "" && /[\p{L}\p{N}]/u.test(ch);
+  if (ch === "") return false;
+  const cp = ch.charCodeAt(0);
+  if (cp < 128) return cp >= 65 && cp <= 90 || cp >= 97 && cp <= 122 || cp >= 48 && cp <= 57;
+  return /[\p{L}\p{N}]/u.test(ch);
+}
+function isLetter(ch) {
+  const cp = ch.charCodeAt(0);
+  if (cp < 128) return cp >= 65 && cp <= 90 || cp >= 97 && cp <= 122;
+  return new RegExp("\\p{L}", "u").test(ch);
+}
+function isSpace(ch) {
+  const cp = ch.charCodeAt(0);
+  if (cp < 128) return cp === 32 || cp >= 9 && cp <= 13;
+  return /\s/u.test(ch);
 }
 function foldSpelling(value) {
-  return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+  let out = "";
+  for (let i = 0; i < value.length; i++) {
+    const cp = value.charCodeAt(i);
+    if (cp > 127) return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, "");
+    out += ASCII_FOLD2[cp];
+  }
+  return out;
 }
 function wordsOf(fragment) {
   return fragment.toLowerCase().split(/[^\p{L}]+/u).filter((w) => w.length > 0);
@@ -18737,7 +18759,7 @@ function inVocabulary(word) {
 }
 function wordBefore(text, at) {
   let i = at;
-  while (i > 0 && new RegExp("\\p{L}", "u").test(text[i - 1])) i--;
+  while (i > 0 && isLetter(text[i - 1])) i--;
   return text.slice(i, at).toLowerCase();
 }
 function blockBounds(text) {
@@ -18747,11 +18769,12 @@ function blockBounds(text) {
     const ch = text[i];
     let isBreak = false;
     if (ch === "." || ch === "!" || ch === "?") {
-      isBreak = i + 1 >= text.length || /\s/.test(text[i + 1]);
+      isBreak = i + 1 >= text.length || isSpace(text[i + 1]);
       if (isBreak && ch === ".") {
         const prev = text[i - 1] ?? "";
-        if (/\d/.test(prev)) isBreak = false;
-        else if (new RegExp("\\p{L}", "u").test(prev) && (text[i - 2] ?? "") === ".") isBreak = false;
+        const cp = prev.charCodeAt(0);
+        if (cp >= 48 && cp <= 57) isBreak = false;
+        else if (isLetter(prev) && (text[i - 2] ?? "") === ".") isBreak = false;
         else if (ABBREVIATIONS.has(wordBefore(text, i))) isBreak = false;
       }
     } else if (ch === "\n") {
@@ -18761,10 +18784,10 @@ function blockBounds(text) {
     }
     if (!isBreak) continue;
     const end = ch === "\n" ? i : i + 1;
-    if (end > start) bounds.push([start, end]);
+    if (end > start) bounds.push(start, end);
     start = i + 1;
   }
-  if (start < text.length) bounds.push([start, text.length]);
+  if (start < text.length) bounds.push(start, text.length);
   return bounds;
 }
 function escapeRegExp(value) {
@@ -18862,24 +18885,36 @@ function foldPerCodePoint(value) {
   for (const ch of value) out += foldSpelling(ch);
   return out;
 }
+function foldSpellingRange(text, from, to) {
+  let out = "";
+  for (let i = from; i < to; i++) {
+    const cp = text.codePointAt(i);
+    out += cp < 128 ? ASCII_FOLD2[cp] : foldPerCodePoint(String.fromCodePoint(cp));
+    if (cp > 65535) i++;
+  }
+  return out;
+}
 function declineCollapsedMentions(text, spans) {
   if (spans.length === 0) return spans;
   const declined = /* @__PURE__ */ new Set();
   const occurrences = /* @__PURE__ */ new Map();
+  const foldedResults = /* @__PURE__ */ new Map();
   let paragraphs = null;
   let cursor = 0;
   const bounds = blockBounds(text);
-  for (let b = 0; b < bounds.length; b++) {
-    const [from, to] = bounds[b];
-    const previous = b > 0 && /^\s*$/u.test(text.slice(bounds[b - 1][1], from)) ? bounds[b - 1] : null;
+  for (let b = 0; b < bounds.length; b += 2) {
+    const from = bounds[b];
+    const to = bounds[b + 1];
+    const previous = b > 0 ? b - 2 : -1;
     while (cursor < spans.length && spans[cursor].start < from) cursor++;
     const here = [];
     for (let i = cursor; i < spans.length && spans[i].start < to; i++) {
-      if (spans[i].end <= to) here.push({ span: spans[i], index: i });
+      if (spans[i].end <= to) here.push(i);
     }
     if (here.length === 0) continue;
     const byResult = /* @__PURE__ */ new Map();
-    for (const { span, index } of here) {
+    for (const index of here) {
+      const span = spans[index];
       let group = byResult.get(span.replacement);
       if (!group) {
         group = [];
@@ -18897,13 +18932,25 @@ function declineCollapsedMentions(text, spans) {
       for (let o = firstAtOrAfter(bare, from); o < bare.length && bare[o] < to; o++) {
         const at = bare[o];
         if (at + result.length > to) break;
-        while (span < here.length && here[span].span.end <= at) span++;
-        if (span < here.length && here[span].span.start < at + result.length) continue;
+        while (span < here.length && spans[here[span]].end <= at) span++;
+        if (span < here.length && spans[here[span]].start < at + result.length) continue;
         points.push({ start: at, end: at + result.length, index: null, anchor: true });
       }
-      const anchored = points.some((p) => p.anchor) || // Folded, like every other test for the canonical here: the paragraph
-      // above says "Ashlr AI" or "ashlr.ai" as readily as it says "Ashlr.AI".
-      previous !== null && foldSpelling(text.slice(previous[0], previous[1])).includes(foldSpelling(result));
+      let foldedResult = foldedResults.get(result);
+      if (foldedResult === void 0) {
+        foldedResult = foldSpelling(result);
+        foldedResults.set(result, foldedResult);
+      }
+      let anchored = false;
+      for (const p of points) {
+        if (p.anchor) {
+          anchored = true;
+          break;
+        }
+      }
+      if (!anchored && previous >= 0 && foldSpellingRange(text, bounds[previous], bounds[previous + 1]).includes(foldedResult)) {
+        anchored = true;
+      }
       for (const p of points) {
         if (p.index === null || !isTightQuoted(text, p.start, p.end)) continue;
         if (anchored || (paragraphs ??= new ParagraphIndex(text)).holds(p.start, p.end, result)) {
@@ -18938,7 +18985,7 @@ function declineCollapsedMentions(text, spans) {
   if (declined.size === 0) return spans;
   return spans.filter((_, i) => !declined.has(i));
 }
-var MARKERS, GLUE, GUARD_VOCABULARY, CHAIN_WORDS, CHAIN_PUNCTUATION, LIST_PUNCTUATION, NUMBERED_ITEM, ENUMERATING_ABBREVIATION, ABBREVIATIONS, QUOTE_PAIRS, DETERMINERS, LINE_BULLET, LINE_TRAILER, ParagraphIndex;
+var MARKERS, GLUE, GUARD_VOCABULARY, CHAIN_WORDS, CHAIN_PUNCTUATION, LIST_PUNCTUATION, NUMBERED_ITEM, ENUMERATING_ABBREVIATION, ABBREVIATIONS, QUOTE_PAIRS, DETERMINERS, LINE_BULLET, LINE_TRAILER, ASCII_FOLD2, ParagraphIndex;
 var init_enumeration = __esm({
   "src/core/matcher/enumeration.ts"() {
     MARKERS = /* @__PURE__ */ new Set([
@@ -19293,6 +19340,10 @@ var init_enumeration = __esm({
     ]);
     LINE_BULLET = /^[\s\d.)\]*+•·>|-]*$/u;
     LINE_TRAILER = /^[\s.,;:)|\]"'”’!?-]*$/u;
+    ASCII_FOLD2 = Array.from({ length: 128 }, (_, i) => {
+      const ch = String.fromCharCode(i).toLowerCase();
+      return /[\p{L}\p{N}]/u.test(ch) ? ch : "";
+    });
     ParagraphIndex = class {
       constructor(text) {
         this.text = text;
@@ -19313,6 +19364,7 @@ var init_enumeration = __esm({
       /** Newline offsets followed by a blank line that is itself newline-terminated. */
       breaks = [];
       cache = /* @__PURE__ */ new Map();
+      needles = /* @__PURE__ */ new Map();
       /**
        * True when the canonical stands (in any folded spelling) somewhere in the
        * paragraph around `start..end`, outside the span itself. A paragraph runs
@@ -19325,7 +19377,11 @@ var init_enumeration = __esm({
         const belowAt = lastAtMost(this.breaks, end - 1) + 1;
         const to = belowAt < this.breaks.length ? this.breaks[belowAt] : this.text.length;
         const para = this.paragraph(from, to);
-        const needle = foldPerCodePoint(canonical);
+        let needle = this.needles.get(canonical);
+        if (needle === void 0) {
+          needle = foldPerCodePoint(canonical);
+          this.needles.set(canonical, needle);
+        }
         if (needle.length === 0) return false;
         let found = para.matches.get(needle);
         if (!found) {
@@ -19338,28 +19394,35 @@ var init_enumeration = __esm({
         if (found.length > 0 && found[0] + needle.length <= k1) return true;
         if (found.length > 0 && found[found.length - 1] >= k2) return true;
         const n = needle.length - 1;
-        const joined = para.folded.slice(Math.max(0, k1 - n), k1) + para.folded.slice(k2, k2 + n);
-        return joined.includes(needle);
+        const leftLen = Math.min(k1, n);
+        const rightLen = Math.min(n, para.folded.length - k2);
+        const folded = para.folded;
+        for (let s = Math.max(1, needle.length - rightLen); s <= Math.min(leftLen, n); s++) {
+          let j = 0;
+          while (j < needle.length && folded.charCodeAt(j < s ? k1 - s + j : k2 + j - s) === needle.charCodeAt(j)) j++;
+          if (j === needle.length) return true;
+        }
+        return false;
       }
       paragraph(from, to) {
         const cached2 = this.cache.get(from);
         if (cached2) return cached2;
         const before = new Uint32Array(to - from + 1);
-        const parts = [];
+        let folded = "";
         let length = 0;
         let i = from;
         while (i < to) {
           const cp = this.text.codePointAt(i);
           const width = cp > 65535 ? 2 : 1;
-          const piece = foldPerCodePoint(String.fromCodePoint(cp));
+          const piece = cp < 128 ? ASCII_FOLD2[cp] : foldPerCodePoint(String.fromCodePoint(cp));
           before[i - from] = length;
           if (width === 2 && i + 1 - from < before.length) before[i + 1 - from] = length;
-          parts.push(piece);
+          folded += piece;
           length += piece.length;
           i += width;
         }
         before[to - from] = length;
-        const para = { folded: parts.join(""), before, matches: /* @__PURE__ */ new Map() };
+        const para = { folded, before, matches: /* @__PURE__ */ new Map() };
         this.cache.set(from, para);
         return para;
       }
