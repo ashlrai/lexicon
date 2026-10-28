@@ -3,7 +3,7 @@ name: CI
 # PR and merge_group run one fast required check (CI Gate): typecheck,
 # build, the crypto policy check, the redaction test and a pinned diff
 # secret scan. The full matrix (ubuntu node 20/22/24, Windows, macOS, e2e,
-# benchmark gate, smoke, doc gates) runs at 6 AM and 6 PM ET on main and on
+# benchmark gate, smoke, doc gates) runs daily at 04:41 ET on main and on
 # workflow_dispatch; a red scheduled run files a P0 FIX-MAIN issue
 # (fix-main.yml). Pushes no longer run CI: the merge queue ran the gate.
 on:
@@ -12,8 +12,9 @@ on:
     types: [opened, synchronize, reopened]
   merge_group:
   schedule:
-    # Daily full suite at 06:00 ET (10:00 UTC).
-    - cron: "0 10 * * *"
+    # Daily full suite at 04:41 ET (08:41 UTC), staggered from the other repos'
+    # daily runs so the macOS row does not queue behind them (RQ-DAILY-15).
+    - cron: "41 8 * * *"
   workflow_dispatch:
 
 # Superseded PR runs are cancelled; queue and scheduled runs never are.
@@ -64,7 +65,7 @@ jobs:
   plan:
     if: github.event_name == 'schedule' || github.event_name == 'workflow_dispatch'
     runs-on: ubuntu-latest
-    timeout-minutes: 45
+    timeout-minutes: 10
     permissions:
       contents: read
       pull-requests: read
