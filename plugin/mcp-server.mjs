@@ -52629,13 +52629,14 @@ async function restoreTrustEntry(projectPath, entry, opts = {}) {
 }
 async function untrustProject(projectPath, opts = {}) {
   const key = await canonicalPath(projectPath);
-  return withTrustLock(async () => {
+  const apply = async () => {
     const registry2 = await readTrustRegistryForUpdate(opts);
     if (!(key in registry2.trusted)) return false;
     delete registry2.trusted[key];
     if (!opts.dryRun) await writeTrustRegistry(registry2, opts);
     return true;
-  }, opts);
+  };
+  return opts.dryRun ? apply() : withTrustLock(apply, opts);
 }
 async function listTrusted(opts = {}) {
   const registry2 = await readTrustRegistry(opts);
@@ -53471,7 +53472,10 @@ async function hydrateHits(merged, project, opts) {
 }
 async function loadLexicon(opts = {}) {
   const paths = resolvePaths(opts);
-  const read = await readGlobalLexiconMaybeStale(paths.global, opts.staleGlobal ? { stale: true } : {});
+  const read = await readGlobalLexiconMaybeStale(paths.global, {
+    ...opts.staleGlobal && !opts.dryRun ? { stale: true } : {},
+    ...opts.dryRun ? { writeBack: false } : {}
+  });
   const global = read.file;
   if (read.stale) {
     return { ...await loadLexiconWith(global, paths, opts), globalStale: true, ...read.staleProblem !== void 0 ? { globalStaleProblem: read.staleProblem } : {} };
@@ -53510,8 +53514,8 @@ async function loadLexiconWith(global, paths, opts) {
     return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust: trust, skippedProject: placeholder };
   }
   projectTrust ??= await isTrusted(project, opts);
-  if (projectTrust === "trusted" && fresh) await writeProjectParseCache(project, fresh.text, paths.global, read?.mainId);
-  else if (projectTrust === "trusted" && read?.fromSpill) {
+  if (!opts.dryRun && projectTrust === "trusted" && fresh) await writeProjectParseCache(project, fresh.text, paths.global, read?.mainId);
+  else if (!opts.dryRun && projectTrust === "trusted" && read?.fromSpill) {
     await promoteCacheEntry(import_node_path6.default.join(import_node_path6.default.dirname(paths.global), PROJECT_PARSE_CACHE_FILE_NAME), import_node_path6.default.resolve(paths.project), read.mainId);
   }
   if (projectTrust === "trusted" || opts.includeUntrusted) {
@@ -53668,14 +53672,15 @@ async function addTerm(term, opts = {}) {
   const scope = opts.scope ?? "global";
   const targetPath = await resolveScopeWritePath(scope, opts);
   const incoming = prepareIncoming(term);
-  return withLexiconLock(targetPath, async () => {
+  const apply = async () => {
     const file2 = await readLexiconFileForWrite(targetPath, scope);
     if (!opts.leaveUntrusted) await assertParsedProjectWritable(file2, opts);
     assertNoNeverAliasClash(file2, incoming, opts);
     const result = mergeTermInto(file2, incoming, scope, opts);
     await writeAddedFile(file2, opts);
     return { file: file2, ...result };
-  });
+  };
+  return opts.dryRun ? apply() : withLexiconLock(targetPath, apply);
 }
 function assertNoNeverAliasClash(file2, incoming, opts) {
   if (opts.merge === false) return;
@@ -53692,13 +53697,14 @@ async function addTerms(terms, opts = {}) {
   const scope = opts.scope ?? "global";
   const targetPath = await resolveScopeWritePath(scope, opts);
   const incoming = terms.map(prepareIncoming);
-  return withLexiconLock(targetPath, async () => {
+  const apply = async () => {
     const file2 = await readLexiconFileForWrite(targetPath, scope);
     if (!opts.leaveUntrusted) await assertParsedProjectWritable(file2, opts);
     const results = incoming.map((t) => mergeTermInto(file2, t, scope, opts));
     if (results.length > 0) await writeAddedFile(file2, opts);
     return { file: file2, results };
-  });
+  };
+  return opts.dryRun ? apply() : withLexiconLock(targetPath, apply);
 }
 async function writeAddedFile(file2, opts) {
   if (opts.dryRun) {
@@ -53716,7 +53722,7 @@ async function writeAndTrust(file2, opts) {
 }
 async function removeTerm(canonical, opts = {}) {
   for (const target of candidatePaths(opts, opts.scope)) {
-    const removed = await withLexiconLock(target.path, async () => {
+    const apply = async () => {
       const file2 = await readLexiconFileForWrite(target.path, target.scope);
       if (!file2.exists) return false;
       const remaining = file2.lexicon.terms.filter((t) => !sameCanonical(t.canonical, canonical));
@@ -53733,7 +53739,8 @@ async function removeTerm(canonical, opts = {}) {
         await dropGlobalHits(canonical, opts);
       }
       return true;
-    });
+    };
+    const removed = await (opts.dryRun ? apply() : withLexiconLock(target.path, apply));
     if (removed) return true;
   }
   return false;
@@ -53766,7 +53773,7 @@ async function removeAlias(canonical, alias, opts = {}) {
   let firstTerm;
   const files = [];
   for (const target of candidatePaths(opts, opts.scope)) {
-    await withLexiconLock(target.path, async () => {
+    const apply = async () => {
       const file2 = await readLexiconFileForWrite(target.path, target.scope);
       if (!file2.exists) return;
       const term = findTerm(file2.lexicon, wanted);
@@ -53788,7 +53795,8 @@ async function removeAlias(canonical, alias, opts = {}) {
       }
       files.push(file2);
       firstTerm ??= term;
-    });
+    };
+    await (opts.dryRun ? apply() : withLexiconLock(target.path, apply));
   }
   if (firstTerm) return { term: firstTerm, files };
   const where = opts.scope ? `the ${opts.scope} lexicon` : "the global or project lexicon";
@@ -60661,7 +60669,7 @@ async function installLoadedPack(pack, recordAs, opts = {}) {
     ...opts.dryRun === true ? { dryRun: true } : {}
   };
   const targetPath = await resolveScopeWritePath(scope, { ...storeOpts3, leaveUntrusted });
-  return withLexiconLock(targetPath, async () => {
+  const apply = async () => {
     const incoming = pack.lexicon.terms.map((term) => {
       const t = { ...term, aliases: [...term.aliases], source: "pack" };
       if (term.never) t.never = [...term.never];
@@ -60680,7 +60688,8 @@ async function installLoadedPack(pack, recordAs, opts = {}) {
     await writePacksSetting(file2, packs, storeOpts3, leaveUntrusted);
     const alreadyInstalled2 = before !== void 0 && before === await readTextIfAny(file2.path);
     return { pack: info(pack), added, merged, path: file2.path, scope, alreadyInstalled: alreadyInstalled2 };
-  });
+  };
+  return opts.dryRun ? apply() : withLexiconLock(targetPath, apply);
 }
 async function installPack(name, opts = {}) {
   return installLoadedPack(await loadPack(name, opts), name, opts);
@@ -73367,7 +73376,7 @@ async function runAdd(canonical, aliasArgs, opts, io, prompter) {
     ...opts.dryRun ? { dryRun: true } : {},
     ...fallbackOnly && suggested.length > 0 ? { defaultAliases: suggested } : {}
   });
-  const conflicts = await loadLexicon({ cwd, ...opts.globalPath ? { globalPath: opts.globalPath } : {}, parseSkipped: false }).then(
+  const conflicts = await loadLexicon({ cwd, ...opts.globalPath ? { globalPath: opts.globalPath } : {}, ...opts.dryRun ? { dryRun: true } : {}, parseSkipped: false }).then(
     (loaded) => spellingConflicts(loaded.merged, result.term.aliases, result.term.canonical),
     () => []
   );
@@ -73420,7 +73429,7 @@ async function runRemove(canonical, opts, io) {
   }
   const scope = opts.project ? "project" : opts.global ? "global" : void 0;
   if (opts.alias !== void 0) return runRemoveAlias(canonical, opts.alias, opts, scope, cwd, io);
-  const loaded = await loadLexicon({ cwd }).catch(() => void 0);
+  const loaded = await loadLexicon({ cwd, ...opts.dryRun ? { dryRun: true } : {} }).catch(() => void 0);
   const holders = loaded ? termHolders(loaded, canonical) : [];
   const untrusted = loaded ? untrustedTermHolder(loaded, canonical) : void 0;
   const dry = opts.dryRun === true;
@@ -73482,7 +73491,7 @@ function aliasMissStep(loaded, scope, canonical) {
   return `the aliases of "${term.canonical}" are: ${term.aliases.join(", ")}; remove one with ${commandLine(["lexicon", "remove", term.canonical])} --alias <alias>${scope ? ` --${scope}` : ""}`;
 }
 async function runRemoveAlias(canonical, alias, opts, scope, cwd, io) {
-  const loaded = await loadLexicon({ cwd }).catch(() => void 0);
+  const loaded = await loadLexicon({ cwd, ...opts.dryRun ? { dryRun: true } : {} }).catch(() => void 0);
   const untrusted = loaded ? untrustedAliasHolder(loaded, canonical, alias) : void 0;
   const dry = opts.dryRun === true;
   const extra = { ...dry ? { dryRun: true } : {}, ...untrusted ? { untrustedProject: untrusted } : {} };

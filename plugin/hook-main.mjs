@@ -20879,7 +20879,10 @@ async function hydrateHits(merged, project, opts) {
 }
 async function loadLexicon(opts = {}) {
   const paths = resolvePaths(opts);
-  const read = await readGlobalLexiconMaybeStale(paths.global, opts.staleGlobal ? { stale: true } : {});
+  const read = await readGlobalLexiconMaybeStale(paths.global, {
+    ...opts.staleGlobal && !opts.dryRun ? { stale: true } : {},
+    ...opts.dryRun ? { writeBack: false } : {}
+  });
   const global = read.file;
   if (read.stale) {
     return { ...await loadLexiconWith(global, paths, opts), globalStale: true, ...read.staleProblem !== void 0 ? { globalStaleProblem: read.staleProblem } : {} };
@@ -20918,8 +20921,8 @@ async function loadLexiconWith(global, paths, opts) {
     return { merged: await hydrated(mergeLexicons(global.lexicon)), global, projectTrust: trust, skippedProject: placeholder };
   }
   projectTrust ??= await isTrusted(project, opts);
-  if (projectTrust === "trusted" && fresh) await writeProjectParseCache(project, fresh.text, paths.global, read?.mainId);
-  else if (projectTrust === "trusted" && read?.fromSpill) {
+  if (!opts.dryRun && projectTrust === "trusted" && fresh) await writeProjectParseCache(project, fresh.text, paths.global, read?.mainId);
+  else if (!opts.dryRun && projectTrust === "trusted" && read?.fromSpill) {
     await promoteCacheEntry(import_node_path4.default.join(import_node_path4.default.dirname(paths.global), PROJECT_PARSE_CACHE_FILE_NAME), import_node_path4.default.resolve(paths.project), read.mainId);
   }
   if (projectTrust === "trusted" || opts.includeUntrusted) {

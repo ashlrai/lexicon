@@ -473,7 +473,7 @@ export async function runAdd(
   // effort: a lexicon that will not load just loses the report.
   // The check reads the merged terms only, so a skipped (untrusted) project
   // file is never parsed for it (parseSkipped: false).
-  const conflicts = await loadLexicon({ cwd, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}), parseSkipped: false }).then(
+  const conflicts = await loadLexicon({ cwd, ...(opts.globalPath ? { globalPath: opts.globalPath } : {}), ...(opts.dryRun ? { dryRun: true } : {}), parseSkipped: false }).then(
     (loaded) => spellingConflicts(loaded.merged, result.term.aliases, result.term.canonical),
     () => [],
   );
@@ -554,7 +554,7 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
   // correcting. A skipped (untrusted) project file is never edited, but a copy
   // there wins the merge once the user trusts it, so it is named too (path
   // only). Best effort: a file that will not load just loses the report.
-  const loaded = await loadLexicon({ cwd }).catch(() => undefined);
+  const loaded = await loadLexicon({ cwd, ...(opts.dryRun ? { dryRun: true } : {}) }).catch(() => undefined);
   const holders = loaded ? termHolders(loaded, canonical) : [];
   const untrusted = loaded ? untrustedTermHolder(loaded, canonical) : undefined;
   const dry = opts.dryRun === true;
@@ -663,7 +663,7 @@ async function runRemoveAlias(
   io: IO,
 ): Promise<number> {
   // Best effort: a lexicon that will not load just loses the report.
-  const loaded = await loadLexicon({ cwd }).catch(() => undefined);
+  const loaded = await loadLexicon({ cwd, ...(opts.dryRun ? { dryRun: true } : {}) }).catch(() => undefined);
   const untrusted = loaded ? untrustedAliasHolder(loaded, canonical, alias) : undefined;
   const dry = opts.dryRun === true;
   const extra = { ...(dry ? { dryRun: true } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
