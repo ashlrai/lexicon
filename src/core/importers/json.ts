@@ -4,6 +4,7 @@
  * (scope, createdAt, hits) are dropped: the destination store owns those.
  */
 import { parse as parseYaml } from 'yaml';
+import { guardYamlImport } from './yaml-guard.js';
 import { parseLexicon } from '../schema.js';
 import type { Term } from '../types.js';
 import { isRecord } from './shared.js';
@@ -16,6 +17,7 @@ export function looksLikeLexiconJson(value: unknown): boolean {
 export function parseJsonImport(content: string): RawImport {
   let raw: unknown;
   try {
+    guardYamlImport(content);
     raw = parseYaml(content.replace(/^﻿/, ''), { prettyErrors: false }); // see readLexiconFile
   } catch (err) {
     throw new Error(`json: invalid JSON/YAML (${err instanceof Error ? err.message : String(err)})`);
