@@ -126,11 +126,19 @@ export function findGitRoot(start: string, exists: (p: string) => boolean): stri
  * A company name guess from the working directory: the scope of the
  * package.json name (`@ashlr/lexicon` -> `Ashlr`), else the org of the git
  * remote (`github.com/ashlrai/lexicon` -> `ashlrai`). Undefined when neither
- * yields anything.
+ * yields anything. A matching dotted package author supplies the brand's
+ * spelling (`@ashlr/lexicon`, author `Ashlr.AI` -> `Ashlr.AI`).
  */
-export function suggestCompany(packageName: string | undefined, remoteUrl: string | undefined): string | undefined {
+export function suggestCompany(packageName: string | undefined, remoteUrl: string | undefined, author?: string): string | undefined {
   const scope = packageName?.match(/^@([A-Za-z0-9][\w.-]*)\//)?.[1];
-  if (scope) return scope.charAt(0).toUpperCase() + scope.slice(1);
+  if (scope) {
+    const brand = author?.trim();
+    // Only restore a spelling present in the manifest, never invent a suffix
+    // or use an unrelated author's name as the company.
+    if (brand && /^[A-Za-z0-9][\w-]*(?:\.[A-Za-z0-9][\w-]*)+$/.test(brand)
+      && [brand.toLowerCase(), brand.split('.')[0].toLowerCase()].includes(scope.toLowerCase())) return brand;
+    return scope.charAt(0).toUpperCase() + scope.slice(1);
+  }
   if (remoteUrl) {
     // https://github.com/org/repo(.git), git@github.com:org/repo.git, ssh://git@host/org/repo
     const m = remoteUrl.trim().match(/[:/]([A-Za-z0-9][\w.-]*)\/[\w.-]+?(?:\.git)?\/?$/);
@@ -139,13 +147,20 @@ export function suggestCompany(packageName: string | undefined, remoteUrl: strin
   return undefined;
 }
 
-export async function readPackageName(cwd: string): Promise<string | undefined> {
+export async function readPackageIdentity(cwd: string): Promise<{ name?: string; author?: string }> {
   try {
     const raw = await fs.readFile(path.join(cwd, 'package.json'), 'utf8');
-    const pkg = JSON.parse(raw) as { name?: unknown };
-    return typeof pkg.name === 'string' ? pkg.name : undefined;
+    const pkg: unknown = JSON.parse(raw);
+    if (!pkg || typeof pkg !== 'object') return {};
+    const name = 'name' in pkg ? pkg.name : undefined;
+    const author = 'author' in pkg ? pkg.author : undefined;
+    const authorName = author && typeof author === 'object' && 'name' in author ? author.name : author;
+    return {
+      ...(typeof name === 'string' ? { name } : {}),
+      ...(typeof authorName === 'string' ? { author: authorName } : {}),
+    };
   } catch {
-    return undefined;
+    return {};
   }
 }
 

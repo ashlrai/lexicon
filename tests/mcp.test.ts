@@ -359,6 +359,36 @@ describe('lexicon MCP server', () => {
     }
   });
 
+  it('lists and reads a live, read-only glossary with packs from both trusted scopes', async () => {
+    const global = { ...loaded.global, lexicon: { ...fixtureLexicon, settings: { packs: ['developer'] } } };
+    const project = { ...loaded.project!, lexicon: { version: 1 as const, terms: [], settings: { packs: ['developer', 'ai'] } } };
+    mocks.loadLexicon.mockResolvedValue({ ...loaded, global, project });
+    const { client, close } = await connect();
+    const uri = 'lexicon://glossary';
+    const read = async () => {
+      const result = await client.readResource({ uri });
+      expect(result.contents[0]).toMatchObject({ uri, mimeType: 'application/json' });
+      const content = result.contents[0];
+      return JSON.parse(content && 'text' in content ? content.text : 'null');
+    };
+    try {
+      expect((await client.listResources()).resources).toContainEqual(expect.objectContaining({ uri, mimeType: 'application/json' }));
+      expect(await read()).toMatchObject({ activePacks: ['developer', 'ai'], terms: fixtureLexicon.terms });
+      mocks.loadLexicon.mockResolvedValue({
+        merged: global.lexicon, global, projectTrust: 'untrusted',
+        skippedProject: { ...project, lexicon: { ...project.lexicon, settings: { packs: ['untrusted-pack'] } } },
+      });
+      expect(await read()).toMatchObject({ activePacks: ['developer'], projectTrust: 'untrusted', skippedProject: project.path });
+      mocks.loadLexicon.mockResolvedValue({ merged: { version: 1, terms: [] }, global: { ...global, lexicon: { version: 1, terms: [] } } });
+      expect(await read()).toMatchObject({ activePacks: [], terms: [], note: expect.stringContaining('no spellings') });
+      expect(mocks.loadLexicon).toHaveBeenCalledWith({ cwd: '/fake/repo', parseSkipped: false });
+      expect(mocks.recordHits).not.toHaveBeenCalled();
+      expect(mocks.installPack).not.toHaveBeenCalled();
+    } finally {
+      await close();
+    }
+  });
+
   it('normalize_transcript returns the corrected text and records hits', async () => {
     const { client, close } = await connect();
     try {

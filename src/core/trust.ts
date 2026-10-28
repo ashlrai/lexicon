@@ -404,13 +404,14 @@ export async function restoreTrustEntry(projectPath: string, entry: TrustEntry |
 /** Remove `projectPath` from the registry. Returns false when it was not registered. */
 export async function untrustProject(projectPath: string, opts: StoreOptions = {}): Promise<boolean> {
   const key = await canonicalPath(projectPath);
-  return withTrustLock(async () => {
+  const apply = async () => {
     const registry = await readTrustRegistryForUpdate(opts);
     if (!(key in registry.trusted)) return false;
     delete registry.trusted[key];
     if (!opts.dryRun) await writeTrustRegistry(registry, opts);
     return true;
-  }, opts);
+  };
+  return opts.dryRun ? apply() : withTrustLock(apply, opts);
 }
 
 /** Every registered file with its current status, sorted by path. */
