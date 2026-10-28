@@ -43971,7 +43971,7 @@ var require_lexer = __commonJS({
     var flowIndicatorChars = new Set(",[]{}");
     var invalidAnchorChars = new Set(" ,[]{}\n\r	");
     var isNotAnchorChar = (ch) => !ch || invalidAnchorChars.has(ch);
-    var Lexer = class {
+    var Lexer2 = class {
       constructor() {
         this.atEnd = false;
         this.blockScalarIndent = -1;
@@ -44534,7 +44534,7 @@ var require_lexer = __commonJS({
         return yield* this.pushToIndex(i, false);
       }
     };
-    exports.Lexer = Lexer;
+    exports.Lexer = Lexer2;
   }
 });
 
@@ -57232,7 +57232,7 @@ function estimateWhisperTokens(text) {
   for (const m of text.matchAll(/ ?[A-Za-z]+|[0-9]|[\x21-\x2f\x3a-\x40\x5b-\x60\x7b-\x7e]| |[^\x00-\x7f]/gu)) {
     const piece = m[0];
     if (/[A-Za-z]/.test(piece)) tokens += Math.ceil(piece.trimStart().length / 2);
-    else if (/[^\x00-\x7f]/u.test(piece)) tokens += Buffer.byteLength(piece, "utf8");
+    else if (/[^\x00-\x7f]/u.test(piece)) tokens += utf8.encode(piece).length;
     else tokens += 1;
   }
   return tokens;
@@ -57284,12 +57284,13 @@ function exportWhisperPrompt(lexicon, opts = {}, sink) {
   if (sink) sink.names = kept.length;
   return kept.map(listItem).join(", ");
 }
-var WHISPER_PROMPT_DEFAULT_LIMIT, WHISPER_PROMPT_TOKEN_BUDGET;
+var WHISPER_PROMPT_DEFAULT_LIMIT, WHISPER_PROMPT_TOKEN_BUDGET, utf8;
 var init_whisperPrompt = __esm({
   "src/core/exporters/whisperPrompt.ts"() {
     init_shared();
     WHISPER_PROMPT_DEFAULT_LIMIT = 100;
     WHISPER_PROMPT_TOKEN_BUDGET = 223;
+    utf8 = new TextEncoder();
   }
 });
 
@@ -57506,6 +57507,28 @@ var init_exporters = __esm({
       "text": exportText,
       "markdown": exportMarkdown
     };
+  }
+});
+
+// src/core/importers/yaml-guard.ts
+function guardYamlImport(content) {
+  let depth = 0;
+  let quoted = false;
+  for (const token of new import_yaml4.Lexer().lex(content)) {
+    if (token === "[" || token === "{") {
+      if (++depth > 128) throw new Error("YAML import exceeds the maximum flow nesting depth of 128");
+    } else if (token === "]" || token === "}") {
+      depth = Math.max(0, depth - 1);
+    }
+    const nextQuoted = token.startsWith('"') || token.startsWith("'");
+    if (quoted && nextQuoted) throw new Error("YAML import has adjacent quoted scalars without a separator");
+    quoted = nextQuoted;
+  }
+}
+var import_yaml4;
+var init_yaml_guard = __esm({
+  "src/core/importers/yaml-guard.ts"() {
+    import_yaml4 = __toESM(require_dist2());
   }
 });
 
@@ -57747,21 +57770,22 @@ function looksLikeEspanso(content) {
 }
 function parseEspansoImport(content) {
   const text = content.replace(/^﻿/, "");
-  const lineCounter = new import_yaml4.LineCounter();
-  const doc = (0, import_yaml4.parseDocument)(text, { lineCounter });
+  guardYamlImport(text);
+  const lineCounter = new import_yaml5.LineCounter();
+  const doc = (0, import_yaml5.parseDocument)(text, { lineCounter });
   if (doc.errors.length > 0) {
     throw new Error(`espanso: invalid YAML (${doc.errors[0].message.split("\n")[0]})`);
   }
   const root = doc.contents;
-  const matches = (0, import_yaml4.isMap)(root) ? root.get("matches", true) : void 0;
-  if (!(0, import_yaml4.isSeq)(matches)) {
+  const matches = (0, import_yaml5.isMap)(root) ? root.get("matches", true) : void 0;
+  if (!(0, import_yaml5.isSeq)(matches)) {
     throw new Error("espanso: expected a top-level `matches:` list");
   }
   const out = { rows: [], skipped: [] };
   matches.items.forEach((node2, i) => {
-    const offset = (0, import_yaml4.isMap)(node2) && node2.range ? node2.range[0] : void 0;
+    const offset = (0, import_yaml5.isMap)(node2) && node2.range ? node2.range[0] : void 0;
     const line2 = offset === void 0 ? i + 1 : lineCounter.linePos(offset).line;
-    const entry = (0, import_yaml4.isMap)(node2) ? node2.toJSON() : node2;
+    const entry = (0, import_yaml5.isMap)(node2) ? node2.toJSON() : node2;
     if (!isRecord2(entry)) {
       out.skipped.push({ line: line2, reason: "match is not a mapping" });
       return;
@@ -57806,10 +57830,11 @@ function parseEspansoImport(content) {
   });
   return out;
 }
-var import_yaml4;
+var import_yaml5;
 var init_espanso2 = __esm({
   "src/core/importers/espanso.ts"() {
-    import_yaml4 = __toESM(require_dist2());
+    init_yaml_guard();
+    import_yaml5 = __toESM(require_dist2());
     init_shared2();
   }
 });
@@ -57821,7 +57846,8 @@ function looksLikeLexiconJson(value) {
 function parseJsonImport(content) {
   let raw;
   try {
-    raw = (0, import_yaml5.parse)(content.replace(/^﻿/, ""), { prettyErrors: false });
+    guardYamlImport(content);
+    raw = (0, import_yaml6.parse)(content.replace(/^﻿/, ""), { prettyErrors: false });
   } catch (err) {
     throw new Error(`json: invalid JSON/YAML (${err instanceof Error ? err.message : String(err)})`);
   }
@@ -57833,10 +57859,11 @@ function parseJsonImport(content) {
   });
   return { rows, skipped: [] };
 }
-var import_yaml5;
+var import_yaml6;
 var init_json3 = __esm({
   "src/core/importers/json.ts"() {
-    import_yaml5 = __toESM(require_dist2());
+    import_yaml6 = __toESM(require_dist2());
+    init_yaml_guard();
     init_schema();
     init_shared2();
   }
@@ -58265,7 +58292,8 @@ function detectImportFormat(content, filename) {
     } catch (err) {
       jsonError2 = err instanceof Error ? err.message : String(err);
       try {
-        const yaml = (0, import_yaml6.parse)(trimmed, { prettyErrors: false });
+        guardYamlImport(trimmed);
+        const yaml = (0, import_yaml7.parse)(trimmed, { prettyErrors: false });
         if (looksLikeLexiconJson(yaml)) return "json";
       } catch {
       }
@@ -58357,11 +58385,12 @@ function mergeRows(rows, source) {
   }
   return { terms: [...byKey.values()], skipped };
 }
-var import_yaml6, IMPORT_FORMAT_INFO, PARSERS;
+var import_yaml7, IMPORT_FORMAT_INFO, PARSERS;
 var init_importers = __esm({
   "src/core/importers/index.ts"() {
     init_caps();
-    import_yaml6 = __toESM(require_dist2());
+    import_yaml7 = __toESM(require_dist2());
+    init_yaml_guard();
     init_encoding();
     init_csv2();
     init_csv_parse();
@@ -58819,7 +58848,7 @@ async function readPendingFile(file2) {
   }
   let doc;
   try {
-    doc = (0, import_yaml7.parse)(text);
+    doc = (0, import_yaml8.parse)(text);
   } catch {
     throw new PendingFileError(`${file2} is not valid YAML`);
   }
@@ -58839,7 +58868,7 @@ async function readPendingFile(file2) {
 async function writePending(file2, entries2, rejected) {
   const doc = { version: 1, pending: entries2 };
   if (rejected.length > 0) doc.rejected = rejected;
-  await writeFileAtomic(file2, HEADER + (0, import_yaml7.stringify)(doc), { mode: 384 });
+  await writeFileAtomic(file2, HEADER + (0, import_yaml8.stringify)(doc), { mode: 384 });
 }
 async function queueCorrections(corrections, opts = {}) {
   const file2 = pendingPath(opts);
@@ -58937,13 +58966,13 @@ async function acceptPending(sel, opts = {}, learn = learnCorrection) {
     return { accepted, unknown: unknown2, file: file2 };
   }));
 }
-var import_node_crypto2, import_node_fs9, import_node_path9, import_yaml7, PENDING_FILE_NAME, MAX_PENDING, MAX_PENDING_BYTES, MAX_REJECTED, PendingFileError, HEADER;
+var import_node_crypto2, import_node_fs9, import_node_path9, import_yaml8, PENDING_FILE_NAME, MAX_PENDING, MAX_PENDING_BYTES, MAX_REJECTED, PendingFileError, HEADER;
 var init_pending = __esm({
   "src/core/pending.ts"() {
     import_node_crypto2 = __toESM(require_node_crypto());
     import_node_fs9 = __toESM(require_node_fs());
     import_node_path9 = __toESM(require_node_path());
-    import_yaml7 = __toESM(require_dist2());
+    import_yaml8 = __toESM(require_dist2());
     init_atomic();
     init_learn();
     init_store();
@@ -59943,7 +59972,7 @@ function resolvedDeps(deps) {
 function parseIndexYaml(text, source) {
   let raw;
   try {
-    raw = (0, import_yaml8.parse)(text, { prettyErrors: false });
+    raw = (0, import_yaml9.parse)(text, { prettyErrors: false });
   } catch (err) {
     throw new Error(`invalid registry index at ${sourceLabel(source)}: ${errorMessage(err)}`);
   }
@@ -60426,13 +60455,13 @@ function validateCommunityPack(pack) {
   }
   return { errors, warnings };
 }
-var import_node_crypto3, import_node_fs10, import_node_path11, import_yaml8, REGISTRY_REF_RE, RegistryIndexEntrySchema, RegistryIndexSchema, MAX_REGISTRY_FILE_BYTES, REGISTRY_FETCH_TIMEOUT_MS, RegistryPackStateSchema, REGISTRIES_ENV;
+var import_node_crypto3, import_node_fs10, import_node_path11, import_yaml9, REGISTRY_REF_RE, RegistryIndexEntrySchema, RegistryIndexSchema, MAX_REGISTRY_FILE_BYTES, REGISTRY_FETCH_TIMEOUT_MS, RegistryPackStateSchema, REGISTRIES_ENV;
 var init_registry = __esm({
   "src/core/registry.ts"() {
     import_node_crypto3 = __toESM(require_node_crypto());
     import_node_fs10 = __toESM(require_node_fs());
     import_node_path11 = __toESM(require_node_path());
-    import_yaml8 = __toESM(require_dist2());
+    import_yaml9 = __toESM(require_dist2());
     init_zod();
     init_harvest();
     init_collate();
@@ -60561,7 +60590,7 @@ async function loadPackFile(file2, expectedName) {
 function parsePackText(text, file2, expectedName) {
   let raw;
   try {
-    raw = (0, import_yaml9.parse)(text, { prettyErrors: false });
+    raw = (0, import_yaml10.parse)(text, { prettyErrors: false });
   } catch (err) {
     throw new Error(`Invalid pack at ${file2}: ${errorMessage(err)}`);
   }
@@ -60731,13 +60760,13 @@ async function uninstallLoadedPack(pack, recordAs, opts = {}) {
 async function uninstallPack(name, opts = {}) {
   return uninstallLoadedPack(await loadPack(name, opts), name, opts);
 }
-var import_node_fs11, import_node_path12, import_node_url2, import_yaml9, PACKS_DIR_NAME, PACK_NAME_RE, DEFAULT_PACKS, PackNotFoundError, PACKAGE_NAME2, PackFileSchema;
+var import_node_fs11, import_node_path12, import_node_url2, import_yaml10, PACKS_DIR_NAME, PACK_NAME_RE, DEFAULT_PACKS, PackNotFoundError, PACKAGE_NAME2, PackFileSchema;
 var init_packs = __esm({
   "src/core/packs.ts"() {
     import_node_fs11 = __toESM(require_node_fs());
     import_node_path12 = __toESM(require_node_path());
     import_node_url2 = __toESM(require_node_url());
-    import_yaml9 = __toESM(require_dist2());
+    import_yaml10 = __toESM(require_dist2());
     init_zod();
     init_schema();
     init_store();
@@ -60868,6 +60897,31 @@ var init_demo = __esm({
   }
 });
 
+// src/serve/info.ts
+var SERVER_FEATURES, ServerInfoSchema;
+var init_info = __esm({
+  "src/serve/info.ts"() {
+    init_zod();
+    SERVER_FEATURES = [
+      "normalize",
+      "learn",
+      "add",
+      "lexicon",
+      "stats",
+      "packs",
+      "aliases",
+      "export",
+      "pair"
+    ];
+    ServerInfoSchema = external_exports.object({
+      version: external_exports.string().trim().min(1),
+      host: external_exports.string().trim().min(1),
+      port: external_exports.number().int().min(1).max(65535),
+      features: external_exports.array(external_exports.string().trim().min(1))
+    }).strict();
+  }
+});
+
 // src/core/index.ts
 var core_exports3 = {};
 __export(core_exports3, {
@@ -60926,11 +60980,13 @@ __export(core_exports3, {
   REGISTRY_FETCH_TIMEOUT_MS: () => REGISTRY_FETCH_TIMEOUT_MS,
   REGISTRY_REF_RE: () => REGISTRY_REF_RE,
   REPLACEMENT_CHAR: () => REPLACEMENT_CHAR,
+  SERVER_FEATURES: () => SERVER_FEATURES,
   STALE_AFTER_DAYS: () => STALE_AFTER_DAYS,
   STALE_GLOBAL_MIN_BYTES: () => STALE_GLOBAL_MIN_BYTES,
   STOPLIST: () => STOPLIST,
   SUGGEST_DEFAULT_LIMIT: () => SUGGEST_DEFAULT_LIMIT,
   SUGGEST_MAX_LIMIT: () => SUGGEST_MAX_LIMIT,
+  ServerInfoSchema: () => ServerInfoSchema,
   TERM_CATEGORIES: () => TERM_CATEGORIES,
   TERM_SCOPES: () => TERM_SCOPES,
   TERM_SOURCES: () => TERM_SOURCES,
@@ -61192,6 +61248,7 @@ var init_core3 = __esm({
     init_registry();
     init_demo();
     init_shell2();
+    init_info();
   }
 });
 
@@ -68999,6 +69056,12 @@ function createServer(opts = {}) {
     if (!await authorized(req.headers.authorization)) {
       throw tokenRequired();
     }
+    if (pathname === "/info") {
+      if (method !== "GET") throw notGet();
+      strictQuery(url2, "GET /info", []);
+      const info2 = { version: version2, host, port: boundPort, features: [...SERVER_FEATURES] };
+      return json2(200, info2);
+    }
     if (pathname === "/normalize") {
       if (method !== "POST") throw wrongMethod(["POST"]);
       const raw = await readJson(req, MAX_BODY_BYTES, "/normalize");
@@ -69248,6 +69311,7 @@ ${body}`
 var import_node_crypto6, import_node_fs25, import_node_http, import_node_net2, import_node_path24, MAX_BODY_BYTES, MAX_SERVE_CONFIG_BYTES, MAX_CONCURRENT_REQUESTS, LEXICON_RELOAD_MS, NORMALIZE_BUDGET_MS, REQUEST_TIMEOUT_MS, HEADERS_TIMEOUT_MS, PAIR_PATH, PAIR_META, PAIR_INSTALL_HINT_MS, PAIR_HEADERS, MAX_CACHED_CWDS, EXPORT_CONTENT_TYPES, TERM_CATEGORIES2, TERM_SCOPES2, CwdField, NormalizeBody, LearnBody, AddBody, PackBody, ROUTES, BODY_SHAPES, BUSY_RETRY_AFTER_S, TOKEN_SOURCES, PACK_ROUTE_RE, EXPORT_ROUTE_RE, BROKEN_LEXICON_ANONYMOUS, HttpError, EXPORT_NOTE_HEADER;
 var init_server3 = __esm({
   "src/serve/server.ts"() {
+    init_info();
     import_node_crypto6 = __toESM(require_node_crypto());
     import_node_fs25 = __toESM(require_node_fs());
     import_node_http = __toESM(require_node_http());
@@ -69323,6 +69387,7 @@ var init_server3 = __esm({
     }).strict();
     ROUTES = [
       "GET /health",
+      "GET /info",
       "GET /pair",
       "POST /normalize",
       "POST /learn",
@@ -69365,6 +69430,7 @@ var init_serve = __esm({
   "src/serve/index.ts"() {
     init_config();
     init_server3();
+    init_info();
   }
 });
 

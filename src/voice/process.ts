@@ -43,7 +43,6 @@ export interface ChildHandle {
   exited: Promise<number | null>;
   /** Stderr collected while attached (empty for detached children). */
   stderr: () => string;
-  kill(signal: NodeJS.Signals): void;
 }
 
 export interface SpawnOptions {
@@ -165,13 +164,6 @@ export function defaultSpawn(cmd: string, args: readonly string[], opts: SpawnOp
     pid: child.pid,
     exited,
     stderr: () => Buffer.concat(errChunks).toString('utf8'),
-    kill: (signal) => {
-      try {
-        child.kill(signal);
-      } catch {
-        // already gone
-      }
-    },
   };
 }
 
