@@ -179,7 +179,7 @@ the bundle runs without a build. The same JSON is in
 [examples/mcp-config.json](../examples/mcp-config.json).
 
 [MCP.md](MCP.md) documents what the server answers once it is running: the twenty
-tools, the two resources and the two prompts.
+tools, the three resources and the two prompts.
 
 ## ChatGPT, Claude.ai, Grok and other browser chats
 

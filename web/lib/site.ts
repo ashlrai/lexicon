@@ -9,7 +9,7 @@
  * nobody ever looks at it. So they all import from here.
  *
  * Every number below is derived from the repo and checked by
- * `node scripts/check-facts.mjs`: twenty-one MCP tools, two resources, two
+ * `node scripts/check-facts.mjs`: twenty-one MCP tools, three resources, two
  * prompts, sixteen export formats, eight importers, 176 terms across the four packs.
  */
 
@@ -153,7 +153,7 @@ export const FAQ: Faq[] = [
   {
     q: 'What is an MCP server, and do I need one?',
     a:
-      'MCP, the Model Context Protocol, is a standard way for an AI agent to call tools that run on your own machine. Lexicon ships one, named `lexicon`, over stdio, with twenty-one tools, two resources and two prompts, so an agent can normalize a transcript, add a term, learn a correction or run setup without you opening a terminal. You want it if you talk to an agent and need the names fixed before the agent acts. You do not need it for the browser extension, the menu bar app or the CLI, which read the same file directly.',
+      'MCP, the Model Context Protocol, is a standard way for an AI agent to call tools that run on your own machine. Lexicon ships one, named `lexicon`, over stdio, with twenty-one tools, three resources and two prompts, so an agent can normalize a transcript, add a term, learn a correction or run setup without you opening a terminal. You want it if you talk to an agent and need the names fixed before the agent acts. You do not need it for the browser extension, the menu bar app or the CLI, which read the same file directly.',
   },
   {
     q: 'How is this different from a dictation app’s custom dictionary?',
@@ -172,7 +172,7 @@ export const FAQ: Faq[] = [
 export const DOC_LINKS: { label: string; href: string; blurb: string }[] = [
   { label: 'Quickstart', href: DOC('docs/QUICKSTART.md'), blurb: 'Nothing to working in five minutes.' },
   { label: 'Install into your agents', href: DOC('docs/CLIENTS.md'), blurb: 'Per-client config for the seven supported clients.' },
-  { label: 'MCP server reference', href: DOC('docs/MCP.md'), blurb: 'The twenty-one tools, two resources and two prompts.' },
+  { label: 'MCP server reference', href: DOC('docs/MCP.md'), blurb: 'The twenty-one tools, three resources and two prompts.' },
   { label: 'Agent-native usage', href: DOC('docs/AGENT-NATIVE.md'), blurb: 'How an agent is meant to chain the tools.' },
   { label: 'For agents', href: DOC('docs/AGENTS.md'), blurb: 'Install and verify Lexicon on a user’s behalf.' },
   { label: 'FAQ', href: DOC('docs/FAQ.md'), blurb: 'The same answers as this page, as markdown.' },
