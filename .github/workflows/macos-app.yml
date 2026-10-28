@@ -3,23 +3,13 @@
 # Node test matrix does not wait on a macOS runner.
 name: macOS app
 
+# Desktop app builds run with the scheduled full suite (6 AM and 6 PM ET) and
+# on dispatch, not on PRs or pushes. A red scheduled run files a P0
+# FIX-MAIN issue (fix-main.yml).
 on:
-  push:
-    branches: [main]
-    paths:
-      - 'apps/macos/**'
-      - 'scripts/build-macos-app.sh'
-      - '.github/workflows/macos-app.yml'
-  pull_request:
-    types: [opened, synchronize, reopened, ready_for_review]
-    paths:
-      - 'apps/macos/**'
-      - 'scripts/build-macos-app.sh'
-      - '.github/workflows/macos-app.yml'
-  # Nightly too (runner capacity P0, Oct 26); PRs keep their path filter
-  # until lexicon has a merge queue.
   schedule:
-    - cron: "40 7 * * *"
+    - cron: "55 10 * * *"
+    - cron: "55 22 * * *"
   workflow_dispatch:
 
 permissions:
