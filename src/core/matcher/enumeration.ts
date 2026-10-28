@@ -240,7 +240,10 @@ const QUOTE_PAIRS: ReadonlyArray<readonly [string, string]> = [
 function isTightQuoted(text: string, start: number, end: number): boolean {
   const before = text[start - 1] ?? '';
   const after = text[end] ?? '';
-  return QUOTE_PAIRS.some(([open, close]) => before === open && after === close);
+  for (const [open, close] of QUOTE_PAIRS) {
+    if (before === open && after === close) return true;
+  }
+  return false;
 }
 
 /**
@@ -268,13 +271,49 @@ interface Point {
   readonly anchor: boolean;
 }
 
+/** ASCII letters and digits decide the test without a regex; anything wider falls back. */
 function isWordChar(ch: string): boolean {
-  return ch !== '' && /[\p{L}\p{N}]/u.test(ch);
+  if (ch === '') return false;
+  const cp = ch.charCodeAt(0);
+  if (cp < 128) return (cp >= 65 && cp <= 90) || (cp >= 97 && cp <= 122) || (cp >= 48 && cp <= 57);
+  return /[\p{L}\p{N}]/u.test(ch);
 }
+
+/** ASCII letters decide without a regex; anything wider falls back. */
+function isLetter(ch: string): boolean {
+  const cp = ch.charCodeAt(0);
+  if (cp < 128) return (cp >= 65 && cp <= 90) || (cp >= 97 && cp <= 122);
+  return /\p{L}/u.test(ch);
+}
+
+/** ASCII whitespace is exactly 9-13 and 32; anything wider falls back to `\s`. */
+function isSpace(ch: string): boolean {
+  const cp = ch.charCodeAt(0);
+  if (cp < 128) return cp === 32 || (cp >= 9 && cp <= 13);
+  return /\s/u.test(ch);
+}
+
+/**
+ * The fold for code points below 128, computed once: a letter folds to its
+ * lowercase, a digit stands, anything else folds to nothing. The paragraph
+ * index folds a paragraph one code point at a time, and running the general
+ * fold - an allocation and a unicode replace - per character is what made a
+ * paragraph of quoted aliases cost minutes in the first place.
+ */
+const ASCII_FOLD: readonly string[] = Array.from({ length: 128 }, (_, i) => {
+  const ch = String.fromCharCode(i).toLowerCase();
+  return /[\p{L}\p{N}]/u.test(ch) ? ch : '';
+});
 
 /** Case and punctuation folded away: "ashlr.ai" and "Ashlr AI" both become "ashlrai". */
 function foldSpelling(value: string): string {
-  return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+  let out = '';
+  for (let i = 0; i < value.length; i++) {
+    const cp = value.charCodeAt(i);
+    if (cp > 127) return value.toLowerCase().replace(/[^\p{L}\p{N}]+/gu, '');
+    out += ASCII_FOLD[cp];
+  }
+  return out;
 }
 
 function wordsOf(fragment: string): string[] {
@@ -303,25 +342,27 @@ function inVocabulary(word: string): boolean {
 /** The run of letters immediately before `at`, lowercased: "vs" in "vs.". */
 function wordBefore(text: string, at: number): string {
   let i = at;
-  while (i > 0 && /\p{L}/u.test(text[i - 1])) i--;
+  while (i > 0 && isLetter(text[i - 1])) i--;
   return text.slice(i, at).toLowerCase();
 }
 
-function blockBounds(text: string): Array<[number, number]> {
-  const bounds: Array<[number, number]> = [];
+/** Flat `[start, end, start, end, ...]`: one array, not one tuple per block. */
+function blockBounds(text: string): number[] {
+  const bounds: number[] = [];
   let start = 0;
   for (let i = 0; i < text.length; i++) {
     const ch = text[i];
     let isBreak = false;
 
     if (ch === '.' || ch === '!' || ch === '?') {
-      isBreak = i + 1 >= text.length || /\s/.test(text[i + 1]);
+      isBreak = i + 1 >= text.length || isSpace(text[i + 1]);
       if (isBreak && ch === '.') {
         const prev = text[i - 1] ?? '';
+        const cp = prev.charCodeAt(0);
         // "1." and "2)" are list scaffolding, not the end of a thought.
-        if (/\d/.test(prev)) isBreak = false;
+        if (cp >= 48 && cp <= 57) isBreak = false;
         // "e.g." and "i.e." and "U.S.": a lone letter standing after a period.
-        else if (/\p{L}/u.test(prev) && (text[i - 2] ?? '') === '.') isBreak = false;
+        else if (isLetter(prev) && (text[i - 2] ?? '') === '.') isBreak = false;
         else if (ABBREVIATIONS.has(wordBefore(text, i))) isBreak = false;
       }
     } else if (ch === '\n') {
@@ -332,10 +373,10 @@ function blockBounds(text: string): Array<[number, number]> {
     if (!isBreak) continue;
 
     const end = ch === '\n' ? i : i + 1;
-    if (end > start) bounds.push([start, end]);
+    if (end > start) bounds.push(start, end);
     start = i + 1;
   }
-  if (start < text.length) bounds.push([start, text.length]);
+  if (start < text.length) bounds.push(start, text.length);
   return bounds;
 }
 
@@ -511,6 +552,8 @@ class ParagraphIndex {
   private readonly breaks: number[] = [];
   private readonly cache = new Map<number, FoldedParagraph>();
 
+  private readonly needles = new Map<string, string>();
+
   constructor(private readonly text: string) {
     let lineStart = 0;
     let prevNewline = -1;
@@ -537,7 +580,13 @@ class ParagraphIndex {
     const to = belowAt < this.breaks.length ? this.breaks[belowAt] : this.text.length;
 
     const para = this.paragraph(from, to);
-    const needle = foldPerCodePoint(canonical);
+    // Every quoted mention in a block asks about the same canonical; folding
+    // it once per mention used to be the second-largest cost in the loop.
+    let needle = this.needles.get(canonical);
+    if (needle === undefined) {
+      needle = foldPerCodePoint(canonical);
+      this.needles.set(canonical, needle);
+    }
     if (needle.length === 0) return false;
     let found = para.matches.get(needle);
     if (!found) {
@@ -551,31 +600,42 @@ class ParagraphIndex {
     if (found.length > 0 && found[0] + needle.length <= k1) return true;
     if (found.length > 0 && found[found.length - 1] >= k2) return true;
     // Folding drops the quotation marks, so the text either side of the span
-    // can join into the canonical once the span is taken out.
+    // can join into the canonical once the span is taken out: a match made of
+    // a suffix of needle.length - 1 folded characters ending at k1 plus a
+    // prefix starting at k2. Neither side alone can hold the needle, so every
+    // match straddles the cut; comparing in place keeps this per-mention test
+    // free of the slices it used to allocate.
     const n = needle.length - 1;
-    const joined = para.folded.slice(Math.max(0, k1 - n), k1) + para.folded.slice(k2, k2 + n);
-    return joined.includes(needle);
+    const leftLen = Math.min(k1, n);
+    const rightLen = Math.min(n, para.folded.length - k2);
+    const folded = para.folded;
+    for (let s = Math.max(1, needle.length - rightLen); s <= Math.min(leftLen, n); s++) {
+      let j = 0;
+      while (j < needle.length && folded.charCodeAt(j < s ? k1 - s + j : k2 + j - s) === needle.charCodeAt(j)) j++;
+      if (j === needle.length) return true;
+    }
+    return false;
   }
 
   private paragraph(from: number, to: number): FoldedParagraph {
     const cached = this.cache.get(from);
     if (cached) return cached;
     const before = new Uint32Array(to - from + 1);
-    const parts: string[] = [];
+    let folded = '';
     let length = 0;
     let i = from;
     while (i < to) {
       const cp = this.text.codePointAt(i)!;
       const width = cp > 0xffff ? 2 : 1;
-      const piece = foldPerCodePoint(String.fromCodePoint(cp));
+      const piece = cp < 128 ? ASCII_FOLD[cp] : foldPerCodePoint(String.fromCodePoint(cp));
       before[i - from] = length;
       if (width === 2 && i + 1 - from < before.length) before[i + 1 - from] = length;
-      parts.push(piece);
+      folded += piece;
       length += piece.length;
       i += width;
     }
     before[to - from] = length;
-    const para = { folded: parts.join(''), before, matches: new Map<string, number[]>() };
+    const para = { folded, before, matches: new Map<string, number[]>() };
     this.cache.set(from, para);
     return para;
   }
@@ -588,6 +648,23 @@ function foldPerCodePoint(value: string): string {
 }
 
 /**
+ * `foldSpelling(text.slice(from, to))` without materializing the slice: the
+ * per-code-point fold is context-free, so folding in place gives the same
+ * string. The block loop asks this of the previous block once per block, and
+ * the slice was one of the allocations that made a long paragraph of quoted
+ * aliases run hot under GC.
+ */
+function foldSpellingRange(text: string, from: number, to: number): string {
+  let out = '';
+  for (let i = from; i < to; i++) {
+    const cp = text.codePointAt(i)!;
+    out += cp < 128 ? ASCII_FOLD[cp] : foldPerCodePoint(String.fromCodePoint(cp));
+    if (cp > 0xffff) i++;
+  }
+  return out;
+}
+
+/**
  * Drop the rewrites that would flatten a passage which is quoting spellings.
  * Pure, and order-preserving for everything it keeps.
  */
@@ -596,6 +673,7 @@ export function declineCollapsedMentions<T extends MentionSpan>(text: string, sp
 
   const declined = new Set<number>();
   const occurrences = new Map<string, number[]>();
+  const foldedResults = new Map<string, string>();
   let paragraphs: ParagraphIndex | null = null;
   // Both lists are sorted by offset, so one pointer walks the spans once across
   // all blocks. Rescanning every span per block made this quadratic: a 1 MB
@@ -603,34 +681,54 @@ export function declineCollapsedMentions<T extends MentionSpan>(text: string, sp
   let cursor = 0;
 
   const bounds = blockBounds(text);
-  for (let b = 0; b < bounds.length; b++) {
-    const [from, to] = bounds[b];
-    // The block immediately before this one, when nothing but whitespace
-    // separates them. A README states the canonical, leaves a blank line, and
-    // then lists the garbles; the anchor is in the paragraph above and there is
-    // no rule that could reach it from inside this block. Widening only the
-    // *anchor* is safe because linking is unchanged: two mentions in this block
-    // still have to contrast with each other before anything is declined.
-    const previous = b > 0 && /^\s*$/u.test(text.slice(bounds[b - 1][1], from)) ? bounds[b - 1] : null;
+  for (let b = 0; b < bounds.length; b += 2) {
+    const from = bounds[b];
+    const to = bounds[b + 1];
+    // The block immediately before this one. A README states the canonical,
+    // leaves a blank line, and then lists the garbles; the anchor is in the
+    // paragraph above and there is no rule that could reach it from inside
+    // this block. Widening only the *anchor* is safe because linking is
+    // unchanged: two mentions in this block still have to contrast with each
+    // other before anything is declined. The bounds above cover the text
+    // contiguously except for skipped newline runs, so nothing but whitespace
+    // ever separates two entries.
+    const previous = b > 0 ? b - 2 : -1;
     while (cursor < spans.length && spans[cursor].start < from) cursor++;
 
-    const here: Array<{ span: T; index: number }> = [];
+    const here: number[] = [];
     for (let i = cursor; i < spans.length && spans[i].start < to; i++) {
-      if (spans[i].end <= to) here.push({ span: spans[i], index: i });
+      if (spans[i].end <= to) here.push(i);
     }
     if (here.length === 0) continue;
 
+    // Most blocks name a single spelling pair; they get a lone list without a
+    // Map, and only the first divergent replacement pays for grouping.
+    let soloResult: string | null = null;
+    const soloPoints: Point[] = [];
     const byResult = new Map<string, Point[]>();
-    for (const { span, index } of here) {
+    for (const index of here) {
+      const span = spans[index];
+      const point: Point = { start: span.start, end: span.end, index, anchor: foldSpelling(span.original) === foldSpelling(span.replacement) };
+      if (byResult.size === 0 && (soloResult === null || span.replacement === soloResult)) {
+        soloResult = span.replacement;
+        soloPoints.push(point);
+        continue;
+      }
+      if (soloResult !== null) {
+        byResult.set(soloResult, soloPoints);
+        soloResult = null;
+      }
       let group = byResult.get(span.replacement);
       if (!group) {
         group = [];
         byResult.set(span.replacement, group);
       }
-      group.push({ start: span.start, end: span.end, index, anchor: foldSpelling(span.original) === foldSpelling(span.replacement) });
+      group.push(point);
     }
+    const groups: Iterable<readonly [string, Point[]]> =
+      byResult.size > 0 ? byResult : soloResult === null ? [] : [[soloResult, soloPoints]];
 
-    for (const [result, points] of byResult) {
+    for (const [result, points] of groups) {
       let bare = occurrences.get(result);
       if (!bare) {
         bare = wordOccurrences(text, result);
@@ -644,19 +742,31 @@ export function declineCollapsedMentions<T extends MentionSpan>(text: string, sp
       for (let o = firstAtOrAfter(bare, from); o < bare.length && bare[o] < to; o++) {
         const at = bare[o];
         if (at + result.length > to) break;
-        while (span < here.length && here[span].span.end <= at) span++;
-        if (span < here.length && here[span].span.start < at + result.length) continue;
+        while (span < here.length && spans[here[span]].end <= at) span++;
+        if (span < here.length && spans[here[span]].start < at + result.length) continue;
         points.push({ start: at, end: at + result.length, index: null, anchor: true });
       }
 
       // The canonical has to be standing somewhere in this block, or in the
       // paragraph directly above it. Without it there is nothing being
       // contrasted against, and this is someone dictating one word twice.
-      const anchored =
-        points.some((p) => p.anchor) ||
-        // Folded, like every other test for the canonical here: the paragraph
-        // above says "Ashlr AI" or "ashlr.ai" as readily as it says "Ashlr.AI".
-        (previous !== null && foldSpelling(text.slice(previous[0], previous[1])).includes(foldSpelling(result)));
+      let foldedResult = foldedResults.get(result);
+      if (foldedResult === undefined) {
+        foldedResult = foldSpelling(result);
+        foldedResults.set(result, foldedResult);
+      }
+      let anchored = false;
+      for (const p of points) {
+        if (p.anchor) {
+          anchored = true;
+          break;
+        }
+      }
+      // Folded, like every other test for the canonical here: the paragraph
+      // above says "Ashlr AI" or "ashlr.ai" as readily as it says "Ashlr.AI".
+      if (!anchored && previous >= 0 && foldSpellingRange(text, bounds[previous], bounds[previous + 1]).includes(foldedResult)) {
+        anchored = true;
+      }
 
       // A mention inside its own quotation marks is named, not used, and that
       // is true whatever the rest of the sentence says. It is the one rule here

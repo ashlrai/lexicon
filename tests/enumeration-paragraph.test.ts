@@ -1,3 +1,7 @@
+// Wall-clock bound on the paragraph-wide quote anchor. It lives in its own
+// file so vitest.config.ts can run it in the `perf` project: one forked
+// worker, after every other file has finished, so no other suite competes for
+// the CPU while it is timed.
 import { describe, expect, it } from 'vitest';
 import { declineCollapsedMentions } from '../src/core/matcher/enumeration.js';
 
@@ -20,7 +24,7 @@ function quotedParagraph(n: number, lead: string): { text: string; spans: Array<
 
 function bestOf(run: () => void): number {
   let best = Number.POSITIVE_INFINITY;
-  for (let i = 0; i < 3; i++) {
+  for (let i = 0; i < 5; i++) {
     const t0 = performance.now();
     run();
     best = Math.min(best, performance.now() - t0);
@@ -40,6 +44,7 @@ describe('declineCollapsedMentions: paragraph-wide quote anchor', () => {
     const small = quotedParagraph(4000, 'Something else entirely. ');
     const large = quotedParagraph(16000, 'Something else entirely. ');
     declineCollapsedMentions(small.text, small.spans); // warm-up
+    declineCollapsedMentions(large.text, large.spans); // warm-up
     const tSmall = bestOf(() => declineCollapsedMentions(small.text, small.spans));
     const tLarge = bestOf(() => declineCollapsedMentions(large.text, large.spans));
     // 4x the input: linear is ~4x, the quadratic it replaces was ~16x.
