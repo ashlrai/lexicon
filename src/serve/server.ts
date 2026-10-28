@@ -21,6 +21,8 @@
  * `createServer()` is exported so tests and the menu bar app can embed it;
  * signal handling lives in the CLI command (src/cli/cmd-serve.ts).
  */
+import { SERVER_FEATURES } from './info.js';
+import type { ServerInfoResponse } from './info.js';
 import { createHash, timingSafeEqual } from 'node:crypto';
 import { promises as fs, realpathSync } from 'node:fs';
 import http from 'node:http';
@@ -375,6 +377,7 @@ const PackBody = z.object({
  */
 const ROUTES: readonly string[] = [
   'GET /health',
+  'GET /info',
   'GET /pair',
   'POST /normalize',
   'POST /learn',
@@ -1439,6 +1442,13 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     if (!config) throw serverStarting();
     if (!(await authorized(req.headers.authorization))) {
       throw tokenRequired();
+    }
+
+    if (pathname === '/info') {
+      if (method !== 'GET') throw notGet();
+      strictQuery(url, 'GET /info', []);
+      const info: ServerInfoResponse = { version, host, port: boundPort, features: [...SERVER_FEATURES] };
+      return json(200, info);
     }
 
     if (pathname === '/normalize') {

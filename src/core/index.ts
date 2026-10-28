@@ -29,3 +29,6 @@ export * from './packs.js';
 export * from './registry.js';
 export * from './demo.js';
 export * from './shell.js';
+// Discovery contract is dependency-light and shared with HTTP API consumers.
+export { ServerInfoSchema, SERVER_FEATURES } from '../serve/info.js';
+export type { ServerInfoResponse } from '../serve/info.js';
