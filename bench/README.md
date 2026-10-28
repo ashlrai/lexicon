@@ -23,11 +23,12 @@ npx vitest run bench                       # regression guard (thresholds in ben
 
 | file | what |
 |---|---|
-| `lexicon.yaml` | 70 terms a founder/dev would keep. ~30% deliberately have no aliases so the phonetic and fuzzy passes are what gets measured for them. No `never` lists, no settings: the naive out-of-the-box configuration. |
+| `lexicon.yaml` | 112 terms a founder/dev would keep. ~40% deliberately have no aliases so the phonetic and fuzzy passes are what gets measured for them. 42 of the terms are non-English person names (the issue #8 fixture). No `never` lists, no settings: the naive out-of-the-box configuration. |
 | `gen-corpus.ts` | Deterministic generator (seeded PRNG, templates x heard-variants). Writes `corpus.jsonl`. |
 | `cases/negatives.jsonl` | Hand-written clean prose that must not change: sound-alikes (`pass the sauce`, `red is my favorite color`), code spans, fences, URLs, emails, paths. |
 | `cases/hard.jsonl` | Hand-written cases we expect to fail, each with a diagnosis in `note`. |
 | `cases/positives.jsonl` | Hand-written positives that mix code/URLs with prose, punctuation, multi-line input. |
+| `cases/nonenglish.jsonl` | Hand-written non-English edges: name-lookalike prose negatives, first-name-only and diminutive misses, multi-name sentences. Every case carries `lang`. |
 | `corpus.jsonl` | Generated output. Committed so the numbers are reproducible without regenerating. |
 | `lib.ts` | Loading + metrics. `run.ts` (CLI) and `bench.test.ts` both import it so they cannot disagree. |
 | `results.json` | Last run: summary, sweep, every failing case. |
@@ -38,11 +39,15 @@ One JSON object per line:
 
 ```json
 {"id":"pos-042","category":"product","heard":"add a pie dantic model for the sync job","expected":"add a Pydantic model for the sync job","terms":["Pydantic"],"note":"optional"}
+{"id":"ne-003","category":"person","heard":"ask your gin meyer if the invoice went out","expected":"ask Jürgen Meyer if the invoice went out","terms":["Jürgen Meyer"],"lang":"german","note":"expected-hard: ..."}
 ```
 
 - `category`: `brand | person | product | acronym | identifier | prose`
 - `heard`: what STT produced. `expected`: what the user meant.
 - `terms`: canonicals that must appear in `expected`. Empty array = negative (nothing may change).
+- `lang`: optional language-family tag (`german`, `spanish`, `polish`, `japanese`, `arabic`,
+  `nordic` today). Tagged cases are additionally reported as the `non-English` subset, broken
+  down per family; untagged cases form the `baseline` subset.
 - `note`: free text. A note starting with `expected-hard` marks a case we expect to fail; those are
   reported separately so the headline is not flattered by dropping them.
 
@@ -58,6 +63,9 @@ One JSON object per line:
 - **Prose false-positive rate**: negatives with at least one replacement / all negatives.
 - **By reason**: replacements per pass (`alias` / `phonetic` / `fuzzy`), split into correct
   (canonical expected in that case) and spurious, with mean confidence.
+- **By language** (when cases carry `lang`): every metric above recomputed on the untagged
+  `baseline` subset, the whole `non-English` subset, and each family separately. This is the
+  issue #8 measurement: baseline and subset recall sit side by side so the gap is one number.
 - **Latency**: warm mean per case over 5 rounds; `normalize()` includes `buildIndex()` (what the hook
   pays per prompt), `findReplacements()` uses a prebuilt index.
 
@@ -70,6 +78,10 @@ meaningful before/after number is term recall, and the honesty check is the pros
   `gen-corpus.ts` (and to `lexicon.yaml` if you want the alias pass to handle it), then
   `node --import tsx bench/gen-corpus.ts`.
 - A new term: add it to `lexicon.yaml` and to `TERMS` in `gen-corpus.ts`.
+- A new non-English name: add it to `lexicon.yaml` and to `NONENGLISH_TERMS` in `gen-corpus.ts`
+  with its `lang` tag; list the variants you expect to fail in its `hard` map, then regenerate
+  and check whether the misses match the marks. Hand-written edges go in
+  `cases/nonenglish.jsonl` with `lang` set.
 - A negative or hard case: append a line to `cases/negatives.jsonl` or `cases/hard.jsonl`,
   then regenerate. Prefix `note` with `expected-hard: ` if you expect it to fail.
 - Templates must be inert: the generator fails loudly if a template mutates on its own with a
@@ -82,9 +94,9 @@ deliberately.
 
 ## CI regression gate
 
-CI runs `npx vitest run bench/bench.test.ts` as its own step ("Benchmark regression gate (synthetic corpus)") on every push and pull request, independent of which files a PR touched. It fails when the matcher's accuracy drops below thresholds set from the numbers measured on 2026-10-18 minus a small margin:
+CI runs `npx vitest run bench/bench.test.ts` as its own step ("Benchmark regression gate (synthetic corpus)") on every push and pull request, independent of which files a PR touched. It fails when the matcher's accuracy drops below thresholds set from the numbers measured on 2026-10-26 minus a small margin. The guard runs on the `baseline` (untagged) subset, so its gates still measure the original 402 cases they were tuned on:
 
-| Measure (synthetic corpus, 402 sentences) | Measured | Gate |
+| Measure (baseline subset, 402 sentences) | Measured | Gate |
 |---|---|---|
 | Positive sentences | 95.32% (265/278) | at least 94% |
 | Positives excluding expected-hard | 99.61% (255/256) | at least 98% |
@@ -93,6 +105,17 @@ CI runs `npx vitest run bench/bench.test.ts` as its own step ("Benchmark regress
 | Term precision | 93.81% (303/323) | at least 92% |
 | Prose false positives excluding expected-hard | 0.00% (0/95) | at most 2% |
 | Prose false positives including expected-hard | 15.32% (19/124) | at most 16% |
+
+Since the issue #8 fixture landed, a second set of floors guards the `lang`-tagged subset so a
+matcher change cannot regress names while the baseline holds:
+
+| Measure (non-English subset, 152 sentences) | Measured | Gate |
+|---|---|---|
+| Term recall | 76.35% (113/148) | at least 70% |
+| Term precision | 100.00% (113/113) | at least 95% |
+| Prose false positives including expected-hard | 0.00% (0/10) | at most 20% |
+| Positives excluding expected-hard | 100.00% (106/106) | exactly 100% (an unmarked failure is a regression) |
+| Per-family recall | arabic 92.6, german 66.7, japanese 79.2, nordic 96.0, polish 41.7, spanish 79.2 | floors at 85, 60, 70, 90, 35, 70 |
 
 The corpus is synthetic (hand-written STT errors, text only), so the gate protects against matcher regressions; it says nothing about real dictation accuracy. If a deliberate change moves a number, re-run `npm run bench`, update `docs/BENCHMARK.md`, and move the threshold in `bench/bench.test.ts` with it.
 

@@ -21,9 +21,9 @@ important half of this document.
 Source: `npm run bench:audio`, `small.en`, 279 term slots across three voices. Raw 45.9%
 (128/279), after the lexicon 91.0% (254/279). Prose: 0 of 72.
 
-Why this one and not the bigger number. The synthetic corpus shows 5.1% to 96.8%, which looks
+Why this one and not the bigger number. The synthetic corpus shows 4.6% to 90.2%, which looks
 better and is worse evidence: every sentence in it was written to contain a mis-hearing, so the
-5.1% is an artifact of corpus construction, not a fact about speech-to-text. The TTS-audio
+4.6% is an artifact of corpus construction, not a fact about speech-to-text. The TTS-audio
 before-number is the one that survives a sceptic. If a shorter line is needed, "46% to 91% on
 synthesized speech" is the floor of what can be said honestly, and "roughly doubles what your recognizer
 gets right" is a fair plain-English gloss.
@@ -74,11 +74,12 @@ first:
 | proper nouns recovered, TTS audio, `base.en` | 41.9% to 82.8% | `npm run bench:audio` |
 | best configuration, prompt + lexicon | 95.7% (267/279) | `npm run bench:audio` |
 | ordinary prose sentences changed | 0 of 72, in every configuration | `npm run bench:audio` |
-| ordinary prose, synthetic corpus | 0 of 95 | `npm run bench` |
+| ordinary prose, synthetic corpus | 0 of 105 | `npm run bench` |
+| non-English name recall, synthetic | 76.4% (96.8% on the original corpus; the measured gap) | `npm run bench` |
 | term precision, TTS audio | 93.9% (`base.en`) to 95.7% (`small.en` + prompt) | `npm run bench:audio` |
 | latency | about 0.3 ms per sentence | `npm run bench` |
 | corpus size, audio | 110 sentences x 3 voices = 330 clips, 279 term slots | `bench/audio/sentences.jsonl` |
-| corpus size, synthetic | 402 cases, 313 term slots, 70 terms | `bench/corpus.jsonl` |
+| corpus size, synthetic | 554 cases, 461 term slots, 112 terms | `bench/corpus.jsonl` |
 | tests | 2,642 (2 skipped), on every CI job | `npm test` |
 | licence | MIT | `LICENSE` |
 | format, tool and command counts | 16 export formats, 8 import formats, 21 MCP tools, 27 CLI commands | derived from the code by `npm run check:facts`, which also holds this row to it |

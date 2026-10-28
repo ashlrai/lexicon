@@ -31,6 +31,12 @@ export interface BenchCase {
   terms: string[];
   /** Free text. A note starting with "expected-hard" marks a case we expect to fail. */
   note?: string;
+  /**
+   * Language family on non-English-name cases (issue #8): 'german', 'spanish',
+   * 'polish', 'japanese', 'arabic', 'nordic'. Untagged cases are the original
+   * baseline corpus; the report scores the tagged subset separately.
+   */
+  lang?: string;
 }
 
 export interface BenchOptions {
@@ -52,6 +58,10 @@ export interface CaseResult {
   pass: boolean;
   negative: boolean;
   hard: boolean;
+  /** Canonicals the case expects; lets subset metrics be derived from results alone. */
+  terms: string[];
+  /** Language family tag, carried over from the case. */
+  lang?: string;
   replacements: Replacement[];
   /** Term slots (canonical) that were not recovered. */
   missed: string[];
@@ -101,8 +111,44 @@ export interface BenchReport {
   falsePositiveRate: Ratio;
   falsePositiveRateExcludingHard: Ratio;
   byReason: Record<MatchReason, ReasonStats>;
+  /**
+   * Metrics over the lang-tagged (non-English) subset and the untagged
+   * baseline, per the issue #8 fixture. Present only when the corpus carries
+   * at least one lang-tagged case.
+   */
+  lang?: {
+    /** Cases without a lang tag: the original corpus. */
+    baseline: SubsetReport;
+    /** Cases with any lang tag. */
+    nonEnglish: SubsetReport;
+    byLang: Record<string, SubsetReport>;
+  };
   latency?: { normalizeUs: number; findReplacementsUs: number; rounds: number };
   results: CaseResult[];
+}
+
+/** The same headline metrics as the full report, recomputed over a slice of the results. */
+export interface SubsetReport {
+  cases: number;
+  positives: number;
+  negatives: number;
+  hard: number;
+  termSlots: number;
+  /** Exact-match sentence accuracy over all cases in the slice. */
+  sentence: Ratio;
+  /** Exact-match sentence accuracy over positive cases. */
+  positiveSentence: Ratio;
+  /** Exact-match sentence accuracy over positive cases that are not expected-hard. */
+  positiveSentenceExcludingHard: Ratio;
+  /** Negatives with at least one replacement. */
+  falsePositiveRate: Ratio;
+  /** Negatives that are not expected-hard with at least one replacement. */
+  falsePositiveRateExcludingHard: Ratio;
+  /** Fraction of term slots already correct in `heard`. */
+  rawRecall: Ratio;
+  recall: Ratio;
+  precision: Ratio;
+  f1: number;
 }
 
 // ---------------------------------------------------------------------------
@@ -147,6 +193,10 @@ function assertCase(raw: unknown, line: number): BenchCase {
   if (c.note !== undefined) {
     if (typeof c.note !== 'string') throw new Error(`corpus line ${line} (${id}): "note" must be a string`);
     out.note = c.note;
+  }
+  if (c.lang !== undefined) {
+    if (typeof c.lang !== 'string') throw new Error(`corpus line ${line} (${id}): "lang" must be a string`);
+    out.lang = c.lang;
   }
   return out;
 }
@@ -266,6 +316,8 @@ export function runBench(cases: BenchCase[], lexicon: Lexicon, opts: BenchOption
       pass,
       negative,
       hard,
+      terms: c.terms,
+      ...(c.lang !== undefined ? { lang: c.lang } : {}),
       replacements: r.replacements,
       missed,
       spurious,
@@ -276,7 +328,6 @@ export function runBench(cases: BenchCase[], lexicon: Lexicon, opts: BenchOption
   const negatives = results.filter((r) => r.negative);
   const posEasy = positives.filter((r) => !r.hard);
   const negEasy = negatives.filter((r) => !r.hard);
-  const passed = (list: CaseResult[]): Ratio => ratio(list.filter((r) => r.pass).length, list.length);
   const flagged = (list: CaseResult[]): Ratio => ratio(list.filter((r) => r.replacements.length > 0).length, list.length);
 
   const precision = ratio(tp, tp + fp);
@@ -338,9 +389,68 @@ export function runBench(cases: BenchCase[], lexicon: Lexicon, opts: BenchOption
     results,
   };
 
+  const tagged = results.filter((r) => r.lang !== undefined);
+  if (tagged.length > 0) {
+    const byLang: Record<string, SubsetReport> = {};
+    for (const lang of [...new Set(tagged.map((r) => r.lang as string))].sort()) {
+      byLang[lang] = subsetReport(tagged.filter((r) => r.lang === lang));
+    }
+    report.lang = {
+      baseline: subsetReport(results.filter((r) => r.lang === undefined)),
+      nonEnglish: subsetReport(tagged),
+      byLang,
+    };
+  }
+
   if (opts.timing !== false) report.latency = measureLatency(selected, lexicon, normOpts);
   return report;
 }
+
+/**
+ * Recompute the headline metrics over a slice of results, so a tagged subset
+ * (the non-English names) can sit next to the baseline it was added to.
+ * tp/fp/fn and raw recall are derived per case from `terms`, `missed` and
+ * `spurious`, the same accounting runBench uses on the full corpus.
+ */
+export function subsetReport(list: CaseResult[]): SubsetReport {
+  let tp = 0;
+  let fp = 0;
+  let fn = 0;
+  let rawHit = 0;
+  let termSlots = 0;
+  for (const r of list) {
+    fp += r.spurious.length;
+    fn += r.missed.length;
+    for (const canonical of new Set(r.terms)) {
+      termSlots++;
+      const want = Math.max(1, countOccurrences(r.expected, canonical));
+      if (countOccurrences(r.heard, canonical) >= want) rawHit++;
+      if (countOccurrences(r.output, canonical) >= want) tp++;
+    }
+  }
+  const positives = list.filter((r) => !r.negative);
+  const negatives = list.filter((r) => r.negative);
+  const precision = ratio(tp, tp + fp);
+  const recall = ratio(tp, tp + fn);
+  return {
+    cases: list.length,
+    positives: positives.length,
+    negatives: negatives.length,
+    hard: list.filter((r) => r.hard).length,
+    termSlots,
+    sentence: passed(list),
+    positiveSentence: passed(positives),
+    positiveSentenceExcludingHard: passed(positives.filter((r) => !r.hard)),
+    falsePositiveRate: ratio(negatives.filter((r) => r.replacements.length > 0).length, negatives.length),
+    falsePositiveRateExcludingHard: ratio(negatives.filter((r) => !r.hard && r.replacements.length > 0).length, negatives.filter((r) => !r.hard).length),
+    rawRecall: ratio(rawHit, termSlots),
+    recall,
+    precision,
+    f1: precision.rate + recall.rate === 0 ? 0 : (2 * precision.rate * recall.rate) / (precision.rate + recall.rate),
+  };
+}
+
+const passed = (list: CaseResult[]): Ratio => ratio(list.filter((r) => r.pass).length, list.length);
 
 /** Warm mean latency per case, in microseconds. normalize() includes buildIndex(). */
 function measureLatency(cases: BenchCase[], lexicon: Lexicon, opts: NormalizeOptions): NonNullable<BenchReport['latency']> {
@@ -378,6 +488,9 @@ export interface SweepRow {
   f1: number;
   falsePositiveRate: number;
   falsePositiveRateExcludingHard: number;
+  /** Term recall/precision restricted to the lang-tagged subset, when the corpus has one. */
+  nonEnglishRecall?: number;
+  nonEnglishPrecision?: number;
 }
 
 export function sweep(cases: BenchCase[], lexicon: Lexicon, base: Omit<BenchOptions, 'minConfidence' | 'timing'> = {}): SweepRow[] {
@@ -392,6 +505,9 @@ export function sweep(cases: BenchCase[], lexicon: Lexicon, base: Omit<BenchOpti
       f1: r.terms.f1,
       falsePositiveRate: r.falsePositiveRate.rate,
       falsePositiveRateExcludingHard: r.falsePositiveRateExcludingHard.rate,
+      ...(r.lang
+        ? { nonEnglishRecall: r.lang.nonEnglish.recall.rate, nonEnglishPrecision: r.lang.nonEnglish.precision.rate }
+        : {}),
     };
   });
 }

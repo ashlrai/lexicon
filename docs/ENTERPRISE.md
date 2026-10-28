@@ -25,8 +25,8 @@ and guesses. Lexicon is one small file of those words, applied to every
 transcript before an agent or a text field sees it.
 
 Measured on 330 synthesized-speech clips: proper nouns recovered went from 41.9% to
-82.8%. On a synthetic corpus of speech-to-text errors, 5.1% to 96.8%. Zero of
-95 ordinary prose sentences were changed incorrectly. Method, corpora and the
+82.8%. On a synthetic corpus of speech-to-text errors, 4.6% to 90.2%. Zero of
+105 ordinary prose sentences were changed incorrectly. Method, corpora and the
 cases that still fail are in [BENCHMARK.md](BENCHMARK.md), and the benchmark is
 reproducible with one command.
 

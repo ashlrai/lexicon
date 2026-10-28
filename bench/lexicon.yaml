@@ -1,6 +1,6 @@
 # Benchmark lexicon: what a founder/developer would realistically keep.
-# 70 terms. Aliases are spellings Whisper / Apple / Google STT actually emit.
-# Roughly 30% of terms deliberately have NO aliases so the phonetic and fuzzy
+# 112 terms. Aliases are spellings Whisper / Apple / Google STT actually emit.
+# Roughly 40% of terms deliberately have NO aliases so the phonetic and fuzzy
 # passes are what gets measured for them (marked "# no aliases: measures ...").
 # No `never` lists and no settings overrides: this is the naive out-of-the-box
 # configuration. See docs/BENCHMARK.md for the never/protectedWords a user
@@ -227,3 +227,149 @@ terms:
   - canonical: harvestRepo
     category: identifier
     aliases: []            # no aliases: measures collapsed (harvest repo) + phonetic (harvest ripo)
+
+  # ------------------------------------------------ non-English names
+  # Issue #8 measurement fixture: colleague names a real user would add,
+  # across six language families. Aliases, where listed, are romanizations
+  # and the English-STT spellings a user would already have seen. Bare
+  # terms are what the English-tuned phonetic pass and fuzzy pass are
+  # measured against. Cases live in the ne-* block of bench/corpus.jsonl
+  # and in bench/cases/nonenglish.jsonl.
+
+  # German
+  - canonical: Jürgen Meyer
+    category: person
+    aliases: [jurgen meyer]
+  - canonical: Katja Schröder
+    category: person
+    aliases: [katja schroder]
+  - canonical: Lukas Weiß
+    category: person
+    aliases: [lucas weiss]
+  - canonical: Götz Neumann
+    category: person
+    aliases: []            # no aliases: measures phonetic (gerts) + fold (goetz)
+  - canonical: Anke Bräutigam
+    category: person
+    aliases: []            # no aliases: measures fold (anke brautigam)
+  - canonical: Bärbel Hoffmann
+    category: person
+    aliases: [barbel hoffmann]
+  - canonical: Friedrich Vogel
+    category: person
+    aliases: []            # no aliases: measures phonetic (freed rich)
+
+  # Spanish
+  - canonical: José García
+    category: person
+    aliases: [jose garcia]
+  - canonical: Joaquín Fernández
+    category: person
+    aliases: []            # no aliases: measures fold (joaquin fernandez)
+  - canonical: Guillermo Ortega
+    category: person
+    aliases: []            # no aliases: measures phonetic (gear mo)
+  - canonical: Ximena Navarro
+    category: person
+    aliases: [jimena navarro]
+  - canonical: Iñaki Mendoza
+    category: person
+    aliases: []            # no aliases: measures fuzzy (inyaki)
+  - canonical: Rafael Muñoz
+    category: person
+    aliases: [rafael munoz]
+  - canonical: Rodrigo Villalobos
+    category: person
+    aliases: []            # no aliases: measures collapsed (villa lobos)
+
+  # Polish
+  - canonical: Szymon Kowalski
+    category: person
+    aliases: [shimon kowalski, simon kowalski]
+  - canonical: Wojciech Zieliński
+    category: person
+    aliases: []            # no aliases: measures fold (wojciech zielinski) + garbles (voy tech)
+  - canonical: Łukasz Nowak
+    category: person
+    aliases: [lukasz nowak]
+  - canonical: Grzegorz Brzęczyszczykiewicz
+    category: person
+    aliases: []            # no aliases: the hardest name in the fixture
+  - canonical: Katarzyna Wiśniewska
+    category: person
+    aliases: []            # no aliases: measures fold + phonetic (katarzina)
+  - canonical: Mikołaj Zielonka
+    category: person
+    aliases: [mikolaj zielonka]
+  - canonical: Agnieszka Szczepańska
+    category: person
+    aliases: []            # no aliases: measures phonetic (agnieska shepanska)
+
+  # Japanese (romaji)
+  - canonical: Yuki Tanaka
+    category: person
+    aliases: []            # no aliases: measures collapsed (you key)
+  - canonical: Rin Takahashi
+    category: person
+    aliases: [wren takahashi]
+  - canonical: Satoshi Nakamura
+    category: person
+    aliases: []            # no aliases: measures collapsed (sato shi)
+  - canonical: Naoki Kobayashi
+    category: person
+    aliases: []            # no aliases: measures collapsed (nah oki)
+  - canonical: Keisuke Yamaguchi
+    category: person
+    aliases: []            # no aliases: measures collapsed (kay suke)
+  - canonical: Miyuki Tsukamoto
+    category: person
+    aliases: []            # no aliases: measures collapsed (mi yuki)
+  - canonical: Ryota Miyazaki
+    category: person
+    aliases: []            # no aliases: measures collapsed (rio ta)
+
+  # Arabic (transliteration)
+  - canonical: Mohammed Al-Rashid
+    category: person
+    aliases: [muhammad al rashid, mohammed al rasheed]
+  - canonical: Fatima Zahra
+    category: person
+    aliases: []            # no aliases: measures fuzzy (fatima zara)
+  - canonical: Khalid Nasser
+    category: person
+    aliases: [khaled nasser]
+  - canonical: Aisha Bakr
+    category: person
+    aliases: []            # no aliases: measures fuzzy (aisha bakker)
+  - canonical: Zainab Qureshi
+    category: person
+    aliases: [zaynab qureshi]
+  - canonical: Omar Farouk
+    category: person
+    aliases: [omar farooq, omar faruk]
+  - canonical: Abdulrahman Haddad
+    category: person
+    aliases: []            # no aliases: measures collapsed (abdul rahman)
+
+  # Nordic
+  - canonical: Åsa Lindqvist
+    category: person
+    aliases: [asa lindqvist]
+  - canonical: Søren Kjær
+    category: person
+    aliases: [soren kjaer]
+  - canonical: Kåre Strøm
+    category: person
+    aliases: []            # no aliases: measures fold (kare strom)
+  - canonical: Øystein Aas
+    category: person
+    aliases: [oystein aas]
+  - canonical: Päivi Mäkinen
+    category: person
+    aliases: []            # no aliases: measures fold (paivi makinen)
+  - canonical: Guðrún Sigurðardóttir
+    category: person
+    aliases: [gudrun sigurdardottir]
+  - canonical: Eero Saarinen
+    category: person
+    aliases: []            # no aliases: measures fuzzy (eero sarinen)

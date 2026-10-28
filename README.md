@@ -56,13 +56,16 @@ Two honest notes about that table. Raw whisper.cpp cannot wrongly change prose b
 | --- | --- | --- | --- |
 | TTS audio, whisper.cpp base.en (330 clips) | 41.9% | 82.8% | 0 of 72 |
 | TTS audio, whisper.cpp small.en with prompt hints | 76.0% | 95.7% | 0 of 72 |
-| synthetic STT errors (402 sentences, 70 terms) | 5.1% | 96.8% | 0 of 95 |
+| synthetic STT errors (554 sentences, 112 terms) | 4.6% | 90.2% | 0 of 105 |
+| ... its non-English name subset (152 sentences) | 3.4% | 76.4% | 0 of 10 |
 
 Latency in that harness is about 0.3 ms per sentence. The TTS-audio rows use macOS text-to-speech read into whisper.cpp, so they are cleaner than a phone microphone. A separate same-VM comparison with espanso and whisper.cpp (install, latency, memory) is in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
 
-The synthetic 5.1% is not a claim that speech-to-text gets 5% of proper nouns right in general. Every sentence in that corpus was written to contain a mis-hearing, so 5.1% is only the handful that came out right anyway. The honest "before" number is the TTS-audio one, 41.9%.
+The synthetic 4.6% is not a claim that speech-to-text gets 5% of proper nouns right in general. Every sentence in that corpus was written to contain a mis-hearing, so 4.6% is only the handful that came out right anyway. The honest "before" number is the TTS-audio one, 41.9%.
 
-The last column counts ordinary prose only. Each corpus also contains sentences deliberately built to trip the matcher (a bare "llama" next to an Ollama term, sound-alikes, code spans), marked `expected-hard`; with those included the false-positive rate is 15.3% (19 of 124) synthetic and 16.7% (15 of 90) on audio. Both numbers, and every failing case, are in [docs/BENCHMARK.md](docs/BENCHMARK.md).
+The non-English row is there on purpose: Double Metaphone is tuned for English, so the fixture measures the matcher's weakest spot instead of hiding it inside the headline. On the original cases alone recall is 96.8%. Both rows, and the per-language-family table, are in [docs/BENCHMARK.md](docs/BENCHMARK.md).
+
+The last column counts ordinary prose only. Each corpus also contains sentences deliberately built to trip the matcher (a bare "llama" next to an Ollama term, sound-alikes, code spans), marked `expected-hard`; with those included the false-positive rate is 14.2% (19 of 134) synthetic and 16.7% (15 of 90) on audio. Both numbers, and every failing case, are in [docs/BENCHMARK.md](docs/BENCHMARK.md).
 
 **Held-out check (separate internal run, unseen voice).** The tables above use a lexicon written for the test terms. To test the harder case, aliases were learned only from other sentences and voices, then scored on a voice and sentences never used for learning (63 clips). Synthetic speech from three open text-to-speech voices read into whisper.cpp, clips counted correct when every target term was recovered.
 
