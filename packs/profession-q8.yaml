@@ -1,0 +1,91 @@
+# Opt-in legal vocabulary: lexicon pack add profession-q8.
+# Split spellings are explicit aliases; ordinary-word homophones are excluded
+# with exact never entries, never installed as aliases.
+name: profession-q8
+title: Legal profession
+description: Opt-in legal terminology, research tools and spelled-out acronyms.
+version: 1
+terms:
+  - canonical: voir dire
+    category: other
+    aliases: [voir deer, voir dear]
+  - canonical: res judicata
+    category: other
+    aliases: [res judi cata]
+  - canonical: habeas corpus
+    category: other
+    aliases: [habeus corpus, habeas corpis]
+  - canonical: amicus curiae
+    category: other
+    aliases: [amicus curia]
+  - canonical: certiorari
+    category: other
+    aliases: [certio rari]
+  - canonical: subpoena
+    category: other
+    aliases: [sub poena, subpeona]
+  - canonical: mens rea
+    category: other
+    aliases: [mens re a]
+  - canonical: actus reus
+    category: other
+    aliases: [actus re us]
+  - canonical: prima facie
+    category: other
+    aliases: [prima facia]
+  - canonical: stare decisis
+    category: other
+    aliases: [stare de cisis]
+  - canonical: pro hac vice
+    category: other
+    aliases: [pro hack vice, pro hac vise]
+  - canonical: lis pendens
+    category: other
+    aliases: [lis pen dens]
+  - canonical: in limine
+    category: other
+    aliases: [in limini]
+  - canonical: non obstante veredicto
+    category: other
+    aliases: [non obstante verdicto]
+  - canonical: Westlaw
+    category: product
+    aliases: [westlaw legal]
+  - canonical: LexisNexis
+    category: product
+    aliases: [lexis nexis, lexis nexus]
+    never: [lexis, nexus]
+  - canonical: PACER
+    category: acronym
+    aliases: [p a c e r, pee ay see ee ar]
+    never: [pacer]
+  - canonical: HIPAA
+    category: acronym
+    aliases: [h i p a a, hipaa act]
+    never: [hippo]
+  - canonical: FOIA
+    category: acronym
+    aliases: [f o i a, eff oh eye ay, foia request]
+    never: [foyer]
+  - canonical: tort
+    category: other
+    aliases: []
+    never: [taught, taut, tart]
+  - canonical: lien
+    category: other
+    aliases: []
+    never: [lean, line, lion]
+  - canonical: counsel
+    category: other
+    aliases: []
+    never: [council, councils]
+  - canonical: writ
+    category: other
+    aliases: []
+    never: [write, right, rite]
+  - canonical: estoppel
+    category: other
+    aliases: [estop pel, estopple]
+  - canonical: indemnification
+    category: other
+    aliases: [indemnifi cation]

@@ -58,10 +58,10 @@ import { registerPackCommands, runPackAdd, runPackList, runPackRemove, runPackSh
 import { Command } from 'commander';
 import { makeIO } from './helpers.js';
 
-const PACK_NAMES = ['ai', 'business', 'cloud-devops', 'developer', 'voice-tools'];
+const PACK_NAMES = ['ai', 'business', 'cloud-devops', 'developer', 'profession-q8', 'voice-tools'];
 
 /** Minimum sizes the packs promise (docs/PACKS.md). */
-const MIN_TERMS: Record<string, number> = { developer: 50, 'cloud-devops': 20, ai: 30, business: 30, 'voice-tools': 12 };
+const MIN_TERMS: Record<string, number> = { developer: 50, 'cloud-devops': 20, ai: 30, business: 30, 'voice-tools': 12, 'profession-q8': 25 };
 
 /**
  * Aliases that ARE an ordinary word, on purpose. Each entry is a real STT
@@ -109,6 +109,37 @@ const STOPLIST_PHRASE_ALLOWLIST: Record<string, string[]> = {
 // ---------------------------------------------------------------------------
 
 describe('shipped packs', () => {
+  it('offers legal vocabulary only by opt-in and preserves exact ambiguous words', async () => {
+    const pack = await loadPack('profession-q8');
+    expect(DEFAULT_PACKS).not.toContain(pack.name);
+    expect(pack.terms).toBe(25);
+    expect(pack.lexicon.terms.find((term) => term.canonical === 'subpoena')?.aliases).toContain('sub poena');
+    expect(normalize('file sub poena and habeus corpus through lexis nexis', pack.lexicon).output)
+      .toBe('file subpoena and habeas corpus through LexisNexis');
+    const exclusions = {
+      tort: ['taught', 'taut', 'tart'],
+      lien: ['lean', 'line', 'lion'],
+      counsel: ['council', 'councils'],
+      writ: ['write', 'right', 'rite'],
+      PACER: ['pacer'],
+      HIPAA: ['hippo'],
+      FOIA: ['foyer'],
+      LexisNexis: ['lexis', 'nexus'],
+    };
+    for (const [canonical, words] of Object.entries(exclusions)) {
+      const term = pack.lexicon.terms.find((entry) => entry.canonical === canonical);
+      expect(term?.never).toEqual(words);
+      for (const word of words) {
+        expect(term?.aliases).not.toContain(word);
+        const result = normalize(word, pack.lexicon);
+        expect(result.output).toBe(word);
+        expect(result.replacements).toEqual([]);
+      }
+    }
+    const prose = 'the council taught us to write a line in the foyer';
+    expect(normalize(prose, pack.lexicon).output).toBe(prose);
+  });
+
   it('installs cloud/DevOps vocabulary and corrects a deployment sentence without changing prose', async () => {
     const pack = await loadPack('cloud-devops');
     expect(pack.terms).toBe(20);
