@@ -29,7 +29,7 @@ import {
   parsePulseSources,
   pickDevice,
 } from '../src/voice/devices.js';
-import { HISTORY_MAX_BYTES, HISTORY_MAX_LINES, HISTORY_READ_MAX_BYTES, appendHistory, historyPath, readHistory } from '../src/voice/history.js';
+import { HISTORY_MAX_BYTES, HISTORY_MAX_LINES, HISTORY_READ_MAX_BYTES, appendHistory, historyPath } from '../src/voice/history.js';
 import { VOICE_HISTORY_READ_MAX_BYTES, loadVoiceHistory } from '../src/core/suggestTerms.js';
 import { GGML_MAGIC, STALE_PART_MS, checkModelHashRecord, defaultDownloader, expandTilde, modelFileName, modelUrl, modelsDir, resolveModel } from '../src/voice/models.js';
 import type { Downloader } from '../src/voice/models.js';
@@ -50,7 +50,6 @@ import {
   stateFilePath,
   stopRecorder,
   voiceDir,
-  wavHasAudio,
   writeState,
   commandIsRecorder,
   confirmRecorder,
@@ -266,10 +265,6 @@ async function makeHarness(overrides: { platform?: NodeJS.Platform; missing?: st
       pid,
       exited,
       stderr: () => '',
-      kill: (signal) => {
-        h.kills.push({ pid, signal });
-        resolveExit(signal === 'SIGKILL' ? null : 255);
-      },
     };
   };
 
@@ -456,7 +451,7 @@ describe('lexicon voice --toggle', () => {
     expect(h.kills).toEqual([]);
     expect(await readState(h.globalPath)).toBeUndefined();
     // The length comes from the audio, not from the wall clock since startedAt.
-    expect((await readHistory(h.globalPath))[0].ms.record).toBe(600_000);
+    expect((await loadVoiceHistory(h.globalPath))[0].ms?.record).toBe(600_000);
   });
 
   it('transcribes what a crashed recorder wrote instead of deleting it', async () => {
@@ -829,7 +824,7 @@ describe('lexicon voice --toggle start race', () => {
     expect(await readState(h.globalPath)).toBeUndefined();
     expect((await fs.readdir(voiceDir(h.globalPath))).filter((f) => f.endsWith('.wav'))).toEqual([]);
 
-    const noPid: VoiceSpawn = () => ({ pid: undefined, exited: Promise.resolve(null), stderr: () => '', kill: () => undefined });
+    const noPid: VoiceSpawn = () => ({ pid: undefined, exited: Promise.resolve(null), stderr: () => '' });
     h.deps.spawn = noPid;
     expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_ERROR);
     expect(h.err.join('')).toContain('could not start ffmpeg');
@@ -1177,7 +1172,7 @@ describe('lexicon voice (foreground)', () => {
     const h = await harness();
     h.deps.waitForStop = async () => 'enter';
     await runVoice(h.opts, h.io, h.deps);
-    const history = await readHistory(h.globalPath);
+    const history = await loadVoiceHistory(h.globalPath);
     expect(history).toHaveLength(1);
     expect(history[0]).toMatchObject({
       at: '2026-09-19T12:00:00.000Z',
@@ -1185,7 +1180,7 @@ describe('lexicon voice (foreground)', () => {
       output: 'ping Ashlr.AI about the Kubernetes rollout',
       model: 'base.en',
     });
-    expect(Object.keys(history[0].ms).sort()).toEqual(['normalize', 'record', 'transcribe']);
+    expect(history[0].ms).toEqual({ record: expect.any(Number), transcribe: expect.any(Number), normalize: expect.any(Number) });
     // Counted in the hits.json sidecar; the lexicon YAML itself is not rewritten.
     const hits = JSON.parse(await fs.readFile(path.join(path.dirname(h.globalPath), 'hits.json'), 'utf8')) as {
       global: Record<string, number>;
@@ -1250,7 +1245,7 @@ describe('lexicon voice (foreground)', () => {
     const code = await runVoice(h.opts, h.io, h.deps);
     expect(code).toBe(EXIT_NOTHING_HEARD);
     expect(h.out).toEqual(['(nothing heard)\n']);
-    expect(await readHistory(h.globalPath)).toEqual([]);
+    expect(await loadVoiceHistory(h.globalPath)).toEqual([]);
     const kept = (await fs.readdir(path.join(h.dir, 'tmp'))).filter((f) => f.endsWith('.wav'));
     expect(kept).toHaveLength(1);
     expect(h.err.join('')).toContain('whisper read nothing out of this capture, so the recording is kept at');
@@ -1899,7 +1894,7 @@ describe('history', () => {
     const h = await harness();
     const entry = (i: number) => ({ at: `t${i}`, raw: `r${i}`, output: `o${i}`, model: 'base.en', ms: { record: 0, transcribe: 0, normalize: 0 } });
     for (let i = 0; i < 7; i += 1) await appendHistory(h.globalPath, entry(i), 5);
-    const kept = await readHistory(h.globalPath);
+    const kept = await loadVoiceHistory(h.globalPath);
     expect(kept.map((e) => e.at)).toEqual(['t2', 't3', 't4', 't5', 't6']);
     const text = await fs.readFile(historyPath(h.globalPath), 'utf8');
     expect(text.endsWith('\n')).toBe(true);
@@ -1913,7 +1908,7 @@ describe('history', () => {
   it('keeps every entry when several dictations append at once', async () => {
     const h = await harness();
     await Promise.all(Array.from({ length: 12 }, (_, i) => appendHistory(h.globalPath, entry(i))));
-    const kept = (await readHistory(h.globalPath)).map((e) => e.at).sort();
+    const kept = (await loadVoiceHistory(h.globalPath)).map((e) => e.at).sort();
     expect(kept).toEqual(Array.from({ length: 12 }, (_, i) => `t${i}`).sort());
     // No lock file is left behind.
     expect((await fs.readdir(voiceDir(h.globalPath))).filter((n) => n.includes('lock'))).toEqual([]);
@@ -1937,22 +1932,22 @@ describe('history', () => {
       spy.mockRestore();
     }
     expect(await fs.readFile(file, 'utf8')).toBe(before);
-    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t0', 't1']);
+    expect((await loadVoiceHistory(h.globalPath)).map((e) => e.at)).toEqual(['t0', 't1']);
   });
 
-  // Catches: a truncated last line (a crash or a full disk mid-write) and foreign lines were carried forward forever, and readHistory returned JSON that was not an entry.
+  // Catches: a truncated last line (a crash or a full disk mid-write) and foreign lines were carried forward forever, and loadVoiceHistory returned JSON that was not an entry.
   it('drops truncated and foreign lines on the next append, and reads only entries', async () => {
     const h = await harness();
     await ensureVoiceDir(h.globalPath);
     const good = JSON.stringify(entry(0));
     await fs.writeFile(historyPath(h.globalPath), `${good}\nnull\n42\n[1]\n{"at":"x"}\nnot json\n${good.slice(0, 20)}`);
-    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t0']);
+    expect((await loadVoiceHistory(h.globalPath)).map((e) => e.at)).toEqual(['t0']);
     await appendHistory(h.globalPath, entry(1));
     const text = await fs.readFile(historyPath(h.globalPath), 'utf8');
     expect(text).toBe(`${good}\n${JSON.stringify(entry(1))}\n`);
   });
 
-  // Catches: appendHistory and readHistory read the whole file before the 4 MiB cap applied, so a file grown past it (another program, an older version) was loaded whole on every dictation, and past V8's string limit every append failed.
+  // Catches: appendHistory and loadVoiceHistory read the whole file before the 4 MiB cap applied, so a file grown past it (another program, an older version) was loaded whole on every dictation, and past V8's string limit every append failed.
   it('reads only the last HISTORY_READ_MAX_BYTES of an oversized file, never all of it', async () => {
     const h = await harness();
     await ensureVoiceDir(h.globalPath);
@@ -1966,14 +1961,14 @@ describe('history', () => {
       return (realRead as (...a: unknown[]) => Promise<unknown>)(p, ...rest);
     }) as typeof fs.readFile);
     try {
-      expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t0', 't1']);
+      expect((await loadVoiceHistory(h.globalPath)).map((e) => e.at)).toEqual(['t0', 't1']);
       await appendHistory(h.globalPath, entry(2));
       expect(whole).toEqual([]);
     } finally {
       spy.mockRestore();
     }
     expect((await fs.stat(file)).size).toBeLessThanOrEqual(HISTORY_MAX_BYTES);
-    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t0', 't1', 't2']);
+    expect((await loadVoiceHistory(h.globalPath)).map((e) => e.at)).toEqual(['t0', 't1', 't2']);
   });
 
   // Catches: only the line count was capped, so long dictations grew the file (read and rewritten on every append) without bound.
@@ -1984,9 +1979,9 @@ describe('history', () => {
     for (let i = 0; i < 6; i += 1) await appendHistory(h.globalPath, entry(i, big));
     const text = await fs.readFile(historyPath(h.globalPath), 'utf8');
     expect(Buffer.byteLength(text)).toBeLessThanOrEqual(HISTORY_MAX_BYTES);
-    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t3', 't4', 't5']);
+    expect((await loadVoiceHistory(h.globalPath)).map((e) => e.at)).toEqual(['t3', 't4', 't5']);
     await appendHistory(h.globalPath, entry(9, 'y'.repeat(HISTORY_MAX_BYTES)));
-    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t9']);
+    expect((await loadVoiceHistory(h.globalPath)).map((e) => e.at)).toEqual(['t9']);
   });
 
   // Catches: lexicon suggest read the newest 8 MiB and the writer kept a newest entry of up to 16 MiB, so an entry between the two was cut and suggest saw no history.
@@ -1995,8 +1990,7 @@ describe('history', () => {
     expect(HISTORY_READ_MAX_BYTES).toBe(VOICE_HISTORY_READ_MAX_BYTES);
     await appendHistory(h.globalPath, entry(0));
     await appendHistory(h.globalPath, entry(1, 'y'.repeat(10 * 1024 * 1024)));
-    expect((await readHistory(h.globalPath)).map((e) => e.at)).toEqual(['t1']);
-    expect((await loadVoiceHistory(h.globalPath)).map((e) => e.at)).toEqual(['t1']);
+    expect(await loadVoiceHistory(h.globalPath)).toEqual([entry(1, 'y'.repeat(10 * 1024 * 1024))]);
   });
 
   // Catches: an entry larger than any reader looks at was written, and the byte cap dropped every older entry to make room, leaving a history nobody could read.
@@ -2239,7 +2233,7 @@ describe('capture validation', () => {
     expect(check.finalized).toBe(false);
     // The header says "size unknown", so the bytes on disk are the answer.
     expect(check.audioBytes).toBe(32_000);
-    expect(await wavHasAudio(wav)).toBe(true);
+    expect((await inspectWav(wav)).ok).toBe(true);
   });
 
   it('accepts a finalized capture and says so', async () => {
@@ -2254,7 +2248,7 @@ describe('capture validation', () => {
     const check = await inspectWav(wav);
     expect(check.ok).toBe(false);
     expect(check.reason).toContain('no audio');
-    expect(await wavHasAudio(wav)).toBe(false);
+    expect((await inspectWav(wav)).ok).toBe(false);
   });
 
   it('rejects bytes that are not a WAV, however many there are', async () => {
@@ -2262,7 +2256,7 @@ describe('capture validation', () => {
     const wav = await write('zeros.wav', Buffer.alloc(1000));
 
     expect((await inspectWav(wav)).reason).toContain('not a WAV');
-    expect(await wavHasAudio(wav)).toBe(false);
+    expect((await inspectWav(wav)).ok).toBe(false);
   });
 
   it('rejects an empty file, a truncated header and a missing file', async () => {
@@ -2662,7 +2656,7 @@ describe('a capture outlives every reading of it', () => {
     expect(h.err.join('')).toContain(`whisper read nothing out of this capture, so the recording is kept at ${wav}`);
     expect(h.err.join('')).toContain('A wrong --lang');
     expect((await fs.stat(wav)).size).toBe(600 * 32_000 + 44);
-    expect(await readHistory(h.globalPath)).toEqual([]);
+    expect(await loadVoiceHistory(h.globalPath)).toEqual([]);
   });
 
   /**
@@ -2737,7 +2731,7 @@ describe('a capture outlives every reading of it', () => {
     expect((await fs.stat(wav)).size).toBe(300 * 32_000 + 44);
     // And no second recorder competing for the microphone.
     expect(h.spawnCalls).toEqual([]);
-    expect((await readHistory(h.globalPath))[0].ms.record).toBe(300_000);
+    expect((await loadVoiceHistory(h.globalPath))[0].ms?.record).toBe(300_000);
   });
 
   it('still starts a new recording when the table can be read and holds no recorder', async () => {
@@ -2772,7 +2766,7 @@ describe('two hotkey presses, one recording', () => {
     const [a, b] = await Promise.all([runVoiceToggle(h.opts, h.io, h.deps), runVoiceToggle(h.opts, h.io, h.deps)]);
     expect([a, b]).toEqual([EXIT_OK, EXIT_OK]);
     expect(h.out.filter((s) => s.includes('Ashlr.AI'))).toHaveLength(1);
-    expect(await readHistory(h.globalPath)).toHaveLength(1);
+    expect(await loadVoiceHistory(h.globalPath)).toHaveLength(1);
   });
 
   it('claimStop hands the state to exactly one caller and clears it', async () => {

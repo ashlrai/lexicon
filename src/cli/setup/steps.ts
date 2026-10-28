@@ -52,7 +52,7 @@ import {
   lastLine,
   parseClientList,
   parsePackList,
-  readPackageName,
+  readPackageIdentity,
   setupHintProblem,
   setupNameProblem,
   suggestCompany,
@@ -210,7 +210,8 @@ export async function stepLexicon(ctx: Ctx): Promise<void> {
   let companySkipped = false;
   const guessCompany = async (): Promise<string | undefined> => {
     if (gated) return undefined;
-    const name = suggestCompany(await readPackageName(ctx.cwd), tryExec(ctx.exec, 'git', ['-C', ctx.cwd, 'remote', 'get-url', 'origin']));
+    const pkg = await readPackageIdentity(ctx.cwd);
+    const name = suggestCompany(pkg.name, tryExec(ctx.exec, 'git', ['-C', ctx.cwd, 'remote', 'get-url', 'origin']), pkg.author);
     if (name === undefined) return undefined;
     const problem = setupNameProblem(name);
     if (problem === undefined) return name;
