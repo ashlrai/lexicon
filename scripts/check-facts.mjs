@@ -59,6 +59,12 @@ const argv = process.argv.slice(2);
 const verbose = argv.includes('--verbose');
 const listOnly = argv.includes('--list');
 const skipTests = argv.includes('--no-tests');
+// vitest.config.ts drops tests/extension.test.ts below Node 22 (jsdom needs
+// it), so a vitest run on Node 20 counts fewer tests than CI does and every
+// stated TypeScript test count would look wrong. Skip that one fact instead of
+// failing a contributor's local run on a number that is right.
+const nodeMajor = Number(process.versions.node.split('.')[0]);
+const skipTsTests = skipTests || nodeMajor < 22;
 
 // ---------------------------------------------------------------------------
 // Ground truth
@@ -616,7 +622,7 @@ function check(facts, version) {
       for (const claim of CLAIMS) {
         // `typescript tests` costs a full vitest run, so it is only derived the
         // first time a line actually looks like it states a test count.
-        if (claim.fact === 'typescript tests' && facts[claim.fact] === undefined && !skipTests) {
+        if (claim.fact === 'typescript tests' && facts[claim.fact] === undefined && !skipTsTests) {
           if (!claim.patterns.some((p) => p.test(line)) || claim.skipLine?.test(line)) continue;
           console.log(`check-facts: ${file}:${i + 1} states a test count; running vitest to check it...`);
           facts[claim.fact] = vitestCount();
@@ -752,7 +758,7 @@ function checkStructure({ steps, routes, setupArgs }) {
 const { facts, detail, structure } = await groundTruth();
 
 if (listOnly) {
-  if (!skipTests) facts['typescript tests'] = vitestCount();
+  if (!skipTsTests) facts['typescript tests'] = vitestCount();
   for (const [name, value] of Object.entries(facts)) {
     console.log(`${name.padEnd(18)} ${value}`);
     if (detail[name]) console.log(`${' '.repeat(18)} ${detail[name].join(', ')}`);
@@ -784,3 +790,9 @@ if (problems.length > 0) {
 const counted = Object.keys(facts).length;
 console.log(`check-facts: ${agreed.length} claim(s) across the docs agree with the code (${counted} facts derived)`);
 if (skipTests) console.log('check-facts: test counts skipped (--no-tests)');
+else if (skipTsTests) {
+  console.log(
+    `check-facts: TypeScript test count skipped on Node ${process.versions.node} ` +
+      '(tests/extension.test.ts only runs on Node 22+, so the total would be short; CI checks it on Node 22)',
+  );
+}

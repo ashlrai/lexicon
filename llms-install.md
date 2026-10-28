@@ -28,6 +28,14 @@ Use npm:
 npm install -g @ashlr/lexicon
 ```
 
+That installs the latest release. To pin the release this page was written for:
+
+<!-- fresh:begin install:npm -->
+```bash
+npm install -g @ashlr/lexicon@0.5.6
+```
+<!-- fresh:end -->
+
 Or Homebrew on macOS and Linux (this pulls in Node for the user):
 
 ```bash

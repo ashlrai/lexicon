@@ -40,12 +40,20 @@ primitives Phantom can call, in order of preference:
 1. `normalize()`: pure function, `npm i @ashlr/lexicon`. Text plus lexicon
    in, corrected text plus a replacement list out. No processes, no files
    beyond the YAML. Best when Phantom already holds the transcript.
-2. MCP server (`lexicon-mcp`, stdio, 20 tools): `normalize_transcript`,
+2. MCP server (`lexicon-mcp`, stdio, 21 tools): `normalize_transcript`,
    `learn_correction`, `add_term`, `setup_lexicon`, `lexicon_doctor`. Best when
    Phantom talks to an assistant over MCP anyway.
+   The complete tool contract is `add_pack`, `add_term`, `apply_suggestion`,
+   `export_lexicon`, `harvest_repo`, `import_dictionary`, `import_vocabulary`,
+   `install_client`, `learn_correction`, `lexicon_doctor`, `lexicon_stats`,
+   `list_packs`, `list_terms`, `normalize_transcript`, `remove_term`,
+   `serve_status`, `setup_lexicon`, `suggest_canonical`, `suggest_terms`,
+   `trust_project`, and `uninstall_client`.
 3. Local HTTP API (`lexicon serve`, loopback `127.0.0.1:41733`, Bearer <redacted>,
    11 endpoints): `POST /normalize`, `POST /learn`, `GET /lexicon`. Best for
-   non-JS hosts and the tray apps.
+   non-JS hosts and the tray apps. The default server binds to loopback and
+   rejects non-loopback Host headers before authentication. An explicit
+   `--host` changes the bind interface; Phantom should keep the default.
 4. CLI (`lexicon normalize`, `lexicon learn`, ...): best for scripts, hooks
    and one-shot corrections.
 
@@ -107,8 +115,7 @@ shape for Phantom's config (names illustrative, Phantom's side to finalize):
 - **The hook contract.** The Claude Code hook exits 0, stays under 200ms, and
   never rewrites the prompt or writes to the lexicon file. Fleet-wide prompt
   rewriting belongs in Phantom's own layer, not smuggled through this hook.
-- **Counts are load-bearing.** Docs in this repo state exact numbers (19 MCP
-  tools, 25 CLI commands, 16 export formats, 176 pack terms) and
+- **Counts are load-bearing.** Docs in this repo state exact surface counts, and
   `npm run check:facts` fails the build when prose disagrees with code. Any
   Phantom doc that quotes Lexicon's surface should derive the number, not
   copy it.
