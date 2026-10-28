@@ -20,8 +20,7 @@ name: Windows app
 # FIX-MAIN issue (fix-main.yml).
 on:
   schedule:
-    - cron: "58 10 * * *"
-    - cron: "58 22 * * *"
+    - cron: "0 10 * * *"
   workflow_dispatch:
 
 permissions:
@@ -41,6 +40,7 @@ jobs:
     name: Core tests + cross-build (Linux)
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
@@ -67,6 +67,7 @@ jobs:
     name: Publish LexiconBar.exe
     if: github.event_name != 'pull_request' || github.event.pull_request.draft == false
     runs-on: windows-latest
+    timeout-minutes: 45
     steps:
       - uses: actions/checkout@v7
 
