@@ -37,7 +37,7 @@ bench/             benchmark corpora and runners; bench/audio/models is also a w
 ```
 
 
-## src/util/ (errors, json, which, atomic, package)
+## src/util/ (errors, record, json, which, atomic, package)
 
 The bottom layer: no imports from `src/core`, `src/cli` or anything else in the tree. Every other layer imports these directly by path rather than through `core/index.js`, which is the one documented exception to the sibling rule. These exist because seven waves of agents each wrote their own copy; if you find yourself writing an eightieth `String(err)` or `PATH.split(':')`, it belongs here.
 
@@ -46,8 +46,10 @@ The bottom layer: no imports from `src/core`, `src/cli` or anything else in the 
 - `isEnoent(err: unknown): boolean` true for a missing-file error.
 - `class InputError extends Error` (name `'InputError'`) and `isInputError(err: unknown): boolean` (by name): an error caused by the caller's input, thrown by `learnCorrection`'s checks, `addTerm`/`removeAlias` on an empty or unknown name, and a write whose YAML would not read back. The local API maps it to 400 and every other unexpected error to 500; the message is what the CLI and MCP server show, unchanged.
 
+### src/util/record.ts
+- `isRecord(value: unknown): value is Record<string, unknown>` the type guard the codebase uses instead of `any` when walking parsed JSON; re-exported from `json.js`, where callers already import it.
+
 ### src/util/json.ts
-- `isRecord(value: unknown): value is Record<string, unknown>` the type guard the codebase uses instead of `any` when walking parsed JSON.
 - `formatJson(value: unknown): string` the canonical 2-space encoding written to config files.
 - `JsonFileRead { exists; value?; error?; text? }`, `readJsonFile(file): Promise<JsonFileRead>` and `writeJsonFile(file, value, original?): Promise<void>`: read-modify-write of another tool's config (`~/.claude/settings.json`, `~/.cursor/mcp.json`, ...) without losing what was already there. `readJsonFile` parses with `parseJsonc` (comments and trailing commas accepted; a BOM is still an error) and returns the text read as `text`; `writeJsonFile` with that text as `original` writes `editJsonText(original, value)`, so only what changed is rewritten, and `formatJson(value)` without it, through `writeFileAtomic` (a link followed, the mode kept), so a write that fails partway leaves the old file.
 

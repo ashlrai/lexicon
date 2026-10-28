@@ -10,10 +10,7 @@ import { writeFileAtomic } from './atomic.js';
 import { errorMessage, isEnoent } from './errors.js';
 import { editJsonText, parseJsonc } from './jsonc.js';
 
-/** A plain object (not null, not an array): the shape every config merge expects. */
-export function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value);
-}
+export { isRecord } from './record.js';
 
 /** How a JSON config file is formatted when this tool writes it. */
 export function formatJson(value: unknown): string {

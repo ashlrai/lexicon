@@ -11,6 +11,7 @@ import type { Prompter } from '../prompt.js';
 import type { CommonOptions, IO } from '../io.js';
 import type { InstallOutcome } from '../commands.js';
 import type {
+  ExportFormat,
   HarvestCandidate,
   HarvestOptions,
   InstallPackResult,
@@ -108,7 +109,7 @@ export interface SetupOptions extends CommonOptions {
 }
 
 export interface SetupClientResult {
-  name: string;
+  name: SetupClient;
   status: 'installed' | 'skipped' | 'failed';
   /**
    * For `installed`: the config file(s) the installer wrote, comma separated,
@@ -148,7 +149,7 @@ export interface SetupSummary {
   packs: SetupPackResult[];
   clients: SetupClientResult[];
   serve: 'installed' | 'skipped' | 'failed';
-  exports: { format: string; path: string }[];
+  exports: { format: ExportFormat; path: string }[];
   /** The correction the run ended by demonstrating. Absent only if the step threw. */
   demo?: SetupDemo;
   /** The project lexicon a `harvestUntrusted` harvest wrote without pinning it (it was not trusted before); untrusted until the user runs `lexicon trust`. */
@@ -244,7 +245,7 @@ export interface SetupPlan {
    */
   serveBlocked?: string;
   /** Files a real run would write for the dictation app, including the one the prompt defaults to. */
-  wouldExport: { format: string; path: string }[];
+  wouldExport: { format: ExportFormat; path: string }[];
   /** The correction a real run would end by demonstrating (computed, never written). */
   demo?: SetupDemo;
 }

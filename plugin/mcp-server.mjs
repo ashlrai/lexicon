@@ -38044,6 +38044,15 @@ var init_caps = __esm({
   }
 });
 
+// src/util/record.ts
+function isRecord2(value) {
+  return typeof value === "object" && value !== null && !Array.isArray(value);
+}
+var init_record2 = __esm({
+  "src/util/record.ts"() {
+  }
+});
+
 // src/core/schema.ts
 function findUnencodableChar(s) {
   const m = UNENCODABLE_RE.exec(s);
@@ -38132,7 +38141,7 @@ function refuseUnencodable(term, ctx) {
 }
 function nullKeysAsAbsent(keep) {
   return (raw) => {
-    if (raw === null || typeof raw !== "object" || Array.isArray(raw)) return raw;
+    if (!isRecord2(raw)) return raw;
     let out;
     for (const [key, value] of Object.entries(raw)) {
       if (value !== null || keep.includes(key)) continue;
@@ -38230,6 +38239,7 @@ var init_schema = __esm({
     init_zod();
     init_caps();
     init_types3();
+    init_record2();
     init_caps();
     INVISIBLE_RE = /[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g;
     CONTROL_RE = /[\u0000-\u001F\u007F-\u009F\u2028\u2029]/;
@@ -52418,9 +52428,6 @@ var init_jsonc = __esm({
 });
 
 // src/util/json.ts
-function isRecord2(value) {
-  return typeof value === "object" && value !== null && !Array.isArray(value);
-}
 function formatJson(value) {
   return `${JSON.stringify(value, null, 2)}
 `;
@@ -52449,6 +52456,7 @@ var init_json = __esm({
     init_atomic();
     init_errors4();
     init_jsonc();
+    init_record2();
   }
 });
 
@@ -60583,7 +60591,8 @@ function installedPacks(loaded) {
 }
 async function writePacksSetting(file2, packs, opts, leaveUntrusted = false) {
   const settings = { ...file2.lexicon.settings ?? {}, packs };
-  for (const [key, value] of Object.entries(settings)) {
+  for (const key of Object.keys(settings)) {
+    const value = settings[key];
     if (value === void 0 || Array.isArray(value) && value.length === 0) delete settings[key];
   }
   if (Object.keys(settings).length > 0) file2.lexicon.settings = settings;
