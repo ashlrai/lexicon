@@ -34,6 +34,14 @@ interface TermSpec {
   canonical: string;
   category: Exclude<BenchCategory, 'prose'>;
   heard: string[];
+  /** Language family tag propagated onto generated cases (the non-English subset). */
+  lang?: string;
+  /**
+   * Per heard-variant diagnosis for variants the current matcher is not
+   * expected to recover; the generated case is marked expected-hard with the
+   * note, the same convention the hand-written case files use.
+   */
+  hard?: Record<string, string>;
 }
 
 const TERMS: TermSpec[] = [
@@ -112,6 +120,66 @@ const TERMS: TermSpec[] = [
   { canonical: 'normalizeTranscript', category: 'identifier', heard: ['normalize transcript', 'normalise transcript', 'normal eyes transcript'] },
   { canonical: 'UserPromptSubmit', category: 'identifier', heard: ['user prompt submit', 'user prompt summit', 'user prompts submit'] },
   { canonical: 'harvestRepo', category: 'identifier', heard: ['harvest repo', 'harvest ripo', 'harvest re po'] },
+];
+
+// ---------------------------------------------------------------------------
+// Non-English names (issue #8): the measurement fixture for how an
+// English-tuned double metaphone plus fuzzy does on colleague names in other
+// language families. Generated as ne-NNN cases from the person templates;
+// `lang` tags each case so bench/lib.ts can score the subset separately.
+// Heard variants are what English STT plausibly writes for these names:
+// romanizations, word-shaped splits and phoneme substitutions.
+// ---------------------------------------------------------------------------
+
+const NONENGLISH_TERMS: TermSpec[] = [
+  // German
+  { canonical: 'Jürgen Meyer', category: 'person', lang: 'german', heard: ['jurgen meyer', 'yurgen mayer', 'your gin meyer'], hard: { 'your gin meyer': 'three-token split of a two-token name; \'your\' is a function word so inexact windows starting there are refused' } },
+  { canonical: 'Katja Schröder', category: 'person', lang: 'german', heard: ['katja schroder', 'katya shroder', 'cat ya shroder'], hard: { 'cat ya shroder': 'three-word spelling of the given name; \'cat ya\' and \'katja\' share no metaphone key' } },
+  { canonical: 'Lukas Weiß', category: 'person', lang: 'german', heard: ['lucas weiss', 'lukas vice', 'lucas vice'], hard: { 'lukas vice': 'STT wrote the English word \'vice\' for the ß sibilant; \'vice\' and \'weiss\' share no key', 'lucas vice': 'STT wrote the English word \'vice\' for the ß sibilant; \'vice\' and \'weiss\' share no key' } },
+  { canonical: 'Götz Neumann', category: 'person', lang: 'german', heard: ['goetz neumann', 'gerts noiman', 'guts newman'], hard: { 'gerts noiman': 'the umlaut vowel pushed STT to \'gerts\'; \'gerts\' and \'goetz\' share no key' } },
+  { canonical: 'Anke Bräutigam', category: 'person', lang: 'german', heard: ['anke brautigam', 'anka broytigam', 'anchor broytee gam'], hard: { 'anchor broytee gam': 'four tokens for a two-token name; the window never spans that many words' } },
+  { canonical: 'Bärbel Hoffmann', category: 'person', lang: 'german', heard: ['barbel hoffmann', 'bear bell hoffman', 'barbell hoffman'] },
+  { canonical: 'Friedrich Vogel', category: 'person', lang: 'german', heard: ['friedrich fogle', 'freed rich fogel', 'frederick vogel'], hard: { 'frederick vogel': 'anglicized \'frederick\' for \'friedrich\'; past the fuzzy floor and no shared key' } },
+  // Spanish
+  { canonical: 'José García', category: 'person', lang: 'spanish', heard: ['jose garcia', 'hose garcia', 'jose garsia'] },
+  { canonical: 'Joaquín Fernández', category: 'person', lang: 'spanish', heard: ['joaquin fernandez', 'wa keen fernandez', 'wah keen fern and es'], hard: { 'wa keen fernandez': 'Spanish \'joa\' written as English \'wa keen\'; no shared key', 'wah keen fern and es': 'four-token split with the function word \'and\' inside the surname' } },
+  { canonical: 'Guillermo Ortega', category: 'person', lang: 'spanish', heard: ['gillermo ortega', 'gear mo ortega', 'wee yermo ortega'], hard: { 'gear mo ortega': 'Spanish \'gui\' written as the English word \'gear\'; \'gear mo\' and \'guillermo\' share no key', 'wee yermo ortega': 'Spanish \'gue\' written \'wee ye\'; \'wee yermo\' and \'guillermo\' share no key' } },
+  { canonical: 'Ximena Navarro', category: 'person', lang: 'spanish', heard: ['jimena navarro', 'he mena navarro', 'zimena navarro'], hard: { 'he mena navarro': 'STT split \'xi\' into the word \'he\'; the name is recovered but the leftover \'he\' fails the sentence' } },
+  { canonical: 'Iñaki Mendoza', category: 'person', lang: 'spanish', heard: ['inaki mendoza', 'inyaki mendoza', 'e naki mendoza'] },
+  { canonical: 'Rafael Muñoz', category: 'person', lang: 'spanish', heard: ['rafael munoz', 'rafael munez', 'raphael munoz'] },
+  { canonical: 'Rodrigo Villalobos', category: 'person', lang: 'spanish', heard: ['rodrigo villalobos', 'rodrigo villa lobos', 'rod rigo via lobos'], hard: { 'rod rigo via lobos': 'four tokens for a two-token name; the window never spans that many words' } },
+  // Polish
+  { canonical: 'Szymon Kowalski', category: 'person', lang: 'polish', heard: ['shimon kowalski', 'simon kovalski', 'shy mon kowalski'] },
+  { canonical: 'Wojciech Zieliński', category: 'person', lang: 'polish', heard: ['wojciech zielinski', 'voy tech zielinski', 'voycek zielinski'], hard: { 'voy tech zielinski': 'Polish \'wojciech\' written as English \'voy tech\'; \'voy\' shares no key', 'voycek zielinski': 'the English ear writes \'voycek\' for \'wojciech\'; the metaphone keys disagree' } },
+  { canonical: 'Łukasz Nowak', category: 'person', lang: 'polish', heard: ['lukasz nowak', 'wukash novak', 'lucas novak'], hard: { 'wukash novak': 'Polish ł -> w and sz -> sh; \'wukash\' and \'lukasz\' share no key', 'lucas novak': 'anglicized both tokens (\'lucas\', \'novak\'); each is near fuzzy range but the pair is below the floor' } },
+  { canonical: 'Grzegorz Brzęczyszczykiewicz', category: 'person', lang: 'polish', heard: ['grzegorz brzeczyszczykiewicz', 'gregors shes kovitch', 'gregory brzezinski'], hard: { 'gregors shes kovitch': 'three-word approximation of a nine-syllable name; no shared key and past the fuzzy floor', 'gregory brzezinski': 'STT substituted a different Polish surname; \'brzezinski\' and \'brzeczyszczykiewicz\' are too far for fuzzy' } },
+  { canonical: 'Katarzyna Wiśniewska', category: 'person', lang: 'polish', heard: ['katarzyna wisniewska', 'katarzina vishnevska', 'catalina wish nevsky'], hard: { 'katarzina vishnevska': 'Polish ś written \'sh\' gives \'vishnevska\'; it and \'wisniewska\' share no key', 'catalina wish nevsky': 'STT anglicized the given name too (\'catalina\'); both tokens miss the keys' } },
+  { canonical: 'Mikołaj Zielonka', category: 'person', lang: 'polish', heard: ['mikolaj zielonka', 'mikoy zelonka', 'nicolai zelonka'], hard: { 'mikoy zelonka': 'Polish ł lands as \'y\' in the English ear; \'mikoy\' and \'mikolaj\' share no key', 'nicolai zelonka': 'anglicized \'nicolai\' for \'mikolaj\'; no shared key' } },
+  { canonical: 'Agnieszka Szczepańska', category: 'person', lang: 'polish', heard: ['agnieszka szczepanska', 'agnieska shepanska', 'agnes che panska'], hard: { 'agnieska shepanska': 'szcz written \'shp\' gives \'shepanska\'; it and \'szczepanska\' share no key', 'agnes che panska': 'three-token split plus anglicized \'agnes\'; no shared key' } },
+  // Japanese (romaji)
+  { canonical: 'Yuki Tanaka', category: 'person', lang: 'japanese', heard: ['yuki tanaka', 'you key tanaka', 'yookie tanaka'], hard: { 'you key tanaka': 'STT spells the syllables as English words \'you key\'; the window starts on a function word' } },
+  { canonical: 'Rin Takahashi', category: 'person', lang: 'japanese', heard: ['rin takahashi', 'wren takahashi', 'rin taka hashi'] },
+  { canonical: 'Satoshi Nakamura', category: 'person', lang: 'japanese', heard: ['satoshi nakamura', 'sato shi nakamura', 'sa toshee nakamura'] },
+  { canonical: 'Naoki Kobayashi', category: 'person', lang: 'japanese', heard: ['naoki kobayashi', 'now key kobayashi', 'nah oki koba yashi'], hard: { 'now key kobayashi': 'STT spells \'nao\' as the English word \'now\'; the window starts on a function word', 'nah oki koba yashi': 'four tokens for a two-token name' } },
+  { canonical: 'Keisuke Yamaguchi', category: 'person', lang: 'japanese', heard: ['keisuke yamaguchi', 'kay suke yamaguchi', 'case kay yamaguchi'] },
+  { canonical: 'Miyuki Tsukamoto', category: 'person', lang: 'japanese', heard: ['miyuki tsukamoto', 'mi yuki sukamoto', 'me yuki tsuka moto'], hard: { 'mi yuki sukamoto': 'the ts- onset is written \'s\'; \'sukamoto\' and \'tsukamoto\' share no key', 'me yuki tsuka moto': 'four tokens for a two-token name' } },
+  { canonical: 'Ryota Miyazaki', category: 'person', lang: 'japanese', heard: ['ryota miyazaki', 'rio ta miyazaki', 'ryo tah mia zaki'] },
+  // Arabic (transliteration)
+  { canonical: 'Mohammed Al-Rashid', category: 'person', lang: 'arabic', heard: ['muhammad al rashid', 'mohammed al rasheed', 'mohamed al rasheed'] },
+  { canonical: 'Fatima Zahra', category: 'person', lang: 'arabic', heard: ['fatima zahra', 'fatima zara', 'fatema zahra'] },
+  { canonical: 'Khalid Nasser', category: 'person', lang: 'arabic', heard: ['khaled nasser', 'khalid naser', 'called nasser'] },
+  { canonical: 'Aisha Bakr', category: 'person', lang: 'arabic', heard: ['aisha bakr', 'aisha bakker', 'asia bakr'], hard: { 'asia bakr': '\'asia\' is an English word for \'aisha\'; the window falls below the fuzzy floor' } },
+  { canonical: 'Zainab Qureshi', category: 'person', lang: 'arabic', heard: ['zaynab qureshi', 'zainab koreshi', 'zane ab koreshi'] },
+  { canonical: 'Omar Farouk', category: 'person', lang: 'arabic', heard: ['omar farooq', 'omar faruk', 'oh mar farouk'] },
+  { canonical: 'Abdulrahman Haddad', category: 'person', lang: 'arabic', heard: ['abdulrahman haddad', 'abdul rahman haddad', 'abdul rock man haddad'], hard: { 'abdul rock man haddad': '\'rock man\' inserts a word inside \'rahman\'; the window never spans four tokens' } },
+  // Nordic
+  { canonical: 'Åsa Lindqvist', category: 'person', lang: 'nordic', heard: ['asa lindqvist', 'oh sa lindqvist', 'osa lindkvist'] },
+  { canonical: 'Søren Kjær', category: 'person', lang: 'nordic', heard: ['soren kjaer', 'sorin care', 'soren chair'], hard: { 'soren chair': '\'kjær\' written as the English word \'chair\' shares no key' } },
+  { canonical: 'Kåre Strøm', category: 'person', lang: 'nordic', heard: ['kare strom', 'kore strom', 'core a strum'] },
+  { canonical: 'Øystein Aas', category: 'person', lang: 'nordic', heard: ['oystein aas', 'oy stein oss', 'oi stein os'] },
+  { canonical: 'Päivi Mäkinen', category: 'person', lang: 'nordic', heard: ['paivi makinen', 'pavi makkinen', 'pie vee makinen'] },
+  { canonical: 'Guðrún Sigurðardóttir', category: 'person', lang: 'nordic', heard: ['gudrun sigurdardottir', 'guthrun sigurthardottir', 'good run sigurdar daughter'] },
+  { canonical: 'Eero Saarinen', category: 'person', lang: 'nordic', heard: ['eero sarinen', 'ero saarinen', 'arrow saarinen'] },
 ];
 
 // ---------------------------------------------------------------------------
@@ -225,6 +293,9 @@ const KEEP: string[] = [
   'Kubernetes', 'Ashlr.AI', 'Mason Wyatt', 'Next.js', 'tRPC', 'Bjørn Halvorsen', 'PostgreSQL',
   'normalizeTranscript', 'OAuth', 'SaaS', 'Wispr Flow', 'Siobhan Reilly', 'GraphQL', 'Tadeusz Wróblewski',
   'Cloudflare', 'JWT',
+  // Already-correct non-English spellings, diacritics and all: the matcher may
+  // not "help" them toward a different term.
+  'José García', 'Søren Kjær', 'Yuki Tanaka', 'Mohammed Al-Rashid', 'Wojciech Zieliński',
 ];
 
 // ---------------------------------------------------------------------------
@@ -259,7 +330,7 @@ function readCases(file: string): BenchCase[] {
 function main(): void {
   const lexicon = parseLexicon(parseYaml(readFileSync(join(HERE, 'lexicon.yaml'), 'utf8')));
   const canonicals = new Set(lexicon.terms.map((t) => t.canonical));
-  for (const spec of TERMS) {
+  for (const spec of [...TERMS, ...NONENGLISH_TERMS]) {
     if (!canonicals.has(spec.canonical)) throw new Error(`gen-corpus: ${spec.canonical} is not in bench/lexicon.yaml`);
   }
 
@@ -304,7 +375,7 @@ function main(): void {
   }
 
   // (b) multi-term sentences.
-  const bySpec = new Map(TERMS.map((t) => [t.canonical, t] as const));
+  const bySpec = new Map([...TERMS, ...NONENGLISH_TERMS].map((t) => [t.canonical, t] as const));
   MULTI.forEach((m, i) => {
     let heard = m.template;
     let expected = m.template;
@@ -339,13 +410,40 @@ function main(): void {
       expected: text,
       terms: [canonical],
       note: 'already-correct: must stay untouched',
+      ...(spec.lang !== undefined ? { lang: spec.lang } : {}),
     });
   });
 
-  // (d) hand-written cases.
+  // (d) non-English names. Runs after (a)-(c) so the rng draws that placed the
+  // existing cases are unchanged; ne- ids keep the subset greppable even
+  // without the lang tag.
+  let ne = 0;
+  for (const spec of NONENGLISH_TERMS) {
+    const pool = TEMPLATES[spec.category];
+    const offset = Math.floor(random() * pool.length);
+    spec.heard.forEach((heard, i) => {
+      const template = pool[(offset + i * 5) % pool.length];
+      ne++;
+      const c: BenchCase = {
+        id: `ne-${pad(ne)}`,
+        category: spec.category,
+        heard: fill(template, '{T}', heard),
+        expected: fill(template, '{T}', spec.canonical),
+        terms: [spec.canonical],
+        lang: spec.lang,
+      };
+      if (heard.toLowerCase() === spec.canonical.toLowerCase()) c.note = 'casing-only';
+      const why = spec.hard?.[heard];
+      if (why) c.note = `expected-hard: ${why}`;
+      cases.push(c);
+    });
+  }
+
+  // (e) hand-written cases.
   cases.push(...readCases('positives.jsonl'));
   cases.push(...readCases('negatives.jsonl'));
   cases.push(...readCases('hard.jsonl'));
+  cases.push(...readCases('nonenglish.jsonl'));
 
   const ids = new Set<string>();
   for (const c of cases) {

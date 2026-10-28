@@ -1,5 +1,5 @@
 {
-  "generatedAt": "2026-10-16T21:12:31.669Z",
+  "generatedAt": "2026-10-27T01:56:32.637Z",
   "lexicon": "bench/lexicon.yaml",
   "corpus": "bench/corpus.jsonl",
   "config": {
@@ -8,36 +8,36 @@
     "fuzzy": true
   },
   "counts": {
-    "cases": 402,
-    "positives": 278,
-    "negatives": 124,
-    "hard": 51,
-    "termSlots": 313
+    "cases": 554,
+    "positives": 420,
+    "negatives": 134,
+    "hard": 87,
+    "termSlots": 461
   },
   "sentence": {
     "all": {
-      "hit": 370,
-      "total": 402,
-      "rate": 0.9203980099502488
+      "hit": 486,
+      "total": 554,
+      "rate": 0.8772563176895307
     },
     "positives": {
-      "hit": 265,
-      "total": 278,
-      "rate": 0.9532374100719424
+      "hit": 371,
+      "total": 420,
+      "rate": 0.8833333333333333
     },
     "negatives": {
-      "hit": 105,
-      "total": 124,
-      "rate": 0.8467741935483871
+      "hit": 115,
+      "total": 134,
+      "rate": 0.8582089552238806
     },
     "positivesExcludingHard": {
-      "hit": 255,
-      "total": 256,
-      "rate": 0.99609375
+      "hit": 361,
+      "total": 362,
+      "rate": 0.9972375690607734
     },
     "negativesExcludingHard": {
-      "hit": 95,
-      "total": 95,
+      "hit": 105,
+      "total": 105,
       "rate": 1
     },
     "byCategory": {
@@ -57,9 +57,9 @@
         "rate": 0.9482758620689655
       },
       "person": {
-        "hit": 32,
-        "total": 34,
-        "rate": 0.9411764705882353
+        "hit": 138,
+        "total": 176,
+        "rate": 0.7840909090909091
       },
       "identifier": {
         "hit": 15,
@@ -67,32 +67,32 @@
         "rate": 0.9375
       },
       "prose": {
-        "hit": 105,
-        "total": 124,
-        "rate": 0.8467741935483871
+        "hit": 115,
+        "total": 134,
+        "rate": 0.8582089552238806
       }
     }
   },
   "terms": {
     "rawRecall": {
-      "hit": 16,
-      "total": 313,
-      "rate": 0.051118210862619806
+      "hit": 21,
+      "total": 461,
+      "rate": 0.0455531453362256
     },
     "recall": {
-      "hit": 303,
-      "total": 313,
-      "rate": 0.9680511182108626
+      "hit": 416,
+      "total": 461,
+      "rate": 0.9023861171366594
     },
     "precision": {
-      "hit": 303,
-      "total": 323,
-      "rate": 0.9380804953560371
+      "hit": 416,
+      "total": 436,
+      "rate": 0.9541284403669725
     },
-    "f1": 0.9528301886792453,
-    "tp": 303,
+    "f1": 0.927536231884058,
+    "tp": 416,
     "fp": 20,
-    "fn": 10,
+    "fn": 45,
     "byCategory": {
       "brand": {
         "recall": {
@@ -132,14 +132,14 @@
       },
       "person": {
         "recall": {
-          "hit": 42,
-          "total": 43,
-          "rate": 0.9767441860465116
+          "hit": 155,
+          "total": 191,
+          "rate": 0.8115183246073299
         },
         "rawRecall": {
-          "hit": 4,
-          "total": 43,
-          "rate": 0.09302325581395349
+          "hit": 9,
+          "total": 191,
+          "rate": 0.04712041884816754
         }
       },
       "identifier": {
@@ -158,37 +158,425 @@
   },
   "falsePositiveRate": {
     "hit": 19,
-    "total": 124,
-    "rate": 0.1532258064516129
+    "total": 134,
+    "rate": 0.1417910447761194
   },
   "falsePositiveRateExcludingHard": {
     "hit": 0,
-    "total": 95,
+    "total": 105,
     "rate": 0
   },
   "byReason": {
     "alias": {
-      "replacements": 248,
-      "correct": 230,
+      "replacements": 305,
+      "correct": 287,
       "wrong": 18,
-      "meanConfidence": 0.9945564516129025
+      "meanConfidence": 0.9949180327868846
     },
     "phonetic": {
-      "replacements": 52,
-      "correct": 51,
+      "replacements": 83,
+      "correct": 82,
       "wrong": 1,
-      "meanConfidence": 0.878141113693998
+      "meanConfidence": 0.8824992328585501
     },
     "fuzzy": {
-      "replacements": 8,
-      "correct": 7,
+      "replacements": 28,
+      "correct": 27,
       "wrong": 1,
-      "meanConfidence": 0.9086174242424243
+      "meanConfidence": 0.9067054536805682
+    }
+  },
+  "lang": {
+    "baseline": {
+      "cases": 402,
+      "positives": 278,
+      "negatives": 124,
+      "hard": 51,
+      "termSlots": 313,
+      "sentence": {
+        "hit": 370,
+        "total": 402,
+        "rate": 0.9203980099502488
+      },
+      "positiveSentence": {
+        "hit": 265,
+        "total": 278,
+        "rate": 0.9532374100719424
+      },
+      "positiveSentenceExcludingHard": {
+        "hit": 255,
+        "total": 256,
+        "rate": 0.99609375
+      },
+      "falsePositiveRate": {
+        "hit": 19,
+        "total": 124,
+        "rate": 0.1532258064516129
+      },
+      "falsePositiveRateExcludingHard": {
+        "hit": 0,
+        "total": 95,
+        "rate": 0
+      },
+      "rawRecall": {
+        "hit": 16,
+        "total": 313,
+        "rate": 0.051118210862619806
+      },
+      "recall": {
+        "hit": 303,
+        "total": 313,
+        "rate": 0.9680511182108626
+      },
+      "precision": {
+        "hit": 303,
+        "total": 323,
+        "rate": 0.9380804953560371
+      },
+      "f1": 0.9528301886792453
+    },
+    "nonEnglish": {
+      "cases": 152,
+      "positives": 142,
+      "negatives": 10,
+      "hard": 36,
+      "termSlots": 148,
+      "sentence": {
+        "hit": 116,
+        "total": 152,
+        "rate": 0.7631578947368421
+      },
+      "positiveSentence": {
+        "hit": 106,
+        "total": 142,
+        "rate": 0.7464788732394366
+      },
+      "positiveSentenceExcludingHard": {
+        "hit": 106,
+        "total": 106,
+        "rate": 1
+      },
+      "falsePositiveRate": {
+        "hit": 0,
+        "total": 10,
+        "rate": 0
+      },
+      "falsePositiveRateExcludingHard": {
+        "hit": 0,
+        "total": 10,
+        "rate": 0
+      },
+      "rawRecall": {
+        "hit": 5,
+        "total": 148,
+        "rate": 0.033783783783783786
+      },
+      "recall": {
+        "hit": 113,
+        "total": 148,
+        "rate": 0.7635135135135135
+      },
+      "precision": {
+        "hit": 113,
+        "total": 113,
+        "rate": 1
+      },
+      "f1": 0.8659003831417624
+    },
+    "byLang": {
+      "arabic": {
+        "cases": 28,
+        "positives": 25,
+        "negatives": 3,
+        "hard": 2,
+        "termSlots": 27,
+        "sentence": {
+          "hit": 26,
+          "total": 28,
+          "rate": 0.9285714285714286
+        },
+        "positiveSentence": {
+          "hit": 23,
+          "total": 25,
+          "rate": 0.92
+        },
+        "positiveSentenceExcludingHard": {
+          "hit": 23,
+          "total": 23,
+          "rate": 1
+        },
+        "falsePositiveRate": {
+          "hit": 0,
+          "total": 3,
+          "rate": 0
+        },
+        "falsePositiveRateExcludingHard": {
+          "hit": 0,
+          "total": 3,
+          "rate": 0
+        },
+        "rawRecall": {
+          "hit": 1,
+          "total": 27,
+          "rate": 0.037037037037037035
+        },
+        "recall": {
+          "hit": 25,
+          "total": 27,
+          "rate": 0.9259259259259259
+        },
+        "precision": {
+          "hit": 25,
+          "total": 25,
+          "rate": 1
+        },
+        "f1": 0.9615384615384615
+      },
+      "german": {
+        "cases": 24,
+        "positives": 23,
+        "negatives": 1,
+        "hard": 8,
+        "termSlots": 24,
+        "sentence": {
+          "hit": 16,
+          "total": 24,
+          "rate": 0.6666666666666666
+        },
+        "positiveSentence": {
+          "hit": 15,
+          "total": 23,
+          "rate": 0.6521739130434783
+        },
+        "positiveSentenceExcludingHard": {
+          "hit": 15,
+          "total": 15,
+          "rate": 1
+        },
+        "falsePositiveRate": {
+          "hit": 0,
+          "total": 1,
+          "rate": 0
+        },
+        "falsePositiveRateExcludingHard": {
+          "hit": 0,
+          "total": 1,
+          "rate": 0
+        },
+        "rawRecall": {
+          "hit": 0,
+          "total": 24,
+          "rate": 0
+        },
+        "recall": {
+          "hit": 16,
+          "total": 24,
+          "rate": 0.6666666666666666
+        },
+        "precision": {
+          "hit": 16,
+          "total": 16,
+          "rate": 1
+        },
+        "f1": 0.8
+      },
+      "japanese": {
+        "cases": 25,
+        "positives": 23,
+        "negatives": 2,
+        "hard": 5,
+        "termSlots": 24,
+        "sentence": {
+          "hit": 20,
+          "total": 25,
+          "rate": 0.8
+        },
+        "positiveSentence": {
+          "hit": 18,
+          "total": 23,
+          "rate": 0.782608695652174
+        },
+        "positiveSentenceExcludingHard": {
+          "hit": 18,
+          "total": 18,
+          "rate": 1
+        },
+        "falsePositiveRate": {
+          "hit": 0,
+          "total": 2,
+          "rate": 0
+        },
+        "falsePositiveRateExcludingHard": {
+          "hit": 0,
+          "total": 2,
+          "rate": 0
+        },
+        "rawRecall": {
+          "hit": 1,
+          "total": 24,
+          "rate": 0.041666666666666664
+        },
+        "recall": {
+          "hit": 19,
+          "total": 24,
+          "rate": 0.7916666666666666
+        },
+        "precision": {
+          "hit": 19,
+          "total": 19,
+          "rate": 1
+        },
+        "f1": 0.8837209302325582
+      },
+      "nordic": {
+        "cases": 26,
+        "positives": 24,
+        "negatives": 2,
+        "hard": 1,
+        "termSlots": 25,
+        "sentence": {
+          "hit": 25,
+          "total": 26,
+          "rate": 0.9615384615384616
+        },
+        "positiveSentence": {
+          "hit": 23,
+          "total": 24,
+          "rate": 0.9583333333333334
+        },
+        "positiveSentenceExcludingHard": {
+          "hit": 23,
+          "total": 23,
+          "rate": 1
+        },
+        "falsePositiveRate": {
+          "hit": 0,
+          "total": 2,
+          "rate": 0
+        },
+        "falsePositiveRateExcludingHard": {
+          "hit": 0,
+          "total": 2,
+          "rate": 0
+        },
+        "rawRecall": {
+          "hit": 1,
+          "total": 25,
+          "rate": 0.04
+        },
+        "recall": {
+          "hit": 24,
+          "total": 25,
+          "rate": 0.96
+        },
+        "precision": {
+          "hit": 24,
+          "total": 24,
+          "rate": 1
+        },
+        "f1": 0.9795918367346939
+      },
+      "polish": {
+        "cases": 25,
+        "positives": 24,
+        "negatives": 1,
+        "hard": 14,
+        "termSlots": 24,
+        "sentence": {
+          "hit": 11,
+          "total": 25,
+          "rate": 0.44
+        },
+        "positiveSentence": {
+          "hit": 10,
+          "total": 24,
+          "rate": 0.4166666666666667
+        },
+        "positiveSentenceExcludingHard": {
+          "hit": 10,
+          "total": 10,
+          "rate": 1
+        },
+        "falsePositiveRate": {
+          "hit": 0,
+          "total": 1,
+          "rate": 0
+        },
+        "falsePositiveRateExcludingHard": {
+          "hit": 0,
+          "total": 1,
+          "rate": 0
+        },
+        "rawRecall": {
+          "hit": 1,
+          "total": 24,
+          "rate": 0.041666666666666664
+        },
+        "recall": {
+          "hit": 10,
+          "total": 24,
+          "rate": 0.4166666666666667
+        },
+        "precision": {
+          "hit": 10,
+          "total": 10,
+          "rate": 1
+        },
+        "f1": 0.5882352941176471
+      },
+      "spanish": {
+        "cases": 24,
+        "positives": 23,
+        "negatives": 1,
+        "hard": 6,
+        "termSlots": 24,
+        "sentence": {
+          "hit": 18,
+          "total": 24,
+          "rate": 0.75
+        },
+        "positiveSentence": {
+          "hit": 17,
+          "total": 23,
+          "rate": 0.7391304347826086
+        },
+        "positiveSentenceExcludingHard": {
+          "hit": 17,
+          "total": 17,
+          "rate": 1
+        },
+        "falsePositiveRate": {
+          "hit": 0,
+          "total": 1,
+          "rate": 0
+        },
+        "falsePositiveRateExcludingHard": {
+          "hit": 0,
+          "total": 1,
+          "rate": 0
+        },
+        "rawRecall": {
+          "hit": 1,
+          "total": 24,
+          "rate": 0.041666666666666664
+        },
+        "recall": {
+          "hit": 19,
+          "total": 24,
+          "rate": 0.7916666666666666
+        },
+        "precision": {
+          "hit": 19,
+          "total": 19,
+          "rate": 1
+        },
+        "f1": 0.8837209302325582
+      }
     }
   },
   "latency": {
-    "normalizeUs": 1128.273130348262,
-    "findReplacementsUs": 182.89074875622214,
+    "normalizeUs": 13113.275306498124,
+    "findReplacementsUs": 1263.6327306859698,
     "rounds": 5
   },
   "failures": [
@@ -201,9 +589,647 @@
       "pass": false,
       "negative": false,
       "hard": false,
+      "terms": [
+        "SaaS"
+      ],
       "replacements": [],
       "missed": [
         "SaaS"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-003",
+      "category": "person",
+      "heard": "ask your gin meyer if the invoice went out",
+      "expected": "ask Jürgen Meyer if the invoice went out",
+      "output": "ask your gin meyer if the invoice went out",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Jürgen Meyer"
+      ],
+      "lang": "german",
+      "replacements": [],
+      "missed": [
+        "Jürgen Meyer"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-006",
+      "category": "person",
+      "heard": "so cat ya shroder's point was that we ship too slowly",
+      "expected": "so Katja Schröder's point was that we ship too slowly",
+      "output": "so cat ya shroder's point was that we ship too slowly",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Katja Schröder"
+      ],
+      "lang": "german",
+      "replacements": [],
+      "missed": [
+        "Katja Schröder"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-008",
+      "category": "person",
+      "heard": "get lukas vice access to the repo",
+      "expected": "get Lukas Weiß access to the repo",
+      "output": "get lukas vice access to the repo",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Lukas Weiß"
+      ],
+      "lang": "german",
+      "replacements": [],
+      "missed": [
+        "Lukas Weiß"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-009",
+      "category": "person",
+      "heard": "lucas vice's pr is still waiting on review",
+      "expected": "Lukas Weiß's pr is still waiting on review",
+      "output": "lucas vice's pr is still waiting on review",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Lukas Weiß"
+      ],
+      "lang": "german",
+      "replacements": [],
+      "missed": [
+        "Lukas Weiß"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-011",
+      "category": "person",
+      "heard": "gerts noiman told me the demo is thursday",
+      "expected": "Götz Neumann told me the demo is thursday",
+      "output": "gerts noiman told me the demo is thursday",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Götz Neumann"
+      ],
+      "lang": "german",
+      "replacements": [],
+      "missed": [
+        "Götz Neumann"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-015",
+      "category": "person",
+      "heard": "i talked to anchor broytee gam about the roadmap yesterday",
+      "expected": "i talked to Anke Bräutigam about the roadmap yesterday",
+      "output": "i talked to anchor broytee gam about the roadmap yesterday",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Anke Bräutigam"
+      ],
+      "lang": "german",
+      "replacements": [],
+      "missed": [
+        "Anke Bräutigam"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-021",
+      "category": "person",
+      "heard": "i talked to frederick vogel about the roadmap yesterday",
+      "expected": "i talked to Friedrich Vogel about the roadmap yesterday",
+      "output": "i talked to frederick vogel about the roadmap yesterday",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Friedrich Vogel"
+      ],
+      "lang": "german",
+      "replacements": [],
+      "missed": [
+        "Friedrich Vogel"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-026",
+      "category": "person",
+      "heard": "ask wa keen fernandez if the invoice went out",
+      "expected": "ask Joaquín Fernández if the invoice went out",
+      "output": "ask wa keen fernandez if the invoice went out",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Joaquín Fernández"
+      ],
+      "lang": "spanish",
+      "replacements": [],
+      "missed": [
+        "Joaquín Fernández"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-027",
+      "category": "person",
+      "heard": "forward the contract to wah keen fern and es",
+      "expected": "forward the contract to Joaquín Fernández",
+      "output": "forward the contract to wah keen fern and es",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Joaquín Fernández"
+      ],
+      "lang": "spanish",
+      "replacements": [],
+      "missed": [
+        "Joaquín Fernández"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-029",
+      "category": "person",
+      "heard": "ask gear mo ortega if the invoice went out",
+      "expected": "ask Guillermo Ortega if the invoice went out",
+      "output": "ask gear mo ortega if the invoice went out",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Guillermo Ortega"
+      ],
+      "lang": "spanish",
+      "replacements": [],
+      "missed": [
+        "Guillermo Ortega"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-030",
+      "category": "person",
+      "heard": "forward the contract to wee yermo ortega",
+      "expected": "forward the contract to Guillermo Ortega",
+      "output": "forward the contract to wee yermo ortega",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Guillermo Ortega"
+      ],
+      "lang": "spanish",
+      "replacements": [],
+      "missed": [
+        "Guillermo Ortega"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-032",
+      "category": "person",
+      "heard": "he mena navarro told me the demo is thursday",
+      "expected": "Ximena Navarro told me the demo is thursday",
+      "output": "he Ximena Navarro told me the demo is thursday",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Ximena Navarro"
+      ],
+      "lang": "spanish",
+      "replacements": [
+        {
+          "start": 3,
+          "end": 15,
+          "original": "mena navarro",
+          "replacement": "Ximena Navarro",
+          "canonical": "Ximena Navarro",
+          "reason": "fuzzy",
+          "confidence": 0.8571428571428572
+        }
+      ],
+      "missed": [],
+      "spurious": []
+    },
+    {
+      "id": "ne-042",
+      "category": "person",
+      "heard": "can you schedule thirty minutes with rod rigo via lobos next week",
+      "expected": "can you schedule thirty minutes with Rodrigo Villalobos next week",
+      "output": "can you schedule thirty minutes with rod rigo via lobos next week",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Rodrigo Villalobos"
+      ],
+      "lang": "spanish",
+      "replacements": [],
+      "missed": [
+        "Rodrigo Villalobos"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-047",
+      "category": "person",
+      "heard": "voy tech zielinski told me the demo is thursday",
+      "expected": "Wojciech Zieliński told me the demo is thursday",
+      "output": "voy tech zielinski told me the demo is thursday",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Wojciech Zieliński"
+      ],
+      "lang": "polish",
+      "replacements": [],
+      "missed": [
+        "Wojciech Zieliński"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-048",
+      "category": "person",
+      "heard": "cc voycek zielinski on the launch announcement",
+      "expected": "cc Wojciech Zieliński on the launch announcement",
+      "output": "cc voycek zielinski on the launch announcement",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Wojciech Zieliński"
+      ],
+      "lang": "polish",
+      "replacements": [],
+      "missed": [
+        "Wojciech Zieliński"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-050",
+      "category": "person",
+      "heard": "remind wukash novak about the offsite",
+      "expected": "remind Łukasz Nowak about the offsite",
+      "output": "remind wukash novak about the offsite",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Łukasz Nowak"
+      ],
+      "lang": "polish",
+      "replacements": [],
+      "missed": [
+        "Łukasz Nowak"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-051",
+      "category": "person",
+      "heard": "lucas novak told me the demo is thursday",
+      "expected": "Łukasz Nowak told me the demo is thursday",
+      "output": "lucas novak told me the demo is thursday",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Łukasz Nowak"
+      ],
+      "lang": "polish",
+      "replacements": [],
+      "missed": [
+        "Łukasz Nowak"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-053",
+      "category": "person",
+      "heard": "ask gregors shes kovitch if the invoice went out",
+      "expected": "ask Grzegorz Brzęczyszczykiewicz if the invoice went out",
+      "output": "ask gregors shes kovitch if the invoice went out",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Grzegorz Brzęczyszczykiewicz"
+      ],
+      "lang": "polish",
+      "replacements": [],
+      "missed": [
+        "Grzegorz Brzęczyszczykiewicz"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-054",
+      "category": "person",
+      "heard": "forward the contract to gregory brzezinski",
+      "expected": "forward the contract to Grzegorz Brzęczyszczykiewicz",
+      "output": "forward the contract to gregory brzezinski",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Grzegorz Brzęczyszczykiewicz"
+      ],
+      "lang": "polish",
+      "replacements": [],
+      "missed": [
+        "Grzegorz Brzęczyszczykiewicz"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-056",
+      "category": "person",
+      "heard": "remind katarzina vishnevska about the offsite",
+      "expected": "remind Katarzyna Wiśniewska about the offsite",
+      "output": "remind katarzina vishnevska about the offsite",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Katarzyna Wiśniewska"
+      ],
+      "lang": "polish",
+      "replacements": [],
+      "missed": [
+        "Katarzyna Wiśniewska"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-057",
+      "category": "person",
+      "heard": "catalina wish nevsky told me the demo is thursday",
+      "expected": "Katarzyna Wiśniewska told me the demo is thursday",
+      "output": "catalina wish nevsky told me the demo is thursday",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Katarzyna Wiśniewska"
+      ],
+      "lang": "polish",
+      "replacements": [],
+      "missed": [
+        "Katarzyna Wiśniewska"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-059",
+      "category": "person",
+      "heard": "can you schedule thirty minutes with mikoy zelonka next week",
+      "expected": "can you schedule thirty minutes with Mikołaj Zielonka next week",
+      "output": "can you schedule thirty minutes with mikoy zelonka next week",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Mikołaj Zielonka"
+      ],
+      "lang": "polish",
+      "replacements": [],
+      "missed": [
+        "Mikołaj Zielonka"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-060",
+      "category": "person",
+      "heard": "nicolai zelonka owns the billing migration",
+      "expected": "Mikołaj Zielonka owns the billing migration",
+      "output": "nicolai zelonka owns the billing migration",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Mikołaj Zielonka"
+      ],
+      "lang": "polish",
+      "replacements": [],
+      "missed": [
+        "Mikołaj Zielonka"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-062",
+      "category": "person",
+      "heard": "cc agnieska shepanska on the launch announcement",
+      "expected": "cc Agnieszka Szczepańska on the launch announcement",
+      "output": "cc agnieska shepanska on the launch announcement",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Agnieszka Szczepańska"
+      ],
+      "lang": "polish",
+      "replacements": [],
+      "missed": [
+        "Agnieszka Szczepańska"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-063",
+      "category": "person",
+      "heard": "ask agnes che panska if the invoice went out",
+      "expected": "ask Agnieszka Szczepańska if the invoice went out",
+      "output": "ask agnes che panska if the invoice went out",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Agnieszka Szczepańska"
+      ],
+      "lang": "polish",
+      "replacements": [],
+      "missed": [
+        "Agnieszka Szczepańska"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-065",
+      "category": "person",
+      "heard": "get you key tanaka access to the repo",
+      "expected": "get Yuki Tanaka access to the repo",
+      "output": "get you key tanaka access to the repo",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Yuki Tanaka"
+      ],
+      "lang": "japanese",
+      "replacements": [],
+      "missed": [
+        "Yuki Tanaka"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-074",
+      "category": "person",
+      "heard": "forward the contract to now key kobayashi",
+      "expected": "forward the contract to Naoki Kobayashi",
+      "output": "forward the contract to now key kobayashi",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Naoki Kobayashi"
+      ],
+      "lang": "japanese",
+      "replacements": [],
+      "missed": [
+        "Naoki Kobayashi"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-075",
+      "category": "person",
+      "heard": "so nah oki koba yashi's point was that we ship too slowly",
+      "expected": "so Naoki Kobayashi's point was that we ship too slowly",
+      "output": "so nah oki koba yashi's point was that we ship too slowly",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Naoki Kobayashi"
+      ],
+      "lang": "japanese",
+      "replacements": [],
+      "missed": [
+        "Naoki Kobayashi"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-080",
+      "category": "person",
+      "heard": "ask mi yuki sukamoto if the invoice went out",
+      "expected": "ask Miyuki Tsukamoto if the invoice went out",
+      "output": "ask mi yuki sukamoto if the invoice went out",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Miyuki Tsukamoto"
+      ],
+      "lang": "japanese",
+      "replacements": [],
+      "missed": [
+        "Miyuki Tsukamoto"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-081",
+      "category": "person",
+      "heard": "forward the contract to me yuki tsuka moto",
+      "expected": "forward the contract to Miyuki Tsukamoto",
+      "output": "forward the contract to me yuki tsuka moto",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Miyuki Tsukamoto"
+      ],
+      "lang": "japanese",
+      "replacements": [],
+      "missed": [
+        "Miyuki Tsukamoto"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-096",
+      "category": "person",
+      "heard": "loop in asia bakr on the design review",
+      "expected": "loop in Aisha Bakr on the design review",
+      "output": "loop in asia bakr on the design review",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Aisha Bakr"
+      ],
+      "lang": "arabic",
+      "replacements": [],
+      "missed": [
+        "Aisha Bakr"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-105",
+      "category": "person",
+      "heard": "cc abdul rock man haddad on the launch announcement",
+      "expected": "cc Abdulrahman Haddad on the launch announcement",
+      "output": "cc abdul rock man haddad on the launch announcement",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Abdulrahman Haddad"
+      ],
+      "lang": "arabic",
+      "replacements": [],
+      "missed": [
+        "Abdulrahman Haddad"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "ne-111",
+      "category": "person",
+      "heard": "soren chair's pr is still waiting on review",
+      "expected": "Søren Kjær's pr is still waiting on review",
+      "output": "soren chair's pr is still waiting on review",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Søren Kjær"
+      ],
+      "lang": "nordic",
+      "replacements": [],
+      "missed": [
+        "Søren Kjær"
       ],
       "spurious": []
     },
@@ -216,6 +1242,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 4,
@@ -249,6 +1276,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 8,
@@ -282,6 +1310,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 4,
@@ -315,6 +1344,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 18,
@@ -348,6 +1378,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 4,
@@ -381,6 +1412,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 13,
@@ -414,6 +1446,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 0,
@@ -447,6 +1480,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 5,
@@ -480,6 +1514,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 0,
@@ -513,6 +1548,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 9,
@@ -546,6 +1582,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 4,
@@ -579,6 +1616,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 2,
@@ -612,6 +1650,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 9,
@@ -645,6 +1684,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 4,
@@ -678,6 +1718,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 0,
@@ -711,6 +1752,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 9,
@@ -744,6 +1786,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 4,
@@ -777,6 +1820,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 3,
@@ -810,6 +1854,7 @@
       "pass": false,
       "negative": true,
       "hard": true,
+      "terms": [],
       "replacements": [
         {
           "start": 4,
@@ -843,6 +1888,9 @@
       "pass": false,
       "negative": false,
       "hard": true,
+      "terms": [
+        "SaaS"
+      ],
       "replacements": [],
       "missed": [
         "SaaS"
@@ -858,6 +1906,9 @@
       "pass": false,
       "negative": false,
       "hard": true,
+      "terms": [
+        "Anthropic"
+      ],
       "replacements": [],
       "missed": [
         "Anthropic"
@@ -873,6 +1924,9 @@
       "pass": false,
       "negative": false,
       "hard": true,
+      "terms": [
+        "Playwright"
+      ],
       "replacements": [],
       "missed": [
         "Playwright"
@@ -888,6 +1942,9 @@
       "pass": false,
       "negative": false,
       "hard": true,
+      "terms": [
+        "Vitest"
+      ],
       "replacements": [
         {
           "start": 4,
@@ -923,6 +1980,9 @@
       "pass": false,
       "negative": false,
       "hard": true,
+      "terms": [
+        "LangChain"
+      ],
       "replacements": [],
       "missed": [
         "LangChain"
@@ -938,6 +1998,9 @@
       "pass": false,
       "negative": false,
       "hard": true,
+      "terms": [
+        "Bjørn Halvorsen"
+      ],
       "replacements": [
         {
           "start": 7,
@@ -961,6 +2024,9 @@
       "pass": false,
       "negative": false,
       "hard": true,
+      "terms": [
+        "API"
+      ],
       "replacements": [],
       "missed": [
         "API"
@@ -976,6 +2042,9 @@
       "pass": false,
       "negative": false,
       "hard": true,
+      "terms": [
+        "PostgreSQL"
+      ],
       "replacements": [
         {
           "start": 4,
@@ -999,6 +2068,9 @@
       "pass": false,
       "negative": false,
       "hard": true,
+      "terms": [
+        "normalizeTranscript"
+      ],
       "replacements": [],
       "missed": [
         "normalizeTranscript"
@@ -1014,6 +2086,9 @@
       "pass": false,
       "negative": false,
       "hard": true,
+      "terms": [
+        "Priyanka Raghunathan"
+      ],
       "replacements": [],
       "missed": [
         "Priyanka Raghunathan"
@@ -1029,6 +2104,9 @@
       "pass": false,
       "negative": false,
       "hard": true,
+      "terms": [
+        "Docker"
+      ],
       "replacements": [
         {
           "start": 4,
@@ -1052,9 +2130,69 @@
       "pass": false,
       "negative": false,
       "hard": true,
+      "terms": [
+        "Zod"
+      ],
       "replacements": [],
       "missed": [
         "Zod"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "nex-016",
+      "category": "person",
+      "heard": "ping jurgen about the tickets",
+      "expected": "ping Jürgen Meyer about the tickets",
+      "output": "ping jurgen about the tickets",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Jürgen Meyer"
+      ],
+      "lang": "german",
+      "replacements": [],
+      "missed": [
+        "Jürgen Meyer"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "nex-017",
+      "category": "person",
+      "heard": "ask agnieska about the review",
+      "expected": "ask Agnieszka Szczepańska about the review",
+      "output": "ask agnieska about the review",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Agnieszka Szczepańska"
+      ],
+      "lang": "polish",
+      "replacements": [],
+      "missed": [
+        "Agnieszka Szczepańska"
+      ],
+      "spurious": []
+    },
+    {
+      "id": "nex-020",
+      "category": "person",
+      "heard": "the wojtek zielinski ticket is yours",
+      "expected": "the Wojciech Zieliński ticket is yours",
+      "output": "the wojtek zielinski ticket is yours",
+      "pass": false,
+      "negative": false,
+      "hard": true,
+      "terms": [
+        "Wojciech Zieliński"
+      ],
+      "lang": "polish",
+      "replacements": [],
+      "missed": [
+        "Wojciech Zieliński"
       ],
       "spurious": []
     }

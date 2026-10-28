@@ -22,6 +22,7 @@ import {
   type BenchOptions,
   type BenchReport,
   type CaseResult,
+  type SubsetReport,
   type SweepRow,
 } from './lib.js';
 
@@ -181,6 +182,32 @@ function renderReport(r: BenchReport): string {
       }),
     ),
   );
+  if (r.lang) {
+    const row = (name: string, s: SubsetReport): string[] => [
+      name,
+      `${s.positives}+${s.negatives}n`,
+      frac(s.positiveSentence),
+      frac(s.positiveSentenceExcludingHard),
+      frac(s.rawRecall),
+      frac(s.recall),
+      frac(s.precision),
+      pct(s.f1),
+      frac(s.falsePositiveRate),
+    ];
+    out.push('', '## Non-English subset (lang-tagged cases)', '');
+    out.push(
+      table(
+        ['subset', 'cases', 'sentence acc', 'acc excl. hard', 'recall raw', 'recall', 'precision', 'F1', 'prose FP'],
+        [
+          row('baseline (untagged)', r.lang.baseline),
+          row('non-English (all)', r.lang.nonEnglish),
+          ...Object.keys(r.lang.byLang)
+            .sort()
+            .map((lang) => row(lang, r.lang!.byLang[lang])),
+        ],
+      ),
+    );
+  }
   out.push('', '## By reason', '');
   out.push(
     table(
@@ -216,11 +243,16 @@ function renderFailures(results: CaseResult[]): string {
 }
 
 function renderSweep(rows: SweepRow[]): string {
+  const hasSubset = rows.some((s) => s.nonEnglishRecall !== undefined);
   return [
     '## Sweep: minConfidence vs accuracy and false positives',
     '',
     table(
-      ['minConfidence', 'positive acc', 'positive acc excl. hard', 'term recall', 'term precision', 'term F1', 'prose FP rate', 'prose FP excl. hard'],
+      [
+        'minConfidence', 'positive acc', 'positive acc excl. hard', 'term recall', 'term precision', 'term F1',
+        'prose FP rate', 'prose FP excl. hard',
+        ...(hasSubset ? ['non-English recall', 'non-English precision'] : []),
+      ],
       rows.map((s) => [
         s.minConfidence.toFixed(2),
         pct(s.positiveAccuracy),
@@ -230,6 +262,7 @@ function renderSweep(rows: SweepRow[]): string {
         pct(s.f1),
         pct(s.falsePositiveRate),
         pct(s.falsePositiveRateExcludingHard),
+        ...(hasSubset ? [pct(s.nonEnglishRecall ?? 0), pct(s.nonEnglishPrecision ?? 0)] : []),
       ]),
     ),
   ].join('\n');
