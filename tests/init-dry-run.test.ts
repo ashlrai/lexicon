@@ -31,6 +31,26 @@ describe('project init trust preflight', () => {
     await expect(fs.stat(path.join(repo, '.lexicon.yaml'))).rejects.toMatchObject({ code: 'ENOENT' });
   });
 
+  it('reports a pending project initialization in text and preserves existing files', async () => {
+    const project = path.join(repo, '.lexicon.yaml');
+    const missing = makeIO();
+    expect(await runInit({ cwd: repo, project: true, dryRun: true }, missing)).toBe(0);
+    expect(missing.out).toContain(`would create project lexicon: ${project} (and trust it)`);
+    expect(await fs.readdir(repo)).toEqual(['.git']);
+    await expect(fs.stat(registry)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    const content = 'version: 1\nterms: []\n';
+    await fs.writeFile(project, content);
+    const before = await fs.stat(project);
+    const existing = makeIO();
+    expect(await runInit({ cwd: repo, project: true, dryRun: true }, existing)).toBe(0);
+    expect(existing.out).toContain(`project lexicon already exists: ${project}`);
+    expect(existing.out).toContain('it is not trusted yet');
+    expect(await fs.readFile(project, 'utf8')).toBe(content);
+    expect((await fs.stat(project)).mtimeMs).toBe(before.mtimeMs);
+    await expect(fs.stat(registry)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it('previews creating and trusting a missing project without writing either file', async () => {
     const io = makeIO();
     expect(await runInit({ cwd: repo, project: true, dryRun: true, json: true }, io)).toBe(0);
