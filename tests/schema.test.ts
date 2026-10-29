@@ -240,6 +240,18 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(parseLexicon({ terms: [{ canonical: nice, aliases: ['zoe'] }] }).terms[0].canonical).toBe(nice);
   });
 
+  it('rejects U+FFFF in a canonical term and an alias with the offending character in the error', () => {
+    const canonical = { terms: [{ canonical: 'Ash\uFFFFlr' }] };
+    const alias = parseYaml('terms:\n  - canonical: Ashlr.AI\n    aliases: ["Ash\\uFFFFler"]\n');
+
+    expect(() => parseLexicon(canonical)).toThrow(
+      'terms[0].canonical: must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ash\\uFFFFlr"',
+    );
+    expect(() => parseLexicon(alias)).toThrow(
+      'terms[0].aliases[0]: must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ashlr.AI"',
+    );
+  });
+
   // Catches: U+FFFE, U+FFFF and an unpaired surrogate passed the schema
   // (they are neither control nor invisible characters), though no UTF-8 file
   // can hold a lone surrogate and XML forbids all three: one such alias made
