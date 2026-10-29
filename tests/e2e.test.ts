@@ -213,6 +213,29 @@ beforeAll(async () => {
   await seed(shared);
 });
 
+describe.concurrent('e2e: documented setup cast', () => {
+  it('creates a lexicon and corrects the example without installing integrations', async () => {
+    const h = await freshHome('setup-cast');
+    const setup = await runCli([
+      'setup', '--yes', '--company', 'Ashlr.AI', '--person', 'Mason Wyatt',
+      '--clients', 'none', '--no-packs', '--no-harvest', '--no-serve', '--app', 'none',
+    ], { env: h.env, cwd: h.repo });
+    expect(setup.code, setup.stderr).toBe(0);
+    expect(setup.stdout).toContain('created ');
+    expect(setup.stdout).toContain('added Mason Wyatt (person)');
+    expect(setup.stdout).toContain('added Ashlr.AI (brand)');
+    expect(setup.stdout).toContain('skipped (--clients none)');
+    expect(setup.stdout).toContain('skipped (--no-serve)');
+    expect(setup.stdout).toContain('7. Does it work?');
+    expect(setup.stdout).toContain('"Ashler" -> "Ashlr.AI"');
+    expect(existsSync(h.globalPath)).toBe(true);
+
+    const correction = await runCli(['normalize', 'ping Ashler about the launch'], { env: h.env, cwd: h.repo });
+    expect(correction.code, correction.stderr).toBe(0);
+    expect(correction.stdout.trim()).toBe('ping Ashlr.AI about the launch');
+  });
+});
+
 afterAll(async () => {
   await Promise.all(created.map((dir) => fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 })));
 });
