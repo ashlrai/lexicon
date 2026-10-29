@@ -137,8 +137,11 @@ export function suggestCompany(packageName: string | undefined, remoteUrl: strin
     const brand = author?.trim();
     // Only restore a spelling present in the manifest, never invent a suffix
     // or use an unrelated author's name as the company.
-    if (brand && /^[A-Za-z0-9][\w-]*(?:\.[A-Za-z0-9][\w-]*)+$/.test(brand)
-      && [brand.toLowerCase(), brand.split('.')[0].toLowerCase()].includes(scope.toLowerCase())) return brand;
+    if (brand && /^[A-Za-z0-9][\w-]*(?:\.[A-Za-z0-9][\w-]*)+$/.test(brand)) {
+      const normalizedBrand = brand.toLowerCase();
+      const normalizedScope = scope.toLowerCase();
+      if (normalizedBrand === normalizedScope || normalizedBrand.startsWith(`${normalizedScope}.`)) return brand;
+    }
     return scope.charAt(0).toUpperCase() + scope.slice(1);
   }
   if (remoteUrl) {
