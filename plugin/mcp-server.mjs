@@ -67695,9 +67695,22 @@ function parseSourceList(value) {
   return [...new Set(ids.map((id) => getImportSource(id).id))];
 }
 function showImportCandidate(io, c, index, total) {
-  line(io, `${dim(`[${index + 1}/${total}]`)} ${bold(safe(c.canonical))}  ${dim(`${c.category}, seen ${c.count}x, from ${c.source}`)}`);
-  line(io, `  evidence: ${c.evidence.length > 0 ? safe(c.evidence.slice(0, 3).join(", ")) : dim("(none)")}`);
+  line(io, `${dim(`[${index + 1}/${total}]`)} ${bold(safe(c.canonical))}  ${dim(`${c.category}, seen ${c.count}x, source tag ${safe(c.source)}`)}`);
+  if (c.count > 1) line(io, dim("  repeated candidate: occurrences combined into one approval."));
+  line(io, `  evidence: ${c.evidence.length > 0 ? safe(c.evidence.join(", ")) : dim("(none)")}`);
   line(io, `  aliases:  ${c.suggestedAliases.length > 0 ? safe(c.suggestedAliases.join(", ")) : dim("(none)")}`);
+}
+function showImportPreview(io, candidates) {
+  const groups = /* @__PURE__ */ new Map();
+  candidates.forEach((candidate, index) => {
+    const indices = groups.get(candidate.source) ?? [];
+    indices.push(index);
+    groups.set(candidate.source, indices);
+  });
+  for (const [source, indices] of groups) {
+    line(io, bold(`Source: ${safe(source)} (${plural2(indices.length, "candidate")})`));
+    for (const index of indices) showImportCandidate(io, candidates[index], index, candidates.length);
+  }
 }
 async function askCategory(prompter, def) {
   for (; ; ) {
@@ -67809,12 +67822,7 @@ async function runImportGuided(opts, io, deps = {}) {
   const candidates = await harvestImportSources(chosen, sdeps, { limit });
   report2.candidates = candidates.map((c) => ({
     id: importCandidateId(c),
-    canonical: c.canonical,
-    category: c.category,
-    source: c.source,
-    aliases: c.suggestedAliases,
-    evidence: c.evidence,
-    count: c.count
+    ...importCandidatePreview(c)
   }));
   const paths = resolvePaths(storeOpts3);
   report2.previewId = importPreviewDigest(chosen, candidates, JSON.stringify({ scope, cwd, ...paths }));
@@ -67833,9 +67841,17 @@ async function runImportGuided(opts, io, deps = {}) {
 `);
     } else {
       line(io, bold(`dry run: ${candidates.length} candidate${candidates.length === 1 ? "" : "s"} (nothing written)`));
-      candidates.forEach((c, i) => showImportCandidate(io, c, i, candidates.length));
+      line(io, dim("Duplicate names are combined case-insensitively; counts, evidence and aliases are merged."));
+      showImportPreview(io, candidates);
     }
     return 0;
+  }
+  if (interactive) {
+    line(io, bold("Review all candidates before approving terms:"));
+    line(io, dim("Duplicate names are combined case-insensitively into one candidate; counts, evidence and aliases are merged."));
+    line(io, dim("The source tag is the retained tag; evidence lists the origins of merged candidates."));
+    showImportPreview(io, candidates);
+    line(io);
   }
   const work = candidates.map((c) => ({ ...c, suggestedAliases: [...c.suggestedAliases] }));
   const accepted = [];
@@ -71521,7 +71537,7 @@ function registerServeCommands(program2, io) {
   });
 }
 function registerSetupCommands(program2, io) {
-  program2.command("setup").description("guided first-run: seed the lexicon, harvest the repo, install into your agents and dictation app").option("-y, --yes", "take every default without prompting").option("--clients <list>", `comma-separated clients to install into, or none (default: detect; one of ${SETUP_CLIENTS.join(", ")})`).option("--company <name>", `company or product name to seed (as you want it spelled; one line, at most ${LIMITS.word} characters)`).option("--person <name>", `your name to seed, one line of at most ${LIMITS.word} characters (default: git user.name, global then this repo, or $GIT_AUTHOR_NAME)`).option("--phonetic <hint>", "pronunciation hint for the company term, e.g. ASH-ler").option("--app <app>", `dictation app to export for: ${SETUP_APPS.join("|")}`).option("--export-dir <dir>", "where to write the dictation export (default: ~/Desktop)").option("--harvest", "add the repo names to the project lexicon (with --yes it is skipped unless this is passed)").option("--packs <list>", "comma-separated starter packs to install, or none (default: a checklist on a terminal, nothing with --yes; one of developer, ai, business, voice-tools)").option("--no-packs", "skip the starter packs (no prompt)").option("--no-harvest", "skip the repo harvest (no prompt)").option("--serve", "install the local API login service (with --yes it is skipped unless this is passed)").option("--no-serve", "skip installing the local API login service (no prompt)").option("--dry-run", "detect and suggest only; write nothing and print what a run would do").option("--reseed", "also seed the guessed person/company (git user.name, package scope) when the lexicon already has terms").option("--home <dir>", "treat <dir> as the home directory (mainly for tests)").option("--json", "print a machine-readable summary on stdout, led by ok (progress goes to stderr; a refusal prints { ok: false, error, nextStep })").action(async (opts) => {
+  program2.command("setup").description("guided first-run: seed the lexicon, harvest the repo, install into your agents and dictation app").option("-y, --yes", "take every default without prompting").option("--clients <list>", `comma-separated clients to install into, or none (default: detect; one of ${SETUP_CLIENTS.join(", ")})`).option("--company <name>", `company or product name to seed (as you want it spelled; one line, at most ${LIMITS.word} characters)`).option("--person <name>", `your name to seed, one line of at most ${LIMITS.word} characters (default: git user.name, global then this repo, or $GIT_AUTHOR_NAME)`).option("--phonetic <hint>", "pronunciation hint for the company term, e.g. ASH-ler").option("--app <app>", `dictation app to export for: ${SETUP_APPS.join("|")}`).option("--export-dir <dir>", "where to write the dictation export (default: ~/Desktop)").option("--harvest", "add the repo names to the project lexicon (with --yes it is skipped unless this is passed)").option("--packs <list>", "comma-separated starter packs to install, or none (default: a checklist on a terminal, nothing with --yes; one of developer, ai, business, voice-tools, cloud-devops, profession-q8)").option("--no-packs", "skip the starter packs (no prompt)").option("--no-harvest", "skip the repo harvest (no prompt)").option("--serve", "install the local API login service (with --yes it is skipped unless this is passed)").option("--no-serve", "skip installing the local API login service (no prompt)").option("--dry-run", "detect and suggest only; write nothing and print what a run would do").option("--reseed", "also seed the guessed person/company (git user.name, package scope) when the lexicon already has terms").option("--home <dir>", "treat <dir> as the home directory (mainly for tests)").option("--json", "print a machine-readable summary on stdout, led by ok (progress goes to stderr; a refusal prints { ok: false, error, nextStep })").action(async (opts) => {
     const { runSetupCli: runSetupCli2 } = await Promise.resolve().then(() => (init_cmd_setup(), cmd_setup_exports));
     await runSetupCli2(program2, io, opts);
   });
@@ -74222,7 +74238,7 @@ var init_setup = __esm({
             company: external_exports.string().optional().describe(`Company or product name, spelled exactly as it should appear: one name of at most ${LIMITS.word} characters once trimmed, on one line (the lexicon's cap for a term). A longer, blank or multi-line one is refused, in the preview too, and nothing is written.`),
             person: external_exports.string().optional().describe(`The user's own name as they write it: at most ${LIMITS.word} characters once trimmed, on one line. A longer, blank or multi-line one is refused, in the preview too, and nothing is written.`),
             clients: external_exports.array(external_exports.enum(INSTALL_CLIENT_VALUES)).optional().describe("Agent clients to register the server in, exactly as the user agreed. Omitted or empty = none (the plan lists the detected ones so you can ask)."),
-            packs: external_exports.array(external_exports.string().regex(/^[a-z0-9-]+$/)).optional().describe("Starter packs to install into the global lexicon (developer, ai, business, voice-tools), exactly as the user agreed. Omitted or empty = none (the plan lists the defaults in packsOnOffer so you can ask)."),
+            packs: external_exports.array(external_exports.string().regex(/^[a-z0-9-]+$/)).optional().describe("Starter packs to install into the global lexicon (the names list_packs returns), exactly as the user agreed. Omitted or empty = none (the plan lists the defaults in packsOnOffer so you can ask)."),
             harvest: external_exports.boolean().optional().describe("true = also add the repo names in wouldHarvest to the project .lexicon.yaml; a file the user already trusted stays trusted, any other is left untrusted until the user trusts it (relay `nextStep`). Only after the user agreed; omitted = not harvested."),
             serve: external_exports.boolean().optional().describe("true = also install the local API (`lexicon serve`) as a login service. Only after the user agreed; omitted = not installed."),
             apply: external_exports.boolean().optional().describe("false/omitted = preview only: return the plan and write nothing (default). true = perform the setup after the user confirmed the plan.")
@@ -74382,7 +74398,7 @@ var init_packs2 = __esm({
         "list_packs",
         {
           title: "List the starter term packs",
-          description: "List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. Pass registry (an index the user registered; others are refused) to also list that index's community packs (<author>/<name>), with an installed flag for each. The installed flags come from trusted lexicon files only: when the repo has an untrusted project lexicon, the result carries `projectTrust`, `skippedProject` (its path) and `note`, and a pack only that file records reads as not installed. When a lexicon file's settings.packs and the registry records disagree, `registryMismatch { fileOnly, recordOnly }` names the refs: fileOnly will not be checked by " + cliCommand("pack update") + ", recordOnly reads as not installed (" + cliCommand("pack remove <ref>") + " clears the record). Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.",
+          description: "List the starter packs shipped with the lexicon (curated names with the misspellings STT produces for them) and which are already installed. Pass registry (an index the user registered; others are refused) to also list that index's community packs (<author>/<name>), with an installed flag for each. The installed flags come from trusted lexicon files only: when the repo has an untrusted project lexicon, the result carries `projectTrust`, `skippedProject` (its path) and `note`, and a pack only that file records reads as not installed. When a lexicon file's settings.packs and the registry records disagree, `registryMismatch { fileOnly, recordOnly }` names the refs: fileOnly will not be checked by " + cliCommand("pack update") + ", recordOnly reads as not installed (" + cliCommand("pack remove <ref>") + " clears the record). Call when onboarding a new user or when they ask what packs exist; describe each pack in one line, then call add_pack only for the ones they pick.",
           inputSchema: {
             registry: nonBlank().optional().describe(REGISTRY_SOURCE_DESC)
           }
@@ -75044,7 +75060,7 @@ var init_server4 = __esm({
       'lexicon_doctor answers "is this set up, and what fixes it" in one call: read its ready, summary and nextStep fields and relay those rather than the whole check list.',
       PROACTIVE_OFFER,
       "setup_lexicon previews by default: call it without apply to get the plan (what it would seed, the starter packs it would offer, the repo names it could harvest, the clients it detected, whether it would install the login service), show the plan to the user, then call again with apply: true, clients: [...], packs: [...], harvest: true and serve: true only for what the user agreed to. Omitted clients install nothing; omitted packs, harvest and serve do nothing.",
-      "Starter packs (list_packs: developer, ai, business, voice-tools) give a new user dozens of curated names each (list_packs has the count); offer them once, name what a pack contains, and call add_pack only for the packs the user picked.",
+      "Starter packs (list_packs: developer, ai, business, voice-tools, cloud-devops, profession-q8) give a new user dozens of curated names each (list_packs has the count); offer them once, name what a pack contains, and call add_pack only for the packs the user picked.",
       'When corrections are not happening, call lexicon_doctor. When the user asks how to improve corrections, call suggest_terms, present the proposals (including pronunciation hints, kind "phonetic") and apply the accepted ones with apply_suggestion.',
       "Preview install_client (and dry-run uninstall_client) before applying it, and never trust a project lexicon (trust_project) before showing the user its preview and getting a yes. Never install into a client or create a login service the user did not name."
     ].join("\n");

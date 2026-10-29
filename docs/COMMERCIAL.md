@@ -400,7 +400,7 @@ The landing page must not blur this line, so it is stated once, precisely.
 commands); the MCP server (twenty-one tools, three resources, two prompts); the
 Claude Code plugin with `SessionStart` and `UserPromptSubmit` hooks; the
 browser extension; the macOS menu bar app; the loopback HTTP API; the clipboard
-daemon; local voice via ffmpeg and whisper.cpp; five starter packs (196 terms);
+daemon; local voice via ffmpeg and whisper.cpp; six starter packs (221 terms);
 sixteen exporters and eight importers; the trust gate; the benchmark.
 
 **Shipped with a distribution caveat:** the browser extension is not in the

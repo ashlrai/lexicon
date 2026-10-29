@@ -1,12 +1,15 @@
 # Install Lexicon
 
 Instructions for an AI assistant installing this MCP server on behalf of its user.
-Follow them in order. Lexicon needs no API key, no account and no network access:
-do not ask the user for credentials at any point.
+Follow them in order. Local correction needs no API key or account:
+do not ask the user for credentials. Installation downloads the package; optional
+model downloads, community packs and guided GitHub imports also use the network.
+GitHub imports use an existing `gh` login. See [the privacy guide](docs/AGENTS.md#what-to-tell-your-user-about-privacy).
 
 Lexicon is a stdio MCP server (21 tools) that holds the user's personal vocabulary:
 the names, brands and identifiers speech-to-text mishears, and the canonical spelling
-for each. Call `normalize_transcript` on dictated input before acting on it.
+for each. The complete tool and argument table is in [docs/MCP.md](docs/MCP.md),
+backed by the registrars in `src/mcp/tools/index.ts`. Call `normalize_transcript` on dictated input before acting on it.
 
 ## Step 1: check the runtime
 
@@ -135,11 +138,12 @@ lexicon import ~/path/to/wispr-dictionary.csv
 Run all three. Every one must pass before you tell the user it worked.
 
 ```bash
-lexicon doctor
+lexicon doctor --json
 ```
 
 Reports the resolved file paths, term conflicts and whether the client integration is in
-place. Fix anything it flags.
+place. Read `ready`, `summary` and `nextStep`: `ok` alone also passes for an
+empty lexicon. Fix anything it flags.
 
 ```bash
 lexicon normalize "ship it to ashler today"
@@ -150,7 +154,7 @@ Ashlr.AI today` for the term added above. If the output is identical to the inpu
 term is not in the lexicon yet, so go back to step 4.
 
 Finally, restart the user's MCP client and confirm the `lexicon` server connects and lists
-its tools. From the client, call `lexicon_doctor` and read the `lexicon://me` resource; a
+its tools. From the client, call `lexicon_doctor`, require `ready: true`, and read the `lexicon://me` resource; a
 successful read means the server is live and the vocabulary is visible to the model.
 
 ## After installing

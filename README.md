@@ -91,7 +91,7 @@ npm i -g @ashlr/lexicon                                        # or npm (Node 20
 
 Then open Claude Code and say a sentence with your company name in it. Done. A timed walkthrough of that install on a clean Linux VM, with notes for agents, is in [docs/FIRST-RUN.md](docs/FIRST-RUN.md).
 
-> npm currently serves `@ashlr/lexicon` 0.5.4 while this source tree is 0.5.6 (check with `npm view @ashlr/lexicon version`). Changes since 0.5.4, such as the `lexicon export` format suggestion below, are not in the published npm package yet.
+> This README describes the current source tree. Check `lexicon --version` for your installed version and `npm view @ashlr/lexicon version` for npm latest before relying on source features.
 
 The install script runs `lexicon setup` for you when it has a terminal to ask questions on; without one (CI, a Dockerfile), under `sudo`, or with `LEXICON_NO_SETUP=1` it installs only and tells you to run `lexicon setup` yourself, as after a Homebrew or npm install. Every step is optional and safe to rerun, and `lexicon setup --dry-run` writes nothing while describing the run you would get from the same command without it: the steps it would perform, and the ones it would stop and ask about, with the answer pressing Enter gives each.
 
@@ -176,9 +176,9 @@ This is not a dictation app. It sits between whatever dictation you already use 
 - **Twenty-one MCP tools**, three resources and two prompts, for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop. Your agent can run its own setup: `setup_lexicon`, `lexicon_doctor`, `install_client`, `trust_project`, `import_dictionary`, `import_vocabulary` and `suggest_terms` mean "set up my lexicon" works without a terminal. The tools that change your machine preview first: `setup_lexicon` and `install_client` return a plan and write nothing until the agent passes `apply: true`, `uninstall_client` (the `lexicon uninstall` counterpart) is a dry run until `apply: true`, `trust_project` asks you directly (an MCP elicitation prompt the agent cannot answer) before pinning a file, `import_dictionary` takes `dryRun`, and `import_vocabulary` reads only explicitly selected sources, then requires a saved preview token and approved candidate ids with `apply: true`.
 - **A Claude Code plugin**: MCP server, `SessionStart` and `UserPromptSubmit` hooks, a `lexicon` skill and a `/lexicon` command. Installs from this repo's marketplace with no build step.
 - **A CLI with 27 commands**, from `lexicon add` to `lexicon voice`.
-- **196 starter terms** in five packs (developer, AI, business, voice tools, cloud and DevOps), one command each, plus community packs from registry indexes (`lexicon pack search cardiology --registry <index>`): checksums pinned at install, every install and update previewed before it writes.
+- **221 starter terms** in six packs (developer, AI, business, voice tools, cloud and DevOps, legal profession), one command each, plus community packs from registry indexes (`lexicon pack search cardiology --registry <index>`): checksums pinned at install, every install and update previewed before it writes.
 - **Sixteen export formats** (Wispr Flow, Superwhisper, macOS Text Replacement, espanso, Whisper and OpenAI prompts, Deepgram, AssemblyAI, Speechmatics, Azure, Google, CLAUDE.md, markdown, text, CSV, JSON) and **eight importers** (including the CLAUDE.md table it writes) for the dictionary you already trained.
-  `lexicon export` with no format lists them all. A mistyped format exits 1 with a suggestion, for example `lexicon export wisprr` prints `Did you mean wispr? Run: lexicon export wispr` (0.5.6 source).
+  `lexicon export` with no format lists them all. A mistyped format exits 1 with a suggestion, for example `lexicon export wisprr` prints `Did you mean wispr? Run: lexicon export wispr` in the current source.
 - **Repo harvesting**, a guided vocabulary import (`lexicon import --guided`: your contacts, calendar and GitHub, each source opt-in, every candidate approved before it is written), correction learning ("it's Ashlr.AI not Ashler"; corrections the prompt hook notices are also queued for review in `pending-aliases.yaml` next to your global lexicon, and nothing in the queue changes matching until you run `lexicon pending accept <id>`; `lexicon pending reject <id>` drops one, `LEXICON_QUEUE_CORRECTIONS=0` turns the queue off), usage stats, suggestions mined from your voice history, and a trust gate for project lexicons.
 - **A plain library.** `normalize()` is a pure function: text plus lexicon in, corrected text and a replacement list out.
 
@@ -218,7 +218,7 @@ The rules in full, including every guard, are in [docs/MATCHING.md](docs/MATCHIN
 
 ## Repair with doctor --fix
 
-`lexicon doctor --fix` previews repairs for problems `lexicon doctor` reports and writes nothing (exit 0). `lexicon doctor --fix --apply` makes them, backing up each file first. `lexicon doctor --apply` without `--fix` is refused with exit 1. Add `--json` for one `{ mode, plan, outcome }` object. This is in source (main) and not yet in a release; the npm package (0.5.4) does not have it.
+`lexicon doctor --fix` previews repairs for problems `lexicon doctor` reports and writes nothing (exit 0). `lexicon doctor --fix --apply` makes them, backing up each file first. `lexicon doctor --apply` without `--fix` is refused with exit 1. Add `--json` for one `{ mode, plan, outcome }` object. Check your installed version with `lexicon --version` and `lexicon doctor --help` for flag availability.
 
 ```console
 $ lexicon doctor --fix

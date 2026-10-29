@@ -36,7 +36,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon suggest [options]`](#lexicon-suggest) | suggest aliases, new terms, never-words and stale terms from your voice history |
 | [`lexicon review [options]`](#lexicon-review) | walk through existing terms and keep, delete or edit each one |
 | [`lexicon edit [options]`](#lexicon-edit) | open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards |
-| [`lexicon pack`](#lexicon-pack) | starter term packs (developer, ai, business, voice-tools) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate |
+| [`lexicon pack`](#lexicon-pack) | starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate |
 
 ## `lexicon`
 
@@ -78,7 +78,7 @@ Commands:
   suggest [options]                       suggest aliases, new terms, never-words and stale terms from your voice history
   review [options]                        walk through existing terms and keep, delete or edit each one
   edit [options]                          open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards
-  pack                                    starter term packs (developer, ai, business, voice-tools) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate
+  pack                                    starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate
   help [command]                          display help for command
 
 Start here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.
@@ -626,7 +626,8 @@ Options:
                       is skipped unless this is passed)
   --packs <list>      comma-separated starter packs to install, or none
                       (default: a checklist on a terminal, nothing with --yes;
-                      one of developer, ai, business, voice-tools)
+                      one of developer, ai, business, voice-tools, cloud-devops,
+                      profession-q8)
   --no-packs          skip the starter packs (no prompt)
   --no-harvest        skip the repo harvest (no prompt)
   --serve             install the local API login service (with --yes it is
@@ -708,9 +709,9 @@ Options:
 ```text
 Usage: lexicon pack [options] [command]
 
-starter term packs (developer, ai, business, voice-tools) and community packs
-(<author>/<name> via --registry): list, add, remove, show, search, update,
-validate
+starter term packs (developer, ai, business, voice-tools, cloud-devops,
+profession-q8) and community packs (<author>/<name> via --registry): list, add,
+remove, show, search, update, validate
 
 Options:
   -h, --help                  display help for command

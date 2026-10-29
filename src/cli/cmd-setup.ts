@@ -6,7 +6,8 @@
  *      the company/product name (suggested from the cwd package scope or the
  *      git remote org) with suggested aliases and an optional phonetic hint
  *   b. starter packs (core/packs.ts): a checklist with developer, ai and
- *      voice-tools checked and business offered; `--packs a,b` / `--no-packs`
+ *      voice-tools checked and the rest offered, one yes/no each;
+ *      `--packs a,b` / `--no-packs`
  *   c. repo harvest into the project lexicon (top 10, min-count 5)
  *   d. agent clients detected on this machine, installed via runInstall
  *   e. the local API as a login service via runServeInstall

@@ -254,7 +254,7 @@ export const registerSetupTools: ToolRegistrar = (server, ctx) => {
         packs: z
           .array(z.string().regex(/^[a-z0-9-]+$/))
           .optional()
-          .describe('Starter packs to install into the global lexicon (developer, ai, business, voice-tools), exactly as the user agreed. Omitted or empty = none (the plan lists the defaults in packsOnOffer so you can ask).'),
+          .describe('Starter packs to install into the global lexicon (the names list_packs returns), exactly as the user agreed. Omitted or empty = none (the plan lists the defaults in packsOnOffer so you can ask).'),
         harvest: z
           .boolean()
           .optional()

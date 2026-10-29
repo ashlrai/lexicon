@@ -165,7 +165,8 @@ let them decide. Never set `LEXICON_TRUST_ALL=1` on a user's behalf.
 
 ## Verify it worked
 
-Do not tell the user it is installed without checking. Any one of these:
+Do not tell the user it is installed without checking both readiness and a real
+correction using an alias they added. `stats` is an optional usage check:
 
 ```bash
 lexicon normalize "tell Ashler to ship it"   # expect: tell Ashlr.AI to ship it
@@ -217,11 +218,9 @@ Previews can contain personal or organization names, and sending them to an
 agent client can make those names model input. Email and chat importers are
 not implemented. Full threat model: [SECURITY.md](../SECURITY.md).
 
-This guided importer is implemented in repository source and in the `v0.5.5`
-tag (release prep merged in [#25](https://github.com/ashlrai/lexicon/pull/25)).
-Public npm `latest` was still `0.5.4` when requeried on 2026-10-15, and there is
-no GitHub release for `v0.5.5` yet; source documentation does not prove
-publication, installation or authenticated-import acceptance.
+This guide describes the current source. Check `lexicon --version` and
+`lexicon import --help` before relying on guided import in an installed copy;
+source documentation does not prove publication or authenticated-import acceptance.
 
 ## Where the machine-readable files are in this repository
 
