@@ -229,6 +229,20 @@ describe('CLI dry-run previews', () => {
     expect(readFileSync(registryPath, 'utf8')).not.toBe(registry);
   });
 
+  it('untrust previews an absent pin without creating a registry', () => {
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    const registryPath = path.join(path.dirname(globalPath), 'trust.json');
+    writeFileSync(projectPath, seed);
+    const before = snapshot();
+    const result = preview(['untrust']);
+    expect(result).toMatchObject({
+      ok: true, action: 'untrust', path: projectPath, removed: false, dryRun: true,
+      registry: registryPath, summary: `${projectPath} was not trusted; nothing to do`,
+    });
+    expect(snapshot()).toEqual(before);
+    expect(existsSync(registryPath)).toBe(false);
+  });
+
   it.each([
     { args: ['remove', 'Ashlr.AI'], message: 'would remove Ashlr.AI from', suffix: '' },
     { args: ['remove', 'Ashlr.AI', '--alias', 'Ashler'], message: 'would remove alias Ashler from Ashlr.AI in', suffix: 'aliases: Ashlar\n' },
