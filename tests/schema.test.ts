@@ -293,6 +293,26 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it('accepts and preserves paired surrogates in term and settings text', () => {
+    const rocket = '\uD83D\uDE80';
+    const term = {
+      canonical: `${rocket} Rocket`,
+      aliases: [`Rocket ${rocket}`, `${rocket}${rocket}`],
+      never: [`not ${rocket}`],
+      phonetic: `rocket ${rocket} ship`,
+      notes: `${rocket} launch`,
+      createdAt: `date ${rocket}`,
+    };
+    const settings = { protectedWords: [`${rocket} protected`], packs: [`pack ${rocket}`] };
+
+    expect(parseLexicon({ terms: [term], settings })).toMatchObject({ terms: [term], settings });
+    for (const text of [rocket, `${rocket}a`, `a${rocket}`, `${rocket}${rocket}`]) {
+      expect(findUnencodableChar(text)).toBeUndefined();
+    }
+    expect(findUnencodableChar(`${rocket}\uD800`)).toBe('U+D800');
+    expect(findUnencodableChar(`\uDC00${rocket}`)).toBe('U+DC00');
+  });
+
   it('rejects the Unicode line and paragraph separators like newlines', () => {
     const LS = cp(0x2028);
     const PS = cp(0x2029);
