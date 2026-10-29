@@ -1097,6 +1097,18 @@ describe('tool and resource descriptions agree with what the code does', () => {
     await expect(fs.access(path.join(home, 'lexicon.yaml'))).rejects.toThrow();
   });
 
+  it('marks the proposed learn preview as pending for MCP while documenting the existing CLI preview', async () => {
+    const contract = await fs.readFile(new URL('../docs/CONTRACT.md', import.meta.url), 'utf8');
+    const proposal = contract.match(/^- \*\*Pending proposal: learn dry run on MCP and HTTP\.\*\*.*$/m)?.[0] ?? '';
+    expect(proposal).toContain('without persistent changes to lexicons, trust records or caches');
+    expect(proposal).toContain('a separate operation against the then-current state');
+    expect(proposal).toContain('not yet an argument of MCP `learn_correction` or `POST /learn`');
+    expect(proposal).toContain('`lexicon learn --dry-run` already provides a CLI preview');
+    const tool = (await listTools()).find((t) => t.name === 'learn_correction');
+    expect(tool).toBeDefined();
+    expect(tool?.inputSchema.properties).not.toHaveProperty('dryRun');
+  });
+
   // Catches: docs/MCP.md's learn_correction row described a project-scope
   // `dryRun` the tool does not take (it is import_dictionary's). Every name
   // a row lists as an argument, and every other tool's argument name a row's
