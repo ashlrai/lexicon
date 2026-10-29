@@ -322,6 +322,20 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(findUnencodableChar(`\uDC00${rocket}`)).toBe('U+DC00');
   });
 
+  it.each([
+    ['U+10000', '\uD800\uDC00'],
+    ['U+103FF', '\uD800\uDFFF'],
+    ['U+10FC00', '\uDBFF\uDC00'],
+    ['U+10FFFF', '\uDBFF\uDFFF'],
+  ])('accepts the paired surrogates for %s from YAML', (_codePoint, pair) => {
+    const input = parseYaml(`terms:\n  - canonical: "before ${pair} after"\n    aliases: ["${pair}${pair}"]\n`);
+    const parsed = parseLexicon(input);
+
+    expect(parsed.terms[0].canonical).toBe(`before ${pair} after`);
+    expect(parsed.terms[0].aliases).toEqual([`${pair}${pair}`]);
+    expect(findUnencodableChar(pair)).toBeUndefined();
+  });
+
   it('rejects the Unicode line and paragraph separators like newlines', () => {
     const LS = cp(0x2028);
     const PS = cp(0x2029);
