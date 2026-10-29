@@ -293,6 +293,15 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it('identifies an unpaired low surrogate in a canonical term and settings', () => {
+    expect(() => parseLexicon({ terms: [{ canonical: 'Rocket \uDC00ship' }] })).toThrow(
+      'terms[0].canonical: must not contain U+DC00 (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket \\uDC00ship"',
+    );
+    expect(() => parseLexicon({ terms: [], settings: { protectedWords: ['a\uDC00b'] } })).toThrow(
+      'settings.protectedWords[0]: must not contain U+DC00 (U+FFFE, U+FFFF and unpaired surrogates fit no file format)',
+    );
+  });
+
   it('accepts and preserves paired surrogates in term and settings text', () => {
     const rocket = '\uD83D\uDE80';
     const term = {
