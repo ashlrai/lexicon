@@ -252,6 +252,19 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it('rejects U+FFFE in a canonical term and a YAML alias with the offending character in the error', () => {
+    const canonical = { terms: [{ canonical: 'Ash\uFFFElr' }] };
+    const alias = parseYaml('terms:\n  - canonical: Ashlr.AI\n    aliases: ["Ash\\uFFFEler"]\n');
+
+    expect(() => parseLexicon(canonical)).toThrow(
+      'terms[0].canonical: must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ash\\uFFFElr"',
+    );
+    expect(() => parseLexicon(alias)).toThrow(
+      'terms[0].aliases[0]: must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ashlr.AI"',
+    );
+    expect(findUnencodableChar('ok\uFFFE\uFFFF')).toBe('U+FFFE');
+  });
+
   // Catches: U+FFFE, U+FFFF and an unpaired surrogate passed the schema
   // (they are neither control nor invisible characters), though no UTF-8 file
   // can hold a lone surrogate and XML forbids all three: one such alias made
