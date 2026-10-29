@@ -170,6 +170,32 @@ describe('CLI dry-run previews', () => {
     expect(readFileSync(globalPath, 'utf8')).toBe(seed);
   });
 
+  it('untrust reports the intended removal without changing trust data', () => {
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    const registryPath = path.join(path.dirname(globalPath), 'trust.json');
+    writeFileSync(projectPath, seed);
+    const trusted = lexicon(['trust', '--yes']);
+    expect(trusted.status, trusted.stderr).toBe(0);
+    const before = snapshot();
+    const registry = readFileSync(registryPath, 'utf8');
+
+    const planned = lexicon(['untrust', '--dry-run']);
+    expect(planned.status, planned.stderr).toBe(0);
+    expect(planned.stderr).toBe('');
+    expect(planned.stdout).toBe(`would untrust ${projectPath}; it would no longer be merged\n`);
+    expect(preview(['untrust'])).toEqual({
+      ok: true, action: 'untrust', path: projectPath, removed: true, dryRun: true,
+      registry: registryPath, summary: `would untrust ${projectPath}; it would no longer be merged`,
+    });
+    expect(snapshot()).toEqual(before);
+    expect(readFileSync(registryPath, 'utf8')).toBe(registry);
+
+    const applied = lexicon(['untrust', '--json']);
+    expect(applied.status, applied.stderr).toBe(0);
+    expect(JSON.parse(applied.stdout)).toMatchObject({ action: 'untrust', path: projectPath, removed: true });
+    expect(readFileSync(registryPath, 'utf8')).not.toBe(registry);
+  });
+
   it.each([
     { args: ['remove', 'Ashlr.AI'], message: 'would remove Ashlr.AI from', suffix: '' },
     { args: ['remove', 'Ashlr.AI', '--alias', 'Ashler'], message: 'would remove alias Ashler from Ashlr.AI in', suffix: 'aliases: Ashlar\n' },
