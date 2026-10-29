@@ -133,6 +133,22 @@ describe('harvestRepo', () => {
     expect(byName(withSymbols, 'IgnoredVendorThing')).toBeUndefined();
   });
 
+  it('excludes NOTE and HACK comment markers when harvesting source symbols', async () => {
+    const dir = path.join(tmp, 'marker-repo');
+    await fs.mkdir(dir);
+    await fs.writeFile(path.join(dir, 'markers.ts'), [
+      '// NOTE: check the QuasarWidget integration.',
+      '// HACK: keep the QuasarWidget workaround.',
+      'const widget = new QuasarWidget();',
+    ].join('\n'));
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+    expect(byName(candidates, 'QuasarWidget')?.count).toBe(3);
+    expect(byName(candidates, 'QuasarWidget')?.evidence).toContain('markers.ts');
+    expect(byName(candidates, 'NOTE')).toBeUndefined();
+    expect(byName(candidates, 'HACK')).toBeUndefined();
+  });
+
   it('never guesses a word boundary a name does not already have', async () => {
     const candidates = await harvestRepo(repo, { minCount: 1, symbols: true });
 
