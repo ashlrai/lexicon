@@ -39,10 +39,22 @@ it('writes the documented non-English baseline with comparable subset metrics', 
     );
     expect(saved.lang?.nonEnglish.cases).toBeGreaterThan(0);
     expect(saved.lang?.baseline.cases).toBeGreaterThan(0);
+    const repeated = runBench(loadCorpus(input), loadLexicon(), { timing: false });
+    expect(repeated.config).toEqual(saved.config);
+    expect(repeated.counts).toEqual(saved.counts);
+    expect(repeated.lang).toEqual(saved.lang);
+    expect(repeated.results.filter((result) => !result.pass)).toEqual(saved.failures);
+    const subsets = saved.lang!;
+    expect(subsets.baseline.cases + subsets.nonEnglish.cases).toBe(saved.counts.cases);
+    expect(Object.values(subsets.byLang).reduce((sum, group) => sum + group.cases, 0))
+      .toBe(subsets.nonEnglish.cases);
     expect(markdown).toContain('## Non-English subset (lang-tagged cases)');
     expect(markdown).toContain('baseline (untagged)');
     expect(markdown).toContain('non-English (all)');
     for (const lang of Object.keys(saved.lang?.byLang ?? {})) expect(markdown).toContain(`| ${lang} |`);
+    for (const group of [subsets.baseline, subsets.nonEnglish, ...Object.values(subsets.byLang)]) {
+      expect(markdown).toContain(`${(group.recall.rate * 100).toFixed(1)}% (${group.recall.hit}/${group.recall.total})`);
+    }
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
