@@ -147,6 +147,26 @@ describe('harvestRepo', () => {
     });
   });
 
+  it('retains prose containing a marker substring while excluding marker comments', async () => {
+    const dir = path.join(tmp, 'prose-markers');
+    await fs.mkdir(dir);
+    await fs.writeFile(path.join(dir, 'README.md'), 'We use Mastodon and Mastodon connects the community.\n');
+    await fs.writeFile(path.join(dir, 'marker.ts'), '// TODO: revisit this\nclass QuasarWidget {}\n');
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+    expect(byName(candidates, 'Mastodon')).toMatchObject({
+      category: 'brand',
+      count: 2,
+      evidence: ['README.md'],
+    });
+    expect(byName(candidates, 'TODO')).toBeUndefined();
+    expect(byName(candidates, 'QuasarWidget')).toMatchObject({
+      category: 'identifier',
+      count: 1,
+      evidence: ['marker.ts'],
+    });
+  });
+
   it('never guesses a word boundary a name does not already have', async () => {
     const candidates = await harvestRepo(repo, { minCount: 1, symbols: true });
 
