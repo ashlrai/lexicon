@@ -94,8 +94,23 @@ function parseSourceList(value: string | undefined): ImportSourceId[] {
 
 function showImportCandidate(io: IO, c: HarvestCandidate, index: number, total: number): void {
   line(io, `${dim(`[${index + 1}/${total}]`)} ${bold(safe(c.canonical))}  ${dim(`${c.category}, seen ${c.count}x, source tag ${safe(c.source)}`)}`);
+  if (c.count > 1) line(io, dim('  repeated candidate: occurrences combined into one approval.'));
   line(io, `  evidence: ${c.evidence.length > 0 ? safe(c.evidence.join(', ')) : dim('(none)')}`);
   line(io, `  aliases:  ${c.suggestedAliases.length > 0 ? safe(c.suggestedAliases.join(', ')) : dim('(none)')}`);
+}
+
+/** Group the overview without changing the order used for individual approvals. */
+function showImportPreview(io: IO, candidates: readonly HarvestCandidate[]): void {
+  const groups = new Map<string, number[]>();
+  candidates.forEach((candidate, index) => {
+    const indices = groups.get(candidate.source) ?? [];
+    indices.push(index);
+    groups.set(candidate.source, indices);
+  });
+  for (const [source, indices] of groups) {
+    line(io, bold(`Source: ${safe(source)} (${plural(indices.length, 'candidate')})`));
+    for (const index of indices) showImportCandidate(io, candidates[index], index, candidates.length);
+  }
 }
 
 async function askCategory(prompter: Prompter, def: TermCategory): Promise<TermCategory> {
@@ -247,7 +262,7 @@ export async function runImportGuided(
     } else {
       line(io, bold(`dry run: ${candidates.length} candidate${candidates.length === 1 ? '' : 's'} (nothing written)`));
       line(io, dim('Duplicate names are combined case-insensitively; counts, evidence and aliases are merged.'));
-      candidates.forEach((c, i) => showImportCandidate(io, c, i, candidates.length));
+      showImportPreview(io, candidates);
     }
     return 0;
   }
@@ -256,7 +271,7 @@ export async function runImportGuided(
     line(io, bold('Review all candidates before approving terms:'));
     line(io, dim('Duplicate names are combined case-insensitively into one candidate; counts, evidence and aliases are merged.'));
     line(io, dim('The source tag is the retained tag; evidence lists the origins of merged candidates.'));
-    candidates.forEach((c, i) => showImportCandidate(io, c, i, candidates.length));
+    showImportPreview(io, candidates);
     line(io);
   }
 
