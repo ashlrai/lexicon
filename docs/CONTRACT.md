@@ -36,6 +36,43 @@ apps/macos/        LexiconBar, SwiftPM; talks to the CLI as a subprocess and to 
 bench/             benchmark corpora and runners; bench/audio/models is also a whisper model fallback dir
 ```
 
+## Non-English name benchmark (issue #8)
+
+Run this text benchmark from the repository root after `npm install`, with Node 20 or
+newer. Keep the same repository revision, corpus, lexicon and default matcher settings
+when comparing runs; record the revision, Node version and command with the report.
+The committed `bench/corpus.jsonl` and `bench/lexicon.yaml` are the inputs, so no
+corpus generation or personal lexicon is needed. The untagged cases are the original
+baseline; the `lang`-tagged cases cover German, Spanish, Polish, Japanese, Arabic and
+Nordic names. They include accent folding, transliterations, anglicized and syllable-split
+spellings, first-name and diminutive cases, multiple names, and clean prose that sounds
+like a name. The lexicon includes terms both with and without aliases. These are
+hand-written examples of STT errors, not a representative sample of real dictation.
+
+For the baseline run, save the markdown and JSON outside the checkout:
+
+```bash
+bench_dir=$(mktemp -d)
+npm run bench -- --out "$bench_dir/results.json" > "$bench_dir/report.md"
+```
+
+Use the `Non-English subset (lang-tagged cases)` table to record the case counts and
+the untagged baseline, all tagged cases and each language group separately. Report raw
+term recall from `heard` and recall after normalization, term precision and F1,
+positive sentence accuracy, and the negative prose false-positive rate, with the
+numerators and denominators shown in the report. Recall counts expected canonical
+term slots recovered; precision counts recovered slots against recovered slots plus
+spurious replacements. Sentence accuracy requires an exact match to `expected`;
+prose false positives are negative cases with any replacement. Include expected-hard
+cases in the main figures and report the positive accuracy excluding them alongside
+it; inspect failures with `npm run bench -- --verbose --out "$bench_dir/verbose.json"`.
+Compare raw and normalized recall and the tagged and untagged subsets, while keeping
+their different inputs in mind. The runner's warm latency is a separate whole-corpus
+measurement, sensitive to the machine and load. For definitions and fixture changes,
+see [bench/README.md](../bench/README.md); measured results, if needed, live in
+[BENCHMARK.md](BENCHMARK.md). This synthetic procedure measures the matcher on the
+fixture, not recognition quality or real-world performance across speakers and languages.
+
 
 ## src/util/ (errors, record, json, which, atomic, package)
 
