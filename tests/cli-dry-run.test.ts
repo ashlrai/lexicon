@@ -127,6 +127,18 @@ describe('CLI dry-run previews', () => {
     expect(JSON.parse(applied.stdout).term.aliases).toEqual(['Ashler', 'Ashlar', 'Ashley our AI']);
   });
 
+  it('add --dry-run reports the intended addition without changing an existing lexicon', () => {
+    seedGlobal();
+    const before = snapshot();
+    const result = lexicon(['add', 'QuasarBridge', 'quasar bridge', 'quasar breach', '--dry-run']);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain('would create QuasarBridge (global)');
+    expect(result.stdout).toContain('aliases: quasar bridge, quasar breach');
+    expect(result.stdout).toContain('nothing was written');
+    expect(snapshot()).toEqual(before);
+  });
+
   it('remove previews a whole term or one alias while preserving the file', () => {
     seedGlobal();
     expect(preview(['remove', 'Ashlr.AI'])).toMatchObject({ ok: true, removed: true, dryRun: true });
