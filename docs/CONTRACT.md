@@ -14,7 +14,7 @@ Each layer imports only from the layers above it, and siblings only through `src
 src/util/          errors, json, which, atomic, package      <- nothing (the bottom layer; every other layer imports it directly)
 src/core/          types, schema, store, trust, matcher (facade over matcher/{build,text,tokenize,tuning} + stoplist),
                    normalize, suggest, learn, pending, stats, notes, suggestTerms, harvest, packs, shell, importers/, exporters/, index   <- util
-src/daemon/        clipboard-backends, clipboard             <- core, util
+src/daemon/        clipboard-backends, clipboard, expander, expander-server   <- core, util
 src/serve/         config, server, index                     <- core, util
 src/voice/         process, devices, models, recorder, transcribe, history, voice   <- core, daemon (clipboard write), util
 src/cli/           cli-entry, io, serve-paths, prompt, claude-settings, commands (facade), cmd-doctor, cmd-install,
@@ -382,6 +382,40 @@ Pure expansion core of the resident expander (no IO). `EXPANDER_NAMED_KEYS` (`Ba
 - `new Expander(lexicon: Lexicon | MatcherIndex, opts?: ExpanderOptions { normalize?: NormalizeOptions; maxBuffer? })`: matching defaults to `{ phonetic: false, fuzzy: false }`. `type(chunk): ExpansionAction | undefined` appends typed text; when whitespace finishes words, corrections that end in the newly finished words (and start at or after the end of its own last output) become `ExpansionAction { kind: 'expand' | 'undo'; backspaces (grapheme clusters); insert; replacements: { original; replacement; canonical }[] }`. `key(name)`: `Backspace` straight after an expansion returns the `undo` action and settles the restored word; any other Backspace edits the buffer; every other named key resets. `reset()`, `setIndex(lexicon | index)` (keeps the buffer), `buffer`.
 
 ## src/daemon/expander-server.ts
+### Separate-process boundary (issue #220)
+
+The existing CLI boundary lets a client invoke `lexicon normalize` as a
+subprocess, send text on stdin, and read corrected text from stdout after the
+command exits. The client handles the exit status and stderr. Each invocation
+starts a new process; this boundary does not require a resident service.
+
+**Proposed integration:** a client that needs repeated low-latency corrections
+could instead run the opt-in `lexicon daemon --expander` as a separate,
+long-lived process and communicate over its local socket (a named pipe on
+Windows). The CLI flag and server described below already exist; adoption by a
+client, automatic startup, supervision, reconnects and fallback to the CLI
+are proposed behavior, not guarantees of the current CLI contract. A client
+would own those lifecycle decisions and apply any returned expansion actions;
+the server does not capture keystrokes or edit the client's text field. It
+holds a lexicon and matcher index in its own process, not shared memory with
+the client. Each connection has its own expansion buffer; requests and
+responses are newline-delimited JSON in order, with an optional echoed `id`.
+The existing socket protocol for a normalization request is, for example:
+
+```json
+{"id":"example","op":"normalize","text":"Ashler"}
+```
+
+With an `Ashler` alias for `Ashlr.AI`, the response is:
+
+```json
+{"id":"example","ok":true,"output":"Ashlr.AI","changed":true,"replacements":[{"original":"Ashler","replacement":"Ashlr.AI","canonical":"Ashlr.AI","reason":"alias","confidence":1}]}
+```
+
+See [DAEMON.md](DAEMON.md#resident-expander-opt-in) for the other operations,
+socket access and lifecycle details. No client should assume the daemon is
+running merely because the CLI is installed.
+
 `runExpanderServer(opts: ExpanderServerOptions { socketPath?; signal?; expanderOptions?; onListening?; load? } & ClipboardCommonOptions): Promise<ClipboardDaemonStop>`: loads the lexicon (fails before listening if it will not load), prepares and listens on the socket (chmod 0600), answers newline-delimited JSON (`ping`, `normalize`, `type`, `key`, `reset`, `clipboard`; see docs/DAEMON.md), one Expander per connection, requests on a connection answered in order, clipboard requests serialized and run through `runClipboardOnce` with the cached lexicon. A request line over `MAX_EXPANDER_REQUEST_CHARS` (80000) is answered with an error and the connection ended; a `type` chunk over `MAX_EXPANDER_TYPE_CHARS` (4096) or `normalize` text over `MAX_CLIPBOARD_CHARS` is an error. Stops on SIGINT, SIGTERM or `signal` and removes the socket.
 - `defaultExpanderSocketPath(env?, platform?, home?)`: `\\.\pipe\lexicon-expander-<user>` on Windows, else `<XDG_RUNTIME_DIR (absolute) or XDG state home>/lexicon/expander.sock`.
 - `prepareSocketPath(path)`: refuses a path over 103 bytes, creates the directory 0700 (refuses one owned by another user, tightens a loose one), removes a stale socket, refuses a live one or a non-socket.

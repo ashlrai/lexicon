@@ -1,4 +1,4 @@
-import { mkdtempSync, rmSync, statSync, writeFileSync, chmodSync, mkdirSync } from 'node:fs';
+import { mkdtempSync, rmSync, statSync, writeFileSync, chmodSync, mkdirSync, readFileSync } from 'node:fs';
 import { spawn } from 'node:child_process';
 import net from 'node:net';
 import os from 'node:os';
@@ -102,6 +102,21 @@ async function connect(socketPath: string): Promise<{ ask: (req: unknown) => Pro
 }
 
 describe.skipIf(!posix)('resident expander over a Unix socket', () => {
+  it('answers the normalization example in the separate-process contract', async () => {
+    const contract = readFileSync(new URL('../../docs/CONTRACT.md', import.meta.url), 'utf8');
+    const section = contract.split('### Separate-process boundary (issue #220)')[1]?.split('## src/serve')[0];
+    const examples = [...(section ?? '').matchAll(/```json\s*\n([^\n]+)\n```/g)].map((match) => JSON.parse(match[1]));
+    expect(examples).toHaveLength(2);
+    const r = await start();
+    const c = await connect(r.socketPath);
+    try {
+      expect(await c.ask(examples[0])).toEqual(examples[1]);
+    } finally {
+      c.close();
+      await r.stop();
+    }
+  });
+
   it('answers ping, normalize, type and key on one connection, in order', async () => {
     const r = await start();
     expect(r.out.join('')).toContain(`lexicon expander listening on ${r.socketPath} (1 terms)`);
