@@ -101,6 +101,18 @@ async function connect(socketPath: string): Promise<{ ask: (req: unknown) => Pro
   return { raw, ask: (req) => raw(`${JSON.stringify(req)}\n`), close: () => socket.destroy() };
 }
 
+describe('issue #220 contract scope', () => {
+  it('distinguishes the proposed system-wide surface from the existing server', () => {
+    const contract = readFileSync(new URL('../../docs/CONTRACT.md', import.meta.url), 'utf8');
+    const section = contract.split('### Separate-process boundary (issue #220)')[1]?.split('## src/serve')[0];
+    expect(section).toBeDefined();
+    expect(section).toMatch(/Proposed surface:[\s\S]*system-wide text expander, separate from the CLI and\s+agent integrations/);
+    expect(section).toMatch(/any focused text\s+field without an agent in the loop/);
+    expect(section).toMatch(/complete surface is not implemented/);
+    expect(section).toMatch(/existing expansion core and socket server do not capture system-wide input\s+or apply changes to a focused field/);
+  });
+});
+
 describe.skipIf(!posix)('resident expander over a Unix socket', () => {
   it('answers the normalization example in the separate-process contract', async () => {
     const contract = readFileSync(new URL('../../docs/CONTRACT.md', import.meta.url), 'utf8');

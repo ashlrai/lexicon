@@ -389,6 +389,16 @@ Pure expansion core of the resident expander (no IO). `EXPANDER_NAMED_KEYS` (`Ba
 ## src/daemon/expander-server.ts
 ### Separate-process boundary (issue #220)
 
+**Proposed surface:** [issue #220](https://github.com/ashlrai/lexicon/issues/220)
+describes a resident, system-wide text expander, separate from the CLI and
+agent integrations. Its intended scope is to expand text in any focused text
+field without an agent in the loop. That complete surface is not implemented:
+the existing expansion core and socket server do not capture system-wide input
+or apply changes to a focused field. A platform-specific client would need to
+provide those capabilities, including input permissions and focus handling.
+The issue proposes a resident process to avoid a Node cold start for each
+correction; it does not establish a latency or memory guarantee.
+
 The existing CLI boundary lets a client invoke `lexicon normalize` as a
 subprocess, send text on stdin, and read corrected text from stdout after the
 command exits. The client handles the exit status and stderr. Each invocation
