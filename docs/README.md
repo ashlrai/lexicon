@@ -58,6 +58,13 @@ Look up an exact name, flag or field. Three of these four pages appear above as
 well; they are the same page either way, listed twice because you reach them for
 two different reasons.
 
+The CLI reference describes the current source tree. In the published npm package
+measured in [FIRST-RUN.md](FIRST-RUN.md), `lexicon doctor --fix`,
+`lexicon doctor --json`, `lexicon add --json`, `lexicon install --json`,
+`lexicon uninstall` and `lexicon pending` were available only in source. Check
+your installed version with `lexicon --version`, then use `lexicon --help` and
+`lexicon doctor --help` to check which commands and flags it supports.
+
 | Page | What it covers | Also listed under |
 |---|---|---|
 | [CLI.md](CLI.md) | Every command and flag, generated from `--help` | |
