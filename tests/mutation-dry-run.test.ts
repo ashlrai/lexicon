@@ -7,6 +7,7 @@ import { runLearn } from '../src/cli/cmd-learn.js';
 import { runPendingAccept, runPendingReject } from '../src/cli/cmd-pending.js';
 import { runTrust, runUntrust } from '../src/cli/cmd-trust.js';
 import { runPackAdd, runPackRemove } from '../src/cli/cmd-pack.js';
+import { runAdd, runRemove } from '../src/cli/commands.js';
 import { makeIO } from './helpers.js';
 
 let dir: string;
@@ -44,6 +45,94 @@ async function seedGlobal(): Promise<void> {
 }
 
 describe('mutation handler previews', () => {
+  it('add previews creation and merge without writing, then applies the planned aliases', async () => {
+    const before = await snapshot();
+    const create = makeIO();
+    expect(await runAdd('Ashlr.AI', ['Ashler'], { cwd, globalPath, dryRun: true, json: true }, create)).toBe(0);
+    expect(JSON.parse(create.out)).toMatchObject({ ok: true, created: true, dryRun: true, scope: 'global', path: globalPath, term: { canonical: 'Ashlr.AI', aliases: ['Ashler'] } });
+    expect(await snapshot()).toEqual(before);
+    expect(await runAdd('Ashlr.AI', ['Ashler'], { cwd, globalPath }, makeIO())).toBe(0);
+
+    const seeded = await snapshot();
+    const merge = makeIO();
+    expect(await runAdd('Ashlr.AI', ['Ashlar'], { cwd, globalPath, dryRun: true }, merge)).toBe(0);
+    expect(merge.out).toContain('would merge Ashlr.AI (global)');
+    expect(merge.out).toContain('nothing was written');
+    expect(merge.out).toContain('aliases: Ashler, Ashlar');
+    expect(await snapshot()).toEqual(seeded);
+    expect(await runAdd('Ashlr.AI', ['Ashlar'], { cwd, globalPath }, makeIO())).toBe(0);
+    expect((await loadLexicon({ cwd, globalPath })).global.lexicon.terms[0].aliases).toEqual(['Ashler', 'Ashlar']);
+  });
+
+  it('project add previews trust and rejects an untrusted existing file without persisting either', async () => {
+    const before = await snapshot();
+    const preview = makeIO();
+    expect(await runAdd('Ashlr.AI', ['Ashler'], { cwd, globalPath, project: true, dryRun: true }, preview)).toBe(0);
+    expect(preview.out).toContain('would create Ashlr.AI (project)');
+    expect(preview.out).toContain('a real run also re-pins');
+    expect(await snapshot()).toEqual(before);
+
+    await fs.writeFile(projectPath, 'version: 1\nterms: []\n');
+    const untrusted = await snapshot();
+    await expect(runAdd('Ashlr.AI', ['Ashler'], { cwd, globalPath, project: true, dryRun: true }, makeIO())).rejects.toThrow(/untrusted/);
+    expect(await snapshot()).toEqual(untrusted);
+  });
+
+  it('remove previews the first term copy and then removes only that copy', async () => {
+    await seedGlobal();
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler', 'Ashlar'] }, { cwd, globalPath, scope: 'project' });
+    const before = await snapshot();
+    const preview = makeIO();
+    expect(await runRemove('ashlr.ai', { cwd, dryRun: true, json: true }, preview)).toBe(0);
+    const plan = JSON.parse(preview.out);
+    expect(plan).toMatchObject({ ok: true, canonical: 'Ashlr.AI', removed: true, dryRun: true, stillIn: [{ scope: 'global', path: globalPath }] });
+    expect(await snapshot()).toEqual(before);
+    const actual = makeIO();
+    expect(await runRemove('ashlr.ai', { cwd, json: true }, actual)).toBe(0);
+    const { dryRun, ...expected } = plan;
+    expect(dryRun).toBe(true);
+    expect(JSON.parse(actual.out)).toEqual(expected);
+    const loaded = await loadLexicon({ cwd, globalPath });
+    expect(loaded.project?.lexicon.terms).toEqual([]);
+    expect(loaded.global.lexicon.terms[0].canonical).toBe('Ashlr.AI');
+  });
+
+  it('remove alias previews all affected files and remaining aliases without writing', async () => {
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler', 'Global'] }, { cwd, globalPath });
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler', 'Project'] }, { cwd, globalPath, scope: 'project' });
+    const before = await snapshot();
+    const preview = makeIO();
+    expect(await runRemove('Ashlr.AI', { cwd, alias: 'Ashler', dryRun: true, json: true }, preview)).toBe(0);
+    const plan = JSON.parse(preview.out);
+    expect(plan).toMatchObject({ ok: true, canonical: 'Ashlr.AI', alias: 'Ashler', removed: true, dryRun: true, aliases: ['Project'], paths: [projectPath, globalPath] });
+    expect(await snapshot()).toEqual(before);
+    const textPreview = makeIO();
+    expect(await runRemove('Ashlr.AI', { cwd, alias: 'Ashler', global: true, dryRun: true }, textPreview)).toBe(0);
+    expect(textPreview.out).toContain(`would remove alias Ashler from Ashlr.AI in ${globalPath}`);
+    expect(textPreview.out).toContain('aliases: Global');
+    expect(await snapshot()).toEqual(before);
+    const actual = makeIO();
+    expect(await runRemove('Ashlr.AI', { cwd, alias: 'Ashler', json: true }, actual)).toBe(0);
+    const { dryRun, ...expected } = plan;
+    expect(dryRun).toBe(true);
+    expect(JSON.parse(actual.out)).toEqual(expected);
+    const loaded = await loadLexicon({ cwd, globalPath });
+    expect(loaded.project?.lexicon.terms[0].aliases).toEqual(['Project']);
+    expect(loaded.global.lexicon.terms[0].aliases).toEqual(['Global']);
+  });
+
+  it('remove dry runs refuse missing targets and untrusted project writes without changes', async () => {
+    await seedGlobal();
+    await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n');
+    const before = await snapshot();
+    for (const opts of [{ global: true }, { global: true, alias: 'Missing' }, { project: true }, { project: true, alias: 'Ashler' }]) {
+      const io = makeIO();
+      expect(await runRemove(opts.project || opts.alias ? 'Ashlr.AI' : 'Missing', { cwd, ...opts, dryRun: true, json: true }, io)).toBe(1);
+      expect(JSON.parse(io.out)).toMatchObject({ ok: false, removed: false });
+      expect(await snapshot()).toEqual(before);
+    }
+  });
+
   it('learn previews a new term without creating the lexicon or sidecars', async () => {
     const before = await snapshot();
     const io = makeIO();
