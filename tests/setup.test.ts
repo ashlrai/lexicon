@@ -167,6 +167,8 @@ describe('runSetup --yes', () => {
   it.each([
     ['@ashlr/lexicon', 'Ashlr.AI', 'Ashlr.AI'],
     ['@ashlr.ai/lexicon', 'Ashlr.AI <hello@example.com> (https://example.com)', 'Ashlr.AI'],
+    // Issue #218: a dotted scope and package name must retain the author's brand spelling.
+    ['@ashlr.ai/ashlr.ai', 'Ashlr.AI', 'Ashlr.AI'],
     ['@ashlr/lexicon', 'Ashlr.AI (https://example.com)', 'Ashlr.AI'],
     ['@acme.ai/tools', 'Other.AI <hello@example.com>', 'Acme.ai'],
     ['@ashlr/lexicon', { name: 'Ashlr.AI', email: 'hello@example.com' }, 'Ashlr.AI'],
@@ -1036,6 +1038,7 @@ describe('runSetup interactive', () => {
     [{ name: '@ashlr/lexicon', author: 'Ashlr.AI' }, 'Ashlr.AI'],
     [{ name: '@Ashlr.AI/lexicon' }, 'Ashlr.AI'],
     [{ name: '@ashlr.ai/lexicon', author: 'Ashlr.AI <hello@example.com>' }, 'Ashlr.AI'],
+    [{ name: '@ashlr.ai/ashlr.ai', author: 'Ashlr.AI' }, 'Ashlr.AI'],
     [{ name: '@Acme.Voice.AI/transcriber' }, 'Acme.Voice.AI'],
   ])('accepts a dotted package brand as the suggested company when pressing Enter: %j', async (pkg, expected) => {
     await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify(pkg));
