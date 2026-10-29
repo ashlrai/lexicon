@@ -8,6 +8,7 @@ const nodeMajor = Number(process.versions.node.split('.')[0]);
 // Wall-clock assertions. They run in their own project (below), never in the
 // parallel pool with the rest of the suite.
 const PERF_FILES = [
+  'tests/code-spans.test.ts',
   'tests/matcher-perf.test.ts',
   'tests/matcher-linear-perf.test.ts',
   'tests/enumeration-paragraph.test.ts',
