@@ -148,6 +148,8 @@ describe('runSetup --yes', () => {
     ['@ashlr/lexicon', 'Ashlr.AI', 'Ashlr.AI'],
     ['@ashlr/lexicon', { name: 'Ashlr.AI', email: 'hello@example.com' }, 'Ashlr.AI'],
     ['@ashlr.ai/lexicon', { name: 'Ashlr.AI' }, 'Ashlr.AI'],
+    ['@Ashlr.AI/lexicon', undefined, 'Ashlr.AI'],
+    ['@ashlr.ai/lexicon', undefined, 'Ashlr.ai'],
     ['@acme/tools', 'Other.AI', 'Acme'],
     ['@acme/tools', undefined, 'Acme'],
     ['@acme/tools', { name: 42 }, 'Acme'],
@@ -981,8 +983,11 @@ describe('runSetup with a step that fails', () => {
 });
 
 describe('runSetup interactive', () => {
-  it('accepts the dotted package author as the suggested company when pressing Enter', async () => {
-    await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify({ name: '@ashlr/lexicon', author: 'Ashlr.AI' }));
+  it.each([
+    [{ name: '@ashlr/lexicon', author: 'Ashlr.AI' }],
+    [{ name: '@Ashlr.AI/lexicon' }],
+  ])('accepts a dotted package brand as the suggested company when pressing Enter: %j', async (pkg) => {
+    await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify(pkg));
     const p = scripted(['y', '', '', 'n']); // person, suggested company, no hint, no extra term
     const f = fakes({ isInteractive: () => true, createPrompter: () => p });
     const { code, summary } = await run({ clients: 'none', packs: false, harvest: false, serve: false, app: 'none' }, f);
@@ -1183,6 +1188,7 @@ describe('helpers', () => {
     ['@ashlr.ai/lexicon', 'Ashlr.AI', 'Ashlr.AI'],
     ['@Ashlr.AI/lexicon', undefined, 'Ashlr.AI'],
     ['@ashlr.ai/lexicon', undefined, 'Ashlr.ai'],
+    ['@foo.bar.BAZ/tools', undefined, 'Foo.bar.BAZ'],
     ['@ashlr/lexicon', undefined, 'Ashlr'],
     ['@acme/tools', 'Acme', 'Acme'],
     ['@acme-inc/tools', undefined, 'Acme-inc'],
