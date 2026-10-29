@@ -243,6 +243,41 @@ describe('CLI dry-run previews', () => {
     expect(existsSync(registryPath)).toBe(false);
   });
 
+  it.each(['global', 'project'] as const)('built-in pack previews preserve %s state and report independent results', (scope) => {
+    const flags = scope === 'project' ? ['--project'] : [];
+    const target = scope === 'project' ? path.join(repo, '.lexicon.yaml') : globalPath;
+    if (scope === 'project') {
+      writeFileSync(target, seed);
+      const trusted = lexicon(['trust', '--yes']);
+      expect(trusted.status, trusted.stderr).toBe(0);
+    } else {
+      seedGlobal();
+    }
+    const before = snapshot();
+    const text = lexicon(['pack', 'add', 'developer', ...flags, '--dry-run']);
+    expect(text.status, text.stderr).toBe(0);
+    expect(text.stdout).toMatch(/would install developer .*: \d+ added, \d+ merged into /);
+    expect(text.stdout).toContain(`${target}; nothing was written`);
+    const result = lexicon(['pack', 'add', 'developer', 'developer', ...flags, '--dry-run', '--json']);
+    expect(result.status, result.stderr).toBe(0);
+    const plans = JSON.parse(result.stdout);
+    expect(plans).toHaveLength(2);
+    expect(plans[0]).toMatchObject({ pack: { name: 'developer' }, added: expect.any(Number), merged: expect.any(Number), path: target, scope, alreadyInstalled: false, dryRun: true });
+    expect(plans[1]).toEqual(plans[0]);
+    expect(snapshot()).toEqual(before);
+
+    const applied = lexicon(['pack', 'add', 'developer', ...flags, '--json']);
+    expect(applied.status, applied.stderr).toBe(0);
+    const { dryRun, ...expected } = plans[0];
+    expect(dryRun).toBe(true);
+    expect(JSON.parse(applied.stdout)[0]).toEqual(expected);
+    const installed = snapshot();
+    const again = lexicon(['pack', 'add', 'developer', ...flags, '--dry-run', '--json']);
+    expect(again.status, again.stderr).toBe(0);
+    expect(JSON.parse(again.stdout)[0]).toMatchObject({ alreadyInstalled: true, dryRun: true, path: target, scope });
+    expect(snapshot()).toEqual(installed);
+  });
+
   it.each([
     { args: ['remove', 'Ashlr.AI'], message: 'would remove Ashlr.AI from', suffix: '' },
     { args: ['remove', 'Ashlr.AI', '--alias', 'Ashler'], message: 'would remove alias Ashler from Ashlr.AI in', suffix: 'aliases: Ashlar\n' },
