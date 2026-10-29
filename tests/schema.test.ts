@@ -365,6 +365,27 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(parseLexicon({ terms: [{ canonical: `  ${'a'.repeat(80)}${ZW}  ` }] }).terms[0].canonical).toHaveLength(80);
   });
 
+  it.each([
+    { field: 'canonical', input: (word: string) => ({ terms: [{ canonical: word }] }), path: ['terms', 0, 'canonical'] },
+    { field: 'aliases', input: (word: string) => ({ terms: [{ canonical: 'X', aliases: [word] }] }), path: ['terms', 0, 'aliases', 0] },
+    { field: 'never', input: (word: string) => ({ terms: [{ canonical: 'X', never: [word] }] }), path: ['terms', 0, 'never', 0] },
+    { field: 'protectedWords', input: (word: string) => ({ settings: { protectedWords: [word] } }), path: ['settings', 'protectedWords', 0] },
+    { field: 'packs', input: (word: string) => ({ settings: { packs: [word] } }), path: ['settings', 'packs', 0] },
+  ])('enforces the 80-character word boundary for $field after sanitizing', ({ input, path }) => {
+    const word = 'w'.repeat(80);
+    const atLimit = LexiconSchema.safeParse(input(` ${ZW}${word} `));
+    expect(atLimit.success).toBe(true);
+    if (!atLimit.success) throw atLimit.error;
+    expect(atLimit.data).toMatchObject(input(word));
+
+    const overLimit = LexiconSchema.safeParse(input(`${word}w`));
+    expect(overLimit.success).toBe(false);
+    if (overLimit.success) throw new Error('Expected the word limit to be enforced');
+    expect(overLimit.error.issues).toMatchObject([
+      { code: 'too_big', path, maximum: 80, message: 'must be at most 80 characters' },
+    ]);
+  });
+
   it.each(['notes', 'phonetic'] as const)('enforces the 200-character text boundary for %s after sanitizing', (field) => {
     const text = 'x'.repeat(200);
     const atLimit = LexiconSchema.safeParse({ terms: [{ canonical: 'X', [field]: ` ${ZW}${text} ` }] });
