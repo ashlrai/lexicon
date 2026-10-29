@@ -139,6 +139,39 @@ describe('CLI dry-run previews', () => {
     expect(snapshot()).toEqual(before);
   });
 
+  it('add previews a project merge without re-pinning trust', () => {
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    writeFileSync(projectPath, seed);
+    const trusted = lexicon(['trust', '--yes']);
+    expect(trusted.status, trusted.stderr).toBe(0);
+    const before = snapshot();
+
+    const merged = lexicon(['add', 'Ashlr.AI', 'Ashley our AI', '--project', '--dry-run']);
+    expect(merged.status, merged.stderr).toBe(0);
+    expect(merged.stdout).toContain(`would merge Ashlr.AI (project) in ${projectPath}; nothing was written\n`);
+    expect(merged.stdout).toContain('aliases: Ashler, Ashlar, Ashley our AI\n');
+    expect(merged.stdout).toContain(`a real run also re-pins the project lexicon's trust (${projectPath})`);
+    expect(snapshot()).toEqual(before);
+  });
+
+  it('add previews an unchanged project term without re-pinning trust', () => {
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    writeFileSync(projectPath, seed);
+    const trusted = lexicon(['trust', '--yes']);
+    expect(trusted.status, trusted.stderr).toBe(0);
+    const before = snapshot();
+
+    const unchanged = lexicon(['add', 'Ashlr.AI', 'Ashler', '--project', '--dry-run']);
+    expect(unchanged.status, unchanged.stderr).toBe(0);
+    expect(unchanged.stdout).toContain('Nothing was added: "Ashlr.AI" already has every alias and field given.');
+    expect(unchanged.stdout).toContain('aliases: Ashler, Ashlar\n');
+    expect(preview(['add', 'Ashlr.AI', 'Ashler', '--project'])).toMatchObject({
+      ok: true, created: false, unchanged: true, dryRun: true, scope: 'project', path: projectPath,
+      term: { canonical: 'Ashlr.AI', aliases: ['Ashler', 'Ashlar'] }, suggested: [],
+    });
+    expect(snapshot()).toEqual(before);
+  });
+
   it.each([
     { heard: 'cooper netties', meant: 'Kubernetes', action: 'new term', aliases: ['cooper netties', 'Cubernetes'], created: true },
     { heard: 'Ashlur', meant: 'Ashlr.AI', action: 'alias added', aliases: ['Ashler', 'Ashlar', 'Ashlur'], created: false },
