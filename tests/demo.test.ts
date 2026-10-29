@@ -128,6 +128,20 @@ describe('lexicon normalize with nothing set up', () => {
     expect(io.err).toContain('built-in example');
   });
 
+  it('uses a user-owned Hetzner alias without supplementing it with example terms', async () => {
+    const lexiconPath = path.join(cwd, 'nope', 'lexicon.yaml');
+    const yaml = 'version: 1\nterms:\n  - canonical: Hetzner\n    aliases: [head sner]\n';
+    await fs.mkdir(path.dirname(lexiconPath), { recursive: true });
+    await fs.writeFile(lexiconPath, yaml);
+
+    const io = makeIO();
+    const code = await runNormalize(['deploy on head sner and ping ashler'], { cwd }, io);
+    expect(code).toBe(0);
+    expect(io.out).toBe('deploy on Hetzner and ping ashler\n');
+    expect(io.err).not.toContain('built-in example');
+    expect(await fs.readFile(lexiconPath, 'utf8')).toBe(yaml);
+  });
+
   // Keep these sentences in sync with the README "How it works" block and
   // docs/MATCHING.md. Both are what a person with no lexicon is told to paste.
   it('corrects the sentences the README and MATCHING.md tell a new user to paste', async () => {
