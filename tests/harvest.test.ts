@@ -133,6 +133,20 @@ describe('harvestRepo', () => {
     expect(byName(withSymbols, 'IgnoredVendorThing')).toBeUndefined();
   });
 
+  it('excludes the XXX marker while retaining an adjacent identifier', async () => {
+    const dir = path.join(tmp, 'marker-repo');
+    await fs.mkdir(dir);
+    await fs.writeFile(path.join(dir, 'marker.ts'), '// XXX: revisit this\nclass QuasarWidget {}\n');
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+    expect(byName(candidates, 'XXX')).toBeUndefined();
+    expect(byName(candidates, 'QuasarWidget')).toMatchObject({
+      category: 'identifier',
+      count: 1,
+      evidence: ['marker.ts'],
+    });
+  });
+
   it('never guesses a word boundary a name does not already have', async () => {
     const candidates = await harvestRepo(repo, { minCount: 1, symbols: true });
 
