@@ -151,6 +151,24 @@ describe('CLI dry-run previews', () => {
     expect(readFileSync(globalPath, 'utf8')).toBe(seed);
   });
 
+  it.each([
+    { args: ['remove', 'Ashlr.AI'], message: 'would remove Ashlr.AI from', suffix: '' },
+    { args: ['remove', 'Ashlr.AI', '--alias', 'Ashler'], message: 'would remove alias Ashler from Ashlr.AI in', suffix: 'aliases: Ashlar\n' },
+  ])('remove reports the intended change without writing: $message', ({ args, message, suffix }) => {
+    seedGlobal();
+    const before = snapshot();
+    const planned = lexicon([...args, '--dry-run']);
+    expect(planned.status, planned.stderr).toBe(0);
+    expect(planned.stdout).toBe(`${message} ${globalPath}\n${suffix}`);
+    expect(planned.stderr).toBe('');
+    expect(snapshot()).toEqual(before);
+
+    const applied = lexicon([...args, '--json']);
+    expect(applied.status, applied.stderr).toBe(0);
+    expect(JSON.parse(applied.stdout)).toMatchObject({ ok: true, canonical: 'Ashlr.AI', removed: true });
+    expect(readFileSync(globalPath, 'utf8')).not.toBe(seed);
+  });
+
   it('project previews retain the untrusted-file refusal and do not pin content', () => {
     const projectPath = path.join(repo, '.lexicon.yaml');
     writeFileSync(projectPath, seed);
