@@ -255,9 +255,15 @@ describe('CLI dry-run previews', () => {
     expect(planned.stderr).toBe('');
     expect(snapshot()).toEqual(before);
 
+    const proposal = preview(args);
+    expect(proposal).toMatchObject({ ok: true, canonical: 'Ashlr.AI', removed: true, dryRun: true });
+    expect(snapshot()).toEqual(before);
+
     const applied = lexicon([...args, '--json']);
     expect(applied.status, applied.stderr).toBe(0);
-    expect(JSON.parse(applied.stdout)).toMatchObject({ ok: true, canonical: 'Ashlr.AI', removed: true });
+    const { dryRun, ...expected } = proposal;
+    expect(dryRun).toBe(true);
+    expect(JSON.parse(applied.stdout)).toEqual(expected);
     expect(readFileSync(globalPath, 'utf8')).not.toBe(seed);
   });
 
