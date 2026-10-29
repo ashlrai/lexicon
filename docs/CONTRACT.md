@@ -415,6 +415,28 @@ the server does not capture keystrokes or edit the client's text field. It
 holds a lexicon and matcher index in its own process, not shared memory with
 the client. Each connection has its own expansion buffer; requests and
 responses are newline-delimited JSON in order, with an optional echoed `id`.
+
+**System-wide surface proposed in [issue #220](https://github.com/ashlrai/lexicon/issues/220):**
+a resident process would let a person expand dictated or typed text in a
+focused text field across applications, without an agent in the loop. It would
+keep the lexicon and matcher warm rather than start Node for each correction.
+The intended flow is to observe text input, match completed words against the
+lexicon, and apply the resulting replacement in the focused field. The existing
+expansion core defaults to explicit aliases and returns backspace-and-insert
+actions, including an immediate Backspace undo; a future input client would
+have to perform those actions. The clipboard watcher corrects copied text and
+is a separate, already available surface.
+
+This system-wide integration is a proposal, not an implemented or available
+feature. The socket server has no global input capture or text-field editing
+client. Platform choices remain open: how to observe focus and input and
+apply edits on macOS and Windows, and how to support Linux across X11 and
+Wayland compositors. The required permissions, sensitive-field exclusions,
+edit and undo behavior, startup and supervision, and recovery when focus or
+the connection changes also need design and validation on each platform. The
+socket protocol below does not settle those choices or promise support in
+every application.
+
 The existing socket protocol for a normalization request is, for example:
 
 ```json
