@@ -56,6 +56,15 @@ describe('bench corpus', () => {
       expect(langs.has(lang), lang).toBe(true);
     }
   });
+
+  it('includes name positives, lookalike negatives, hard cases and aliasless names', () => {
+    const tagged = corpus.filter((c) => c.lang !== undefined);
+    expect(tagged.some((c) => !isNegative(c))).toBe(true);
+    expect(tagged.some(isNegative)).toBe(true);
+    expect(tagged.some(isHard)).toBe(true);
+    const names = new Set(tagged.flatMap((c) => c.terms));
+    expect(lexicon.terms.some((t) => names.has(t.canonical) && t.aliases.length === 0)).toBe(true);
+  });
 });
 
 describe('bench accuracy (default config)', () => {
@@ -63,6 +72,19 @@ describe('bench accuracy (default config)', () => {
   const lang = report.lang;
   if (!lang) throw new Error('corpus has no lang-tagged cases; the non-English fixture is missing');
   const { baseline, nonEnglish, byLang } = lang;
+
+  it('reports comparable baseline, tagged and per-language measurements', () => {
+    expect(baseline.cases + nonEnglish.cases).toBe(corpus.length);
+    expect(Object.values(byLang).reduce((sum, group) => sum + group.cases, 0)).toBe(nonEnglish.cases);
+    for (const [tag, group] of Object.entries(byLang)) {
+      const cases = corpus.filter((c) => c.lang === tag);
+      expect(group.cases, tag).toBe(cases.length);
+      expect(group.recall.total, tag).toBe(cases.reduce((sum, c) => sum + new Set(c.terms).size, 0));
+      expect(group.rawRecall.total, tag).toBe(group.recall.total);
+      expect(group.falsePositiveRate.total, tag).toBe(cases.filter(isNegative).length);
+      expect(group.positiveSentence.total, tag).toBe(cases.filter((c) => !isNegative(c)).length);
+    }
+  });
 
   it('keeps the baseline identical to the pre-fixture corpus', () => {
     // The gates below were tuned on the 402 untagged cases; asserting the size
