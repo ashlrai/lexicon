@@ -660,8 +660,8 @@ Interactive workflows. Every handler takes a `Prompter` (or an injectable spawne
   Then the summary card, which is not numbered: lexicon path, terms added, packs, clients, local API, exports, and one next action (dictate a sentence with the company name in the client that was installed), followed by a dim `later:` line naming `lexicon suggest`, `lexicon stats` and `lexicon voice`. Under `--dry-run` the plan card replaces it and ends in `to apply, run: <setupApplyCommand(opts)>`.
 
 Company guessing uses `suggestCompany(packageName, remoteUrl, author?)`: a dotted
-package author whose full name or first dot-separated component matches the
-scope (case-insensitive) supplies the canonical spelling. For example,
+package author whose full name or dot-separated prefix matches the scope
+(case-insensitive) supplies the canonical spelling. For example,
 `@ashlr/lexicon` with author `Ashlr.AI` suggests `Ashlr.AI`. Otherwise the scope
 keeps its spelling with its first letter capitalized, or the remote organization
 is used for an unscoped package. No suffix is invented.
