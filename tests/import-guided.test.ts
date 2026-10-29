@@ -275,13 +275,16 @@ describe('runImportGuided', () => {
       evidence: ['calendar attendee', 'calendar organizer', 'calendar title', 'fourth calendar origin', 'GitHub profile name'],
       aliases: ['Mason Whyatt'],
     });
-    const p = scripted([[2, 3], 'a']);
+    const p = scripted([[2, 3], 'y', 'n']);
     const ask = p.ask.bind(p);
     p.ask = async (...args) => {
       expect(io.out).toContain('fourth calendar origin');
       expect(io.out).toContain('GitHub profile name');
       expect(io.out).toContain('Lexicon');
       expect(io.out).toContain('seen 2x');
+      expect(io.out).toContain('Source: import:calendar (1 candidate)');
+      expect(io.out).toContain('Source: import:github (1 candidate)');
+      expect(io.out).toContain('repeated candidate: occurrences combined into one approval.');
       expect(io.out).toContain('Duplicate names are combined');
       expect(existsSync(globalPath)).toBe(false);
       return ask(...args);
@@ -289,9 +292,39 @@ describe('runImportGuided', () => {
     expect(await runImportGuided({ globalPath }, io, fakeDeps({
       isInteractive: () => true, createPrompter: () => p,
     }))).toBe(0);
-    expect(io.out).toContain('2 new');
+    expect(io.out).toContain('1 new');
+    expect(io.out).toContain('1 skipped');
     const text = readFileSync(globalPath, 'utf8');
     expect(text.match(/canonical: Mason Wyatt/g)).toHaveLength(1);
+    expect(text).not.toContain('canonical: Lexicon');
+  });
+
+  it('groups interleaved sources in a dry-run overview without writing', async () => {
+    const candidates: HarvestCandidate[] = [
+      { canonical: 'Alpha', category: 'person', source: 'import:calendar', count: 3, evidence: [], suggestedAliases: [] },
+      { canonical: 'Beta', category: 'person', source: 'import:github', count: 2, evidence: [], suggestedAliases: [] },
+      { canonical: 'Gamma', category: 'person', source: 'import:calendar', count: 1, evidence: [], suggestedAliases: [] },
+    ];
+    vi.spyOn(getImportSource('github'), 'harvest').mockResolvedValue(candidates);
+    const io = makeIO();
+    expect(await runImportGuided({ sources: 'github', dryRun: true, globalPath }, io, fakeDeps())).toBe(0);
+    expect(io.out).toContain('Source: import:calendar (2 candidates)');
+    expect(io.out.indexOf('Gamma')).toBeLessThan(io.out.indexOf('Source: import:github'));
+    expect(io.out.match(/repeated candidate:/g)).toHaveLength(2);
+    expect(existsSync(globalPath)).toBe(false);
+  });
+
+  it('an empty approved selection imports nothing from a nonempty preview', async () => {
+    const previewIO = makeIO();
+    expect(await runImportGuided({ sources: 'github', json: true, globalPath }, previewIO, fakeDeps())).toBe(0);
+    const preview = JSON.parse(previewIO.out);
+    const io = makeIO();
+    expect(await runImportGuided({ sources: 'github', yes: true, json: true, globalPath,
+      previewId: preview.previewId, accept: '' }, io, fakeDeps())).toBe(0);
+    const report = JSON.parse(io.out);
+    expect(report).toMatchObject({ added: 0, merged: 0, skipped: preview.candidates.length });
+    expect(report.candidates.every((candidate: { accepted: boolean }) => !candidate.accepted)).toBe(true);
+    expect(existsSync(globalPath)).toBe(false);
   });
 
   it.each(['q', 'n'])('declining every candidate with %s leaves an existing lexicon unchanged', async (answer) => {
