@@ -42,6 +42,17 @@ describe('examples/', () => {
     expect(r.out).toMatch(/"keywords": \[/);
   }, 60_000);
 
+  it('hetzner-evaluation.ts checks the documented baseline, corrections and false positive', () => {
+    const r = runExample('hetzner-evaluation.ts');
+    expect(r.status).toBe(0);
+    expect(r.err).toBe('');
+    expect(r.out.trim().split('\n')).toEqual([
+      'PASS: deploy on head sner | before: deploy on head sner | after: deploy on Hetzner',
+      'PASS: deploy on hetsner | before: deploy on hetsner | after: deploy on Hetzner',
+      'PASS: the head singer is ready | before: the head singer is ready | after: the head singer is ready',
+    ]);
+  }, 60_000);
+
   it('mcp-config.json points at the lexicon-mcp bin the package ships', () => {
     const cfg = JSON.parse(readFileSync(path.join(root, 'examples', 'mcp-config.json'), 'utf8'));
     const pkg = JSON.parse(readFileSync(path.join(root, 'package.json'), 'utf8'));
