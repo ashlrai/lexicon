@@ -182,6 +182,28 @@ describe('runSetup --yes', () => {
     expect(repeated.summary.termsAdded).toEqual([]);
   });
 
+  it.each([
+    ['a git remote', 'https://github.com/remote-org/repo.git', ['remote-org']],
+    ['no git remote', undefined, []],
+  ])('uses %s for an unscoped package company guess', async (_label, remote, brands) => {
+    await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify({ name: 'acme', author: 'Acme.AI' }));
+    const f = fakes({ exec: (_file, args) => {
+      if (args.includes('get-url') && remote) return remote;
+      throw new Error('no git value');
+    } });
+    const opts = { yes: true, clients: 'none', packs: 'none', person: 'Jane Doe' };
+    const preview = await run({ ...opts, dryRun: true }, f);
+    expect(preview.code).toBe(0);
+    expect(preview.plan?.wouldSeed).toEqual(['Jane Doe', ...brands]);
+    expect(existsSync(globalPath)).toBe(false);
+
+    const applied = await run(opts, f);
+    expect(applied.code).toBe(0);
+    expect(applied.summary.termsAdded).toEqual(['Jane Doe', ...brands]);
+    const file = await readLexiconFile(globalPath, 'global');
+    expect(file.lexicon.terms.filter((term) => term.category === 'brand').map((term) => term.canonical)).toEqual(brands);
+  });
+
   it('is idempotent: a second run adds nothing and reports no new terms', async () => {
     const f = fakes();
     await run({ yes: true, clients: 'claude', company: 'Ashlr.AI' }, f);
