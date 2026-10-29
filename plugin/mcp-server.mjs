@@ -70517,7 +70517,7 @@ async function readPackageIdentity(cwd) {
     if (!pkg || typeof pkg !== "object") return {};
     const name = "name" in pkg ? pkg.name : void 0;
     const author = "author" in pkg ? pkg.author : void 0;
-    const authorName = author && typeof author === "object" && "name" in author ? author.name : author;
+    const authorName = author && typeof author === "object" && "name" in author ? author.name : typeof author === "string" ? author.match(/^\s*([^<>()\r\n]+?)\s*(?:<[^<>\r\n]+>\s*)?(?:\([^()\r\n]+\)\s*)?$/)?.[1] : void 0;
     return {
       ...typeof name === "string" ? { name } : {},
       ...typeof authorName === "string" ? { author: authorName } : {}
