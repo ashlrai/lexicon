@@ -381,4 +381,20 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(parseLexicon({ terms }).terms).toHaveLength(5000);
     expect(() => parseLexicon({ terms: [...terms, { canonical: 'overflow' }] })).toThrow(/terms: at most 5000 terms/);
   });
+
+  it('accepts exactly 5000 terms and reports the terms boundary for 5001', () => {
+    const terms = Array.from({ length: 5000 }, (_, i) => ({ canonical: `Term${i}` }));
+    const atLimit = LexiconSchema.safeParse({ terms });
+    expect(atLimit.success).toBe(true);
+    if (!atLimit.success) throw atLimit.error;
+    expect(atLimit.data.terms).toHaveLength(5000);
+    expect(atLimit.data.terms[4999].canonical).toBe('Term4999');
+
+    const overLimit = LexiconSchema.safeParse({ terms: [...terms, { canonical: 'Term5000' }] });
+    expect(overLimit.success).toBe(false);
+    if (overLimit.success) throw new Error('Expected the terms limit to be enforced');
+    expect(overLimit.error.issues).toMatchObject([
+      { code: 'too_big', path: ['terms'], maximum: 5000, message: 'at most 5000 terms' },
+    ]);
+  });
 });
