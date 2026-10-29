@@ -411,6 +411,18 @@ Local HTTP API for surfaces without hooks or MCP (browser extension, Claude Desk
     - `GET /stats[?cwd=]` -> `StatsResponse` = `LexiconStats` plus `projectTrust?` and `skippedProject?` (path only) when a project file exists or was skipped, as `/lexicon` and `/packs` carry them (the counts leave a skipped file out), and `note` (`statsNote(loaded)`, only when there is something to say): the same `lexicon trust` step plus `Its terms are not in the counts.` for a skipped file, else for a lexicon with no terms the `emptyStatsNote` text `lexicon stats --json` gives, as MCP `lexicon_stats` says it.
     - `GET /packs[?cwd=]` -> `PacksResponse { packs, installed, registryMismatch?, projectTrust?, skippedProject? }` (every `PackInfo` plus which are installed; `installed` holds community refs too; `registryMismatch` from `findRegistryRecordMismatch`, as MCP `list_packs`; the skipped project file by path only; no registry index is read, so no network access); `POST /packs/:name` installs one (-> `InstallPackResponse`: `InstallPackResult` with `alreadyInstalled: boolean` always set and a `summary`, `installed <name>: N added, M merged into <path>` or, for a reinstall that changed nothing, `packAlreadyInstalledNote`) and `DELETE /packs/:name` removes it (-> `UninstallPackResponse`: `UninstallPackResult` plus a `summary`, and `notInstalled: true` when no file listed the pack, so nothing was written) (`PACK_ROUTE_RE = /^\/packs\/([a-z0-9-]+)$/`).
     - `GET /aliases?canonical=X` -> `AliasesResponse`, the spellings STT is likely to produce for a name, for an onboarding form. `canonical` is cleaned as the schema cleans a canonical (`stripInvisible`, then trimmed) before the checks: empty -> 400 `canonical query parameter is required (e.g. GET /aliases?canonical=Ashlr.AI)`, over `LIMITS.word` (80) -> 400 `canonical must be at most 80 characters`, a control character left inside it (`hasControlChars`: C0 including tab and newline, DEL, C1, U+2028/U+2029, which `NonEmptyWord` refuses too) -> 400 `canonical must not contain control characters or newlines`, a U+FFFE, U+FFFF or unpaired surrogate (`findUnencodableChar`) -> 400 `canonical must not contain U+XXXX (U+FFFE, U+FFFF and unpaired surrogates fit no file format)`; the response's `canonical` is the cleaned value.
+
+      For example, URL-encode the canonical name `Mason Wyatt` and send the bearer token as described above:
+
+      ```http
+      GET /aliases?canonical=Mason%20Wyatt
+      ```
+
+      The 200 JSON response contains the cleaned canonical and suggested aliases, not stored terms:
+
+      ```json
+      { "canonical": "Mason Wyatt", "aliases": ["Mason Wiatt", "Mason Wyat"] }
+      ```
   - Logs one line per request to `opts.log` (default stderr) unless `quiet`: `[serve] <METHOD> <path> <status> <ms>ms` (path sanitized).
 - `src/serve/index.ts` re-exports both modules.
 - `src/cli/cli-entry.ts` (no imports from the rest of the CLI): `PACKAGE_NAME`, `CLI_ENV_VAR = 'LEXICON_CLI'`, and `PACKAGE_NAME` / `findPackageRoot` re-exported from `src/util/package.ts` (`findPackageRoot(from: string)` walks up to the directory whose package.json is named `@ashlr/lexicon`; undefined otherwise). `whichBin` is gone: use `findOnPathSync` from `src/util/which.ts`, `resolveCliEntry(opts?: { cliPath?; env?; moduleUrl? }): string` = `cliPath` | `$LEXICON_CLI` | `<root>/dist/cli/index.js` when it exists (root from `moduleUrl`, default this module, so it is the same file from src/, dist/ and the plugin/ bundles) | a `lexicon` on PATH resolved through `realpathSync` and accepted only when it ends in `.js`/`.mjs`/`.cjs`, else a readable Error naming `LEXICON_CLI`. Existence is checked for the last two only.

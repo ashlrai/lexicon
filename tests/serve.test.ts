@@ -3440,6 +3440,16 @@ describe('packs and aliases routes', () => {
     expect(((await removal.json()) as { error: string }).error).toContain('or retry with ?scope=global to use the global lexicon instead');
   });
 
+  it('serves the URL-encoded aliases example in the contract', async () => {
+    const contract = await fs.readFile(new URL('../docs/CONTRACT.md', import.meta.url), 'utf8');
+    const example = contract.match(/For example, URL-encode the canonical name `Mason Wyatt`[\s\S]*?```http\s+GET (\/aliases\?canonical=[^\s]+)\s+```[\s\S]*?```json\s+([^\n]+)\s+```/);
+    expect(example).not.toBeNull();
+    expect(example![1]).toBe('/aliases?canonical=Mason%20Wyatt');
+    const response = await api2('GET', example![1]!);
+    expect(response.status).toBe(200);
+    expect(await response.json()).toEqual(JSON.parse(example![2]!));
+  });
+
   it('GET /aliases?canonical=X returns suggestAliases and 400 without a canonical', async () => {
     const res = await api2('GET', `/aliases?canonical=${encodeURIComponent('Ashlr.AI')}`);
     expect(res.status).toBe(200);
