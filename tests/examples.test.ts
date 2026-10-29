@@ -8,6 +8,9 @@ import { mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { afterAll, describe, expect, it } from 'vitest';
+import { parse as parseYaml } from 'yaml';
+import { normalize } from '../src/core/normalize.js';
+import { parseLexicon } from '../src/core/schema.js';
 
 const root = process.cwd();
 const home = mkdtempSync(path.join(tmpdir(), 'lexicon-examples-home-'));
@@ -26,6 +29,24 @@ function runExample(file: string) {
 }
 
 describe('examples/', () => {
+  it('the architecture proposal is valid lexicon YAML and corrects its candidate aliases', () => {
+    const readme = readFileSync(path.join(root, 'examples', 'README.md'), 'utf8');
+    const section = readme.split('## Starter-pack proposal: building architecture')[1];
+    expect(section).toBeDefined();
+    const yaml = section.match(/```yaml\n([\s\S]*?)\n```/)?.[1];
+    expect(yaml).toBeDefined();
+    const lexicon = parseLexicon(parseYaml(yaml!));
+    expect(lexicon.terms.length).toBeGreaterThanOrEqual(5);
+    for (const term of lexicon.terms) {
+      expect(term.aliases.length).toBeGreaterThan(0);
+      for (const alias of term.aliases) {
+        expect(normalize(alias, lexicon, { phonetic: false, fuzzy: false }).output).toBe(term.canonical);
+      }
+    }
+    const ordinary = 'Please sketch the building and review the plans.';
+    expect(normalize(ordinary, lexicon).output).toBe(ordinary);
+  });
+
   it('stt-pipeline.ts fixes every misheard term before the LLM sees it', () => {
     const r = runExample('stt-pipeline.ts');
     expect(r.err).toBe('');
