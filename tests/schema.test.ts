@@ -336,6 +336,21 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(parseLexicon({ terms: [{ canonical: `  ${'a'.repeat(80)}${ZW}  ` }] }).terms[0].canonical).toHaveLength(80);
   });
 
+  it.each(['notes', 'phonetic'] as const)('enforces the 200-character text boundary for %s after sanitizing', (field) => {
+    const text = 'x'.repeat(200);
+    const atLimit = LexiconSchema.safeParse({ terms: [{ canonical: 'X', [field]: ` ${ZW}${text} ` }] });
+    expect(atLimit.success).toBe(true);
+    if (!atLimit.success) throw atLimit.error;
+    expect(atLimit.data.terms[0][field]).toBe(text);
+
+    const overLimit = LexiconSchema.safeParse({ terms: [{ canonical: 'X', [field]: `${text}x` }] });
+    expect(overLimit.success).toBe(false);
+    if (overLimit.success) throw new Error('Expected the text limit to be enforced');
+    expect(overLimit.error.issues).toMatchObject([
+      { code: 'too_big', path: ['terms', 0, field], maximum: 200, message: 'must be at most 200 characters' },
+    ]);
+  });
+
   it('stripControlChars removes every control, separator and invisible character and nothing else', () => {
     const CR = cp(0x0d);
     const DEL = cp(0x7f);
