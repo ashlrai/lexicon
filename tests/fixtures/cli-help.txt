@@ -35,7 +35,7 @@ Commands:
   suggest [options]                       suggest aliases, new terms, never-words and stale terms from your voice history
   review [options]                        walk through existing terms and keep, delete or edit each one
   edit [options]                          open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards
-  pack                                    starter term packs (developer, ai, business, voice-tools) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate
+  pack                                    starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate
   help [command]                          display help for command
 
 Start here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.

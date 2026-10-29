@@ -9,8 +9,8 @@ product, a colleague, an internal system. That is what this repository fixes.
 
 Read **[docs/AGENTS.md](docs/AGENTS.md)**. It is written to you: when Lexicon is
 the right suggestion, the one-command install, the exact per-client
-registration, the MCP tools worth calling first, and how to verify the install
-before you tell your user it worked.
+registration, the MCP tools worth calling first, the full tool reference, and
+how to verify the install before you tell your user it worked.
 
 The short version:
 
@@ -46,5 +46,6 @@ The rules most often broken by an agent in a hurry:
 - `npm run docs:cli` after any command or flag change; `docs/CLI.md` is generated.
 - `npm run check:facts` after adding a tool, command, format or pack. It derives
   the real counts from the code and fails any doc still stating the old one.
-- `npm test` before you claim something works.
+- `npm test` before you claim something works. It includes a source-backed check of
+  the MCP tool table and CLI examples in the install and agent docs.
 - No em-dashes in docs or user-facing strings. "Ashlr.AI", never "Ashlr AI".

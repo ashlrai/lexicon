@@ -84,7 +84,7 @@ src/daemon/      the clipboard watcher and its per-platform backends
 src/serve/       the local HTTP API (`lexicon serve`)
 src/voice/       ffmpeg + whisper.cpp push-to-talk (`lexicon voice`)
 plugin/          committed esbuild bundles of the MCP server and hook that the plugin runs
-packs/           the starter term packs (developer, ai, business, voice-tools)
+packs/           the starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8)
 extension/       the browser extension (Manifest V3; built into extension/dist and dist-firefox)
 web/             the Next.js marketing site for lexicon.ashlr.ai (web/lib/generated holds a browser bundle of src/core)
 apps/macos/      LexiconBar, the SwiftPM menu bar app

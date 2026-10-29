@@ -62,7 +62,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
     {
       title: 'List the starter term packs',
       description:
-        'List the starter packs shipped with the lexicon (developer, ai, business, voice-tools: curated names with the misspellings STT produces for them) and which are already installed. ' +
+        'List the starter packs shipped with the lexicon (curated names with the misspellings STT produces for them) and which are already installed. ' +
         'Pass registry (an index the user registered; others are refused) to also list that index\'s community packs (<author>/<name>), with an installed flag for each. ' +
         'The installed flags come from trusted lexicon files only: when the repo has an untrusted project lexicon, the result carries `projectTrust`, `skippedProject` (its path) and `note`, and a pack only that file records reads as not installed. ' +
         'When a lexicon file\'s settings.packs and the registry records disagree, `registryMismatch { fileOnly, recordOnly }` names the refs: fileOnly will not be checked by ' + cliCommand('pack update') + ', recordOnly reads as not installed (' + cliCommand('pack remove <ref>') + ' clears the record). ' +

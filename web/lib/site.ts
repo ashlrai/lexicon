@@ -10,7 +10,7 @@
  *
  * Every number below is derived from the repo and checked by
  * `node scripts/check-facts.mjs`: twenty-one MCP tools, three resources, two
- * prompts, sixteen export formats, eight importers, 196 terms across the five packs.
+ * prompts, sixteen export formats, eight importers, 221 terms across the six packs.
  */
 
 export const SITE_URL = 'https://lexicon.ashlr.ai';
@@ -83,7 +83,7 @@ export const MCP_TOOLS: { name: string; summary: string }[] = [
   { name: 'uninstall_client', summary: 'Dry-run (default) or remove what install_client wrote for a client.' },
   { name: 'setup_lexicon', summary: 'Plan or run first-time setup non-interactively.' },
   { name: 'serve_status', summary: 'Whether the loopback API on 127.0.0.1:41733 is up.' },
-  { name: 'list_packs', summary: 'The five starter packs (and a registry\'s community packs) and which are installed.' },
+  { name: 'list_packs', summary: 'The six starter packs (and a registry\'s community packs) and which are installed.' },
   { name: 'add_pack', summary: 'Install a starter pack, or a community pack after a preview.' },
   { name: 'import_dictionary', summary: 'Import a Wispr, Superwhisper, macOS, espanso, CSV or JSON dictionary.' },
   { name: 'import_vocabulary', summary: 'Preview or harvest proper nouns from contacts, calendar and GitHub.' },
