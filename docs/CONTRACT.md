@@ -655,6 +655,19 @@ package name and the string author or author object's `name`; missing, malformed
 or non-object manifests return an empty object. Setup validates the resulting
 name before seeding it, including in previews.
 
+### Dotted brand in setup (issue #218)
+
+For this scoped `package.json`:
+
+```json
+{ "name": "@ashlr.ai/lexicon", "author": "Ashlr.AI" }
+```
+
+Setup previously truncated the company suggestion to `Ashlr`. The requested
+behavior is to preserve the dot and suggest `Ashlr.AI`; the dry-run preview and
+the seeded brand must agree. The matching author supplies the capitalization.
+Without it, the dotted scope still produces `Ashlr.ai`, with the dot intact.
+
 ## src/cli/index.ts  (bin: lexicon)
 A lone `--version`, `-V` or `-v` prints the package version before commander or the core loads. Other invocations load `run.ts` for the handshake, dispatch and error handling. `program.ts` exports `buildProgram(io): Command` and wires commander; actions dynamically import handlers in `commands.ts` and `cmd-*.ts`. Lightweight argument and IO helpers live in `args.ts` and are re-exported from `io.ts`. Twelve registrars run in this order: `registerImportCommands`, `registerInstallCommands`, `registerUninstallCommands`, `registerTrustCommands`, `registerLearnCommands`, `registerPendingCommands`, `registerServeCommands`, `registerVoiceCommands`, `registerSetupCommands`, `registerSuggestCommands`, `registerReviewCommands`, `registerPackCommands`. Global `--cwd <dir>`: the `preAction` hook refuses one that is not an existing directory before any command but `hook` and `mcp` runs (`cwdOptionProblem(cwd): CliRefusal | undefined` in io.ts; the `CliRefusal { message, nextStep? }` it throws is reported through `refuse`: `lexicon: --cwd "<dir>" is not an existing directory`, then `pass a directory that exists, or leave --cwd out to use the current directory`, both also as `{ ok: false, error, nextStep }` under `--json` or `--full`, exit 1). Commands wired in `program.ts`: `init` (`--project`, `--json`), `add <canonical> [aliases...]` (`--phonetic`, `--category`, `--notes`, `--project`, `--suggest`, `-i/--interactive`, `--never <word...>`), `remove|rm <canonical>` (`--project`), `list|ls` (`--json`, `--category`, `--query`), `normalize [text...]` (stdin if omitted; `--json`, `--diff`, `--dry-run`, `--min-confidence`, `--no-phonetic`, `--no-fuzzy`, `--include-untrusted`), `harvest [path]` (`--limit`, `--min-count`, `--add`, `-i/--interactive`, `--yes`, `--json`, `--full`), `export [format]` (`--out`, `--category <c...>`, `--limit`), `path` (`--json`), `doctor` (`--json`), `mcp`, `hook`, `daemon` (`--once`, `--paste`, `--interval`, `--dry-run`, `--quiet`, `--backend`, `--which`), `install-claude` (`--apply`, `--scope`, `--project`, `--home`, `--json`: the flags of `install claude`, forwarded to `runInstall("claude", ...)`, with no `--scope` default of its own). Then `registerImportCommands`, `registerInstallCommands`, `registerUninstallCommands`, `registerTrustCommands`, `registerLearnCommands`, `registerReviewCommands`, `registerSetupCommands` add `import`, `install`, `uninstall`, `trust`, `untrust`, `learn`, `stats`, `review`, `edit`, `setup`. `docs/CLI.md` is generated from their `--help`.
 
