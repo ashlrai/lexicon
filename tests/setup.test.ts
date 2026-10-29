@@ -112,6 +112,26 @@ async function run(
 }
 
 describe('runSetup --yes', () => {
+  it('previews and seeds the dotted brand from the contract example', async () => {
+    const contract = await fs.readFile(new URL('../docs/CONTRACT.md', import.meta.url), 'utf8');
+    const section = contract.split('### Dotted brand in setup (issue #218)')[1]?.split('\n## ')[0];
+    const example = section?.match(/```json\n([\s\S]*?)\n```/)?.[1];
+    expect(example).toBeDefined();
+    await fs.writeFile(path.join(cwd, 'package.json'), example!);
+
+    const opts = { yes: true, clients: 'none', packs: 'none' };
+    const preview = await run({ ...opts, dryRun: true }, fakes());
+    expect(preview.code).toBe(0);
+    expect(preview.plan?.wouldSeed).toContain('Ashlr.AI');
+    expect(existsSync(globalPath)).toBe(false);
+
+    const applied = await run(opts, fakes());
+    expect(applied.code).toBe(0);
+    expect(applied.summary.termsAdded).toContain('Ashlr.AI');
+    const file = await readLexiconFile(globalPath, 'global');
+    expect(file.lexicon.terms.filter((term) => term.category === 'brand').map((term) => term.canonical)).toEqual(['Ashlr.AI']);
+  });
+
   it('creates the global lexicon, seeds person + company and installs into the selected clients', async () => {
     const f = fakes();
     const { code, summary, io } = await run({ yes: true, clients: 'claude,cursor', company: 'Ashlr.AI', phonetic: 'ASH-ler', serve: true }, f);
