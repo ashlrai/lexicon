@@ -116,6 +116,21 @@ describe('CLI dry-run previews', () => {
     expect(readFileSync(projectPath, 'utf8')).toBe(before);
   });
 
+  it('init reports an existing untrusted project without changing its file or trust state', () => {
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    writeFileSync(projectPath, seed);
+    const before = snapshot();
+    const text = lexicon(['init', '--project', '--dry-run']);
+    expect(text.status, text.stderr).toBe(0);
+    expect(text.stdout).toContain(`project lexicon already exists: ${projectPath}`);
+    expect(text.stdout).toContain('it is not trusted yet');
+    expect(preview(['init', '--project'])).toMatchObject({
+      ok: true, scope: 'project', path: projectPath, created: false, dryRun: true,
+      trust: 'untrusted', nextStep: expect.stringContaining('review it and run: lexicon trust'),
+    });
+    expect(snapshot()).toEqual(before);
+  });
+
   it('add previews new and merged terms without creating or replacing the lexicon', () => {
     expect(preview(['add', 'Ashlr.AI', 'Ashler'])).toMatchObject({ ok: true, created: true, dryRun: true, term: { canonical: 'Ashlr.AI', aliases: ['Ashler'] } });
     expect(existsSync(globalPath)).toBe(false);
@@ -187,6 +202,24 @@ describe('CLI dry-run previews', () => {
     expect(preview(['learn', heard, meant])).toMatchObject({
       ok: true, dryRun: true, heard, meant, created, aliasAdded: true, path: globalPath,
       term: { canonical: meant, aliases },
+    });
+    expect(snapshot()).toEqual(before);
+  });
+
+  it('learn --from previews an already known correction without changing persisted data', () => {
+    seedGlobal();
+    const before = snapshot();
+    const args = ['learn', '--from', 'it is Ashlr.AI not Ashler'];
+    const result = lexicon([...args, '--dry-run']);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stdout).toContain('Nothing was added:');
+    expect(result.stdout).toContain('aliases: Ashler, Ashlar');
+    expect(preview(args)).toMatchObject({
+      ok: true, dryRun: true, heard: 'Ashler', meant: 'Ashlr.AI',
+      created: false, aliasAdded: false, unchanged: true, path: globalPath,
+      file: { path: globalPath, scope: 'global' },
+      term: { canonical: 'Ashlr.AI', aliases: ['Ashler', 'Ashlar'] },
+      note: expect.stringContaining('already an alias'),
     });
     expect(snapshot()).toEqual(before);
   });
