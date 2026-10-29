@@ -153,6 +153,10 @@ describe('runSetup --yes', () => {
     ['@ashlr.ai/lexicon', { name: 'Ashlr.AI' }, 'Ashlr.AI'],
     ['@Ashlr.AI/lexicon', undefined, 'Ashlr.AI'],
     ['@ashlr.ai/lexicon', undefined, 'Ashlr.ai'],
+    // Issue #218: keep every dotted segment of the scope, but not @ or the package name.
+    ['@acme.voice.ai/transcriber', undefined, 'Acme.voice.ai'],
+    ['@acme.voice.ai/transcriber', 'Acme.Voice.AI <hello@example.com>', 'Acme.Voice.AI'],
+    ['@acme.voice.ai/transcriber', 'Other.Voice.AI', 'Acme.voice.ai'],
     ['@acme/tools', 'Other.AI', 'Acme'],
     ['@acme/tools', undefined, 'Acme'],
     ['@acme/tools', { name: 42 }, 'Acme'],
@@ -987,10 +991,11 @@ describe('runSetup with a step that fails', () => {
 
 describe('runSetup interactive', () => {
   it.each([
-    [{ name: '@ashlr/lexicon', author: 'Ashlr.AI' }],
-    [{ name: '@Ashlr.AI/lexicon' }],
-    [{ name: '@ashlr.ai/lexicon', author: 'Ashlr.AI <hello@example.com>' }],
-  ])('accepts a dotted package brand as the suggested company when pressing Enter: %j', async (pkg) => {
+    [{ name: '@ashlr/lexicon', author: 'Ashlr.AI' }, 'Ashlr.AI'],
+    [{ name: '@Ashlr.AI/lexicon' }, 'Ashlr.AI'],
+    [{ name: '@ashlr.ai/lexicon', author: 'Ashlr.AI <hello@example.com>' }, 'Ashlr.AI'],
+    [{ name: '@Acme.Voice.AI/transcriber' }, 'Acme.Voice.AI'],
+  ])('accepts a dotted package brand as the suggested company when pressing Enter: %j', async (pkg, expected) => {
     await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify(pkg));
     const p = scripted(['y', '', '', 'n']); // person, suggested company, no hint, no extra term
     const f = fakes({ isInteractive: () => true, createPrompter: () => p });
@@ -998,9 +1003,9 @@ describe('runSetup interactive', () => {
 
     expect(code).toBe(0);
     expect(p.asked.some((question) => question.includes('Your company or product name'))).toBe(true);
-    expect(summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+    expect(summary.termsAdded).toEqual(['Mason Wyatt', expected]);
     const terms = (await readLexiconFile(globalPath, 'global')).lexicon.terms;
-    expect(terms.filter((term) => term.category === 'brand').map((term) => term.canonical)).toEqual(['Ashlr.AI']);
+    expect(terms.filter((term) => term.category === 'brand').map((term) => term.canonical)).toEqual([expected]);
   });
 
   // Catches: ctrl-C or ctrl-D at a prompt surfaced as `input closed before
