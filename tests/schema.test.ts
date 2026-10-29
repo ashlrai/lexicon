@@ -380,6 +380,18 @@ describe('hardening (lexicon content reaches model context)', () => {
     ]);
   });
 
+  it.each(['notes', 'phonetic'] as const)('enforces the 200-character boundary on standalone terms for %s', (field) => {
+    const text = 'x'.repeat(200);
+    expect(TermSchema.parse({ canonical: 'X', [field]: text })[field]).toBe(text);
+
+    const result = TermSchema.safeParse({ canonical: 'X', [field]: `${text}x` });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the text limit to be enforced');
+    expect(result.error.issues).toMatchObject([
+      { code: 'too_big', path: [field], maximum: 200, message: 'must be at most 200 characters' },
+    ]);
+  });
+
   it('stripControlChars removes every control, separator and invisible character and nothing else', () => {
     const CR = cp(0x0d);
     const DEL = cp(0x7f);
