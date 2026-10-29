@@ -16,7 +16,7 @@ import { sendToBackground } from '../extension/src/chrome-store.js';
 import { installContent } from '../extension/src/content-core.js';
 import type { ContentHandle } from '../extension/src/content-core.js';
 import { applyCorrections, flatten, invertCorrections, readText, setWholeText } from '../extension/src/editable.js';
-import { createEmbedded, learnIntoYaml } from '../extension/src/embedded.js';
+import { createEmbedded, EMBEDDED_MATCH_BUDGET_MS, learnIntoYaml } from '../extension/src/embedded.js';
 import { pairFromDocument } from '../extension/src/pair.js';
 import { ANY_SITE_SCRIPT_ID, setAnySite } from '../extension/src/any-site.js';
 import type { AnySiteApi, AnySiteScript } from '../extension/src/any-site.js';
@@ -1908,6 +1908,16 @@ describe('popup and options messages render commands as <code>', () => {
 // ---------------------------------------------------------------------------
 
 describe('background: text too large for the server request limit', () => {
+  // These assertions exercise routing and corrections, not runner speed.
+  // Tokenizing a 1 MB paste can exhaust the real matching budget before
+  // reaching "ashler" on a busy CI worker. Test expiry explicitly below.
+  beforeEach(() => {
+    vi.spyOn(performance, 'now').mockReturnValue(0);
+  });
+  afterEach(() => {
+    vi.mocked(performance.now).mockRestore();
+  });
+
   function storeWith(settings: Record<string, unknown>): KeyValueStore {
     const data: Record<string, unknown> = { settings };
     return {
@@ -1935,6 +1945,8 @@ describe('background: text too large for the server request limit', () => {
       const reply = (await bg.handle({ type: 'normalize', text: big, dryRun })) as NormalizeReply;
       expect(reply).toMatchObject({ ok: true, mode: 'embedded' });
       expect(reply.ok && reply.replacements[0]).toMatchObject({ original: 'ashler', replacement: 'Ashlr.AI' });
+      expect(reply.ok && reply.incomplete).toBeUndefined();
+      expect(reply.ok && reply.output).toBe(dryRun ? big : big.replace('ashler', 'Ashlr.AI'));
       expect(reply.ok && reply.fallback).toBe(tooLargeForApiMessage(big.length + '{"text":""}'.length + (dryRun ? ',"dryRun":true'.length : 0)));
     }
     expect(fetchMock.mock.calls.filter(([url]) => String(url).endsWith('/normalize'))).toHaveLength(0);
@@ -1958,6 +1970,24 @@ describe('background: text too large for the server request limit', () => {
     );
     const bg2 = createBackground({ fetch: up as unknown as typeof fetch, store: storeWith({ token: 'a'.repeat(64) }), defaultYaml: EXAMPLE_YAML });
     expect(await bg2.handle({ type: 'normalize', text: 'x'.repeat(API_MAX_BODY_BYTES - 100) })).toMatchObject({ ok: true, mode: 'api' });
+  });
+
+  it('reports budget expiry and keeps partial corrections when oversized text falls back', async () => {
+    vi.mocked(performance.now).mockReturnValueOnce(0).mockReturnValue(EMBEDDED_MATCH_BUDGET_MS);
+    const fetchMock = vi.fn(async (_url: string) => json({ ok: true, version: '1', terms: 1 }));
+    const bg = createBackground({ fetch: fetchMock as unknown as typeof fetch, store: storeWith({ token: 'a'.repeat(64) }), defaultYaml: EXAMPLE_YAML });
+    const text = 'ashler ' + 'x'.repeat(API_MAX_BODY_BYTES) + ' ashler';
+    const reply = await bg.handle({ type: 'normalize', text });
+    expect(reply).toMatchObject({
+      ok: true,
+      mode: 'embedded',
+      output: 'Ashlr.AI' + text.slice('ashler'.length),
+      replacements: [{ original: 'ashler', replacement: 'Ashlr.AI' }],
+      fallback: tooLargeForApiMessage(new TextEncoder().encode(JSON.stringify({ text })).length),
+      incomplete: { reasons: ['time'], totalChars: text.length },
+    });
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(String(fetchMock.mock.calls[0]?.[0])).toContain('/health');
   });
 
   it('the limit mirrors the server', () => {
