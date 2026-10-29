@@ -10,3 +10,9 @@ describe('cleanTranscript bracketed tags', () => {
     expect(cleanTranscript('Please[door closes]send[unrecognized sound]the report.')).toBe('Please send the report.');
   });
 });
+
+describe('cleanTranscript asterisk tags', () => {
+  it('removes a one-word annotation and preserves the surrounding speech', () => {
+    expect(cleanTranscript('Please*whispers*send the report.')).toBe('Please send the report.');
+  });
+});
