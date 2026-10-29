@@ -149,6 +149,22 @@ describe('mutation handler previews', () => {
     expect(JSON.parse(actual.out)).toEqual([expected]);
   });
 
+  it('previews each built-in pack against disk, then installs names in order', async () => {
+    const before = await snapshot();
+    const preview = makeIO();
+    expect(await runPackAdd(['voice-tools', 'voice-tools'], { cwd, globalPath, dryRun: true, json: true }, preview)).toBe(0);
+    const [first, second] = JSON.parse(preview.out);
+    expect(first).toMatchObject({ dryRun: true, added: expect.any(Number), merged: 0 });
+    expect(first.added).toBeGreaterThan(0);
+    expect(second).toEqual(first);
+    expect(await snapshot()).toEqual(before);
+    const actual = makeIO();
+    expect(await runPackAdd(['voice-tools', 'voice-tools'], { cwd, globalPath, json: true }, actual)).toBe(0);
+    const [installed, repeated] = JSON.parse(actual.out);
+    expect(installed.added).toBe(first.added);
+    expect(repeated.alreadyInstalled).toBe(true);
+  });
+
   it('vendored pack removal previews removed and edited terms without modifying dictionary or caches', async () => {
     expect(await runPackAdd(['voice-tools'], { cwd, globalPath }, makeIO())).toBe(0);
     const installed = await loadLexicon({ cwd, globalPath });
