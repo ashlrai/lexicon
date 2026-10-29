@@ -169,6 +169,31 @@ describe('CLI dry-run previews', () => {
     expect(readFileSync(globalPath, 'utf8')).not.toBe(seed);
   });
 
+  it.each(['project', 'global'] as const)('remove --dry-run reports the %s copy while preserving both lexicons', (scope) => {
+    seedGlobal();
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    writeFileSync(projectPath, seed);
+    const trusted = lexicon(['trust', '--yes']);
+    expect(trusted.status, trusted.stderr).toBe(0);
+    const before = snapshot();
+    const target = scope === 'project' ? projectPath : globalPath;
+    const other = scope === 'project' ? globalPath : projectPath;
+    const flags = scope === 'global' ? ['--global'] : [];
+
+    const planned = lexicon(['remove', 'ashlr.ai', ...flags, '--dry-run']);
+    expect(planned.status, planned.stderr).toBe(0);
+    expect(planned.stderr).toBe('');
+    expect(planned.stdout).toContain(`would remove Ashlr.AI from ${target}\n`);
+    expect(planned.stdout).toContain(`still in the ${scope === 'project' ? 'global' : 'project'} lexicon (${other})`);
+    expect(snapshot()).toEqual(before);
+
+    const applied = lexicon(['remove', 'ashlr.ai', ...flags]);
+    expect(applied.status, applied.stderr).toBe(0);
+    expect(applied.stdout).toContain(`removed Ashlr.AI from ${target}\n`);
+    expect(readFileSync(target, 'utf8')).not.toBe(seed);
+    expect(readFileSync(other, 'utf8')).toBe(seed);
+  });
+
   it('project previews retain the untrusted-file refusal and do not pin content', () => {
     const projectPath = path.join(repo, '.lexicon.yaml');
     writeFileSync(projectPath, seed);
