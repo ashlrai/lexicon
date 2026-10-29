@@ -126,8 +126,10 @@ export function findGitRoot(start: string, exists: (p: string) => boolean): stri
  * A company name guess from the working directory: the scope of the
  * package.json name (`@ashlr/lexicon` -> `Ashlr`), else the org of the git
  * remote (`github.com/ashlrai/lexicon` -> `ashlrai`). Undefined when neither
- * yields anything. A matching dotted package author supplies the brand's
- * spelling (`@ashlr/lexicon`, author `Ashlr.AI` -> `Ashlr.AI`).
+ * yields anything. Dots and casing in the scope are preserved apart from its
+ * first character (`@Ashlr.AI/lexicon` -> `Ashlr.AI`). A matching dotted
+ * package author can supply the brand's spelling (`@ashlr/lexicon`, author
+ * `Ashlr.AI` -> `Ashlr.AI`).
  */
 export function suggestCompany(packageName: string | undefined, remoteUrl: string | undefined, author?: string): string | undefined {
   const scope = packageName?.match(/^@([A-Za-z0-9][\w.-]*)\//)?.[1];
