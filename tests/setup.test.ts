@@ -981,6 +981,19 @@ describe('runSetup with a step that fails', () => {
 });
 
 describe('runSetup interactive', () => {
+  it('accepts the dotted package author as the suggested company when pressing Enter', async () => {
+    await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify({ name: '@ashlr/lexicon', author: 'Ashlr.AI' }));
+    const p = scripted(['y', '', '', 'n']); // person, suggested company, no hint, no extra term
+    const f = fakes({ isInteractive: () => true, createPrompter: () => p });
+    const { code, summary } = await run({ clients: 'none', packs: false, harvest: false, serve: false, app: 'none' }, f);
+
+    expect(code).toBe(0);
+    expect(p.asked.some((question) => question.includes('Your company or product name'))).toBe(true);
+    expect(summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+    const terms = (await readLexiconFile(globalPath, 'global')).lexicon.terms;
+    expect(terms.filter((term) => term.category === 'brand').map((term) => term.canonical)).toEqual(['Ashlr.AI']);
+  });
+
   // Catches: ctrl-C or ctrl-D at a prompt surfaced as `input closed before
   // the prompt was answered` and exit 1, with no word of what the steps
   // before it had already written (a created lexicon, seeded terms).
