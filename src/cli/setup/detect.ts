@@ -156,7 +156,13 @@ export async function readPackageIdentity(cwd: string): Promise<{ name?: string;
     if (!pkg || typeof pkg !== 'object') return {};
     const name = 'name' in pkg ? pkg.name : undefined;
     const author = 'author' in pkg ? pkg.author : undefined;
-    const authorName = author && typeof author === 'object' && 'name' in author ? author.name : author;
+    // npm also accepts "Name <email> (url)" as an author string. Keep only
+    // the name so the same brand matching applies as for an author object.
+    const authorName = author && typeof author === 'object' && 'name' in author
+      ? author.name
+      : typeof author === 'string'
+        ? author.match(/^\s*([^<>()\r\n]+?)\s*(?:<[^<>\r\n]+>\s*)?(?:\([^()\r\n]+\)\s*)?$/)?.[1]
+        : undefined;
     return {
       ...(typeof name === 'string' ? { name } : {}),
       ...(typeof authorName === 'string' ? { author: authorName } : {}),

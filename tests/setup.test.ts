@@ -146,6 +146,9 @@ describe('runSetup --yes', () => {
 
   it.each([
     ['@ashlr/lexicon', 'Ashlr.AI', 'Ashlr.AI'],
+    ['@ashlr.ai/lexicon', 'Ashlr.AI <hello@example.com> (https://example.com)', 'Ashlr.AI'],
+    ['@ashlr/lexicon', 'Ashlr.AI (https://example.com)', 'Ashlr.AI'],
+    ['@acme.ai/tools', 'Other.AI <hello@example.com>', 'Acme.ai'],
     ['@ashlr/lexicon', { name: 'Ashlr.AI', email: 'hello@example.com' }, 'Ashlr.AI'],
     ['@ashlr.ai/lexicon', { name: 'Ashlr.AI' }, 'Ashlr.AI'],
     ['@Ashlr.AI/lexicon', undefined, 'Ashlr.AI'],
@@ -986,6 +989,7 @@ describe('runSetup interactive', () => {
   it.each([
     [{ name: '@ashlr/lexicon', author: 'Ashlr.AI' }],
     [{ name: '@Ashlr.AI/lexicon' }],
+    [{ name: '@ashlr.ai/lexicon', author: 'Ashlr.AI <hello@example.com>' }],
   ])('accepts a dotted package brand as the suggested company when pressing Enter: %j', async (pkg) => {
     await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify(pkg));
     const p = scripted(['y', '', '', 'n']); // person, suggested company, no hint, no extra term
