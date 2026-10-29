@@ -287,6 +287,12 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(findUnencodableChar('\uDE80x')).toBe('U+DE80');
   });
 
+  it('identifies an unpaired high surrogate in a canonical term', () => {
+    expect(() => parseLexicon({ terms: [{ canonical: 'Rocket \uD83Dship' }] })).toThrow(
+      'terms[0].canonical: must not contain U+D83D (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket \\uD83Dship"',
+    );
+  });
+
   it('rejects the Unicode line and paragraph separators like newlines', () => {
     const LS = cp(0x2028);
     const PS = cp(0x2029);
