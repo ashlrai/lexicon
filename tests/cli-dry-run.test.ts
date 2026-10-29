@@ -139,6 +139,25 @@ describe('CLI dry-run previews', () => {
     expect(snapshot()).toEqual(before);
   });
 
+  it.each([
+    { heard: 'cooper netties', meant: 'Kubernetes', action: 'new term', aliases: ['cooper netties', 'Cubernetes'], created: true },
+    { heard: 'Ashlur', meant: 'Ashlr.AI', action: 'alias added', aliases: ['Ashler', 'Ashlar', 'Ashlur'], created: false },
+  ])('learn previews a $action without changing persisted data', ({ heard, meant, action, aliases, created }) => {
+    seedGlobal();
+    const before = snapshot();
+    const result = lexicon(['learn', heard, meant, '--dry-run']);
+    expect(result.status, result.stderr).toBe(0);
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toBe(`would learn ${heard} -> ${meant} (${action}) in ${globalPath}; nothing was written\naliases: ${aliases.join(', ')}\n`);
+    expect(snapshot()).toEqual(before);
+
+    expect(preview(['learn', heard, meant])).toMatchObject({
+      ok: true, dryRun: true, heard, meant, created, aliasAdded: true, path: globalPath,
+      term: { canonical: meant, aliases },
+    });
+    expect(snapshot()).toEqual(before);
+  });
+
   it('remove previews a whole term or one alias while preserving the file', () => {
     seedGlobal();
     expect(preview(['remove', 'Ashlr.AI'])).toMatchObject({ ok: true, removed: true, dryRun: true });
