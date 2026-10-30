@@ -252,6 +252,26 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it.each([
+    ['canonical', { canonical: 'Ash\uFFFFlr' }, ['canonical'], 'Ash\\uFFFFlr'],
+    ['aliases', { canonical: 'Ashlr.AI', aliases: ['valid', 'Ash\uFFFFler'] }, ['aliases', 1], 'Ashlr.AI'],
+    ['never', { canonical: 'Ashlr.AI', never: ['valid', 'Ash\uFFFFler'] }, ['never', 1], 'Ashlr.AI'],
+    ['phonetic', { canonical: 'Ashlr.AI', phonetic: 'Ash\uFFFFler' }, ['phonetic'], 'Ashlr.AI'],
+    ['notes', { canonical: 'Ashlr.AI', notes: 'Ash\uFFFFler' }, ['notes'], 'Ashlr.AI'],
+    ['createdAt', { canonical: 'Ashlr.AI', createdAt: '2026\uFFFF' }, ['createdAt'], 'Ashlr.AI'],
+  ])('rejects U+FFFF in term %s with a specific structured error', (_field, term, path, name) => {
+    const result = TermSchema.safeParse(term);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected U+FFFF to be rejected');
+    expect(result.error.issues.map(({ path: issuePath, message }) => ({ path: issuePath, message }))).toEqual([
+      {
+        path,
+        message: `must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "${name}"`,
+      },
+    ]);
+  });
+
   it('reports U+FFFF as the first unencodable character in settings', () => {
     const word = 'Rocket \u{1F680}\uFFFF\uFFFE';
 
