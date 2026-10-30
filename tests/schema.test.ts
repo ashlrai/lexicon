@@ -486,6 +486,23 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(() => parseLexicon({ terms: [...terms, { canonical: 'overflow' }] })).toThrow(/terms: at most 5000 terms/);
   });
 
+  it('accepts 64 aliases per term and rejects a 65th', () => {
+    const aliases = Array.from({ length: 64 }, (_, i) => `alias${i}`);
+    const atLimit = LexiconSchema.safeParse({ terms: [{ canonical: 'First', aliases }, { canonical: 'Second', aliases }] });
+    expect(atLimit.success).toBe(true);
+    if (!atLimit.success) throw atLimit.error;
+    expect(atLimit.data.terms.map((term) => term.aliases)).toEqual([aliases, aliases]);
+
+    const overLimit = LexiconSchema.safeParse({
+      terms: [{ canonical: 'First', aliases }, { canonical: 'Second', aliases: [...aliases, 'alias64'] }],
+    });
+    expect(overLimit.success).toBe(false);
+    if (overLimit.success) throw new Error('Expected the aliases limit to be enforced');
+    expect(overLimit.error.issues).toMatchObject([
+      { code: 'too_big', path: ['terms', 1, 'aliases'], maximum: 64, message: 'at most 64 aliases per term' },
+    ]);
+  });
+
   it('accepts exactly 5000 terms and reports the terms boundary for 5001', () => {
     const terms = Array.from({ length: 5000 }, (_, i) => ({ canonical: `Term${i}` }));
     const atLimit = LexiconSchema.safeParse({ terms });
