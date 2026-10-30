@@ -38,6 +38,14 @@ bench/             benchmark corpora and runners; bench/audio/models is also a w
 
 ## Non-English name benchmark (issue #8)
 
+[Issue #8](https://github.com/ashlrai/lexicon/issues/8) remains an open measurement
+task: assess non-English name performance before choosing changes to the phonetics.
+The phonetic pass uses English-tuned Double Metaphone, which may miss patterns in
+other languages. The existing synthetic fixture supports repeatable matcher
+comparisons, but does not establish accuracy on representative real-world
+non-English dictation across speakers and languages. Measuring that gap remains
+open; this contract makes no real-world accuracy claim.
+
 Run this text benchmark from the repository root after `npm install`, with Node 20 or
 newer. Keep the same repository revision, corpus, lexicon and default matcher settings
 when comparing runs; record the revision, Node version and command with the report.
