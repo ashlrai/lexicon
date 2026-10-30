@@ -27,4 +27,8 @@ describe('cleanTranscript asterisk tags', () => {
   it('removes a one-word annotation and preserves the surrounding speech', () => {
     expect(cleanTranscript('Please*whispers*send the report.')).toBe('Please send the report.');
   });
+
+  it('removes a one-word sound tag without altering surrounding text', () => {
+    expect(cleanTranscript('Ready, *cough* set, go!')).toBe('Ready, set, go!');
+  });
 });
