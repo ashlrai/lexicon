@@ -130,7 +130,10 @@ function handshake(script, { env, cwd, protocolVersion }) {
     let buffer = '';
     let stderr = '';
     let nextId = 0;
+    let finished = false;
     const done = (value) => {
+      if (finished) return;
+      finished = true;
       clearTimeout(timer);
       child.kill();
       resolve(value);
@@ -164,6 +167,6 @@ function handshake(script, { env, cwd, protocolVersion }) {
       child.stdin.write(`${JSON.stringify({ jsonrpc: '2.0', method: 'notifications/initialized' })}\n`);
       const list = await request('tools/list');
       done({ serverVersion: init.result?.serverInfo?.version, tools: (list.result?.tools ?? []).map((t) => t.name) });
-    })();
+    })().catch((error) => done({ error: String(error) }));
   });
 }

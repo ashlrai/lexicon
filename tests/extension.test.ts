@@ -2327,3 +2327,17 @@ describe('extension: which pages the guard runs on', () => {
     expect(siteNote(settings(true, { 'example.org': false }), 'https://example.org/')).toBe('Paused on this site.');
   });
 });
+
+describe('extension form labels', () => {
+  it.each(['popup.html', 'options.html'])('gives every control an accessible name in %s', (file) => {
+    const html = readFileSync(resolve(process.cwd(), 'extension/static', file), 'utf8');
+    const document = new DOMParser().parseFromString(html, 'text/html');
+    for (const control of document.querySelectorAll('input, textarea, select')) {
+      const labelledBy = control.getAttribute('aria-labelledby');
+      const name = control.getAttribute('aria-label')?.trim()
+        || (labelledBy && labelledBy.split(/\s+/).map((id) => document.getElementById(id)?.textContent?.trim()).filter(Boolean).join(' '))
+        || [...(control as HTMLInputElement).labels ?? []].map((label) => label.textContent?.trim()).filter(Boolean).join(' ');
+      expect(name, `${file}: #${control.id || control.getAttribute('name')}`).toBeTruthy();
+    }
+  });
+});

@@ -10,6 +10,7 @@ const validators = await import(new URL('../web/scripts/check-seo.mjs', import.m
   validateUseCases: (guides: unknown) => void;
   validateSource: (source: unknown) => void;
   validatePage: (document: unknown, pathname: string, guides: string[]) => void;
+  validateSitemap: (document: unknown, routes: string[]) => void;
 };
 const root = fileURLToPath(new URL('..', import.meta.url));
 
@@ -61,6 +62,18 @@ describe('use-case evidence contract', () => {
     ]) {
       expect(readFileSync(resolve(root, file), 'utf8'), file).not.toContain('\u2014');
     }
+  });
+});
+
+describe('sitemap namespace', () => {
+  it('requires the standard namespace identifier', () => {
+    const document = {
+      documentElement: { localName: 'urlset', namespaceURI: 'http://www.sitemaps.org/schemas/sitemap/0.9' },
+      getElementsByTagNameNS: () => [],
+    };
+    expect(() => validators.validateSitemap(document, [])).not.toThrow();
+    document.documentElement.namespaceURI = 'https://www.sitemaps.org/schemas/sitemap/0.9';
+    expect(() => validators.validateSitemap(document, [])).toThrow('Sitemap namespace is invalid');
   });
 });
 

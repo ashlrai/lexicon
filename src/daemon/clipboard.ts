@@ -178,7 +178,7 @@ export async function resolveClipboard(opts: ClipboardCommonOptions): Promise<Re
  * decoding back replaced the user's copied image with mangled text.
  */
 export function looksBinary(text: string): boolean {
-  return /[\u0000\uFFFD]/.test(text);
+  return text.includes('\u0000') || text.includes('\uFFFD');
 }
 
 function reportable(text: string): boolean {
