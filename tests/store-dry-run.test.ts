@@ -48,6 +48,30 @@ describe('store dry-run final validation', () => {
     await sameRefusal(original, (dryRun) => addTerms([{ canonical: 'ExtraQuasar', aliases: [] }], { globalPath, dryRun }), `at most ${LIMITS.terms} terms`);
   });
 
+  it('allows the last term and preserves the file when the next term exceeds the limit', async () => {
+    const terms = Array.from({ length: 4999 }, (_, i) => ({ canonical: `Quasar${i}`, aliases: [] }));
+    const original = JSON.stringify({ version: 1, terms });
+    const last: Term = { canonical: 'LastQuasar', aliases: [], scope: 'global', source: 'user', createdAt: '2026-01-01T00:00:00Z' };
+    const overflow: Term = { canonical: 'ExtraQuasar', aliases: [] };
+    await fs.writeFile(globalPath, original);
+
+    const preview = await addTerm(last, { globalPath, dryRun: true });
+    expect(preview.term).toEqual(last);
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(original);
+    const applied = await addTerm(last, { globalPath });
+    expect(applied.term).toEqual(preview.term);
+    const saved = await fs.readFile(globalPath, 'utf8');
+    const loaded = await loadLexicon({ cwd: dir, globalPath, dryRun: true });
+    expect(loaded.global.lexicon.terms).toEqual([...terms, last]);
+
+    const backup = await fs.readFile(`${globalPath}.bak`, 'utf8');
+    for (const dryRun of [true, false]) {
+      await expect(addTerm(overflow, { globalPath, dryRun })).rejects.toThrow('at most 5000 terms');
+      expect(await fs.readFile(globalPath, 'utf8')).toBe(saved);
+      expect(await fs.readFile(`${globalPath}.bak`, 'utf8')).toBe(backup);
+    }
+  });
+
   it('retains the invalid-settings refusal before planning or saving an add', async () => {
     const original = JSON.stringify({ version: 1, settings: { minConfidence: 2 }, terms: [] });
     await sameRefusal(original, (dryRun) => addTerm({ canonical: 'QuasarBridge', aliases: [] }, { globalPath, dryRun }), 'minConfidence');

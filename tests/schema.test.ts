@@ -510,6 +510,7 @@ describe('hardening (lexicon content reaches model context)', () => {
     if (!atLimit.success) throw atLimit.error;
     expect(atLimit.data.terms).toHaveLength(5000);
     expect(atLimit.data.terms[4999].canonical).toBe('Term4999');
+    expect(atLimit.data.terms).toEqual(terms.map((term) => ({ ...term, aliases: [] })));
 
     const overLimit = LexiconSchema.safeParse({ terms: [...terms, { canonical: 'Term5000' }] });
     expect(overLimit.success).toBe(false);
@@ -517,5 +518,8 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(overLimit.error.issues).toMatchObject([
       { code: 'too_big', path: ['terms'], maximum: 5000, message: 'at most 5000 terms' },
     ]);
+    expect(() => parseLexicon({ terms: [...terms, { canonical: 'Term5000' }] })).toThrow(
+      'Invalid lexicon:\n  - terms: at most 5000 terms',
+    );
   });
 });
