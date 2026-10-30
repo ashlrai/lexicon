@@ -362,6 +362,20 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it.each(['DC00', 'DFFF'])('reports an unpaired low surrogate U+%s from YAML with a readable term label', (hex) => {
+    const input = parseYaml(`terms:\n  - canonical: "Rocket \\u${hex}ship"\n`);
+    const result = LexiconSchema.safeParse(input);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected an unpaired low surrogate to be rejected');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['terms', 0, 'canonical'],
+        message: `must not contain U+${hex} (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket \\u${hex}ship"`,
+      },
+    ]);
+  });
+
   it('accepts and preserves paired surrogates in term and settings text', () => {
     const rocket = '\uD83D\uDE80';
     const term = {
