@@ -70512,7 +70512,7 @@ function suggestCompany(packageName, remoteUrl, author) {
     return scope.charAt(0).toUpperCase() + scope.slice(1);
   }
   if (remoteUrl) {
-    const m = remoteUrl.trim().match(/[:/]([A-Za-z0-9][\w.-]*)\/[\w.-]+?(?:\.git)?\/?$/);
+    const m = remoteUrl.trim().match(/(?<!\/)[:\/]([A-Za-z0-9][\w.-]*)\/[\w.-]+?(?:\.git)?\/?$/);
     if (m && !/^(users?|orgs?)$/i.test(m[1])) return m[1];
   }
   return void 0;

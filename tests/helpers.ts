@@ -30,8 +30,11 @@ export type Answer = string | number | number[];
  * A `Prompter` that replays `answers` in order and records every question it
  * was asked. Running out of answers throws rather than returning a default, so
  * an unexpected extra prompt fails the test instead of being silently accepted.
+ * `defaults` is index-aligned with `asked`: the `default` each prompt offered
+ * (`undefined` for choices, which take none), so a test can assert what Enter
+ * would have accepted, not only what the scripted answer returned.
  */
-export function scripted(answers: Answer[]): Prompter & { asked: string[]; closed: boolean } {
+export function scripted(answers: Answer[]): Prompter & { asked: string[]; defaults: (string | boolean | undefined)[]; closed: boolean } {
   const queue = [...answers];
   const next = (question: string): Answer => {
     if (queue.length === 0) throw new Error(`no scripted answer for: ${question}`);
@@ -39,19 +42,23 @@ export function scripted(answers: Answer[]): Prompter & { asked: string[]; close
   };
   const fake = {
     asked: [] as string[],
+    defaults: [] as (string | boolean | undefined)[],
     closed: false,
     async ask(question: string, opts?: { default?: string }): Promise<string> {
       fake.asked.push(question);
+      fake.defaults.push(opts?.default);
       const a = String(next(question));
       return a === '' && opts?.default !== undefined ? opts.default : a;
     },
     async confirm(question: string, def = false): Promise<boolean> {
       fake.asked.push(question);
+      fake.defaults.push(def);
       const a = String(next(question)).toLowerCase();
       return a === '' ? def : a.startsWith('y');
     },
     async choose<T>(question: string, choices: PromptChoice<T>[], opts?: { multi?: boolean }): Promise<T[]> {
       fake.asked.push(question);
+      fake.defaults.push(undefined);
       const a = next(question);
       const idx = Array.isArray(a) ? a : [Number(a)];
       if (!opts?.multi && idx.length !== 1) throw new Error('single choice expects one index');

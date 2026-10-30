@@ -132,6 +132,35 @@ describe('runSetup --yes', () => {
     expect(file.lexicon.terms.filter((term) => term.category === 'brand').map((term) => term.canonical)).toEqual(['Ashlr.AI']);
   });
 
+  // Catches (issue #218): the company guess for a package scoped to a dotted
+  // brand was cut at the first dot, so `@ashlr.ai/lexicon` suggested "Ashlr",
+  // seeded it, and the demo corrected "Ashler" to "Ashlr" instead of the
+  // brand. The suggestion, the plan's preview and the seeded term must keep
+  // every dot, and a dotted scope never falls through to the remote org.
+  it('keeps the dotted brand as the suggested company for a package scoped to it (issue #218)', async () => {
+    expect(suggestCompany('@ashlr.ai/lexicon', 'https://github.com/ashlrai/lexicon.git', 'Ashlr.AI')).toBe('Ashlr.AI');
+    expect(suggestCompany('@Ashlr.AI/lexicon', 'https://github.com/other-org/repo.git')).toBe('Ashlr.AI');
+    // No matching author: the dotted scope is kept as written, not collapsed
+    // to its first segment or replaced by the remote org.
+    expect(suggestCompany('@ashlr.ai/lexicon', 'https://github.com/other-org/repo.git')).toBe('Ashlr.ai');
+
+    await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify({ name: '@ashlr.ai/lexicon', author: 'Ashlr.AI' }));
+    const opts = { yes: true, clients: 'none', packs: 'none' };
+    const preview = await run({ ...opts, dryRun: true }, fakes());
+    expect(preview.code).toBe(0);
+    expect(preview.plan?.wouldSeed).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+    expect(existsSync(globalPath)).toBe(false);
+
+    const applied = await run(opts, fakes());
+    expect(applied.code).toBe(0);
+    expect(applied.summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+    const file = await readLexiconFile(globalPath, 'global');
+    expect(file.lexicon.terms.filter((term) => term.category === 'brand').map((term) => term.canonical)).toEqual(['Ashlr.AI']);
+    // The demo the issue was about: it must teach the dotted brand, not "Ashlr".
+    expect(applied.summary.demo?.usedExample).toBe(false);
+    expect(applied.summary.demo?.corrected).toContain('Ashlr.AI');
+  });
+
   it('creates the global lexicon, seeds person + company and installs into the selected clients', async () => {
     const f = fakes();
     const { code, summary, io } = await run({ yes: true, clients: 'claude,cursor', company: 'Ashlr.AI', phonetic: 'ASH-ler', serve: true }, f);
@@ -1049,7 +1078,10 @@ describe('runSetup interactive', () => {
     const { code, summary } = await run({ clients: 'none', packs: false, harvest: false, serve: false, app: 'none' }, f);
 
     expect(code).toBe(0);
-    expect(p.asked.some((question) => question.includes('Your company or product name'))).toBe(true);
+    const companyPrompt = p.asked.findIndex((question) => question.includes('Your company or product name'));
+    expect(companyPrompt).toBeGreaterThanOrEqual(0);
+    // The suggested company is the prompt's default: it must carry the dot too.
+    expect(p.defaults[companyPrompt]).toBe(expected);
     expect(summary.termsAdded).toEqual(['Mason Wyatt', expected]);
     const terms = (await readLexiconFile(globalPath, 'global')).lexicon.terms;
     expect(terms.filter((term) => term.category === 'brand').map((term) => term.canonical)).toEqual([expected]);
@@ -1269,6 +1301,15 @@ describe('helpers', () => {
     expect(suggestCompany(undefined, 'ssh://git@gitlab.com/acme/tools/')).toBe('acme');
     expect(suggestCompany(undefined, undefined)).toBeUndefined();
     expect(suggestCompany('plain', 'not a url')).toBeUndefined();
+    // `users`/`orgs` are listing pages, not an organization; a bare profile
+    // URL or a remote that names neither guesses nothing.
+    expect(suggestCompany(undefined, 'https://github.com/users/octocat')).toBeUndefined();
+    expect(suggestCompany(undefined, 'https://github.com/orgs/ashlrai')).toBeUndefined();
+    expect(suggestCompany(undefined, 'https://github.com/octocat')).toBeUndefined();
+    // An `@` that does not form a scope (no name before or after the slash)
+    // is not a company guess either; the remote supplies one instead.
+    expect(suggestCompany('@/lexicon', 'https://github.com/remote-org/repo.git')).toBe('remote-org');
+    expect(suggestCompany('@ashlr', 'https://github.com/remote-org/repo.git')).toBe('remote-org');
   });
 
   it('parseClientList validates and dedupes', () => {
