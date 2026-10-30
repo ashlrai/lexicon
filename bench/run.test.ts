@@ -15,6 +15,10 @@ it.each([
 });
 
 it('writes the documented non-English baseline with comparable subset metrics', () => {
+  const readme = readFileSync('bench/README.md', 'utf8');
+  const section = readme.split('## Repeat the non-English-name benchmark')[1]?.split('\n## ')[0];
+  const command = section?.match(/```bash\n([^\n]+)\n```/)?.[1];
+  expect(command).toBe('npm run bench -- --out /tmp/lexicon-name-benchmark.json');
   const dir = mkdtempSync(join(tmpdir(), 'lexicon-name-bench-'));
   try {
     const output = join(dir, 'results.json');
@@ -28,10 +32,10 @@ it('writes the documented non-English baseline with comparable subset metrics', 
     ];
     if (cases.some((c) => c === undefined)) throw new Error('benchmark fixture is missing representative cases');
     writeFileSync(input, cases.map((c) => JSON.stringify(c)).join('\n') + '\n');
-    const markdown = execFileSync(process.execPath, [
-      '--import', 'tsx', 'bench/run.ts',
-      '--corpus', input, '--lexicon', 'bench/lexicon.yaml', '--out', output,
-    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+    const args = command!.split(' ').slice(1);
+    args[args.length - 1] = output;
+    args.push('--corpus', input);
+    const markdown = execFileSync('npm', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
     const saved = JSON.parse(readFileSync(output, 'utf8')) as BenchReport & {
       corpus: string;
       lexicon: string;
@@ -58,6 +62,7 @@ it('writes the documented non-English baseline with comparable subset metrics', 
     expect(Object.values(subsets.byLang).reduce((sum, group) => sum + group.cases, 0))
       .toBe(subsets.nonEnglish.cases);
     expect(markdown).toContain('## Non-English subset (lang-tagged cases)');
+    expect(markdown).toContain('| subset | cases | sentence acc | acc excl. hard | recall raw | recall | precision | F1 | prose FP |');
     expect(markdown).toContain('baseline (untagged)');
     expect(markdown).toContain('non-English (all)');
     for (const lang of Object.keys(saved.lang?.byLang ?? {})) expect(markdown).toContain(`| ${lang} |`);
