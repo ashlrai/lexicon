@@ -17,9 +17,10 @@ const result = await build({
     export { isRecursiveSchema } from './node_modules/zod/v4/core/memoizer.js';`, resolveDir: process.cwd() },
   bundle: true, format: 'esm', platform: 'node', write: false, plugins: [hookBundleFixes],
 });
-const fixture = resolve(home, 'zod.mjs');
+// URL-sensitive characters make raw-path imports fail on POSIX as well as Windows.
+const fixture = resolve(home, 'zod # %.mjs');
 await writeFile(fixture, result.outputFiles[0].text);
-const { defineLazy, allowsEval, Doc, isRecursiveSchema } = await import(fixture);
+const { defineLazy, allowsEval, Doc, isRecursiveSchema } = await import(pathToFileURL(fixture).href);
 
 test('lazy getter handles reentrancy, caches values and permits assignment', () => {
   const object = {};
