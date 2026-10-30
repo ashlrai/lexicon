@@ -72687,6 +72687,7 @@ function withDoctorEnvelope(report2) {
   return {
     ...report2,
     kind: "ashlr.doctor",
+    schemaVersion: 1,
     schema_version: 1,
     tool: "lexicon",
     status,

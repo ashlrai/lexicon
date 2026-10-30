@@ -734,6 +734,7 @@ export function withDoctorEnvelope(report: DoctorReport) {
   return {
     ...report,
     kind: 'ashlr.doctor' as const,
+    schemaVersion: 1 as const,
     schema_version: 1 as const,
     tool: 'lexicon',
     status,

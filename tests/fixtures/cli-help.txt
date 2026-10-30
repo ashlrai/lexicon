@@ -17,7 +17,7 @@ Commands:
   harvest [options] [path]                scan a repository for names worth adding to the lexicon
   export [options] [format]               export the merged lexicon for another tool (run without a format to list them)
   path [options]                          print the resolved global and project lexicon paths
-  doctor [options]                        check lexicon files, term conflicts and the Claude Code integration
+  doctor|status [options]                 check lexicon files, term conflicts and the Claude Code integration
   mcp                                     start the stdio MCP server (what `claude mcp add` points at)
   hook                                    run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON from stdin)
   daemon [options]                        watch the clipboard (macOS, Linux, Windows) and correct dictated text in place

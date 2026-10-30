@@ -18,6 +18,8 @@ if (wantsHandshake(process.argv.slice(2))) {
 }
 
 const program = buildProgram(processIO);
+// Status is the same health report, including JSON and exit codes.
+program.commands.find((command) => command.name() === 'doctor')!.alias('status');
 
 // Commander usage errors (unknown option or command, missing argument, an
 // invalid --port) are raised before any handler runs, so under --json they
