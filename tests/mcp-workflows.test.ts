@@ -1255,7 +1255,7 @@ describe('voice-context and lexicon://me', () => {
   // Catches: the skipped file's path went into raw markdown unsanitized, so a
   // bidi override in a cloned directory's name reached the conversation.
   it('sanitize the skipped project path', async () => {
-    const nasty = path.join(repo, 'evil‮name');
+    const nasty = path.join(repo, 'evil\u202ename');
     await fs.mkdir(path.join(nasty, '.git'), { recursive: true });
     await fs.writeFile(path.join(nasty, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Phantom\n    aliases: [Fantom]\n');
     const server = createServer({ cwd: nasty });
@@ -1269,7 +1269,7 @@ describe('voice-context and lexicon://me', () => {
       const me = (await client.readResource({ uri: 'lexicon://me' })).contents.map((c) => ('text' in c ? String(c.text) : '')).join('\n');
       for (const t of [text, me]) {
         expect(t).toContain('evilname');
-        expect(t).not.toContain('‮');
+        expect(t).not.toContain('\u202e');
         expect(t).not.toContain('Fantom');
       }
     } finally {
