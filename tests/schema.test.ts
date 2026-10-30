@@ -410,6 +410,50 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(findUnencodableChar(pair)).toBeUndefined();
   });
 
+  // U+20BB7 (𠮷), a CJK Extension B ideograph from plane 2: the "Yoshiki"
+  // name kanji is the sort of supplementary character a lexicon of names
+  // actually carries, and its high surrogate U+D842 sits outside the range
+  // the emoji pairs above exercise.
+  it('accepts and preserves a supplementary character in an alias', () => {
+    const yoshiki = '\u{20BB7}';
+    const alias = `Tsuchi${yoshiki}ya`;
+    const lex = parseLexicon({ terms: [{ canonical: 'Ashlr.AI', aliases: [alias, yoshiki, `${yoshiki}top`, `tail${yoshiki}`] }] });
+
+    expect(lex.terms[0].aliases).toEqual([alias, yoshiki, `${yoshiki}top`, `tail${yoshiki}`]);
+    // Preserved code unit for code unit: still one supplementary code point
+    // encoded as the same pair, not normalized or dropped.
+    const embedded = lex.terms[0].aliases[0];
+    expect(embedded.codePointAt(6)).toBe(0x20bb7);
+    expect(embedded.charCodeAt(6)).toBe(0xd842);
+    expect(embedded.charCodeAt(7)).toBe(0xdfb7);
+    expect(lex.terms[0].aliases[1]).toHaveLength(2);
+    expect(findUnencodableChar(alias)).toBeUndefined();
+  });
+
+  it('accepts a supplementary character spelled as a YAML \\U escape in an alias', () => {
+    // The 8-digit \U escape is how a hand-edited file spells an astral
+    // character its editor cannot type.
+    const input = parseYaml('terms:\n  - canonical: Ashlr.AI\n    aliases: ["Tsuchi\\U00020BB7ya"]\n');
+    expect(parseLexicon(input).terms[0].aliases).toEqual(['Tsuchi\u{20BB7}ya']);
+
+    // The 4-digit \u escape cannot spell one: "\uD842" reads as a lone high
+    // surrogate, which the unpaired-surrogate guard still refuses.
+    const loneHalf = parseYaml('terms:\n  - canonical: Ashlr.AI\n    aliases: ["\\uD842"]\n');
+    expect(() => parseLexicon(loneHalf)).toThrow(
+      'terms[0].aliases[0]: must not contain U+D842 (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ashlr.AI"',
+    );
+  });
+
+  it('counts a supplementary character as one character toward the alias limit', () => {
+    // The word cap counts code points, not UTF-16 code units: 80
+    // supplementary characters (160 code units) fit exactly.
+    const word = '\u{20BB7}'.repeat(LIMITS.word);
+    expect(parseLexicon({ terms: [{ canonical: 'X', aliases: [word] }] }).terms[0].aliases).toEqual([word]);
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', aliases: [`${word}\u{20BB7}`] }] })).toThrow(
+      /terms\[0\]\.aliases\[0\]: must be at most 80 characters/,
+    );
+  });
+
   it('rejects the Unicode line and paragraph separators like newlines', () => {
     const LS = cp(0x2028);
     const PS = cp(0x2029);
