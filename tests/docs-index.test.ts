@@ -30,11 +30,13 @@ describe('documentation index', () => {
     expect(rows[0]).toMatch(/2026 Linux first-run report/i);
     expect(rows[0]).toMatch(/measured October 26/i);
     expect(rows[0]).toMatch(/install and setup demo timings/i);
+    expect(rows[0]).toMatch(/separate npx normalization timing/i);
     expect(rows[0]).toMatch(/non-interactive agent behavior, write gates/i);
     expect(rows[0]).toMatch(/documentation findings/i);
     expect(rows[0]).toMatch(/JSON errors/i);
     expect(rows[0]).toMatch(/MCP schemas/i);
     expect(rows[0]).toMatch(/comparing npm 0\.5\.4 with source 0\.5\.6/i);
+    expect(rows[0]).toMatch(/ranked follow-ups/i);
     expect(rows[0]).not.toMatch(/wrong doc lines/i);
 
     const target = rows[0].match(/\[FIRST-RUN\.md\]\(([^)]+)\)/)?.[1];
@@ -44,11 +46,13 @@ describe('documentation index', () => {
     expect(report).toMatch(/^## Timed path$/m);
     expect(report).toMatch(/Measured 2026-10-26/);
     expect(report).toMatch(/first printed correction is the setup demo/i);
+    expect(report).toMatch(/An `npx` run that executed `normalize`[\s\S]*?finished in 2\.799 s/);
     expect(report).toMatch(/^## What the docs said, and what the command did$/m);
     expect(report).toMatch(/^## Agent use$/m);
     expect(report).toMatch(/^### `--json` and errors$/m);
     expect(report).toMatch(/^### `--dry-run` and other write gates$/m);
     expect(report).toMatch(/^### MCP schemas$/m);
+    expect(report).toMatch(/^## Follow-ups\n\nRanked by how much of the product they touch\./m);
     expect(report).toMatch(/npm serves `@ashlr\/lexicon` 0\.5\.4\. This source tree is 0\.5\.6/);
   });
 });
