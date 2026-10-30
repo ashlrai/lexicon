@@ -401,44 +401,33 @@ Pure expansion core of the resident expander (no IO). `EXPANDER_NAMED_KEYS` (`Ba
 **Proposed surface:** [issue #220](https://github.com/ashlrai/lexicon/issues/220)
 describes a resident, system-wide text expander, separate from the CLI and
 agent integrations. Its intended scope is to expand text in any focused text
-field without an agent in the loop. That complete surface is not implemented:
+field without an agent in the loop. It targets a focused text field across applications, without an agent in the loop.
+The intended flow is to observe text input, match completed words against the
+lexicon, and apply the resulting replacement in the focused field. The complete surface is not implemented:
 the existing expansion core and socket server do not capture system-wide input
-or apply changes to a focused field. A platform-specific client would need to
-provide those capabilities, including input permissions and focus handling.
-The issue proposes a resident process to avoid a Node cold start for each
-correction; it does not establish a latency or memory guarantee.
+or apply changes to a focused field. This system-wide integration is a
+proposal, not an implemented or available feature. The socket server has no global input capture or text-field editing
+client; a future platform-specific client would have to observe input and apply the expansion
+core's backspace-and-insert actions, including its immediate Backspace undo.
 
 The existing CLI boundary lets a client invoke `lexicon normalize` as a
-subprocess, send text on stdin, and read corrected text from stdout after the
-command exits. The client handles the exit status and stderr. Each invocation
-starts a new process; this boundary does not require a resident service.
+subprocess with text as arguments or on stdin and read corrected text from stdout.
+The client handles the exit status and stderr. Each invocation starts a new
+process and exits; it does not require a resident service. Separately,
+`lexicon daemon` watches the clipboard by default, and the clipboard watcher corrects copied text,
+not text in a focused field.
 
-**Proposed integration:** a client that needs repeated low-latency corrections
-could instead run the opt-in `lexicon daemon --expander` as a separate,
-long-lived process and communicate over its local socket (a named pipe on
-Windows). The CLI flag and server described below already exist; adoption by a
-client, automatic startup, supervision, reconnects and fallback to the CLI
-are proposed behavior, not guarantees of the current CLI contract. A client
-would own those lifecycle decisions and apply any returned expansion actions;
-the server does not capture keystrokes or edit the client's text field. It
-holds a lexicon and matcher index in its own process, not shared memory with
-the client. Each connection has its own expansion buffer; requests and
-responses are newline-delimited JSON in order, with an optional echoed `id`.
+The opt-in `lexicon daemon --expander` already starts a separate,
+long-lived process with a lexicon and matcher index in its own memory. A future
+client could communicate with that server over a local socket (a named pipe on
+Windows) rather than start Node for each correction. Each connection has its
+own expansion buffer; requests and responses are newline-delimited JSON in order,
+with an optional echoed `id`. Client adoption, automatic startup, supervision,
+reconnects and fallback to the CLI are proposed behavior, not guarantees of the
+current CLI contract. The client would own those lifecycle decisions. Neither the
+issue nor the socket protocol establishes a latency or memory guarantee.
 
-**System-wide surface proposed in [issue #220](https://github.com/ashlrai/lexicon/issues/220):**
-a resident process would let a person expand dictated or typed text in a
-focused text field across applications, without an agent in the loop. It would
-keep the lexicon and matcher warm rather than start Node for each correction.
-The intended flow is to observe text input, match completed words against the
-lexicon, and apply the resulting replacement in the focused field. The existing
-expansion core defaults to explicit aliases and returns backspace-and-insert
-actions, including an immediate Backspace undo; a future input client would
-have to perform those actions. The clipboard watcher corrects copied text and
-is a separate, already available surface.
-
-This system-wide integration is a proposal, not an implemented or available
-feature. The socket server has no global input capture or text-field editing
-client. Platform choices remain open: how to observe focus and input and
+Platform choices remain open: how to observe focus and input and
 apply edits on macOS and Windows, and how to support Linux across X11 and
 Wayland compositors. The required permissions, sensitive-field exclusions,
 edit and undo behavior, startup and supervision, and recovery when focus or
