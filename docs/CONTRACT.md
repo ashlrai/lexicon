@@ -40,6 +40,8 @@ bench/             benchmark corpora and runners; bench/audio/models is also a w
 
 [Issue #8](https://github.com/ashlrai/lexicon/issues/8) remains an open measurement
 task: assess non-English name performance before choosing changes to the phonetics.
+Before changing phonetic matching, record a reproducible baseline using the procedure
+below, then compare the candidate against it using the same inputs and settings.
 The phonetic pass uses English-tuned Double Metaphone, which may miss patterns in
 other languages. The existing synthetic fixture supports repeatable matcher
 comparisons, but does not establish accuracy on representative real-world
@@ -47,8 +49,9 @@ non-English dictation across speakers and languages. Measuring that gap remains
 open; this contract makes no real-world accuracy claim.
 
 Run this text benchmark from the repository root after `npm install`, with Node 20 or
-newer. Keep the same repository revision, corpus, lexicon and default matcher settings
-when comparing runs; record the revision, Node version and command with the report.
+newer. Run the baseline on the revision before the change and the comparison on the
+candidate revision. Keep the corpus, lexicon, Node version and default matcher settings
+the same; record the revision, Node version and command with each report.
 The committed `bench/corpus.jsonl` and `bench/lexicon.yaml` are the inputs, so no
 corpus generation or personal lexicon is needed. The untagged cases are the original
 baseline; the `lang`-tagged cases cover German, Spanish, Polish, Japanese, Arabic and
