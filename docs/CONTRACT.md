@@ -826,6 +826,14 @@ SwiftPM app, no dependencies, that fronts the CLI; it never links the TypeScript
 - `LexiconBar` (AppKit): `AppDelegate` builds the status item menu; `HotKeyCenter` registers ⌃⌥Space (push to talk via `lexicon voice --toggle --json`) and ⌃⌥V (`lexicon daemon --once`); `ChildProcessSupervisor` runs `lexicon daemon` and `lexicon serve` as child processes under `RestartPolicy`; `CommandRunner` spawns one-shot CLI calls; `Notifier` posts a notification after each run; `Settings` persists CLI path, whisper model, paste-vs-copy and hotkeys in `UserDefaults`; `PreferencesWindow` is the SwiftUI preferences sheet and `TextWindow` a read-only text window for `lexicon doctor` output.
 - Everything the app does is a CLI invocation with the same files, trust gate and hit counters as the terminal, so this contract for the CLI is the app's contract too.
 
+## Windows and Linux tray proposal (issue #13)
+
+[Issue #13](https://github.com/ashlrai/lexicon/issues/13) proposes tray access on Windows and Linux to the macOS app's push-to-talk and clipboard repair workflows. Push-to-talk would start and stop local dictation and deliver the corrected transcript; clipboard repair would normalize copied text for the user to paste. These are proposed capabilities, not a promise of platform parity or a defined implementation.
+
+The issue sketches Dictate and Fix clipboard actions using `lexicon voice --toggle --paste` and `lexicon daemon --once --paste`, plus Open lexicon, Preferences, Quit and a clipboard hotkey. It proposes disabling actions other than Preferences when the CLI is missing. Hotkey and paste integration would need platform-specific work: the existing daemon's `--paste` only pastes on macOS, leaving corrected text on the clipboard on Windows and Linux.
+
+The complete proposed Windows and Linux tray support is unimplemented. Linux has no tray app. Windows has a separate tray app in `apps/windows/` with clipboard repair, but no tray push-to-talk; its desktop integration, including the clipboard actions, has not been verified on a real Windows desktop, and no release ships its binary. The existing cross-platform CLI voice and clipboard commands are distinct from tray integration. See [WINDOWS-APP.md](WINDOWS-APP.md) and [PLATFORMS.md](PLATFORMS.md) for current boundaries and verification status.
+
 ## See also
 
 - [CONTRIBUTING.md](../CONTRIBUTING.md) is the workflow these rules are enforced by.
