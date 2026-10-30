@@ -153,7 +153,7 @@ export function blockNames() {
   for (const [type, spec] of Object.entries(GENERATORS)) {
     for (const variant of Object.keys(spec.variants)) names.push(`${type}:${variant}`);
   }
-  return names.sort();
+  return names.sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
 }
 
 /**
@@ -282,7 +282,7 @@ export function markedFiles(root = repoRoot) {
         return false;
       }
     })
-    .sort();
+    .sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
 }
 
 /**

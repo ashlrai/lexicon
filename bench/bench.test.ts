@@ -176,3 +176,13 @@ describe('bench accuracy (default config)', () => {
     }
   });
 });
+
+describe('benchmark language ordering', () => {
+  it('retains UTF-16 ordering and groups duplicate language tags', () => {
+    const tags = ['é', 'z', 'a', 'Z', 'a'];
+    const cases = tags.map((lang, i) => ({ ...corpus[0], id: `order-${i}`, lang }));
+    const report = runBench(cases, lexicon, { timing: false });
+    expect(Object.keys(report.lang!.byLang)).toEqual(['Z', 'a', 'z', 'é']);
+    expect(report.lang!.byLang.a.cases).toBe(2);
+  });
+});

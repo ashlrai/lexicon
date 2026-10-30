@@ -266,7 +266,12 @@ if (isMain) {
   const tmp = mkdtempSync(path.join(tmpdir(), 'lexicon-merge-'));
   try {
     let bad = 0;
-    for (const [rel, st] of [...pending.entries()].sort()) {
+    for (const [rel, st] of [...pending.entries()].sort((a, b) => {
+      // Match default sort's entry stringification, including the separator.
+      const left = String(a);
+      const right = String(b);
+      return left < right ? -1 : left > right ? 1 : 0;
+    })) {
       const kind = classify(rel);
       if (!kind) {
         bad++;
