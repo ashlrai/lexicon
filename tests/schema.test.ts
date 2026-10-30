@@ -501,6 +501,48 @@ describe('hardening (lexicon content reaches model context)', () => {
     ]);
   });
 
+  it('enforces the 80-character word boundary on the fields of a standalone term', () => {
+    const word = 'w'.repeat(LIMITS.word);
+    const term = TermSchema.parse({ canonical: word, aliases: [word], never: [word] });
+    expect(term.canonical).toBe(word);
+    expect(term.aliases).toEqual([word]);
+    expect(term.never).toEqual([word]);
+
+    for (const [input, path] of [
+      [{ canonical: `${word}w` }, ['canonical']],
+      [{ canonical: 'X', aliases: [`${word}w`] }, ['aliases', 0]],
+      [{ canonical: 'X', never: [`${word}w`] }, ['never', 0]],
+    ] as const) {
+      const result = TermSchema.safeParse(input);
+      expect(result.success).toBe(false);
+      if (result.success) throw new Error('Expected the word limit to be enforced');
+      expect(result.error.issues).toMatchObject([
+        { code: 'too_big', path, maximum: LIMITS.word, message: 'must be at most 80 characters' },
+      ]);
+    }
+  });
+
+  // Catches: zod's .max counts code points, not UTF-16 code units, so a word
+  // of 80 emoji is in and one of 81 is out even though their .length is 160
+  // and 162. A refactor that measured .length (or a zod that did) would turn
+  // every astral name over 40 characters away at the door.
+  it('counts the word limit in code points: 80 astral characters pass, 81 fail', () => {
+    const rocket = '\u{1F680}'; // one code point, two UTF-16 code units
+    const atLimit = rocket.repeat(LIMITS.word);
+    expect(atLimit).toHaveLength(LIMITS.word * 2);
+    const lex = parseLexicon({ terms: [{ canonical: atLimit, aliases: [atLimit] }] });
+    expect(lex.terms[0].canonical).toBe(atLimit);
+    expect(lex.terms[0].aliases).toEqual([atLimit]);
+
+    const overLimit = rocket.repeat(LIMITS.word + 1);
+    expect(() => parseLexicon({ terms: [{ canonical: overLimit }] })).toThrow(
+      /terms\[0\]\.canonical: must be at most 80 characters/,
+    );
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', aliases: [overLimit] }] })).toThrow(
+      /terms\[0\]\.aliases\[0\]: must be at most 80 characters/,
+    );
+  });
+
   it('stripControlChars removes every control, separator and invisible character and nothing else', () => {
     const CR = cp(0x0d);
     const DEL = cp(0x7f);
