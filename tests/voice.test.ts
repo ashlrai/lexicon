@@ -1777,6 +1777,11 @@ describe('lexicon voice --json failures', () => {
 });
 
 describe('cleanTranscript', () => {
+  it('removes starred spans of up to three words but preserves four-word spans', () => {
+    expect(cleanTranscript('before *door slams loudly* after')).toBe('before after');
+    expect(cleanTranscript('before *the door slams loudly* after')).toBe('before *the door slams loudly* after');
+  });
+
   it('strips whisper tags, collapses whitespace and trims', () => {
     expect(cleanTranscript(' [BLANK_AUDIO] ')).toBe('');
     expect(cleanTranscript('[BLANK_AUDIO] Ping Ashler.  [MUSIC]\n about the  rollout. [inaudible]')).toBe('Ping Ashler. about the rollout.');
