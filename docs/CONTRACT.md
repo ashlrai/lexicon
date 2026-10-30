@@ -245,6 +245,30 @@ Starter term packs: the curated lexicons in `packs/*.yaml` at the package root, 
 - `loadPackFile(file, expectedName?)` and `parsePackText(text, file, expectedName?)` validate external community pack files (`parsePackText` without `expectedName` accepts the pack under any file name, which is what `lexicon pack validate` needs). `installLoadedPack(pack, recordAs, opts?)` and `uninstallLoadedPack(pack, recordAs, opts?)` retain the same merge, edited-term preservation and project trust behavior as the named starter-pack operations. `installPack` and `installLoadedPack` take `leaveUntrusted?: boolean` (MCP `add_pack` on a project file that is not trusted): the gate is skipped, every `addTerm` gets the flag and the `settings.packs` rewrite does not `refreshTrust`, so nothing is pinned or re-pinned and a changed file stays changed.
 - `findPackageRoot(from = import.meta.url)`: see the collision note under `src/util/package.ts`.
 
+### Proposed profession starter pack: veterinary medicine
+
+Veterinary professionals are not covered by a dedicated shipped pack. This is an
+outline for a possible opt-in pack, not an implemented or installable pack. Candidate
+canonical terms include **pyometra**, **brachycephalic**, **leptospirosis** and
+**ovariohysterectomy**. They are examples for review, not a final term list; no
+aliases are asserted here to be observed speech-to-text errors.
+
+Before implementation, work with veterinary professionals to collect consented,
+de-identified dictation and the corresponding speech-to-text output. Review candidate
+spellings and retain aliases only when supported by observed errors. Exclude ordinary
+English words as standalone aliases, and consider `never` entries for collisions as
+described in [PACKS.md](PACKS.md#how-the-aliases-were-chosen). Keep speakers and utterances for a
+held-out evaluation separate from those used to choose aliases. Compare normalization
+with and without the candidate pack on the same held-out examples: report corrected
+errors, missed errors and unintended changes, including clean sentences and ordinary
+speech containing confusable words. Investigate false positives before shipping; do
+not infer clinical accuracy from a text-matching test.
+
+If the pack is implemented, follow [the pack contribution steps](PACKS.md#adding-a-pack-to-this-repo):
+validate its schema and safety, add pack tests, and exercise `pack show` and
+normalization on representative sentences. The proposal does not change the current
+pack list, defaults or installation behavior.
+
 ## src/core/registry.ts
 - `RegistryRef { author; name; ref; version? }`, `parseRegistryRef(value)`, `isRegistryRef(value)` validate community `<author>/<name>` references and optional version pins. `RegistryIndexEntry` carries ref/author/name/title/description/homepage/version/terms/aliases/checksum/url; `RegistryIndex { packs }` is schema validated by `loadRegistryIndex(source, RegistryDeps?)`, which returns `{ index; base }` for a local path, file URL or HTTPS URL. Every registry read (index or pack file, network or disk, default or injected `RegistryDeps` fetcher) is capped at `MAX_REGISTRY_FILE_BYTES` (= `MAX_LEXICON_BYTES`) and refused past it (`registry: <what> exceeds the <n> byte limit (refusing to read it)`); the default fetch streams the body and stops at the cap, and gives up after `REGISTRY_FETCH_TIMEOUT_MS` (30 s); a local index or pack path must be a regular file (`... is not a regular file`), and an index that fails to parse is reported without quoting its source. `assertSecureRegistryUrl(url)` throws unless `url` is `https://` or plain `http://` to a loopback host (`localhost`, `127.x.x.x`, `[::1]`); it guards the index source, every pack URL (default and injected fetchers alike) and the final URL of a redirected default fetch.
 - `recordedRegistrySource(source)` is the `indexSource` an install or update records: an http(s) URL as given, a local path or `file://` URL as the absolute path `loadRegistryIndex` read (a relative `--registry` resolves against the current directory once, at install).
