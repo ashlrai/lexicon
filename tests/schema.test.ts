@@ -306,6 +306,32 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it.each([
+    ['U+FFFF then U+FFFE', '\uFFFFa\uFFFE', 'U+FFFF'],
+    ['U+FFFE then an unpaired high surrogate', '\uFFFEa\uD800', 'U+FFFE'],
+    ['an unpaired high surrogate then U+FFFF', '\uD800a\uFFFF', 'U+D800'],
+    ['an unpaired low surrogate after a valid pair', '\u{1F680}\uDC00a\uFFFE', 'U+DC00'],
+  ])('reports the first unencodable character for %s', (_description, text, first) => {
+    expect(findUnencodableChar(text)).toBe(first);
+
+    const result = LexiconSchema.safeParse({
+      terms: [{ canonical: 'Rocket', aliases: [text] }],
+      settings: { protectedWords: [text] },
+    });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected unencodable characters to be rejected');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['terms', 0, 'aliases', 0],
+        message: `must not contain ${first} (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket"`,
+      },
+      {
+        path: ['settings', 'protectedWords', 0],
+        message: `must not contain ${first} (U+FFFE, U+FFFF and unpaired surrogates fit no file format)`,
+      },
+    ]);
+  });
+
   it('identifies an unpaired low surrogate in a canonical term and settings', () => {
     expect(() => parseLexicon({ terms: [{ canonical: 'Rocket \uDC00ship' }] })).toThrow(
       'terms[0].canonical: must not contain U+DC00 (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket \\uDC00ship"',
