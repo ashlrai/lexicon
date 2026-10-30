@@ -392,7 +392,7 @@ export function runBench(cases: BenchCase[], lexicon: Lexicon, opts: BenchOption
   const tagged = results.filter((r) => r.lang !== undefined);
   if (tagged.length > 0) {
     const byLang: Record<string, SubsetReport> = {};
-    for (const lang of [...new Set(tagged.map((r) => r.lang as string))].sort()) {
+    for (const lang of [...new Set(tagged.map((r) => r.lang as string))].sort((a, b) => a < b ? -1 : a > b ? 1 : 0)) {
       byLang[lang] = subsetReport(tagged.filter((r) => r.lang === lang));
     }
     report.lang = {

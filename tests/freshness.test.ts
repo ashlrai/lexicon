@@ -1,10 +1,10 @@
 import { spawnSync } from 'node:child_process';
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
-import { applyMarkers, blockNames, loadTruth, planFreshness, renderBlock, repoRoot } from '../scripts/freshness/lib.mjs';
+import { applyMarkers, blockNames, loadTruth, markedFiles, planFreshness, renderBlock, repoRoot } from '../scripts/freshness/lib.mjs';
 
 const syncScript = fileURLToPath(new URL('../scripts/freshness/sync.mjs', import.meta.url));
 const checkScript = fileURLToPath(new URL('../scripts/freshness/check.mjs', import.meta.url));
@@ -28,6 +28,7 @@ function fixture(files: Record<string, string>): string {
   const dir = mkdtempSync(path.join(tmpdir(), 'freshness-'));
   fixtureDirs.push(dir);
   for (const [rel, text] of Object.entries(files)) {
+    mkdirSync(path.dirname(path.join(dir, rel)), { recursive: true });
     writeFileSync(path.join(dir, rel), text);
   }
   return dir;
@@ -167,5 +168,24 @@ describe('freshness sync/check lifecycle', () => {
     const listed = run(checkScript, ['--list']);
     expect(listed.status).toBe(0);
     for (const name of blockNames()) expect(listed.stdout).toContain(name);
+  });
+});
+
+describe('freshness ordering', () => {
+  it('lists block names in UTF-16 order', () => {
+    const names = blockNames();
+    for (let i = 1; i < names.length; i++) expect(names[i - 1] < names[i]).toBe(true);
+  });
+
+  it('scans marked files in UTF-16 order', () => {
+    const dir = fixture({
+      'docs/z.md': '<!-- fresh:begin pin:tag -->',
+      'docs/B.md': '<!-- fresh:begin pin:tag -->',
+      'docs/10.md': '<!-- fresh:begin pin:tag -->',
+      'docs/2.md': '<!-- fresh:begin pin:tag -->',
+      'docs/é.md': '<!-- fresh:begin pin:tag -->',
+      'docs/ignored.md': '# No markers',
+    });
+    expect(markedFiles(dir)).toEqual(['docs/10.md', 'docs/2.md', 'docs/B.md', 'docs/z.md', 'docs/é.md']);
   });
 });

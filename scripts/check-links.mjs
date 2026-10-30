@@ -31,7 +31,7 @@ function markdownUnder(rootDir, dir) {
     if (entry.isDirectory()) out.push(...markdownUnder(rootDir, rel));
     else if (/\.md$/i.test(entry.name)) out.push(rel);
   }
-  return out.sort();
+  return out.sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
 }
 
 /**
@@ -45,7 +45,7 @@ export function targets(rootDir = root) {
     if (entry.isFile() && /\.md$/i.test(entry.name)) out.push(entry.name);
   }
   for (const dir of ['docs', '.github', 'examples', 'bench']) out.push(...markdownUnder(rootDir, dir));
-  return [...new Set(out)].sort();
+  return [...new Set(out)].sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
 }
 
 /** GitHub's heading slug: lowercase, strip anything but word chars/space/dash, spaces to dashes. */

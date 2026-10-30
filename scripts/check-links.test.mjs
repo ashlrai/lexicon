@@ -88,3 +88,13 @@ test('the repository itself has no broken relative links', () => {
   assert.deepEqual(r.broken, []);
   assert.ok(r.files > 50 && r.checked > 400, `unexpected coverage: ${JSON.stringify(r)}`);
 });
+
+test('targets retains UTF-16 ordering across root and nested markdown', () => {
+  const names = ['z.md', 'B.md', 'a.md', '10.md', '2.md', 'é.md', 'docs/z.md', 'docs/B.md'];
+  const root = fixture(Object.fromEntries(names.map((name) => [name, '# Page\n'])));
+  try {
+    assert.deepEqual(targets(root), ['10.md', '2.md', 'B.md', 'a.md', 'docs/B.md', 'docs/z.md', 'z.md', 'é.md']);
+  } finally {
+    rmSync(root, { recursive: true, force: true });
+  }
+});

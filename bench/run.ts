@@ -202,7 +202,7 @@ function renderReport(r: BenchReport): string {
           row('baseline (untagged)', r.lang.baseline),
           row('non-English (all)', r.lang.nonEnglish),
           ...Object.keys(r.lang.byLang)
-            .sort()
+            .sort((a, b) => a < b ? -1 : a > b ? 1 : 0)
             .map((lang) => row(lang, r.lang!.byLang[lang])),
         ],
       ),
