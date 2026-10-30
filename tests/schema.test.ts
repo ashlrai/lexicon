@@ -318,6 +318,15 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it('reports an unpaired high surrogate immediately before a valid pair', () => {
+    const canonical = 'Rocket \uDBFF\uD83D\uDE80';
+
+    expect(findUnencodableChar(canonical)).toBe('U+DBFF');
+    expect(() => parseLexicon({ terms: [{ canonical }] })).toThrow(
+      'terms[0].canonical: must not contain U+DBFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket \\uDBFF🚀"',
+    );
+  });
+
   it.each([
     ['U+FFFF then U+FFFE', '\uFFFFa\uFFFE', 'U+FFFF'],
     ['U+FFFE then an unpaired high surrogate', '\uFFFEa\uD800', 'U+FFFE'],
