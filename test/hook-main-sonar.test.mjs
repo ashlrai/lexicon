@@ -2,6 +2,7 @@ import assert from 'node:assert/strict';
 import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { resolve } from 'node:path';
+import { pathToFileURL } from 'node:url';
 import { spawnSync } from 'node:child_process';
 import { after, test } from 'node:test';
 import { build } from 'esbuild';
@@ -65,12 +66,19 @@ test('unknown schema kinds still scan children without invoking accessors', () =
 
 test('shipped hook validates and corrects with string code generation forbidden', async () => {
   const lexicon = resolve(home, 'lexicon.yaml');
-  for (const [contents, expected] of [
-    ['version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n', /Ashlr\.AI/],
-    ['version: 1\nterms: invalid\n', /file does not parse/],
+  const clock = resolve(home, 'clock.mjs');
+  const valid = 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler]\n';
+  // This checks validation without eval, not runner speed. Keep the scan clock
+  // still for correctness, then advance it past the real budget to check the
+  // timeout path too. A descheduled child used to miss the second word.
+  for (const [contents, step, expected] of [
+    [valid, 0, /Ashlr\.AI/],
+    ['version: 1\nterms: invalid\n', 0, /file does not parse/],
+    [valid, 101_000_000, /stopped checking this prompt .* after its 100 ms budget/],
   ]) {
     await writeFile(lexicon, contents);
-    const run = spawnSync(process.execPath, ['--disallow-code-generation-from-strings', 'plugin/hook-main.mjs'], {
+    await writeFile(clock, `let now = 0n; process.hrtime.bigint = () => (now += ${step}n);\n`);
+    const run = spawnSync(process.execPath, ['--disallow-code-generation-from-strings', '--import', pathToFileURL(clock).href, 'plugin/hook-main.mjs'], {
       input: JSON.stringify({ hook_event_name: 'UserPromptSubmit', prompt: 'Ask Ashler', cwd: home }),
       encoding: 'utf8', env: { ...process.env, HOME: home, XDG_CONFIG_HOME: home, LEXICON_PATH: lexicon },
     });
@@ -78,6 +86,8 @@ test('shipped hook validates and corrects with string code generation forbidden'
     assert.equal(run.status, 0);
     assert.match(run.stdout + run.stderr, expected);
     assert.doesNotMatch(run.stderr, /Code generation|EvalError/);
+    if (step === 0) assert.doesNotMatch(run.stdout, /stopped checking this prompt/);
+    else assert.doesNotMatch(run.stdout, /Ashlr\.AI/);
   }
 });
 
