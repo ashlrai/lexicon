@@ -9,6 +9,10 @@ describe('cleanTranscript bracketed tags', () => {
   it('separates spoken words when bracketed tags touch them', () => {
     expect(cleanTranscript('Please[door closes]send[unrecognized sound]the report.')).toBe('Please send the report.');
   });
+
+  it('removes adjacent bracketed tags while preserving surrounding speech', () => {
+    expect(cleanTranscript('Please [MUSIC][inaudible] continue speaking.')).toBe('Please continue speaking.');
+  });
 });
 
 describe('cleanTranscript asterisk tags', () => {
