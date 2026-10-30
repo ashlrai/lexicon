@@ -79,7 +79,8 @@ export function validatePage(document, pathname, guidePaths) {
 }
 
 export function validateSitemap(document, routes) {
-  const namespace = 'http://www.sitemaps.org/schemas/sitemap/0.9';
+  // This is the standard XML namespace identifier, not a network request.
+  const namespace = 'http://www.sitemaps.org/schemas/sitemap/0.9'; // NOSONAR: the identifier must match the sitemap specification.
   assert.equal(document.documentElement.localName, 'urlset', 'Sitemap root must be urlset');
   assert.equal(document.documentElement.namespaceURI, namespace, 'Sitemap namespace is invalid');
   const entries = [...document.getElementsByTagNameNS(namespace, 'url')];
