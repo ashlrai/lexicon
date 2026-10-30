@@ -274,6 +274,27 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(findUnencodableChar('ok\uFFFE\uFFFF')).toBe('U+FFFE');
   });
 
+  it.each([
+    [{ canonical: 'Ash\uFFFElr' }, ['canonical'], 'Ash\\uFFFElr'],
+    [{ canonical: 'Ashlr.AI', aliases: ['valid', 'Ash\uFFFEler'] }, ['aliases', 1], 'Ashlr.AI'],
+    [{ canonical: 'Ashlr.AI', never: ['valid', 'Ash\uFFFEler'] }, ['never', 1], 'Ashlr.AI'],
+    [{ canonical: 'Ashlr.AI', phonetic: 'ash\uFFFEler' }, ['phonetic'], 'Ashlr.AI'],
+    [{ canonical: 'Ashlr.AI', notes: 'note\uFFFE' }, ['notes'], 'Ashlr.AI'],
+    [{ canonical: 'Ashlr.AI', createdAt: '2026\uFFFE' }, ['createdAt'], 'Ashlr.AI'],
+  ])('rejects U+FFFE in standalone term field %#', (term, path, name) => {
+    const result = TermSchema.safeParse(term);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected U+FFFE to be rejected');
+    expect(result.error.issues).toMatchObject([
+      {
+        code: 'custom',
+        path,
+        message: `must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "${name}"`,
+      },
+    ]);
+  });
+
   // Catches: U+FFFE, U+FFFF and an unpaired surrogate passed the schema
   // (they are neither control nor invisible characters), though no UTF-8 file
   // can hold a lone surrogate and XML forbids all three: one such alias made
