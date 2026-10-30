@@ -22,6 +22,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Internal
+
+- Cover adjacent bracketed Whisper tags in the voice transcript cleaning tests.
+
 ### Changed
 
 - Large phonetic pack lookups use a length index to skip impossible candidates while preserving matching results.

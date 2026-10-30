@@ -1785,6 +1785,12 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript('deploy it (the new build) tonight')).toBe('deploy it (the new build) tonight');
   });
 
+  it('removes adjacent bracketed tags while preserving surrounding speech', () => {
+    expect(cleanTranscript('Please [MUSIC][APPLAUSE] continue the rollout.')).toBe('Please continue the rollout.');
+    expect(cleanTranscript('Hello[noise][inaudible]world')).toBe('Hello world');
+    expect(cleanTranscript('[MUSIC][BLANK_AUDIO]')).toBe('');
+  });
+
   it('preserves an unmatched opening bracket and the text after it', () => {
     expect(cleanTranscript('  Hello [MUSIC] there [unfinished   thought  ')).toBe('Hello there [unfinished thought');
   });
