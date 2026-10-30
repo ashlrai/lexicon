@@ -252,6 +252,15 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it('reports U+FFFF as the first unencodable character in settings', () => {
+    const word = 'Rocket \u{1F680}\uFFFF\uFFFE';
+
+    expect(findUnencodableChar(word)).toBe('U+FFFF');
+    expect(() => parseLexicon({ terms: [], settings: { protectedWords: [word] } })).toThrow(
+      'settings.protectedWords[0]: must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format)',
+    );
+  });
+
   it('rejects U+FFFE in a canonical term and a YAML alias with the offending character in the error', () => {
     const canonical = { terms: [{ canonical: 'Ash\uFFFElr' }] };
     const alias = parseYaml('terms:\n  - canonical: Ashlr.AI\n    aliases: ["Ash\\uFFFEler"]\n');
@@ -270,10 +279,13 @@ describe('hardening (lexicon content reaches model context)', () => {
   // can hold a lone surrogate and XML forbids all three: one such alias made
   // the macos plist unreadable and the YAML written back unreadable as UTF-8.
   it('refuses U+FFFE, U+FFFF and an unpaired surrogate in every free-text field, naming the term', () => {
-    const bad = ['\uFFFE', '\uFFFF', '\uD800', '\uDFFF', 'a\uDC00b', 'a\uD83D'];
-    for (const ch of bad) {
+    const bad = [
+      ['\uFFFE', 'U+FFFE'], ['\uFFFF', 'U+FFFF'], ['\uD800', 'U+D800'],
+      ['\uDFFF', 'U+DFFF'], ['a\uDC00b', 'U+DC00'], ['a\uD83D', 'U+D83D'],
+    ];
+    for (const [ch, codePoint] of bad) {
       expect(() => parseLexicon({ terms: [{ canonical: 'Ashlr.AI', aliases: ['ok', `x${ch}`] }] })).toThrow(
-        /terms\[0\]\.aliases\[1\]: must not contain U\+[0-9A-F]{4} \(U\+FFFE, U\+FFFF and unpaired surrogates fit no file format\) in term "Ashlr\.AI"/,
+        `terms[0].aliases[1]: must not contain ${codePoint} (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ashlr.AI"`,
       );
     }
     expect(() => parseLexicon({ terms: [{ canonical: 'Ash\uFFFElr' }] })).toThrow(
