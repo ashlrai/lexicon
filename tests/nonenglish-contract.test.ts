@@ -8,6 +8,10 @@ describe('non-English name benchmark contract', () => {
   it('keeps issue #8 open for measurement before phonetics changes', () => {
     expect(section).toMatch(/\[Issue #8\]\(https:\/\/github\.com\/ashlrai\/lexicon\/issues\/8\) remains an open measurement\s+task/);
     expect(section).toMatch(/before choosing changes to the phonetics/);
+    expect(section).toMatch(/Before changing phonetic matching, record a reproducible baseline using the procedure\s+below, then compare the candidate against it using the same inputs and settings/);
+    expect(section).toMatch(/baseline on the revision before the change and the comparison on the\s+candidate revision/);
+    expect(section).toMatch(/Keep the corpus, lexicon, Node version and default matcher settings\s+the same/);
+    expect(section).toMatch(/record the revision, Node version and command with each report/);
     expect(section).toMatch(/phonetic pass uses English-tuned Double Metaphone/);
   });
 
