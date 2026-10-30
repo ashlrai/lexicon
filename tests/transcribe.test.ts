@@ -13,6 +13,14 @@ describe('cleanTranscript bracketed tags', () => {
   it('removes adjacent bracketed tags while preserving surrounding speech', () => {
     expect(cleanTranscript('Please [MUSIC][inaudible] continue speaking.')).toBe('Please continue speaking.');
   });
+
+  it('removes several consecutive bracketed tags while preserving surrounding speech', () => {
+    expect(cleanTranscript('Please [MUSIC][inaudible][static] continue speaking.')).toBe('Please continue speaking.');
+    expect(cleanTranscript('Please [MUSIC] [inaudible] [laughter] continue speaking.')).toBe('Please continue speaking.');
+    expect(cleanTranscript('Please[MUSIC][inaudible][static]send the report.')).toBe('Please send the report.');
+    expect(cleanTranscript('[BLANK_AUDIO][MUSIC][inaudible]Only this remains. [NOISE][silence]')).toBe('Only this remains.');
+    expect(cleanTranscript('[BLANK_AUDIO][MUSIC][inaudible]')).toBe('');
+  });
 });
 
 describe('cleanTranscript asterisk tags', () => {
