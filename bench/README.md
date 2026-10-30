@@ -19,6 +19,30 @@ npx vitest run bench                       # regression guard (thresholds in ben
 
 `--out`, `--corpus` and `--lexicon` point the runner at other files.
 
+## Repeat the non-English-name benchmark
+
+From the repository root, with dependencies installed, run:
+
+```bash
+npm run bench -- --out /tmp/lexicon-name-benchmark.json
+```
+
+This uses the committed `bench/corpus.jsonl` and `bench/lexicon.yaml` with the
+default matcher settings. The corpus includes generated name cases from
+`bench/gen-corpus.ts` and the hand-written edges in `bench/cases/nonenglish.jsonl`.
+Run the full corpus, rather than the edges file alone, to retain the generated
+cases and the untagged baseline. The command prints a Markdown report and saves
+JSON to the specified path, leaving `bench/results.json` untouched.
+
+In the `Non-English subset` table, compare the untagged baseline, all
+`lang`-tagged cases, and each language family. It reports case counts, positive
+sentence accuracy (with and without expected-hard cases), raw and post-lexicon
+term recall, precision, F1, and the prose false-positive rate. `--verbose` also
+lists failing cases; the saved JSON includes failures. Repeat with the same
+inputs and settings to compare accuracy; latency varies with the machine and
+load. These are synthetic text cases, so the report does not measure real
+dictation accuracy.
+
 ## Files
 
 | file | what |
