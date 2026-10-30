@@ -24,6 +24,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Internal
 
+- Guard dynamic imports in both test trees against bare filesystem paths on Windows, and assert the enumeration prose regression ceiling explicitly.
 - Load the hook regression fixture through a file URL on Windows, with a URL-sensitive filename to catch raw-path imports on every platform.
 - Cover adjacent bracketed Whisper tags in the voice transcript cleaning tests.
 
