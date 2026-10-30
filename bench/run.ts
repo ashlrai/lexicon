@@ -10,6 +10,7 @@
 import { writeFileSync } from 'node:fs';
 import { dirname, join, relative } from 'node:path';
 import { fileURLToPath } from 'node:url';
+import { reportPath } from './report-path.js';
 import {
   CATEGORIES,
   DEFAULT_CORPUS,
@@ -323,8 +324,8 @@ function main(): void {
   const repoRoot = join(HERE, '..');
   const payload = {
     generatedAt: new Date().toISOString(),
-    lexicon: relative(repoRoot, args.lexicon),
-    corpus: relative(repoRoot, args.corpus),
+    lexicon: reportPath(relative(repoRoot, args.lexicon)),
+    corpus: reportPath(relative(repoRoot, args.corpus)),
     ...summary,
     ...(sweepRows ? { sweep: sweepRows } : {}),
     failures: results.filter((r) => !r.pass),
