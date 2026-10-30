@@ -14,6 +14,17 @@ describe('proposed system-wide daemon contract', () => {
     expect(boundary).toMatch(/proposal, not an implemented or available\s+feature/);
   });
 
+  it('separates the existing CLI and opt-in server from proposed client lifecycle', () => {
+    expect(boundary).toMatch(/`lexicon normalize` as a\s+subprocess with text as arguments or on stdin and read corrected text from stdout/);
+    expect(boundary).toMatch(/client handles the exit status and stderr/);
+    expect(boundary).toMatch(/Each invocation starts a new\s+process and exits; it does not require a resident service/);
+    expect(boundary).toMatch(/`lexicon\s+daemon` watches the clipboard by default/);
+    expect(boundary).toMatch(/opt-in `lexicon daemon --expander` already starts a separate/);
+    expect(boundary).toMatch(/automatic startup, supervision,\s+reconnects and fallback to the CLI are proposed behavior, not guarantees/);
+    expect(boundary).toMatch(/client would own those lifecycle decisions/);
+    expect(boundary).toMatch(/Neither the\s+issue nor the socket protocol establishes a latency or memory guarantee/);
+  });
+
   it('leaves platform and operational decisions open', () => {
     expect(boundary).toMatch(/Platform choices remain open/);
     expect(boundary).toMatch(/macOS and Windows[\s\S]*Linux across X11 and\s+Wayland/);
