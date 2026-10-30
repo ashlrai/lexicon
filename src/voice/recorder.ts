@@ -13,6 +13,7 @@
  * hotkey presses that race therefore produce one recorder: the loser sees
  * EEXIST and re-reads the file instead of spawning a second ffmpeg.
  */
+import { randomBytes } from 'node:crypto';
 import { promises as fs } from 'node:fs';
 import type { FileHandle } from 'node:fs/promises';
 import path from 'node:path';
@@ -199,7 +200,7 @@ const STOPPING_PREFIX = 'stopping-';
 export async function claimStop(globalPath: string): Promise<RecordingState | undefined> {
   const claimed = path.join(
     voiceDir(globalPath),
-    `${STOPPING_PREFIX}${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.json`,
+    `${STOPPING_PREFIX}${process.pid}-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}.json`,
   );
   // Rename alone is not exclusive on Windows: libuv renames through a handle
   // to the file, so a press that opened the state file before another press

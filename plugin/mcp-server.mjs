@@ -51724,6 +51724,13 @@ var require_node_async_hooks = __commonJS({
   }
 });
 
+// builtin-cjs:node:crypto
+var require_node_crypto = __commonJS({
+  "builtin-cjs:node:crypto"(exports, module) {
+    module.exports = __require("node:crypto");
+  }
+});
+
 // src/util/atomic.ts
 async function resolveWriteTarget(target) {
   const abs = import_node_path3.default.resolve(target);
@@ -51915,7 +51922,7 @@ async function blockingFile(dir) {
   }
 }
 async function acquire(lockPath, target, timeoutMs, staleMs) {
-  const token = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const token = `${process.pid}-${Date.now().toString(36)}-${(0, import_node_crypto.randomBytes)(8).toString("hex")}`;
   const payload = JSON.stringify({ pid: process.pid, host: import_node_os.default.hostname(), token, at: (/* @__PURE__ */ new Date()).toISOString() });
   const deadline = Date.now() + timeoutMs;
   let wait = 4;
@@ -51942,7 +51949,7 @@ async function acquire(lockPath, target, timeoutMs, staleMs) {
       if (transient !== void 0) throw transient;
       throw new FileLockError(target, lockPath, `still held after ${timeoutMs}ms by ${await describeHolder(lockPath)}`, { held: true });
     }
-    await sleep(wait / 2 + Math.random() * wait);
+    await sleep(wait / 2 + (0, import_node_crypto.randomInt)(wait));
     wait = Math.min(wait * 2, 120);
   }
 }
@@ -52025,11 +52032,12 @@ function isEexist(err) {
 function sleep(ms) {
   return new Promise((resolve5) => setTimeout(resolve5, ms));
 }
-var import_node_fs2, import_node_async_hooks, import_node_os, import_node_path3, BACKUP_SUFFIX, OLDER_BACKUP_SUFFIX, BACKUP_ROTATE_MS, LOCK_SUFFIX, DEFAULT_LOCK_TIMEOUT_MS, DEFAULT_LOCK_STALE_MS, DEFAULT_LOCK_QUEUE_TIMEOUT_MS, WINDOWS_RENAME_RETRY_MS, FileLockError, ownedLocks, exitHookInstalled, heldLocks, queues;
+var import_node_fs2, import_node_async_hooks, import_node_crypto, import_node_os, import_node_path3, BACKUP_SUFFIX, OLDER_BACKUP_SUFFIX, BACKUP_ROTATE_MS, LOCK_SUFFIX, DEFAULT_LOCK_TIMEOUT_MS, DEFAULT_LOCK_STALE_MS, DEFAULT_LOCK_QUEUE_TIMEOUT_MS, WINDOWS_RENAME_RETRY_MS, FileLockError, ownedLocks, exitHookInstalled, heldLocks, queues;
 var init_atomic = __esm({
   "src/util/atomic.ts"() {
     import_node_fs2 = __toESM(require_node_fs());
     import_node_async_hooks = __toESM(require_node_async_hooks());
+    import_node_crypto = __toESM(require_node_crypto());
     import_node_os = __toESM(require_node_os());
     import_node_path3 = __toESM(require_node_path());
     init_errors4();
@@ -52152,13 +52160,6 @@ var init_bounded_read = __esm({
       }
     };
     OPEN_FLAGS = import_node_fs3.constants.O_RDONLY | (import_node_fs3.constants.O_NONBLOCK ?? 0);
-  }
-});
-
-// builtin-cjs:node:crypto
-var require_node_crypto = __commonJS({
-  "builtin-cjs:node:crypto"(exports, module) {
-    module.exports = __require("node:crypto");
   }
 });
 
@@ -56810,10 +56811,10 @@ function importCandidatePreview(candidate) {
   };
 }
 function importCandidateId(candidate) {
-  return (0, import_node_crypto.createHash)("sha256").update(JSON.stringify(importCandidatePreview(candidate))).digest("hex");
+  return (0, import_node_crypto2.createHash)("sha256").update(JSON.stringify(importCandidatePreview(candidate))).digest("hex");
 }
 function importPreviewDigest(sources, candidates, destination) {
-  return (0, import_node_crypto.createHash)("sha256").update(JSON.stringify({
+  return (0, import_node_crypto2.createHash)("sha256").update(JSON.stringify({
     sources: [...new Set(sources)].sort(compareText),
     destination,
     candidates: candidates.map(importCandidatePreview)
@@ -56826,10 +56827,10 @@ function selectImportCandidates(candidates, approvedIds) {
   }
   return [...new Set(approvedIds)].map((id) => byId.get(id));
 }
-var import_node_crypto;
+var import_node_crypto2;
 var init_import_preview = __esm({
   "src/core/import-preview.ts"() {
-    import_node_crypto = __toESM(require_node_crypto());
+    import_node_crypto2 = __toESM(require_node_crypto());
     init_collate();
   }
 });
@@ -58899,7 +58900,7 @@ function norm(s) {
 }
 function pendingId(heard, meant) {
   const key = `${norm(heard).toLowerCase()}\0${norm(meant).toLowerCase()}`;
-  return (0, import_node_crypto2.createHash)("sha256").update(key).digest("hex").slice(0, 8);
+  return (0, import_node_crypto3.createHash)("sha256").update(key).digest("hex").slice(0, 8);
 }
 function queueRefusal(heard, meant) {
   const h = norm(heard);
@@ -59059,10 +59060,10 @@ async function acceptPending(sel, opts = {}, learn = learnCorrection) {
     return { accepted, unknown: unknown2, file: file2 };
   }));
 }
-var import_node_crypto2, import_node_fs9, import_node_path9, import_yaml8, PENDING_FILE_NAME, MAX_PENDING, MAX_PENDING_BYTES, MAX_REJECTED, PendingFileError, HEADER;
+var import_node_crypto3, import_node_fs9, import_node_path9, import_yaml8, PENDING_FILE_NAME, MAX_PENDING, MAX_PENDING_BYTES, MAX_REJECTED, PendingFileError, HEADER;
 var init_pending = __esm({
   "src/core/pending.ts"() {
-    import_node_crypto2 = __toESM(require_node_crypto());
+    import_node_crypto3 = __toESM(require_node_crypto());
     import_node_fs9 = __toESM(require_node_fs());
     import_node_path9 = __toESM(require_node_path());
     import_yaml8 = __toESM(require_dist2());
@@ -60120,7 +60121,7 @@ function resolvePackUrl(entry, base) {
   return import_node_path11.default.resolve(base, entry.url);
 }
 function sha256Hex(data) {
-  return (0, import_node_crypto3.createHash)("sha256").update(data).digest("hex");
+  return (0, import_node_crypto4.createHash)("sha256").update(data).digest("hex");
 }
 function verifyPackChecksum(data, expected, ref) {
   const actual = sha256Hex(data);
@@ -60548,10 +60549,10 @@ function validateCommunityPack(pack) {
   }
   return { errors, warnings };
 }
-var import_node_crypto3, import_node_fs10, import_node_path11, import_yaml9, REGISTRY_REF_RE, RegistryIndexEntrySchema, RegistryIndexSchema, MAX_REGISTRY_FILE_BYTES, REGISTRY_FETCH_TIMEOUT_MS, RegistryPackStateSchema, REGISTRIES_ENV;
+var import_node_crypto4, import_node_fs10, import_node_path11, import_yaml9, REGISTRY_REF_RE, RegistryIndexEntrySchema, RegistryIndexSchema, MAX_REGISTRY_FILE_BYTES, REGISTRY_FETCH_TIMEOUT_MS, RegistryPackStateSchema, REGISTRIES_ENV;
 var init_registry = __esm({
   "src/core/registry.ts"() {
-    import_node_crypto3 = __toESM(require_node_crypto());
+    import_node_crypto4 = __toESM(require_node_crypto());
     import_node_fs10 = __toESM(require_node_fs());
     import_node_path11 = __toESM(require_node_path());
     import_yaml9 = __toESM(require_dist2());
@@ -62658,7 +62659,7 @@ async function keepOwnerOnly(file2) {
   }
 }
 function generateToken() {
-  return (0, import_node_crypto4.randomBytes)(16).toString("hex");
+  return (0, import_node_crypto5.randomBytes)(16).toString("hex");
 }
 function tokenProblem(raw) {
   if (typeof raw !== "object" || raw === null || Array.isArray(raw)) return "it is not a JSON object";
@@ -62751,11 +62752,11 @@ async function probeHealth(baseUrl, opts = {}) {
   const given = typeof body === "object" && body !== null ? body.error : void 0;
   return { state: "failing", status: res.status, error: typeof given === "string" ? redactSecrets(given, [opts.token]) : `HTTP ${res.status}` };
 }
-var import_node_crypto4, import_node_net, import_node_fs14, import_node_path16, SERVE_FILE_MODE, SERVE_FILE_NAME, EXTENSION_ORIGIN_PREFIXES, TOKEN_RE3, MISSING_REASON, SERVE_STATUS_HINTS, FOREIGN_HEALTH_ERROR;
+var import_node_crypto5, import_node_net, import_node_fs14, import_node_path16, SERVE_FILE_MODE, SERVE_FILE_NAME, EXTENSION_ORIGIN_PREFIXES, TOKEN_RE3, MISSING_REASON, SERVE_STATUS_HINTS, FOREIGN_HEALTH_ERROR;
 var init_config = __esm({
   "src/serve/config.ts"() {
     init_defaults();
-    import_node_crypto4 = __toESM(require_node_crypto());
+    import_node_crypto5 = __toESM(require_node_crypto());
     import_node_net = __toESM(require_node_net());
     import_node_fs14 = __toESM(require_node_fs());
     import_node_path16 = __toESM(require_node_path());
@@ -67267,7 +67268,7 @@ function modelHashPath(modelPath) {
   return `${modelPath}${MODEL_HASH_SUFFIX}`;
 }
 function sha256OfFile(p) {
-  const hash2 = (0, import_node_crypto5.createHash)("sha256");
+  const hash2 = (0, import_node_crypto6.createHash)("sha256");
   const buf = Buffer.alloc(1024 * 1024);
   const fd = (0, import_node_fs19.openSync)(p, "r");
   try {
@@ -67348,10 +67349,10 @@ function resolveModel(spec, opts) {
   }
   return { name: spec, path: primary, present: false, url: modelUrl(spec), ...atPrimary !== "missing" ? flagged(atPrimary) : {} };
 }
-var import_node_crypto5, import_node_fs19, import_node_path21, import_node_stream, import_promises, DEFAULT_MODEL, MODEL_BASE_URL, REPO_MODELS_DIR, MODEL_HASH_SUFFIX, MODEL_HASH_VERSION, MODEL_CHANGED_PREFIX, GGML_MAGIC, STALE_PART_MS;
+var import_node_crypto6, import_node_fs19, import_node_path21, import_node_stream, import_promises, DEFAULT_MODEL, MODEL_BASE_URL, REPO_MODELS_DIR, MODEL_HASH_SUFFIX, MODEL_HASH_VERSION, MODEL_CHANGED_PREFIX, GGML_MAGIC, STALE_PART_MS;
 var init_models = __esm({
   "src/voice/models.ts"() {
-    import_node_crypto5 = __toESM(require_node_crypto());
+    import_node_crypto6 = __toESM(require_node_crypto());
     import_node_fs19 = __toESM(require_node_fs());
     init_xdg();
     import_node_path21 = __toESM(require_node_path());
@@ -68652,9 +68653,9 @@ function tokenMatches(header, token) {
   if (!header) return false;
   const match = /^Bearer\s+(\S+)$/i.exec(header.trim());
   if (!match) return false;
-  const given = (0, import_node_crypto6.createHash)("sha256").update(match[1], "utf8").digest();
-  const expected = (0, import_node_crypto6.createHash)("sha256").update(token, "utf8").digest();
-  return (0, import_node_crypto6.timingSafeEqual)(given, expected);
+  const given = (0, import_node_crypto7.createHash)("sha256").update(match[1], "utf8").digest();
+  const expected = (0, import_node_crypto7.createHash)("sha256").update(token, "utf8").digest();
+  return (0, import_node_crypto7.timingSafeEqual)(given, expected);
 }
 function expectsContinue(req) {
   return String(req.headers.expect ?? "").trim().toLowerCase() === "100-continue";
@@ -69420,11 +69421,11 @@ ${body}`
   }
   return { server, start, stop };
 }
-var import_node_crypto6, import_node_fs25, import_node_http, import_node_net2, import_node_path24, MAX_BODY_BYTES, MAX_SERVE_CONFIG_BYTES, MAX_CONCURRENT_REQUESTS, LEXICON_RELOAD_MS, NORMALIZE_BUDGET_MS, REQUEST_TIMEOUT_MS, HEADERS_TIMEOUT_MS, PAIR_PATH, PAIR_META, PAIR_INSTALL_HINT_MS, PAIR_HEADERS, MAX_CACHED_CWDS, EXPORT_CONTENT_TYPES, TERM_CATEGORIES2, TERM_SCOPES2, CwdField, NormalizeBody, LearnBody, AddBody, PackBody, ROUTES, BODY_SHAPES, BUSY_RETRY_AFTER_S, TOKEN_SOURCES, PACK_ROUTE_RE, EXPORT_ROUTE_RE, BROKEN_LEXICON_ANONYMOUS, HttpError, EXPORT_NOTE_HEADER;
+var import_node_crypto7, import_node_fs25, import_node_http, import_node_net2, import_node_path24, MAX_BODY_BYTES, MAX_SERVE_CONFIG_BYTES, MAX_CONCURRENT_REQUESTS, LEXICON_RELOAD_MS, NORMALIZE_BUDGET_MS, REQUEST_TIMEOUT_MS, HEADERS_TIMEOUT_MS, PAIR_PATH, PAIR_META, PAIR_INSTALL_HINT_MS, PAIR_HEADERS, MAX_CACHED_CWDS, EXPORT_CONTENT_TYPES, TERM_CATEGORIES2, TERM_SCOPES2, CwdField, NormalizeBody, LearnBody, AddBody, PackBody, ROUTES, BODY_SHAPES, BUSY_RETRY_AFTER_S, TOKEN_SOURCES, PACK_ROUTE_RE, EXPORT_ROUTE_RE, BROKEN_LEXICON_ANONYMOUS, HttpError, EXPORT_NOTE_HEADER;
 var init_server3 = __esm({
   "src/serve/server.ts"() {
     init_info();
-    import_node_crypto6 = __toESM(require_node_crypto());
+    import_node_crypto7 = __toESM(require_node_crypto());
     import_node_fs25 = __toESM(require_node_fs());
     import_node_http = __toESM(require_node_http());
     import_node_net2 = __toESM(require_node_net());
@@ -73274,11 +73275,11 @@ async function runHarvestInteractive(candidates, opts, io, prompter) {
   if (created + merged > 0) line(io, dim(NEXT_LIST));
   return writeError === void 0 ? 0 : 1;
 }
-var import_node_child_process9, import_node_crypto7, import_node_fs32, import_node_path32, NEXT_LIST, HARVEST_KEYS, HARVEST_HELP;
+var import_node_child_process9, import_node_crypto8, import_node_fs32, import_node_path32, NEXT_LIST, HARVEST_KEYS, HARVEST_HELP;
 var init_cmd_review = __esm({
   "src/cli/cmd-review.ts"() {
     import_node_child_process9 = __toESM(require_node_child_process());
-    import_node_crypto7 = __toESM(require_node_crypto());
+    import_node_crypto8 = __toESM(require_node_crypto());
     import_node_fs32 = __toESM(require_node_fs());
     import_node_path32 = __toESM(require_node_path());
     init_core3();
@@ -74357,11 +74358,11 @@ var init_setup = __esm({
 });
 
 // src/mcp/tools/packs.ts
-var import_node_crypto8, applyImportCandidates2, harvestImportSources2, installPack2, installRegistryPack2, installedPacks2, isRegistryRef2, importCandidateId2, importCandidatePreview2, importPreviewDigest2, selectImportCandidates2, resolvePaths4, listImportSources2, listPacks2, loadRegistryIndex2, packAlreadyInstalledNote2, findRegistryEntry2, downloadPack2, findRegistryRecordMismatch2, parsePackText2, parseRegistryRef2, verifyPackChecksum2, assertUserRegistry2, IMPORT_PREVIEW_MAX_CANDIDATES, IMPORT_PREVIEWS_KEPT, IMPORT_PREVIEW_TTL_MS, compareSources, REGISTRY_SOURCE_DESC, registerPackTools;
+var import_node_crypto9, applyImportCandidates2, harvestImportSources2, installPack2, installRegistryPack2, installedPacks2, isRegistryRef2, importCandidateId2, importCandidatePreview2, importPreviewDigest2, selectImportCandidates2, resolvePaths4, listImportSources2, listPacks2, loadRegistryIndex2, packAlreadyInstalledNote2, findRegistryEntry2, downloadPack2, findRegistryRecordMismatch2, parsePackText2, parseRegistryRef2, verifyPackChecksum2, assertUserRegistry2, IMPORT_PREVIEW_MAX_CANDIDATES, IMPORT_PREVIEWS_KEPT, IMPORT_PREVIEW_TTL_MS, compareSources, REGISTRY_SOURCE_DESC, registerPackTools;
 var init_packs2 = __esm({
   "src/mcp/tools/packs.ts"() {
     init_zod();
-    import_node_crypto8 = __toESM(require_node_crypto());
+    import_node_crypto9 = __toESM(require_node_crypto());
     init_json();
     init_caps();
     init_types3();
@@ -74476,13 +74477,13 @@ var init_packs2 = __esm({
               checksum: entry.checksum,
               terms: pack.lexicon.terms.map((t) => ({ ...t }))
             };
-            const digest = (0, import_node_crypto8.createHash)("sha256").update(JSON.stringify({
+            const digest = (0, import_node_crypto9.createHash)("sha256").update(JSON.stringify({
               name,
               registry: registry2,
               destination: destination(scope),
               entry,
               preview,
-              bytes: (0, import_node_crypto8.createHash)("sha256").update(bytes).digest("hex")
+              bytes: (0, import_node_crypto9.createHash)("sha256").update(bytes).digest("hex")
             })).digest("hex");
             if (confirm !== true) {
               return textResult({
@@ -74617,7 +74618,7 @@ var init_packs2 = __esm({
           const chosen = wanted.filter((id) => availability.some((s) => s.id === id && s.implemented && s.available));
           const candidates = chosen.length === 0 ? [] : await harvestImportSources2(chosen, {}, { limit: IMPORT_PREVIEW_MAX_CANDIDATES });
           while (imports.size >= IMPORT_PREVIEWS_KEPT) imports.delete(imports.keys().next().value);
-          const token = (0, import_node_crypto8.randomUUID)();
+          const token = (0, import_node_crypto9.randomUUID)();
           imports.set(token, { at: Date.now(), sources: [...new Set(wanted)].sort(compareSources), destination: destination(scope), candidates: structuredClone(candidates) });
           return textResult({
             sources: availability,

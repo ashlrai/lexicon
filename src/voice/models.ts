@@ -6,7 +6,7 @@
  * needs no second download. Missing named models are fetched from Hugging
  * Face with a progress line. `--model <path>` is used as-is.
  */
-import { createHash } from 'node:crypto';
+import { createHash, randomBytes } from 'node:crypto';
 import { closeSync, createWriteStream, openSync, promises as fs, readFileSync, readSync, statSync, writeFileSync } from 'node:fs';
 import { homeDir, usableHome } from '../util/xdg.js';
 import path from 'node:path';
@@ -437,7 +437,7 @@ export async function defaultDownloader(url: string, dest: string, onProgress: (
   // One `.part` file per download: two `lexicon voice` runs fetching the same
   // model at once wrote into one shared `<dest>.part`, interleaving their
   // bytes, and the second rename failed (or renamed the other's half file).
-  const tmp = `${dest}.${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}.part`;
+  const tmp = `${dest}.${process.pid}-${Date.now().toString(36)}-${randomBytes(4).toString('hex')}.part`;
   const source = Readable.fromWeb(res.body as import('node:stream/web').ReadableStream<Uint8Array>);
   source.on('data', (chunk: Buffer) => {
     if (head.length < GGML_MAGIC.length) head = Buffer.concat([head, chunk.subarray(0, GGML_MAGIC.length - head.length)]);
