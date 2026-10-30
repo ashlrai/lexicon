@@ -220,17 +220,18 @@ function floatSafeRemainder(val, step) {
   return ratio - roundedRatio;
 }
 function defineLazy(object2, key, getter) {
-  let value = void 0;
+  const state = { value: void 0, evaluating: false };
   Object.defineProperty(object2, key, {
     get() {
-      if (value === EVALUATING) {
+      if (state.evaluating) {
         return void 0;
       }
-      if (value === void 0) {
-        value = EVALUATING;
-        value = getter();
+      if (state.value === void 0) {
+        state.evaluating = true;
+        state.value = getter();
+        state.evaluating = false;
       }
-      return value;
+      return state.value;
     },
     set(v) {
       Object.defineProperty(object2, key, {
@@ -835,10 +836,9 @@ function constantCatch(value) {
   fn[CONSTANT_CATCH] = true;
   return fn;
 }
-var Cached, EVALUATING, captureStackTrace, allowsEval, getParsedType, propertyKeyTypes, primitiveTypes, NUMBER_FORMAT_RANGES, BIGINT_FORMAT_RANGES, highSurrogate, Class, installing, broke, breaker, CONSTANT_CATCH;
+var Cached, captureStackTrace, allowsEval, getParsedType, propertyKeyTypes, primitiveTypes, NUMBER_FORMAT_RANGES, BIGINT_FORMAT_RANGES, highSurrogate, Class, installing, broke, breaker, CONSTANT_CATCH;
 var init_util = __esm({
   "node_modules/zod/v4/core/util.js"() {
-    init_core();
     Cached = class {
       constructor(getter) {
         this._getter = getter;
@@ -853,24 +853,9 @@ var init_util = __esm({
         return this._value;
       }
     };
-    EVALUATING = /* @__PURE__ */ Symbol("evaluating");
     captureStackTrace = "captureStackTrace" in Error ? Error.captureStackTrace : (..._args) => {
     };
-    allowsEval = /* @__PURE__ */ cached(() => {
-      if (globalConfig.jitless) {
-        return false;
-      }
-      if (typeof navigator !== "undefined" && navigator?.userAgent?.includes("Cloudflare")) {
-        return false;
-      }
-      try {
-        const F = Function;
-        new F("");
-        return true;
-      } catch (_) {
-        return false;
-      }
-    });
+    allowsEval = /* @__PURE__ */ cached(() => false);
     getParsedType = (data) => {
       const t = typeof data;
       switch (t) {
@@ -1777,12 +1762,7 @@ var init_doc = __esm({
         }
       }
       compile() {
-        const F = Function;
-        const content = this?.content ?? [``];
-        const factory = new F(...Object.keys(this.closed), `return function (${this.args.join(", ")}) {
-${content.join("\n")}
-};`);
-        return factory(...Object.values(this.closed));
+        throw new Error("Code generation is disabled in the Lexicon hook");
       }
     };
   }
@@ -3344,7 +3324,6 @@ function isRecursive(inst, stack, resolve2) {
     case "custom":
       break;
     default: {
-      kind;
       for (const key in def) {
         const desc = Object.getOwnPropertyDescriptor(def, key);
         if (!desc || desc.get)
