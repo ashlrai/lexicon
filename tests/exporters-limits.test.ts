@@ -5,13 +5,48 @@
  */
 import { describe, expect, it } from 'vitest';
 import { parse as parseYaml } from 'yaml';
-import { exportLexicon, exportLexiconWithNotes } from '../src/core/exporters/index.js';
+import { EXPORT_FORMATS, exportLexicon, exportLexiconWithNotes } from '../src/core/exporters/index.js';
 import { WHISPER_PROMPT_TOKEN_BUDGET, estimateWhisperTokens } from '../src/core/exporters/whisperPrompt.js';
-import type { Lexicon, Term } from '../src/core/types.js';
+import type { ExportFormat, Lexicon, Term } from '../src/core/types.js';
 
 function lex(terms: Term[]): Lexicon {
   return { version: 1, terms };
 }
+
+describe('empty lexicon exports', () => {
+  const expected: Record<ExportFormat, { value: unknown; encoding?: 'json' | 'yaml'; rows?: number; names?: number }> = {
+    wispr: { value: 'word,replacement\n', rows: 0 },
+    superwhisper: { value: [], encoding: 'json', rows: 0 },
+    'whisper-prompt': { value: '', names: 0 },
+    macos: {
+      value: '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<array>\n</array>\n</plist>\n',
+      rows: 0,
+    },
+    'claude-md': {
+      value: '## Voice lexicon\n\nThe user dictates with speech-to-text. When a transcript contains one of these spellings, they mean the canonical term. Always write the canonical form.\n\n| Canonical | Sounds like / STT writes | Note |\n| --- | --- | --- |\n\nIf a word looks like a garbled proper noun and is not listed, ask rather than guess.\n',
+    },
+    csv: { value: 'canonical,alias,category,phonetic\n', rows: 0 },
+    json: { value: { version: 1, terms: [] }, encoding: 'json' },
+    deepgram: { value: { keyterm: [], keywords: [] }, encoding: 'json' },
+    espanso: { value: { matches: [] }, encoding: 'yaml', rows: 0 },
+    assemblyai: { value: { word_boost: [], boost_param: 'high' }, encoding: 'json' },
+    speechmatics: { value: { additional_vocab: [] }, encoding: 'json' },
+    azure: { value: { phraseList: [] }, encoding: 'json' },
+    google: { value: { adaptation: { phraseSets: [{ phrases: [] }] } }, encoding: 'json' },
+    openai: { value: '', names: 0 },
+    text: { value: '' },
+    markdown: { value: '' },
+  };
+
+  it.each(EXPORT_FORMATS)('%s returns its empty representation without omissions', (format) => {
+    const { encoding, value, rows, names } = expected[format];
+    const result = exportLexiconWithNotes(lex([]), format);
+    const parsed: unknown = encoding === 'json' ? JSON.parse(result.text) : encoding === 'yaml' ? parseYaml(result.text) : result.text;
+    expect(parsed).toEqual(value);
+    expect(result).toEqual({ text: expect.any(String), notes: [], ...(rows !== undefined ? { rows } : {}), ...(names !== undefined ? { names } : {}) });
+    expect(exportLexicon(lex([]), format)).toBe(result.text);
+  });
+});
 
 describe('whisper-prompt and openai: the prompt window Whisper reads', () => {
   // Catches: the cap was 100 names whatever their length. Whisper keeps only
