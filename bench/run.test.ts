@@ -1,9 +1,18 @@
 import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join, relative } from 'node:path';
+import { join, relative, win32 } from 'node:path';
 import { expect, it } from 'vitest';
 import { isNegative, loadCorpus, loadLexicon, runBench, type BenchReport } from './lib.js';
+import { reportPath } from './report-path.js';
+
+it.each([
+  ['bench/lexicon.yaml', 'bench/lexicon.yaml'],
+  [win32.relative('C:\\repo', 'C:\\repo\\bench\\lexicon.yaml'), 'bench/lexicon.yaml'],
+  [win32.relative('C:\\repo', 'C:\\fixtures\\corpus.jsonl'), '../fixtures/corpus.jsonl'],
+])('stores the relative path %s with portable separators', (input, expected) => {
+  expect(reportPath(input)).toBe(expected);
+});
 
 it('writes the documented non-English baseline with comparable subset metrics', () => {
   const dir = mkdtempSync(join(tmpdir(), 'lexicon-name-bench-'));
@@ -30,7 +39,7 @@ it('writes the documented non-English baseline with comparable subset metrics', 
     };
     const expected = runBench(loadCorpus(input), loadLexicon(), { timing: false });
 
-    expect(saved.corpus).toBe(relative(process.cwd(), input));
+    expect(saved.corpus).toBe(relative(process.cwd(), input).replace(/\\/g, '/'));
     expect(saved.lexicon).toBe('bench/lexicon.yaml');
     expect(saved.config).toEqual(expected.config);
     expect(saved.lang).toEqual(expected.lang);
