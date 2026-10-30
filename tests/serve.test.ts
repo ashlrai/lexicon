@@ -3450,6 +3450,28 @@ describe('packs and aliases routes', () => {
     expect(await response.json()).toEqual(JSON.parse(example![2]!));
   });
 
+  it('generates aliases from the canonical query without looking up or changing stored terms', async () => {
+    const lexiconPath = path.join(home2, 'aliases-contract.yaml');
+    const stored = 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [stored-only-spelling]\n';
+    await fs.writeFile(lexiconPath, stored);
+    const server = createServer({ port: 0, cwd: cwd2, globalPath: lexiconPath, quiet: true });
+    const serverInfo = await server.start();
+    try {
+      const request = (route: string) => fetch(`${serverInfo.url}${route}`, { headers: { Authorization: `Bearer ${serverInfo.token}` } });
+      const response = await request('/aliases?canonical=Ashlr.AI');
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ canonical: 'Ashlr.AI', aliases: suggestAliases('Ashlr.AI') });
+      expect(suggestAliases('Ashlr.AI')).not.toContain('stored-only-spelling');
+      expect(await fs.readFile(lexiconPath, 'utf8')).toBe(stored);
+
+      for (const route of ['/aliases?term=Ashlr.AI', '/aliases?canonical=Ashlr.AI&canonical=Ashlr.AI']) {
+        expect((await request(route)).status, route).toBe(400);
+      }
+    } finally {
+      await server.stop();
+    }
+  });
+
   it('GET /aliases?canonical=X returns suggestAliases and 400 without a canonical', async () => {
     const res = await api2('GET', `/aliases?canonical=${encodeURIComponent('Ashlr.AI')}`);
     expect(res.status).toBe(200);
