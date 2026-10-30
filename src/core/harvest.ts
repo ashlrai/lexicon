@@ -730,7 +730,7 @@ function tomlSections(text: string): Map<string, string> {
 // ---------------------------------------------------------------------------
 
 /** PascalCase with at least two humps: Upper+lower..., Upper+... (e.g. LexiconStore, OpenClaw). */
-const PASCAL_RE = /\b[A-Z][a-z0-9]+(?:[A-Z][a-zA-Z0-9]*)+\b/g;
+const PASCAL_RE = /\b[A-Z][a-z0-9]+[A-Z][a-zA-Z0-9]*\b/g;
 
 /** Something like "Ashlr.AI", "Foo.io", "Next.js": a name with a dot-TLD tail. */
 const DOT_TLD_RE = /\b[A-Z][A-Za-z0-9]{1,}\.(?:AI|ai|io|IO|com|dev|app|sh|co|js|ts|net|org|xyz|so|gg|fm|tv|me)\b(?![\w/]|\.\w)/g;
@@ -792,7 +792,7 @@ function readmeProperNouns(text: string): Map<string, number> {
       // `⌃⌥Space`, `v2Beta`: glued to a symbol or digit, so a key or a token, not a name.
       if (/^[^A-Za-z"'(\[*_]/.test(raw)) continue;
       if (word.length < 4) continue;
-      if (!/^[A-Z][a-z]+(?:[A-Z][a-zA-Z]*)*$/.test(word)) continue;
+      if (!/^[A-Z][a-z]+(?:[A-Z][a-zA-Z]*)?$/.test(word)) continue;
       if (HARVEST_STOPLIST.has(word)) continue;
       if (GENERIC_IDENTIFIERS.has(word)) continue;
       // An everyday English word ("Leader", "Resources", "Growth") capitalised

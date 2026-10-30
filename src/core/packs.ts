@@ -20,6 +20,7 @@ import { fileURLToPath } from 'node:url';
 import { parse as parseYaml } from 'yaml';
 import * as z from 'zod';
 import { parseLexicon } from './schema.js';
+import { compareText } from './collate.js';
 import { ProjectTrustError, addTerms, effectiveHits, readHitsFor, readLexiconFile, refreshIndexCache, resolveScopeWritePath, resolvePaths, withLexiconLock, writeLexiconFile } from './store.js';
 import type { StoreOptions } from './store.js';
 import { isTrusted, parsedContentHash, refreshTrust } from './trust.js';
@@ -170,7 +171,7 @@ async function packNames(dir: string): Promise<string[]> {
     .filter((f) => f.endsWith('.yaml'))
     .map((f) => f.slice(0, -'.yaml'.length))
     .filter((n) => PACK_NAME_RE.test(n))
-    .sort();
+    .sort(compareText);
 }
 
 function parsePack(raw: unknown, file: string, expectedName?: string): Pack {

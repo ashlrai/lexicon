@@ -97,7 +97,8 @@ export function validateSitemap(document, routes) {
     return url;
   });
   assert.equal(new Set(urls).size, urls.length, 'Duplicate sitemap URL');
-  assert.deepEqual(urls.sort(), routes.map((path) => `${site}${path === '/' ? '' : path}`).sort(), 'Sitemap must cover every built page exactly once');
+  const compareText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+  assert.deepEqual(urls.sort(compareText), routes.map((path) => `${site}${path === '/' ? '' : path}`).sort(compareText), 'Sitemap must cover every built page exactly once');
 }
 
 function builtPages(directory) {
