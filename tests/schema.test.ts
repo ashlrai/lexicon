@@ -265,6 +265,18 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(findUnencodableChar('ok\uFFFE\uFFFF')).toBe('U+FFFE');
   });
 
+  it('reports U+FFFE after a valid surrogate pair and before a second noncharacter', () => {
+    const text = '\u{1F680}\uFFFE\uFFFF';
+
+    expect(findUnencodableChar(text)).toBe('U+FFFE');
+    expect(() => parseLexicon({ terms: [{ canonical: 'Rocket', notes: text }] })).toThrow(
+      'terms[0].notes: must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket"',
+    );
+    expect(() => parseLexicon({ terms: [], settings: { protectedWords: [text] } })).toThrow(
+      'settings.protectedWords[0]: must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format)',
+    );
+  });
+
   // Catches: U+FFFE, U+FFFF and an unpaired surrogate passed the schema
   // (they are neither control nor invisible characters), though no UTF-8 file
   // can hold a lone surrogate and XML forbids all three: one such alias made
