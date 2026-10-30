@@ -606,6 +606,20 @@ describe('hardening (lexicon content reaches model context)', () => {
     ]);
   });
 
+  it('enforces the standalone term alias limit after cleaning the list', () => {
+    const aliases = Array.from({ length: 64 }, (_, i) => `alias${i}`);
+    const input = [...aliases.map((alias) => ` ${ZW}${alias} `), '', ' ', ZW];
+
+    expect(TermSchema.parse({ canonical: 'X', aliases: input }).aliases).toEqual(aliases);
+
+    const result = TermSchema.safeParse({ canonical: 'X', aliases: [...input, ' alias64 '] });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the aliases limit to be enforced');
+    expect(result.error.issues).toMatchObject([
+      { code: 'too_big', path: ['aliases'], maximum: 64, message: 'at most 64 aliases per term' },
+    ]);
+  });
+
   it('accepts exactly 5000 terms and reports the terms boundary for 5001', () => {
     const terms = Array.from({ length: 5000 }, (_, i) => ({ canonical: `Term${i}` }));
     const atLimit = LexiconSchema.safeParse({ terms });
