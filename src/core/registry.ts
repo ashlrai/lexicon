@@ -479,7 +479,7 @@ export async function writeRegistryState(state: RegistryState, opts: RegistrySto
 
 /** Refs currently recorded as installed from a registry. */
 export async function installedRegistryPacks(opts: RegistryStoreOptions = {}): Promise<string[]> {
-  return Object.keys((await readRegistryState(opts)).packs).sort();
+  return Object.keys((await readRegistryState(opts)).packs).sort(compareText);
 }
 
 /** Environment variable a human sets (in the MCP server's env) to allow extra registry indexes, comma or newline separated. */
@@ -522,7 +522,7 @@ export async function userRegistrySources(opts: StoreOptions = {}): Promise<stri
       if (c) out.add(c);
     }
   }
-  return [...out].sort();
+  return [...out].sort(compareText);
 }
 
 /**

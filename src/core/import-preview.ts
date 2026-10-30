@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { compareText } from './collate.js';
 import type { HarvestCandidate } from './types.js';
 
 /** The complete candidate data shown to a user before import. */
@@ -20,7 +21,7 @@ export function importCandidateId(candidate: HarvestCandidate): string {
 /** Bind approval to the sources, destination and every previewed candidate. */
 export function importPreviewDigest(sources: readonly string[], candidates: readonly HarvestCandidate[], destination: string): string {
   return createHash('sha256').update(JSON.stringify({
-    sources: [...new Set(sources)].sort(), destination,
+    sources: [...new Set(sources)].sort(compareText), destination,
     candidates: candidates.map(importCandidatePreview),
   })).digest('hex');
 }

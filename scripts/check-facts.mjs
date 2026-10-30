@@ -256,7 +256,7 @@ function serveRoutes() {
     if (regexes.has(m[1])) found.add(normalizeRoute(routeFromRegex(regexes.get(m[1]))));
   }
   if (found.size === 0) throw new Error('parsed zero routes out of the route() dispatch in src/serve/server.ts');
-  return [...found].sort();
+  return [...found].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
 /**
@@ -558,7 +558,7 @@ function scanTargets() {
     }
   };
   for (const r of roots) walk(r);
-  return [...new Set(out)].sort();
+  return [...new Set(out)].sort((a, b) => (a < b ? -1 : a > b ? 1 : 0));
 }
 
 /**

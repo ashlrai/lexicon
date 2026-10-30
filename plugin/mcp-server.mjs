@@ -54576,7 +54576,7 @@ function readmeProperNouns(text) {
       first = false;
       if (/^[^A-Za-z"'(\[*_]/.test(raw)) continue;
       if (word.length < 4) continue;
-      if (!/^[A-Z][a-z]+(?:[A-Z][a-zA-Z]*)*$/.test(word)) continue;
+      if (!/^[A-Z][a-z]+(?:[A-Z][a-zA-Z]*)?$/.test(word)) continue;
       if (HARVEST_STOPLIST.has(word)) continue;
       if (GENERIC_IDENTIFIERS.has(word)) continue;
       if (/^[A-Z][a-z]+$/.test(word) && STOPLIST.has(word.toLowerCase())) continue;
@@ -56329,7 +56329,7 @@ var init_harvest = __esm({
       "tower",
       "tracing"
     ]);
-    PASCAL_RE = /\b[A-Z][a-z0-9]+(?:[A-Z][a-zA-Z0-9]*)+\b/g;
+    PASCAL_RE = /\b[A-Z][a-z0-9]+[A-Z][a-zA-Z0-9]*\b/g;
     DOT_TLD_RE = /\b[A-Z][A-Za-z0-9]{1,}\.(?:AI|ai|io|IO|com|dev|app|sh|co|js|ts|net|org|xyz|so|gg|fm|tv|me)\b(?![\w/]|\.\w)/g;
   }
 });
@@ -56814,7 +56814,7 @@ function importCandidateId(candidate) {
 }
 function importPreviewDigest(sources, candidates, destination) {
   return (0, import_node_crypto.createHash)("sha256").update(JSON.stringify({
-    sources: [...new Set(sources)].sort(),
+    sources: [...new Set(sources)].sort(compareText),
     destination,
     candidates: candidates.map(importCandidatePreview)
   })).digest("hex");
@@ -56830,6 +56830,7 @@ var import_node_crypto;
 var init_import_preview = __esm({
   "src/core/import-preview.ts"() {
     import_node_crypto = __toESM(require_node_crypto());
+    init_collate();
   }
 });
 
@@ -60217,7 +60218,7 @@ async function writeRegistryState(state, opts = {}) {
 `, { mode: 384 });
 }
 async function installedRegistryPacks(opts = {}) {
-  return Object.keys((await readRegistryState(opts)).packs).sort();
+  return Object.keys((await readRegistryState(opts)).packs).sort(compareText);
 }
 function canonicalRegistrySource(source) {
   const s = source.trim();
@@ -60251,7 +60252,7 @@ async function userRegistrySources(opts = {}) {
       if (c) out.add(c);
     }
   }
-  return [...out].sort();
+  return [...out].sort(compareText);
 }
 async function assertUserRegistry(source, opts = {}) {
   const allowed = await userRegistrySources(opts);
@@ -60630,7 +60631,7 @@ async function packNames(dir) {
     if (isEnoent(err)) return [];
     throw err;
   }
-  return entries2.filter((f) => f.endsWith(".yaml")).map((f) => f.slice(0, -".yaml".length)).filter((n) => PACK_NAME_RE.test(n)).sort();
+  return entries2.filter((f) => f.endsWith(".yaml")).map((f) => f.slice(0, -".yaml".length)).filter((n) => PACK_NAME_RE.test(n)).sort(compareText);
 }
 function parsePack(raw, file2, expectedName) {
   const head = PackFileSchema.safeParse(raw);
@@ -60863,6 +60864,7 @@ var init_packs = __esm({
     import_yaml10 = __toESM(require_dist2());
     init_zod();
     init_schema();
+    init_collate();
     init_store();
     init_trust();
     init_errors4();
@@ -74355,7 +74357,7 @@ var init_setup = __esm({
 });
 
 // src/mcp/tools/packs.ts
-var import_node_crypto8, applyImportCandidates2, harvestImportSources2, installPack2, installRegistryPack2, installedPacks2, isRegistryRef2, importCandidateId2, importCandidatePreview2, importPreviewDigest2, selectImportCandidates2, resolvePaths4, listImportSources2, listPacks2, loadRegistryIndex2, packAlreadyInstalledNote2, findRegistryEntry2, downloadPack2, findRegistryRecordMismatch2, parsePackText2, parseRegistryRef2, verifyPackChecksum2, assertUserRegistry2, IMPORT_PREVIEW_MAX_CANDIDATES, IMPORT_PREVIEWS_KEPT, IMPORT_PREVIEW_TTL_MS, REGISTRY_SOURCE_DESC, registerPackTools;
+var import_node_crypto8, applyImportCandidates2, harvestImportSources2, installPack2, installRegistryPack2, installedPacks2, isRegistryRef2, importCandidateId2, importCandidatePreview2, importPreviewDigest2, selectImportCandidates2, resolvePaths4, listImportSources2, listPacks2, loadRegistryIndex2, packAlreadyInstalledNote2, findRegistryEntry2, downloadPack2, findRegistryRecordMismatch2, parsePackText2, parseRegistryRef2, verifyPackChecksum2, assertUserRegistry2, IMPORT_PREVIEW_MAX_CANDIDATES, IMPORT_PREVIEWS_KEPT, IMPORT_PREVIEW_TTL_MS, compareSources, REGISTRY_SOURCE_DESC, registerPackTools;
 var init_packs2 = __esm({
   "src/mcp/tools/packs.ts"() {
     init_zod();
@@ -74391,6 +74393,7 @@ var init_packs2 = __esm({
     IMPORT_PREVIEW_MAX_CANDIDATES = 50;
     IMPORT_PREVIEWS_KEPT = 20;
     IMPORT_PREVIEW_TTL_MS = 3e5;
+    compareSources = (a, b) => a < b ? -1 : a > b ? 1 : 0;
     REGISTRY_SOURCE_DESC = "Registry index for community packs, as the user gave it: only an index the user registered is read (one they installed a pack from with the CLI, or one in LEXICON_REGISTRIES); any other is refused, and so is a blank one. Omit for the vendored starter packs only.";
     registerPackTools = (server, ctx) => {
       const { load } = ctx;
@@ -74579,7 +74582,7 @@ var init_packs2 = __esm({
               );
             }
             const saved = imports.get(previewToken);
-            if (!saved || saved.destination !== destination(scope) || JSON.stringify([...new Set(sources)].sort()) !== JSON.stringify(saved.sources)) {
+            if (!saved || saved.destination !== destination(scope) || JSON.stringify([...new Set(sources)].sort(compareSources)) !== JSON.stringify(saved.sources)) {
               throw new Error("preview is missing, expired, or belongs to different sources/destination; preview again");
             }
             const accepted = selectImportCandidates2(saved.candidates, approvedCandidateIds);
@@ -74615,7 +74618,7 @@ var init_packs2 = __esm({
           const candidates = chosen.length === 0 ? [] : await harvestImportSources2(chosen, {}, { limit: IMPORT_PREVIEW_MAX_CANDIDATES });
           while (imports.size >= IMPORT_PREVIEWS_KEPT) imports.delete(imports.keys().next().value);
           const token = (0, import_node_crypto8.randomUUID)();
-          imports.set(token, { at: Date.now(), sources: [...new Set(wanted)].sort(), destination: destination(scope), candidates: structuredClone(candidates) });
+          imports.set(token, { at: Date.now(), sources: [...new Set(wanted)].sort(compareSources), destination: destination(scope), candidates: structuredClone(candidates) });
           return textResult({
             sources: availability,
             candidates: candidates.map((c) => ({ id: importCandidateId2(c), ...importCandidatePreview2(c) })),

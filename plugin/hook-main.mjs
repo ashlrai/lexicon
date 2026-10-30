@@ -12192,8 +12192,11 @@ var require_lexer = __commonJS({
         }
         this.atEnd = !incomplete;
         let next = this.next ?? "stream";
-        while (next && (incomplete || this.hasChars(1)))
+        while (next) {
+          if (!incomplete && !this.hasChars(1))
+            break;
           next = yield* this.parseNext(next);
+        }
       }
       atLineEnd() {
         let i = this.pos;
@@ -12708,9 +12711,11 @@ var require_lexer = __commonJS({
       *pushSpaces(allowTabs) {
         let i = this.pos - 1;
         let ch;
-        do {
+        for (; ; ) {
           ch = this.buffer[++i];
-        } while (ch === " " || allowTabs && ch === "	");
+          if (ch !== " " && (!allowTabs || ch !== "	"))
+            break;
+        }
         const n = i - this.pos;
         if (n > 0) {
           yield this.buffer.substr(this.pos, n);

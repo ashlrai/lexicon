@@ -44,6 +44,9 @@ const IMPORT_PREVIEWS_KEPT = 20;
 /** How long an import_vocabulary preview token lasts. */
 const IMPORT_PREVIEW_TTL_MS = 300_000;
 
+/** The order a preview's source list is stored and compared in: UTF-16 code units, the same on every machine. */
+const compareSources = (a: string, b: string): number => (a < b ? -1 : a > b ? 1 : 0);
+
 const REGISTRY_SOURCE_DESC =
   'Registry index for community packs, as the user gave it: only an index the user registered is read (one they installed a pack from with the CLI, or one in LEXICON_REGISTRIES); any other is refused, and so is a blank one. Omit for the vendored starter packs only.';
 
@@ -291,7 +294,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
           }
           const saved = imports.get(previewToken);
           if (!saved || saved.destination !== destination(scope) ||
-              JSON.stringify([...new Set(sources)].sort()) !== JSON.stringify(saved.sources)) {
+              JSON.stringify([...new Set(sources)].sort(compareSources)) !== JSON.stringify(saved.sources)) {
             throw new Error('preview is missing, expired, or belongs to different sources/destination; preview again');
           }
           const accepted = selectImportCandidates(saved.candidates, approvedCandidateIds);
@@ -318,7 +321,7 @@ export const registerPackTools: ToolRegistrar = (server, ctx) => {
         const candidates = chosen.length === 0 ? [] : await harvestImportSources(chosen, {}, { limit: IMPORT_PREVIEW_MAX_CANDIDATES });
         while (imports.size >= IMPORT_PREVIEWS_KEPT) imports.delete(imports.keys().next().value!);
         const token = randomUUID();
-        imports.set(token, { at: Date.now(), sources: [...new Set(wanted)].sort(), destination: destination(scope), candidates: structuredClone(candidates) });
+        imports.set(token, { at: Date.now(), sources: [...new Set(wanted)].sort(compareSources), destination: destination(scope), candidates: structuredClone(candidates) });
         return textResult({ sources: availability,
           candidates: candidates.map((c) => ({ id: importCandidateId(c), ...importCandidatePreview(c) })),
           previewToken: token, previewDigest: importPreviewDigest(wanted, candidates, destination(scope)), applied: false,

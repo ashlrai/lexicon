@@ -14,6 +14,7 @@ import {
   TERM_CATEGORIES,
   addTerm,
   addTerms,
+  compareText,
   effectiveHits,
   emptyLexicon,
   isTrusted,
@@ -383,7 +384,7 @@ function termKey(t: Term): string {
 
 /** Key-order-independent JSON of a term, for change detection. */
 function termFingerprint(t: Term): string {
-  return JSON.stringify(t, Object.keys(t).sort());
+  return JSON.stringify(t, Object.keys(t).sort(compareText));
 }
 
 /**

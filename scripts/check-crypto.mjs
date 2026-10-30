@@ -15,6 +15,9 @@ export const PATTERNS = [
 const SKIP_DIRS = new Set(['node_modules', 'target', '.git', 'dist', 'build', 'coverage', '.next', 'docs']);
 const EXTS = new Set(['.ts', '.tsx', '.js', '.mjs', '.cjs', '.rs', '.toml']);
 
+/** UTF-16 code-unit order, independent of the runner's locale. */
+const compareText = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
 export function scan(root, { allow = {}, dirs = ['.'], selfNames = ['check-crypto.mjs', 'check-crypto.test.mjs'] } = {}) {
   const hits = [];
   const walk = (dir) => {
@@ -29,11 +32,11 @@ export function scan(root, { allow = {}, dirs = ['.'], selfNames = ['check-crypt
       if (/(^|\/)(__tests__|tests?)\//.test(rel) || /\.test\.[a-z]+$/.test(rel)) continue;
       const kinds = new Set();
       for (const [kind, re] of PATTERNS) if (re.test(readFileSync(p, 'utf8'))) kinds.add(kind);
-      if (kinds.size) hits.push({ file: rel, kinds: [...kinds].sort(), allowed: rel in allow, reason: allow[rel] });
+      if (kinds.size) hits.push({ file: rel, kinds: [...kinds].sort(compareText), allowed: rel in allow, reason: allow[rel] });
     }
   };
   for (const d of dirs) walk(resolve(root, d));
-  return hits.sort((a, b) => a.file.localeCompare(b.file));
+  return hits.sort((a, b) => compareText(a.file, b.file));
 }
 
 export function report(hits) {
