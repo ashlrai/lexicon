@@ -387,6 +387,16 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(findUnencodableChar(pair)).toBeUndefined();
   });
 
+  it('accepts a supplementary CJK character decoded from a YAML Unicode escape', () => {
+    const character = '\u{20000}';
+    const input = parseYaml('terms:\n  - canonical: "Name \\U00020000"\nsettings:\n  protectedWords: ["\\U00020000"]\n');
+    const parsed = parseLexicon(input);
+
+    expect(findUnencodableChar(character)).toBeUndefined();
+    expect(parsed.terms[0].canonical).toBe(`Name ${character}`);
+    expect(parsed.settings?.protectedWords).toEqual([character]);
+  });
+
   it('rejects the Unicode line and paragraph separators like newlines', () => {
     const LS = cp(0x2028);
     const PS = cp(0x2029);
