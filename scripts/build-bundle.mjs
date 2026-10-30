@@ -18,6 +18,7 @@
  * Left unminified on purpose: the committed files should stay inspectable.
  */
 import { build } from 'esbuild';
+import { hookBundleFixes } from './hook-bundle-fixes.mjs';
 import { statSync } from 'node:fs';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -85,7 +86,7 @@ const entryPoints = {
   hook: resolve(root, 'src/hooks/plugin-entry.ts'),
 };
 
-await build({
+const options = {
   absWorkingDir: root,
   entryPoints,
   outdir: resolve(root, 'plugin'),
@@ -101,7 +102,12 @@ await build({
   sourcemap: false,
   logLevel: 'warning',
   plugins: [sideEffectFreeSrc, builtinsViaRequire],
-});
+};
+
+const { 'hook-main': hookMain, ...otherEntries } = entryPoints;
+await build({ ...options, entryPoints: otherEntries });
+await build({ ...options, entryPoints: { 'hook-main': hookMain },
+  plugins: [...options.plugins, hookBundleFixes] });
 
 for (const name of Object.keys(entryPoints)) {
   const file = resolve(root, 'plugin', `${name}.mjs`);
