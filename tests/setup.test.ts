@@ -1065,6 +1065,28 @@ describe('runSetup with a step that fails', () => {
 });
 
 describe('runSetup interactive', () => {
+  it('suggests the remote organization for an unscoped package when pressing Enter', async () => {
+    const remote = 'https://github.com/remote-org/speech-tools.git';
+    expect(suggestCompany('speech-tools', remote, 'Speech Tools Inc.')).toBe('remote-org');
+    expect(suggestCompany('speech-tools', undefined, 'Speech Tools Inc.')).toBeUndefined();
+    await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify({ name: 'speech-tools', author: 'Speech Tools Inc.' }));
+    const p = scripted(['y', '', '', 'n']);
+    const f = fakes({
+      isInteractive: () => true,
+      createPrompter: () => p,
+      exec: (_file, args) => args.includes('get-url') ? remote : 'Mason Wyatt',
+    });
+    const { code, summary } = await run({ clients: 'none', packs: false, harvest: false, serve: false, app: 'none' }, f);
+
+    expect(code).toBe(0);
+    const companyPrompt = p.asked.findIndex((question) => question.includes('Your company or product name'));
+    expect(companyPrompt).toBeGreaterThanOrEqual(0);
+    expect(p.defaults[companyPrompt]).toBe('remote-org');
+    expect(summary.termsAdded).toEqual(['Mason Wyatt', 'remote-org']);
+    const terms = (await readLexiconFile(globalPath, 'global')).lexicon.terms;
+    expect(terms.filter((term) => term.category === 'brand').map((term) => term.canonical)).toEqual(['remote-org']);
+  });
+
   it.each([
     [{ name: '@ashlr/lexicon', author: 'Ashlr.AI' }, 'Ashlr.AI'],
     [{ name: '@Ashlr.AI/lexicon' }, 'Ashlr.AI'],
