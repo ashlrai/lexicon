@@ -321,6 +321,24 @@ describe('runSetup --yes', () => {
     expect(again.summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI']);
   });
 
+  it('retains the dotted scoped-package brand when reseeding an existing lexicon', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nterms:\n  - canonical: A\n    aliases: []\n  - canonical: B\n    aliases: []\n  - canonical: C\n    aliases: []\n');
+    await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify({ name: '@ashlr.ai/lexicon', author: 'Ashlr.AI' }));
+    const opts = { yes: true, clients: 'none', packs: 'none', reseed: true };
+
+    const preview = await run({ ...opts, dryRun: true }, fakes());
+    expect(preview.code).toBe(0);
+    expect(preview.plan?.wouldSeed).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+
+    const applied = await run(opts, fakes());
+    expect(applied.code).toBe(0);
+    expect(applied.summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+    const terms = (await readLexiconFile(globalPath, 'global')).lexicon.terms;
+    expect(terms.map((term) => term.canonical)).toEqual(['A', 'B', 'C', 'Mason Wyatt', 'Ashlr.AI']);
+    expect(terms.find((term) => term.canonical === 'Ashlr.AI')?.category).toBe('brand');
+  });
+
   it('seeds an explicit --company / --person into a lexicon that already has terms, without the guessed defaults', async () => {
     await fs.mkdir(path.dirname(globalPath), { recursive: true });
     await fs.writeFile(
@@ -1091,6 +1109,7 @@ describe('runSetup interactive', () => {
     [{ name: '@ashlr/lexicon', author: 'Ashlr.AI' }, 'Ashlr.AI'],
     [{ name: '@Ashlr.AI/lexicon' }, 'Ashlr.AI'],
     [{ name: '@ashlr.ai/lexicon', author: 'Ashlr.AI <hello@example.com>' }, 'Ashlr.AI'],
+    [{ name: '@ashlr.ai/lexicon', author: { name: 'Ashlr.AI', email: 'hello@example.com' } }, 'Ashlr.AI'],
     [{ name: '@ashlr.ai/ashlr.ai', author: 'Ashlr.AI' }, 'Ashlr.AI'],
     [{ name: '@Acme.Voice.AI/transcriber' }, 'Acme.Voice.AI'],
   ])('accepts a dotted package brand as the suggested company when pressing Enter: %j', async (pkg, expected) => {
