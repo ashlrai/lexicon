@@ -107,7 +107,7 @@ describe('issue #220 contract scope', () => {
     const section = contract.split('### Separate-process boundary (issue #220)')[1]?.split('## src/serve')[0];
     expect(section).toBeDefined();
     expect(section).toMatch(/Proposed surface:[\s\S]*system-wide text expander, separate from the CLI and\s+agent integrations/);
-    expect(section).toMatch(/any focused text\s+field without an agent in the loop/);
+    expect(section).toMatch(/focused text field across applications, without an agent in the loop/);
     expect(section).toMatch(/complete surface is not implemented/);
     expect(section).toMatch(/existing expansion core and socket server do not capture system-wide input\s+or apply changes to a focused field/);
   });

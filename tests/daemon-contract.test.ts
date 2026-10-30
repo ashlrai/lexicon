@@ -32,4 +32,15 @@ describe('proposed system-wide daemon contract', () => {
     expect(boundary).toMatch(/startup and supervision/);
     expect(boundary).toMatch(/does not settle those choices or promise support in\s+every application/);
   });
+
+  it('keeps the proposed client distinct from each existing integration surface', () => {
+    expect(boundary).toMatch(/CLI `normalize`[^\n]*does not observe or edit a field/);
+    expect(boundary).toMatch(/Clipboard daemon[^\n]*separate clipboard workflow, not continuous field editing/);
+    expect(boundary).toMatch(/Agent integrations[^\n]*hook adds context rather than rewriting the prompt/);
+    expect(boundary).toMatch(/Local HTTP API and browser extension[^\n]*Neither makes the proposed expander available across applications/);
+    expect(boundary).toMatch(/Opt-in expander server[^\n]*does not capture input or apply actions/);
+    expect(boundary).toMatch(/Proposed platform client[^\n]*not supplied by installing the CLI or starting the server/);
+    expect(boundary).toMatch(/starts or discovers the server[\s\S]*reconnects or falls back after failure remains open/);
+    expect(boundary).toMatch(/focus\s+changes, stale or partial edits, composition input, secure fields and permission\s+denial/);
+  });
 });
