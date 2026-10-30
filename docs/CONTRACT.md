@@ -801,3 +801,13 @@ SwiftPM app, no dependencies, that fronts the CLI; it never links the TypeScript
 - [DOGFOOD.md](DOGFOOD.md) is what happens when the signatures are right and the behaviour is not.
 
 Back to [the docs index](README.md).
+
+### Versioned CLI reports
+
+`lexicon status --json` is an alias for `lexicon doctor --json`. Both emit
+`DoctorReport` with the additive doctor envelope and `schemaVersion: 1`.
+The existing `schema_version: 1` belongs to the shared `ashlr.doctor` envelope
+and remains available. `lexicon stats --json` emits
+`{ ok: true, schemaVersion: 1, ...LexiconStats, projectTrust?, skippedProject?, note? }`.
+The camel-case version identifies the CLI report contract; incompatible changes
+require a version increment. JSON and text modes retain the same exit codes.

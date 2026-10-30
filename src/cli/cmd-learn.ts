@@ -292,7 +292,7 @@ export async function runStats(opts: StatsOptions, io: IO): Promise<number> {
     const stats = computeStats(loaded);
     const empty = emptyStatsNote(loaded);
     if (opts.json) {
-      line(io, JSON.stringify(jsonOk({ ...stats, ...skippedProjectJson(loaded), ...(empty ? { note: empty } : {}) }), null, 2));
+      line(io, JSON.stringify(jsonOk({ schemaVersion: 1, ...stats, ...skippedProjectJson(loaded), ...(empty ? { note: empty } : {}) }), null, 2));
     } else {
       io.stdout(renderStats(stats, empty));
     }

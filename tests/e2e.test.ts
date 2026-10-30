@@ -1449,7 +1449,7 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: agent journey (on
       const cliStats = await cli(['stats', '--json']);
       expect(cliStats.code, cliStats.stderr).toBe(0);
       // The CLI's --json success leads with ok: true; the rest is what lexicon_stats returns.
-      expect(JSON.parse(cliStats.stdout)).toEqual({ ok: true, ...stats });
+      expect(JSON.parse(cliStats.stdout)).toEqual({ ok: true, schemaVersion: 1, ...stats });
 
       // 7. Suggest: Vercel is no longer a new name to add; the garble is now alias
       // material for it. Applying that suggestion fixes the garble too.

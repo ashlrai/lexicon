@@ -18,7 +18,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon harvest [options] [path]`](#lexicon-harvest) | scan a repository for names worth adding to the lexicon |
 | [`lexicon export [options] [format]`](#lexicon-export) | export the merged lexicon for another tool (run without a format to list them) |
 | [`lexicon path [options]`](#lexicon-path) | print the resolved global and project lexicon paths |
-| [`lexicon doctor [options]`](#lexicon-doctor) | check lexicon files, term conflicts and the Claude Code integration |
+| [`lexicon doctor\|status [options]`](#lexicon-doctor) | check lexicon files, term conflicts and the Claude Code integration |
 | [`lexicon mcp`](#lexicon-mcp) | start the stdio MCP server (what `claude mcp add` points at) |
 | [`lexicon hook`](#lexicon-hook) | run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON from stdin) |
 | [`lexicon daemon [options]`](#lexicon-daemon) | watch the clipboard (macOS, Linux, Windows) and correct dictated text in place |
@@ -60,7 +60,7 @@ Commands:
   harvest [options] [path]                scan a repository for names worth adding to the lexicon
   export [options] [format]               export the merged lexicon for another tool (run without a format to list them)
   path [options]                          print the resolved global and project lexicon paths
-  doctor [options]                        check lexicon files, term conflicts and the Claude Code integration
+  doctor|status [options]                 check lexicon files, term conflicts and the Claude Code integration
   mcp                                     start the stdio MCP server (what `claude mcp add` points at)
   hook                                    run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON from stdin)
   daemon [options]                        watch the clipboard (macOS, Linux, Windows) and correct dictated text in place
@@ -287,7 +287,7 @@ Options:
 ## `lexicon doctor`
 
 ```text
-Usage: lexicon doctor [options]
+Usage: lexicon doctor|status [options]
 
 check lexicon files, term conflicts and the Claude Code integration
 

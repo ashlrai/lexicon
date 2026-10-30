@@ -1,0 +1,151 @@
+// Vitest Snapshot v1, https://vitest.dev/guide/snapshot.html
+
+exports[`versioned CLI JSON snapshots > doctor --json emits one versioned document 1`] = `
+{
+  "checks": [
+    {
+      "level": "<LEVEL>",
+      "message": "<MESSAGE>",
+      "status": "<LEVEL>",
+      "summary": "<MESSAGE>",
+    },
+  ],
+  "companions": [
+    {
+      "capabilities": [],
+      "command": "locus",
+      "fix": "optional: install locus (\`locus\`), see https://github.com/ashlrai/locus#readme",
+      "health": null,
+      "name": "locus",
+      "next_steps": [],
+      "state": "missing",
+      "version": null,
+    },
+    {
+      "capabilities": [],
+      "command": "mdopener-mcp",
+      "fix": "optional: install ashlr-md (\`mdopener-mcp\`), see https://github.com/ashlrai/ashlr-md#readme",
+      "health": null,
+      "name": "ashlr-md",
+      "next_steps": [],
+      "state": "missing",
+      "version": null,
+    },
+  ],
+  "kind": "ashlr.doctor",
+  "native_status": "ok",
+  "nextStep": "Run: lexicon install claude --apply  (or: lexicon setup, which detects every client you have)",
+  "ok": true,
+  "paths": {
+    "global": "<HOME>/lexicon.yaml",
+    "installedPlugins": "<HOME>/.claude/plugins/installed_plugins.json",
+    "projectSettings": "<HOME>/.claude/settings.json",
+    "projectSettingsFiles": [
+      "<HOME>/.claude/settings.json",
+      "<HOME>/.claude/settings.local.json",
+    ],
+    "settings": "<HOME>/.claude/settings.json",
+    "trust": "<HOME>/trust.json",
+  },
+  "ready": false,
+  "schemaVersion": 1,
+  "schema_version": 1,
+  "status": "warn",
+  "summary": "Lexicon has 1 term, but no agent is wired up to use them yet.",
+  "tool": "lexicon",
+  "versions": {
+    "lexicon": "<VERSION>",
+    "node": "<NODE>",
+    "platform": "<PLATFORM>",
+  },
+}
+`;
+
+exports[`versioned CLI JSON snapshots > stats --json emits one versioned document 1`] = `
+{
+  "aliasCount": 1,
+  "byCategory": {
+    "uncategorized": 1,
+  },
+  "bySource": {
+    "unknown": 1,
+  },
+  "files": [
+    {
+      "path": "<HOME>/lexicon.yaml",
+      "scope": "global",
+      "terms": 1,
+    },
+  ],
+  "neverHit": [
+    "Ashlr.AI",
+  ],
+  "neverHitCount": 1,
+  "ok": true,
+  "schemaVersion": 1,
+  "termCount": 1,
+  "topTerms": [],
+  "totalHits": 0,
+}
+`;
+
+exports[`versioned CLI JSON snapshots > status --json emits one versioned document 1`] = `
+{
+  "checks": [
+    {
+      "level": "<LEVEL>",
+      "message": "<MESSAGE>",
+      "status": "<LEVEL>",
+      "summary": "<MESSAGE>",
+    },
+  ],
+  "companions": [
+    {
+      "capabilities": [],
+      "command": "locus",
+      "fix": "optional: install locus (\`locus\`), see https://github.com/ashlrai/locus#readme",
+      "health": null,
+      "name": "locus",
+      "next_steps": [],
+      "state": "missing",
+      "version": null,
+    },
+    {
+      "capabilities": [],
+      "command": "mdopener-mcp",
+      "fix": "optional: install ashlr-md (\`mdopener-mcp\`), see https://github.com/ashlrai/ashlr-md#readme",
+      "health": null,
+      "name": "ashlr-md",
+      "next_steps": [],
+      "state": "missing",
+      "version": null,
+    },
+  ],
+  "kind": "ashlr.doctor",
+  "native_status": "ok",
+  "nextStep": "Run: lexicon install claude --apply  (or: lexicon setup, which detects every client you have)",
+  "ok": true,
+  "paths": {
+    "global": "<HOME>/lexicon.yaml",
+    "installedPlugins": "<HOME>/.claude/plugins/installed_plugins.json",
+    "projectSettings": "<HOME>/.claude/settings.json",
+    "projectSettingsFiles": [
+      "<HOME>/.claude/settings.json",
+      "<HOME>/.claude/settings.local.json",
+    ],
+    "settings": "<HOME>/.claude/settings.json",
+    "trust": "<HOME>/trust.json",
+  },
+  "ready": false,
+  "schemaVersion": 1,
+  "schema_version": 1,
+  "status": "warn",
+  "summary": "Lexicon has 1 term, but no agent is wired up to use them yet.",
+  "tool": "lexicon",
+  "versions": {
+    "lexicon": "<VERSION>",
+    "node": "<NODE>",
+    "platform": "<PLATFORM>",
+  },
+}
+`;
