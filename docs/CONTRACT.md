@@ -427,8 +427,7 @@ Pure expansion core of the resident expander (no IO). `EXPANDER_NAMED_KEYS` (`Ba
 
 **Proposed surface:** [issue #220](https://github.com/ashlrai/lexicon/issues/220)
 describes a resident, system-wide text expander, separate from the CLI and
-agent integrations. Its intended scope is to expand text in any focused text
-field without an agent in the loop. It targets a focused text field across applications, without an agent in the loop.
+agent integrations. It targets a focused text field across applications, without an agent in the loop.
 The intended flow is to observe text input, match completed words against the
 lexicon, and apply the resulting replacement in the focused field. The complete surface is not implemented:
 the existing expansion core and socket server do not capture system-wide input
@@ -461,6 +460,25 @@ edit and undo behavior, startup and supervision, and recovery when focus or
 the connection changes also need design and validation on each platform. The
 socket protocol below does not settle those choices or promise support in
 every application.
+
+#### Boundaries between surfaces
+
+| Surface | Boundary |
+| --- | --- |
+| CLI `normalize` | A caller supplies text to a short-lived command and consumes its output; it does not observe or edit a field. |
+| Clipboard daemon | The default daemon watches copied text; its optional one-shot paste is a separate clipboard workflow, not continuous field editing. |
+| Agent integrations | MCP and the Claude Code hook have their own request and prompt interfaces. The hook adds context rather than rewriting the prompt; neither is a system-wide input client. |
+| Local HTTP API and browser extension | The API accepts explicit requests; the extension operates in supported browser pages under its own settings and permissions. Neither makes the proposed expander available across applications. |
+| Opt-in expander server | The server holds its own lexicon and per-connection expansion state and returns actions over its socket. It does not capture input or apply actions. |
+| Proposed platform client | A future client would bridge OS input and focused fields to the server and apply actions. It is not supplied by installing the CLI or starting the server. |
+
+These surfaces have distinct entry points and process lifetimes; installing or
+using one does not imply the proposed client is running. How a future client
+starts or discovers the server, handles an existing instance, shuts down,
+reconnects or falls back after failure remains open. So do the handling of focus
+changes, stale or partial edits, composition input, secure fields and permission
+denial. Each platform needs a design and validation for these cases before the
+system-wide surface can be described as available.
 
 The existing socket protocol for a normalization request is, for example:
 
