@@ -19910,6 +19910,13 @@ var require_node_async_hooks = __commonJS({
   }
 });
 
+// builtin-cjs:node:crypto
+var require_node_crypto = __commonJS({
+  "builtin-cjs:node:crypto"(exports, module) {
+    module.exports = __require("node:crypto");
+  }
+});
+
 // src/util/errors.ts
 function errorMessage(err) {
   return err instanceof Error ? err.message : String(err);
@@ -20107,7 +20114,7 @@ async function blockingFile(dir) {
   }
 }
 async function acquire(lockPath, target, timeoutMs, staleMs) {
-  const token = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const token = `${process.pid}-${Date.now().toString(36)}-${(0, import_node_crypto.randomBytes)(8).toString("hex")}`;
   const payload = JSON.stringify({ pid: process.pid, host: import_node_os.default.hostname(), token, at: (/* @__PURE__ */ new Date()).toISOString() });
   const deadline = Date.now() + timeoutMs;
   let wait = 4;
@@ -20134,7 +20141,7 @@ async function acquire(lockPath, target, timeoutMs, staleMs) {
       if (transient !== void 0) throw transient;
       throw new FileLockError(target, lockPath, `still held after ${timeoutMs}ms by ${await describeHolder(lockPath)}`, { held: true });
     }
-    await sleep(wait / 2 + Math.random() * wait);
+    await sleep(wait / 2 + (0, import_node_crypto.randomInt)(wait));
     wait = Math.min(wait * 2, 120);
   }
 }
@@ -20217,11 +20224,12 @@ function isEexist(err) {
 function sleep(ms) {
   return new Promise((resolve2) => setTimeout(resolve2, ms));
 }
-var import_node_fs, import_node_async_hooks, import_node_os, import_node_path, BACKUP_SUFFIX, OLDER_BACKUP_SUFFIX, BACKUP_ROTATE_MS, LOCK_SUFFIX, DEFAULT_LOCK_TIMEOUT_MS, DEFAULT_LOCK_STALE_MS, DEFAULT_LOCK_QUEUE_TIMEOUT_MS, WINDOWS_RENAME_RETRY_MS, FileLockError, ownedLocks, exitHookInstalled, heldLocks, queues;
+var import_node_fs, import_node_async_hooks, import_node_crypto, import_node_os, import_node_path, BACKUP_SUFFIX, OLDER_BACKUP_SUFFIX, BACKUP_ROTATE_MS, LOCK_SUFFIX, DEFAULT_LOCK_TIMEOUT_MS, DEFAULT_LOCK_STALE_MS, DEFAULT_LOCK_QUEUE_TIMEOUT_MS, WINDOWS_RENAME_RETRY_MS, FileLockError, ownedLocks, exitHookInstalled, heldLocks, queues;
 var init_atomic = __esm({
   "src/util/atomic.ts"() {
     import_node_fs = __toESM(require_node_fs());
     import_node_async_hooks = __toESM(require_node_async_hooks());
+    import_node_crypto = __toESM(require_node_crypto());
     import_node_os = __toESM(require_node_os());
     import_node_path = __toESM(require_node_path());
     init_errors3();
@@ -20310,13 +20318,6 @@ var init_bounded_read = __esm({
       }
     };
     OPEN_FLAGS = import_node_fs2.constants.O_RDONLY | (import_node_fs2.constants.O_NONBLOCK ?? 0);
-  }
-});
-
-// builtin-cjs:node:crypto
-var require_node_crypto = __commonJS({
-  "builtin-cjs:node:crypto"(exports, module) {
-    module.exports = __require("node:crypto");
   }
 });
 
@@ -21209,10 +21210,10 @@ var init_packs = __esm({
 });
 
 // src/core/registry.ts
-var import_node_crypto2, import_node_fs9, import_node_path8, import_yaml5, RegistryIndexEntrySchema, RegistryIndexSchema, MAX_REGISTRY_FILE_BYTES, RegistryPackStateSchema;
+var import_node_crypto3, import_node_fs9, import_node_path8, import_yaml5, RegistryIndexEntrySchema, RegistryIndexSchema, MAX_REGISTRY_FILE_BYTES, RegistryPackStateSchema;
 var init_registry = __esm({
   "src/core/registry.ts"() {
-    import_node_crypto2 = __toESM(require_node_crypto());
+    import_node_crypto3 = __toESM(require_node_crypto());
     import_node_fs9 = __toESM(require_node_fs());
     import_node_path8 = __toESM(require_node_path());
     import_yaml5 = __toESM(require_dist());
@@ -21553,7 +21554,7 @@ function sameText(a, b) {
 }
 
 // src/core/pending.ts
-var import_node_crypto = __toESM(require_node_crypto());
+var import_node_crypto2 = __toESM(require_node_crypto());
 var import_node_fs7 = __toESM(require_node_fs());
 var import_node_path6 = __toESM(require_node_path());
 var import_yaml3 = __toESM(require_dist());
@@ -21576,7 +21577,7 @@ function norm(s) {
 }
 function pendingId(heard, meant) {
   const key = `${norm(heard).toLowerCase()}\0${norm(meant).toLowerCase()}`;
-  return (0, import_node_crypto.createHash)("sha256").update(key).digest("hex").slice(0, 8);
+  return (0, import_node_crypto2.createHash)("sha256").update(key).digest("hex").slice(0, 8);
 }
 function queueRefusal(heard, meant) {
   const h = norm(heard);

@@ -27,6 +27,7 @@
  */
 import { promises as fs, unlinkSync } from 'node:fs';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { randomBytes, randomInt } from 'node:crypto';
 import os from 'node:os';
 import path from 'node:path';
 import { isEnoent } from './errors.js';
@@ -522,7 +523,7 @@ export async function blockingFile(dir: string): Promise<string> {
 }
 
 async function acquire(lockPath: string, target: string, timeoutMs: number, staleMs: number): Promise<string> {
-  const token = `${process.pid}-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+  const token = `${process.pid}-${Date.now().toString(36)}-${randomBytes(8).toString('hex')}`;
   const payload = JSON.stringify({ pid: process.pid, host: os.hostname(), token, at: new Date().toISOString() });
   const deadline = Date.now() + timeoutMs;
   let wait = 4;
@@ -560,7 +561,7 @@ async function acquire(lockPath: string, target: string, timeoutMs: number, stal
       throw new FileLockError(target, lockPath, `still held after ${timeoutMs}ms by ${await describeHolder(lockPath)}`, { held: true });
     }
     // Backoff with jitter so a dozen waiters do not retry in lockstep.
-    await sleep(wait / 2 + Math.random() * wait);
+    await sleep(wait / 2 + randomInt(wait));
     wait = Math.min(wait * 2, 120);
   }
 }

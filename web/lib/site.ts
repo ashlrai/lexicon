@@ -92,6 +92,7 @@ export const MCP_TOOLS: { name: string; summary: string }[] = [
 export const MCP_RESOURCES = [
   { uri: 'lexicon://me', summary: 'The merged lexicon as markdown. What an agent should read at session start.' },
   { uri: 'lexicon://json', summary: 'The merged lexicon as JSON.' },
+  { uri: 'lexicon://glossary', summary: 'The merged lexicon plus the installed packs, as JSON for coding agents.' },
 ];
 
 export const MCP_PROMPTS = [
