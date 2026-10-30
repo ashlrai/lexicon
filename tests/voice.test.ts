@@ -1785,6 +1785,10 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript('deploy it (the new build) tonight')).toBe('deploy it (the new build) tonight');
   });
 
+  it('preserves an unmatched opening bracket and the text after it', () => {
+    expect(cleanTranscript('  Hello [MUSIC] there [unfinished   thought  ')).toBe('Hello there [unfinished thought');
+  });
+
   it('parseWhisperOutput joins JSON segments and falls back to stdout', () => {
     expect(parseWhisperOutput(JSON.stringify({ transcription: [{ text: ' a' }, { text: ' b' }] }), 'x')).toBe(' a  b');
     expect(parseWhisperOutput('not json', 'plain')).toBe('plain');
