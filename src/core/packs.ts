@@ -365,10 +365,15 @@ export async function installLoadedPack(
     // The bytes before and after say whether the install changed anything:
     // `merged` counts every term the file already had, gained alias or not.
     const before = await readTextIfAny(targetPath);
+    const current = await readLexiconFile(targetPath, scope);
+    const packs = dedupe([...(current.lexicon.settings?.packs ?? []), recordAs]);
+    // Validate the pack record before adding terms, for previews and real
+    // installs alike. Otherwise a full packs list previews successfully but
+    // a real install writes terms before failing to record the pack.
+    parseLexicon({ ...current.lexicon, settings: { ...current.lexicon.settings, packs } });
     const { file, results } = await addTerms(incoming, { ...storeOpts, scope, leaveUntrusted });
     const added = results.filter((r) => r.created).length;
     const merged = results.length - added;
-    const packs = dedupe([...(file.lexicon.settings?.packs ?? []), recordAs]);
     if (opts.dryRun) {
       // No bytes were written, so the before/after byte compare cannot speak:
       // "already installed" is what it would have meant, every term unchanged
