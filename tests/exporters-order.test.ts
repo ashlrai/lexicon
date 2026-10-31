@@ -55,4 +55,37 @@ describe('export order', () => {
       expect(exportLexicon(reversed, f), f).toBe(exportLexicon(lexicon, f));
     }
   });
+
+  it('writes the same sorted exports and limited selection for every term order', () => {
+    const terms: Lexicon['terms'] = [
+      { canonical: 'Zebra', aliases: ['zeebra'], category: 'brand', hits: 2 },
+      { canonical: 'Alpha', aliases: ['alfa'], category: 'place', hits: 2 },
+      { canonical: 'Beta', aliases: ['beeta'], category: 'person', hits: 2 },
+      { canonical: 'Delta', aliases: ['deltta'], category: 'identifier', hits: 5 },
+    ];
+    const formats = ['text', 'claude-md', 'markdown', 'whisper-prompt', 'openai',
+      'deepgram', 'assemblyai', 'speechmatics', 'azure', 'google'] as const;
+    const baseline: Lexicon = { version: 1, terms };
+    const expected = formats.map((format) => [
+      exportLexicon(baseline, format),
+      exportLexicon(baseline, format, { limit: 2 }),
+    ]);
+
+    // Pin the three distinct orderings, including the tie at the limit.
+    expect(expected[0]?.[0]).toBe('Alpha: alfa\nBeta: beeta\nDelta: deltta\nZebra: zeebra\n');
+    expect(expected[2]?.[0]).toBe('- **Zebra** (brand): zeebra\n- **Beta** (person): beeta\n- **Delta** (identifier): deltta\n- **Alpha** (place): alfa\n');
+    expect(expected[3]).toEqual(['Delta, Beta, Zebra, Alpha', 'Delta, Beta']);
+
+    for (const a of terms) for (const b of terms) for (const c of terms) for (const d of terms) {
+      const permutation = [a, b, c, d];
+      if (new Set(permutation).size !== terms.length) continue;
+      const originalOrder = [...permutation];
+      const input: Lexicon = { version: 1, terms: permutation };
+      for (const [i, format] of formats.entries()) {
+        expect(exportLexicon(input, format), `${format}: ${permutation.map((t) => t.canonical).join(', ')}`).toBe(expected[i]?.[0]);
+        expect(exportLexicon(input, format, { limit: 2 }), `${format} with limit`).toBe(expected[i]?.[1]);
+      }
+      expect(input.terms).toEqual(originalOrder);
+    }
+  });
 });

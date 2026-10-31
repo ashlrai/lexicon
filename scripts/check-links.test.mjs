@@ -36,7 +36,7 @@ test('fragments are held to the target file headings, GitHub slug rules', () => 
   });
   const r = check(root);
   assert.deepEqual(r.broken, [
-    'README.md:1  no such heading in docs/page.md: #missing',
+    `README.md:1  no such heading in ${join('docs', 'page.md')}: #missing`,
     'README.md:1  no such heading in this file: #readme',
   ]);
   rmSync(root, { recursive: true });
@@ -79,7 +79,7 @@ test('targets picks up root-level markdown, not just the original fixed list', (
     'docs/DEEP.md': '# x\n',
     'notes.txt': 'x',
   });
-  assert.deepEqual(targets(root), ['INTEGRATION.md', 'docs/DEEP.md']);
+  assert.deepEqual(targets(root), ['INTEGRATION.md', join('docs', 'DEEP.md')]);
   rmSync(root, { recursive: true });
 });
 
@@ -93,7 +93,7 @@ test('targets retains UTF-16 ordering across root and nested markdown', () => {
   const names = ['z.md', 'B.md', 'a.md', '10.md', '2.md', 'é.md', 'docs/z.md', 'docs/B.md'];
   const root = fixture(Object.fromEntries(names.map((name) => [name, '# Page\n'])));
   try {
-    assert.deepEqual(targets(root), ['10.md', '2.md', 'B.md', 'a.md', 'docs/B.md', 'docs/z.md', 'z.md', 'é.md']);
+    assert.deepEqual(targets(root), ['10.md', '2.md', 'B.md', 'a.md', join('docs', 'B.md'), join('docs', 'z.md'), 'z.md', 'é.md']);
   } finally {
     rmSync(root, { recursive: true, force: true });
   }

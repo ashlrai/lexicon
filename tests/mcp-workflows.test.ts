@@ -1255,7 +1255,7 @@ describe('voice-context and lexicon://me', () => {
   // Catches: the skipped file's path went into raw markdown unsanitized, so a
   // bidi override in a cloned directory's name reached the conversation.
   it('sanitize the skipped project path', async () => {
-    const nasty = path.join(repo, 'evil‮name');
+    const nasty = path.join(repo, 'evil\u202ename');
     await fs.mkdir(path.join(nasty, '.git'), { recursive: true });
     await fs.writeFile(path.join(nasty, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Phantom\n    aliases: [Fantom]\n');
     const server = createServer({ cwd: nasty });
@@ -1269,7 +1269,7 @@ describe('voice-context and lexicon://me', () => {
       const me = (await client.readResource({ uri: 'lexicon://me' })).contents.map((c) => ('text' in c ? String(c.text) : '')).join('\n');
       for (const t of [text, me]) {
         expect(t).toContain('evilname');
-        expect(t).not.toContain('‮');
+        expect(t).not.toContain('\u202e');
         expect(t).not.toContain('Fantom');
       }
     } finally {
@@ -2203,7 +2203,7 @@ describe('MCP input edge cases', () => {
   it('add_pack names the available packs and the lowercase name for a miscased one', async () => {
     const r = await call('add_pack', { name: 'Developer' });
     expect(r.isError).toBe(true);
-    expect(r.text).toContain('available: ai, business, cloud-devops, developer, profession-q8, voice-tools');
+    expect(r.text).toContain('available: ai, business, cloud-devops, developer, legal, profession-q8, voice-tools');
     expect(r.text).toContain('did you mean "developer"?');
     expect(r.text).toContain('Nothing was installed.');
   });

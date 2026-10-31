@@ -1,7 +1,7 @@
 {
   "name": "@ashlr/lexicon",
   "mcpName": "io.github.ashlrai/lexicon",
-  "version": "0.5.6",
+  "version": "0.5.7",
   "description": "Personal lexicon for voice-to-agents. Fixes the words STT gets wrong (Ashler -> Ashlr.AI) before your agent sees the prompt.",
   "type": "module",
   "license": "MIT",
@@ -47,7 +47,7 @@
     "prepare": "npm run build && npm run build:bundle",
     "check:bundle": "node scripts/check-bundle.mjs",
     "dev": "tsc -p tsconfig.build.json --watch",
-    "test": "node --test test/hook-main-sonar.test.mjs && vitest run",
+    "test": "node --test test/hook-main-sonar.test.mjs tests/docs-index-first-run.test.mjs tests/setup-dotted-brand.test.mjs && vitest run",
     "test:e2e": "vitest run tests/e2e.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p extension/tsconfig.json --noEmit && tsc -p site/tsconfig.json --noEmit",
@@ -68,7 +68,8 @@
     "build:site": "node scripts/build-site.mjs",
     "dev:site": "npm run build:site && node site/serve.mjs",
     "build:extension": "node scripts/build-extension.mjs",
-    "bench:compare": "node --import tsx bench/audio/compare.ts"
+    "bench:compare": "node --import tsx bench/audio/compare.ts",
+    "bench:non-english": "node --import tsx scripts/bench-non-english.mjs"
   },
   "keywords": [
     "mcp",

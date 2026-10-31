@@ -3291,7 +3291,7 @@ describe('packs and aliases routes', () => {
     const res = await api2('GET', '/packs');
     expect(res.status).toBe(200);
     const body = (await res.json()) as { packs: { name: string; title: string; terms: number; aliases: number; installed: boolean; path: string }[]; installed: string[] };
-    expect(body.packs.map((p) => p.name)).toEqual(['ai', 'business', 'cloud-devops', 'developer', 'profession-q8', 'voice-tools']);
+    expect(body.packs.map((p) => p.name)).toEqual(['ai', 'business', 'cloud-devops', 'developer', 'legal', 'profession-q8', 'voice-tools']);
     expect(body.packs.every((p) => p.installed === false && p.terms > 0 && p.aliases > 0 && p.path.endsWith('.yaml'))).toBe(true);
     expect(body.installed).toEqual([]);
     expect((await api2('POST', '/packs', {})).status).toBe(405);
@@ -3448,6 +3448,46 @@ describe('packs and aliases routes', () => {
     const response = await api2('GET', example![1]!);
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual(JSON.parse(example![2]!));
+  });
+
+  it('serves every documented aliases request and response', async () => {
+    const doc = await fs.readFile(new URL('../docs/aliases-api-examples.md', import.meta.url), 'utf8');
+    const examples = [...doc.matchAll(/```http\nGET (\/aliases[^\n]*)\n```\n\nHTTP (\d{3}):\n\n```json\n([^\n]+)\n```/g)];
+    expect(examples.length).toBeGreaterThanOrEqual(9);
+    expect(new Set(examples.map((example) => example[2]))).toEqual(new Set(['200', '400']));
+    for (const [, route, status, body] of examples) {
+      const response = await api2('GET', route!);
+      expect(response.status, route).toBe(Number(status));
+      expect(await response.json(), route).toEqual(JSON.parse(body!));
+    }
+  });
+
+  it('serves the aliases endpoint walkthrough examples', async () => {
+    const doc = await fs.readFile(new URL('../docs/aliases-endpoint-examples.md', import.meta.url), 'utf8');
+    const examples = [...doc.matchAll(/```http\nGET (\/aliases[^\n]*)\n```\n\nHTTP (\d{3}):\n\n```json\n([^\n]+)\n```/g)];
+    expect(examples.map((example) => example[1])).toEqual([
+      '/aliases?canonical=Mason%20Wyatt',
+      '/aliases?canonical=%20Ashlr%E2%80%8B.AI%20',
+      '/aliases?canonical=Bob',
+      '/aliases',
+      '/aliases?canonical=Vercel&limit=3',
+    ]);
+    for (const [, route, status, body] of examples) {
+      const response = await api2('GET', route!);
+      expect(response.status, route).toBe(Number(status));
+      expect(await response.json(), route).toEqual(JSON.parse(body!));
+    }
+  });
+
+  it('serves the request and error examples in the aliases response reference', async () => {
+    const doc = await fs.readFile(new URL('../docs/aliases-response-reference.md', import.meta.url), 'utf8');
+    const examples = [...doc.matchAll(/```http\nGET (\/aliases[^\n]*)\n```[\s\S]*?HTTP (\d{3})[^\n]*\n\n```json\n([^\n]+)\n```/g)];
+    expect(examples.map((example) => example[2])).toEqual(['200', '400']);
+    for (const [, route, status, body] of examples) {
+      const response = await api2('GET', route!);
+      expect(response.status, route).toBe(Number(status));
+      expect(await response.json(), route).toEqual(JSON.parse(body!));
+    }
   });
 
   it('GET /aliases?canonical=X returns suggestAliases and 400 without a canonical', async () => {

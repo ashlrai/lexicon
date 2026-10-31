@@ -120,11 +120,11 @@ describe('lexicon normalize with nothing set up', () => {
     expect(io.err).toContain('nothing was written');
   });
 
-  it('leaves head sner unchanged in the current built-in example', async () => {
+  it('corrects head sner through the built-in example (issue #217)', async () => {
     const io = makeIO();
     const code = await runNormalize(['deploy on head sner'], { cwd }, io);
     expect(code).toBe(0);
-    expect(io.out).toBe('deploy on head sner\n');
+    expect(io.out).toBe('deploy on Hetzner\n');
     expect(io.err).toContain('built-in example');
   });
 

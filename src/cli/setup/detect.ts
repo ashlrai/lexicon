@@ -145,8 +145,10 @@ export function suggestCompany(packageName: string | undefined, remoteUrl: strin
     return scope.charAt(0).toUpperCase() + scope.slice(1);
   }
   if (remoteUrl) {
-    // https://github.com/org/repo(.git), git@github.com:org/repo.git, ssh://git@host/org/repo
-    const m = remoteUrl.trim().match(/[:/]([A-Za-z0-9][\w.-]*)\/[\w.-]+?(?:\.git)?\/?$/);
+    // https://github.com/org/repo(.git), git@github.com:org/repo.git, ssh://git@host/org/repo.
+    // The delimiter must not be the // after a scheme: without that guard a
+    // remote like https://github.com/octocat would read the host as the org.
+    const m = remoteUrl.trim().match(/(?<!\/)[:\/]([A-Za-z0-9][\w.-]*)\/[\w.-]+?(?:\.git)?\/?$/);
     if (m && !/^(users?|orgs?)$/i.test(m[1])) return m[1];
   }
   return undefined;
