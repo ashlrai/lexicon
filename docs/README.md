@@ -72,6 +72,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [MCP.md](MCP.md) | Every tool, resource and prompt, with arguments and return shapes | Use it with |
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Get started |
 | [EXPORTS.md](EXPORTS.md) | Every export format and every importer | Use it with |
+| [voice-cleaning-reference.md](voice-cleaning-reference.md) | How local voice transcription removes tags and collapses whitespace | |
 
 ## Contribute
 
