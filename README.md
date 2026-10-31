@@ -202,11 +202,11 @@ This is not a dictation app. It sits between whatever dictation you already use 
 
 Three tiers over token windows: exact alias first, then double-metaphone phonetic, then Damerau-Levenshtein fuzzy above a confidence floor. Exact hits win the span; matches never overlap. A stoplist of about 3400 common English words, per-term `never` lists, and (with the default `skipCode`) code spans, URLs, emails, paths and glued identifiers are all off limits. That is why zero clean sentences changed in the benchmark. Every replacement reports its `reason` and `confidence`.
 
-With no lexicon of your own, `normalize` uses a built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS) and says so. It does not include Hetzner, so `head sner` is left alone until you add that term.
+With no lexicon of your own, `normalize` uses a built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS, Hetzner) and says so.
 
 ```bash
 lexicon normalize --diff "ask ashler to deploy kuber netties with post gressql"
-# stderr:  lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS).
+# stderr:  lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS, Hetzner).
 #          lexicon: run `lexicon setup` to build your own; nothing was written.
 #          "ashler" -> "Ashlr.AI" (alias, 1.00)
 #          "kuber netties" -> "Kubernetes" (phonetic, 0.88)

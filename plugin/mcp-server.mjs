@@ -60990,6 +60990,13 @@ var init_demo = __esm({
           aliases: ["sass"],
           category: "acronym",
           never: ["sauce"]
+        },
+        {
+          canonical: "Hetzner",
+          aliases: ["head sner", "hetsner"],
+          phonetic: "HETS-ner",
+          category: "brand",
+          notes: "Hosting provider."
         }
       ]
     };
@@ -73762,8 +73769,13 @@ async function runNormalize(args, opts, io, readInput = readStdin) {
     warnSkippedProject(loaded, io);
     const useExample = fromArgs && isEmptyLexicon(loaded.merged);
     if (useExample) {
+      const terms = DEMO_LEXICON.terms.map((t) => t.canonical).join(", ");
       io.stderr(
-        loaded.skippedProject ? "lexicon: no trusted terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS).\nlexicon: the project lexicon is not trusted, so its terms were not used; review it and run `lexicon trust` to use them. Nothing was written.\n" : "lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS).\nlexicon: run `lexicon setup` to build your own; nothing was written.\n"
+        loaded.skippedProject ? `lexicon: no trusted terms yet, so this is the built-in example (${terms}).
+lexicon: the project lexicon is not trusted, so its terms were not used; review it and run \`lexicon trust\` to use them. Nothing was written.
+` : `lexicon: no terms yet, so this is the built-in example (${terms}).
+lexicon: run \`lexicon setup\` to build your own; nothing was written.
+`
       );
     }
     const result = normalize(text, useExample ? DEMO_LEXICON : loaded.merged, normalizeOpts);
