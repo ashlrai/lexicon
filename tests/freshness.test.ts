@@ -186,6 +186,8 @@ describe('freshness ordering', () => {
       'docs/é.md': '<!-- fresh:begin pin:tag -->',
       'docs/ignored.md': '# No markers',
     });
-    expect(markedFiles(dir)).toEqual(['docs/10.md', 'docs/2.md', 'docs/B.md', 'docs/z.md', 'docs/é.md']);
+    // markedFiles returns filesystem paths; keep the ordering assertion while
+    // comparing with the native separator on both Windows and POSIX.
+    expect(markedFiles(dir)).toEqual(['10.md', '2.md', 'B.md', 'z.md', 'é.md'].map((name) => path.join('docs', name)));
   });
 });
