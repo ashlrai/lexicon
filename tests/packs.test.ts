@@ -58,10 +58,10 @@ import { registerPackCommands, runPackAdd, runPackList, runPackRemove, runPackSh
 import { Command } from 'commander';
 import { makeIO } from './helpers.js';
 
-const PACK_NAMES = ['ai', 'business', 'cloud-devops', 'developer', 'profession-q8', 'voice-tools'];
+const PACK_NAMES = ['ai', 'business', 'cloud-devops', 'developer', 'legal', 'profession-q8', 'voice-tools'];
 
 /** Minimum sizes the packs promise (docs/PACKS.md). */
-const MIN_TERMS: Record<string, number> = { developer: 50, 'cloud-devops': 20, ai: 30, business: 30, 'voice-tools': 12, 'profession-q8': 25 };
+const MIN_TERMS: Record<string, number> = { developer: 50, legal: 25, 'cloud-devops': 20, ai: 30, business: 30, 'voice-tools': 12, 'profession-q8': 25 };
 
 /**
  * Aliases that ARE an ordinary word, on purpose. Each entry is a real STT
