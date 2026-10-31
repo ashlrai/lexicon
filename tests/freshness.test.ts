@@ -9,9 +9,8 @@ import { applyMarkers, blockNames, loadTruth, markedFiles, planFreshness, render
 const syncScript = fileURLToPath(new URL('../scripts/freshness/sync.mjs', import.meta.url));
 const checkScript = fileURLToPath(new URL('../scripts/freshness/check.mjs', import.meta.url));
 
-// A truth where source and latest release differ on purpose: the generators
-// that name a git tag follow package.json, the ones a user can install from
-// follow the dated CHANGELOG section.
+// Source and the latest dated CHANGELOG entry differ on purpose; a dated
+// entry alone is not proof that a package or release was published.
 const truth = {
   source: '9.9.9',
   latest: '1.2.3',
@@ -65,11 +64,10 @@ const CHANGELOG = `# Changelog
 `;
 
 describe('freshness block generators', () => {
-  it('badge: a static shields badge at the latest released version', () => {
-    expect(renderBlock('badge:release', truth)).toEqual({
-      inline: true,
-      text: '[![release](https://img.shields.io/badge/release-v1.2.3-blue)](https://github.com/ashlrai/lexicon/releases)',
-    });
+  it('badge: legacy release marker labels the source version, not a published release', () => {
+    const sourceBadge = '[![source version](https://img.shields.io/badge/source-v9.9.9-blue)](package.json)';
+    expect(renderBlock('badge:release', truth)).toEqual({ inline: true, text: sourceBadge });
+    expect(renderBlock('badge:release', { ...truth, latest: null, releases: [] }).text).toBe(sourceBadge);
     expect(renderBlock('badge:npm', truth).text).toContain('badge/npm-v1.2.3-blue');
   });
 
