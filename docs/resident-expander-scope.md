@@ -44,7 +44,9 @@ complete specification for every application's input and editing model.
 
 Each of these is expanded into per-platform discovery questions, marked
 decided or undecided, in
-[expander-platform-questions.md](expander-platform-questions.md).
+[expander-platform-questions.md](expander-platform-questions.md); the
+resident server's own open questions are in
+[daemon-surface-questions.md](daemon-surface-questions.md).
 
 - **Input and editing:** Which APIs can observe input and focus and apply edits
   on macOS, Windows, and Linux, including X11 and different Wayland

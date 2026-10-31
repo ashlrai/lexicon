@@ -239,6 +239,8 @@ which subset, if any, counts as the supported target.
 
 - [resident-expander-scope.md](resident-expander-scope.md): the requested
   surface, the existing pieces and the boundary this list digs into.
+- [daemon-surface-questions.md](daemon-surface-questions.md): the daemon half
+  of the question list, for the resident server a client would talk to.
 - [DAEMON.md](DAEMON.md#resident-expander-opt-in): the server a client
   would talk to, its protocol and its access rules.
 - [PLATFORMS.md](PLATFORMS.md): what is tested, untested and absent per
