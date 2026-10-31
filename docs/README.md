@@ -71,6 +71,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [CLI.md](CLI.md) | Every command and flag, generated from `--help` | |
 | [MCP.md](MCP.md) | Every tool, resource and prompt, with arguments and return shapes | Use it with |
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Get started |
+| [schema-error-examples.md](schema-error-examples.md) | Reading invalid code unit errors and shortened term names | |
 | [EXPORTS.md](EXPORTS.md) | Every export format and every importer | Use it with |
 
 ## Contribute
