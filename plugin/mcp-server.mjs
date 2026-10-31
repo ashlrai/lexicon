@@ -62794,6 +62794,15 @@ var init_config = __esm({
   }
 });
 
+// src/cli/dry-run-plan.ts
+function dryRunPlan(dryRun) {
+  return dryRun === true ? { plan: true } : {};
+}
+var init_dry_run_plan = __esm({
+  "src/cli/dry-run-plan.ts"() {
+  }
+});
+
 // node_modules/commander/lib/error.js
 var require_error = __commonJS({
   "node_modules/commander/lib/error.js"(exports) {
@@ -73379,7 +73388,7 @@ async function runInit(opts, io) {
   if (opts.json) {
     line(
       io,
-      JSON.stringify(jsonOk({ scope, path: target, created, ...dry ? { dryRun: true } : {}, ...trust !== void 0 ? { trust } : {}, ...untrustedStep ? { nextStep: untrustedStep } : {} }))
+      JSON.stringify(jsonOk({ ...dryRunPlan(dry), scope, path: target, created, ...dry ? { dryRun: true } : {}, ...trust !== void 0 ? { trust } : {}, ...untrustedStep ? { nextStep: untrustedStep } : {} }))
     );
     return 0;
   }
@@ -73508,6 +73517,7 @@ async function runAdd(canonical, aliasArgs, opts, io, prompter) {
       io,
       JSON.stringify(
         jsonOk({
+          ...dryRunPlan(opts.dryRun),
           term: result.term,
           path: result.file.path,
           created: result.created,
@@ -73582,7 +73592,7 @@ async function runRemove(canonical, opts, io) {
   const extra = { ...dry ? { dryRun: true } : {}, ...stillIn.length > 0 ? { stillIn } : {}, ...untrusted ? { untrustedProject: untrusted } : {} };
   if (opts.json) {
     const failure2 = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ""}`, missStep);
-    line(io, JSON.stringify(removed ? jsonOk({ canonical: removedName, removed, ...extra }) : { ...failure2, canonical, removed, ...extra }));
+    line(io, JSON.stringify(removed ? jsonOk({ ...dryRunPlan(dry), canonical: removedName, removed, ...extra }) : { ...failure2, canonical, removed, ...extra }));
     if (!removed) io.stderr(notFound());
     return removed ? 0 : 1;
   }
@@ -73643,7 +73653,7 @@ async function runRemoveAlias(canonical, alias, opts, scope, cwd, io) {
   }
   const paths = result.files.map((f) => f.path);
   if (opts.json) {
-    line(io, JSON.stringify(jsonOk({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra })));
+    line(io, JSON.stringify(jsonOk({ ...dryRunPlan(dry), canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra })));
     return 0;
   }
   line(io, `${dry ? "would remove" : "removed"} alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safeMessage(paths.join(", "))}`);
@@ -74080,6 +74090,7 @@ async function runPath(opts, io) {
 var import_node_fs33, import_node_path33, EXAMPLE_TERM_COMMENT, SAME_AS_CANONICAL_REASON;
 var init_commands = __esm({
   "src/cli/commands.ts"() {
+    init_dry_run_plan();
     import_node_fs33 = __toESM(require_node_fs());
     import_node_path33 = __toESM(require_node_path());
     init_core3();
