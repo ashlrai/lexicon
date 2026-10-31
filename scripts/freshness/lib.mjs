@@ -24,13 +24,12 @@
  *   the first of those is `truth.latest`; `## X.Y.Z (unreleased)` and the
  *   `## Unreleased` heading are records of work in flight, not a release
  *
- * Which truth a generator reads is deliberate: `#vX.Y.Z` names the git tag this
- * source tree becomes, so it tracks package.json (and `check:facts` fails on
- * any other value); an npm `@x.y.z` pin or a badge advertises what is actually
- * released, so it tracks the latest dated CHANGELOG section.
+ * Which truth a generator reads is deliberate: `#vX.Y.Z` and the source badge
+ * track package.json. npm pins and the npm badge track the latest dated
+ * CHANGELOG section, which is a project record, not proof of publication.
  *
  * Known block names:
- *   badge:release    shields badge -> GitHub releases, latest released version
+ *   badge:release    legacy marker: source-version badge -> package.json
  *   badge:npm        shields badge -> the npm package, latest released version
  *   install:npm      fenced `npm install -g @ashlr/lexicon@<latest>`
  *   install:github   fenced `npm install -g github:ashlrai/lexicon#v<source>`
@@ -108,7 +107,7 @@ const GENERATORS = {
     inline: true,
     variants: {
       release: (t) =>
-        `[![release](https://img.shields.io/badge/release-v${needLatest(t, 'badge:release')}-blue)](https://github.com/ashlrai/lexicon/releases)`,
+        `[![source version](https://img.shields.io/badge/source-v${t.source}-blue)](package.json)`,
       npm: (t) =>
         `[![npm](https://img.shields.io/badge/npm-v${needLatest(t, 'badge:npm')}-blue)](https://www.npmjs.com/package/@ashlr/lexicon)`,
     },

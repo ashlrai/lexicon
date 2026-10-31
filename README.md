@@ -15,7 +15,7 @@ lands: MCP, Claude Code, the browser, macOS.
 
 [![CI](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml/badge.svg)](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/%40ashlr%2Flexicon)](https://www.npmjs.com/package/@ashlr/lexicon)
-<!-- fresh:begin badge:release -->[![release](https://img.shields.io/badge/release-v0.5.7-blue)](https://github.com/ashlrai/lexicon/releases)<!-- fresh:end -->
+<!-- fresh:begin badge:release -->[![source version](https://img.shields.io/badge/source-v0.5.7-blue)](package.json)<!-- fresh:end -->
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node >=20](https://img.shields.io/node/v/%40ashlr%2Flexicon)](package.json)
 
@@ -146,7 +146,7 @@ selected before inspection, and candidates are reviewed before writes. The
 install script, npm and Homebrew fetch the package itself. See
 [SECURITY.md](SECURITY.md).
 
-The guided GitHub importer ships in 0.5.5 ([PR #25](https://github.com/ashlrai/lexicon/pull/25)); npm `latest` is currently `0.5.4`.
+The guided GitHub importer is in source and the `v0.5.5` tag ([PR #25](https://github.com/ashlrai/lexicon/pull/25)). At preparation on 2026-10-31, that version was not published to npm or as a GitHub release. Check current availability before installing.
 
 ## MCP setup
 
