@@ -26,6 +26,40 @@ afterEach(async () => {
 });
 
 describe('harvest marker boundaries', () => {
+  it('applies candidate casing rules without removing marker comments', async () => {
+    await fs.writeFile(path.join(repo, 'marker.ts'), [
+      '// TODO: QuasarWidget',
+      '// TODO: QuasarWidget',
+      '// todo: revisit this',
+      '// ToDo: revisit this',
+      '// ToDo: revisit this',
+      '// FixMe: revisit this',
+      '// FixMe: revisit this',
+    ].join('\n'));
+
+    const candidates = await harvestRepo(repo, { git: false, symbols: true });
+    for (const canonical of ['QuasarWidget', 'FixMe']) {
+      expect(candidates.find((candidate) => candidate.canonical === canonical)).toMatchObject({
+        category: 'identifier', count: 2, evidence: ['marker.ts'],
+      });
+    }
+    expect(candidates.map((candidate) => candidate.canonical)).not.toContain('TODO');
+    expect(candidates.map((candidate) => candidate.canonical)).not.toContain('todo');
+    expect(candidates.map((candidate) => candidate.canonical)).not.toContain('ToDo');
+  });
+
+  it('accepts mixed-case ToDo in README prose while filtering Todo and Note', async () => {
+    await fs.writeFile(path.join(repo, 'README.md'),
+      'We use ToDo and ToDo connects the community. We mention Todo and Todo, Note and Note.\n');
+
+    const candidates = await harvestRepo(repo, { git: false });
+    expect(candidates.find((candidate) => candidate.canonical === 'ToDo')).toMatchObject({
+      category: 'brand', count: 2, evidence: ['README.md'],
+    });
+    expect(candidates.map((candidate) => candidate.canonical)).not.toContain('Todo');
+    expect(candidates.map((candidate) => candidate.canonical)).not.toContain('Note');
+  });
+
   it.each(markers)('retains README names containing $marker while excluding the complete marker', async ({ marker, prose }) => {
     await fs.writeFile(path.join(repo, 'README.md'),
       `We use ${prose} and ${prose} connects the community.\n${marker}: revisit this.\n`);
