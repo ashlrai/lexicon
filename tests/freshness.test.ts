@@ -119,29 +119,35 @@ describe('freshness block generators', () => {
 });
 
 describe('freshness sync/check lifecycle', () => {
-  it('check exits 1 on a seeded drift fixture, sync rewrites it, check exits 0', () => {
+  it.each([['LF', '\n'], ['CRLF', '\r\n']])('checks and syncs drift idempotently while preserving %s', (_label, eol) => {
+    const guide = '# Install\n\n<!-- fresh:begin install:npm -->\n```bash\nnpm install -g @ashlr/lexicon@0.0.0\n```\n<!-- fresh:end -->\n';
     const dir = fixture({
       'package.json': JSON.stringify(PKG),
-      'CHANGELOG.md': CHANGELOG,
-      'README.md': README_STALE,
+      'CHANGELOG.md': CHANGELOG.replace(/\n/g, eol),
+      'README.md': README_STALE.replace(/\n/g, eol),
+      'docs/Guide.md': guide.replace(/\n/g, eol),
     });
 
     const drifted = run(checkScript, ['--root', dir]);
     expect(drifted.status).toBe(1);
     expect(drifted.stderr).toContain("README.md:3  'pin:github' is stale");
+    expect(drifted.stderr).toContain("docs/Guide.md:3  'install:npm' is stale");
     expect(drifted.stderr).toContain('npm run fresh:sync');
 
     const synced = run(syncScript, ['--root', dir]);
     expect(synced.status).toBe(0);
-    expect(readFileSync(path.join(dir, 'README.md'), 'utf8')).toContain(
-      '`npm i -g github:ashlrai/lexicon#v2.0.0`',
-    );
+    const syncedReadme = README_STALE.replace('v0.0.0', 'v2.0.0').replace(/\n/g, eol);
+    const syncedGuide = guide.replace('@0.0.0', '@2.0.0').replace(/\n/g, eol);
+    expect(readFileSync(path.join(dir, 'README.md'), 'utf8')).toBe(syncedReadme);
+    expect(readFileSync(path.join(dir, 'docs/Guide.md'), 'utf8')).toBe(syncedGuide);
 
     const clean = run(checkScript, ['--root', dir]);
     expect(clean.status).toBe(0);
     expect(clean.stdout).toContain('in sync');
     // Idempotent: a second sync writes nothing.
     expect(run(syncScript, ['--root', dir]).stdout).toContain('already in sync');
+    expect(readFileSync(path.join(dir, 'README.md'), 'utf8')).toBe(syncedReadme);
+    expect(readFileSync(path.join(dir, 'docs/Guide.md'), 'utf8')).toBe(syncedGuide);
   });
 
   it('loadTruth skips Unreleased and (unreleased) sections', () => {
