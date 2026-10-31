@@ -16,7 +16,7 @@ The short pitch, the benchmark headline and the install commands are in the
 | [FIRST-RUN.md](FIRST-RUN.md) | First-run report measured October 26, 2026 on one Linux VM with Node already installed: install and setup demo timings (the first printed correction is the setup demo), a separate npx normalization timing, documentation findings, non-interactive agent behavior, write gates, JSON errors, MCP schemas and ranked follow-ups; compares npm 0.5.4 with source 0.5.6 | |
 | [CLIENTS.md](CLIENTS.md) | Installing into Claude Code (plugin, hooks, headless) and every other agent client. Read this one second | Use it with |
 | [FAQ.md](FAQ.md) | The questions people ask before installing | |
-| [PACKS.md](PACKS.md) | The six starter packs, what is in each, and how install and remove behave | |
+| [PACKS.md](PACKS.md) | The seven starter packs, what is in each, and how install and remove behave | |
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Reference |
 | [PLATFORMS.md](PLATFORMS.md) | What works on macOS, Windows and Linux, what is tested in CI, and what is not there at all | |
 

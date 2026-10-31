@@ -58,10 +58,10 @@ import { registerPackCommands, runPackAdd, runPackList, runPackRemove, runPackSh
 import { Command } from 'commander';
 import { makeIO } from './helpers.js';
 
-const PACK_NAMES = ['ai', 'business', 'cloud-devops', 'developer', 'profession-q8', 'voice-tools'];
+const PACK_NAMES = ['ai', 'architecture', 'business', 'cloud-devops', 'developer', 'profession-q8', 'voice-tools'];
 
 /** Minimum sizes the packs promise (docs/PACKS.md). */
-const MIN_TERMS: Record<string, number> = { developer: 50, 'cloud-devops': 20, ai: 30, business: 30, 'voice-tools': 12, 'profession-q8': 25 };
+const MIN_TERMS: Record<string, number> = { architecture: 12, developer: 50, 'cloud-devops': 20, ai: 30, business: 30, 'voice-tools': 12, 'profession-q8': 25 };
 
 /**
  * Aliases that ARE an ordinary word, on purpose. Each entry is a real STT
@@ -109,6 +109,27 @@ const STOPLIST_PHRASE_ALLOWLIST: Record<string, string[]> = {
 // ---------------------------------------------------------------------------
 
 describe('shipped packs', () => {
+  it('loads and installs opt-in architecture vocabulary without changing ordinary prose', async () => {
+    const pack = await loadPack('architecture');
+    expect(DEFAULT_PACKS).not.toContain(pack.name);
+    expect(pack.terms).toBe(12);
+    expect(pack.lexicon.terms.find((term) => term.canonical === 'Archicad')?.aliases).toContain('archi cad');
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-architecture-'));
+    try {
+      const opts = { globalPath: path.join(dir, 'lexicon.yaml'), cwd: dir };
+      expect((await installPack('architecture', opts)).added).toBe(12);
+      expect((await installPack('architecture', opts)).alreadyInstalled).toBe(true);
+      const { merged } = await loadLexicon(opts);
+      expect(normalize('open archi cad and auto cad for the rain screan', merged).output)
+        .toBe('open Archicad and AutoCAD for the rainscreen');
+      const prose = 'review the model and revise the drawing';
+      expect(normalize(prose, merged).output).toBe(prose);
+      expect((await uninstallPack('architecture', opts)).removed).toHaveLength(12);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it('offers legal vocabulary only by opt-in and preserves exact ambiguous words', async () => {
     const pack = await loadPack('profession-q8');
     expect(DEFAULT_PACKS).not.toContain(pack.name);

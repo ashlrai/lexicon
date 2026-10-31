@@ -2203,7 +2203,7 @@ describe('MCP input edge cases', () => {
   it('add_pack names the available packs and the lowercase name for a miscased one', async () => {
     const r = await call('add_pack', { name: 'Developer' });
     expect(r.isError).toBe(true);
-    expect(r.text).toContain('available: ai, business, cloud-devops, developer, profession-q8, voice-tools');
+    expect(r.text).toContain('available: ai, architecture, business, cloud-devops, developer, profession-q8, voice-tools');
     expect(r.text).toContain('did you mean "developer"?');
     expect(r.text).toContain('Nothing was installed.');
   });

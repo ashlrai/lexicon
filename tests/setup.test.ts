@@ -1168,6 +1168,7 @@ describe('runSetup interactive', () => {
       'product', // category
       'n', // add another term?
       [], // starter packs checklist: none
+      'n', // also add architecture?
       'n', // also add business?
       'n', // also add cloud-devops?
       'n', // also add profession-q8?
@@ -1236,8 +1237,8 @@ describe('runSetup interactive', () => {
   it('Enter everywhere takes the defaults: person yes, suggested company, default packs, harvest NO, all clients, serve yes, first app', async () => {
     await fs.mkdir(path.join(cwd, '.git'));
     const exportDir = path.join(home, 'Desktop');
-    // The packs checklist starts with developer, ai and voice-tools checked; business, cloud-devops and profession-q8 each default to no.
-    const p = scripted(['', '', '', '', [1, 2, 3], '', '', '', '', [1, 2], '', 1]);
+    // The packs checklist starts with developer, ai and voice-tools checked; architecture, business, cloud-devops and profession-q8 each default to no.
+    const p = scripted(['', '', '', '', [1, 2, 3], '', '', '', '', '', [1, 2], '', 1]);
     const f = fakes(
       {
         isInteractive: () => true,
@@ -1480,7 +1481,7 @@ describe('runSetup starter packs', () => {
 
   it('rejects an unknown pack before anything is written', async () => {
     const f = fakes();
-    await expect(run({ yes: true, clients: 'none', company: 'Ashlr.AI', packs: 'developer,nope' }, f)).rejects.toThrow(/unknown pack "nope" \(expected one of: ai, business, cloud-devops, developer, profession-q8, voice-tools, none\)/);
+    await expect(run({ yes: true, clients: 'none', company: 'Ashlr.AI', packs: 'developer,nope' }, f)).rejects.toThrow(/unknown pack "nope" \(expected one of: ai, architecture, business, cloud-devops, developer, profession-q8, voice-tools, none\)/);
     expect(existsSync(globalPath)).toBe(false);
   });
 
@@ -1715,7 +1716,10 @@ describe('runSetup starter packs', () => {
       '', // phonetic
       'n', // another term?
       [1], // packs checklist: developer only
+      'n', // also add architecture?
       'y', // also add business?
+      'n', // also add cloud-devops?
+      'n', // also add profession-q8?
       [], // clients: none detected -> not asked; this answer is for serve
       'n', // app: handled below
     ]);
@@ -1740,7 +1744,7 @@ describe('runSetup starter packs', () => {
   });
 
   it('interactive: an empty checklist and no to the rest skips the step', async () => {
-    const p = scripted(['y', 'Ashlr.AI', '', 'n', [], 'n', 'n', 'n']);
+    const p = scripted(['y', 'Ashlr.AI', '', 'n', [], 'n', 'n', 'n', 'n']);
     const f = fakes({ isInteractive: () => true, createPrompter: () => p });
     const { summary, io } = await run({ app: 'none', serve: false }, f);
     expect(summary.packs).toEqual([]);
