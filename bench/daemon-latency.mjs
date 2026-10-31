@@ -1,4 +1,4 @@
-import { execFile } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { mkdtemp, writeFile, rm } from 'node:fs/promises';
 import os from 'node:os';
@@ -41,6 +41,56 @@ try {
     if (!await tryFastRead(['list', '--json'], undefined, 1000)) throw new Error('daemon miss');
   });
   controller.abort(); await done;
+  // The memory half of the gap: a real `lexicon daemon --expander` child,
+  // warmed with cli-read requests, peak RSS reported by the child itself over
+  // stderr (NODE_OPTIONS --import), so no ps(1) and POSIX-only APIs are needed.
+  // stdout is inherited so the child's cliReadContext() (which includes
+  // stdout.isTTY) matches this process.
+  const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
+  const reporter = 'data:text/javascript,' + encodeURIComponent(
+    "setInterval(() => process.stderr.write('RSS ' + process.memoryUsage().rss + '\\n'), 25).unref()");
+  const daemon = spawn(process.execPath, [path.join(root, 'dist/cli/index.js'), 'daemon', '--expander', '--quiet'],
+    { stdio: ['ignore', 'inherit', 'pipe'], env: { ...process.env, NODE_OPTIONS: `--import=${reporter}` } });
+  let daemonErr = '';
+  let errBuf = '';
+  let peakRss = 0;
+  daemon.stderr.setEncoding('utf8');
+  daemon.stderr.on('data', (chunk) => {
+    errBuf += chunk;
+    let nl;
+    while ((nl = errBuf.indexOf('\n')) !== -1) {
+      const line = errBuf.slice(0, nl);
+      errBuf = errBuf.slice(nl + 1);
+      const m = /^RSS (\d+)$/.exec(line);
+      if (m) peakRss = Math.max(peakRss, Number(m[1]));
+      else if (line.trim()) daemonErr += `${line}\n`;
+    }
+  });
+  daemon.once('error', () => {});
+  const daemonExit = new Promise((resolve) => daemon.once('close', resolve));
+  try {
+    // A refused connect returns at once, so a count would burn out before a
+    // cold daemon under load has even bound the socket: poll for 30 s instead.
+    const upDeadline = Date.now() + 30_000;
+    let up = false;
+    while (!up && Date.now() < upDeadline && daemon.exitCode === null && daemon.signalCode === null) {
+      up = (await tryFastRead(['list', '--json'], undefined, 500)) !== undefined;
+      if (!up) await sleep(100);
+    }
+    if (!up) throw new Error(`expander child did not answer${daemonErr.trim() ? `: ${daemonErr.trim()}` : ''}`);
+    for (let i = 0; i < 30; i++) {
+      if (!await tryFastRead(['list', '--json'], undefined, 1000)) throw new Error('expander child stopped answering');
+    }
+    await sleep(150);
+    if (peakRss <= 0) throw new Error('the expander child reported no RSS samples');
+    console.log(JSON.stringify({ label: 'resident daemon peak RSS', kB: Math.round(peakRss / 1024) }));
+  } catch (e) {
+    console.log(JSON.stringify({ label: 'resident daemon peak RSS', error: e instanceof Error ? e.message : String(e) }));
+  } finally {
+    daemon.kill('SIGTERM');
+    if (await Promise.race([daemonExit.then(() => false), sleep(1500).then(() => true)])) daemon.kill('SIGKILL');
+    await daemonExit;
+  }
   await measure('cold CLI daemon absent',()=>command('index'));
   await measure('cold CLI direct',()=>command('run'));
 } finally {

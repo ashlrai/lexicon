@@ -115,7 +115,7 @@ commands use the direct path too. A missing daemon, an older protocol, a bad
 response or a 100 ms total deadline silently falls back, preserving stdout,
 stderr and status. Nothing starts a daemon automatically. Custom `--socket`
 paths remain available to explicit protocol clients. See [BENCH-DAEMON.md](BENCH-DAEMON.md)
-for measured latency and reproduction.
+for measured latency, memory and reproduction.
 
 `clipboard` is `--once [--paste]` in the resident process, so a hotkey can run:
 
