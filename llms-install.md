@@ -1,5 +1,7 @@
 # Install Lexicon
 
+**Release preparation:** The 0.5.7 version and pins below describe an unpublished candidate prepared on 2026-10-31. At preparation, npm `latest` was 0.5.4. Verify the public npm version and GitHub release before using a 0.5.7 install pin.
+
 Instructions for an AI assistant installing this MCP server on behalf of its user.
 Follow them in order. Local correction needs no API key or account:
 do not ask the user for credentials. Installation downloads the package; optional
@@ -32,7 +34,7 @@ That installs the latest release. To pin the release this page was written for:
 
 <!-- fresh:begin install:npm -->
 ```bash
-npm install -g @ashlr/lexicon@0.5.6
+npm install -g @ashlr/lexicon@0.5.7
 ```
 <!-- fresh:end -->
 

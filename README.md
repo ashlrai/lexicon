@@ -4,6 +4,8 @@
 
 # Lexicon
 
+**Release preparation:** The 0.5.7 version and pins below describe an unpublished candidate prepared on 2026-10-31. At preparation, npm `latest` was 0.5.4. Verify the public npm version and GitHub release before using a 0.5.7 install pin.
+
 **Dictate to your agent. Keep your spelling.**
 
 A personal lexicon for voice-to-agents.
@@ -13,7 +15,7 @@ lands: MCP, Claude Code, the browser, macOS.
 
 [![CI](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml/badge.svg)](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/%40ashlr%2Flexicon)](https://www.npmjs.com/package/@ashlr/lexicon)
-<!-- fresh:begin badge:release -->[![release](https://img.shields.io/badge/release-v0.5.6-blue)](https://github.com/ashlrai/lexicon/releases)<!-- fresh:end -->
+<!-- fresh:begin badge:release -->[![release](https://img.shields.io/badge/release-v0.5.7-blue)](https://github.com/ashlrai/lexicon/releases)<!-- fresh:end -->
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node >=20](https://img.shields.io/node/v/%40ashlr%2Flexicon)](package.json)
 
@@ -253,7 +255,7 @@ Also at the root: [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDU
 
 ## Downloads
 
-Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches the browser extension for Chrome/Edge/Brave and for Firefox, `LexiconBar.app.zip` for macOS, the npm tarball for offline installs, and `SHA256SUMS`. The Homebrew formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap). After 0.5.6 is published, <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.6`<!-- fresh:end --> installs that tag straight from GitHub and builds on install.
+Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches the browser extension for Chrome/Edge/Brave and for Firefox, `LexiconBar.app.zip` for macOS, the npm tarball for offline installs, and `SHA256SUMS`. The Homebrew formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap). After 0.5.7 is published, <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.7`<!-- fresh:end --> installs that tag straight from GitHub and builds on install.
 
 ## Roadmap and non-goals
 
