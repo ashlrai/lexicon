@@ -31,6 +31,8 @@ Agent received:  "tell Ashlr.AI to deploy the Kubernetes auth service"
 
 ![The browser demo, three panels. Left, what STT heard: "tell ashler to deploy cooper netties on head sner and ping mason white about the sass pricing". Middle, what the agent gets: "tell Ashlr.AI to deploy Kubernetes on Hetzner and ping Mason Wyatt about the SaaS pricing", labelled 5 corrections in 0.80 ms, above a table giving each replacement its tier and confidence. Right, the lexicon YAML driving it.](docs/assets/demo.gif)
 
+[Watch the terminal setup demo](docs/assets/cli-setup.cast).
+
 That is the [live demo](https://ashlrai.github.io/lexicon/) running this repo's real matcher on your text, in your browser, with nothing installed. (Its Dictate button uses your browser's own speech recognizer, which in Chrome sends audio to Google.)
 
 ## Measured
