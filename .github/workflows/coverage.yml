@@ -1,0 +1,96 @@
+name: Coverage
+
+# Stays off pull_request. This repo has no merge queue, so merge_group
+# never fires. Push to main is what runs the suite. The test job does not
+# get id-token. This file is not a required check.
+on:
+  push:
+    branches: [main]
+  merge_group:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Test with coverage
+    # ci.yml's Linux rows say ubuntu-latest. That label is moving from 24.04
+    # to 26.04 through November 2026, so this job pins the 24.04 image.
+    # Node 22 is the same major the ubuntu node 22 CI row uses.
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install
+        run: npm ci
+
+      - name: Test with coverage
+        shell: bash
+        run: |
+          set -euo pipefail
+          # --project unit leaves out the perf project. Those two files are
+          # wall-clock budgets, and v8 coverage makes the 20ms matcher case
+          # miss on the probe itself. The CI workflow still runs them, without
+          # coverage, on push and pull_request.
+          npx vitest run --project unit --coverage --coverage.provider=v8 --coverage.reporter=lcov --coverage.reportsDirectory=coverage
+          if [ ! -s coverage/lcov.info ]; then
+            echo "coverage/lcov.info is missing"
+            exit 1
+          fi
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-lcov
+          path: coverage/lcov.info
+          if-no-files-found: error
+          retention-days: 5
+
+  upload:
+    name: Upload coverage
+    needs: test
+    runs-on: ubuntu-24.04
+    timeout-minutes: 20
+    permissions:
+      contents: read
+      id-token: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Download coverage artifact
+        uses: actions/download-artifact@37930b1c2abaa49bbe596cd826c3c89aef350131 # v7.0.0
+        with:
+          name: coverage-lcov
+          path: coverage
+
+      - name: Require the coverage file
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ ! -s coverage/lcov.info ]; then
+            echo "coverage/lcov.info is missing"
+            exit 1
+          fi
+
+      - name: Upload to Codecov
+        uses: codecov/codecov-action@303a32d7a59b442fa8d48b6a1cc6825c09c847a5 # v7.1.1
+        with:
+          use_oidc: true
+          files: coverage/lcov.info
+          disable_search: true
+          fail_ci_if_error: false
