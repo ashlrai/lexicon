@@ -508,11 +508,18 @@ function emptyLexiconSuffix(loaded: LoadedLexicon): string {
 export async function main(): Promise<void> {
   const server = createServer();
   const transport = new StdioServerTransport();
+  let shuttingDown = false;
   const shutdown = (): void => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     server.close().finally(() => process.exit(0));
   };
   process.once('SIGINT', shutdown);
   process.once('SIGTERM', shutdown);
+  // The SDK transport only watches data/errors, so host disconnects must
+  // close the server explicitly, including any outstanding MCP requests.
+  process.stdin.once('end', shutdown);
+  process.stdin.once('close', shutdown);
   await server.connect(transport);
   log('server started (stdio)');
 }
