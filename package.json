@@ -68,7 +68,8 @@
     "build:site": "node scripts/build-site.mjs",
     "dev:site": "npm run build:site && node site/serve.mjs",
     "build:extension": "node scripts/build-extension.mjs",
-    "bench:compare": "node --import tsx bench/audio/compare.ts"
+    "bench:compare": "node --import tsx bench/audio/compare.ts",
+    "bench:non-english": "node --import tsx scripts/bench-non-english.mjs"
   },
   "keywords": [
     "mcp",
