@@ -1,5 +1,22 @@
 import { describe, expect, it } from 'vitest';
+import { readFileSync } from 'node:fs';
 import { cleanTranscript } from '../src/voice/transcribe.js';
+
+describe('voice cleaning reference', () => {
+  const reference = readFileSync(new URL('../docs/voice-cleaning-reference.md', import.meta.url), 'utf8');
+  const examples = [...reference.matchAll(/^\| `([^`]+)` \| `([^`]+)` \|$/gm)];
+
+  it('keeps every published example in sync with the cleaner', () => {
+    expect(examples.length).toBeGreaterThanOrEqual(18);
+    for (const [, input, output] of examples) {
+      expect(cleanTranscript(input), input).toBe(output === '""' ? '' : output);
+    }
+  });
+
+  it('collapses whitespace after cleaning and leaves unmatched delimiters', () => {
+    expect(cleanTranscript(' \tHello\n[MUSIC]\tthere  *unfinished ')).toBe('Hello there *unfinished');
+  });
+});
 
 describe('cleanTranscript bracketed tags', () => {
   it('removes an arbitrary tag while preserving the spoken text around it', () => {
