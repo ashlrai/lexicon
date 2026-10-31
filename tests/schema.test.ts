@@ -359,6 +359,24 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it('safely renders an unpaired high surrogate in a term name across validation errors', () => {
+    const input = { terms: [{ canonical: 'Rocket \uD83Dship', aliases: ['\uFFFF'] }] };
+    const reason = 'U+FFFE, U+FFFF and unpaired surrogates fit no file format';
+
+    try {
+      parseLexicon(input);
+      throw new Error('Expected the invalid term to be rejected');
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      const message = (error as Error).message;
+      expect(message).toBe(
+        `Invalid lexicon:\n  - terms[0].canonical: must not contain U+D83D (${reason}) in term "Rocket \\uD83Dship"\n` +
+        `  - terms[0].aliases[0]: must not contain U+FFFF (${reason}) in term "Rocket \\uD83Dship"`,
+      );
+      expect(Buffer.from(message, 'utf8').toString('utf8')).toBe(message);
+    }
+  });
+
   it.each(['D800', 'DBFF'])('reports an unpaired high surrogate U+%s from YAML with a readable term label', (hex) => {
     const input = parseYaml(`terms:\n  - canonical: "Rocket \\u${hex}ship"\n`);
     const result = LexiconSchema.safeParse(input);
