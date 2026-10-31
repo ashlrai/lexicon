@@ -162,6 +162,20 @@ describe.skipIf(!posix)('resident expander over a Unix socket', () => {
     await r.stop();
   });
 
+  it('never writes typed text to its output or error streams', async () => {
+    const r = await start();
+    const c = await connect(r.socketPath);
+    const secret = 'correct horse battery staple';
+    for (const ch of secret) await c.ask({ op: 'type', text: ch });
+    await c.ask({ op: 'type', text: ' ' });
+    await c.ask({ op: 'key', key: 'Backspace' });
+    await c.ask({ op: 'normalize', text: secret });
+    c.close();
+    await r.stop();
+    const streams = `${r.out.join('')}\n${r.err.join('')}`;
+    expect(streams).not.toContain(secret);
+  });
+
   it('answers bad requests with an error and keeps the connection', async () => {
     const r = await start();
     const c = await connect(r.socketPath);
