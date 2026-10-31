@@ -544,6 +544,26 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(findUnencodableChar(pair)).toBeUndefined();
   });
 
+  it('accepts a supplementary CJK character decoded from a YAML Unicode escape', () => {
+    const character = '\u{20000}';
+    const input = parseYaml('terms:\n  - canonical: "Name \\U00020000"\nsettings:\n  protectedWords: ["\\U00020000"]\n');
+    const parsed = parseLexicon(input);
+
+    expect(findUnencodableChar(character)).toBeUndefined();
+    expect(parsed.terms[0].canonical).toBe(`Name ${character}`);
+    expect(parsed.settings?.protectedWords).toEqual([character]);
+
+    const canonical = parsed.terms[0].canonical;
+    const protectedWord = parsed.settings?.protectedWords?.[0];
+    if (protectedWord === undefined) throw new Error('Expected a protected word');
+    expect(findUnencodableChar(canonical)).toBeUndefined();
+    expect(findUnencodableChar(protectedWord)).toBeUndefined();
+    expect(canonical.codePointAt(5)).toBe(0x20000);
+    expect(protectedWord.codePointAt(0)).toBe(0x20000);
+    expect(protectedWord.charCodeAt(0)).toBe(0xd840);
+    expect(protectedWord.charCodeAt(1)).toBe(0xdc00);
+  });
+
   // U+20BB7 (𠮷), a CJK Extension B ideograph from plane 2: the "Yoshiki"
   // name kanji is the sort of supplementary character a lexicon of names
   // actually carries, and its high surrogate U+D842 sits outside the range
