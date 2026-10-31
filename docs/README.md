@@ -87,6 +87,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [setup-contract-summary.md](setup-contract-summary.md) | Guided first-run responsibilities, preview boundaries and open questions |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The module map and the design decisions behind it |
 | [CONTRACT.md](CONTRACT.md) | The per-module API every change is written against |
+| [tray-platform-scope.md](tray-platform-scope.md) | Issue #13 tray scope: the requested platforms and actions, separated into stated requirements and open questions |
 | [tray-action-map.md](tray-action-map.md) | Issue #13 tray actions, existing CLI and Windows capabilities, and open platform decisions |
 | [RELEASING.md](RELEASING.md) | Cutting a release: npm, GitHub assets, the Homebrew bump |
 | [DISTRIBUTION.md](DISTRIBUTION.md) | Where Lexicon gets listed so people and agents find it |
