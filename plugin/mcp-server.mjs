@@ -60764,10 +60764,12 @@ async function installLoadedPack(pack, recordAs, opts = {}) {
     });
     if (incoming.length === 0) throw new Error(`pack "${pack.name}" has no terms`);
     const before = await readTextIfAny(targetPath);
+    const current = await readLexiconFile(targetPath, scope);
+    const packs = dedupe([...current.lexicon.settings?.packs ?? [], recordAs]);
+    parseLexicon({ ...current.lexicon, settings: { ...current.lexicon.settings, packs } });
     const { file: file2, results } = await addTerms(incoming, { ...storeOpts3, scope, leaveUntrusted });
     const added = results.filter((r) => r.created).length;
     const merged = results.length - added;
-    const packs = dedupe([...file2.lexicon.settings?.packs ?? [], recordAs]);
     if (opts.dryRun) {
       const alreadyInstalled3 = before !== void 0 && results.every((r) => r.unchanged === true) && packs.length === (file2.lexicon.settings?.packs ?? []).length;
       return { pack: info(pack), added, merged, path: file2.path, scope, alreadyInstalled: alreadyInstalled3 };
