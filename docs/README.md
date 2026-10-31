@@ -20,49 +20,6 @@ The short pitch, the benchmark headline and the install commands are in the
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Reference |
 | [PLATFORMS.md](PLATFORMS.md) | What works on macOS, Windows and Linux, what is tested in CI, and what is not there at all | |
 
-### Setup-cast outline
-
-This is an outline for a future terminal recording, not a link to a recording.
-It shows a repeatable source-checkout setup and correction without registering an
-agent or installing a service. Use a POSIX shell, Node 20 or newer, and a checkout
-with dependencies installed (`npm install`). Run `npm run build` from the checkout
-first; it produces the CLI used below.
-
-1. Start in the checkout root, then create an isolated home and enter it:
-
-   ```sh
-   cast_cli="$PWD/dist/cli/index.js"
-   cast_home=$(mktemp -d)
-   export HOME="$cast_home" XDG_CONFIG_HOME="$cast_home/.config" LEXICON_PATH="$cast_home/lexicon.yaml"
-   cd "$cast_home"
-   mkdir .git
-   ```
-
-   The temporary home and `.git` directory isolate the demonstration from your
-   own global and project lexicons.
-   Run the remaining commands in this same shell. Paths in the output will vary.
-
-2. Run setup with explicit example names and the optional integrations disabled:
-
-   ```sh
-   node "$cast_cli" setup --yes --company Ashlr.AI --person "Mason Wyatt" --clients none --no-packs --no-harvest --no-serve --app none
-   ```
-
-   Expect a created lexicon, the two added names, skipped integration steps,
-   and a `Does it work?` example showing `Ashler` corrected to `Ashlr.AI`.
-   Setup writes the lexicon in the temporary directory; it does not configure an
-   agent in this run.
-
-3. Show a separate correction using the saved term:
-
-   ```sh
-   node "$cast_cli" normalize "ping Ashler about the launch"
-   ```
-
-   Expect `ping Ashlr.AI about the launch`. End the shell and remove the temporary
-   directory when finished. For a real client setup, follow [QUICKSTART.md](QUICKSTART.md)
-   and [CLIENTS.md](CLIENTS.md).
-
 ## Use it with
 
 One lexicon, applied wherever your voice lands. Pick your surface. Which of these
@@ -121,6 +78,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | Page | What it covers |
 |---|---|
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Setup, the test layout, and a recipe for each kind of contribution |
+| [setup-cast-outline.md](setup-cast-outline.md) | Reproducible, synthetic-data setup recording plan |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The module map and the design decisions behind it |
 | [CONTRACT.md](CONTRACT.md) | The per-module API every change is written against |
 | [RELEASING.md](RELEASING.md) | Cutting a release: npm, GitHub assets, the Homebrew bump |
