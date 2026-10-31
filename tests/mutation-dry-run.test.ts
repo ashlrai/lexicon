@@ -89,7 +89,8 @@ describe('mutation handler previews', () => {
     expect(await snapshot()).toEqual(before);
     const actual = makeIO();
     expect(await runRemove('ashlr.ai', { cwd, json: true }, actual)).toBe(0);
-    const { dryRun, ...expected } = plan;
+    const { dryRun, plan: marker, ...expected } = plan;
+    expect(marker).toBe(true);
     expect(dryRun).toBe(true);
     expect(JSON.parse(actual.out)).toEqual(expected);
     const loaded = await loadLexicon({ cwd, globalPath });
@@ -113,7 +114,8 @@ describe('mutation handler previews', () => {
     expect(await snapshot()).toEqual(before);
     const actual = makeIO();
     expect(await runRemove('Ashlr.AI', { cwd, alias: 'Ashler', json: true }, actual)).toBe(0);
-    const { dryRun, ...expected } = plan;
+    const { dryRun, plan: marker, ...expected } = plan;
+    expect(marker).toBe(true);
     expect(dryRun).toBe(true);
     expect(JSON.parse(actual.out)).toEqual(expected);
     const loaded = await loadLexicon({ cwd, globalPath });
@@ -149,7 +151,8 @@ describe('mutation handler previews', () => {
     expect(await snapshot()).toEqual(before);
     const actual = makeIO();
     expect(await runLearn(['Ashlar', 'Ashlr.AI'], { cwd, json: true }, actual)).toBe(0);
-    const { dryRun, ...plan } = JSON.parse(preview.out);
+    const { dryRun, plan: marker, ...plan } = JSON.parse(preview.out);
+    expect(marker).toBe(true);
     expect(dryRun).toBe(true);
     expect(JSON.parse(actual.out)).toEqual(plan);
     expect((await loadLexicon({ cwd, globalPath })).merged.terms[0].aliases).toEqual(['Ashler', 'Ashlar']);
@@ -233,8 +236,10 @@ describe('mutation handler previews', () => {
     expect(await snapshot()).toEqual(before);
     const actual = makeIO();
     expect(await runPackAdd(['voice-tools'], { cwd, globalPath, json: true }, actual)).toBe(0);
-    const { dryRun, ...expected } = plan;
+    const { dryRun, plan: marker, ok, ...expected } = plan;
     expect(dryRun).toBe(true);
+    expect(marker).toBe(true);
+    expect(ok).toBe(true);
     expect(JSON.parse(actual.out)).toEqual([expected]);
   });
 

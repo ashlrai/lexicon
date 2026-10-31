@@ -1,3 +1,4 @@
+import { dryRunPlan } from './dry-run-plan.js';
 /**
  * The term-management commands -- init, add, remove, list, normalize, harvest,
  * export, path. The larger commands live in their own `cmd-*.ts` modules and
@@ -297,7 +298,7 @@ export async function runInit(opts: InitOptions, io: IO): Promise<number> {
   if (opts.json) {
     line(
       io,
-      JSON.stringify(jsonOk({ scope, path: target, created, ...(dry ? { dryRun: true } : {}), ...(trust !== undefined ? { trust } : {}), ...(untrustedStep ? { nextStep: untrustedStep } : {}) })),
+      JSON.stringify(jsonOk({ ...dryRunPlan(dry), scope, path: target, created, ...(dry ? { dryRun: true } : {}), ...(trust !== undefined ? { trust } : {}), ...(untrustedStep ? { nextStep: untrustedStep } : {}) })),
     );
     return 0;
   }
@@ -488,6 +489,7 @@ export async function runAdd(
       io,
       JSON.stringify(
         jsonOk({
+          ...dryRunPlan(opts.dryRun),
           term: result.term,
           path: result.file.path,
           created: result.created,
@@ -598,7 +600,7 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     // A miss is a failure document like every other --json refusal: `ok: false` and `error` lead it;
     // a removal leads with `ok: true`.
     const failure = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ''}`, missStep);
-    line(io, JSON.stringify(removed ? jsonOk({ canonical: removedName, removed, ...extra }) : { ...failure, canonical, removed, ...extra }));
+    line(io, JSON.stringify(removed ? jsonOk({ ...dryRunPlan(dry), canonical: removedName, removed, ...extra }) : { ...failure, canonical, removed, ...extra }));
     if (!removed) io.stderr(notFound());
     return removed ? 0 : 1;
   }
@@ -703,7 +705,7 @@ async function runRemoveAlias(
   }
   const paths = result.files.map((f) => f.path);
   if (opts.json) {
-    line(io, JSON.stringify(jsonOk({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra })));
+    line(io, JSON.stringify(jsonOk({ ...dryRunPlan(dry), canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra })));
     return 0;
   }
   line(io, `${dry ? 'would remove' : 'removed'} alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safeMessage(paths.join(', '))}`);

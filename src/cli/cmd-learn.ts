@@ -1,3 +1,4 @@
+import { dryRunPlan } from './dry-run-plan.js';
 /**
  * `lexicon learn` and `lexicon stats`: record a spelling correction from the
  * command line (or from a pasted sentence) and report how the lexicon is used.
@@ -190,6 +191,7 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
         io,
         JSON.stringify(
           jsonOk({
+            ...dryRunPlan(opts.dryRun),
             ...rest,
             path: file.path,
             file: { path: file.path, scope: file.scope },
