@@ -252,6 +252,24 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it('identifies each noncharacter in separate canonical names from the same YAML document', () => {
+    const input = parseYaml('terms:\n  - canonical: Valid\n  - canonical: "Ash\\uFFFElr"\n  - canonical: "Rocket\\uFFFFship"\n');
+    const result = LexiconSchema.safeParse(input);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected both noncharacters to be rejected');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['terms', 1, 'canonical'],
+        message: 'must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ash\\uFFFElr"',
+      },
+      {
+        path: ['terms', 2, 'canonical'],
+        message: 'must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket\\uFFFFship"',
+      },
+    ]);
+  });
+
   it.each([
     ['canonical', { canonical: 'Ash\uFFFFlr' }, ['canonical'], 'Ash\\uFFFFlr'],
     ['aliases', { canonical: 'Ashlr.AI', aliases: ['valid', 'Ash\uFFFFler'] }, ['aliases', 1], 'Ashlr.AI'],
