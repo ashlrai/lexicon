@@ -30,6 +30,8 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Changed
 
+- The built-in example lexicon (`DEMO_LEXICON`), which `lexicon normalize` uses on argument text when your own lexicon is empty and `lexicon setup` falls back to for its closing demo, includes Hetzner again: `lexicon normalize "deploy on head sner"` now prints `deploy on Hetzner` with the example notice instead of echoing the input unchanged. The notice names the example's terms by reading them off `DEMO_LEXICON`, so it cannot drift from the term list. Closes #217.
+
 - Large phonetic pack lookups use a length index to skip impossible candidates while preserving matching results.
 
 - `lexicon --version` and `lexicon --help` return before the lexicon core loads. A command loads its handler the first time it runs, and the MCP server loads the core on the first tool, resource, or prompt that reads a lexicon. Version text, help text, and tool results are unchanged.

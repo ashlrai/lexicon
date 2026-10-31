@@ -65,12 +65,12 @@ It ends at the first non-blank line indented less than that; a blank line inside
 
 Every replacement carries `reason` (`alias`, `phonetic`, `fuzzy`) and `confidence`. `--dry-run` (CLI and MCP) returns the candidates without applying them.
 
-With no lexicon of your own the command below uses the built-in example and says so on stderr. Hetzner is not in that example (`head sner` is unchanged until you add it, or until you point `LEXICON_PATH` at a file that has it, such as `examples/lexicon.example.yaml`).
+With no lexicon of your own the command below uses the built-in example and says so on stderr. The example includes Hetzner (`deploy on head sner` corrects to `deploy on Hetzner`); for anything else add your own terms, or point `LEXICON_PATH` at a file that has them, such as `examples/lexicon.example.yaml`.
 
 ```bash
 lexicon normalize --diff "ask ashler to deploy kuber netties and kubernetees"
 # stderr:
-#   lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS).
+#   lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS, Hetzner).
 #   lexicon: run `lexicon setup` to build your own; nothing was written.
 #   "ashler" -> "Ashlr.AI" (alias, 1.00)
 #   "kuber netties" -> "Kubernetes" (phonetic, 0.88)

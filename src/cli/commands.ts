@@ -934,11 +934,14 @@ export async function runNormalize(
     if (useExample) {
       // A skipped project file holds terms; they are just not trusted yet, so
       // the way to them is `lexicon trust`, not building a lexicon from scratch.
+      // The term list is read off DEMO_LEXICON itself, so the notice cannot
+      // drift from the example it announces.
+      const terms = DEMO_LEXICON.terms.map((t) => t.canonical).join(', ');
       io.stderr(
         loaded.skippedProject
-          ? 'lexicon: no trusted terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS).\n' +
+          ? `lexicon: no trusted terms yet, so this is the built-in example (${terms}).\n` +
               'lexicon: the project lexicon is not trusted, so its terms were not used; review it and run `lexicon trust` to use them. Nothing was written.\n'
-          : 'lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS).\n' +
+          : `lexicon: no terms yet, so this is the built-in example (${terms}).\n` +
               'lexicon: run `lexicon setup` to build your own; nothing was written.\n',
       );
     }
