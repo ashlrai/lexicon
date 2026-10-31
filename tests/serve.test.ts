@@ -3462,6 +3462,23 @@ describe('packs and aliases routes', () => {
     }
   });
 
+  it('serves the aliases endpoint walkthrough examples', async () => {
+    const doc = await fs.readFile(new URL('../docs/aliases-endpoint-examples.md', import.meta.url), 'utf8');
+    const examples = [...doc.matchAll(/```http\nGET (\/aliases[^\n]*)\n```\n\nHTTP (\d{3}):\n\n```json\n([^\n]+)\n```/g)];
+    expect(examples.map((example) => example[1])).toEqual([
+      '/aliases?canonical=Mason%20Wyatt',
+      '/aliases?canonical=%20Ashlr%E2%80%8B.AI%20',
+      '/aliases?canonical=Bob',
+      '/aliases',
+      '/aliases?canonical=Vercel&limit=3',
+    ]);
+    for (const [, route, status, body] of examples) {
+      const response = await api2('GET', route!);
+      expect(response.status, route).toBe(Number(status));
+      expect(await response.json(), route).toEqual(JSON.parse(body!));
+    }
+  });
+
   it('serves the request and error examples in the aliases response reference', async () => {
     const doc = await fs.readFile(new URL('../docs/aliases-response-reference.md', import.meta.url), 'utf8');
     const examples = [...doc.matchAll(/```http\nGET (\/aliases[^\n]*)\n```[\s\S]*?HTTP (\d{3})[^\n]*\n\n```json\n([^\n]+)\n```/g)];
