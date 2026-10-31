@@ -270,7 +270,7 @@ function walk(root, rel, out) {
   }
 }
 
-/** Relative paths of every file under the scan roots that carries a marker. */
+/** Forward-slash relative paths of every marked file, sorted in UTF-16 order. */
 export function markedFiles(root = repoRoot) {
   const all = [];
   for (const rel of SCAN_ROOTS) walk(root, rel, all);
@@ -282,6 +282,7 @@ export function markedFiles(root = repoRoot) {
         return false;
       }
     })
+    .map((rel) => rel.split(path.sep).join('/'))
     .sort((a, b) => a < b ? -1 : a > b ? 1 : 0);
 }
 
