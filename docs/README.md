@@ -84,6 +84,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 |---|---|
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Setup, the test layout, and a recipe for each kind of contribution |
 | [setup-cast-outline.md](setup-cast-outline.md) | Reproducible, synthetic-data setup recording plan |
+| [setup-contract-summary.md](setup-contract-summary.md) | Guided first-run responsibilities, preview boundaries and open questions |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The module map and the design decisions behind it |
 | [CONTRACT.md](CONTRACT.md) | The per-module API every change is written against |
 | [tray-action-map.md](tray-action-map.md) | Issue #13 tray actions, existing CLI and Windows capabilities, and open platform decisions |
