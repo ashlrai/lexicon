@@ -60,6 +60,7 @@ settings:
 `lexicon edit` opens the global file (`--project` for `.lexicon.yaml`) in `$VISUAL` / `$EDITOR` and validates it when the editor exits, reporting any schema error with the path so your edits are never lost. A trusted project file is re-pinned after the edit. Without a terminal (a pipe, CI, an agent's shell) a terminal editor such as vim or nano is refused rather than left waiting for keys; an editor that opens a window (`VISUAL="code --wait"`) still works.
 
 Parsing is defensive: fields are length-capped and stripped of zero-width and bidi characters, and oversized files are refused. The limits and the reasoning are in [TRUST.md](TRUST.md#the-rest-of-the-hardening).
+For examples of validation errors involving invalid code units and shortened term names, see [schema error examples](schema-error-examples.md).
 
 ## See also
 

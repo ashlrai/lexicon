@@ -52120,10 +52120,12 @@ async function readRegularFileTail(filePath, maxBytes) {
     if (!st.isFile()) throw notRegular(filePath);
     const length = Math.min(st.size, maxBytes);
     const start = st.size - length;
-    const buf = Buffer.alloc(length);
+    const readStart = start > 0 ? start - 1 : start;
+    const readLength = length + (start > 0 ? 1 : 0);
+    const buf = Buffer.alloc(readLength);
     let got = 0;
-    while (got < length) {
-      const { bytesRead } = await handle.read(buf, got, length - got, start + got);
+    while (got < readLength) {
+      const { bytesRead } = await handle.read(buf, got, readLength - got, readStart + got);
       if (bytesRead === 0) break;
       got += bytesRead;
     }
@@ -60764,10 +60766,12 @@ async function installLoadedPack(pack, recordAs, opts = {}) {
     });
     if (incoming.length === 0) throw new Error(`pack "${pack.name}" has no terms`);
     const before = await readTextIfAny(targetPath);
+    const current = await readLexiconFile(targetPath, scope);
+    const packs = dedupe([...current.lexicon.settings?.packs ?? [], recordAs]);
+    parseLexicon({ ...current.lexicon, settings: { ...current.lexicon.settings, packs } });
     const { file: file2, results } = await addTerms(incoming, { ...storeOpts3, scope, leaveUntrusted });
     const added = results.filter((r) => r.created).length;
     const merged = results.length - added;
-    const packs = dedupe([...file2.lexicon.settings?.packs ?? [], recordAs]);
     if (opts.dryRun) {
       const alreadyInstalled3 = before !== void 0 && results.every((r) => r.unchanged === true) && packs.length === (file2.lexicon.settings?.packs ?? []).length;
       return { pack: info(pack), added, merged, path: file2.path, scope, alreadyInstalled: alreadyInstalled3 };
@@ -60988,6 +60992,13 @@ var init_demo = __esm({
           aliases: ["sass"],
           category: "acronym",
           never: ["sauce"]
+        },
+        {
+          canonical: "Hetzner",
+          aliases: ["head sner", "hetsner"],
+          phonetic: "HETS-ner",
+          category: "brand",
+          notes: "Hosting provider."
         }
       ]
     };
@@ -62780,6 +62791,15 @@ var init_config = __esm({
       foreign: "Something other than lexicon serve answers on this port. Stop that program, or run the local API on another port: lexicon serve --port <n>."
     };
     FOREIGN_HEALTH_ERROR = "something else answers on that port: its /health response is not lexicon serve's";
+  }
+});
+
+// src/cli/dry-run-plan.ts
+function dryRunPlan(dryRun) {
+  return dryRun === true ? { plan: true } : {};
+}
+var init_dry_run_plan = __esm({
+  "src/cli/dry-run-plan.ts"() {
   }
 });
 
@@ -73368,7 +73388,7 @@ async function runInit(opts, io) {
   if (opts.json) {
     line(
       io,
-      JSON.stringify(jsonOk({ scope, path: target, created, ...dry ? { dryRun: true } : {}, ...trust !== void 0 ? { trust } : {}, ...untrustedStep ? { nextStep: untrustedStep } : {} }))
+      JSON.stringify(jsonOk({ ...dryRunPlan(dry), scope, path: target, created, ...dry ? { dryRun: true } : {}, ...trust !== void 0 ? { trust } : {}, ...untrustedStep ? { nextStep: untrustedStep } : {} }))
     );
     return 0;
   }
@@ -73497,6 +73517,7 @@ async function runAdd(canonical, aliasArgs, opts, io, prompter) {
       io,
       JSON.stringify(
         jsonOk({
+          ...dryRunPlan(opts.dryRun),
           term: result.term,
           path: result.file.path,
           created: result.created,
@@ -73571,7 +73592,7 @@ async function runRemove(canonical, opts, io) {
   const extra = { ...dry ? { dryRun: true } : {}, ...stillIn.length > 0 ? { stillIn } : {}, ...untrusted ? { untrustedProject: untrusted } : {} };
   if (opts.json) {
     const failure2 = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ""}`, missStep);
-    line(io, JSON.stringify(removed ? jsonOk({ canonical: removedName, removed, ...extra }) : { ...failure2, canonical, removed, ...extra }));
+    line(io, JSON.stringify(removed ? jsonOk({ ...dryRunPlan(dry), canonical: removedName, removed, ...extra }) : { ...failure2, canonical, removed, ...extra }));
     if (!removed) io.stderr(notFound());
     return removed ? 0 : 1;
   }
@@ -73632,7 +73653,7 @@ async function runRemoveAlias(canonical, alias, opts, scope, cwd, io) {
   }
   const paths = result.files.map((f) => f.path);
   if (opts.json) {
-    line(io, JSON.stringify(jsonOk({ canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra })));
+    line(io, JSON.stringify(jsonOk({ ...dryRunPlan(dry), canonical: result.term.canonical, alias, removed: true, aliases: result.term.aliases, paths, ...extra })));
     return 0;
   }
   line(io, `${dry ? "would remove" : "removed"} alias ${bold(safe(alias))} from ${bold(safe(result.term.canonical))} in ${safeMessage(paths.join(", "))}`);
@@ -73760,8 +73781,13 @@ async function runNormalize(args, opts, io, readInput = readStdin) {
     warnSkippedProject(loaded, io);
     const useExample = fromArgs && isEmptyLexicon(loaded.merged);
     if (useExample) {
+      const terms = DEMO_LEXICON.terms.map((t) => t.canonical).join(", ");
       io.stderr(
-        loaded.skippedProject ? "lexicon: no trusted terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS).\nlexicon: the project lexicon is not trusted, so its terms were not used; review it and run `lexicon trust` to use them. Nothing was written.\n" : "lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS).\nlexicon: run `lexicon setup` to build your own; nothing was written.\n"
+        loaded.skippedProject ? `lexicon: no trusted terms yet, so this is the built-in example (${terms}).
+lexicon: the project lexicon is not trusted, so its terms were not used; review it and run \`lexicon trust\` to use them. Nothing was written.
+` : `lexicon: no terms yet, so this is the built-in example (${terms}).
+lexicon: run \`lexicon setup\` to build your own; nothing was written.
+`
       );
     }
     const result = normalize(text, useExample ? DEMO_LEXICON : loaded.merged, normalizeOpts);
@@ -74064,6 +74090,7 @@ async function runPath(opts, io) {
 var import_node_fs33, import_node_path33, EXAMPLE_TERM_COMMENT, SAME_AS_CANONICAL_REASON;
 var init_commands = __esm({
   "src/cli/commands.ts"() {
+    init_dry_run_plan();
     import_node_fs33 = __toESM(require_node_fs());
     import_node_path33 = __toESM(require_node_path());
     init_core3();
@@ -74996,11 +75023,16 @@ ${emptyLexiconNote3()}
 async function main() {
   const server = createServer2();
   const transport = new StdioServerTransport();
+  let shuttingDown = false;
   const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     server.close().finally(() => process.exit(0));
   };
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
+  process.stdin.once("end", shutdown);
+  process.stdin.once("close", shutdown);
   await server.connect(transport);
   log("server started (stdio)");
 }

@@ -30,7 +30,6 @@
  * Typed text is never logged: a key source sees passwords too.
  */
 import net from 'node:net';
-import os from 'node:os';
 import path from 'node:path';
 import { promises as fs } from 'node:fs';
 import { buildIndex, loadLexicon, normalizeWithIndex, sanitizeForDisplayMax } from '../core/index.js';
@@ -39,8 +38,10 @@ import { LEXICON_RELOAD_MS, MAX_CLIPBOARD_CHARS, lexiconFilesStamp, runClipboard
 import type { ClipboardCommonOptions, ClipboardDaemonStop, ClipboardOnceResult } from './clipboard.js';
 import { Expander, isExpanderNamedKey } from './expander.js';
 import type { ExpanderOptions, ExpansionAction } from './expander.js';
-import { xdgStateHome } from '../util/xdg.js';
+import { cliReadContext, defaultExpanderSocketPath, isFastRead } from './fast-client.js';
 import { packageVersion } from '../util/package.js';
+
+export { defaultExpanderSocketPath } from './fast-client.js';
 
 export interface ExpanderServerOptions extends ClipboardCommonOptions {
   /** Socket path (named pipe on Windows). Default defaultExpanderSocketPath(). */
@@ -61,26 +62,6 @@ export const MAX_EXPANDER_REQUEST_CHARS = 4 * MAX_CLIPBOARD_CHARS;
 export const MAX_EXPANDER_TYPE_CHARS = 4096;
 /** Most bytes a Unix socket path may have (macOS and the BSDs: 104 with the NUL). */
 const MAX_UNIX_SOCKET_PATH_BYTES = 103;
-
-/** Where `lexicon daemon --expander` listens unless `--socket` says otherwise. */
-export function defaultExpanderSocketPath(
-  env: NodeJS.ProcessEnv = process.env,
-  platform: NodeJS.Platform = process.platform,
-  home: string = os.homedir(),
-): string {
-  if (platform === 'win32') {
-    let user = 'user';
-    try {
-      user = os.userInfo().username;
-    } catch {
-      // no user database entry; the pipe's ACL still limits it to this user
-    }
-    return `\\\\.\\pipe\\lexicon-expander-${user.replace(/[^\w.-]/g, '_')}`;
-  }
-  const runtime = env.XDG_RUNTIME_DIR?.trim();
-  const base = runtime && path.isAbsolute(runtime) ? runtime : xdgStateHome(env, home);
-  return path.join(base, 'lexicon', 'expander.sock');
-}
 
 function errorMessage(e: unknown): string {
   return e instanceof Error ? e.message : String(e);
@@ -215,6 +196,37 @@ export function createExpanderSession(ctx: ConnectionContext): (req: unknown) =>
   return async (req: unknown): Promise<Json> => {
     if (!isRecord(req) || typeof req.op !== 'string') throw new Error('request must be a JSON object with an "op"');
     switch (req.op) {
+      case 'cli-read': {
+        // Use the CLI's fresh load, never the expander's stale-on-error cache.
+        if (req.context !== cliReadContext() || !Array.isArray(req.argv) ||
+            !req.argv.every((a: unknown) => typeof a === 'string') || !isFastRead(req.argv)) {
+          throw new Error('CLI read context or command not supported');
+        }
+        const argv = req.argv as string[];
+        const { runStats } = await import('../cli/cmd-learn.js');
+        const { buildProgram } = await import('../cli/program.js');
+        const commands = await import('../cli/commands.js');
+        const { cwdOptionProblem } = await import('../cli/io.js');
+        let stdout = '', stderr = '', code = 0;
+        const io = { stdout: (s: string) => { stdout += s; }, stderr: (s: string) => { stderr += s; } };
+        const program = buildProgram(io).configureOutput({ writeOut: io.stdout, writeErr: io.stderr });
+        const command = program.commands.find((c) => c.name() === argv[0] || c.aliases().includes(argv[0]))!;
+        command.configureOutput({ writeOut: io.stdout, writeErr: io.stderr }).exitOverride().action(async (...args: unknown[]) => {
+          const opts: Record<string, unknown> & { cwd: string } = { ...command.opts(), cwd: program.opts().cwd ?? process.cwd() };
+          const problem = cwdOptionProblem(opts.cwd);
+          if (problem) throw problem;
+          // Inspect parsed options, so abbreviations and --out=file cannot write.
+          if (opts.out !== undefined) throw new Error('CLI file exports use the direct path');
+          switch (command.name()) {
+            case 'list': code = await commands.runList(opts, io); break;
+            case 'stats': code = await runStats(opts, io); break;
+            case 'path': code = await commands.runPath(opts, io); break;
+            case 'export': code = await commands.runExport(args[0] as string | undefined, opts, io); break;
+          }
+        });
+        await program.parseAsync(argv, { from: 'user' });
+        return { stdout, stderr, code };
+      }
       case 'ping': {
         const lex = await ctx.lexicon.get();
         return { version: ctx.version, terms: lex.loaded.merged.terms.length };
@@ -257,7 +269,7 @@ export function createExpanderSession(ctx: ConnectionContext): (req: unknown) =>
         return { ...(await ctx.clipboard(req.paste === true)) };
       }
       default:
-        throw new Error(`unknown op; expected ping, normalize, type, key, reset or clipboard`);
+        throw new Error(`unknown op; expected ping, normalize, type, key, reset, clipboard or cli-read`);
     }
   };
 }

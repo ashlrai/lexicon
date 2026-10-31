@@ -252,6 +252,44 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it('identifies each noncharacter in separate canonical names from the same YAML document', () => {
+    const input = parseYaml('terms:\n  - canonical: Valid\n  - canonical: "Ash\\uFFFElr"\n  - canonical: "Rocket\\uFFFFship"\n');
+    const result = LexiconSchema.safeParse(input);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected both noncharacters to be rejected');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['terms', 1, 'canonical'],
+        message: 'must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ash\\uFFFElr"',
+      },
+      {
+        path: ['terms', 2, 'canonical'],
+        message: 'must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket\\uFFFFship"',
+      },
+    ]);
+  });
+
+  it.each([
+    ['canonical', { canonical: 'Ash\uFFFFlr' }, ['canonical'], 'Ash\\uFFFFlr'],
+    ['aliases', { canonical: 'Ashlr.AI', aliases: ['valid', 'Ash\uFFFFler'] }, ['aliases', 1], 'Ashlr.AI'],
+    ['never', { canonical: 'Ashlr.AI', never: ['valid', 'Ash\uFFFFler'] }, ['never', 1], 'Ashlr.AI'],
+    ['phonetic', { canonical: 'Ashlr.AI', phonetic: 'Ash\uFFFFler' }, ['phonetic'], 'Ashlr.AI'],
+    ['notes', { canonical: 'Ashlr.AI', notes: 'Ash\uFFFFler' }, ['notes'], 'Ashlr.AI'],
+    ['createdAt', { canonical: 'Ashlr.AI', createdAt: '2026\uFFFF' }, ['createdAt'], 'Ashlr.AI'],
+  ])('rejects U+FFFF in term %s with a specific structured error', (_field, term, path, name) => {
+    const result = TermSchema.safeParse(term);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected U+FFFF to be rejected');
+    expect(result.error.issues.map(({ path: issuePath, message }) => ({ path: issuePath, message }))).toEqual([
+      {
+        path,
+        message: `must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "${name}"`,
+      },
+    ]);
+  });
+
   it('reports U+FFFF as the first unencodable character in settings', () => {
     const word = 'Rocket \u{1F680}\uFFFF\uFFFE';
 
@@ -272,6 +310,39 @@ describe('hardening (lexicon content reaches model context)', () => {
       'terms[0].aliases[0]: must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ashlr.AI"',
     );
     expect(findUnencodableChar('ok\uFFFE\uFFFF')).toBe('U+FFFE');
+  });
+
+  it('reports U+FFFE after a valid surrogate pair and before a second noncharacter', () => {
+    const text = '\u{1F680}\uFFFE\uFFFF';
+
+    expect(findUnencodableChar(text)).toBe('U+FFFE');
+    expect(() => parseLexicon({ terms: [{ canonical: 'Rocket', notes: text }] })).toThrow(
+      'terms[0].notes: must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket"',
+    );
+    expect(() => parseLexicon({ terms: [], settings: { protectedWords: [text] } })).toThrow(
+      'settings.protectedWords[0]: must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format)',
+    );
+  });
+
+  it.each([
+    [{ canonical: 'Ash\uFFFElr' }, ['canonical'], 'Ash\\uFFFElr'],
+    [{ canonical: 'Ashlr.AI', aliases: ['valid', 'Ash\uFFFEler'] }, ['aliases', 1], 'Ashlr.AI'],
+    [{ canonical: 'Ashlr.AI', never: ['valid', 'Ash\uFFFEler'] }, ['never', 1], 'Ashlr.AI'],
+    [{ canonical: 'Ashlr.AI', phonetic: 'ash\uFFFEler' }, ['phonetic'], 'Ashlr.AI'],
+    [{ canonical: 'Ashlr.AI', notes: 'note\uFFFE' }, ['notes'], 'Ashlr.AI'],
+    [{ canonical: 'Ashlr.AI', createdAt: '2026\uFFFE' }, ['createdAt'], 'Ashlr.AI'],
+  ])('rejects U+FFFE in standalone term field %#', (term, path, name) => {
+    const result = TermSchema.safeParse(term);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected U+FFFE to be rejected');
+    expect(result.error.issues).toMatchObject([
+      {
+        code: 'custom',
+        path,
+        message: `must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "${name}"`,
+      },
+    ]);
   });
 
   // Catches: U+FFFE, U+FFFF and an unpaired surrogate passed the schema
@@ -318,6 +389,47 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it('safely renders an unpaired high surrogate in a term name across validation errors', () => {
+    const input = { terms: [{ canonical: 'Rocket \uD83Dship', aliases: ['\uFFFF'] }] };
+    const reason = 'U+FFFE, U+FFFF and unpaired surrogates fit no file format';
+
+    try {
+      parseLexicon(input);
+      throw new Error('Expected the invalid term to be rejected');
+    } catch (error) {
+      expect(error).toBeInstanceOf(Error);
+      const message = (error as Error).message;
+      expect(message).toBe(
+        `Invalid lexicon:\n  - terms[0].canonical: must not contain U+D83D (${reason}) in term "Rocket \\uD83Dship"\n` +
+        `  - terms[0].aliases[0]: must not contain U+FFFF (${reason}) in term "Rocket \\uD83Dship"`,
+      );
+      expect(Buffer.from(message, 'utf8').toString('utf8')).toBe(message);
+    }
+  });
+
+  it.each(['D800', 'DBFF'])('reports an unpaired high surrogate U+%s from YAML with a readable term label', (hex) => {
+    const input = parseYaml(`terms:\n  - canonical: "Rocket \\u${hex}ship"\n`);
+    const result = LexiconSchema.safeParse(input);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected an unpaired high surrogate to be rejected');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['terms', 0, 'canonical'],
+        message: `must not contain U+${hex} (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket \\u${hex}ship"`,
+      },
+    ]);
+  });
+
+  it('reports an unpaired high surrogate immediately before a valid pair', () => {
+    const canonical = 'Rocket \uDBFF\uD83D\uDE80';
+
+    expect(findUnencodableChar(canonical)).toBe('U+DBFF');
+    expect(() => parseLexicon({ terms: [{ canonical }] })).toThrow(
+      'terms[0].canonical: must not contain U+DBFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket \\uDBFF🚀"',
+    );
+  });
+
   it.each([
     ['U+FFFF then U+FFFE', '\uFFFFa\uFFFE', 'U+FFFF'],
     ['U+FFFE then an unpaired high surrogate', '\uFFFEa\uD800', 'U+FFFE'],
@@ -351,6 +463,51 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(() => parseLexicon({ terms: [], settings: { protectedWords: ['a\uDC00b'] } })).toThrow(
       'settings.protectedWords[0]: must not contain U+DC00 (U+FFFE, U+FFFF and unpaired surrogates fit no file format)',
     );
+  });
+
+  it.each(['DC00', 'DFFF'])('rejects an unpaired low surrogate U+%s in a YAML alias', (hex) => {
+    const input = parseYaml(`terms:\n  - canonical: Rocket\n    aliases: ["valid", "ship\\u${hex}name"]\n`);
+    const result = LexiconSchema.safeParse(input);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected an unpaired low surrogate in the alias to be rejected');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['terms', 0, 'aliases', 1],
+        message: `must not contain U+${hex} (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket"`,
+      },
+    ]);
+    expect(() => parseLexicon(input)).toThrow(
+      `terms[0].aliases[1]: must not contain U+${hex} (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket"`,
+    );
+  });
+
+  it.each(['DC00', 'DFFF'])('reports an unpaired low surrogate U+%s from YAML with a readable term label', (hex) => {
+    const input = parseYaml(`terms:\n  - canonical: "Rocket \\u${hex}ship"\n`);
+    const result = LexiconSchema.safeParse(input);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected an unpaired low surrogate to be rejected');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['terms', 0, 'canonical'],
+        message: `must not contain U+${hex} (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket \\u${hex}ship"`,
+      },
+    ]);
+  });
+
+  it.each(['DC00', 'DFFF'])('safely reports an unpaired low surrogate U+%s after a valid pair in a term name', (hex) => {
+    const canonical = `Rocket \u{1F680}${String.fromCharCode(parseInt(hex, 16))}ship`;
+    const input = { terms: [{ canonical }] };
+    const result = LexiconSchema.safeParse(input);
+    const message = `must not contain U+${hex} (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket 🚀\\u${hex}ship"`;
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected an unpaired low surrogate to be rejected');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      { path: ['terms', 0, 'canonical'], message },
+    ]);
+    expect(() => parseLexicon(input)).toThrow(`terms[0].canonical: ${message}`);
   });
 
   it('accepts and preserves paired surrogates in term and settings text', () => {
@@ -395,6 +552,60 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(findUnencodableChar(character)).toBeUndefined();
     expect(parsed.terms[0].canonical).toBe(`Name ${character}`);
     expect(parsed.settings?.protectedWords).toEqual([character]);
+
+    const canonical = parsed.terms[0].canonical;
+    const protectedWord = parsed.settings?.protectedWords?.[0];
+    if (protectedWord === undefined) throw new Error('Expected a protected word');
+    expect(findUnencodableChar(canonical)).toBeUndefined();
+    expect(findUnencodableChar(protectedWord)).toBeUndefined();
+    expect(canonical.codePointAt(5)).toBe(0x20000);
+    expect(protectedWord.codePointAt(0)).toBe(0x20000);
+    expect(protectedWord.charCodeAt(0)).toBe(0xd840);
+    expect(protectedWord.charCodeAt(1)).toBe(0xdc00);
+  });
+
+  // U+20BB7 (𠮷), a CJK Extension B ideograph from plane 2: the "Yoshiki"
+  // name kanji is the sort of supplementary character a lexicon of names
+  // actually carries, and its high surrogate U+D842 sits outside the range
+  // the emoji pairs above exercise.
+  it('accepts and preserves a supplementary character in an alias', () => {
+    const yoshiki = '\u{20BB7}';
+    const alias = `Tsuchi${yoshiki}ya`;
+    const lex = parseLexicon({ terms: [{ canonical: 'Ashlr.AI', aliases: [alias, yoshiki, `${yoshiki}top`, `tail${yoshiki}`] }] });
+
+    expect(lex.terms[0].aliases).toEqual([alias, yoshiki, `${yoshiki}top`, `tail${yoshiki}`]);
+    // Preserved code unit for code unit: still one supplementary code point
+    // encoded as the same pair, not normalized or dropped.
+    const embedded = lex.terms[0].aliases[0];
+    expect(embedded.codePointAt(6)).toBe(0x20bb7);
+    expect(embedded.charCodeAt(6)).toBe(0xd842);
+    expect(embedded.charCodeAt(7)).toBe(0xdfb7);
+    expect(lex.terms[0].aliases[1]).toHaveLength(2);
+    expect(findUnencodableChar(alias)).toBeUndefined();
+  });
+
+  it('accepts a supplementary character spelled as a YAML \\U escape in an alias', () => {
+    // The 8-digit \U escape is how a hand-edited file spells an astral
+    // character its editor cannot type.
+    const input = parseYaml('terms:\n  - canonical: Ashlr.AI\n    aliases: ["Tsuchi\\U00020BB7ya"]\n');
+    expect(parseLexicon(input).terms[0].aliases).toEqual(['Tsuchi\u{20BB7}ya']);
+
+    // The 4-digit \u escape cannot spell one: "\uD842" reads as a lone high
+    // surrogate, which the unpaired-surrogate guard still refuses.
+    const loneHalf = parseYaml('terms:\n  - canonical: Ashlr.AI\n    aliases: ["\\uD842"]\n');
+    expect(() => parseLexicon(loneHalf)).toThrow(
+      'terms[0].aliases[0]: must not contain U+D842 (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ashlr.AI"',
+    );
+  });
+
+  it('counts a supplementary character as one character toward the alias limit', () => {
+    // The word cap counts code points, not UTF-16 code units: 80
+    // supplementary characters (160 code units) fit exactly.
+    const word = '\u{20BB7}'.repeat(LIMITS.word);
+    expect(parseLexicon({ terms: [{ canonical: 'X', aliases: [word] }] }).terms[0].aliases).toEqual([word]);
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', aliases: [`${word}\u{20BB7}`] }] })).toThrow(
+      /terms\[0\]\.aliases\[0\]: must be at most 80 characters/,
+    );
   });
 
   it('rejects the Unicode line and paragraph separators like newlines', () => {
@@ -488,6 +699,48 @@ describe('hardening (lexicon content reaches model context)', () => {
     ]);
   });
 
+  it('enforces the 80-character word boundary on the fields of a standalone term', () => {
+    const word = 'w'.repeat(LIMITS.word);
+    const term = TermSchema.parse({ canonical: word, aliases: [word], never: [word] });
+    expect(term.canonical).toBe(word);
+    expect(term.aliases).toEqual([word]);
+    expect(term.never).toEqual([word]);
+
+    for (const [input, path] of [
+      [{ canonical: `${word}w` }, ['canonical']],
+      [{ canonical: 'X', aliases: [`${word}w`] }, ['aliases', 0]],
+      [{ canonical: 'X', never: [`${word}w`] }, ['never', 0]],
+    ] as const) {
+      const result = TermSchema.safeParse(input);
+      expect(result.success).toBe(false);
+      if (result.success) throw new Error('Expected the word limit to be enforced');
+      expect(result.error.issues).toMatchObject([
+        { code: 'too_big', path, maximum: LIMITS.word, message: 'must be at most 80 characters' },
+      ]);
+    }
+  });
+
+  // Catches: zod's .max counts code points, not UTF-16 code units, so a word
+  // of 80 emoji is in and one of 81 is out even though their .length is 160
+  // and 162. A refactor that measured .length (or a zod that did) would turn
+  // every astral name over 40 characters away at the door.
+  it('counts the word limit in code points: 80 astral characters pass, 81 fail', () => {
+    const rocket = '\u{1F680}'; // one code point, two UTF-16 code units
+    const atLimit = rocket.repeat(LIMITS.word);
+    expect(atLimit).toHaveLength(LIMITS.word * 2);
+    const lex = parseLexicon({ terms: [{ canonical: atLimit, aliases: [atLimit] }] });
+    expect(lex.terms[0].canonical).toBe(atLimit);
+    expect(lex.terms[0].aliases).toEqual([atLimit]);
+
+    const overLimit = rocket.repeat(LIMITS.word + 1);
+    expect(() => parseLexicon({ terms: [{ canonical: overLimit }] })).toThrow(
+      /terms\[0\]\.canonical: must be at most 80 characters/,
+    );
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', aliases: [overLimit] }] })).toThrow(
+      /terms\[0\]\.aliases\[0\]: must be at most 80 characters/,
+    );
+  });
+
   it('stripControlChars removes every control, separator and invisible character and nothing else', () => {
     const CR = cp(0x0d);
     const DEL = cp(0x7f);
@@ -548,6 +801,20 @@ describe('hardening (lexicon content reaches model context)', () => {
     if (overLimit.success) throw new Error('Expected the aliases limit to be enforced');
     expect(overLimit.error.issues).toMatchObject([
       { code: 'too_big', path: ['terms', 1, 'aliases'], maximum: 64, message: 'at most 64 aliases per term' },
+    ]);
+  });
+
+  it('enforces the standalone term alias limit after cleaning the list', () => {
+    const aliases = Array.from({ length: 64 }, (_, i) => `alias${i}`);
+    const input = [...aliases.map((alias) => ` ${ZW}${alias} `), '', ' ', ZW];
+
+    expect(TermSchema.parse({ canonical: 'X', aliases: input }).aliases).toEqual(aliases);
+
+    const result = TermSchema.safeParse({ canonical: 'X', aliases: [...input, ' alias64 '] });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the aliases limit to be enforced');
+    expect(result.error.issues).toMatchObject([
+      { code: 'too_big', path: ['aliases'], maximum: 64, message: 'at most 64 aliases per term' },
     ]);
   });
 

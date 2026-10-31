@@ -36,10 +36,12 @@ and the built-in-example note.
    [MATCHING.md](MATCHING.md), told a reader to run
    `lexicon normalize --diff "deploy to head sner with cuban eatties"` and
    expect `head sner` to become `Hetzner` (alias 1.00) and `cuban eatties` to
-   become `Kubernetes` (phonetic). On a blank home, published 0.5.4 and this
-   source both print `No changes` for that sentence. The built-in example
-   (`src/core/demo.ts`, `DEMO_LEXICON`) is Ashlr.AI, Kubernetes, PostgreSQL,
-   Pydantic and SaaS. Hetzner is not in it. `cuban eatties` is not an alias
+   become `Kubernetes` (phonetic). On a blank home, published 0.5.4 prints
+   `No changes` for that sentence. This source corrects `head sner` to
+   `Hetzner` (alias 1.00) and still prints `No changes` for `cuban eatties`:
+   the built-in example (`src/core/demo.ts`, `DEMO_LEXICON`) is Ashlr.AI,
+   Kubernetes, PostgreSQL, Pydantic, SaaS and Hetzner, which issue #217 put
+   back. `cuban eatties` is not an alias
    of Kubernetes. `cooper netties` is: the alias in the example is
    `Cooper Nettie's`, and it matches as an alias at 1.00, not as a phonetic
    guess. Both doc blocks now use a sentence the command actually corrects,
@@ -192,10 +194,10 @@ go to stderr.
 
 Ranked by how much of the product they touch.
 
-1. Small: add Hetzner back to the empty-lexicon demo ([#217](https://github.com/ashlrai/lexicon/issues/217)).
+1. Done: Hetzner is back in the empty-lexicon demo ([#217](https://github.com/ashlrai/lexicon/issues/217)).
 2. Small: keep a dotted brand when setup guesses a company from a scoped package ([#218](https://github.com/ashlrai/lexicon/issues/218)).
 3. Medium: `--dry-run` on `add`, `remove`, `learn`, `init`, `untrust` and built-in `pack add` ([#219](https://github.com/ashlrai/lexicon/issues/219)).
 4. Medium: off a TTY, `lexicon trust` requires `--yes` ([#216](https://github.com/ashlrai/lexicon/pull/216)).
 5. Medium: lazy-load the CLI and MCP entry points to cut startup ([#212](https://github.com/ashlrai/lexicon/pull/212)).
-6. Large: a resident system-wide expander as a separate surface ([#220](https://github.com/ashlrai/lexicon/issues/220)).
+6. Large: a resident system-wide expander as a separate surface ([#220](https://github.com/ashlrai/lexicon/issues/220)); see the [scope outline](resident-expander-scope.md).
 7. Release: npm still serves 0.5.4 ([#221](https://github.com/ashlrai/lexicon/issues/221)).

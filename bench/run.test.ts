@@ -15,7 +15,13 @@ it.each([
 });
 
 it('writes the documented non-English baseline with comparable subset metrics', () => {
-  const dir = mkdtempSync(join(tmpdir(), 'lexicon-name-bench-'));
+  const readme = readFileSync('bench/README.md', 'utf8');
+  const section = readme.split('## Repeat the non-English-name benchmark')[1]?.split('\n## ')[0];
+  const command = section?.match(/```bash\n([^\n]+)\n```/)?.[1];
+  expect(command).toBe('npm run bench -- --out /tmp/lexicon-name-benchmark.json');
+  const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: { bench: string } };
+  expect(pkg.scripts.bench).toBe('node --import tsx bench/run.ts');
+  const dir = mkdtempSync(join(tmpdir(), 'lexicon name bench &-'));
   try {
     const output = join(dir, 'results.json');
     const input = join(dir, 'corpus.jsonl');
@@ -28,10 +34,13 @@ it('writes the documented non-English baseline with comparable subset metrics', 
     ];
     if (cases.some((c) => c === undefined)) throw new Error('benchmark fixture is missing representative cases');
     writeFileSync(input, cases.map((c) => JSON.stringify(c)).join('\n') + '\n');
+    // Exercise the exact npm script without launching npm's platform-specific
+    // shell shim (npm.cmd is not directly executable on Windows). An empty
+    // PATH also proves this uses the current Node, not a globally found shim.
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'path'));
     const markdown = execFileSync(process.execPath, [
-      '--import', 'tsx', 'bench/run.ts',
-      '--corpus', input, '--lexicon', 'bench/lexicon.yaml', '--out', output,
-    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+      '--import', 'tsx', 'bench/run.ts', '--out', output, '--corpus', input,
+    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...env, PATH: '' } });
     const saved = JSON.parse(readFileSync(output, 'utf8')) as BenchReport & {
       corpus: string;
       lexicon: string;
@@ -58,6 +67,7 @@ it('writes the documented non-English baseline with comparable subset metrics', 
     expect(Object.values(subsets.byLang).reduce((sum, group) => sum + group.cases, 0))
       .toBe(subsets.nonEnglish.cases);
     expect(markdown).toContain('## Non-English subset (lang-tagged cases)');
+    expect(markdown).toContain('| subset | cases | sentence acc | acc excl. hard | recall raw | recall | precision | F1 | prose FP |');
     expect(markdown).toContain('baseline (untagged)');
     expect(markdown).toContain('non-English (all)');
     for (const lang of Object.keys(saved.lang?.byLang ?? {})) expect(markdown).toContain(`| ${lang} |`);

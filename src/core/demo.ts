@@ -60,6 +60,13 @@ export const DEMO_LEXICON: Lexicon = {
       category: 'acronym',
       never: ['sauce'],
     },
+    {
+      canonical: 'Hetzner',
+      aliases: ['head sner', 'hetsner'],
+      phonetic: 'HETS-ner',
+      category: 'brand',
+      notes: 'Hosting provider.',
+    },
   ],
 };
 

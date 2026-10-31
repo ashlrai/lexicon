@@ -4,6 +4,8 @@
 
 # Lexicon
 
+**Release preparation:** The 0.5.7 version and pins below describe an unpublished candidate prepared on 2026-10-31. At preparation, npm `latest` was 0.5.4. Verify the public npm version and GitHub release before using a 0.5.7 install pin.
+
 **Dictate to your agent. Keep your spelling.**
 
 A personal lexicon for voice-to-agents.
@@ -13,7 +15,7 @@ lands: MCP, Claude Code, the browser, macOS.
 
 [![CI](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml/badge.svg)](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/%40ashlr%2Flexicon)](https://www.npmjs.com/package/@ashlr/lexicon)
-<!-- fresh:begin badge:release -->[![release](https://img.shields.io/badge/release-v0.5.6-blue)](https://github.com/ashlrai/lexicon/releases)<!-- fresh:end -->
+<!-- fresh:begin badge:release -->[![release](https://img.shields.io/badge/release-v0.5.7-blue)](https://github.com/ashlrai/lexicon/releases)<!-- fresh:end -->
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node >=20](https://img.shields.io/node/v/%40ashlr%2Flexicon)](package.json)
 
@@ -28,6 +30,8 @@ Agent received:  "tell Ashlr.AI to deploy the Kubernetes auth service"
 ```
 
 ![The browser demo, three panels. Left, what STT heard: "tell ashler to deploy cooper netties on head sner and ping mason white about the sass pricing". Middle, what the agent gets: "tell Ashlr.AI to deploy Kubernetes on Hetzner and ping Mason Wyatt about the SaaS pricing", labelled 5 corrections in 0.80 ms, above a table giving each replacement its tier and confidence. Right, the lexicon YAML driving it.](docs/assets/demo.gif)
+
+[Watch the terminal setup demo](docs/assets/cli-setup.cast).
 
 That is the [live demo](https://ashlrai.github.io/lexicon/) running this repo's real matcher on your text, in your browser, with nothing installed. (Its Dictate button uses your browser's own speech recognizer, which in Chrome sends audio to Google.)
 
@@ -176,7 +180,7 @@ This is not a dictation app. It sits between whatever dictation you already use 
 - **Twenty-one MCP tools**, three resources and two prompts, for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop. Your agent can run its own setup: `setup_lexicon`, `lexicon_doctor`, `install_client`, `trust_project`, `import_dictionary`, `import_vocabulary` and `suggest_terms` mean "set up my lexicon" works without a terminal. The tools that change your machine preview first: `setup_lexicon` and `install_client` return a plan and write nothing until the agent passes `apply: true`, `uninstall_client` (the `lexicon uninstall` counterpart) is a dry run until `apply: true`, `trust_project` asks you directly (an MCP elicitation prompt the agent cannot answer) before pinning a file, `import_dictionary` takes `dryRun`, and `import_vocabulary` reads only explicitly selected sources, then requires a saved preview token and approved candidate ids with `apply: true`.
 - **A Claude Code plugin**: MCP server, `SessionStart` and `UserPromptSubmit` hooks, a `lexicon` skill and a `/lexicon` command. Installs from this repo's marketplace with no build step.
 - **A CLI with 27 commands**, from `lexicon add` to `lexicon voice`.
-- **221 starter terms** in six packs (developer, AI, business, voice tools, cloud and DevOps, legal profession), one command each, plus community packs from registry indexes (`lexicon pack search cardiology --registry <index>`): checksums pinned at install, every install and update previewed before it writes.
+- **246 starter terms** in seven packs (developer, AI, business, voice tools, cloud and DevOps, legal profession, law and litigation), one command each, plus community packs from registry indexes (`lexicon pack search cardiology --registry <index>`): checksums pinned at install, every install and update previewed before it writes.
 - **Sixteen export formats** (Wispr Flow, Superwhisper, macOS Text Replacement, espanso, Whisper and OpenAI prompts, Deepgram, AssemblyAI, Speechmatics, Azure, Google, CLAUDE.md, markdown, text, CSV, JSON) and **eight importers** (including the CLAUDE.md table it writes) for the dictionary you already trained.
   `lexicon export` with no format lists them all. A mistyped format exits 1 with a suggestion, for example `lexicon export wisprr` prints `Did you mean wispr? Run: lexicon export wispr` in the current source.
 - **Repo harvesting**, a guided vocabulary import (`lexicon import --guided`: your contacts, calendar and GitHub, each source opt-in, every candidate approved before it is written), correction learning ("it's Ashlr.AI not Ashler"; corrections the prompt hook notices are also queued for review in `pending-aliases.yaml` next to your global lexicon, and nothing in the queue changes matching until you run `lexicon pending accept <id>`; `lexicon pending reject <id>` drops one, `LEXICON_QUEUE_CORRECTIONS=0` turns the queue off), usage stats, suggestions mined from your voice history, and a trust gate for project lexicons.
@@ -202,11 +206,11 @@ This is not a dictation app. It sits between whatever dictation you already use 
 
 Three tiers over token windows: exact alias first, then double-metaphone phonetic, then Damerau-Levenshtein fuzzy above a confidence floor. Exact hits win the span; matches never overlap. A stoplist of about 3400 common English words, per-term `never` lists, and (with the default `skipCode`) code spans, URLs, emails, paths and glued identifiers are all off limits. That is why zero clean sentences changed in the benchmark. Every replacement reports its `reason` and `confidence`.
 
-With no lexicon of your own, `normalize` uses a built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS) and says so. It does not include Hetzner, so `head sner` is left alone until you add that term.
+With no lexicon of your own, `normalize` uses a built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS, Hetzner) and says so.
 
 ```bash
 lexicon normalize --diff "ask ashler to deploy kuber netties with post gressql"
-# stderr:  lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS).
+# stderr:  lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS, Hetzner).
 #          lexicon: run `lexicon setup` to build your own; nothing was written.
 #          "ashler" -> "Ashlr.AI" (alias, 1.00)
 #          "kuber netties" -> "Kubernetes" (phonetic, 0.88)
@@ -253,7 +257,7 @@ Also at the root: [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDU
 
 ## Downloads
 
-Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches the browser extension for Chrome/Edge/Brave and for Firefox, `LexiconBar.app.zip` for macOS, the npm tarball for offline installs, and `SHA256SUMS`. The Homebrew formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap). After 0.5.6 is published, <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.6`<!-- fresh:end --> installs that tag straight from GitHub and builds on install.
+Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches the browser extension for Chrome/Edge/Brave and for Firefox, `LexiconBar.app.zip` for macOS, the npm tarball for offline installs, and `SHA256SUMS`. The Homebrew formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap). After 0.5.7 is published, <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.7`<!-- fresh:end --> installs that tag straight from GitHub and builds on install.
 
 ## Roadmap and non-goals
 

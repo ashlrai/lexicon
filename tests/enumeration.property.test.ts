@@ -746,12 +746,11 @@ describe('quoting guard, generated round trips', () => {
 
   it('QUOTING, prose: free sentences about spelling, measured against a ceiling', () => {
     const rate = proseReport.failures.length / proseReport.checked;
-    if (rate > PROSE_CEILING) {
-      throw new Error(
-        `prose failure rate ${rate.toFixed(4)} is over the ceiling ${PROSE_CEILING}. ` +
-          `The guard's word list covers less English than it did.\n${describeFailures('QUOTING-prose', proseReport)}`,
-      );
-    }
+    expect(
+      rate,
+      `prose failure rate ${rate.toFixed(4)} must stay at or below ${PROSE_CEILING}. ` +
+        `The guard's word list covers less English than it did.\n${describeFailures('QUOTING-prose', proseReport)}`,
+    ).toBeLessThanOrEqual(PROSE_CEILING);
   }, PROPERTY_TIMEOUT_MS);
 
   it('DICTATION: one word said twice in ordinary prose is corrected', () => {

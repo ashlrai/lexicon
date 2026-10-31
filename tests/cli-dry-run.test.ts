@@ -68,6 +68,25 @@ const mutations = [
 ];
 
 describe('dry-run-everywhere filesystem guarantee', () => {
+  it.each(['add', 'remove', 'learn'])('documents %s --dry-run consistently with CLI help', (command) => {
+    const help = lexicon([command, '--help']);
+    expect(help.status, help.stderr).toBe(0);
+    expect(help.stdout).toMatch(/--dry-run\s+[^\n]*(?:\n\s+write nothing|write nothing)/);
+    const contract = readFileSync(path.join(repoRoot, 'docs', 'CONTRACT.md'), 'utf8');
+    const row = contract.split('\n').find((line) => line.startsWith(`  | \`${command}\` |`));
+    expect(row).toBeDefined();
+    expect(row).toMatch(/(?:No lexicon|Lexicons).*persistent state.*(?:changed|created or changed)/);
+  });
+
+  it('learn --from --project previews without changing the lexicon or sidecars', () => {
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    const before = snapshot();
+    const result = lexicon(['learn', '--from', "it's Ashlr.AI not Ashlerr", '--project', '--dry-run', '--json']);
+    expect(result.status, result.stderr).toBe(0);
+    expect(JSON.parse(result.stdout)).toMatchObject({ ok: true, dryRun: true, created: true, aliasAdded: true, path: projectPath });
+    expect(snapshot()).toEqual(before);
+  });
+
   it.each(mutations.map((args) => [args.join(' '), args] as const))('%s preserves a cold cache and every existing file', (_name, args) => {
     seedGlobal();
     // Above the global parse cache threshold, without populating any cache.
@@ -94,7 +113,7 @@ describe('dry-run-everywhere filesystem guarantee', () => {
 
 describe('CLI dry-run previews', () => {
   it('advertises the preview flag on every newly supported command', () => {
-    for (const command of ['init', 'add', 'remove', 'harvest', 'export', 'review', 'edit']) {
+    for (const command of ['init', 'harvest', 'export', 'review', 'edit']) {
       const result = lexicon([command, '--help']);
       expect(result.status, result.stderr).toBe(0);
       expect(result.stdout).toContain('--dry-run');

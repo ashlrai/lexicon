@@ -27,7 +27,7 @@ src/mcp/           server, shared, tools/{index,terms,harvest,trust,setup,packs}
 Data and other trees, none of which `src/` imports at build time:
 
 ```text
-packs/             the six starter-pack YAML lexicons (developer, ai, business, voice-tools, cloud-devops, profession-q8), read at runtime by src/core/packs.ts
+packs/             the seven starter-pack YAML lexicons (developer, ai, business, voice-tools, cloud-devops, profession-q8, legal), read at runtime by src/core/packs.ts
 plugin/            committed esbuild bundles of src/mcp/server.ts and src/hooks/user-prompt-submit.ts
 extension/src/     browser extension; its core.ts bundles the browser-safe slice of src/core   <- core (build time only)
 web/               Next.js marketing site for lexicon.ashlr.ai; web/lib/generated holds a browser bundle of src/core   <- core (build time only)
@@ -40,6 +40,8 @@ bench/             benchmark corpora and runners; bench/audio/models is also a w
 
 [Issue #8](https://github.com/ashlrai/lexicon/issues/8) remains an open measurement
 task: assess non-English name performance before choosing changes to the phonetics.
+Before changing phonetic matching, record a reproducible baseline using the procedure
+below, then compare the candidate against it using the same inputs and settings.
 The phonetic pass uses English-tuned Double Metaphone, which may miss patterns in
 other languages. The existing synthetic fixture supports repeatable matcher
 comparisons, but does not establish accuracy on representative real-world
@@ -47,8 +49,9 @@ non-English dictation across speakers and languages. Measuring that gap remains
 open; this contract makes no real-world accuracy claim.
 
 Run this text benchmark from the repository root after `npm install`, with Node 20 or
-newer. Keep the same repository revision, corpus, lexicon and default matcher settings
-when comparing runs; record the revision, Node version and command with the report.
+newer. Run the baseline on the revision before the change and the comparison on the
+candidate revision. Keep the corpus, lexicon, Node version and default matcher settings
+the same; record the revision, Node version and command with each report.
 The committed `bench/corpus.jsonl` and `bench/lexicon.yaml` are the inputs, so no
 corpus generation or personal lexicon is needed. The untagged cases are the original
 baseline; the `lang`-tagged cases cover German, Spanish, Polish, Japanese, Arabic and
@@ -242,6 +245,30 @@ Starter term packs: the curated lexicons in `packs/*.yaml` at the package root, 
 - `loadPackFile(file, expectedName?)` and `parsePackText(text, file, expectedName?)` validate external community pack files (`parsePackText` without `expectedName` accepts the pack under any file name, which is what `lexicon pack validate` needs). `installLoadedPack(pack, recordAs, opts?)` and `uninstallLoadedPack(pack, recordAs, opts?)` retain the same merge, edited-term preservation and project trust behavior as the named starter-pack operations. `installPack` and `installLoadedPack` take `leaveUntrusted?: boolean` (MCP `add_pack` on a project file that is not trusted): the gate is skipped, every `addTerm` gets the flag and the `settings.packs` rewrite does not `refreshTrust`, so nothing is pinned or re-pinned and a changed file stays changed.
 - `findPackageRoot(from = import.meta.url)`: see the collision note under `src/util/package.ts`.
 
+### Proposed profession starter pack: veterinary medicine
+
+Veterinary professionals are not covered by a dedicated shipped pack. This is an
+outline for a possible opt-in pack, not an implemented or installable pack. Candidate
+canonical terms include **pyometra**, **brachycephalic**, **leptospirosis** and
+**ovariohysterectomy**. They are examples for review, not a final term list; no
+aliases are asserted here to be observed speech-to-text errors.
+
+Before implementation, work with veterinary professionals to collect consented,
+de-identified dictation and the corresponding speech-to-text output. Review candidate
+spellings and retain aliases only when supported by observed errors. Exclude ordinary
+English words as standalone aliases, and consider `never` entries for collisions as
+described in [PACKS.md](PACKS.md#how-the-aliases-were-chosen). Keep speakers and utterances for a
+held-out evaluation separate from those used to choose aliases. Compare normalization
+with and without the candidate pack on the same held-out examples: report corrected
+errors, missed errors and unintended changes, including clean sentences and ordinary
+speech containing confusable words. Investigate false positives before shipping; do
+not infer clinical accuracy from a text-matching test.
+
+If the pack is implemented, follow [the pack contribution steps](PACKS.md#adding-a-pack-to-this-repo):
+validate its schema and safety, add pack tests, and exercise `pack show` and
+normalization on representative sentences. The proposal does not change the current
+pack list, defaults or installation behavior.
+
 ## src/core/registry.ts
 - `RegistryRef { author; name; ref; version? }`, `parseRegistryRef(value)`, `isRegistryRef(value)` validate community `<author>/<name>` references and optional version pins. `RegistryIndexEntry` carries ref/author/name/title/description/homepage/version/terms/aliases/checksum/url; `RegistryIndex { packs }` is schema validated by `loadRegistryIndex(source, RegistryDeps?)`, which returns `{ index; base }` for a local path, file URL or HTTPS URL. Every registry read (index or pack file, network or disk, default or injected `RegistryDeps` fetcher) is capped at `MAX_REGISTRY_FILE_BYTES` (= `MAX_LEXICON_BYTES`) and refused past it (`registry: <what> exceeds the <n> byte limit (refusing to read it)`); the default fetch streams the body and stops at the cap, and gives up after `REGISTRY_FETCH_TIMEOUT_MS` (30 s); a local index or pack path must be a regular file (`... is not a regular file`), and an index that fails to parse is reported without quoting its source. `assertSecureRegistryUrl(url)` throws unless `url` is `https://` or plain `http://` to a loopback host (`localhost`, `127.x.x.x`, `[::1]`); it guards the index source, every pack URL (default and injected fetchers alike) and the final URL of a redirected default fetch.
 - `recordedRegistrySource(source)` is the `indexSource` an install or update records: an http(s) URL as given, a local path or `file://` URL as the absolute path `loadRegistryIndex` read (a relative `--registry` resolves against the current directory once, at install).
@@ -267,9 +294,9 @@ Starter term packs: the curated lexicons in `packs/*.yaml` at the package root, 
 - `timeBudgetIncomplete(totalChars: number, budgetMs: number): NormalizeIncomplete` = `{ reasons: ['time'], totalChars, note }`, the note naming the budget: what a caller returns when its `shouldStop` budget ran out.
 
 ## src/core/demo.ts
-- `DEMO_LEXICON` is the built-in miniature example used for the first-run demonstration and for argument-based normalization when the user's lexicon is empty. It is a literal because `examples/` is not shipped in the published package; it is announced as an example and is never written or merged into the user's lexicon.
-- [Issue #217](https://github.com/ashlrai/lexicon/issues/217): keep Hetzner out of this miniature for now. With no trusted terms, `lexicon normalize "deploy on head sner"` announces the built-in example and outputs `deploy on head sner`; adding Hetzner with `head sner` as an alias to the user's lexicon makes that sentence output `deploy on Hetzner`. The example is used for argument text only when the merged lexicon is empty; stdin uses the user's lexicon, and a nonempty lexicon is never supplemented with example terms. Setup may also use the example when the user's terms cannot demonstrate a correction.
-- Restoring Hetzner would make that particular empty-lexicon argument demo match the larger browser/example-file demo, but adds another unsolicited example correction and expands the miniature even though its current terms already demonstrate alias, phonetic and fuzzy matching. The example file is not shipped in the package, so the term must be in the literal, not loaded from that file. If restored, acceptance should include `lexicon normalize "deploy on head sner"` outputting `deploy on Hetzner` with the example notice and nothing written, while empty-lexicon stdin remains unchanged and a user's nonempty lexicon remains authoritative. Update the current unchanged-output test, the CLI's example-term notices, and first-run examples and term lists in the docs together; adding the term alone does not necessarily change setup's generated sentence, which selects candidates by order and category.
+- `DEMO_LEXICON` is the built-in miniature example used for the first-run demonstration and for argument-based normalization when the user's lexicon is empty. It is a literal because `examples/` is not shipped in the published package; it is announced as an example and is never written or merged into the user's lexicon. Its terms are Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS and Hetzner.
+- [Issue #217](https://github.com/ashlrai/lexicon/issues/217) put Hetzner (`head sner`, `hetsner`) back in the miniature, so with no trusted terms `lexicon normalize "deploy on head sner"` announces the built-in example and outputs `deploy on Hetzner`. The example is used for argument text only when the merged lexicon is empty; stdin uses the user's lexicon, and a nonempty lexicon is never supplemented with example terms. Setup may also use the example when the user's terms cannot demonstrate a correction.
+- The CLI's built-in-example notice names the terms by reading them off `DEMO_LEXICON` itself, so the announcement cannot drift from the term list. `buildDemonstration` picks its sentence's terms by candidate order and category (a person first, then one other), so a term appended after Ashlr.AI does not change the sentence setup prints.
 
 ## src/core/suggest.ts
 - `compareText(a: string, b: string): number` (collate.ts): a fixed `en` collation, then code units, so an order never follows the user's locale. `computeStats`' `topTerms`, `suggestCanonicalFor`, `harvestRepo` (its candidates and the order it walks a directory), `suggestTerms`, `listTrusted` (by path), the registry index (`loadRegistryIndex`, by ref), `searchRegistryIndex` and `lexicon stats`' category and source lines sort or break ties with it, and the exporters' `compareCanonical` is it.
@@ -400,51 +427,60 @@ Pure expansion core of the resident expander (no IO). `EXPANDER_NAMED_KEYS` (`Ba
 
 **Proposed surface:** [issue #220](https://github.com/ashlrai/lexicon/issues/220)
 describes a resident, system-wide text expander, separate from the CLI and
-agent integrations. Its intended scope is to expand text in any focused text
-field without an agent in the loop. That complete surface is not implemented:
+agent integrations. It targets a focused text field across applications, without an agent in the loop.
+The intended flow is to observe text input, match completed words against the
+lexicon, and apply the resulting replacement in the focused field. The complete surface is not implemented:
 the existing expansion core and socket server do not capture system-wide input
-or apply changes to a focused field. A platform-specific client would need to
-provide those capabilities, including input permissions and focus handling.
-The issue proposes a resident process to avoid a Node cold start for each
-correction; it does not establish a latency or memory guarantee.
+or apply changes to a focused field. This system-wide integration is a
+proposal, not an implemented or available feature. The socket server has no global input capture or text-field editing
+client; a future platform-specific client would have to observe input and apply the expansion
+core's backspace-and-insert actions, including its immediate Backspace undo.
 
 The existing CLI boundary lets a client invoke `lexicon normalize` as a
-subprocess, send text on stdin, and read corrected text from stdout after the
-command exits. The client handles the exit status and stderr. Each invocation
-starts a new process; this boundary does not require a resident service.
+subprocess with text as arguments or on stdin and read corrected text from stdout.
+The client handles the exit status and stderr. Each invocation starts a new
+process and exits; it does not require a resident service. Separately,
+`lexicon daemon` watches the clipboard by default, and the clipboard watcher corrects copied text,
+not text in a focused field.
 
-**Proposed integration:** a client that needs repeated low-latency corrections
-could instead run the opt-in `lexicon daemon --expander` as a separate,
-long-lived process and communicate over its local socket (a named pipe on
-Windows). The CLI flag and server described below already exist; adoption by a
-client, automatic startup, supervision, reconnects and fallback to the CLI
-are proposed behavior, not guarantees of the current CLI contract. A client
-would own those lifecycle decisions and apply any returned expansion actions;
-the server does not capture keystrokes or edit the client's text field. It
-holds a lexicon and matcher index in its own process, not shared memory with
-the client. Each connection has its own expansion buffer; requests and
-responses are newline-delimited JSON in order, with an optional echoed `id`.
+The opt-in `lexicon daemon --expander` already starts a separate,
+long-lived process with a lexicon and matcher index in its own memory. A future
+client could communicate with that server over a local socket (a named pipe on
+Windows) rather than start Node for each correction. Each connection has its
+own expansion buffer; requests and responses are newline-delimited JSON in order,
+with an optional echoed `id`. Client adoption, automatic startup, supervision,
+reconnects and fallback to the CLI are proposed behavior, not guarantees of the
+current CLI contract. The client would own those lifecycle decisions. Neither the
+issue nor the socket protocol establishes a latency or memory guarantee.
 
-**System-wide surface proposed in [issue #220](https://github.com/ashlrai/lexicon/issues/220):**
-a resident process would let a person expand dictated or typed text in a
-focused text field across applications, without an agent in the loop. It would
-keep the lexicon and matcher warm rather than start Node for each correction.
-The intended flow is to observe text input, match completed words against the
-lexicon, and apply the resulting replacement in the focused field. The existing
-expansion core defaults to explicit aliases and returns backspace-and-insert
-actions, including an immediate Backspace undo; a future input client would
-have to perform those actions. The clipboard watcher corrects copied text and
-is a separate, already available surface.
-
-This system-wide integration is a proposal, not an implemented or available
-feature. The socket server has no global input capture or text-field editing
-client. Platform choices remain open: how to observe focus and input and
+Platform choices remain open: how to observe focus and input and
 apply edits on macOS and Windows, and how to support Linux across X11 and
 Wayland compositors. The required permissions, sensitive-field exclusions,
 edit and undo behavior, startup and supervision, and recovery when focus or
 the connection changes also need design and validation on each platform. The
 socket protocol below does not settle those choices or promise support in
-every application.
+every application. The per-platform discovery questions are tracked, marked
+decided or undecided, in
+[expander-platform-questions.md](expander-platform-questions.md).
+
+#### Boundaries between surfaces
+
+| Surface | Boundary |
+| --- | --- |
+| CLI `normalize` | A caller supplies text to a short-lived command and consumes its output; it does not observe or edit a field. |
+| Clipboard daemon | The default daemon watches copied text; its optional one-shot paste is a separate clipboard workflow, not continuous field editing. |
+| Agent integrations | MCP and the Claude Code hook have their own request and prompt interfaces. The hook adds context rather than rewriting the prompt; neither is a system-wide input client. |
+| Local HTTP API and browser extension | The API accepts explicit requests; the extension operates in supported browser pages under its own settings and permissions. Neither makes the proposed expander available across applications. |
+| Opt-in expander server | The server holds its own lexicon and per-connection expansion state and returns actions over its socket. It does not capture input or apply actions. |
+| Proposed platform client | A future client would bridge OS input and focused fields to the server and apply actions. It is not supplied by installing the CLI or starting the server. |
+
+These surfaces have distinct entry points and process lifetimes; installing or
+using one does not imply the proposed client is running. How a future client
+starts or discovers the server, handles an existing instance, shuts down,
+reconnects or falls back after failure remains open. So do the handling of focus
+changes, stale or partial edits, composition input, secure fields and permission
+denial. Each platform needs a design and validation for these cases before the
+system-wide surface can be described as available.
 
 The existing socket protocol for a normalization request is, for example:
 
@@ -462,11 +498,17 @@ See [DAEMON.md](DAEMON.md#resident-expander-opt-in) for the other operations,
 socket access and lifecycle details. No client should assume the daemon is
 running merely because the CLI is installed.
 
-`runExpanderServer(opts: ExpanderServerOptions { socketPath?; signal?; expanderOptions?; onListening?; load? } & ClipboardCommonOptions): Promise<ClipboardDaemonStop>`: loads the lexicon (fails before listening if it will not load), prepares and listens on the socket (chmod 0600), answers newline-delimited JSON (`ping`, `normalize`, `type`, `key`, `reset`, `clipboard`; see docs/DAEMON.md), one Expander per connection, requests on a connection answered in order, clipboard requests serialized and run through `runClipboardOnce` with the cached lexicon. A request line over `MAX_EXPANDER_REQUEST_CHARS` (80000) is answered with an error and the connection ended; a `type` chunk over `MAX_EXPANDER_TYPE_CHARS` (4096) or `normalize` text over `MAX_CLIPBOARD_CHARS` is an error. Stops on SIGINT, SIGTERM or `signal` and removes the socket.
+`runExpanderServer(opts: ExpanderServerOptions { socketPath?; signal?; expanderOptions?; onListening?; load? } & ClipboardCommonOptions): Promise<ClipboardDaemonStop>`: loads the lexicon (fails before listening if it will not load), prepares and listens on the socket (chmod 0600), answers newline-delimited JSON (`ping`, `normalize`, `type`, `key`, `reset`, `clipboard`, `cli-read`; see docs/DAEMON.md), one Expander per connection, requests on a connection answered in order, clipboard requests serialized and run through `runClipboardOnce` with the cached lexicon. A request line over `MAX_EXPANDER_REQUEST_CHARS` (80000) is answered with an error and the connection ended; a `type` chunk over `MAX_EXPANDER_TYPE_CHARS` (4096) or `normalize` text over `MAX_CLIPBOARD_CHARS` is an error. Stops on SIGINT, SIGTERM or `signal` and removes the socket.
 - `defaultExpanderSocketPath(env?, platform?, home?)`: `\\.\pipe\lexicon-expander-<user>` on Windows, else `<XDG_RUNTIME_DIR (absolute) or XDG state home>/lexicon/expander.sock`.
 - `prepareSocketPath(path)`: refuses a path over 103 bytes, creates the directory 0700 (refuses one owned by another user, tightens a loose one), removes a stale socket, refuses a live one or a non-socket.
 - `createExpanderSession(ctx)`: the per-connection request handler.
 - `runDaemonCommand` takes `expander?` and `socketPath?`: `--socket` without `--expander` throws `--socket works only with --expander; ...`, and `--expander` with `--once`, `--paste` or `--which` throws `<flag> cannot be combined with --expander; ...`. `runClipboardOnce` takes `lexicon?: () => Promise<LoadedLexicon>` (the resident cache).
+
+### src/daemon/fast-client.ts
+
+- `tryFastRead(argv, socketPath?, timeoutMs = 100): Promise<FastReadResult | undefined>`: probes only read commands selected by `isFastRead(argv)`. Success carries exact `stdout`, `stderr` and integer exit `code`; transport, protocol, context and deadline failures return `undefined` for normal CLI dispatch. Requests are capped at 80000 characters and responses at 8 Mi characters.
+- `cliReadContext(): string`: opaque identity for compatible CLI rendering and configuration. The server rejects mismatches without changing its environment. Read requests reuse fresh CLI handlers, independently of the expander cache; parsed file-export options are refused before dispatch.
+- `defaultExpanderSocketPath` lives here and is re-exported by `expander-server.ts`, preserving its existing API.
 
 ## src/serve (config.ts, server.ts, index.ts) and src/cli/cmd-serve.ts
 Local HTTP API for surfaces without hooks or MCP (browser extension, Claude Desktop, the Codex app, macOS Shortcuts, Raycast, the menu bar app). `node:http` only, no framework. Other agents code against this exactly; see `docs/LOCAL-API.md` for curl examples.
@@ -561,12 +603,20 @@ Dependency-free interactive helper over `node:readline`. No ANSI beyond bold/dim
 - Still defined here: `readStdin()` (all of stdin as UTF-8, unbounded; `normalize` reads it) and the handlers below. `renderTable(rows, header?, opts?)` takes an optional `header` (singular) and `opts.pathColumns` (0-based column indexes whose cells are file paths: `safePath(p)`, sanitized like `safe`, line breaks included, but capped at `ERROR_LINE_MAX_CHARS` instead of 200, so a deep path keeps its file name; `lexicon stats` files, `harvest` evidence and `trust --list` paths use it).
 - Write previews: `init`, `add`, `remove`, `learn`, `untrust`, built-in `pack add`, `harvest`, `export`, `review` and `edit` accept `--dry-run`. Mutating previews keep the normal validation and project trust gates and report planned changes without persisting them. `loadLexicon({ dryRun: true })` reads current content even with `staleGlobal`, and neither writes parse caches or cached failures nor promotes project spill entries. The `init`, `add`, `remove`, `learn`, `untrust` and built-in `pack add` previews preserve existing files and create no lexicon, trust or cache files. `export --dry-run --out <path>` reports the destination without creating it. `review --dry-run` still asks about terms; `edit --dry-run` reports the target before launching any editor, creating files or updating trust/caches. Project `init`, including a dry run, refuses an unusable trust registry before creating a new project file. JSON success results carry `dryRun: true` when supported; `review` and `edit` keep their existing JSON refusal.
 
+  | Command | Supported scope selection with `--dry-run` | Unsupported scope flags |
+  | --- | --- | --- |
+  | `init` | Global by default; `--project` selects the project. | `--global`, `--scope` |
+  | `untrust [path]` | The optional path selects a project file or directory; otherwise the current project's file is used. | `--project`, `--global`, `--scope` |
+  | `pack add <name...>` (built-in) | Global by default; `--project` selects the project. | `--global`, `--scope` |
+
+  All three accept `--json`; the root `--cwd <dir>` option selects the working directory. `pack add` also accepts `--registry` and `--yes` for community packs. See `lexicon <command> --help` for each command's options.
+
   | Command | Dry-run support and limits |
   | --- | --- |
-  | `init` | Supported for global and `--project`: reports whether the file would be created without creating or modifying files. Initialization remains pending until a separate run without `--dry-run`; this requested preview was previously pending and is now implemented. For a new project, `trust: "trusted"` in JSON describes the trust a real run would grant, not a current pin. An existing project reports its current trust and is not newly trusted. |
+  | `init` | Supported for global and `--project`: reports whether the file would be created without creating or modifying files. Initialization remains pending until a separate run without `--dry-run`. For a new project, `trust: "trusted"` in JSON describes the trust a real run would grant, not a current pin. An existing project reports its current trust and is not newly trusted. |
   | `add` | Supported for global and `--project`. For a change, text output says `would create` or `would merge`, gives the canonical, scope and path, states `nothing was written`, and lists the resulting aliases; an unchanged term instead uses the usual unchanged note and aliases line. Project text output also says a real run re-pins trust. With `--json`, the usual result contains the planned `term`, `path`, `created`, optional `unchanged`, `scope`, `suggested` and any conflict or dropped-alias details, plus `dryRun: true`. No lexicon, trust registry, cache or other persistent state is changed. `--interactive` still prompts, and an untrusted existing project file is refused. |
   | `remove` | Supported for whole terms and `--alias`, including `--global` and `--project`. Text says `would remove` and names the target and file paths; an alias preview also lists the aliases that would remain. JSON reports `removed: true` and `dryRun: true` for a proposed removal; alias results include the remaining `aliases` and affected `paths`. Without a scope, a whole-term preview selects the first copy (project before global), while an alias preview selects every applicable copy. Lexicons, trust records, hit counts and caches remain unchanged; no persistent state is created or changed. The removal requires a separate command without `--dry-run` and is not queued. A missing target still fails; project trust restrictions and warnings about copies in other files still apply. |
-  | `learn` | Supported for positional corrections and `--from`, with the usual scope selection or `--project`: reports the term and whether an alias would be added. Invalid corrections and untrusted project writes are still refused. |
+  | `learn` | Supported for positional corrections and `--from`. It previews a new term or added alias in the file that already holds the intended term, or the global file when none does; `--project` selects the project file. Text reports the proposed change and target path, or an unchanged result when already known; JSON includes the result and `dryRun: true`. No lexicon, trust registry, cache or other persistent state is created or changed. Invalid corrections and untrusted project writes are still refused; a separate run without `--dry-run` applies the correction. |
   | `untrust` | Text says `would untrust <path>; it would no longer be merged` when a pin would be removed, or that the file was not trusted and there is nothing to do. JSON reports the path, registry, summary and proposed `removed` result with `dryRun: true`. The registry and project file remain unchanged, including an existing pin; no persistent state is changed. A separate `lexicon untrust` applies the removal. |
   | `pack add` (built-in) | Supported for global and `--project`: text reports `would install`, the pack, added and merged counts and target path, or an already-installed result. JSON returns an array of pack results with counts, path, scope, `alreadyInstalled` and `dryRun: true`. The lexicon, pack settings, trust registry and caches remain unchanged; no persistent state is changed. Each name in a multi-pack preview is computed against the current files independently, so it does not include effects of earlier names in that preview; a separate real run installs names in order. Project trust restrictions still apply. |
 
@@ -715,7 +765,7 @@ the seeded brand must agree. The matching author supplies the capitalization.
 Without it, the dotted scope still produces `Ashlr.ai`, with the dot intact.
 
 ## src/cli/index.ts  (bin: lexicon)
-A lone `--version`, `-V` or `-v` prints the package version before commander or the core loads. Other invocations load `run.ts` for the handshake, dispatch and error handling. `program.ts` exports `buildProgram(io): Command` and wires commander; actions dynamically import handlers in `commands.ts` and `cmd-*.ts`. Lightweight argument and IO helpers live in `args.ts` and are re-exported from `io.ts`. Twelve registrars run in this order: `registerImportCommands`, `registerInstallCommands`, `registerUninstallCommands`, `registerTrustCommands`, `registerLearnCommands`, `registerPendingCommands`, `registerServeCommands`, `registerVoiceCommands`, `registerSetupCommands`, `registerSuggestCommands`, `registerReviewCommands`, `registerPackCommands`. Global `--cwd <dir>`: the `preAction` hook refuses one that is not an existing directory before any command but `hook` and `mcp` runs (`cwdOptionProblem(cwd): CliRefusal | undefined` in io.ts; the `CliRefusal { message, nextStep? }` it throws is reported through `refuse`: `lexicon: --cwd "<dir>" is not an existing directory`, then `pass a directory that exists, or leave --cwd out to use the current directory`, both also as `{ ok: false, error, nextStep }` under `--json` or `--full`, exit 1). Commands wired in `program.ts`: `init` (`--project`, `--json`), `add <canonical> [aliases...]` (`--phonetic`, `--category`, `--notes`, `--project`, `--suggest`, `-i/--interactive`, `--never <word...>`), `remove|rm <canonical>` (`--project`), `list|ls` (`--json`, `--category`, `--query`), `normalize [text...]` (stdin if omitted; `--json`, `--diff`, `--dry-run`, `--min-confidence`, `--no-phonetic`, `--no-fuzzy`, `--include-untrusted`), `harvest [path]` (`--limit`, `--min-count`, `--add`, `-i/--interactive`, `--yes`, `--json`, `--full`), `export [format]` (`--out`, `--category <c...>`, `--limit`), `path` (`--json`), `doctor` (`--json`), `mcp`, `hook`, `daemon` (`--once`, `--paste`, `--interval`, `--dry-run`, `--quiet`, `--backend`, `--which`), `install-claude` (`--apply`, `--scope`, `--project`, `--home`, `--json`: the flags of `install claude`, forwarded to `runInstall("claude", ...)`, with no `--scope` default of its own). Then `registerImportCommands`, `registerInstallCommands`, `registerUninstallCommands`, `registerTrustCommands`, `registerLearnCommands`, `registerReviewCommands`, `registerSetupCommands` add `import`, `install`, `uninstall`, `trust`, `untrust`, `learn`, `stats`, `review`, `edit`, `setup`. `docs/CLI.md` is generated from their `--help`.
+A lone `--version`, `-V` or `-v` prints the package version before commander or the core loads. Other invocations load `run.ts` for the handshake, dispatch and error handling. `program.ts` exports `buildProgram(io): Command` and wires commander; actions dynamically import handlers in `commands.ts` and `cmd-*.ts`. Lightweight argument and IO helpers live in `args.ts` and are re-exported from `io.ts`. Twelve registrars run in this order: `registerImportCommands`, `registerInstallCommands`, `registerUninstallCommands`, `registerTrustCommands`, `registerLearnCommands`, `registerPendingCommands`, `registerServeCommands`, `registerVoiceCommands`, `registerSetupCommands`, `registerSuggestCommands`, `registerReviewCommands`, `registerPackCommands`. Global `--cwd <dir>`: the `preAction` hook refuses one that is not an existing directory before any command but `hook` and `mcp` runs (`cwdOptionProblem(cwd): CliRefusal | undefined` in io.ts; the `CliRefusal { message, nextStep? }` it throws is reported through `refuse`: `lexicon: --cwd "<dir>" is not an existing directory`, then `pass a directory that exists, or leave --cwd out to use the current directory`, both also as `{ ok: false, error, nextStep }` under `--json` or `--full`, exit 1). Commands wired in `program.ts`: `init` (`--project`, `--dry-run`, `--json`), `add <canonical> [aliases...]` (`--phonetic`, `--category`, `--notes`, `--project`, `--suggest`, `-i/--interactive`, `--never <word...>`), `remove|rm <canonical>` (`--project`), `list|ls` (`--json`, `--category`, `--query`), `normalize [text...]` (stdin if omitted; `--json`, `--diff`, `--dry-run`, `--min-confidence`, `--no-phonetic`, `--no-fuzzy`, `--include-untrusted`), `harvest [path]` (`--limit`, `--min-count`, `--add`, `-i/--interactive`, `--yes`, `--json`, `--full`), `export [format]` (`--out`, `--category <c...>`, `--limit`), `path` (`--json`), `doctor` (`--json`), `mcp`, `hook`, `daemon` (`--once`, `--paste`, `--interval`, `--dry-run`, `--quiet`, `--backend`, `--which`), `install-claude` (`--apply`, `--scope`, `--project`, `--home`, `--json`: the flags of `install claude`, forwarded to `runInstall("claude", ...)`, with no `--scope` default of its own). Then `registerImportCommands`, `registerInstallCommands`, `registerUninstallCommands`, `registerTrustCommands`, `registerLearnCommands`, `registerReviewCommands`, `registerSetupCommands` add `import`, `install`, `uninstall`, `trust`, `untrust`, `learn`, `stats`, `review`, `edit`, `setup`. `docs/CLI.md` is generated from their `--help`.
 
 ## src/hooks/user-prompt-submit.ts  (bin via `lexicon hook`; bundled as plugin/hook-main.mjs, run through plugin/hook.mjs)
 Claude Code hook entry for two events, dispatched on the payload's `hook_event_name`. Exit 0 always; every error path prints nothing (message to stderr). Must finish < 200ms for a 1KB prompt.
@@ -801,6 +851,14 @@ SwiftPM app, no dependencies, that fronts the CLI; it never links the TypeScript
 - `LexiconBarKit` (testable, no AppKit): `CLILocator` (finds `lexicon` on PATH, `/opt/homebrew/bin`, `/usr/local/bin`, npm and Homebrew prefixes, or the path saved in Preferences), `CLIOutput` (parses `lexicon voice --json`, `lexicon daemon --once`, `lexicon path` and `lexicon stats --json` output; the app checks the local API with `GET /health` itself and runs no `lexicon serve --status`), `RestartPolicy` (5 s backoff, 5 restarts before giving up), `HotKey` (Carbon hotkey encoding for the recorder).
 - `LexiconBar` (AppKit): `AppDelegate` builds the status item menu; `HotKeyCenter` registers ⌃⌥Space (push to talk via `lexicon voice --toggle --json`) and ⌃⌥V (`lexicon daemon --once`); `ChildProcessSupervisor` runs `lexicon daemon` and `lexicon serve` as child processes under `RestartPolicy`; `CommandRunner` spawns one-shot CLI calls; `Notifier` posts a notification after each run; `Settings` persists CLI path, whisper model, paste-vs-copy and hotkeys in `UserDefaults`; `PreferencesWindow` is the SwiftUI preferences sheet and `TextWindow` a read-only text window for `lexicon doctor` output.
 - Everything the app does is a CLI invocation with the same files, trust gate and hit counters as the terminal, so this contract for the CLI is the app's contract too.
+
+## Windows and Linux tray proposal (issue #13)
+
+[Issue #13](https://github.com/ashlrai/lexicon/issues/13) proposes tray access on Windows and Linux to the macOS app's push-to-talk and clipboard repair workflows. Push-to-talk would start and stop local dictation and deliver the corrected transcript; clipboard repair would normalize copied text for the user to paste. These are proposed capabilities, not a promise of platform parity or a defined implementation.
+
+The issue sketches Dictate and Fix clipboard actions using `lexicon voice --toggle --paste` and `lexicon daemon --once --paste`, plus Open lexicon, Preferences, Quit and a clipboard hotkey. It proposes disabling actions other than Preferences when the CLI is missing. Hotkey and paste integration would need platform-specific work: the existing daemon's `--paste` only pastes on macOS, leaving corrected text on the clipboard on Windows and Linux.
+
+The complete proposed Windows and Linux tray support is unimplemented. Linux has no tray app. Windows has a separate tray app in `apps/windows/` with clipboard repair, but no tray push-to-talk; its desktop integration, including the clipboard actions, has not been verified on a real Windows desktop, and no release ships its binary. The existing cross-platform CLI voice and clipboard commands are distinct from tray integration. See [WINDOWS-APP.md](WINDOWS-APP.md) and [PLATFORMS.md](PLATFORMS.md) for current boundaries and verification status.
 
 ## See also
 

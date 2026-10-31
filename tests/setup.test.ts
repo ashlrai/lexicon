@@ -321,6 +321,24 @@ describe('runSetup --yes', () => {
     expect(again.summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI']);
   });
 
+  it('retains the dotted scoped-package brand when reseeding an existing lexicon', async () => {
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, 'version: 1\nterms:\n  - canonical: A\n    aliases: []\n  - canonical: B\n    aliases: []\n  - canonical: C\n    aliases: []\n');
+    await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify({ name: '@ashlr.ai/lexicon', author: 'Ashlr.AI' }));
+    const opts = { yes: true, clients: 'none', packs: 'none', reseed: true };
+
+    const preview = await run({ ...opts, dryRun: true }, fakes());
+    expect(preview.code).toBe(0);
+    expect(preview.plan?.wouldSeed).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+
+    const applied = await run(opts, fakes());
+    expect(applied.code).toBe(0);
+    expect(applied.summary.termsAdded).toEqual(['Mason Wyatt', 'Ashlr.AI']);
+    const terms = (await readLexiconFile(globalPath, 'global')).lexicon.terms;
+    expect(terms.map((term) => term.canonical)).toEqual(['A', 'B', 'C', 'Mason Wyatt', 'Ashlr.AI']);
+    expect(terms.find((term) => term.canonical === 'Ashlr.AI')?.category).toBe('brand');
+  });
+
   it('seeds an explicit --company / --person into a lexicon that already has terms, without the guessed defaults', async () => {
     await fs.mkdir(path.dirname(globalPath), { recursive: true });
     await fs.writeFile(
@@ -1065,10 +1083,33 @@ describe('runSetup with a step that fails', () => {
 });
 
 describe('runSetup interactive', () => {
+  it('suggests the remote organization for an unscoped package when pressing Enter', async () => {
+    const remote = 'https://github.com/remote-org/speech-tools.git';
+    expect(suggestCompany('speech-tools', remote, 'Speech Tools Inc.')).toBe('remote-org');
+    expect(suggestCompany('speech-tools', undefined, 'Speech Tools Inc.')).toBeUndefined();
+    await fs.writeFile(path.join(cwd, 'package.json'), JSON.stringify({ name: 'speech-tools', author: 'Speech Tools Inc.' }));
+    const p = scripted(['y', '', '', 'n']);
+    const f = fakes({
+      isInteractive: () => true,
+      createPrompter: () => p,
+      exec: (_file, args) => args.includes('get-url') ? remote : 'Mason Wyatt',
+    });
+    const { code, summary } = await run({ clients: 'none', packs: false, harvest: false, serve: false, app: 'none' }, f);
+
+    expect(code).toBe(0);
+    const companyPrompt = p.asked.findIndex((question) => question.includes('Your company or product name'));
+    expect(companyPrompt).toBeGreaterThanOrEqual(0);
+    expect(p.defaults[companyPrompt]).toBe('remote-org');
+    expect(summary.termsAdded).toEqual(['Mason Wyatt', 'remote-org']);
+    const terms = (await readLexiconFile(globalPath, 'global')).lexicon.terms;
+    expect(terms.filter((term) => term.category === 'brand').map((term) => term.canonical)).toEqual(['remote-org']);
+  });
+
   it.each([
     [{ name: '@ashlr/lexicon', author: 'Ashlr.AI' }, 'Ashlr.AI'],
     [{ name: '@Ashlr.AI/lexicon' }, 'Ashlr.AI'],
     [{ name: '@ashlr.ai/lexicon', author: 'Ashlr.AI <hello@example.com>' }, 'Ashlr.AI'],
+    [{ name: '@ashlr.ai/lexicon', author: { name: 'Ashlr.AI', email: 'hello@example.com' } }, 'Ashlr.AI'],
     [{ name: '@ashlr.ai/ashlr.ai', author: 'Ashlr.AI' }, 'Ashlr.AI'],
     [{ name: '@Acme.Voice.AI/transcriber' }, 'Acme.Voice.AI'],
   ])('accepts a dotted package brand as the suggested company when pressing Enter: %j', async (pkg, expected) => {
@@ -1085,6 +1126,23 @@ describe('runSetup interactive', () => {
     expect(summary.termsAdded).toEqual(['Mason Wyatt', expected]);
     const terms = (await readLexiconFile(globalPath, 'global')).lexicon.terms;
     expect(terms.filter((term) => term.category === 'brand').map((term) => term.canonical)).toEqual([expected]);
+  });
+
+  it('runs the setup cast prompts and keeps optional integrations disabled', async () => {
+    const answers = scripted(['Ashlr.AI', 'ASH-ler', 'n']);
+    const f = fakes({ isInteractive: () => true, createPrompter: () => answers });
+    const { code, summary } = await run({ person: 'Avery Example', clients: 'none', packs: false, harvest: false, serve: false, app: 'none' }, f);
+
+    expect(code).toBe(0);
+    expect(answers.asked).toEqual([
+      expect.stringContaining('Your company or product name'),
+      expect.stringContaining('phonetic hint'),
+      expect.stringContaining('add another term?'),
+    ]);
+    expect(summary.termsAdded).toEqual(['Avery Example', 'Ashlr.AI']);
+    expect(summary.demo?.corrected).toContain('Ashlr.AI');
+    expect(f.installed).toEqual([]);
+    expect(f.serveCalls).toBe(0);
   });
 
   // Catches: ctrl-C or ctrl-D at a prompt surfaced as `input closed before
@@ -1129,6 +1187,7 @@ describe('runSetup interactive', () => {
       [], // starter packs checklist: none
       'n', // also add business?
       'n', // also add cloud-devops?
+      'n', // also add legal?
       'n', // also add profession-q8?
       'n', // add harvest candidates? -> skipped
       [1], // clients checklist: pick the first detected (claude)
@@ -1195,8 +1254,8 @@ describe('runSetup interactive', () => {
   it('Enter everywhere takes the defaults: person yes, suggested company, default packs, harvest NO, all clients, serve yes, first app', async () => {
     await fs.mkdir(path.join(cwd, '.git'));
     const exportDir = path.join(home, 'Desktop');
-    // The packs checklist starts with developer, ai and voice-tools checked; business, cloud-devops and profession-q8 each default to no.
-    const p = scripted(['', '', '', '', [1, 2, 3], '', '', '', '', [1, 2], '', 1]);
+    // The packs checklist starts with developer, ai and voice-tools checked; business, cloud-devops, legal and profession-q8 each default to no.
+    const p = scripted(['', '', '', '', [1, 2, 3], '', '', '', '', '', [1, 2], '', 1]);
     const f = fakes(
       {
         isInteractive: () => true,
@@ -1439,7 +1498,7 @@ describe('runSetup starter packs', () => {
 
   it('rejects an unknown pack before anything is written', async () => {
     const f = fakes();
-    await expect(run({ yes: true, clients: 'none', company: 'Ashlr.AI', packs: 'developer,nope' }, f)).rejects.toThrow(/unknown pack "nope" \(expected one of: ai, business, cloud-devops, developer, profession-q8, voice-tools, none\)/);
+    await expect(run({ yes: true, clients: 'none', company: 'Ashlr.AI', packs: 'developer,nope' }, f)).rejects.toThrow(/unknown pack "nope" \(expected one of: ai, business, cloud-devops, developer, legal, profession-q8, voice-tools, none\)/);
     expect(existsSync(globalPath)).toBe(false);
   });
 
@@ -1675,6 +1734,9 @@ describe('runSetup starter packs', () => {
       'n', // another term?
       [1], // packs checklist: developer only
       'y', // also add business?
+      'n', // also add cloud-devops?
+      'n', // also add legal?
+      'n', // also add profession-q8?
       [], // clients: none detected -> not asked; this answer is for serve
       'n', // app: handled below
     ]);
@@ -1699,7 +1761,7 @@ describe('runSetup starter packs', () => {
   });
 
   it('interactive: an empty checklist and no to the rest skips the step', async () => {
-    const p = scripted(['y', 'Ashlr.AI', '', 'n', [], 'n', 'n', 'n']);
+    const p = scripted(['y', 'Ashlr.AI', '', 'n', [], 'n', 'n', 'n', 'n']);
     const f = fakes({ isInteractive: () => true, createPrompter: () => p });
     const { summary, io } = await run({ app: 'none', serve: false }, f);
     expect(summary.packs).toEqual([]);

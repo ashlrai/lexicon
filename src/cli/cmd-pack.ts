@@ -1,3 +1,4 @@
+import { dryRunPlan } from './dry-run-plan.js';
 /**
  * `lexicon pack list|add|remove|show`: the starter term packs shipped in
  * `packs/`. Handlers are exported for tests; registerPackCommands() only wires
@@ -551,7 +552,7 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
   // single community ref as its object, anything else as one array in
   // argument order.
   const dry = opts.dryRun === true;
-  const results: ((InstallPackResult & { dryRun?: boolean }) | CommunityInstallJson | CommunityPreviewJson)[] = [];
+  const results: ((InstallPackResult & { dryRun?: boolean; ok?: true; plan?: true }) | CommunityInstallJson | CommunityPreviewJson)[] = [];
   let vendored = 0;
   const installed: string[] = [];
   const declined: string[] = [];
@@ -590,7 +591,7 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
         }
       } else {
         const result = await installPack(name, { cwd, scope, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...(dry ? { dryRun: true } : {}), ...deps });
-        results.push(dry ? { ...result, dryRun: true } : result);
+        results.push(dry ? { ok: true, ...dryRunPlan(dry), ...result, dryRun: true } : result);
         installed.push(result.pack.name);
         if (!result.alreadyInstalled) vendored += 1;
         if (!opts.json) {
@@ -631,7 +632,7 @@ function failPackAdd(
   io: IO,
   opts: PackRegistryCliOptions,
   names: readonly string[],
-  results: ((InstallPackResult & { dryRun?: boolean }) | CommunityInstallJson | CommunityPreviewJson)[],
+  results: ((InstallPackResult & { dryRun?: boolean; ok?: true; plan?: true }) | CommunityInstallJson | CommunityPreviewJson)[],
   at: number,
   err: unknown,
 ): number {

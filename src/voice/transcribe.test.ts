@@ -7,6 +7,11 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript(prose)).toBe(prose);
   });
 
+  it('preserves multiline prose and spoken parentheticals while normalizing whitespace', () => {
+    const prose = '  Please review the café menu (including the specials),\n\tthen send it to Zoë.  ';
+    expect(cleanTranscript(prose)).toBe('Please review the café menu (including the specials), then send it to Zoë.');
+  });
+
   it('removes a one-word asterisk tag while preserving surrounding speech', () => {
     expect(cleanTranscript('Please continue *whispers* with the rollout.')).toBe('Please continue with the rollout.');
   });

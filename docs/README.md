@@ -13,55 +13,12 @@ The short pitch, the benchmark headline and the install commands are in the
 | Page | What it covers | Also listed under |
 |---|---|---|
 | [QUICKSTART.md](QUICKSTART.md) | Nothing to working corrections in Claude Code in five minutes, with what each setup step writes | |
-| [FIRST-RUN.md](FIRST-RUN.md) | A 2026 Linux first-run report measured October 26: install and setup demo timings, a separate npx normalization timing, documentation findings, non-interactive agent behavior, write gates, JSON errors and MCP schemas, comparing npm 0.5.4 with source 0.5.6, plus ranked follow-ups | |
+| [FIRST-RUN.md](FIRST-RUN.md) | First-run report measured October 26, 2026 on one Linux VM with Node already installed: install and setup demo timings (the first printed correction is the setup demo), a separate npx normalization timing, documentation findings, non-interactive agent behavior, write gates, JSON errors, MCP schemas and ranked follow-ups; compares npm 0.5.4 with source 0.5.6 | |
 | [CLIENTS.md](CLIENTS.md) | Installing into Claude Code (plugin, hooks, headless) and every other agent client. Read this one second | Use it with |
 | [FAQ.md](FAQ.md) | The questions people ask before installing | |
-| [PACKS.md](PACKS.md) | The six starter packs, what is in each, and how install and remove behave | |
+| [PACKS.md](PACKS.md) | The seven starter packs, what is in each, and how install and remove behave | |
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Reference |
 | [PLATFORMS.md](PLATFORMS.md) | What works on macOS, Windows and Linux, what is tested in CI, and what is not there at all | |
-
-### Setup-cast outline
-
-This is an outline for a future terminal recording, not a link to a recording.
-It shows a repeatable source-checkout setup and correction without registering an
-agent or installing a service. Use a POSIX shell, Node 20 or newer, and a checkout
-with dependencies installed (`npm install`). Run `npm run build` from the checkout
-first; it produces the CLI used below.
-
-1. Start in the checkout root, then create an isolated home and enter it:
-
-   ```sh
-   cast_cli="$PWD/dist/cli/index.js"
-   cast_home=$(mktemp -d)
-   export HOME="$cast_home" XDG_CONFIG_HOME="$cast_home/.config" LEXICON_PATH="$cast_home/lexicon.yaml"
-   cd "$cast_home"
-   mkdir .git
-   ```
-
-   The temporary home and `.git` directory isolate the demonstration from your
-   own global and project lexicons.
-   Run the remaining commands in this same shell. Paths in the output will vary.
-
-2. Run setup with explicit example names and the optional integrations disabled:
-
-   ```sh
-   node "$cast_cli" setup --yes --company Ashlr.AI --person "Mason Wyatt" --clients none --no-packs --no-harvest --no-serve --app none
-   ```
-
-   Expect a created lexicon, the two added names, skipped integration steps,
-   and a `Does it work?` example showing `Ashler` corrected to `Ashlr.AI`.
-   Setup writes the lexicon in the temporary directory; it does not configure an
-   agent in this run.
-
-3. Show a separate correction using the saved term:
-
-   ```sh
-   node "$cast_cli" normalize "ping Ashler about the launch"
-   ```
-
-   Expect `ping Ashlr.AI about the launch`. End the shell and remove the temporary
-   directory when finished. For a real client setup, follow [QUICKSTART.md](QUICKSTART.md)
-   and [CLIENTS.md](CLIENTS.md).
 
 ## Use it with
 
@@ -73,6 +30,7 @@ exist on your operating system is [PLATFORMS.md](PLATFORMS.md).
 | [CLIENTS.md](CLIENTS.md) | Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code, Claude Desktop | Get started |
 | [MCP.md](MCP.md) | Any MCP client: the stdio server's tools, resources and prompts | Reference |
 | [EXTENSION.md](EXTENSION.md) | ChatGPT, Claude.ai, Grok, Gemini, Perplexity, Poe and Copilot in the browser | |
+| [firefox-extension-readiness.md](firefox-extension-readiness.md) | Firefox packaging evidence and open review questions | |
 | [MACOS-APP.md](MACOS-APP.md) | LexiconBar: any macOS app, via the Accessibility API | |
 | [WINDOWS-APP.md](WINDOWS-APP.md) | The tray app: any Windows app, via UI Automation. Built and unit-tested, never yet run on Windows | |
 | [LOCAL-API.md](LOCAL-API.md) | The loopback HTTP API: the browser extension is its main client, then LexiconBar, Shortcuts, Raycast, Alfred and scripts | |
@@ -90,16 +48,17 @@ exist on your operating system is [PLATFORMS.md](PLATFORMS.md).
 | [MATCHING.md](MATCHING.md) | The three matching tiers and every guard against a false positive |
 | [TRUST.md](TRUST.md) | Why a project `.lexicon.yaml` is off until you approve it |
 | [BENCHMARK.md](BENCHMARK.md) | The accuracy measurements: corpora, method, results, and what still fails |
+| [BENCH-NON-ENGLISH.md](BENCH-NON-ENGLISH.md) | The generated non-English name report: per-language hit rates beside the English baseline |
 | [BENCHMARKS.md](BENCHMARKS.md) | Install time, latency and memory next to espanso and whisper.cpp, measured on one Linux VM |
 | [RESEARCH.md](RESEARCH.md) | Why this layer exists at all, the market read, and the kill criteria |
 | [GROWING.md](GROWING.md) | The four ways terms get in after the first one: a starter pack, your repo, your corrections, your voice history |
+| [harvest-markers.md](harvest-markers.md) | How harvest treats TODO-style markers and their casing |
 | [SUGGEST.md](SUGGEST.md) | What `lexicon suggest` mines from your voice history, and how it scores |
 
 ## Reference
 
-Look up an exact name, flag or field. Three of these four pages appear above as
-well; they are the same page either way, listed twice because you reach them for
-two different reasons.
+Look up an exact name, flag or field. Some pages also appear above, listed
+twice because you may reach them for different reasons.
 
 The CLI reference describes the current source tree. In the published npm package
 measured in [FIRST-RUN.md](FIRST-RUN.md), `lexicon doctor --fix`,
@@ -113,15 +72,22 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [CLI.md](CLI.md) | Every command and flag, generated from `--help` | |
 | [MCP.md](MCP.md) | Every tool, resource and prompt, with arguments and return shapes | Use it with |
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Get started |
+| [schema-limit-reference.md](schema-limit-reference.md) | File schema limits and their relationship to the contract | |
+| [schema-error-examples.md](schema-error-examples.md) | Reading invalid code unit errors and shortened term names | |
 | [EXPORTS.md](EXPORTS.md) | Every export format and every importer | Use it with |
+| [voice-cleaning-reference.md](voice-cleaning-reference.md) | How local voice transcription removes tags and collapses whitespace | |
+| [transcript-cleaning-examples.md](transcript-cleaning-examples.md) | Input and output examples for voice transcript cleaning | |
 
 ## Contribute
 
 | Page | What it covers |
 |---|---|
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Setup, the test layout, and a recipe for each kind of contribution |
+| [setup-cast-outline.md](setup-cast-outline.md) | Reproducible, synthetic-data setup recording plan |
+| [setup-contract-summary.md](setup-contract-summary.md) | Guided first-run responsibilities, preview boundaries and open questions |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The module map and the design decisions behind it |
 | [CONTRACT.md](CONTRACT.md) | The per-module API every change is written against |
+| [tray-action-map.md](tray-action-map.md) | Issue #13 tray actions, existing CLI and Windows capabilities, and open platform decisions |
 | [RELEASING.md](RELEASING.md) | Cutting a release: npm, GitHub assets, the Homebrew bump |
 | [DISTRIBUTION.md](DISTRIBUTION.md) | Where Lexicon gets listed so people and agents find it |
 | [LANDING.md](LANDING.md) | The `web/` landing page: what it claims and how it deploys |
@@ -133,8 +99,11 @@ Design notes and live records. You do not need these to use Lexicon.
 | Page | What it covers |
 |---|---|
 | [AGENT-NATIVE.md](AGENT-NATIVE.md) | The agent-as-UI design: which tool an agent calls when, and why each one previews first |
+| [expander-boundary-map.md](expander-boundary-map.md) | Existing correction surfaces, the resident expander and open platform integration boundaries |
 | [DOGFOOD.md](DOGFOOD.md) | A live run of the hooks and MCP server against the real Claude Code CLI, and the bugs it found |
 | [DOGFOOD-AGENT-NATIVE.md](DOGFOOD-AGENT-NATIVE.md) | The same treatment for the agent-native onboarding tools |
+| [resident-expander-scope.md](resident-expander-scope.md) | The scope outline for issue #220: the proposed system-wide expander, the pieces that exist, and the boundary left to build |
+| [expander-platform-questions.md](expander-platform-questions.md) | The per-platform discovery questions behind that boundary, each marked decided or undecided |
 
 ## Not built: commercial planning
 
