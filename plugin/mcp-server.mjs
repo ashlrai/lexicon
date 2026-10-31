@@ -75023,11 +75023,16 @@ ${emptyLexiconNote3()}
 async function main() {
   const server = createServer2();
   const transport = new StdioServerTransport();
+  let shuttingDown = false;
   const shutdown = () => {
+    if (shuttingDown) return;
+    shuttingDown = true;
     server.close().finally(() => process.exit(0));
   };
   process.once("SIGINT", shutdown);
   process.once("SIGTERM", shutdown);
+  process.stdin.once("end", shutdown);
+  process.stdin.once("close", shutdown);
   await server.connect(transport);
   log("server started (stdio)");
 }
