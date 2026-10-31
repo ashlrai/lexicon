@@ -75,6 +75,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [schema-error-examples.md](schema-error-examples.md) | Reading invalid code unit errors and shortened term names | |
 | [EXPORTS.md](EXPORTS.md) | Every export format and every importer | Use it with |
 | [voice-cleaning-reference.md](voice-cleaning-reference.md) | How local voice transcription removes tags and collapses whitespace | |
+| [transcript-cleaning-examples.md](transcript-cleaning-examples.md) | Input and output examples for voice transcript cleaning | |
 
 ## Contribute
 
