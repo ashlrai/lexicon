@@ -3462,6 +3462,17 @@ describe('packs and aliases routes', () => {
     }
   });
 
+  it('serves the request and error examples in the aliases response reference', async () => {
+    const doc = await fs.readFile(new URL('../docs/aliases-response-reference.md', import.meta.url), 'utf8');
+    const examples = [...doc.matchAll(/```http\nGET (\/aliases[^\n]*)\n```[\s\S]*?HTTP (\d{3})[^\n]*\n\n```json\n([^\n]+)\n```/g)];
+    expect(examples.map((example) => example[2])).toEqual(['200', '400']);
+    for (const [, route, status, body] of examples) {
+      const response = await api2('GET', route!);
+      expect(response.status, route).toBe(Number(status));
+      expect(await response.json(), route).toEqual(JSON.parse(body!));
+    }
+  });
+
   it('GET /aliases?canonical=X returns suggestAliases and 400 without a canonical', async () => {
     const res = await api2('GET', `/aliases?canonical=${encodeURIComponent('Ashlr.AI')}`);
     expect(res.status).toBe(200);
