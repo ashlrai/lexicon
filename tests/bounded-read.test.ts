@@ -3,7 +3,7 @@ import { promises as fs, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
-import { BoundedReadError, isBoundedReadError, readBoundedRegularFile } from '../src/util/bounded-read.js';
+import { BoundedReadError, isBoundedReadError, readBoundedRegularFile, readRegularFileTail } from '../src/util/bounded-read.js';
 
 // The reader behind the trust gate's reads of someone else's repo files: it
 // must only ever read a regular file, never more than the cap, and never block.
@@ -120,3 +120,38 @@ function existsDev(p: string): boolean {
     return false;
   }
 }
+
+
+describe('readRegularFileTail', () => {
+  it('keeps a complete first record when the byte limit lands on its boundary', async () => {
+    const p = await write('history', 'old\nfirst\nlast\n');
+    expect(await readRegularFileTail(p, Buffer.byteLength('first\nlast\n'))).toBe('first\nlast\n');
+  });
+
+  it('keeps an entire final record that exactly fills the byte limit', async () => {
+    const p = await write('history', 'old\nlast\n');
+    expect(await readRegularFileTail(p, 5)).toBe('last\n');
+  });
+
+  it('drops only the record cut by a non-boundary byte limit', async () => {
+    const p = await write('history', 'old\nfirst\nlast\n');
+    expect(await readRegularFileTail(p, 9)).toBe('last\n');
+  });
+
+  it('uses byte boundaries for Unicode records', async () => {
+    const p = await write('history', 'old\n你好\nlast\n');
+    expect(await readRegularFileTail(p, Buffer.byteLength('你好\nlast\n'))).toBe('你好\nlast\n');
+    expect(await readRegularFileTail(p, Buffer.byteLength('你好\nlast\n') - 1)).toBe('last\n');
+  });
+
+  it('returns no partial record when the bounded tail has no newline', async () => {
+    expect(await readRegularFileTail(await write('history', 'old\nunfinished'), 4)).toBe('');
+  });
+
+  it('preserves short files and returns empty for a zero-byte limit', async () => {
+    const p = await write('history', 'last\n');
+    expect(await readRegularFileTail(p, 20)).toBe('last\n');
+    expect(await readRegularFileTail(p, 0)).toBe('');
+    expect(await readRegularFileTail(await write('empty', ''), 5)).toBe('');
+  });
+});
