@@ -4,7 +4,9 @@
 push-to-talk and clipboard repair, using the existing Lexicon behavior. This is
 an implementation map for contributors, not a claim that the proposed tray is
 available. The [contract's tray proposal](CONTRACT.md#windows-and-linux-tray-proposal-issue-13)
-and the linked module contracts describe the current source tree.
+and the linked module contracts describe the current source tree, and
+[tray-platform-scope.md](tray-platform-scope.md) separates the issue's stated
+requirements from its open questions.
 
 | Issue request | Existing capability | Remaining tray work |
 |---|---|---|
