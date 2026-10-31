@@ -1128,6 +1128,23 @@ describe('runSetup interactive', () => {
     expect(terms.filter((term) => term.category === 'brand').map((term) => term.canonical)).toEqual([expected]);
   });
 
+  it('runs the setup cast prompts and keeps optional integrations disabled', async () => {
+    const answers = scripted(['Ashlr.AI', 'ASH-ler', 'n']);
+    const f = fakes({ isInteractive: () => true, createPrompter: () => answers });
+    const { code, summary } = await run({ person: 'Avery Example', clients: 'none', packs: false, harvest: false, serve: false, app: 'none' }, f);
+
+    expect(code).toBe(0);
+    expect(answers.asked).toEqual([
+      expect.stringContaining('Your company or product name'),
+      expect.stringContaining('phonetic hint'),
+      expect.stringContaining('add another term?'),
+    ]);
+    expect(summary.termsAdded).toEqual(['Avery Example', 'Ashlr.AI']);
+    expect(summary.demo?.corrected).toContain('Ashlr.AI');
+    expect(f.installed).toEqual([]);
+    expect(f.serveCalls).toBe(0);
+  });
+
   // Catches: ctrl-C or ctrl-D at a prompt surfaced as `input closed before
   // the prompt was answered` and exit 1, with no word of what the steps
   // before it had already written (a created lexicon, seeded terms).
