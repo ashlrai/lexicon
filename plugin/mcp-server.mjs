@@ -52120,10 +52120,12 @@ async function readRegularFileTail(filePath, maxBytes) {
     if (!st.isFile()) throw notRegular(filePath);
     const length = Math.min(st.size, maxBytes);
     const start = st.size - length;
-    const buf = Buffer.alloc(length);
+    const readStart = start > 0 ? start - 1 : start;
+    const readLength = length + (start > 0 ? 1 : 0);
+    const buf = Buffer.alloc(readLength);
     let got = 0;
-    while (got < length) {
-      const { bytesRead } = await handle.read(buf, got, length - got, start + got);
+    while (got < readLength) {
+      const { bytesRead } = await handle.read(buf, got, readLength - got, readStart + got);
       if (bytesRead === 0) break;
       got += bytesRead;
     }
