@@ -5,6 +5,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 <!-- fresh:begin table:releases -->
 | Version | Released |
 |---|---|
+| 0.5.7 | 2026-10-31 |
 | 0.5.6 | 2026-10-18 |
 | 0.5.5 | 2026-10-14 |
 | 0.5.4 | 2026-09-21 |
@@ -20,7 +21,19 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 | 0.1.0 | 2026-09-19 |
 <!-- fresh:end -->
 
-## Unreleased
+## 0.5.7 (2026-10-31)
+
+### Release scope and upgrade notes
+
+- This is an unpublished release candidate prepared on 2026-10-31. The date records preparation, not completed publication. The last verified npm `latest` and public GitHub release are 0.5.4; the 0.5.5 publication failed authentication, and the historical 0.5.6 changelog heading does not prove an npm release. This candidate contains the accumulated changes documented below and in the 0.5.5/0.5.6 sections, not only the newest history-tail fix. Existing dated development notes are preserved as history.
+- Unattended `lexicon trust` callers must explicitly pass `--yes`; MCP project trust now needs hash-bound user elicitation or the documented terminal flow. Do not remove those consent checks to make an integration appear compatible.
+- Rejected pending-correction IDs are additive metadata; older clients that rewrite the pending file forget them. Avoid alternating old and new writers if rejection history matters.
+- `lexicon doctor --json` adds the shared `ashlr.doctor` v1 envelope while retaining existing fields and exit codes. Consumers should accept additional fields and continue using capability discovery.
+
+### Fixed
+
+- Preserve the first complete voice-history record when the bounded tail starts exactly at its byte boundary. History trimming and term suggestions now discard only a genuinely cut record, including for Unicode input.
+
 
 ### Internal
 
