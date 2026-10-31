@@ -55,7 +55,7 @@ exist on your operating system is [PLATFORMS.md](PLATFORMS.md).
 
 ## Reference
 
-Look up an exact name, flag or field. Three of these four pages appear above as
+Look up an exact name, flag or field. Three of these five pages appear above as
 well; they are the same page either way, listed twice because you reach them for
 two different reasons.
 
@@ -72,6 +72,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [MCP.md](MCP.md) | Every tool, resource and prompt, with arguments and return shapes | Use it with |
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Get started |
 | [EXPORTS.md](EXPORTS.md) | Every export format and every importer | Use it with |
+| [contract-limits-reference.md](contract-limits-reference.md) | Schema limits, units and scope | |
 
 ## Contribute
 
