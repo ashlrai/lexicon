@@ -97,6 +97,8 @@ Design notes and live records. You do not need these to use Lexicon.
 | [AGENT-NATIVE.md](AGENT-NATIVE.md) | The agent-as-UI design: which tool an agent calls when, and why each one previews first |
 | [DOGFOOD.md](DOGFOOD.md) | A live run of the hooks and MCP server against the real Claude Code CLI, and the bugs it found |
 | [DOGFOOD-AGENT-NATIVE.md](DOGFOOD-AGENT-NATIVE.md) | The same treatment for the agent-native onboarding tools |
+| [resident-expander-scope.md](resident-expander-scope.md) | The scope outline for issue #220: the proposed system-wide expander, the pieces that exist, and the boundary left to build |
+| [expander-platform-questions.md](expander-platform-questions.md) | The per-platform discovery questions behind that boundary, each marked decided or undecided |
 
 ## Not built: commercial planning
 

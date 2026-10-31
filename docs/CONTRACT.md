@@ -459,7 +459,9 @@ Wayland compositors. The required permissions, sensitive-field exclusions,
 edit and undo behavior, startup and supervision, and recovery when focus or
 the connection changes also need design and validation on each platform. The
 socket protocol below does not settle those choices or promise support in
-every application.
+every application. The per-platform discovery questions are tracked, marked
+decided or undecided, in
+[expander-platform-questions.md](expander-platform-questions.md).
 
 #### Boundaries between surfaces
 

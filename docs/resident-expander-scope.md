@@ -42,6 +42,10 @@ complete specification for every application's input and editing model.
 
 ## Open platform and product questions
 
+Each of these is expanded into per-platform discovery questions, marked
+decided or undecided, in
+[expander-platform-questions.md](expander-platform-questions.md).
+
 - **Input and editing:** Which APIs can observe input and focus and apply edits
   on macOS, Windows, and Linux, including X11 and different Wayland
   compositors? Which applications and input methods can they support?
