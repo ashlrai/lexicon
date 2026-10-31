@@ -96,12 +96,26 @@ in order; an `id` is echoed back.
 
 | Request | Response |
 | --- | --- |
+| `{"op":"cli-read","argv":["list","--json"],"context":"..."}` | `{"ok":true,"stdout":"...","stderr":"","code":0}` |
 | `{"op":"ping"}` | `{"ok":true,"version":"...","terms":12}` |
 | `{"op":"normalize","text":"..."}` | `{"ok":true,"output":"...","changed":true,"replacements":[...]}` |
 | `{"op":"clipboard","paste":true}` | `{"ok":true,"changed":true,"written":true,"corrections":1,"pasted":true}` |
 | `{"op":"type","text":"a"}` | `{"ok":true,"action":null}` or an action |
 | `{"op":"key","key":"Backspace"}` | `{"ok":true,"action":null}` or an undo action |
 | `{"op":"reset"}` | `{"ok":true}` |
+
+The CLI automatically tries the default socket for command-first `list` (`ls`),
+`path`, `stats`, and stdout-only `export` invocations. The internal `cli-read`
+operation uses the same CLI handlers and fresh file/trust checks. Its opaque
+`context` comes from `cliReadContext()`: version, working directory, home,
+lexicon/config overrides, trust override, and terminal colour settings must
+match the resident process. `--cwd` after the command is supported; a global
+option before it uses the direct path. File exports, help, mutations and stdin
+commands use the direct path too. A missing daemon, an older protocol, a bad
+response or a 100 ms total deadline silently falls back, preserving stdout,
+stderr and status. Nothing starts a daemon automatically. Custom `--socket`
+paths remain available to explicit protocol clients. See [BENCH-DAEMON.md](BENCH-DAEMON.md)
+for measured latency and reproduction.
 
 `clipboard` is `--once [--paste]` in the resident process, so a hotkey can run:
 
