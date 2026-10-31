@@ -47,7 +47,7 @@
     "prepare": "npm run build && npm run build:bundle",
     "check:bundle": "node scripts/check-bundle.mjs",
     "dev": "tsc -p tsconfig.build.json --watch",
-    "test": "node --test test/hook-main-sonar.test.mjs tests/docs-index-first-run.test.mjs && vitest run",
+    "test": "node --test test/hook-main-sonar.test.mjs tests/docs-index-first-run.test.mjs tests/cli-dry-run.test.mjs && vitest run",
     "test:e2e": "vitest run tests/e2e.test.ts",
     "test:watch": "vitest",
     "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p extension/tsconfig.json --noEmit && tsc -p site/tsconfig.json --noEmit",
