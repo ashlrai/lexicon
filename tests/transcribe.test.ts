@@ -18,6 +18,22 @@ describe('voice cleaning reference', () => {
   });
 });
 
+describe('transcript cleaning examples', () => {
+  const document = readFileSync(new URL('../docs/transcript-cleaning-examples.md', import.meta.url), 'utf8');
+
+  it.each([
+    ['Square brackets', 7],
+    ['Asterisks', 9],
+  ])('keeps the %s examples in sync with the cleaner', (section, minimum) => {
+    const content = document.split(`## ${section}\n`)[1]?.split('\n## ')[0] ?? '';
+    const examples = [...content.matchAll(/^\| `([^`]+)` \| `([^`]+)` \|$/gm)];
+    expect(examples.length).toBeGreaterThanOrEqual(minimum);
+    for (const [, input, output] of examples) {
+      expect(cleanTranscript(input), input).toBe(output === '""' ? '' : output);
+    }
+  });
+});
+
 describe('cleanTranscript bracketed tags', () => {
   it('removes an arbitrary tag while preserving the spoken text around it', () => {
     expect(cleanTranscript('Please send [background noise] the report.')).toBe('Please send the report.');
