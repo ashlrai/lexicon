@@ -90,6 +90,7 @@ exist on your operating system is [PLATFORMS.md](PLATFORMS.md).
 | [MATCHING.md](MATCHING.md) | The three matching tiers and every guard against a false positive |
 | [TRUST.md](TRUST.md) | Why a project `.lexicon.yaml` is off until you approve it |
 | [BENCHMARK.md](BENCHMARK.md) | The accuracy measurements: corpora, method, results, and what still fails |
+| [BENCH-NON-ENGLISH.md](BENCH-NON-ENGLISH.md) | The generated non-English name report: per-language hit rates beside the English baseline |
 | [BENCHMARKS.md](BENCHMARKS.md) | Install time, latency and memory next to espanso and whisper.cpp, measured on one Linux VM |
 | [RESEARCH.md](RESEARCH.md) | Why this layer exists at all, the market read, and the kill criteria |
 | [GROWING.md](GROWING.md) | The four ways terms get in after the first one: a starter pack, your repo, your corrections, your voice history |
