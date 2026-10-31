@@ -461,7 +461,9 @@ the connection changes also need design and validation on each platform. The
 socket protocol below does not settle those choices or promise support in
 every application. The per-platform discovery questions are tracked, marked
 decided or undecided, in
-[expander-platform-questions.md](expander-platform-questions.md).
+[expander-platform-questions.md](expander-platform-questions.md), and the
+resident server's open questions in
+[daemon-surface-questions.md](daemon-surface-questions.md).
 
 #### Boundaries between surfaces
 
