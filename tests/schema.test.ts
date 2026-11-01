@@ -957,4 +957,16 @@ describe('hardening (lexicon content reaches model context)', () => {
       'Invalid lexicon:\n  - terms: at most 5000 terms',
     );
   });
+
+  it('counts repeated terms toward the documented 5000-term limit', () => {
+    // docs/CONTRACT.md specifies a collection limit, not a unique-name limit.
+    const terms = Array.from({ length: 5000 }, () => ({ canonical: 'Repeated' }));
+    const parsed = parseLexicon({ terms });
+    expect(parsed.terms).toHaveLength(5000);
+    expect(parsed.terms.every((term) => term.canonical === 'Repeated')).toBe(true);
+
+    expect(() => parseLexicon({ terms: [...terms, { canonical: 'Repeated' }] })).toThrow(
+      'Invalid lexicon:\n  - terms: at most 5000 terms',
+    );
+  });
 });
