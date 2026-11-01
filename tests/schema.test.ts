@@ -612,6 +612,31 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(findUnencodableChar(pair)).toBeUndefined();
   });
 
+  it('accepts pairs across the full high and low surrogate ranges', () => {
+    for (let unit = 0; unit <= 0x3ff; unit++) {
+      for (const pair of [
+        String.fromCharCode(0xd800 + unit, 0xdc00),
+        String.fromCharCode(0xd800 + unit, 0xdfff),
+        String.fromCharCode(0xd800, 0xdc00 + unit),
+        String.fromCharCode(0xdbff, 0xdc00 + unit),
+      ]) {
+        expect(findUnencodableChar(`a${pair}${pair}z`)).toBeUndefined();
+      }
+    }
+  });
+
+  it('preserves supplementary characters decoded from paired YAML surrogate escapes', () => {
+    const input = parseYaml(
+      'terms:\n  - canonical: "Name \\uD842\\uDFB7"\n    aliases: ["\\uD83D\\uDE80\\uD842\\uDFB7"]\n' +
+      'settings:\n  protectedWords: ["\\uD842\\uDFB7"]\n',
+    );
+    const parsed = parseLexicon(input);
+
+    expect(parsed.terms[0].canonical).toBe('Name \u{20BB7}');
+    expect(parsed.terms[0].aliases).toEqual(['\u{1F680}\u{20BB7}']);
+    expect(parsed.settings?.protectedWords).toEqual(['\u{20BB7}']);
+  });
+
   it('accepts a supplementary CJK character decoded from a YAML Unicode escape', () => {
     const character = '\u{20000}';
     const input = parseYaml('terms:\n  - canonical: "Name \\U00020000"\nsettings:\n  protectedWords: ["\\U00020000"]\n');
