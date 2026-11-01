@@ -299,6 +299,41 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it.each([
+    ['U+FFFE', '\uFFFE'],
+    ['U+FFFF', '\uFFFF'],
+  ])('identifies %s in both settings lists after empty entries are removed', (codePoint, character) => {
+    const input = {
+      terms: [],
+      settings: {
+        protectedWords: [' ', 'valid', `before${character}after`],
+        packs: ['', `before${character}after`],
+      },
+    };
+    const result = LexiconSchema.safeParse(input);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error(`Expected ${codePoint} to be rejected`);
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['settings', 'protectedWords', 1],
+        message: `must not contain ${codePoint} (U+FFFE, U+FFFF and unpaired surrogates fit no file format)`,
+      },
+      {
+        path: ['settings', 'packs', 0],
+        message: `must not contain ${codePoint} (U+FFFE, U+FFFF and unpaired surrogates fit no file format)`,
+      },
+    ]);
+  });
+
+  it('preserves valid Unicode values on either side of the rejected BMP boundary', () => {
+    const neighbors = ['\uFFFD', '\u{10000}'];
+    const input = { terms: [{ canonical: 'Boundary', aliases: neighbors }], settings: { packs: neighbors } };
+
+    expect(parseLexicon(input)).toMatchObject(input);
+    for (const character of neighbors) expect(findUnencodableChar(character)).toBeUndefined();
+  });
+
   it('rejects U+FFFE in a canonical term and a YAML alias with the offending character in the error', () => {
     const canonical = { terms: [{ canonical: 'Ash\uFFFElr' }] };
     const alias = parseYaml('terms:\n  - canonical: Ashlr.AI\n    aliases: ["Ash\\uFFFEler"]\n');
