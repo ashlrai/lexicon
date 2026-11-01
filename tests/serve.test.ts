@@ -3576,6 +3576,20 @@ describe('packs and aliases routes', () => {
     }
   });
 
+  it.each([
+    '/aliases?canonical=',
+    '/aliases?canonical',
+    '/aliases?canonical=%20%09%0A',
+    '/aliases?canonical=%E2%80%8B%EF%BB%BF',
+    `/aliases?canonical=${'%E2%80%8B'.repeat(81)}%20`,
+  ])('rejects an empty canonical query after cleaning: %s', async (route) => {
+    const response = await api2('GET', route);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'canonical query parameter is required (e.g. GET /aliases?canonical=Ashlr.AI)',
+    });
+  });
+
   it('GET /aliases?canonical=X returns suggestAliases and 400 without a canonical', async () => {
     const res = await api2('GET', `/aliases?canonical=${encodeURIComponent('Ashlr.AI')}`);
     expect(res.status).toBe(200);
