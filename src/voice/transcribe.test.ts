@@ -23,6 +23,20 @@ describe('cleanTranscript', () => {
   });
 
   it.each([
+    ['whitespace before a bracketed tag', 'Hello \t[noise]world', 'Hello world'],
+    ['whitespace after a bracketed tag', 'Hello[noise]\n world', 'Hello world'],
+    ['whitespace on both sides of a bracketed tag', 'Hello  [noise]\t\nworld', 'Hello world'],
+    ['whitespace on both sides of a parenthesized tag', 'Hello\n (soft music)\t world', 'Hello world'],
+    ['whitespace on both sides of a starred tag', 'Hello\t *laughs* \r\nworld', 'Hello world'],
+    ['Unicode whitespace around a tag', 'Hello\u00a0[noise]\u2003world', 'Hello world'],
+    ['a tag before speech', ' \t[noise]\n Hello world  ', 'Hello world'],
+    ['a tag after speech', '  Hello world \t[noise]\n ', 'Hello world'],
+    ['speech and tags at both ends', '\n[noise]\tHello world  *laughs*\r\n', 'Hello world'],
+  ])('normalizes %s without losing speech', (_description, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
+  it.each([
     ['an unmatched opening bracket', 'Please keep [unfinished speech.', 'Please keep [unfinished speech.'],
     ['an unmatched closing bracket', 'Please keep unfinished] speech.', 'Please keep unfinished] speech.'],
     ['an opening bracket after a complete tag', '  Please [noise] continue [unfinished\nthought  ', 'Please continue [unfinished thought'],
