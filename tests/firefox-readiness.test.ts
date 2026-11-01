@@ -16,6 +16,19 @@ describe('Firefox readiness documentation', () => {
     expect(read('docs/README.md')).toContain('(firefox-distribution-scope.md)');
   });
 
+  it('records publication questions without asserting issue details or publication', () => {
+    const doc = read('docs/firefox-extension-publication-questions.md');
+    expect(doc).toContain('https://github.com/ashlrai/lexicon/issues/12');
+    expect(doc).toContain('Firefox Add-ons (AMO) listing');
+    expect(doc).toMatch(/exact requirements\s+and any additional acceptance criteria remain unverified/);
+    expect(doc).toContain('not a submission or publication');
+    expect(doc).toContain('## Packaging questions');
+    expect(doc).toContain('## Review and listing questions');
+    expect(doc).toContain('source archive');
+    expect(doc).toContain('permission revocation and regrant');
+    expect(read('docs/README.md')).toContain('(firefox-extension-publication-questions.md)');
+  });
+
   it('tracks the generated Firefox manifest and the documented review boundary', async () => {
     const doc = read('docs/firefox-extension-readiness.md');
     const source = JSON.parse(read('extension/manifest.json')) as Record<string, unknown>;

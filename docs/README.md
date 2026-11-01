@@ -32,6 +32,7 @@ exist on your operating system is [PLATFORMS.md](PLATFORMS.md).
 | [EXTENSION.md](EXTENSION.md) | ChatGPT, Claude.ai, Grok, Gemini, Perplexity, Poe and Copilot in the browser | |
 | [firefox-distribution-scope.md](firefox-distribution-scope.md) | Firefox distribution outcome and issue evidence | |
 | [firefox-extension-readiness.md](firefox-extension-readiness.md) | Firefox packaging evidence and open review questions | |
+| [firefox-extension-publication-questions.md](firefox-extension-publication-questions.md) | Open Firefox publication and review questions | |
 | [firefox-addon-submission-checklist.md](firefox-addon-submission-checklist.md) | Verification steps for a listed Firefox AMO submission | |
 | [MACOS-APP.md](MACOS-APP.md) | LexiconBar: any macOS app, via the Accessibility API | |
 | [WINDOWS-APP.md](WINDOWS-APP.md) | The tray app: any Windows app, via UI Automation. Built and unit-tested, never yet run on Windows | |
