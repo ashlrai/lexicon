@@ -167,6 +167,37 @@ describe('harvestRepo', () => {
     });
   });
 
+  it('scans marker-adjacent identifiers with ASCII word boundaries, including in comments and strings', async () => {
+    const dir = path.join(tmp, 'repo');
+    await fs.mkdir(dir);
+    await fs.writeFile(path.join(dir, 'markers.ts'), [
+      '// TODO FIXME NOTE HACK XXX: QuasarWidget',
+      '"TodoWidget QuasarTODO"',
+      'xNebulaWidget _PulsarWidget 2CometWidget',
+      'éOrbitWidget -NovaWidget',
+    ].join('\n'));
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+    const names = candidates.map((candidate) => candidate.canonical);
+    for (const name of ['QuasarWidget', 'TodoWidget', 'QuasarTODO', 'OrbitWidget', 'NovaWidget']) {
+      expect(names).toContain(name);
+    }
+    for (const name of ['TODO', 'FIXME', 'NOTE', 'HACK', 'XXX', 'NebulaWidget', 'PulsarWidget', 'CometWidget']) {
+      expect(names).not.toContain(name);
+    }
+  });
+
+  it('does not apply the identifier marker set to manifest names', async () => {
+    const dir = path.join(tmp, 'marker-manifest');
+    await fs.mkdir(dir);
+    await fs.writeFile(path.join(dir, 'Cargo.toml'), '[package]\nname = "TODO"\n');
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1 });
+    expect(candidates.find((candidate) => candidate.canonical === 'TODO')).toMatchObject({
+      category: 'product', source: 'harvest:package', evidence: ['Cargo.toml#package.name'],
+    });
+  });
+
   it('never guesses a word boundary a name does not already have', async () => {
     const candidates = await harvestRepo(repo, { minCount: 1, symbols: true });
 
