@@ -1,11 +1,28 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { LexiconSchema, LIMITS } from '../src/core/schema.js';
+import { LexiconSchema, LIMITS, TermSchema } from '../src/core/schema.js';
 
 const doc = readFileSync(new URL('../docs/contract-term-limits.md', import.meta.url), 'utf8');
 const contract = readFileSync(new URL('../docs/CONTRACT.md', import.meta.url), 'utf8');
 
 describe('contract term limits reference', () => {
+  it.each(['a', '𠮷'])('enforces the documented canonical word limit for %s', (character) => {
+    const match = contract.match(/`word` (\d+) \(canonical, alias\)/);
+    expect(match).not.toBeNull();
+    const documentedLimit = Number(match![1]);
+    expect(documentedLimit).toBe(80);
+
+    const canonical = character.repeat(documentedLimit);
+    expect(TermSchema.parse({ canonical }).canonical).toBe(canonical);
+
+    const result = TermSchema.safeParse({ canonical: canonical + character });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the canonical to exceed the documented word limit');
+    expect(result.error.issues).toMatchObject([
+      { code: 'too_big', path: ['canonical'], maximum: documentedLimit, message: `must be at most ${documentedLimit} characters` },
+    ]);
+  });
+
   it.each([
     ['word', 'Unicode code points in each term\'s `canonical` and each `aliases` entry'],
     ['text', 'Unicode code points in each term\'s `notes` and `phonetic` field'],
