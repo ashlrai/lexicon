@@ -1,0 +1,18 @@
+version: 2
+
+# Documented Socket defaults, so a looser org dashboard does not turn one off.
+issueRules:
+  didYouMean: true
+  installScripts: true
+  telemetry: true
+  troll: true
+  malware: true
+  hasNativeCode: true
+  shellScriptOverride: true
+  gitDependency: true
+  httpDependency: true
+  invalidPackageJSON: true
+  unresolvedRequire: true
+
+projectIgnorePaths:
+  - "tests/fixtures/**"

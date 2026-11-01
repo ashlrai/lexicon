@@ -14,6 +14,7 @@ One YAML file of the words speech-to-text gets wrong, applied everywhere your vo
 lands: MCP, Claude Code, the browser, macOS.
 
 [![CI](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml/badge.svg)](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml)
+[![OpenSSF Scorecard](https://api.scorecard.dev/projects/github.com/ashlrai/lexicon/badge)](https://scorecard.dev/viewer/?uri=github.com/ashlrai/lexicon)
 [![npm](https://img.shields.io/npm/v/%40ashlr%2Flexicon)](https://www.npmjs.com/package/@ashlr/lexicon)
 <!-- fresh:begin badge:release -->[![source version](https://img.shields.io/badge/source-v0.5.7-blue)](package.json)<!-- fresh:end -->
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)

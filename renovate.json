@@ -1,0 +1,38 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "timezone": "America/New_York",
+  "schedule": ["before 6am on Monday"],
+  "automerge": false,
+  "prConcurrentLimit": 3,
+  "prHourlyLimit": 2,
+  "separateMajorMinor": true,
+  "vulnerabilityAlerts": {
+    "enabled": true,
+    "automerge": false
+  },
+  "packageRules": [
+    {
+      "description": "One pull request for all non-major updates",
+      "matchUpdateTypes": ["minor", "patch", "pin", "digest"],
+      "groupName": "non-major updates"
+    },
+    {
+      "description": "One pull request for major updates",
+      "matchUpdateTypes": ["major"],
+      "groupName": "major updates"
+    },
+    {
+      "description": "GitHub Actions stay in their own pull request, including pin and digest updates",
+      "matchManagers": ["github-actions"],
+      "matchUpdateTypes": ["major", "minor", "patch", "pin", "digest"],
+      "groupName": "github-actions"
+    },
+    {
+      "description": "Vulnerability fixes stay ungrouped so they are not held for the Monday batch",
+      "matchJsonata": ["$exists(vulnerabilityFixVersion)"],
+      "groupName": null,
+      "automerge": false
+    }
+  ]
+}
