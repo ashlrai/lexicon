@@ -2,6 +2,16 @@ import { describe, expect, it } from 'vitest';
 import { cleanTranscript } from './transcribe.js';
 
 describe('cleanTranscript', () => {
+  it.each([
+    ['empty input', ''],
+    ['spaces', '   '],
+    ['tabs and line breaks', '\t\r\n\n'],
+    ['mixed Unicode whitespace', ' \u00a0\u2003\u2028\u2029\ufeff\t'],
+    ['noise annotations and whitespace', ' \t[BLANK_AUDIO]\n(soft music) *laughs*  '],
+  ])('returns an empty string for %s', (_description, input) => {
+    expect(cleanTranscript(input)).toBe('');
+  });
+
   it('preserves ordinary prose without annotations', () => {
     const prose = "Let's review the report, then send it to the team. Does that work?";
     expect(cleanTranscript(prose)).toBe(prose);
