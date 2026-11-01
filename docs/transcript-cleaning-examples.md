@@ -6,6 +6,10 @@ later normalized `output`. Other input surfaces calling `normalize()` do not
 perform this cleaning. See the [full cleaning reference](voice-cleaning-reference.md)
 and [module contract](CONTRACT.md) for details.
 
+Each table shows the complete input and cleaned output. `""` represents an
+empty string, not two quotation marks in the result. Removed spans become
+spaces; the final step collapses whitespace and trims both ends.
+
 ## Square brackets
 
 Every span from `[` to the next `]` is replaced with a space, even when it
@@ -30,7 +34,8 @@ A span delimited by single asterisks is replaced with a space when it contains
 one to three ASCII-letter words separated by whitespace. The words do not have
 to describe a sound. Four words, punctuation, digits, non-ASCII letters, or
 spaces just inside the delimiters prevent a match. This is pattern matching,
-not Markdown parsing.
+not Markdown parsing: adjacent matches are removed independently, and an
+unmatched asterisk can remain after a matching span is removed.
 
 | Input | Cleaned output |
 |---|---|
@@ -45,10 +50,15 @@ not Markdown parsing.
 | `Please *door  slams* continue.` | `Please continue.` |
 | `Keep * hello * here.` | `Keep * hello * here.` |
 | `Keep **bold** here.` | `Keep * * here.` |
+| `Keep *laughs**coughs* here.` | `Keep here.` |
+| `Keep *one*two* here.` | `Keep two* here.` |
+| `Before *hello [noise] world* after.` | `Before after.` |
 
-The cleaner also removes recognized parenthesized noise annotations, then
-collapses whitespace and trims the result. For example, `(soft music) Hello`
-becomes `Hello`; `(the new build)` stays. See the
+The last example reflects the order of operations: square-bracketed spans are
+removed before asterisk matching, so the remaining words form a matching span.
+Between those steps, the cleaner removes recognized parenthesized noise
+annotations. For example, `(soft music) Hello` becomes `Hello`;
+`(the new build)` stays. See the
 [full reference](voice-cleaning-reference.md) for those rules and examples.
 
 Back to [the docs index](README.md).
