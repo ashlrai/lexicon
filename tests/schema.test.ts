@@ -666,6 +666,22 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it.each(['a', '\u{20BB7}'])('enforces the 80-character canonical and alias limit after cleaning (%s)', (character) => {
+    const atLimit = character.repeat(80);
+    const overLimit = `${atLimit}${character}`;
+    const padded = (word: string): string => ` ${ZW}${word}${ZW} `;
+
+    expect(parseLexicon({ terms: [{ canonical: padded(atLimit), aliases: ['short', padded(atLimit)] }] }).terms[0])
+      .toEqual({ canonical: atLimit, aliases: ['short', atLimit] });
+
+    expect(() => parseLexicon({ terms: [{ canonical: padded(overLimit), aliases: ['short'] }] })).toThrow(
+      'terms[0].canonical: must be at most 80 characters',
+    );
+    expect(() => parseLexicon({ terms: [{ canonical: 'Valid', aliases: ['short', padded(overLimit)] }] })).toThrow(
+      'terms[0].aliases[1]: must be at most 80 characters',
+    );
+  });
+
   it('counts a supplementary character as one character toward the alias limit', () => {
     // The word cap counts code points, not UTF-16 code units: 80
     // supplementary characters (160 code units) fit exactly.
