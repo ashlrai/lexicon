@@ -187,6 +187,39 @@ describe('harvestRepo', () => {
     }
   });
 
+  it.each([':', ',', '.', '/', '-', '(', ')', '[', ']', '"', "'", '`', ';', '!', '?'])(
+    'uses punctuation %s as a boundary around markers and identifiers', async (punctuation) => {
+      const dir = path.join(tmp, `punctuation-${punctuation.charCodeAt(0)}`);
+      await fs.mkdir(dir);
+      const markers = ['TODO', 'FIXME', 'NOTE', 'HACK', 'XXX'];
+      await fs.writeFile(path.join(dir, 'markers.ts'), markers.map(
+        (marker) => `${marker}${punctuation}QuasarWidget${punctuation}${marker}`,
+      ).join('\n'));
+
+      const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+      expect(byName(candidates, 'QuasarWidget')).toMatchObject({
+        canonical: 'QuasarWidget', category: 'identifier', source: 'harvest:repo',
+        count: markers.length, evidence: ['markers.ts'],
+      });
+      for (const marker of markers) expect(byName(candidates, marker)).toBeUndefined();
+    },
+  );
+
+  it('does not treat underscores or glued markers as punctuation boundaries', async () => {
+    const dir = path.join(tmp, 'marker-word-boundaries');
+    await fs.mkdir(dir);
+    await fs.writeFile(path.join(dir, 'markers.ts'), [
+      'TODO_QuasarWidget QuasarWidget_TODO TODOQuasarWidget QuasarWidgetTODO',
+    ].join('\n'));
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+    expect(byName(candidates, 'QuasarWidget')).toBeUndefined();
+    expect(byName(candidates, 'TODOQuasarWidget')).toBeUndefined();
+    expect(byName(candidates, 'QuasarWidgetTODO')).toMatchObject({
+      canonical: 'QuasarWidgetTODO', category: 'identifier', count: 1, evidence: ['markers.ts'],
+    });
+  });
+
   it.each([
     ['TODO', 'Todo'],
     ['FIXME', 'Fixme'],
