@@ -6,7 +6,7 @@ import { dryRunPlan } from './dry-run-plan.js';
  */
 import { CORRECTION_EXAMPLES, compareText, computeStats, conflictNote, emptyStatsNote, learnCorrection, learnUnchangedNote, loadLexicon, parseCorrection } from '../core/index.js';
 import type { Correction, LexiconStats, TermScope } from '../core/index.js';
-import { conflictLine, dryField, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, safeMessage, shownCommand, shownWord, skippedProjectJson, warnSkippedProject } from './io.js';
+import { conflictLine, fail, jsonOk, line, printJsonError, refuse, renderTable, resolveCwd, safe, safeMessage, shownCommand, shownWord, skippedProjectJson, warnSkippedProject } from './io.js';
 import type { CommonOptions, IO } from './io.js';
 
 /** On stderr: it follows an error, and stdout must stay parseable under --json. */
@@ -197,7 +197,6 @@ export async function runLearn(words: readonly string[], opts: LearnOptions, io:
             file: { path: file.path, scope: file.scope },
             heard: correction.heard,
             meant: correction.meant,
-            ...dryField(opts.dryRun),
             ...(unchanged ? { unchanged: true } : {}),
             ...(notes.length > 0 ? { note: notes.join(' ') } : {}),
           }),

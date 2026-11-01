@@ -62796,7 +62796,7 @@ var init_config = __esm({
 
 // src/cli/dry-run-plan.ts
 function dryRunPlan(dryRun) {
-  return dryRun === true ? { plan: true } : {};
+  return dryRun === true ? { plan: true, dryRun: true } : {};
 }
 var init_dry_run_plan = __esm({
   "src/cli/dry-run-plan.ts"() {
@@ -73388,7 +73388,7 @@ async function runInit(opts, io) {
   if (opts.json) {
     line(
       io,
-      JSON.stringify(jsonOk({ ...dryRunPlan(dry), scope, path: target, created, ...dry ? { dryRun: true } : {}, ...trust !== void 0 ? { trust } : {}, ...untrustedStep ? { nextStep: untrustedStep } : {} }))
+      JSON.stringify(jsonOk({ ...dryRunPlan(dry), scope, path: target, created, ...trust !== void 0 ? { trust } : {}, ...untrustedStep ? { nextStep: untrustedStep } : {} }))
     );
     return 0;
   }
@@ -73522,7 +73522,6 @@ async function runAdd(canonical, aliasArgs, opts, io, prompter) {
           path: result.file.path,
           created: result.created,
           ...result.unchanged ? { unchanged: true } : {},
-          ...opts.dryRun ? { dryRun: true } : {},
           scope,
           // The suggestions this call applied: the fallback ones only when it
           // created the term, as the text output marks them. They used to be

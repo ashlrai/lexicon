@@ -298,7 +298,7 @@ export async function runInit(opts: InitOptions, io: IO): Promise<number> {
   if (opts.json) {
     line(
       io,
-      JSON.stringify(jsonOk({ ...dryRunPlan(dry), scope, path: target, created, ...(dry ? { dryRun: true } : {}), ...(trust !== undefined ? { trust } : {}), ...(untrustedStep ? { nextStep: untrustedStep } : {}) })),
+      JSON.stringify(jsonOk({ ...dryRunPlan(dry), scope, path: target, created, ...(trust !== undefined ? { trust } : {}), ...(untrustedStep ? { nextStep: untrustedStep } : {}) })),
     );
     return 0;
   }
@@ -494,7 +494,6 @@ export async function runAdd(
           path: result.file.path,
           created: result.created,
           ...(result.unchanged ? { unchanged: true } : {}),
-          ...(opts.dryRun ? { dryRun: true } : {}),
           scope,
           // The suggestions this call applied: the fallback ones only when it
           // created the term, as the text output marks them. They used to be

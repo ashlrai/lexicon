@@ -591,7 +591,7 @@ export async function runPackAdd(names: readonly string[], opts: PackRegistryCli
         }
       } else {
         const result = await installPack(name, { cwd, scope, ...(opts.globalPath !== undefined ? { globalPath: opts.globalPath } : {}), ...(dry ? { dryRun: true } : {}), ...deps });
-        results.push(dry ? { ok: true, ...dryRunPlan(dry), ...result, dryRun: true } : result);
+        results.push(dry ? { ok: true, ...result, ...dryRunPlan(dry) } : result);
         installed.push(result.pack.name);
         if (!result.alreadyInstalled) vendored += 1;
         if (!opts.json) {
