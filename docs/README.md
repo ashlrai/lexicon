@@ -99,6 +99,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The module map and the design decisions behind it |
 | [CONTRACT.md](CONTRACT.md) | The per-module API every change is written against |
 | [tray-platform-scope.md](tray-platform-scope.md) | Issue #13 tray scope: the requested platforms and actions, separated into stated requirements and open questions |
+| [tray-platform-questions.md](tray-platform-questions.md) | Windows and Linux tray surfaces and platform-specific open questions for issue #13 |
 | [tray-action-map.md](tray-action-map.md) | Issue #13 tray actions, existing CLI and Windows capabilities, and open platform decisions |
 | [tray-interaction-questions.md](tray-interaction-questions.md) | Open push-to-talk and clipboard interaction questions for Windows and Linux trays |
 | [RELEASING.md](RELEASING.md) | Cutting a release: npm, GitHub assets, the Homebrew bump |
