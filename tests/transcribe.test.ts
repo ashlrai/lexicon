@@ -141,6 +141,24 @@ describe('cleanTranscript asterisk tags', () => {
     expect(cleanTranscript('Before *room 2* and * cough * after')).toBe('Before *room 2* and * cough * after');
   });
 
+  it.each([
+    ['digits alone', '*123*'],
+    ['leading digit', '*2beeps*'],
+    ['embedded digit', '*be2eps*'],
+    ['trailing digit', '*beeps2*'],
+    ['first of two words', '*2 beeps*'],
+    ['second of two words', '*room 2*'],
+    ['middle of three words', '*door 2 slams*'],
+    ['digit attached in three words', '*door slams2 loudly*'],
+  ])('retains an annotation with %s because it is not all plain words', (_label, annotation) => {
+    expect(cleanTranscript(`Before ${annotation} after.`)).toBe(`Before ${annotation} after.`);
+  });
+
+  it('removes letter-only annotations while retaining a digit-bearing annotation', () => {
+    expect(cleanTranscript('Before *laughs* then *room 2* and *door slams* after.'))
+      .toBe('Before then *room 2* and after.');
+  });
+
   it('applies bracket cleaning before matching asterisks across newlines', () => {
     expect(cleanTranscript('Before *hello [noise]\nworld* after.')).toBe('Before after.');
     expect(cleanTranscript('Keep *laughs**coughs* and *one*two* here.')).toBe('Keep and two* here.');
