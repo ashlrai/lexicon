@@ -22,6 +22,22 @@ describe('schema error name format', () => {
     expect(errorMessage(parseYaml(examples[0][1]))).toBe(examples[0][2]);
   });
 
+  it('shows each term name at its own 40-character cutoff in a multi-term error', () => {
+    const short = 'Short name';
+    const atLimit = 'A'.repeat(39) + 'B';
+    const long = 'C'.repeat(39) + 'DE';
+    expect(errorMessage({ terms: [
+      { canonical: short, aliases: ['\uFFFF'] },
+      { canonical: atLimit, notes: '\uFFFE' },
+      { canonical: long, never: ['\uD800'] },
+    ] })).toBe([
+      'Invalid lexicon:',
+      `  - terms[0].aliases[0]: must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "${short}"`,
+      `  - terms[1].notes: must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "${atLimit}"`,
+      `  - terms[2].never[0]: must not contain U+D800 (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "${'C'.repeat(39)}…"`,
+    ].join('\n'));
+  });
+
   it.each([
     [34, 'A'.repeat(34) + '\\uFFFF'],
     [35, 'A'.repeat(35) + '\\uFF…'],
