@@ -847,6 +847,15 @@ describe('hardening (lexicon content reaches model context)', () => {
     ]);
   });
 
+  it.each(['notes', 'phonetic'] as const)('counts astral characters at the 200-character text boundary for %s', (field) => {
+    const text = '\u{1F680}'.repeat(200);
+    expect(text).toHaveLength(400); // 200 code points, each two UTF-16 code units.
+    expect(parseLexicon({ terms: [{ canonical: 'X', [field]: text }] }).terms[0][field]).toBe(text);
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', [field]: `${text}\u{1F680}` }] })).toThrow(
+      `terms[0].${field}: must be at most 200 characters`,
+    );
+  });
+
   it('enforces the 80-character word boundary on the fields of a standalone term', () => {
     const word = 'w'.repeat(LIMITS.word);
     const term = TermSchema.parse({ canonical: word, aliases: [word], never: [word] });
