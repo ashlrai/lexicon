@@ -73,3 +73,5 @@ paths use zero-based indexes, and list indexes refer to the cleaned list.
 Settings errors identify a path but do not include a term preview. See
 [schema-error-examples.md](schema-error-examples.md) for more fields and
 [schema-limit-reference.md](schema-limit-reference.md) for validation limits.
+The [preview reference](schema-error-preview-reference.md) details the
+construction and its UTF-16 boundary behavior.

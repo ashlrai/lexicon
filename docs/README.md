@@ -82,6 +82,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [schema-error-examples.md](schema-error-examples.md) | Reading invalid code unit errors and shortened term names | |
 | [schema-first-invalid-unit.md](schema-first-invalid-unit.md) | Which invalid code unit a schema error reports first | |
 | [schema-error-preview.md](schema-error-preview.md) | How schema errors escape and shorten term-name previews | |
+| [schema-error-preview-reference.md](schema-error-preview-reference.md) | Exact term-name preview construction and UTF-16 boundaries | |
 | [EXPORTS.md](EXPORTS.md) | Every export format and every importer | Use it with |
 | [voice-cleaning-reference.md](voice-cleaning-reference.md) | How local voice transcription removes tags and collapses whitespace | |
 | [transcript-cleaning-examples.md](transcript-cleaning-examples.md) | Input and output examples for voice transcript cleaning | |
