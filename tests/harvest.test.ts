@@ -275,6 +275,26 @@ describe('harvestRepo', () => {
   });
 
   it.each(['TODO', 'FIXME', 'NOTE', 'HACK', 'XXX'])(
+    'does not extract %s from the middle of longer words', async (marker) => {
+      const dir = path.join(tmp, `embedded-${marker}`, 'repo');
+      await fs.mkdir(dir, { recursive: true });
+      const identifier = `Quasar${marker}Beacon`;
+      await fs.writeFile(path.join(dir, 'first.ts'), [
+        `// ${identifier} x${marker}word 2${marker}word _${marker}word`,
+        `const message = '${identifier}';`,
+      ].join('\n'));
+      await fs.writeFile(path.join(dir, 'second.ts'), `// ${identifier}\n`);
+
+      const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+      expect(candidates.map(({ canonical, category, source, count, evidence }) =>
+        ({ canonical, category, source, count, evidence }))).toEqual([{
+        canonical: identifier, category: 'identifier', source: 'harvest:repo',
+        count: 3, evidence: ['first.ts', 'second.ts'],
+      }]);
+    },
+  );
+
+  it.each(['TODO', 'FIXME', 'NOTE', 'HACK', 'XXX'])(
     'retains %s when it is a manifest package name', async (marker) => {
       const dir = path.join(tmp, `package-${marker}`);
       await fs.mkdir(dir);
