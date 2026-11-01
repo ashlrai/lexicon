@@ -54,6 +54,7 @@ exist on your operating system is [PLATFORMS.md](PLATFORMS.md).
 | [RESEARCH.md](RESEARCH.md) | Why this layer exists at all, the market read, and the kill criteria |
 | [GROWING.md](GROWING.md) | The four ways terms get in after the first one: a starter pack, your repo, your corrections, your voice history |
 | [harvest-markers.md](harvest-markers.md) | How harvest treats TODO-style markers and their casing |
+| [harvest-marker-reference.md](harvest-marker-reference.md) | Configured marker literals and links to their source |
 | [SUGGEST.md](SUGGEST.md) | What `lexicon suggest` mines from your voice history, and how it scores |
 
 ## Reference
