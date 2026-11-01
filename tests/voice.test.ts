@@ -1819,6 +1819,15 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript('[MUSIC][BLANK_AUDIO]')).toBe('');
   });
 
+  it.each([
+    ['[MUSIC][APPLAUSE]Start speaking.', 'Start speaking.'],
+    ['Keep speaking.[noise][inaudible]', 'Keep speaking.'],
+    ['One[noise][music]two[applause][silence]three.', 'One two three.'],
+    ['Before[][BLANK_AUDIO][MUSIC]after', 'Before after'],
+  ])('removes adjacent tags from %s', (input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
   it('preserves an unmatched opening bracket and the text after it', () => {
     expect(cleanTranscript('  Hello [MUSIC] there [unfinished   thought  ')).toBe('Hello there [unfinished thought');
   });
