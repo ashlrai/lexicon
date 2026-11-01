@@ -106,6 +106,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [setup-command-entrypoints.md](setup-command-entrypoints.md) | CLI and MCP setup registration, dispatch and shared execution |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The module map and the design decisions behind it |
 | [CONTRACT.md](CONTRACT.md) | The per-module API every change is written against |
+| [tray-request-scope.md](tray-request-scope.md) | Issue #13 requested tray platforms and interactions, current context and open implementation details |
 | [tray-platform-scope.md](tray-platform-scope.md) | Issue #13 tray scope: the requested platforms and actions, separated into stated requirements and open questions |
 | [tray-platform-questions.md](tray-platform-questions.md) | Windows and Linux tray surfaces and platform-specific open questions for issue #13 |
 | [tray-action-map.md](tray-action-map.md) | Issue #13 tray actions, existing CLI and Windows capabilities, and open platform decisions |
