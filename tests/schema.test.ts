@@ -563,6 +563,21 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(() => parseLexicon(input)).toThrow(`terms[0].canonical: ${message}`);
   });
 
+  it.each([
+    ['D800', '\uD800'],
+    ['DBFF', '\uDBFF'],
+    ['DC00', '\uDC00'],
+    ['DFFF', '\uDFFF'],
+  ])('reports lone surrogate U+%s at string and valid-pair boundaries', (hex, unit) => {
+    const pair = '\uD83D\uDE80';
+    for (const text of [unit, `${pair}${unit}`, `${unit}${pair}`, `${pair}${unit}${pair}`]) {
+      expect(findUnencodableChar(text)).toBe(`U+${hex}`);
+      expect(() => parseLexicon({ terms: [{ canonical: 'Rocket', aliases: [text] }] })).toThrow(
+        `terms[0].aliases[0]: must not contain U+${hex} (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket"`,
+      );
+    }
+  });
+
   it('accepts and preserves paired surrogates in term and settings text', () => {
     const rocket = '\uD83D\uDE80';
     const term = {
