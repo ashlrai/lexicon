@@ -30,6 +30,7 @@ exist on your operating system is [PLATFORMS.md](PLATFORMS.md).
 | [CLIENTS.md](CLIENTS.md) | Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code, Claude Desktop | Get started |
 | [MCP.md](MCP.md) | Any MCP client: the stdio server's tools, resources and prompts | Reference |
 | [EXTENSION.md](EXTENSION.md) | ChatGPT, Claude.ai, Grok, Gemini, Perplexity, Poe and Copilot in the browser | |
+| [firefox-distribution-scope.md](firefox-distribution-scope.md) | Firefox distribution outcome and issue evidence | |
 | [firefox-extension-readiness.md](firefox-extension-readiness.md) | Firefox packaging evidence and open review questions | |
 | [firefox-addon-submission-checklist.md](firefox-addon-submission-checklist.md) | Verification steps for a listed Firefox AMO submission | |
 | [MACOS-APP.md](MACOS-APP.md) | LexiconBar: any macOS app, via the Accessibility API | |

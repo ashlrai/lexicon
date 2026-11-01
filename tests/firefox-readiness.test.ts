@@ -7,6 +7,15 @@ const root = process.cwd();
 const read = (file: string) => readFileSync(resolve(root, file), 'utf8');
 
 describe('Firefox readiness documentation', () => {
+  it('distinguishes the roadmap outcome from unverified issue requirements', () => {
+    const doc = read('docs/firefox-distribution-scope.md');
+    expect(doc).toContain('https://github.com/ashlrai/lexicon/issues/12');
+    expect(doc).toContain('listed Firefox Add-ons (AMO) listing');
+    expect(doc).toMatch(/prerequisites and any additional acceptance criteria remain \*\*unverified\*\*/);
+    expect(doc).toContain('not claims about what issue');
+    expect(read('docs/README.md')).toContain('(firefox-distribution-scope.md)');
+  });
+
   it('tracks the generated Firefox manifest and the documented review boundary', async () => {
     const doc = read('docs/firefox-extension-readiness.md');
     const source = JSON.parse(read('extension/manifest.json')) as Record<string, unknown>;
