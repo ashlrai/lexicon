@@ -31,6 +31,7 @@ exist on your operating system is [PLATFORMS.md](PLATFORMS.md).
 | [MCP.md](MCP.md) | Any MCP client: the stdio server's tools, resources and prompts | Reference |
 | [EXTENSION.md](EXTENSION.md) | ChatGPT, Claude.ai, Grok, Gemini, Perplexity, Poe and Copilot in the browser | |
 | [firefox-extension-readiness.md](firefox-extension-readiness.md) | Firefox packaging evidence and open review questions | |
+| [firefox-addon-submission-checklist.md](firefox-addon-submission-checklist.md) | Verification steps for a listed Firefox AMO submission | |
 | [MACOS-APP.md](MACOS-APP.md) | LexiconBar: any macOS app, via the Accessibility API | |
 | [WINDOWS-APP.md](WINDOWS-APP.md) | The tray app: any Windows app, via UI Automation. Built and unit-tested, never yet run on Windows | |
 | [LOCAL-API.md](LOCAL-API.md) | The loopback HTTP API: the browser extension is its main client, then LexiconBar, Shortcuts, Raycast, Alfred and scripts | |

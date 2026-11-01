@@ -21,4 +21,20 @@ describe('Firefox readiness documentation', () => {
     expect(doc).toContain('## Open questions before submission');
     expect(read('docs/README.md')).toContain('(firefox-extension-readiness.md)');
   });
+
+  it('keeps the submission checklist aligned with the Firefox build and unverified status', async () => {
+    const doc = read('docs/firefox-addon-submission-checklist.md');
+    const source = JSON.parse(read('extension/manifest.json')) as Record<string, unknown>;
+    const mod = await import(pathToFileURL(resolve(root, 'scripts/extension-manifest.mjs')).href);
+    const gecko = mod.firefoxManifest(source).browser_specific_settings.gecko;
+    for (const value of [gecko.id, ...gecko.data_collection_permissions.required, ...(source.permissions as string[]), ...(source.optional_host_permissions as string[])]) {
+      expect(doc).toContain(`\`${value}\``);
+    }
+    expect(doc).toContain('listed Firefox Add-ons (AMO) listing');
+    expect(doc).toContain('https://github.com/ashlrai/lexicon/issues/12');
+    expect(doc).toContain('extension/lexicon-extension-firefox.zip');
+    expect(doc).toContain('All boxes are unverified');
+    expect(doc).not.toMatch(/^- \[[xX]\]/m);
+    expect(read('docs/README.md')).toContain('(firefox-addon-submission-checklist.md)');
+  });
 });
