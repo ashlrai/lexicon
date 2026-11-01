@@ -187,6 +187,51 @@ describe('harvestRepo', () => {
     }
   });
 
+  it.each([
+    ['TODO', 'Todo'],
+    ['FIXME', 'Fixme'],
+    ['NOTE', 'Note'],
+    ['HACK', 'Hack'],
+    ['XXX', 'Xxx'],
+  ])('treats %s as a marker without discarding identifiers that contain it', async (marker, titleCase) => {
+    const dir = path.join(tmp, `source-${marker}`);
+    await fs.mkdir(dir);
+    const prefix = `${titleCase}Widget`;
+    const suffix = `Quasar${marker}`;
+    await fs.writeFile(path.join(dir, 'markers.ts'), [
+      `// ${marker}: ${prefix} ${suffix}`,
+      `const message = '${marker}: ${prefix} ${suffix}';`,
+    ].join('\n'));
+
+    const opts = { git: false, symbols: true };
+    const candidates = await harvestRepo(dir, { ...opts, minCount: 2 });
+    const aboveCount = await harvestRepo(dir, { ...opts, minCount: 3 });
+    const withoutSymbols = await harvestRepo(dir, { git: false, minCount: 1 });
+    expect(byName(candidates, marker)).toBeUndefined();
+    for (const name of [prefix, suffix]) {
+      expect(byName(candidates, name)).toMatchObject({
+        canonical: name, category: 'identifier', source: 'harvest:repo',
+        count: 2, evidence: ['markers.ts'],
+      });
+      expect(byName(aboveCount, name)).toBeUndefined();
+      expect(byName(withoutSymbols, name)).toBeUndefined();
+    }
+  });
+
+  it.each(['TODO', 'FIXME', 'NOTE', 'HACK', 'XXX'])(
+    'retains %s when it is a manifest package name', async (marker) => {
+      const dir = path.join(tmp, `package-${marker}`);
+      await fs.mkdir(dir);
+      await fs.writeFile(path.join(dir, 'Cargo.toml'), `[package]\nname = "${marker}"\n`);
+
+      const candidates = await harvestRepo(dir, { git: false, minCount: 1 });
+      expect(byName(candidates, marker)).toMatchObject({
+        canonical: marker, category: 'product', source: 'harvest:package',
+        count: 1, evidence: ['Cargo.toml#package.name'],
+      });
+    },
+  );
+
   it('does not apply the identifier marker set to manifest names', async () => {
     const dir = path.join(tmp, 'marker-manifest');
     await fs.mkdir(dir);
