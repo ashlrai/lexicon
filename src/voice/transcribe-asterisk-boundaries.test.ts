@@ -28,4 +28,33 @@ describe('cleanTranscript asterisk boundaries', () => {
   ])('preserves %s', (_label, input) => {
     expect(cleanTranscript(input)).toBe(input);
   });
+
+  it.each([
+    ['a leading quote', '*"laughs*'],
+    ['a trailing period', '*laughs.*'],
+    ['a comma between words', '*door, slams*'],
+    ['a hyphen between words', '*door-slams*'],
+    ['an apostrophe', "*it's working*"],
+    ['a slash', '*yes/no*'],
+    ['a colon', '*noise: static*'],
+    ['question and exclamation marks', '*really?!*'],
+    ['Unicode punctuation', '*door’s open*'],
+  ])('preserves starred content containing %s', (_label, content) => {
+    expect(cleanTranscript(`Before ${content} after.`)).toBe(`Before ${content} after.`);
+    expect(cleanTranscript(content)).toBe(content);
+  });
+
+  it('removes plain-word tags while keeping punctuation outside their delimiters', () => {
+    expect(cleanTranscript('Ready, *laughs*! Then *door slams*, and *door slams loudly*.'))
+      .toBe('Ready, ! Then , and .');
+  });
+
+  it('preserves punctuation-bearing content alongside removable plain-word tags', () => {
+    expect(cleanTranscript('Before *laughs* keep *door, slams* and *well-known* after *door slams loudly*.'))
+      .toBe('Before keep *door, slams* and *well-known* after .');
+  });
+
+  it('normalizes whitespace in punctuation-bearing content without removing it', () => {
+    expect(cleanTranscript('  Before\n*door,\t slams*\tafter  ')).toBe('Before *door, slams* after');
+  });
 });
