@@ -902,6 +902,17 @@ describe('hardening (lexicon content reaches model context)', () => {
     ]);
   });
 
+  it('counts repeated aliases toward the documented per-term limit', () => {
+    expect(LIMITS.aliases).toBe(64);
+    const aliases = Array.from({ length: 64 }, () => ' spelling ');
+    const term = { canonical: 'X', aliases };
+
+    expect(parseLexicon({ terms: [term] }).terms[0].aliases).toEqual(Array(64).fill('spelling'));
+    expect(() => parseLexicon({ terms: [{ ...term, aliases: [...aliases, 'spelling'] }] })).toThrow(
+      'Invalid lexicon:\n  - terms[0].aliases: at most 64 aliases per term',
+    );
+  });
+
   it('accepts exactly 5000 terms and reports the terms boundary for 5001', () => {
     const terms = Array.from({ length: 5000 }, (_, i) => ({ canonical: `Term${i}` }));
     const atLimit = LexiconSchema.safeParse({ terms });
