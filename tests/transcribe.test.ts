@@ -92,6 +92,16 @@ describe('cleanTranscript bracketed tags', () => {
     expect(cleanTranscript('[BLANK_AUDIO][MUSIC][inaudible]Only this remains. [NOISE][silence]')).toBe('Only this remains.');
     expect(cleanTranscript('[BLANK_AUDIO][MUSIC][inaudible]')).toBe('');
   });
+
+  it.each([
+    ['speech between tags', 'Before [MUSIC] keep these words [noise] after.', 'Before keep these words after.'],
+    ['tags throughout a transcript', '[MUSIC]First [noise] second [inaudible] third[static]', 'First second third'],
+    ['punctuation and non-ASCII speech', 'Zoë says, [door closes] "Café is open!" [noise] Go.', 'Zoë says, "Café is open!" Go.'],
+    ['mixed whitespace and arbitrary tag contents', 'One\n[speaker 2]\ttwo [noise: 50%]\nthree', 'One two three'],
+    ['an unmatched opening bracket after tags', 'One [noise] two [music] three [unfinished', 'One two three [unfinished'],
+  ])('removes multiple bracketed tags with %s', (_label, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
 });
 
 describe('cleanTranscript asterisk tags', () => {
