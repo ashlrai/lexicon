@@ -46,3 +46,5 @@ evidence. Candidate counts, the limit, and other filters also affect the final
 results. See [GROWING.md](GROWING.md) for the harvest workflow.
 For one source example per marker, see
 [harvest-marker-examples.md](harvest-marker-examples.md).
+For the marker list and source links, see
+[harvest-marker-reference.md](harvest-marker-reference.md).
