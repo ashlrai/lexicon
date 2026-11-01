@@ -64,4 +64,9 @@ describe('cleanTranscript asterisk tags', () => {
   it('removes a one-word sound tag without altering surrounding text', () => {
     expect(cleanTranscript('Ready, *cough* set, go!')).toBe('Ready, set, go!');
   });
+
+  it('accepts whitespace between words but not digits or whitespace at the edges', () => {
+    expect(cleanTranscript('Before *door\nslams* after')).toBe('Before after');
+    expect(cleanTranscript('Before *room 2* and * cough * after')).toBe('Before *room 2* and * cough * after');
+  });
 });
