@@ -32,6 +32,16 @@ describe('transcript cleaning examples', () => {
       expect(cleanTranscript(input), input).toBe(output === '""' ? '' : output);
     }
   });
+
+  it('documents interactions between sequential and adjacent matches', () => {
+    for (const row of [
+      '| `Keep *laughs**coughs* here.` | `Keep here.` |',
+      '| `Keep *one*two* here.` | `Keep two* here.` |',
+      '| `Before *hello [noise] world* after.` | `Before after.` |',
+    ]) {
+      expect(document).toContain(row);
+    }
+  });
 });
 
 describe('cleanTranscript bracketed tags', () => {
@@ -68,5 +78,10 @@ describe('cleanTranscript asterisk tags', () => {
   it('accepts whitespace between words but not digits or whitespace at the edges', () => {
     expect(cleanTranscript('Before *door\nslams* after')).toBe('Before after');
     expect(cleanTranscript('Before *room 2* and * cough * after')).toBe('Before *room 2* and * cough * after');
+  });
+
+  it('applies bracket cleaning before matching asterisks across newlines', () => {
+    expect(cleanTranscript('Before *hello [noise]\nworld* after.')).toBe('Before after.');
+    expect(cleanTranscript('Keep *laughs**coughs* and *one*two* here.')).toBe('Keep and two* here.');
   });
 });
