@@ -1168,6 +1168,29 @@ describe('lexicon voice (foreground)', () => {
     expect(parsed.ok).toBe(true);
   });
 
+  it.each([
+    ['one', '*laughs*'],
+    ['two', '*door slams*'],
+    ['three', '*door slams loudly*'],
+  ])('removes a %s-word annotation from Whisper output before normalization', async (_length, annotation) => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    h.transcript = `Please ping ashler ${annotation} about the cooper netties rollout.`;
+
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_OK);
+    const result = JSON.parse(h.out[0]) as VoiceJsonResult;
+    expect(result.raw).toBe('Please ping ashler about the cooper netties rollout.');
+    expect(result.output).toBe('Please ping Ashlr.AI about the Kubernetes rollout.');
+    expect(result.replacements.map(({ original, replacement }) => [original, replacement])).toEqual([
+      ['ashler', 'Ashlr.AI'],
+      ['cooper netties', 'Kubernetes'],
+    ]);
+    expect(await loadVoiceHistory(h.globalPath)).toMatchObject([{
+      raw: result.raw,
+      output: result.output,
+    }]);
+  });
+
   it('appends to voice/history.jsonl and records hits for the corrected terms', async () => {
     const h = await harness();
     h.deps.waitForStop = async () => 'enter';
