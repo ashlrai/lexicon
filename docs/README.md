@@ -86,6 +86,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [schema-error-preview-reference.md](schema-error-preview-reference.md) | Exact term-name preview construction and UTF-16 boundaries | |
 | [EXPORTS.md](EXPORTS.md) | Every export format and every importer | Use it with |
 | [voice-cleaning-reference.md](voice-cleaning-reference.md) | How local voice transcription removes tags and collapses whitespace | |
+| [transcript-cleaning-scope.md](transcript-cleaning-scope.md) | Which transcript tags are removed or preserved, with examples | |
 | [transcript-cleaning-examples.md](transcript-cleaning-examples.md) | Input and output examples for voice transcript cleaning | |
 
 ## Contribute
