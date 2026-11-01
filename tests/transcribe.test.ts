@@ -113,6 +113,16 @@ describe('cleanTranscript asterisk tags', () => {
     expect(cleanTranscript(input)).toBe(expected);
   });
 
+  it.each([
+    ['between speech', 'Zoë said, *the door closes softly* "send it!"', 'Zoë said, *the door closes softly* "send it!"'],
+    ['at the beginning', '*the door closes softly* Please continue.', '*the door closes softly* Please continue.'],
+    ['at the end', 'Please continue. *the door closes softly*', 'Please continue. *the door closes softly*'],
+    ['as the entire transcript', '*the door closes softly*', '*the door closes softly*'],
+    ['with mixed whitespace', '  Before\n*the\tdoor  closes\nsoftly*\tafter.  ', 'Before *the door closes softly* after.'],
+  ])('retains a four-word annotation %s', (_position, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
   it('removes one-, two-, and three-word annotations in the same transcript', () => {
     expect(cleanTranscript('First *laughs* then *door slams* and *door slams loudly* finally done.'))
       .toBe('First then and finally done.');
