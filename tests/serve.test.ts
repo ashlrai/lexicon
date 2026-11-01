@@ -3538,6 +3538,44 @@ describe('packs and aliases routes', () => {
     }
   });
 
+  it('serves the documented alias edge cases without looking up or writing terms', async () => {
+    const doc = await fs.readFile(new URL('../docs/aliases-endpoint-edge-cases.md', import.meta.url), 'utf8');
+    const index = await fs.readFile(new URL('../docs/README.md', import.meta.url), 'utf8');
+    expect(index).toContain('(aliases-endpoint-edge-cases.md)');
+    const examples = [...doc.matchAll(/```http\nGET (\/aliases[^\n]*)\n```\n\nHTTP (\d{3}):\n\n```json\n([^\n]+)\n```/g)];
+    expect(examples.map((example) => example[1])).toEqual([
+      '/aliases',
+      '/aliases?canonical=%20%E2%80%8B%20',
+      '/aliases?canonical=Mason%20Wyatt',
+      '/aliases?canonical=Bob',
+    ]);
+
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-alias-edge-'));
+    const globalPath = path.join(dir, 'config', 'lexicon.yaml');
+    const server = createServer({ port: 0, cwd: dir, globalPath, quiet: true });
+    try {
+      const info = await server.start();
+      const get = (route: string) => fetch(`${info.url}${route}`, { headers: { Authorization: `Bearer ${info.token}` } });
+      const before = await (await get('/lexicon')).json();
+      expect((before as { lexicon: { terms: unknown[] } }).lexicon.terms).toEqual([]);
+      for (const [, route, status, body] of examples) {
+        const response = await get(route!);
+        expect(response.status, route).toBe(Number(status));
+        expect(await response.json(), route).toEqual(JSON.parse(body!));
+      }
+      expect(await (await get('/lexicon')).json()).toEqual(before);
+      await expect(fs.stat(globalPath)).rejects.toMatchObject({ code: 'ENOENT' });
+
+      await addTerm({ canonical: 'Mason Wyatt', aliases: ['a stored alias'] }, { cwd: dir, globalPath });
+      const response = await get('/aliases?canonical=Mason%20Wyatt');
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(JSON.parse(examples[2]![3]!));
+    } finally {
+      await server.stop();
+      await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
   it('GET /aliases?canonical=X returns suggestAliases and 400 without a canonical', async () => {
     const res = await api2('GET', `/aliases?canonical=${encodeURIComponent('Ashlr.AI')}`);
     expect(res.status).toBe(200);
