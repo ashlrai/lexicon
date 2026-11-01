@@ -24,6 +24,27 @@ describe('notes and phonetic text limits', () => {
     new Function('assert', 'parseLexicon', blocks[0][1].slice(imports.length))(assert, parseLexicon);
   });
 
+  it.each(['notes', 'phonetic'] as const)('enforces the inclusive 200-code-point limit for %s', (field) => {
+    for (const character of ['x', '🙂']) {
+      const atLimit = character.repeat(200);
+      const parse = (value: string) => parseLexicon({ terms: [{ canonical: 'X', [field]: value }] });
+
+      expect(parse(atLimit).terms[0][field]).toBe(atLimit);
+      expect(() => parse(`${atLimit}${character}`)).toThrow(
+        new RegExp(`terms\\[0\\]\\.${field}: must be at most 200 characters`),
+      );
+      // Length is measured after trimming and removing the documented invisible characters.
+      expect(parse(`  ${atLimit}\u200b  `).terms[0][field]).toBe(atLimit);
+    }
+  });
+
+  it('applies the limit independently to both fields', () => {
+    const text = 'x'.repeat(200);
+    const term = parseLexicon({ terms: [{ canonical: 'X', notes: text, phonetic: text }] }).terms[0];
+    expect(term.notes).toBe(text);
+    expect(term.phonetic).toBe(text);
+  });
+
   it.each(['notes', 'phonetic'])('rejects retained line breaks and unencodable text in %s', (field) => {
     for (const invalid of ['a\nb', 'a\u2028b', 'a\ufffeb', 'a\ud800b']) {
       expect(() => parseLexicon({ terms: [{ canonical: 'X', [field]: invalid }] })).toThrow();
