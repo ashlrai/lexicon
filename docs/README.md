@@ -74,6 +74,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Get started |
 | [schema-limit-reference.md](schema-limit-reference.md) | File schema limits and their relationship to the contract | |
 | [schema-error-examples.md](schema-error-examples.md) | Reading invalid code unit errors and shortened term names | |
+| [schema-error-preview.md](schema-error-preview.md) | How schema errors escape and shorten term-name previews | |
 | [EXPORTS.md](EXPORTS.md) | Every export format and every importer | Use it with |
 | [voice-cleaning-reference.md](voice-cleaning-reference.md) | How local voice transcription removes tags and collapses whitespace | |
 | [transcript-cleaning-examples.md](transcript-cleaning-examples.md) | Input and output examples for voice transcript cleaning | |
