@@ -67,6 +67,19 @@ describe('cleanTranscript bracketed tags', () => {
 });
 
 describe('cleanTranscript asterisk tags', () => {
+  it.each([
+    ['one', 'Zoë said, *laughs* "send it!"', 'Zoë said, "send it!"'],
+    ['two', 'Keep the café open; *door slams* notify the team.', 'Keep the café open; notify the team.'],
+    ['three', 'Version 2 is ready: *door slams loudly* ship it, please.', 'Version 2 is ready: ship it, please.'],
+  ])('removes a %s-word annotation and preserves the surrounding text', (_length, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
+  it('removes one-, two-, and three-word annotations in the same transcript', () => {
+    expect(cleanTranscript('First *laughs* then *door slams* and *door slams loudly* finally done.'))
+      .toBe('First then and finally done.');
+  });
+
   it('removes a one-word annotation and preserves the surrounding speech', () => {
     expect(cleanTranscript('Please*whispers*send the report.')).toBe('Please send the report.');
   });
