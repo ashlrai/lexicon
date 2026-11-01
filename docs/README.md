@@ -56,6 +56,7 @@ exist on your operating system is [PLATFORMS.md](PLATFORMS.md).
 | [harvest-markers.md](harvest-markers.md) | How harvest treats TODO-style markers and their casing |
 | [harvest-marker-boundary-examples.md](harvest-marker-boundary-examples.md) | Tested source identifier boundary examples near markers |
 | [harvest-marker-reference.md](harvest-marker-reference.md) | Configured marker literals and links to their source |
+| [harvest-marker-inventory.md](harvest-marker-inventory.md) | Marker literals and their role in harvest |
 | [SUGGEST.md](SUGGEST.md) | What `lexicon suggest` mines from your voice history, and how it scores |
 
 ## Reference
