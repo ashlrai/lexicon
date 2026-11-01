@@ -48,5 +48,7 @@ For one source example per marker, see
 [harvest-marker-examples.md](harvest-marker-examples.md).
 For the marker list and source links, see
 [harvest-marker-reference.md](harvest-marker-reference.md).
+For case behavior in source and README prose, see
+[harvest-marker-case-behavior.md](harvest-marker-case-behavior.md).
 For a concise list of the configured strings, see
 [harvest-marker-catalog.md](harvest-marker-catalog.md).
