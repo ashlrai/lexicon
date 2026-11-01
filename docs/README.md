@@ -73,6 +73,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | Page | What it covers | Also listed under |
 |---|---|---|
 | [CLI.md](CLI.md) | Every command and flag, generated from `--help` | |
+| [source-versus-npm-commands.md](source-versus-npm-commands.md) | Dated npm 0.5.4 and source command differences, with version checks | |
 | [MCP.md](MCP.md) | Every tool, resource and prompt, with arguments and return shapes | Use it with |
 | [aliases-endpoint-example.md](aliases-endpoint-example.md) | Alias suggestions during onboarding | |
 | [aliases-onboarding-reference.md](aliases-onboarding-reference.md) | Suggesting and reviewing aliases in an onboarding form | |
