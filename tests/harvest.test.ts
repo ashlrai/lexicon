@@ -147,6 +147,29 @@ describe('harvestRepo', () => {
     });
   });
 
+  it.each(['TODO', 'FIXME', 'NOTE', 'HACK', 'XXX'])(
+    'counts and ranks identifiers across separate lines with repeated %s markers', async (marker) => {
+      const dir = path.join(tmp, `repeated-${marker}`, 'repo');
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, 'markers.ts'), [
+        `// ${marker}: ZetaWidget`,
+        `// ${marker}: BetaWidget`,
+        `// ${marker}: AlphaWidget`,
+        `// ${marker}: ZetaWidget`,
+        `// ${marker}: GammaWidget`,
+        `// ${marker}: AlphaWidget`,
+      ].join('\n'));
+
+      const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+      expect(candidates.map(({ canonical, count, evidence }) => ({ canonical, count, evidence }))).toEqual([
+        { canonical: 'AlphaWidget', count: 2, evidence: ['markers.ts'] },
+        { canonical: 'ZetaWidget', count: 2, evidence: ['markers.ts'] },
+        { canonical: 'BetaWidget', count: 1, evidence: ['markers.ts'] },
+        { canonical: 'GammaWidget', count: 1, evidence: ['markers.ts'] },
+      ]);
+    },
+  );
+
   it('retains prose containing a marker substring while excluding marker comments', async () => {
     const dir = path.join(tmp, 'prose-markers');
     await fs.mkdir(dir);
