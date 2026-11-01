@@ -836,6 +836,18 @@ describe('hardening (lexicon content reaches model context)', () => {
     ]);
   });
 
+  it('counts never entries separately from aliases after cleaning, including duplicates', () => {
+    const aliases = Array.from({ length: 64 }, (_, i) => `alias${i}`);
+    const never = Array(64).fill(' excluded ');
+    const term = parseLexicon({ terms: [{ canonical: 'X', aliases, never: [...never, '', ' ', ZW] }] }).terms[0];
+    expect(term.aliases).toEqual(aliases);
+    expect(term.never).toEqual(Array(64).fill('excluded'));
+
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', aliases, never: [...never, 'another'] }] })).toThrow(
+      /terms\[0\]\.never: at most 64 never words per term/,
+    );
+  });
+
   it('accepts exactly 5000 terms and reports the terms boundary for 5001', () => {
     const terms = Array.from({ length: 5000 }, (_, i) => ({ canonical: `Term${i}` }));
     const atLimit = LexiconSchema.safeParse({ terms });
