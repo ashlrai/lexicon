@@ -2,6 +2,22 @@ import { describe, expect, it } from 'vitest';
 import { readFileSync } from 'node:fs';
 import { cleanTranscript } from '../src/voice/transcribe.js';
 
+describe('transcript tag examples', () => {
+  const document = readFileSync(new URL('../docs/transcript-tag-examples.md', import.meta.url), 'utf8');
+
+  it('keeps the published tag examples in sync with the cleaner', () => {
+    const json = document.match(/```json\n([\s\S]*?)\n```/)?.[1];
+    expect(json).toBeDefined();
+    const examples = JSON.parse(json!) as Array<{ input: string; cleaned: string }>;
+    expect(examples.length).toBeGreaterThanOrEqual(14);
+    expect(examples.some(({ input }) => /\[[^\]]*\]/.test(input))).toBe(true);
+    expect(examples.some(({ input }) => /\*[^*]+\*/.test(input))).toBe(true);
+    for (const { input, cleaned } of examples) {
+      expect(cleanTranscript(input), input).toBe(cleaned);
+    }
+  });
+});
+
 describe('voice cleaning reference', () => {
   const reference = readFileSync(new URL('../docs/voice-cleaning-reference.md', import.meta.url), 'utf8');
   const examples = [...reference.matchAll(/^\| `([^`]+)` \| `([^`]+)` \|$/gm)];
