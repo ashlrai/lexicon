@@ -3440,6 +3440,23 @@ describe('packs and aliases routes', () => {
     expect(((await removal.json()) as { error: string }).error).toContain('or retry with ?scope=global to use the global lexicon instead');
   });
 
+  it('serves the onboarding reference example without changing the lexicon', async () => {
+    const doc = await fs.readFile(new URL('../docs/aliases-onboarding-reference.md', import.meta.url), 'utf8');
+    const index = await fs.readFile(new URL('../docs/README.md', import.meta.url), 'utf8');
+    expect(index).toContain('(aliases-onboarding-reference.md)');
+    expect(doc).toContain('required `canonical` query parameter');
+    expect(doc).toContain('onboarding form');
+    expect(doc).toContain('`aliases: []`');
+    const example = doc.match(/```http\nGET (\/aliases\?canonical=[^\n]+)\n```\n\nHTTP (\d{3}):\n\n```json\n([^\n]+)\n```/);
+    expect(example).not.toBeNull();
+    expect(example![1]).toBe('/aliases?canonical=Mason%20Wyatt');
+    const before = await (await api2('GET', '/lexicon')).json();
+    const response = await api2('GET', example![1]!);
+    expect(response.status).toBe(Number(example![2]));
+    expect(await response.json()).toEqual(JSON.parse(example![3]!));
+    expect(await (await api2('GET', '/lexicon')).json()).toEqual(before);
+  });
+
   it('serves the URL-encoded aliases example in the contract', async () => {
     const contract = await fs.readFile(new URL('../docs/CONTRACT.md', import.meta.url), 'utf8');
     const example = contract.match(/For example, URL-encode the canonical name `Mason Wyatt`[\s\S]*?```http\s+GET (\/aliases\?canonical=[^\s]+)\s+```[\s\S]*?```json\s+([^\n]+)\s+```/);
