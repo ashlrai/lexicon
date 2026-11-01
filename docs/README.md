@@ -100,6 +100,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Setup, the test layout, and a recipe for each kind of contribution |
 | [setup-cast-outline.md](setup-cast-outline.md) | Reproducible, synthetic-data setup recording plan |
 | [setup-contract-summary.md](setup-contract-summary.md) | Guided first-run responsibilities, preview boundaries and open questions |
+| [setup-command-entrypoints.md](setup-command-entrypoints.md) | CLI and MCP setup registration, dispatch and shared execution |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The module map and the design decisions behind it |
 | [CONTRACT.md](CONTRACT.md) | The per-module API every change is written against |
 | [tray-platform-scope.md](tray-platform-scope.md) | Issue #13 tray scope: the requested platforms and actions, separated into stated requirements and open questions |
