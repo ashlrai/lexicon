@@ -407,6 +407,24 @@ describe('hardening (lexicon content reaches model context)', () => {
     }
   });
 
+  it.each([
+    ['high first', 'D800', 'DFFF'],
+    ['low first', 'DC00', 'DBFF'],
+  ])('escapes every unpaired surrogate in YAML term previews (%s)', (_order, first, second) => {
+    const input = parseYaml(`terms:\n  - canonical: "Name \\u${first} middle \\u${second} end"\n    aliases: ["bad\\uFFFF"]\n`);
+    const reason = 'U+FFFE, U+FFFF and unpaired surrogates fit no file format';
+    const preview = `Name \\u${first} middle \\u${second} end`;
+    const expected = `Invalid lexicon:\n  - terms[0].canonical: must not contain U+${first} (${reason}) in term "${preview}"\n  - terms[0].aliases[0]: must not contain U+FFFF (${reason}) in term "${preview}"`;
+
+    expect(() => parseLexicon(input)).toThrow(expected);
+    const result = LexiconSchema.safeParse(input);
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected unpaired surrogates to be rejected');
+    for (const issue of result.error.issues) {
+      expect(Buffer.from(issue.message, 'utf8').toString('utf8')).toBe(issue.message);
+    }
+  });
+
   it.each(['D800', 'DBFF'])('reports an unpaired high surrogate U+%s from YAML with a readable term label', (hex) => {
     const input = parseYaml(`terms:\n  - canonical: "Rocket \\u${hex}ship"\n`);
     const result = LexiconSchema.safeParse(input);
