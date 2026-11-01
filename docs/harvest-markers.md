@@ -44,3 +44,5 @@ a global ban on those strings. Source-only identifiers are omitted by default
 unless `symbols: true` is requested or another source provides external
 evidence. Candidate counts, the limit, and other filters also affect the final
 results. See [GROWING.md](GROWING.md) for the harvest workflow.
+For one source example per marker, see
+[harvest-marker-examples.md](harvest-marker-examples.md).
