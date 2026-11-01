@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { LIMITS, parseLexicon } from '../src/core/schema.js';
+import { LIMITS, LexiconSchema, TermSchema, parseLexicon } from '../src/core/schema.js';
 
 const doc = readFileSync(new URL('../docs/schema-text-limits.md', import.meta.url), 'utf8');
 const contract = readFileSync(new URL('../docs/CONTRACT.md', import.meta.url), 'utf8');
@@ -22,6 +22,27 @@ describe('notes and phonetic text limits', () => {
     const imports = "import assert from 'node:assert/strict';\nimport { parseLexicon } from '@ashlr/lexicon';\n";
     expect(blocks[0][1].startsWith(imports)).toBe(true);
     new Function('assert', 'parseLexicon', blocks[0][1].slice(imports.length))(assert, parseLexicon);
+  });
+
+  it.each(['notes', 'phonetic'] as const)('enforces the contract limit through both schemas for %s', (field) => {
+    const schemaSection = contract.split('## src/core/schema.ts\n')[1]?.split('\n## ')[0];
+    const match = schemaSection?.match(/`text` (\d+) \(notes, phonetic\)/);
+    expect(match).toBeTruthy();
+    const limit = Number(match![1]);
+    const atLimit = 'x'.repeat(limit);
+
+    for (const [schema, wrap, path] of [
+      [TermSchema, (term: object) => term, [field]],
+      [LexiconSchema, (term: object) => ({ terms: [term] }), ['terms', 0, field]],
+    ] as const) {
+      expect(schema.safeParse(wrap({ canonical: 'X', [field]: atLimit })).success).toBe(true);
+      const result = schema.safeParse(wrap({ canonical: 'X', [field]: `${atLimit}x` }));
+      expect(result.success).toBe(false);
+      if (result.success) throw new Error('Expected an overlong field to be rejected');
+      expect(result.error.issues).toEqual(expect.arrayContaining([
+        expect.objectContaining({ path, message: `must be at most ${limit} characters` }),
+      ]));
+    }
   });
 
   it.each(['notes', 'phonetic'] as const)('enforces the inclusive 200-code-point limit for %s', (field) => {
