@@ -43,4 +43,8 @@ newline and `""` represents an empty result.
 
 These rules apply to `lexicon voice` transcription, not generally to every
 text normalization entry point. Review the transcript when literal bracketed
-or starred text matters, since cleaning can remove dictated words.
+or starred text matters, since cleaning can remove dictated words. See the
+[voice cleaning reference](voice-cleaning-reference.md) for the full rules and
+[transcript cleaning examples](transcript-cleaning-examples.md) for more cases.
+
+Back to [the docs index](README.md).
