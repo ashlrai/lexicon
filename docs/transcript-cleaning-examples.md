@@ -20,6 +20,8 @@ Brackets are not parsed as nested structures.
 | `[noise][inaudible] Continue.` | `Continue.` |
 | `Keep [the title] here.` | `Keep here.` |
 | `Keep [unfinished` | `Keep [unfinished` |
+| `Keep unfinished] here.` | `Keep unfinished] here.` |
+| `Hello[]there.` | `Hello there.` |
 | `A [outer [inner] tail] B` | `A tail] B` |
 
 ## Asterisks
@@ -39,6 +41,8 @@ not Markdown parsing.
 | `*cough*` | `""` |
 | `Keep *these four spoken words* here.` | `Keep *these four spoken words* here.` |
 | `Keep *hello!* and *café* here.` | `Keep *hello!* and *café* here.` |
+| `Keep *room 2* here.` | `Keep *room 2* here.` |
+| `Please *door  slams* continue.` | `Please continue.` |
 | `Keep * hello * here.` | `Keep * hello * here.` |
 | `Keep **bold** here.` | `Keep * * here.` |
 
