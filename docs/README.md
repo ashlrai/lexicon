@@ -75,6 +75,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [aliases-query-examples.md](aliases-query-examples.md) | Local API alias suggestion queries and responses | |
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Get started |
 | [schema-limit-reference.md](schema-limit-reference.md) | File schema limits and their relationship to the contract | |
+| [schema-text-limits.md](schema-text-limits.md) | Notes and phonetic text limits, counting and examples | |
 | [contract-term-limits.md](contract-term-limits.md) | Contract term limits, affected fields and counting rules | |
 | [contract-limit-examples.md](contract-limit-examples.md) | Executable examples at and beyond the schema limits | |
 | [schema-error-examples.md](schema-error-examples.md) | Reading invalid code unit errors and shortened term names | |
