@@ -116,6 +116,7 @@ Design notes and live records. You do not need these to use Lexicon.
 | [DOGFOOD.md](DOGFOOD.md) | A live run of the hooks and MCP server against the real Claude Code CLI, and the bugs it found |
 | [DOGFOOD-AGENT-NATIVE.md](DOGFOOD-AGENT-NATIVE.md) | The same treatment for the agent-native onboarding tools |
 | [resident-expander-scope.md](resident-expander-scope.md) | The scope outline for issue #220: the proposed system-wide expander, the pieces that exist, and the boundary left to build |
+| [daemon-scope-questions.md](daemon-scope-questions.md) | Open questions on process lifetime, configuration and interactions with existing surfaces |
 | [expander-platform-questions.md](expander-platform-questions.md) | The per-platform discovery questions behind that boundary, each marked decided or undecided |
 | [daemon-surface-questions.md](daemon-surface-questions.md) | The daemon half of the same list: the requested resident-expander surface and the open server-side questions, marked decided or undecided |
 | [daemon-design-constraints.md](daemon-design-constraints.md) | Issue #220's requested surface, current boundary and open design decisions |
