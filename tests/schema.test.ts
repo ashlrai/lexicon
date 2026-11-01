@@ -95,6 +95,24 @@ describe('parseLexicon', () => {
     expect(lex.terms[0].aliases).toEqual(['Ashler']);
   });
 
+  it('accepts 80-character canonical names and aliases after trimming and stripping invisibles', () => {
+    const word = 'a'.repeat(80);
+    const lex = parseLexicon({ terms: [{ canonical: ` \u200B${word} `, aliases: [` ${word}\u200B `] }] });
+
+    expect(lex.terms[0]).toEqual({ canonical: word, aliases: [word] });
+  });
+
+  it('rejects 81-character canonical names and aliases with their field paths', () => {
+    const word = 'a'.repeat(81);
+
+    expect(() => parseLexicon({ terms: [{ canonical: word }] })).toThrow(
+      'terms[0].canonical: must be at most 80 characters',
+    );
+    expect(() => parseLexicon({ terms: [{ canonical: 'Valid', aliases: [word] }] })).toThrow(
+      'terms[0].aliases[0]: must be at most 80 characters',
+    );
+  });
+
   it('strips unknown keys instead of failing', () => {
     const lex = parseLexicon({ terms: [{ canonical: 'X', aliases: [], bogus: 1 }], extra: true });
     expect(lex.terms[0]).not.toHaveProperty('bogus');
