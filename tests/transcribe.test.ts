@@ -45,6 +45,18 @@ describe('transcript cleaning examples', () => {
 });
 
 describe('cleanTranscript bracketed tags', () => {
+  it.each([
+    ['beginning', '[MUSIC]Hello there.', 'Hello there.'],
+    ['middle', 'Hello[background noise]there.', 'Hello there.'],
+    ['end', 'Hello there.[inaudible]', 'Hello there.'],
+    ['consecutive tags at the beginning', '[MUSIC][noise]Hello.', 'Hello.'],
+    ['consecutive tags in the middle', 'Hello[MUSIC][noise]there.', 'Hello there.'],
+    ['consecutive tags at the end', 'Hello.[MUSIC][noise]', 'Hello.'],
+    ['an empty tag between words', 'Hello[]there.', 'Hello there.'],
+  ])('removes tags adjacent to text at the %s', (_position, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
   it('removes an arbitrary tag while preserving the spoken text around it', () => {
     expect(cleanTranscript('Please send [background noise] the report.')).toBe('Please send the report.');
   });
