@@ -578,6 +578,27 @@ describe('hardening (lexicon content reaches model context)', () => {
     }
   });
 
+  it.each([
+    ['high', 0xd800, 0xdbff],
+    ['low', 0xdc00, 0xdfff],
+  ])('reports every isolated %s surrogate at its alias path', (_kind, first, last) => {
+    for (let unit = first; unit <= last; unit++) {
+      const code = `U+${unit.toString(16).toUpperCase()}`;
+      const alias = `before${String.fromCharCode(unit)}after`;
+      const result = TermSchema.safeParse({ canonical: 'Rocket', aliases: [alias] });
+
+      expect(findUnencodableChar(alias)).toBe(code);
+      expect(result.success, code).toBe(false);
+      if (result.success) throw new Error(`Expected ${code} to be rejected`);
+      expect(result.error.issues.map(({ path, message }) => ({ path, message })), code).toEqual([
+        {
+          path: ['aliases', 0],
+          message: `must not contain ${code} (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket"`,
+        },
+      ]);
+    }
+  });
+
   it('accepts and preserves paired surrogates in term and settings text', () => {
     const rocket = '\uD83D\uDE80';
     const term = {
