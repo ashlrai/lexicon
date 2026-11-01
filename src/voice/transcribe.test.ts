@@ -22,6 +22,15 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript(prose)).toBe('Please review the café menu (including the specials), then send it to Zoë.');
   });
 
+  it.each([
+    ['an unmatched opening bracket', 'Please keep [unfinished speech.', 'Please keep [unfinished speech.'],
+    ['an unmatched closing bracket', 'Please keep unfinished] speech.', 'Please keep unfinished] speech.'],
+    ['an opening bracket after a complete tag', '  Please [noise] continue [unfinished\nthought  ', 'Please continue [unfinished thought'],
+    ['a closing bracket before a complete tag', '  Please unfinished] [noise] continue\nnow  ', 'Please unfinished] continue now'],
+  ])('preserves %s', (_description, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
   it('removes a one-word asterisk tag while preserving surrounding speech', () => {
     expect(cleanTranscript('Please continue *whispers* with the rollout.')).toBe('Please continue with the rollout.');
   });
