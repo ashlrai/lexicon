@@ -23,6 +23,23 @@ describe('contract term limits reference', () => {
     ]);
   });
 
+  it.each(['a', '𠮷'])('enforces the documented phonetic text limit for %s', (character) => {
+    const match = contract.match(/`text` (\d+) \(notes, phonetic\)/);
+    expect(match).not.toBeNull();
+    const documentedLimit = Number(match![1]);
+    expect(documentedLimit).toBe(200);
+
+    const phonetic = character.repeat(documentedLimit);
+    expect(TermSchema.parse({ canonical: 'Name', phonetic }).phonetic).toBe(phonetic);
+
+    const result = TermSchema.safeParse({ canonical: 'Name', phonetic: phonetic + character });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected phonetic to exceed the documented text limit');
+    expect(result.error.issues).toMatchObject([
+      { code: 'too_big', path: ['phonetic'], maximum: documentedLimit, message: `must be at most ${documentedLimit} characters` },
+    ]);
+  });
+
   it.each([
     ['word', 'Unicode code points in each term\'s `canonical` and each `aliases` entry'],
     ['text', 'Unicode code points in each term\'s `notes` and `phonetic` field'],
