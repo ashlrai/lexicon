@@ -6,9 +6,9 @@
   <text x="48" y="112" fill="#e6e9ee" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="26">
     ask <tspan fill="#f0b4ae" text-decoration="line-through">ashler</tspan> to deploy
   </text>
-  <text x="48" y="156" fill="#e6e9ee" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="26">
-    <tspan fill="#f0b4ae" text-decoration="line-through">kuber netties</tspan> with <tspan fill="#f0b4ae" text-decoration="line-through">post gressql</tspan>
-  </text>
+  <text x="48" y="156" fill="#f0b4ae" text-decoration="line-through" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="26">kuber netties</text>
+  <text x="292" y="156" fill="#e6e9ee" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="26">with</text>
+  <text x="380" y="156" fill="#f0b4ae" text-decoration="line-through" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="26">post gressql</text>
   <line x1="48" y1="190" x2="912" y2="190" stroke="#1c2633" stroke-width="2"/>
   <text x="48" y="236" fill="#a4dded" font-family="ui-sans-serif, system-ui, sans-serif" font-size="15" letter-spacing="1.4">WHAT THE AGENT READS</text>
   <text x="48" y="292" fill="#e6e9ee" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="26">
