@@ -23,4 +23,16 @@ describe('harvest marker documentation', () => {
       await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
     }
   });
+
+  it('proposes TODO.AI as a dot-TLD brand but never the bare marker', async () => {
+    const tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-marker-tld-'));
+    try {
+      await fs.writeFile(path.join(tmp, 'README.md'), '# Notes\n\nTry TODO.AI today. TODO.AI is fast.\n');
+      const names = (await harvestRepo(tmp, { git: false, minCount: 1 })).map((c) => c.canonical);
+      expect(names).toContain('TODO.AI');
+      expect(names).not.toContain('TODO');
+    } finally {
+      await fs.rm(tmp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
 });
