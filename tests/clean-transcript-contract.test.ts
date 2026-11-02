@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { cleanTranscript } from '../src/voice/transcribe.js';
+import { cleanTranscript, parseWhisperOutput } from '../src/voice/transcribe.js';
 
 // Contract: docs/CONTRACT.md, src/voice/transcribe.ts.
 describe('cleanTranscript contract', () => {
@@ -15,6 +15,17 @@ describe('cleanTranscript contract', () => {
     ['a spoken parenthetical', 'Before (the new build) after.', 'Before (the new build) after.'],
   ])('handles %s', (_description, input, expected) => {
     expect(cleanTranscript(input)).toBe(expected);
+  });
+
+  it.each([
+    ['Whisper JSON segments', JSON.stringify({ transcription: [
+      { text: 'Please send the report' },
+      { text: '*whispers*' },
+      { text: 'to the team.' },
+    ] }), 'ignored stdout'],
+    ['stdout fallback', undefined, 'Please send the report *whispers* to the team.'],
+  ])('removes a one-word annotation from %s while preserving the transcript', (_source, json, stdout) => {
+    expect(cleanTranscript(parseWhisperOutput(json, stdout))).toBe('Please send the report to the team.');
   });
 
   it('cleans tags and whitespace while preserving a four-word phrase', () => {
