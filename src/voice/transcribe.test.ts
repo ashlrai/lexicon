@@ -43,6 +43,14 @@ describe('cleanTranscript', () => {
   });
 
   it.each([
+    ['spaced speech', 'Please [MUSIC][APPLAUSE] continue.', 'Please continue.'],
+    ['unspaced speech', 'Before[noise][inaudible]after.', 'Before after.'],
+    ['multiline tags', 'Keep[first\ntag][second\r\ntag]speaking.', 'Keep speaking.'],
+  ])('removes adjacent bracketed tags and retains %s', (_description, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
+  it.each([
     ['an unmatched opening bracket', 'Please keep [unfinished speech.', 'Please keep [unfinished speech.'],
     ['an unmatched closing bracket', 'Please keep unfinished] speech.', 'Please keep unfinished] speech.'],
     ['an opening bracket after a complete tag', '  Please [noise] continue [unfinished\nthought  ', 'Please continue [unfinished thought'],
