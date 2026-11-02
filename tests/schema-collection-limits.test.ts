@@ -26,12 +26,21 @@ describe('schema collection limits reference', () => {
     expect(() => parseLexicon({ terms: [{ canonical: 'X', aliases: [...aliases, 'same'] }] })).toThrow(error);
   });
 
-  it('counts terms even when repeated and reports the documented error', () => {
-    const terms = Array.from({ length: LIMITS.terms }, () => ({ canonical: 'Repeated' }));
-    expect(LexiconSchema.parse({ terms }).terms).toHaveLength(LIMITS.terms);
-    const error = `terms: at most ${LIMITS.terms} terms`;
+  it('enforces the contract limit of 5000 terms even when they are repeated', () => {
+    // Keep the boundary independent of LIMITS so a contract change is deliberate.
+    expect(contract).toContain('`terms` 5000');
+    const terms = Array.from({ length: 5000 }, () => ({ canonical: 'Repeated' }));
+    expect(LexiconSchema.parse({ terms }).terms).toHaveLength(5000);
+    const overflow = { terms: [...terms, { canonical: 'Repeated' }] };
+    const result = LexiconSchema.safeParse(overflow);
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the terms limit to be enforced');
+    expect(result.error.issues).toMatchObject([
+      { code: 'too_big', path: ['terms'], maximum: 5000 },
+    ]);
+    const error = 'terms: at most 5000 terms';
     expect(reference).toContain(error);
-    expect(() => parseLexicon({ terms: [...terms, { canonical: 'Repeated' }] })).toThrow(error);
+    expect(() => parseLexicon(overflow)).toThrow(error);
   });
 
   it('defaults missing and null collections but rejects null entries', () => {
