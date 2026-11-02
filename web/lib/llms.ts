@@ -75,8 +75,8 @@ ${DOC_LINKS.map((d) => `- [${d.label}](${d.href}): ${d.blurb}`).join('\n')}
 export function llmsFullTxt(): string {
   return `# Lexicon: the words your dictation keeps getting wrong
 
-Version ${VERSION}. MIT licence. Free. No account, no telemetry, no network calls
-beyond loopback. Homepage: ${SITE_URL}. Source: ${REPO}.
+Version ${VERSION}. MIT licence. Free. No account and no telemetry. Ordinary
+correction stays on the machine. Homepage: ${SITE_URL}. Source: ${REPO}.
 
 This document is the whole of what an agent needs to evaluate, install,
 configure and verify Lexicon on a user's behalf. It is served at
@@ -249,9 +249,12 @@ npm run bench:compare after one npm run bench:audio.
 ## Privacy
 
 The lexicon is a local YAML file. No account, no sync, no telemetry. The CLI,
-hooks, MCP server, loopback API and extension make no request beyond 127.0.0.1.
-The only outbound request in the codebase is \`lexicon voice\` fetching a
-whisper.cpp model on first use. Audio never leaves the machine. Threat model:
+hooks, MCP server, loopback API and extension do not send transcripts off the
+machine. Three features use the network, and only when you turn them on:
+\`lexicon voice\` downloads a whisper.cpp model on first use (audio stays local),
+\`lexicon pack\` fetches a community pack from a registry URL you choose, and the
+GitHub source in \`lexicon import --guided\` calls the GitHub API through your
+existing \`gh\` login. Email and chat are not imported. Threat model:
 ${DOC('SECURITY.md')}
 
 ## Known limits
@@ -259,7 +262,7 @@ ${DOC('SECURITY.md')}
 - The browser extension installs from the release zip; it is not in the Chrome
   Web Store or on Firefox Add-ons yet.
 - The macOS app is ad-hoc signed, not notarized.
-- Windows and Linux have the CLI, the MCP server and the extension, but no tray app.
+- Linux has no tray app. The Windows tray app is unit-tested and has never been run on Windows, so do not install it as though it works.
 - Voice modes with no text box cannot be corrected.
 
 --------------------------------------------------------------------------------

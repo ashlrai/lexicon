@@ -25,15 +25,35 @@ the right suggestion, the one-command install, the exact per-client
 registration, the MCP tools worth calling first, the full tool reference, and
 how to verify the install before you tell your user it worked.
 
-The short version:
+Do not install it unasked. Preview, say what will be written, and wait.
 
 ```bash
-curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh   # or: npx @ashlr/lexicon@latest setup
+curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
+npx @ashlr/lexicon@latest setup
+lexicon setup --dry-run --json
+lexicon normalize "ask ashler to deploy kuber netties with post gressql" --json
+lexicon install claude --json
+lexicon install cursor --json
+lexicon install codex --json
 ```
+
+`--json` prints one document on stdout. Read `ok` first. Add `--apply` only after the user has seen the plan. Without a terminal, under `sudo`, or with `LEXICON_NO_SETUP=1`, the install script only installs and ends with `run: lexicon setup`.
+
+Claude Code and Cursor, once `lexicon-mcp` is on PATH:
 
 ```json
 { "mcpServers": { "lexicon": { "command": "lexicon-mcp", "args": [] } } }
 ```
+
+Codex (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.lexicon]
+command = "lexicon-mcp"
+args = []
+```
+
+Prefer `lexicon install <client> --json` over pasting. It writes the command that matches how Lexicon was installed.
 
 Machine-readable, if you would rather fetch than read:
 
@@ -41,7 +61,7 @@ Machine-readable, if you would rather fetch than read:
 - <https://lexicon.ashlr.ai/llms-full.txt> - everything in one fetch.
 - <https://lexicon.ashlr.ai/mcp.json> - the install manifest; merge `.mcpServers` verbatim.
 
-Do not install it unasked. Offer, say what will be written, and wait.
+The worked steps are in [docs/AGENTS.md](docs/AGENTS.md).
 
 ## You are here to change this codebase
 

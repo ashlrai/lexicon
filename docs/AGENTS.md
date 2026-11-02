@@ -27,37 +27,18 @@ anywhere in the loop (ChatGPT Voice, Gemini Live), it cannot help.
 
 Do not install it unasked. Offer, say what it will write, and wait.
 
-## The one-command install
+## Install, then read `ok`
 
 ```bash
 curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
-```
-
-Checks for Node 20+, installs the `@ashlr/lexicon` CLI, then runs
-`lexicon setup` if it has a terminal. Run by an agent with no terminal, under
-`sudo` or with `LEXICON_NO_SETUP=1`, it only installs and ends with a line
-that says why, then `run: lexicon setup`; run `lexicon setup --yes` (or the `setup_lexicon`
-tool) after. On a machine where you should not install globally:
-
-```bash
 npx @ashlr/lexicon@latest setup
-```
-
-Alternatives: `brew install ashlrai/tap/lexicon`, `npm i -g @ashlr/lexicon`.
-
-Non-interactive, which is usually what you want from a tool call:
-
-```bash
+lexicon setup --dry-run --json
 lexicon setup --yes --packs developer,ai --json
 ```
 
-`--yes` skips every prompt. `--packs`, `--harvest` and `--serve` are opt-in even
-under `--yes`, because each writes a lot or installs a service. `--dry-run`
-prints the plan and writes nothing; run that first and show it to your user.
-`--clients none` installs into no client. `--json` gives you a `SetupSummary`
-(or the `SetupPlan` under `--dry-run`) instead of prose, led by `ok` (false
-when a client or the login service failed, exit 1); a refusal is
-`{ ok: false, error, nextStep }`.
+The script checks for Node 20+, installs the CLI, and runs `lexicon setup` when it has a terminal. Run by an agent with no terminal, under `sudo` or with `LEXICON_NO_SETUP=1`, it only installs and ends with a line that says why, then `run: lexicon setup`. Alternatives: `brew install ashlrai/tap/lexicon`, `npm i -g @ashlr/lexicon`. Plain `brew install lexicon` is a different project.
+
+`--yes` skips every prompt. `--packs`, `--harvest` and `--serve` are opt-in even under `--yes`, because each writes a lot or installs a service. `--dry-run` prints the plan and writes nothing; run that first and show it to your user. `--clients none` installs into no client. `--json` gives you a `SetupSummary` (or the `SetupPlan` under `--dry-run`) instead of prose, led by `ok` (false when a client or the login service failed, exit 1); a refusal is `{ ok: false, error, nextStep }`.
 
 Any other `--json` command that fails without a result of its own to print
 (an unknown flag value, a missing file, an untrusted project lexicon, a lexicon
@@ -73,9 +54,20 @@ same whenever `--json` is on it before any `--`: commander's message as `error`,
 `lexicon voice --json` is the exception:
 its failures are on stderr with exit codes 1 to 3.
 
-## Register the MCP server
+## Register Claude, Cursor and Codex
 
-Server name `lexicon`, stdio transport, binary `lexicon-mcp`.
+Preview first. `--json` returns `{ ok, client, scope, applied, written, output }`. `applied` is false until you pass `--apply`.
+
+```bash
+lexicon install claude --json
+lexicon install claude --apply --json
+lexicon install cursor --json
+lexicon install cursor --apply --json
+lexicon install codex --json
+lexicon install codex --apply --json
+```
+
+Paste these only when `lexicon-mcp` is on PATH. Prefer the install command. It writes the path that matches how Lexicon was installed.
 
 ```json
 {
@@ -88,11 +80,15 @@ Server name `lexicon`, stdio transport, binary `lexicon-mcp`.
 }
 ```
 
-The same block is served as JSON at <https://lexicon.ashlr.ai/mcp.json>, with the
-per-client commands, the tool list and the verification steps beside it. Fetch
-that rather than retyping this.
+Codex (`~/.codex/config.toml`):
 
-One command per client, each writing that client's own config file:
+```toml
+[mcp_servers.lexicon]
+command = "lexicon-mcp"
+args = []
+```
+
+The same JSON block is at <https://lexicon.ashlr.ai/mcp.json>. Fetch that rather than retyping it.
 
 | Client | Command |
 |---|---|
@@ -105,11 +101,7 @@ One command per client, each writing that client's own config file:
 | VS Code | `lexicon install vscode --apply` |
 | Anything else | `lexicon install generic` prints the block to paste |
 
-Drop `--apply` to print the diff without writing. Do that first when your user
-has not seen what you are about to change. Add `--json` for one document:
-`{ ok: true, client, scope, applied, written, output }`, or
-`{ ok: false, error, nextStep }` for an unknown client or scope. From inside an MCP session you have
-the same thing as a tool: `install_client { client, apply? }`.
+From inside an MCP session the same preview is `install_client { client, apply? }`.
 
 In Claude Code, `lexicon install claude --apply` also merges a `SessionStart`
 hook (hands the model the lexicon once per session) and a `UserPromptSubmit`
@@ -119,10 +111,20 @@ hook (corrects each dictated prompt on the way in) into
 `claude plugin install lexicon@ashlrai`) brings those plus a skill and the
 `/lexicon` command, with no build step.
 
+## Correct, add, learn, check
+
+```bash
+lexicon normalize "ask ashler to deploy kuber netties with post gressql" --json
+lexicon add Ashlr.AI Ashler Ashlar "Ashler AI" --phonetic ASH-ler --json
+lexicon learn --from "it's Ashlr.AI not Ashler" --dry-run --json
+lexicon doctor --json
+```
+
+`normalize --json` sets `example` to true when the built-in sample stood in. Nothing is written. `doctor --json`: read `ready`, `summary` and `nextStep`.
+
 ## The tools you will actually call
 
-Twenty-one tools in all; [MCP.md](MCP.md) is the full table. These five cover almost
-everything:
+Twenty-one tools in all; [MCP.md](MCP.md) is the full table. These calls cover almost everything:
 
 - `normalize_transcript { text }` - correct a dictated string. Returns `output`,
   `changed` and a `replacements[]` list you can show, plus a `note` when `text` is
