@@ -53,6 +53,25 @@ describe('first invalid code unit documentation', () => {
     ]);
   });
 
+  it('reports the first invalid unit in notes and packs on repeated calls', () => {
+    const inputs = [
+      ['Rocket 🚀\uFFFF then \uD800', 'U+FFFF'],
+      ['Rocket 🚀\uD800 then \uFFFF', 'U+D800'],
+      ['Rocket 🚀\uFFFF then \uD800', 'U+FFFF'],
+    ];
+
+    for (const [input, first] of inputs) {
+      const reason = `must not contain ${first} (U+FFFE, U+FFFF and unpaired surrogates fit no file format)`;
+      expect(() => parseLexicon({
+        terms: [{ canonical: 'Rocket', notes: input }],
+        settings: { packs: [input] },
+      })).toThrow(
+        `Invalid lexicon:\n  - terms[0].notes: ${reason} in term "Rocket"\n` +
+        `  - settings.packs[0]: ${reason}`,
+      );
+    }
+  });
+
   it.each([
     ['two high surrogates', '\uD800\uDBFF', 'U+D800', '\\uD800\\uDBFF'],
     ['two low surrogates', '\uDC00\uDFFF', 'U+DC00', '\\uDC00\\uDFFF'],
