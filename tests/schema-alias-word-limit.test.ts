@@ -30,3 +30,25 @@ describe('alias word length boundary', () => {
     }
   });
 });
+
+describe('alias word length boundary: normalization and sibling lists', () => {
+  const at = 'a'.repeat(LIMITS.word);
+
+  it('measures the length after trimming and stripping invisible characters', () => {
+    const parsed = TermSchema.parse({ canonical: 'X', aliases: [`  ​${at}﻿  `] });
+    expect(parsed.aliases).toEqual([at]);
+    expect(TermSchema.safeParse({ canonical: 'X', aliases: [` ${at}a `] }).success).toBe(false);
+  });
+
+  it('accepts an 80 character alias next to short ones and rejects the one that is too long', () => {
+    expect(TermSchema.parse({ canonical: 'X', aliases: ['a', at, 'b'] }).aliases).toEqual(['a', at, 'b']);
+    const bad = TermSchema.safeParse({ canonical: 'X', aliases: ['a', at, `${at}a`] });
+    expect(bad.success).toBe(false);
+    if (!bad.success) expect(bad.error.issues[0].path).toEqual(['aliases', 2]);
+  });
+
+  it('applies the same boundary to never words', () => {
+    expect(TermSchema.parse({ canonical: 'X', never: [at] }).never).toEqual([at]);
+    expect(TermSchema.safeParse({ canonical: 'X', never: [`${at}a`] }).success).toBe(false);
+  });
+});
