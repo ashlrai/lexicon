@@ -40,6 +40,15 @@ describe('cleanTranscript', () => {
   });
 
   it.each([
+    'Please send the report to the team.',
+    'The rollout finished at 3 pm and nobody noticed.',
+    'Did Zoë already ship the café menu?',
+    "Let's ping Ashlr.AI about Friday's deploy, then go home.",
+  ])('leaves the ordinary sentence without annotations unchanged: %s', (sentence) => {
+    expect(cleanTranscript(sentence)).toBe(sentence);
+  });
+
+  it.each([
     ['a noise tag', '[BLANK_AUDIO] Please send the report.', 'Please send the report.'],
     ['a tag touching speech', '[MUSIC]Please send the report.', 'Please send the report.'],
     ['an arbitrary tag and leading whitespace', '  [speaker 1]\nPlease send the report.', 'Please send the report.'],
