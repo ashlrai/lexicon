@@ -168,7 +168,7 @@ describe('harvestRepo', () => {
     expect(await harvestRepo(dir, { git: false, minCount: 1, symbols: true })).toEqual([]);
   });
 
-  it.each(['NOTE', 'HACK'])(
+  it.each(['FIXME', 'NOTE', 'HACK'])(
     'excludes %s in ordinary comments while counting the names in their text', async (marker) => {
       const dir = path.join(tmp, `ordinary-comment-${marker}`, 'repo');
       await fs.mkdir(dir, { recursive: true });
