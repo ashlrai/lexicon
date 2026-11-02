@@ -147,6 +147,25 @@ describe('harvestRepo', () => {
     });
   });
 
+  it.each(['NOTE', 'HACK'])(
+    'excludes %s in ordinary comments while counting the names in their text', async (marker) => {
+      const dir = path.join(tmp, `ordinary-comment-${marker}`, 'repo');
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, 'first.ts'), `// ${marker}: keep QuasarWidget available for the next request.\n`);
+      await fs.writeFile(path.join(dir, 'second.ts'), `/* ${marker}: retry QuasarWidget after the connection closes. */\n`);
+
+      const options = { git: false, symbols: true };
+      const candidates = await harvestRepo(dir, options);
+      expect(candidates.map(({ canonical, category, source, count, evidence }) =>
+        ({ canonical, category, source, count, evidence }))).toEqual([{
+        canonical: 'QuasarWidget', category: 'identifier', source: 'harvest:repo',
+        count: 2, evidence: ['first.ts', 'second.ts'],
+      }]);
+      expect(await harvestRepo(dir, { ...options, minCount: 3 })).toEqual([]);
+      expect(await harvestRepo(dir, { git: false })).toEqual([]);
+    },
+  );
+
   it.each(['TODO', 'FIXME', 'NOTE', 'HACK', 'XXX'])(
     'counts and ranks identifiers across separate lines with repeated %s markers', async (marker) => {
       const dir = path.join(tmp, `repeated-${marker}`, 'repo');
