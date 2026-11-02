@@ -4,7 +4,7 @@
 
 # Lexicon
 
-**Release preparation:** The 0.5.7 version and pins below describe an unpublished candidate prepared on 2026-10-31. At preparation, npm `latest` was 0.5.4. Verify the public npm version and GitHub release before using a 0.5.7 install pin.
+**Release preparation:** The 0.5.8 version and pins below describe an unpublished candidate prepared on 2026-11-01. At preparation, npm `latest` was 0.5.4. Verify the public npm version and GitHub release before using a 0.5.8 install pin.
 
 **Dictate to your agent. Keep your spelling.**
 
@@ -15,7 +15,7 @@ lands: MCP, Claude Code, the browser, macOS.
 
 [![CI](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml/badge.svg)](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/%40ashlr%2Flexicon)](https://www.npmjs.com/package/@ashlr/lexicon)
-<!-- fresh:begin badge:release -->[![source version](https://img.shields.io/badge/source-v0.5.7-blue)](package.json)<!-- fresh:end -->
+<!-- fresh:begin badge:release -->[![source version](https://img.shields.io/badge/source-v0.5.8-blue)](package.json)<!-- fresh:end -->
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node >=20](https://img.shields.io/node/v/%40ashlr%2Flexicon)](package.json)
 
@@ -146,7 +146,7 @@ selected before inspection, and candidates are reviewed before writes. The
 install script, npm and Homebrew fetch the package itself. See
 [SECURITY.md](SECURITY.md).
 
-The guided GitHub importer is in source and the `v0.5.5` tag ([PR #25](https://github.com/ashlrai/lexicon/pull/25)). At preparation on 2026-10-31, that version was not published to npm or as a GitHub release. Check current availability before installing.
+The guided GitHub importer is in source and the `v0.5.5` tag ([PR #25](https://github.com/ashlrai/lexicon/pull/25)). At preparation on 2026-11-01, that version was not published to npm or as a GitHub release. Check current availability before installing.
 
 ## MCP setup
 
@@ -257,7 +257,7 @@ Also at the root: [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDU
 
 ## Downloads
 
-Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches the browser extension for Chrome/Edge/Brave and for Firefox, `LexiconBar.app.zip` for macOS, the npm tarball for offline installs, and `SHA256SUMS`. The Homebrew formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap). After 0.5.7 is published, <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.7`<!-- fresh:end --> installs that tag straight from GitHub and builds on install.
+Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches the browser extension for Chrome/Edge/Brave and for Firefox, `LexiconBar.app.zip` for macOS, the npm tarball for offline installs, and `SHA256SUMS`. The Homebrew formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap). After 0.5.8 is published, <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.8`<!-- fresh:end --> installs that tag straight from GitHub and builds on install.
 
 ## Roadmap and non-goals
 
