@@ -352,6 +352,15 @@ describe('hardening (lexicon content reaches model context)', () => {
     for (const character of neighbors) expect(findUnencodableChar(character)).toBeUndefined();
   });
 
+  it('accepts a paired surrogate in a term and preserves it unchanged', () => {
+    const rocket = '\uD83D\uDE80';
+    const term = { canonical: `Rocket ${rocket}`, aliases: [`Launch ${rocket}`], notes: `Ready ${rocket}` };
+
+    expect(findUnencodableChar(rocket)).toBeUndefined();
+    expect(TermSchema.parse(term)).toStrictEqual(term);
+    expect(parseLexicon({ terms: [term] }).terms).toStrictEqual([term]);
+  });
+
   it('rejects U+FFFE in a canonical term and a YAML alias with the offending character in the error', () => {
     const canonical = { terms: [{ canonical: 'Ash\uFFFElr' }] };
     const alias = parseYaml('terms:\n  - canonical: Ashlr.AI\n    aliases: ["Ash\\uFFFEler"]\n');
