@@ -1213,6 +1213,25 @@ describe('lexicon voice (foreground)', () => {
     }]);
   });
 
+  it('preserves a four-word starred span and surrounding speech through delivery', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    h.transcript = '  Please ping ashler  *the door slams loudly*  about the cooper netties rollout.  ';
+
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_OK);
+    const result = JSON.parse(h.out[0]) as VoiceJsonResult;
+    expect(result.raw).toBe('Please ping ashler *the door slams loudly* about the cooper netties rollout.');
+    expect(result.output).toBe('Please ping Ashlr.AI *the door slams loudly* about the Kubernetes rollout.');
+    expect(result.replacements.map(({ original, replacement }) => [original, replacement])).toEqual([
+      ['ashler', 'Ashlr.AI'],
+      ['cooper netties', 'Kubernetes'],
+    ]);
+    expect(await loadVoiceHistory(h.globalPath)).toMatchObject([{
+      raw: result.raw,
+      output: result.output,
+    }]);
+  });
+
   it('appends to voice/history.jsonl and records hits for the corrected terms', async () => {
     const h = await harness();
     h.deps.waitForStop = async () => 'enter';
