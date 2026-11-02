@@ -6,8 +6,10 @@ describe('transcript cleaning scope documentation', () => {
   const doc = readFileSync(new URL('../docs/transcript-cleaning-scope.md', import.meta.url), 'utf8');
 
   it.each([
-    ['Square brackets', 5],
-    ['Asterisks', 9],
+    ['Square brackets', 8],
+    ['Asterisks', 11],
+    ['Parentheses', 8],
+    ['Boundaries', 4],
     ['Other cleaning', 3],
   ])('matches the cleaner for the %s examples', (section, minimum) => {
     const content = doc.split(`## ${section}\n`)[1]?.split('\n## ')[0] ?? '';
