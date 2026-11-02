@@ -5,6 +5,7 @@ import { cleanTranscript } from '../src/voice/transcribe.js';
 describe('cleanTranscript contract', () => {
   it.each([
     ['arbitrary bracketed tags', 'Before [speaker 2: hello] after.', 'Before after.'],
+    ['adjacent bracketed tags', 'Before the release[noise][MUSIC]after the vote.', 'Before the release after the vote.'],
     ['one plain starred word', 'Before *anything* after.', 'Before after.'],
     ['two plain starred words', 'Before *any words* after.', 'Before after.'],
     ['three plain starred words', 'Before *any three words* after.', 'Before after.'],
