@@ -12,6 +12,7 @@ The short pitch, the benchmark headline and the install commands are in the
 
 | Page | What it covers | Also listed under |
 |---|---|---|
+| [COPY-PASTE.md](COPY-PASTE.md) | The install, `--json` commands, and Claude, Cursor and Codex MCP snippets, with no commentary | |
 | [QUICKSTART.md](QUICKSTART.md) | Nothing to working corrections in Claude Code in five minutes, with what each setup step writes | |
 | [FIRST-RUN.md](FIRST-RUN.md) | First-run report measured October 26, 2026 on one Linux VM with Node already installed: install and setup demo timings (the first printed correction is the setup demo), a separate npx normalization timing, documentation findings, non-interactive agent behavior, write gates, JSON errors, MCP schemas and ranked follow-ups; compares npm 0.5.4 with source 0.5.6 | |
 | [CLIENTS.md](CLIENTS.md) | Installing into Claude Code (plugin, hooks, headless) and every other agent client. Read this one second | Use it with |
