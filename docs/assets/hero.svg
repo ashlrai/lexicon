@@ -1,0 +1,21 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="400" viewBox="0 0 960 400" role="img" aria-labelledby="heroTitle heroDesc">
+  <title id="heroTitle">Lexicon rewrites a transcript before the agent reads it</title>
+  <desc id="heroDesc">Speech-to-text wrote ashler, kuber netties and post gressql. Lexicon rewrites those spans to Ashlr.AI, Kubernetes and PostgreSQL.</desc>
+  <rect width="960" height="400" rx="28" fill="#070a0f"/>
+  <text x="48" y="56" fill="#8b97a6" font-family="ui-sans-serif, system-ui, sans-serif" font-size="15" letter-spacing="1.4">WHAT SPEECH-TO-TEXT WROTE</text>
+  <text x="48" y="112" fill="#e6e9ee" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="26">
+    ask <tspan fill="#f0b4ae" text-decoration="line-through">ashler</tspan> to deploy
+  </text>
+  <text x="48" y="156" fill="#e6e9ee" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="26">
+    <tspan fill="#f0b4ae" text-decoration="line-through">kuber netties</tspan> with <tspan fill="#f0b4ae" text-decoration="line-through">post gressql</tspan>
+  </text>
+  <line x1="48" y1="190" x2="912" y2="190" stroke="#1c2633" stroke-width="2"/>
+  <text x="48" y="236" fill="#a4dded" font-family="ui-sans-serif, system-ui, sans-serif" font-size="15" letter-spacing="1.4">WHAT THE AGENT READS</text>
+  <text x="48" y="292" fill="#e6e9ee" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="26">
+    ask <tspan fill="#a4dded">Ashlr.AI</tspan> to deploy
+  </text>
+  <text x="48" y="336" fill="#e6e9ee" font-family="ui-monospace, SFMono-Regular, Menlo, Consolas, monospace" font-size="26">
+    <tspan fill="#a4dded">Kubernetes</tspan> with <tspan fill="#a4dded">PostgreSQL</tspan>
+  </text>
+  <text x="48" y="376" fill="#8b97a6" font-family="ui-sans-serif, system-ui, sans-serif" font-size="15">alias 1.00, then two phonetic matches at 0.88. The rest of the sentence stays put.</text>
+</svg>

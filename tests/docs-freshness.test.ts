@@ -8,7 +8,7 @@ import { createServer } from '../src/mcp/server.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = (file: string): string => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
-const guides = ['README.md', 'AGENTS.md', 'CLAUDE.md', 'llms-install.md', 'docs/AGENTS.md'];
+const guides = ['README.md', 'AGENTS.md', 'CLAUDE.md', 'llms-install.md', 'llms.txt', 'llms-full.txt', 'docs/AGENTS.md', 'docs/COPY-PASTE.md'];
 
 describe('source-backed documentation freshness', () => {
   it('documents exactly the registered MCP tools and all their schema arguments', async () => {
