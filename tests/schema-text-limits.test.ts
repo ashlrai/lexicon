@@ -66,25 +66,25 @@ describe('notes and phonetic text limits', () => {
     expect(term.phonetic).toBe(text);
   });
 
-  it('reports only the term whose notes exceed the documented boundary', () => {
+  it.each(['notes', 'phonetic'] as const)('reports only the term whose %s exceeds the documented boundary', (field) => {
     const atLimit = 'n'.repeat(200);
     const raw = {
       terms: [
-        { canonical: 'Within limit', notes: atLimit },
-        { canonical: 'Over limit', notes: `${atLimit}n` },
-        { canonical: 'Also within limit', notes: atLimit },
+        { canonical: 'Within limit', [field]: atLimit },
+        { canonical: 'Over limit', [field]: `${atLimit}n` },
+        { canonical: 'Also within limit', [field]: atLimit },
       ],
     };
 
     const result = LexiconSchema.safeParse(raw);
     expect(result.success).toBe(false);
-    if (result.success) throw new Error('Expected an overlong note to be rejected');
+    if (result.success) throw new Error(`Expected an overlong ${field} to be rejected`);
     expect(result.error.issues).toHaveLength(1);
     expect(result.error.issues[0]).toMatchObject({
-      path: ['terms', 1, 'notes'],
+      path: ['terms', 1, field],
       message: 'must be at most 200 characters',
     });
-    expect(() => parseLexicon(raw)).toThrow('terms[1].notes: must be at most 200 characters');
+    expect(() => parseLexicon(raw)).toThrow(`terms[1].${field}: must be at most 200 characters`);
   });
 
   it.each(['notes', 'phonetic'])('rejects retained line breaks and unencodable text in %s', (field) => {
