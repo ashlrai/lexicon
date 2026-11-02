@@ -57,6 +57,22 @@ describe('contract term limits reference', () => {
     expect(LexiconSchema.safeParse({ terms: [...terms, { canonical: 'Overflow' }] }).success).toBe(false);
   });
 
+  it('accepts 64 aliases per term and rejects 65', () => {
+    const match = contract.match(/`aliases` (\d+) \(aliases and `never` per term\)/);
+    expect(match).not.toBeNull();
+    expect(Number(match![1])).toBe(64);
+
+    const aliases = Array.from({ length: 64 }, (_, i) => `alias ${i}`);
+    expect(TermSchema.parse({ canonical: 'Name', aliases }).aliases).toEqual(aliases);
+
+    const result = TermSchema.safeParse({ canonical: 'Name', aliases: [...aliases, 'overflow'] });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the alias count to exceed the documented limit');
+    expect(result.error.issues).toMatchObject([
+      { code: 'too_big', path: ['aliases'], maximum: 64, message: 'at most 64 aliases per term' },
+    ]);
+  });
+
   it('counts aliases and never lists separately', () => {
     const entries = Array<string>(LIMITS.aliases).fill('word');
     const input = (aliases: string[], never: string[]) => ({ terms: [{ canonical: 'X', aliases, never }] });
