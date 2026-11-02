@@ -120,7 +120,7 @@ const PLATFORMS: Platform[] = [
     id: 'windows',
     name: 'Windows',
     glyph: <MonitorGlyph />,
-    body: 'The CLI and the MCP server, wherever Node 20 or newer is on the PATH. There is no tray app yet.',
+    body: 'The CLI and the MCP server, wherever Node 20 or newer is on the PATH. A tray app is unit-tested and has never been run on Windows, so do not install it as though it works.',
   },
   {
     id: 'linux',
@@ -130,7 +130,7 @@ const PLATFORMS: Platform[] = [
       </>
     ),
     glyph: <TuxGlyph />,
-    body: 'The CLI and the MCP server, through the install script, Homebrew or npm. There is no tray app yet.',
+    body: 'The CLI and the MCP server, through the install script, Homebrew or npm. There is no tray app.',
   },
 ];
 
