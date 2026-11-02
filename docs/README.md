@@ -136,6 +136,7 @@ Design notes and live records. You do not need these to use Lexicon.
 | [expander-platform-questions.md](expander-platform-questions.md) | The per-platform discovery questions behind that boundary, each marked decided or undecided |
 | [daemon-surface-questions.md](daemon-surface-questions.md) | The daemon half of the same list: the requested resident-expander surface and the open server-side questions, marked decided or undecided |
 | [daemon-design-constraints.md](daemon-design-constraints.md) | Issue #220's requested surface, current boundary and open design decisions |
+| [daemon-design-questions.md](daemon-design-questions.md) | Open lifecycle, configuration and platform questions for the proposed resident expander |
 
 ## Not built: commercial planning
 
