@@ -771,6 +771,14 @@ describe('hardening (lexicon content reaches model context)', () => {
   });
 
   it.each([
+    ['adjacent', '\uD83D\uDE80\uD842\uDFB7'],
+    ['separated by text', '\uD83D\uDE80 and \uD842\uDFB7'],
+  ])('accepts and preserves two distinct surrogate pairs in a canonical term when %s', (_description, canonical) => {
+    expect(TermSchema.parse({ canonical }).canonical).toBe(canonical);
+    expect(parseLexicon({ terms: [{ canonical }] }).terms[0].canonical).toBe(canonical);
+  });
+
+  it.each([
     ['U+10000', '\uD800\uDC00'],
     ['U+103FF', '\uD800\uDFFF'],
     ['U+10FC00', '\uDBFF\uDC00'],
