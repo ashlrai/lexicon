@@ -436,6 +436,139 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(findUnencodableChar('\uDE80x')).toBe('U+DE80');
   });
 
+  it.each([
+    ['U+FFFE', '\uFFFE'],
+    ['U+FFFF', '\uFFFF'],
+  ])('rejects a canonical that is only %s, with the escaped unit as the term label', (codePoint, character) => {
+    // One code point, not empty: the noncharacter itself is the whole field
+    // and the whole term name, shown in the error in its escaped form.
+    const result = TermSchema.safeParse({ canonical: character });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error(`Expected ${codePoint} to be rejected`);
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['canonical'],
+        message: `must not contain ${codePoint} (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "\\u${codePoint.slice(2)}"`,
+      },
+    ]);
+  });
+
+  it.each([
+    ['U+FFFE', '\uFFFE'],
+    ['U+FFFF', '\uFFFF'],
+  ])('rejects a lone %s entry in each settings list at its own index', (codePoint, character) => {
+    const result = LexiconSchema.safeParse({
+      terms: [],
+      settings: { protectedWords: ['valid', character], packs: [character] },
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error(`Expected ${codePoint} to be rejected`);
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['settings', 'protectedWords', 1],
+        message: `must not contain ${codePoint} (U+FFFE, U+FFFF and unpaired surrogates fit no file format)`,
+      },
+      {
+        path: ['settings', 'packs', 0],
+        message: `must not contain ${codePoint} (U+FFFE, U+FFFF and unpaired surrogates fit no file format)`,
+      },
+    ]);
+  });
+
+  it.each([
+    ['U+FFFE', '\uFFFE'],
+    ['U+FFFF', '\uFFFF'],
+  ])('rejects %s through the standalone LexiconSettingsSchema in both word lists', (codePoint, character) => {
+    // Paths sit on the settings object itself and carry no term name: these
+    // entries are file-level, not tied to one canonical.
+    const result = LexiconSettingsSchema.safeParse({
+      protectedWords: ['valid', `word${character}`],
+      packs: [`pack${character}`],
+    });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error(`Expected ${codePoint} to be rejected`);
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['protectedWords', 1],
+        message: `must not contain ${codePoint} (U+FFFE, U+FFFF and unpaired surrogates fit no file format)`,
+      },
+      {
+        path: ['packs', 0],
+        message: `must not contain ${codePoint} (U+FFFE, U+FFFF and unpaired surrogates fit no file format)`,
+      },
+    ]);
+  });
+
+  it('identifies U+FFFE and U+FFFF at their own indexes in the same alias list', () => {
+    const result = TermSchema.safeParse({ canonical: 'Rocket', aliases: ['ok', 'a\uFFFEb', 'c\uFFFFd'] });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the noncharacters to be rejected');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['aliases', 1],
+        message: 'must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket"',
+      },
+      {
+        path: ['aliases', 2],
+        message: 'must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket"',
+      },
+    ]);
+  });
+
+  it('identifies each noncharacter at its own field path when one term carries both', () => {
+    // The check walks TERM_TEXT_FIELDS in order, so the U+FFFF issue on
+    // `never` is listed ahead of the U+FFFE issue on `notes`.
+    const result = TermSchema.safeParse({ canonical: 'Rocket', never: ['n\uFFFFo'], notes: 't\uFFFEt' });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected both noncharacters to be rejected');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['never', 0],
+        message: 'must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket"',
+      },
+      {
+        path: ['notes'],
+        message: 'must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket"',
+      },
+    ]);
+  });
+
+  it.each([
+    ['U+FFFE', '\uFFFE'],
+    ['U+FFFF', '\uFFFF'],
+  ])('still rejects %s when cleaning leaves it as the whole list entry', (codePoint, character) => {
+    // Stripping invisibles and trimming leaves the single noncharacter: it
+    // is not dropped as empty, so the term-level check still finds it.
+    const result = TermSchema.safeParse({ canonical: 'Rocket', never: [` ${ZW}${character}${ZW} `] });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error(`Expected ${codePoint} to be rejected`);
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['never', 0],
+        message: `must not contain ${codePoint} (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket"`,
+      },
+    ]);
+  });
+
+  it('identifies U+FFFE and U+FFFF in one thrown error across term and settings', () => {
+    expect(() =>
+      parseLexicon({
+        terms: [{ canonical: 'Rocket', aliases: ['a\uFFFEb'] }],
+        settings: { packs: ['p\uFFFFk'] },
+      }),
+    ).toThrow(
+      'Invalid lexicon:\n' +
+        '  - terms[0].aliases[0]: must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket"\n' +
+        '  - settings.packs[0]: must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format)',
+    );
+  });
+
   it('identifies an unpaired high surrogate in a canonical term', () => {
     expect(() => parseLexicon({ terms: [{ canonical: 'Rocket \uD83Dship' }] })).toThrow(
       'terms[0].canonical: must not contain U+D83D (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket \\uD83Dship"',
