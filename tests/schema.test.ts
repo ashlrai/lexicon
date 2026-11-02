@@ -361,6 +361,26 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(parseLexicon({ terms: [term] }).terms).toStrictEqual([term]);
   });
 
+  it.each([
+    ['a lone low surrogate', 'x\uDE80y', 'U+DE80'],
+    ['the first low surrogate', '\uDC00', 'U+DC00'],
+    ['a low surrogate before a high one (reversed pair)', '\uDE80\uD83D', 'U+DE80'],
+    ['a low surrogate after a complete pair', '🚀\uDE80', 'U+DE80'],
+  ])('rejects an alias with %s and names the invalid code unit', (_label, alias, codeUnit) => {
+    const result = LexiconSchema.safeParse({ terms: [{ canonical: 'Ashlr.AI', aliases: ['ok', alias] }] });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error(`Expected ${codeUnit} to be rejected`);
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['terms', 0, 'aliases', 1],
+        message: expect.stringContaining(`must not contain ${codeUnit} (U+FFFE, U+FFFF and unpaired surrogates fit no file format)`),
+      },
+    ]);
+    expect(findUnencodableChar(alias)).toBe(codeUnit);
+    expect(() => TermSchema.parse({ canonical: 'Ashlr.AI', aliases: [alias] })).toThrow(codeUnit);
+  });
+
   it('rejects U+FFFE in a canonical term and a YAML alias with the offending character in the error', () => {
     const canonical = { terms: [{ canonical: 'Ash\uFFFElr' }] };
     const alias = parseYaml('terms:\n  - canonical: Ashlr.AI\n    aliases: ["Ash\\uFFFEler"]\n');
