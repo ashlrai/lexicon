@@ -85,6 +85,15 @@ describe('cleanTranscript', () => {
   });
 
   it.each([
+    ['a spaced tag after a comma', 'First draft done, [speaker 2] then we ship.', 'First draft done, then we ship.'],
+    ['a tag touching the comma', 'First draft done,[speaker 2] then we ship.', 'First draft done, then we ship.'],
+    ['non-ASCII words around the tag', 'Zoë, please [phone rings] send the café menu.', 'Zoë, please send the café menu.'],
+    ['a sentence boundary on each side', 'Send it. [door closes] Then leave.', 'Send it. Then leave.'],
+  ])('removes a bracketed tag from mixed text with %s while preserving the surrounding words', (_description, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
+  it.each([
     ['an unmatched opening bracket', 'Please keep [unfinished speech.', 'Please keep [unfinished speech.'],
     ['an unmatched closing bracket', 'Please keep unfinished] speech.', 'Please keep unfinished] speech.'],
     ['an opening bracket after a complete tag', '  Please [noise] continue [unfinished\nthought  ', 'Please continue [unfinished thought'],
