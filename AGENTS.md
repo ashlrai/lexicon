@@ -82,3 +82,15 @@ The rules most often broken by an agent in a hurry:
 - `npm test` before you claim something works. It includes a source-backed check of
   the MCP tool table and CLI examples in the install and agent docs.
 - No em-dashes in docs or user-facing strings. "Ashlr.AI", never "Ashlr AI".
+
+## Hot files: do not edit `docs/README.md` or `docs/CONTRACT.md` for a new doc
+
+`docs/CONTRACT.md` and `docs/README.md` sit in a large share of open PRs, so
+every PR that touches them conflicts with the next one and the queue stalls.
+
+- A new doc does not edit `docs/README.md` or `docs/CONTRACT.md`. Add the file
+  and let the existing index checks stay as they are.
+- A new test must not require a line in `docs/README.md` or `docs/CONTRACT.md`.
+  Assert against the new doc itself, or against the code.
+- Edit `docs/CONTRACT.md` only when a public signature changes, and
+  `docs/README.md` only for a change to the index itself, each in its own small PR.
