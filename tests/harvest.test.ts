@@ -147,6 +147,27 @@ describe('harvestRepo', () => {
     });
   });
 
+  it('filters HACK in a comment while harvesting the adjacent name', async () => {
+    const dir = path.join(tmp, 'hack-comment', 'repo');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'note.ts'), '// HACK: revisit QuasarWidget\n');
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+    expect(candidates.map(({ canonical, category, source, count, evidence }) =>
+      ({ canonical, category, source, count, evidence }))).toEqual([{
+      canonical: 'QuasarWidget', category: 'identifier', source: 'harvest:repo',
+      count: 1, evidence: ['note.ts'],
+    }]);
+  });
+
+  it('does not invent a marker or candidate from ordinary comment text', async () => {
+    const dir = path.join(tmp, 'plain-comment', 'repo');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'note.ts'), '// revisit this after the next request\n');
+
+    expect(await harvestRepo(dir, { git: false, minCount: 1, symbols: true })).toEqual([]);
+  });
+
   it.each(['NOTE', 'HACK'])(
     'excludes %s in ordinary comments while counting the names in their text', async (marker) => {
       const dir = path.join(tmp, `ordinary-comment-${marker}`, 'repo');
