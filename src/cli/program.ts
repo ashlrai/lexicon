@@ -103,7 +103,7 @@ export function buildProgram(io: IO): Command {
     const name = operands[0] ?? '';
     const hint = unknownCommandHint(name);
     if (hint) program.error(`error: unknown command '${name}'\n(${hint})`, { code: 'commander.unknownCommand' });
-    (program as unknown as { unknownCommand(): never }).unknownCommand();
+    program.error(`error: unknown command '${name}'`, { code: 'commander.unknownCommand' });
   });
 
   function withGlobals<T extends object>(opts: T): T & { cwd?: string } {
