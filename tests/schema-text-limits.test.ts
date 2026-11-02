@@ -66,6 +66,27 @@ describe('notes and phonetic text limits', () => {
     expect(term.phonetic).toBe(text);
   });
 
+  it('reports only the term whose notes exceed the documented boundary', () => {
+    const atLimit = 'n'.repeat(200);
+    const raw = {
+      terms: [
+        { canonical: 'Within limit', notes: atLimit },
+        { canonical: 'Over limit', notes: `${atLimit}n` },
+        { canonical: 'Also within limit', notes: atLimit },
+      ],
+    };
+
+    const result = LexiconSchema.safeParse(raw);
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected an overlong note to be rejected');
+    expect(result.error.issues).toHaveLength(1);
+    expect(result.error.issues[0]).toMatchObject({
+      path: ['terms', 1, 'notes'],
+      message: 'must be at most 200 characters',
+    });
+    expect(() => parseLexicon(raw)).toThrow('terms[1].notes: must be at most 200 characters');
+  });
+
   it.each(['notes', 'phonetic'])('rejects retained line breaks and unencodable text in %s', (field) => {
     for (const invalid of ['a\nb', 'a\u2028b', 'a\ufffeb', 'a\ud800b']) {
       expect(() => parseLexicon({ terms: [{ canonical: 'X', [field]: invalid }] })).toThrow();
