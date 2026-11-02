@@ -34,6 +34,16 @@ describe('cleanTranscript', () => {
   });
 
   it.each([
+    ['a noise tag', '[BLANK_AUDIO] Please send the report.', 'Please send the report.'],
+    ['a tag touching speech', '[MUSIC]Please send the report.', 'Please send the report.'],
+    ['an arbitrary tag and leading whitespace', '  [speaker 1]\nPlease send the report.', 'Please send the report.'],
+    ['adjacent tags', '[noise][inaudible] Please send the report.', 'Please send the report.'],
+    ['a multiline tag', '[background\nnoise] Please send the report.', 'Please send the report.'],
+  ])('removes %s at the start while preserving spoken text', (_description, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
+  it.each([
     ['a newline', 'Please [background\nnoise] continue.', 'Please continue.'],
     ['a CRLF', 'Please[background\r\nnoise]continue.', 'Please continue.'],
     ['several lines', 'Before[one\ntwo\nthree]after.', 'Before after.'],
