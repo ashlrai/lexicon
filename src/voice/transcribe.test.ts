@@ -2,6 +2,11 @@ import { describe, expect, it } from 'vitest';
 import { cleanTranscript, parseWhisperOutput } from './transcribe.js';
 
 describe('cleanTranscript', () => {
+  it('returns an empty string for empty input after cleaning a transcript', () => {
+    expect(cleanTranscript('Hello [noise] world')).toBe('Hello world');
+    expect(cleanTranscript('')).toBe('');
+  });
+
   it.each([
     ['empty input', ''],
     ['spaces', '   '],
@@ -14,6 +19,7 @@ describe('cleanTranscript', () => {
 
   it.each([
     ['empty stdout', undefined, ''],
+    ['invalid JSON and empty stdout', '{', ''],
     ['an empty transcription', '{"transcription":[]}', 'ignored stdout'],
     ['an empty segment', '{"transcription":[{"text":""}]}', 'ignored stdout'],
     ['a segment without text', '{"transcription":[{}]}', 'ignored stdout'],
