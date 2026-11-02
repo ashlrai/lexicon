@@ -62,4 +62,9 @@ describe('cleanTranscript asterisk boundaries', () => {
   it('normalizes whitespace in punctuation-bearing content without removing it', () => {
     expect(cleanTranscript('  Before\n*door,\t slams*\tafter  ')).toBe('Before *door, slams* after');
   });
+
+  it('removes adjacent three-word annotations and keeps spaced math asterisks', () => {
+    expect(cleanTranscript('Hello *door slams loudly**phone rings twice* world, 2 * 3 * 4.'))
+      .toBe('Hello world, 2 * 3 * 4.');
+  });
 });
