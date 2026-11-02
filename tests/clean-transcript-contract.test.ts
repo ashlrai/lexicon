@@ -17,6 +17,11 @@ describe('cleanTranscript contract', () => {
     expect(cleanTranscript(input)).toBe(expected);
   });
 
+  it('removes a multiline bracketed tag while preserving surrounding speech', () => {
+    const input = 'Deploy café v2[door closes\nin hallway]after the review, Zoë.';
+    expect(cleanTranscript(input)).toBe('Deploy café v2 after the review, Zoë.');
+  });
+
   it('cleans tags and whitespace while preserving a four-word phrase', () => {
     const input = ' \t[MUSIC] Please *door slams loudly* keep *these four spoken words*\n(soft music) intact.  ';
     expect(cleanTranscript(input)).toBe('Please keep *these four spoken words* intact.');
