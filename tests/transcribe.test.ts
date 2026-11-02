@@ -142,6 +142,21 @@ describe('cleanTranscript asterisk tags', () => {
   });
 
   it.each([
+    ['leading quote', 'laughs', '"laughs'],
+    ['trailing period', 'laughs', 'laughs.'],
+    ['embedded apostrophe', 'laughs', "laugh's"],
+    ['comma between two words', 'door slams', 'door, slams'],
+    ['hyphen between two words', 'door slams', 'door-slams'],
+    ['punctuation after two words', 'door slams', 'door slams!'],
+    ['colon between three words', 'door slams loudly', 'door: slams loudly'],
+    ['Unicode apostrophe in three words', 'door slams loudly', 'door’s slams loudly'],
+    ['punctuation after three words', 'door slams loudly', 'door slams loudly?'],
+  ])('preserves %s inside asterisks while removing its plain-word counterpart', (_label, plain, punctuated) => {
+    const input = `Before *${plain}* between *${punctuated}* after.`;
+    expect(cleanTranscript(input)).toBe(`Before between *${punctuated}* after.`);
+  });
+
+  it.each([
     ['digits alone', '*123*'],
     ['leading digit', '*2beeps*'],
     ['embedded digit', '*be2eps*'],
