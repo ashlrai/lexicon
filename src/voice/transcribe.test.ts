@@ -76,6 +76,15 @@ describe('cleanTranscript', () => {
   });
 
   it.each([
+    ['at the start and the end', '[MUSIC]Please send the report.[noise]', 'Please send the report.'],
+    ['with speech between them', 'Please [MUSIC] send the report [inaudible] today.', 'Please send the report today.'],
+    ['touching different spoken words', 'Please[MUSIC]send the report[inaudible]today.', 'Please send the report today.'],
+    ['on separate lines like speaker labels', '[speaker 1]\nFirst part.\n[speaker 2]\nSecond part.', 'First part. Second part.'],
+  ])('removes two separated bracketed tags %s while the surrounding spoken words remain', (_description, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
+  it.each([
     ['an unmatched opening bracket', 'Please keep [unfinished speech.', 'Please keep [unfinished speech.'],
     ['an unmatched closing bracket', 'Please keep unfinished] speech.', 'Please keep unfinished] speech.'],
     ['an opening bracket after a complete tag', '  Please [noise] continue [unfinished\nthought  ', 'Please continue [unfinished thought'],
