@@ -54,6 +54,11 @@ describe('cleanTranscript asterisk boundaries', () => {
       .toBe('Before keep *door, slams* and *well-known* after .');
   });
 
+  it('retains a four-word span between removable one- and three-word annotations', () => {
+    expect(cleanTranscript('Before *laughs* keep *these four spoken words* after *door slams loudly* today.'))
+      .toBe('Before keep *these four spoken words* after today.');
+  });
+
   it('normalizes whitespace in punctuation-bearing content without removing it', () => {
     expect(cleanTranscript('  Before\n*door,\t slams*\tafter  ')).toBe('Before *door, slams* after');
   });
