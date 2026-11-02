@@ -938,6 +938,24 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it('accepts a notes value of exactly 200 characters and rejects 201', () => {
+    const exact = 'n'.repeat(200);
+    expect(TermSchema.parse({ canonical: 'X', notes: exact }).notes).toBe(exact);
+    expect(TermSchema.safeParse({ canonical: 'X', notes: exact + 'n' }).success).toBe(false);
+    // Surrounding whitespace is trimmed before the cap applies.
+    expect(TermSchema.parse({ canonical: 'X', notes: `  ${exact}  ` }).notes).toBe(exact);
+    // Invisible characters are stripped first, so they do not count toward the 200.
+    expect(TermSchema.parse({ canonical: 'X', notes: `${exact}​` }).notes).toBe(exact);
+    // The same cap holds for phonetic.
+    expect(TermSchema.parse({ canonical: 'X', phonetic: exact }).phonetic).toBe(exact);
+    expect(TermSchema.safeParse({ canonical: 'X', phonetic: exact + 'n' }).success).toBe(false);
+  });
+
+  it('counts a 200-character note in characters, not UTF-16 units', () => {
+    const rocket = '\u{1F680}'.repeat(200);
+    expect(parseLexicon({ terms: [{ canonical: 'X', notes: rocket }] }).terms[0].notes).toBe(rocket);
+  });
+
   it('enforces length limits: canonical/alias 80, notes/phonetic 200', () => {
     expect(parseLexicon({ terms: [{ canonical: 'a'.repeat(LIMITS.word) }] }).terms[0].canonical).toHaveLength(80);
     expect(() => parseLexicon({ terms: [{ canonical: 'a'.repeat(LIMITS.word + 1) }] })).toThrow(/terms\[0\]\.canonical: must be at most 80 characters/);
