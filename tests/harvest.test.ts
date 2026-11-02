@@ -147,6 +147,32 @@ describe('harvestRepo', () => {
     });
   });
 
+  it('counts a name in an XXX comment as source evidence under the harvest contract', async () => {
+    const dir = path.join(tmp, 'xxx-contract', 'repo');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'note.ts'), '// XXX: revisit QuasarWidget\n');
+
+    const options = { git: false, minCount: 1 };
+    expect(await harvestRepo(dir, options)).toEqual([]);
+    const symbols = await harvestRepo(dir, { ...options, symbols: true });
+    expect(symbols).toHaveLength(1);
+    expect(symbols[0]).toMatchObject({
+      canonical: 'QuasarWidget', category: 'identifier', source: 'harvest:repo',
+      count: 1, evidence: ['note.ts'], suggestedAliases: [],
+    });
+
+    await fs.writeFile(path.join(dir, 'README.md'), 'We use QuasarWidget today.\n');
+    const corroborated = await harvestRepo(dir, options);
+    expect(corroborated).toHaveLength(1);
+    expect(corroborated[0]).toMatchObject({
+      canonical: 'QuasarWidget', category: 'brand', source: 'harvest:repo', count: 2,
+    });
+    expect(corroborated[0].evidence).toEqual(expect.arrayContaining(['note.ts', 'README.md']));
+    const withoutIdentifiers = await harvestRepo(dir, { ...options, identifiers: false });
+    expect(withoutIdentifiers).toHaveLength(1);
+    expect(withoutIdentifiers[0]).toMatchObject({ canonical: 'QuasarWidget', count: 1, evidence: ['README.md'] });
+  });
+
   it('filters HACK in a comment while harvesting the adjacent name', async () => {
     const dir = path.join(tmp, 'hack-comment', 'repo');
     await fs.mkdir(dir, { recursive: true });
