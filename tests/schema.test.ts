@@ -799,6 +799,39 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(parseLexicon({ terms: [{ canonical: `  ${'a'.repeat(80)}${ZW}  ` }] }).terms[0].canonical).toHaveLength(80);
   });
 
+  it('applies the 80-character alias contract independently across terms and aliases', () => {
+    const below = 'a'.repeat(79);
+    const atLimit = 'b'.repeat(80);
+    const overLimit = 'c'.repeat(81);
+    const valid = {
+      terms: [
+        { canonical: 'First', aliases: [below, ` ${atLimit} `] },
+        { canonical: 'Second', aliases: [atLimit, 'short'] },
+      ],
+    };
+    expect(parseLexicon(valid).terms.map((term) => term.aliases)).toEqual([
+      [below, atLimit],
+      [atLimit, 'short'],
+    ]);
+
+    const invalid = {
+      terms: [
+        { canonical: 'First', aliases: [below, atLimit, overLimit] },
+        { canonical: 'Second', aliases: [overLimit, atLimit] },
+      ],
+    };
+    const result = LexiconSchema.safeParse(invalid);
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected overlong aliases to be rejected');
+    expect(result.error.issues).toMatchObject([
+      { code: 'too_big', path: ['terms', 0, 'aliases', 2], maximum: 80 },
+      { code: 'too_big', path: ['terms', 1, 'aliases', 0], maximum: 80 },
+    ]);
+    expect(() => parseLexicon(invalid)).toThrow(
+      'Invalid lexicon:\n  - terms[0].aliases[2]: must be at most 80 characters\n  - terms[1].aliases[0]: must be at most 80 characters',
+    );
+  });
+
   it.each([
     { field: 'canonical', input: (word: string) => ({ terms: [{ canonical: word }] }), path: ['terms', 0, 'canonical'] },
     { field: 'aliases', input: (word: string) => ({ terms: [{ canonical: 'X', aliases: [word] }] }), path: ['terms', 0, 'aliases', 0] },
