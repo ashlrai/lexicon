@@ -61,6 +61,15 @@ describe('transcript cleaning examples', () => {
 });
 
 describe('cleanTranscript bracketed tags', () => {
+  // docs/CONTRACT.md: bracketed tags are always dropped, and whitespace is trimmed.
+  it.each([
+    ['separated by whitespace', 'Please send the report. [MUSIC]', 'Please send the report.'],
+    ['adjacent to speech', 'Keep the café open![speaker 2]', 'Keep the café open!'],
+    ['followed by whitespace', 'Call Zoë, please.\n[inaudible] \t', 'Call Zoë, please.'],
+  ])('removes a trailing bracketed tag %s and preserves the spoken text', (_description, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
   it.each([
     ['beginning', '[MUSIC]Hello there.', 'Hello there.'],
     ['middle', 'Hello[background noise]there.', 'Hello there.'],
