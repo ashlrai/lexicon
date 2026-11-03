@@ -409,6 +409,21 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(findUnencodableChar('ok\uFFFE\uFFFF')).toBe('U+FFFE');
   });
 
+  it('rejects U+FFFE in a note loaded from YAML and names the code point, field and term', () => {
+    const input = parseYaml('terms:\n  - canonical: Ashlr.AI\n    notes: "my \\uFFFEcompany"\n');
+    const result = LexiconSchema.safeParse(input);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected U+FFFE in notes to be rejected');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['terms', 0, 'notes'],
+        message: 'must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ashlr.AI"',
+      },
+    ]);
+    expect(() => parseLexicon(input)).toThrow('terms[0].notes: must not contain U+FFFE');
+  });
+
   it('reports U+FFFE after a valid surrogate pair and before a second noncharacter', () => {
     const text = '\u{1F680}\uFFFE\uFFFF';
 
