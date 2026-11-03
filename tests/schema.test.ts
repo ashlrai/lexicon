@@ -270,6 +270,21 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it('rejects U+FFFF in phonetic text and names the code point, field and term', () => {
+    const input = parseYaml('terms:\n  - canonical: Ashlr.AI\n    phonetic: "ash\\uFFFFler"\n');
+    const result = LexiconSchema.safeParse(input);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected U+FFFF in phonetic to be rejected');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['terms', 0, 'phonetic'],
+        message: 'must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ashlr.AI"',
+      },
+    ]);
+    expect(() => parseLexicon(input)).toThrow('terms[0].phonetic: must not contain U+FFFF');
+  });
+
   it('identifies each noncharacter in separate canonical names from the same YAML document', () => {
     const input = parseYaml('terms:\n  - canonical: Valid\n  - canonical: "Ash\\uFFFElr"\n  - canonical: "Rocket\\uFFFFship"\n');
     const result = LexiconSchema.safeParse(input);
