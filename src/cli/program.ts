@@ -5,6 +5,7 @@
  * barrel, commands.ts, or a cmd-*.ts file here.
  */
 import { Command, InvalidArgumentError } from 'commander';
+import type { ErrorOptions } from 'commander';
 import { packageVersion } from '../util/package.js';
 import { EXPORT_MAX_LIMIT, HARVEST_MAX_LIMIT, LIMITS, SUGGEST_MAX_LIMIT, AUTO_APPLY_CONFIDENCE, IMPORT_FORMATS } from '../core/caps.js';
 import { parseBackendName } from '../daemon/clipboard-backends.js';
@@ -81,8 +82,21 @@ function positiveNumber(value: string): number {
 const EDIT_TAKES_NO_TERM =
   'error: lexicon edit takes no term: it opens the whole lexicon file in $VISUAL/$EDITOR. To change one term: lexicon add <canonical> <alias...>, or lexicon remove <term>';
 
+// Customize semantic hints at the error boundary so Commander still handles
+// unknown commands, including its spelling suggestions and usage exit code.
+class LexiconCommand extends Command {
+  override error(message: string, options?: ErrorOptions): never {
+    if (options?.code === 'commander.unknownCommand') {
+      const name = this.args[0] ?? '';
+      const hint = unknownCommandHint(name);
+      if (hint) message = `error: unknown command '${name}'\n(${hint})`;
+    }
+    return super.error(message, options);
+  }
+}
+
 export function buildProgram(io: IO): Command {
-  const program = new Command();
+  const program = new LexiconCommand();
 
   program
     .name('lexicon')
@@ -96,15 +110,6 @@ export function buildProgram(io: IO): Command {
       'after',
       '\nStart here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.\nCheck an install: lexicon doctor',
     );
-
-  // commander suggests by spelling alone; for names other tools use (`status`,
-  // `version`, `config`) name the lexicon command that does that job instead.
-  program.on('command:*', (operands: string[]) => {
-    const name = operands[0] ?? '';
-    const hint = unknownCommandHint(name);
-    if (hint) program.error(`error: unknown command '${name}'\n(${hint})`, { code: 'commander.unknownCommand' });
-    program.error(`error: unknown command '${name}'`, { code: 'commander.unknownCommand' });
-  });
 
   function withGlobals<T extends object>(opts: T): T & { cwd?: string } {
     const { cwd } = program.opts<{ cwd?: string }>();
