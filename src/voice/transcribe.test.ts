@@ -34,6 +34,11 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript(prose)).toBe(prose);
   });
 
+  it('preserves an unmatched asterisk alongside ordinary text', () => {
+    expect(cleanTranscript('Please review the *draft today')).toBe('Please review the *draft today');
+    expect(cleanTranscript('Note * this stays')).toBe('Note * this stays');
+  });
+
   it('preserves multiline prose and spoken parentheticals while normalizing whitespace', () => {
     const prose = '  Please review the café menu (including the specials),\n\tthen send it to Zoë.  ';
     expect(cleanTranscript(prose)).toBe('Please review the café menu (including the specials), then send it to Zoë.');
