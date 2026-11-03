@@ -7,6 +7,12 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript('')).toBe('');
   });
 
+  it('removes a bracketed annotation containing spaces and keeps the surrounding words', () => {
+    expect(cleanTranscript('Please [background music playing] send the report')).toBe('Please send the report');
+    expect(cleanTranscript('[ Pause in speech ] Ship it today')).toBe('Ship it today');
+    expect(cleanTranscript('Ship it today [door closes loudly]')).toBe('Ship it today');
+  });
+
   it.each([
     ['empty input', ''],
     ['spaces', '   '],
