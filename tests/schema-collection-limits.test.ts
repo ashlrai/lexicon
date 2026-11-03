@@ -43,6 +43,16 @@ describe('schema collection limits reference', () => {
     expect(() => parseLexicon(overflow)).toThrow(error);
   });
 
+  it('accepts 5000 distinct terms with aliases in order and refuses the 5001st', () => {
+    const make = (i: number) => ({ canonical: `Term${i}`, aliases: [` alias ${i} `] });
+    const terms = Array.from({ length: 5000 }, (_, i) => make(i));
+    const parsed = parseLexicon({ terms });
+    expect(parsed.terms).toHaveLength(5000);
+    expect(parsed.terms[0]).toMatchObject({ canonical: 'Term0', aliases: ['alias 0'] });
+    expect(parsed.terms[4999]).toMatchObject({ canonical: 'Term4999', aliases: ['alias 4999'] });
+    expect(() => parseLexicon({ terms: [...terms, make(5000)] })).toThrow('terms: at most 5000 terms');
+  });
+
   it('defaults missing and null collections but rejects null entries', () => {
     expect(parseLexicon({ terms: null }).terms).toEqual([]);
     expect(parseLexicon({}).terms).toEqual([]);
