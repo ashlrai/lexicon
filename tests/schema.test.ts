@@ -396,6 +396,14 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(() => TermSchema.parse({ canonical: 'Ashlr.AI', aliases: [alias] })).toThrow(codeUnit);
   });
 
+  it('rejects an unpaired low surrogate in a YAML alias and names the code unit and term', () => {
+    const input = parseYaml('terms:\n  - canonical: Ashlr.AI\n    aliases: ["Ash\\uDE80ler"]\n');
+
+    expect(() => parseLexicon(input)).toThrow(
+      'terms[0].aliases[0]: must not contain U+DE80 (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ashlr.AI"',
+    );
+  });
+
   it('rejects U+FFFE in a canonical term and a YAML alias with the offending character in the error', () => {
     const canonical = { terms: [{ canonical: 'Ash\uFFFElr' }] };
     const alias = parseYaml('terms:\n  - canonical: Ashlr.AI\n    aliases: ["Ash\\uFFFEler"]\n');
