@@ -1077,6 +1077,16 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(parseLexicon({ terms: [{ canonical: `  ${'a'.repeat(80)}${ZW}  ` }] }).terms[0].canonical).toHaveLength(80);
   });
 
+  it('accepts a 200-character phonetic from YAML and rejects the 201st character', () => {
+    const phonetic = `${'a'.repeat(199)}🚀`;
+    const yaml = (value: string) => `terms:\n  - canonical: Example\n    phonetic: "${value}"\n`;
+
+    expect(parseLexicon(parseYaml(yaml(phonetic))).terms[0].phonetic).toBe(phonetic);
+    expect(() => parseLexicon(parseYaml(yaml(`${phonetic}x`)))).toThrow(
+      'terms[0].phonetic: must be at most 200 characters',
+    );
+  });
+
   it('applies the 80-character alias contract independently across terms and aliases', () => {
     const below = 'a'.repeat(79);
     const atLimit = 'b'.repeat(80);
