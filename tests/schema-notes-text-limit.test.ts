@@ -12,6 +12,7 @@
 import { existsSync, promises as fs, readFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
+import { parse as parseYaml } from 'yaml';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { LIMITS, LexiconSchema, TermSchema, parseLexicon } from '../src/core/schema.js';
 import { readLexiconFile } from '../src/core/store.js';
@@ -71,6 +72,39 @@ describe('notes text length boundary', () => {
     };
 
     expect(() => parseLexicon(raw)).toThrow(`terms[1].notes: must be at most ${limit} characters`);
+  });
+
+  it('passes validation on a fully populated term whose notes is at the limit', () => {
+    const limit = Number(match![1]);
+    const atLimit = 'n'.repeat(limit);
+    // Every optional field set: the cap is measured on `notes` alone, and the
+    // term-level unencodable check and each sibling field's own rules still run.
+    const term = {
+      canonical: 'Boundary Co',
+      aliases: ['Boundry Co', 'Boundary Company'],
+      phonetic: 'BOWN-dree',
+      category: 'brand',
+      caseSensitive: true,
+      scope: 'global',
+      source: 'user',
+      notes: atLimit,
+      createdAt: '2026-11-04T00:00:00Z',
+      hits: 12,
+      never: ['Boundery Co'],
+    };
+
+    expect(TermSchema.parse(term)).toMatchObject({ ...term, notes: atLimit });
+    expect(parseLexicon({ terms: [term] }).terms[0]).toMatchObject({ ...term, notes: atLimit });
+  });
+
+  it('accepts a hand-edited YAML term whose notes scalar is at the limit', () => {
+    const limit = Number(match![1]);
+    const atLimit = 'n'.repeat(limit);
+    const lexicon = parseLexicon(
+      parseYaml(['version: 1', 'terms:', '  - canonical: Boundary Co', `    notes: ${atLimit}`, ''].join('\n')),
+    );
+
+    expect(lexicon.terms[0].notes).toBe(atLimit);
   });
 });
 
