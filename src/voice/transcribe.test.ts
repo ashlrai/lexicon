@@ -3,8 +3,11 @@ import { cleanTranscript, parseWhisperOutput } from './transcribe.js';
 
 describe('cleanTranscript', () => {
   it('returns an empty string for empty input after cleaning a transcript', () => {
-    expect(cleanTranscript('Hello [noise] world')).toBe('Hello world');
     expect(cleanTranscript('')).toBe('');
+  });
+
+  it('removes a bracketed tag between ordinary words while the words remain', () => {
+    expect(cleanTranscript('Hello [noise] world')).toBe('Hello world');
   });
 
   it('removes a bracketed annotation containing spaces and keeps the surrounding words', () => {
