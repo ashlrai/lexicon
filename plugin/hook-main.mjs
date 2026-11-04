@@ -6254,8 +6254,11 @@ function findUnencodableChar(s) {
 function unencodableMessage(found) {
   return `must not contain ${found} (${UNENCODABLE_NOTE})`;
 }
+function escapeUnencodable(s) {
+  return s.replace(UNENCODABLE_RE_G, (c) => `\\u${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`);
+}
 function showTermName(s) {
-  const shown = s.replace(UNENCODABLE_RE_G, (c) => `\\u${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`);
+  const shown = escapeUnencodable(s);
   return shown.length > 40 ? `${shown.slice(0, 39)}\u2026` : shown;
 }
 function stripInvisible(s) {

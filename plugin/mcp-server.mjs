@@ -38061,8 +38061,11 @@ function findUnencodableChar(s) {
 function unencodableMessage(found) {
   return `must not contain ${found} (${UNENCODABLE_NOTE})`;
 }
+function escapeUnencodable(s) {
+  return s.replace(UNENCODABLE_RE_G, (c) => `\\u${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`);
+}
 function showTermName(s) {
-  const shown = s.replace(UNENCODABLE_RE_G, (c) => `\\u${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`);
+  const shown = escapeUnencodable(s);
   return shown.length > 40 ? `${shown.slice(0, 39)}\u2026` : shown;
 }
 function stripInvisible(s) {
@@ -53692,13 +53695,16 @@ function prepareIncoming(term) {
 function clean(s) {
   return typeof s === "string" ? stripInvisible(s).trim() : s;
 }
+function showEntry(value) {
+  return escapeUnencodable(JSON.stringify(value) ?? String(value));
+}
 function assertNoBlankEntries(term) {
   for (const field of ["aliases", "never"]) {
     const list = term[field] ?? [];
     const at = list.findIndex((s) => typeof s !== "string" || BLANK_ENTRY_RE.test(s));
     if (at < 0) continue;
     throw new InputError(
-      `term not added: ${field}[${at}] (${JSON.stringify(list[at])}) is blank. Nothing was written; drop that entry or give the word and try again.`
+      `term not added: ${field}[${at}] (${showEntry(list[at])}) is blank. Nothing was written; drop that entry or give the word and try again.`
     );
   }
 }
@@ -53710,7 +53716,7 @@ function assertTermFields(term) {
       const at = /^(aliases|never)\[(\d+)\]/.exec(issue2);
       const value = at ? (term[at[1]] ?? [])[Number(at[2])] : void 0;
       if (value === void 0) return issue2;
-      const shown = JSON.stringify(value.length > 24 ? `${value.slice(0, 24)}...` : value);
+      const shown = showEntry(value.length > 24 ? `${value.slice(0, 24)}...` : value);
       return issue2.replace(/^[^:]+/, (field) => `${field} (${shown})`);
     });
     if (issues.length === 0) throw err;
@@ -61152,6 +61158,7 @@ __export(core_exports3, {
   emptyLexiconNote: () => emptyLexiconNote,
   emptyNormalizeHint: () => emptyNormalizeHint,
   emptyStatsNote: () => emptyStatsNote,
+  escapeUnencodable: () => escapeUnencodable,
   exportAssemblyai: () => exportAssemblyai,
   exportAzure: () => exportAzure,
   exportClaudeMd: () => exportClaudeMd,

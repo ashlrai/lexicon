@@ -23,7 +23,7 @@ import path from 'node:path';
 import { isMap, isScalar, isSeq, parse as parseYaml, parseDocument, stringify as stringifyYaml } from 'yaml';
 import type { Document, YAMLMap } from 'yaml';
 import { PROJECT_FILE_NAME } from './caps.js';
-import { emptyLexicon, parseLexicon, stripInvisible } from './schema.js';
+import { emptyLexicon, escapeUnencodable, parseLexicon, stripInvisible } from './schema.js';
 import { checkLexiconEdit } from './edit-check.js';
 import { buildIndex } from './matcher.js';
 import type { MatcherIndex } from './matcher.js';
@@ -1884,13 +1884,25 @@ function clean(s: string): string {
 // Whitespace and format characters (zero-width space, joiners, BOM) only: what the schema trims away.
 const BLANK_ENTRY_RE = /^[\s\p{Cf}]*$/u;
 
+/**
+ * `value` as the `(...)` of a `term not added` message prints it:
+ * `JSON.stringify` (whitespace, quotes and non-strings stay visible), then
+ * `escapeUnencodable` for U+FFFE and U+FFFF, which JSON leaves literal (it
+ * escapes an unpaired surrogate on its own). The message is printed to
+ * terminals and returned over MCP and `POST /add`, which a raw noncharacter
+ * could not be written back from.
+ */
+function showEntry(value: unknown): string {
+  return escapeUnencodable(JSON.stringify(value) ?? String(value));
+}
+
 function assertNoBlankEntries(term: Term): void {
   for (const field of ['aliases', 'never'] as const) {
     const list: readonly unknown[] = term[field] ?? [];
     const at = list.findIndex((s) => typeof s !== 'string' || BLANK_ENTRY_RE.test(s));
     if (at < 0) continue;
     throw new InputError(
-      `term not added: ${field}[${at}] (${JSON.stringify(list[at])}) is blank. Nothing was written; drop that entry or give the word and try again.`,
+      `term not added: ${field}[${at}] (${showEntry(list[at])}) is blank. Nothing was written; drop that entry or give the word and try again.`,
     );
   }
 }
@@ -1915,7 +1927,7 @@ function assertTermFields(term: Term): void {
         const at = /^(aliases|never)\[(\d+)\]/.exec(issue);
         const value = at ? (term[at[1] as 'aliases' | 'never'] ?? [])[Number(at[2])] : undefined;
         if (value === undefined) return issue;
-        const shown = JSON.stringify(value.length > 24 ? `${value.slice(0, 24)}...` : value);
+        const shown = showEntry(value.length > 24 ? `${value.slice(0, 24)}...` : value);
         return issue.replace(/^[^:]+/, (field) => `${field} (${shown})`);
       });
     if (issues.length === 0) throw err;
