@@ -15,7 +15,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { LIMITS, LexiconSchema, TermSchema, parseLexicon } from '../src/core/schema.js';
-import { readLexiconFile } from '../src/core/store.js';
+import { addTerm, addTerms, readLexiconFile } from '../src/core/store.js';
 import { runAdd } from '../src/cli/commands.js';
 import { setupHintProblem } from '../src/cli/setup/detect.js';
 import { makeIO } from './helpers.js';
@@ -164,5 +164,44 @@ describe('the same boundary through lexicon add --phonetic', () => {
     expect(error).toBeInstanceOf(Error);
     expect(error!.message).toContain(bad);
     expect(error!.message).toContain(`terms[0].phonetic: must be at most ${LIMITS.text} characters`);
+  });
+});
+
+describe('the same boundary through the core addTerm and addTerms', () => {
+  let tmp: string;
+  let globalPath: string;
+
+  beforeEach(async () => {
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-phonetic-limit-core-'));
+    globalPath = path.join(tmp, 'lexicon.yaml');
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmp, { recursive: true, force: true });
+  });
+
+  it('addTerm refuses a phonetic one over with the documented message and writes nothing', async () => {
+    const term = { canonical: 'Boundary Co', aliases: [], phonetic: 'p'.repeat(LIMITS.text + 1) };
+    await expect(addTerm(term, { globalPath, cwd: tmp })).rejects.toThrow(
+      `term not added: phonetic: must be at most ${LIMITS.text} characters. Nothing was written; fix that field and try again.`,
+    );
+    expect(existsSync(globalPath)).toBe(false);
+  });
+
+  it('addTerm accepts a phonetic at the limit', async () => {
+    const phonetic = 'p'.repeat(LIMITS.text);
+    const { term } = await addTerm({ canonical: 'Boundary Co', aliases: [], phonetic }, { globalPath, cwd: tmp });
+    expect(term.phonetic).toBe(phonetic);
+  });
+
+  it('addTerms checks every term before it writes any', async () => {
+    const terms = [
+      { canonical: 'Fine', aliases: [], phonetic: 'p'.repeat(LIMITS.text) },
+      { canonical: 'Over', aliases: [], phonetic: 'p'.repeat(LIMITS.text + 1) },
+    ];
+    await expect(addTerms(terms, { globalPath, cwd: tmp })).rejects.toThrow(
+      `term not added: phonetic: must be at most ${LIMITS.text} characters`,
+    );
+    expect(existsSync(globalPath)).toBe(false);
   });
 });
