@@ -1168,6 +1168,18 @@ describe('lexicon voice (foreground)', () => {
     expect(parsed.ok).toBe(true);
   });
 
+  it('removes a leading Whisper tag before normalizing and delivering the spoken words', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    h.transcript = '[BLANK_AUDIO] Please ping ashler about the rollout.';
+
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_OK);
+    const result = JSON.parse(h.out[0]) as VoiceJsonResult;
+    expect(result.raw).toBe('Please ping ashler about the rollout.');
+    expect(result.output).toBe('Please ping Ashlr.AI about the rollout.');
+    expect(result.replacements.map((x) => [x.original, x.replacement])).toEqual([['ashler', 'Ashlr.AI']]);
+  });
+
   it.each([
     ['with spaces around the tags', 'Please ping ashler [MUSIC][APPLAUSE] about the cooper netties rollout.'],
     ['without spaces around the tags', 'Please ping ashler[noise][inaudible]about the cooper netties rollout.'],
