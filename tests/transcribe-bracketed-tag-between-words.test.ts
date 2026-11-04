@@ -82,3 +82,16 @@ describe('transcribeFile empty bracketed tag', () => {
     expect(result.output).toBe('ping Ashlr.AI');
   });
 });
+
+describe('transcribeFile bracketed tag inside a phrase', () => {
+  it('joins the words around a tag that spans lines', async () => {
+    const result = await transcribe({ segments: [' send [MUSIC\nPLAYING] report '] });
+    expect(result.raw).toBe('send report');
+    expect(result.output).toBe('send report');
+  });
+
+  it('keeps both halves of a word pair the tag split', async () => {
+    const result = await transcribe({ segments: [' ash [inaudible] ler is here '] });
+    expect(result.raw).toBe('ash ler is here');
+  });
+});
