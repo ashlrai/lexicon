@@ -36,6 +36,24 @@ describe('cleanTranscript one-word asterisk annotation', () => {
     expect(cleanTranscript(input)).toBe(expected);
   });
 
+  describe('transcript that is only a one-word asterisk tag', () => {
+    it.each(['*laughs*', '*music*', '*Applause*', '*x*', '  *laughs*  ', '\n*laughs*\n', '*laughs* *sighs*'])(
+      'cleans %j to an empty string',
+      (input) => {
+        expect(cleanTranscript(input)).toBe('');
+      },
+    );
+
+    it('cleans whisper JSON output holding only the tag to an empty string', () => {
+      const json = JSON.stringify({ transcription: [{ text: ' *laughs*' }] });
+      expect(cleanTranscript(parseWhisperOutput(json, 'ignored stdout'))).toBe('');
+    });
+
+    it('keeps a lone asterisk or unclosed tag from being treated as a tag', () => {
+      expect(cleanTranscript('*laughs')).toBe('*laughs');
+    });
+  });
+
   it('removes a *laughs* segment from whisper JSON output', () => {
     const json = JSON.stringify({
       transcription: [
