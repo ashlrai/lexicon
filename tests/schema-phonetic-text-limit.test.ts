@@ -152,4 +152,17 @@ describe('the same boundary through lexicon add --phonetic', () => {
     const term = file.lexicon.terms.find((t) => t.canonical === 'Boundary Co');
     expect(term?.phonetic).toBe('p'.repeat(LIMITS.text));
   });
+
+  it('names the file, the field and the limit when a lexicon on disk has a phonetic one over', async () => {
+    const bad = path.join(tmp, 'bad.yaml');
+    await fs.writeFile(bad, `terms:\n  - canonical: Ashlr.AI\n    phonetic: ${'p'.repeat(LIMITS.text + 1)}\n`);
+
+    const error = await readLexiconFile(bad, 'global').then(
+      () => undefined,
+      (e: unknown) => e as Error,
+    );
+    expect(error).toBeInstanceOf(Error);
+    expect(error!.message).toContain(bad);
+    expect(error!.message).toContain(`terms[0].phonetic: must be at most ${LIMITS.text} characters`);
+  });
 });
