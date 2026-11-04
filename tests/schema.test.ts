@@ -824,6 +824,19 @@ describe('hardening (lexicon content reaches model context)', () => {
     ]);
   });
 
+  it('reports a lone low surrogate as a term name without throwing', () => {
+    const result = LexiconSchema.safeParse({ terms: [{ canonical: '\uDC00' }] });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the lone low surrogate to be rejected');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['terms', 0, 'canonical'],
+        message: 'must not contain U+DC00 (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "\\uDC00"',
+      },
+    ]);
+  });
+
   it('identifies an unpaired low surrogate in a canonical term and settings', () => {
     expect(() => parseLexicon({ terms: [{ canonical: 'Rocket \uDC00ship' }] })).toThrow(
       'terms[0].canonical: must not contain U+DC00 (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Rocket \\uDC00ship"',
