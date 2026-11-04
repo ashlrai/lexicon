@@ -939,6 +939,21 @@ describe('addTerms', () => {
     );
     expect((await readLexiconFile(globalPath, 'global')).exists).toBe(false);
   });
+
+  // Catches: an 81-character alias inside a batch's second term, where only
+  // the write's whole-file parse saw it, as `terms[<n>].aliases[<i>]`, after
+  // the first term had already merged.
+  it('checks the word limit on every alias in the batch before it writes anything', async () => {
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    const over = 'n'.repeat(realSchema.LIMITS.word + 1);
+    expect(over).toHaveLength(81);
+    const shown = JSON.stringify(`${'n'.repeat(24)}...`);
+    await expect(addTerms([batch[0]!, { canonical: 'SaaS', aliases: ['ok', over] }], { cwd: tmp, globalPath })).rejects.toThrow(
+      `term not added: aliases[1] (${shown}): must be at most ${realSchema.LIMITS.word} characters. Nothing was written; fix that field and try again.`,
+    );
+    expect((await readLexiconFile(globalPath, 'global')).exists).toBe(false);
+  });
 });
 
 describe('removeTerm', () => {
