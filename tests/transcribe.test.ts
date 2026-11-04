@@ -143,6 +143,11 @@ describe('cleanTranscript asterisk tags', () => {
       .toBe('First then and finally done.');
   });
 
+  it('retains a four-word annotation next to removed one- and three-word ones', () => {
+    expect(cleanTranscript('A *laughs* B *the door closes softly* C *door slams loudly* D.'))
+      .toBe('A B *the door closes softly* C D.');
+  });
+
   it('removes a one-word annotation and preserves the surrounding speech', () => {
     expect(cleanTranscript('Please*whispers*send the report.')).toBe('Please send the report.');
   });
