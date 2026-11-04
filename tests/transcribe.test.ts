@@ -188,3 +188,10 @@ describe('cleanTranscript asterisk tags', () => {
     expect(cleanTranscript('Keep *laughs**coughs* and *one*two* here.')).toBe('Keep and two* here.');
   });
 });
+
+describe('cleanTranscript asterisk-only transcripts', () => {
+  it('returns an empty string when the transcript is only a three-word asterisk tag', () => {
+    expect(cleanTranscript('*door slams shut*')).toBe('');
+    expect(cleanTranscript('  *door slams shut*\n')).toBe('');
+  });
+});
