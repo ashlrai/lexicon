@@ -1880,6 +1880,10 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript('Please [MUSIC] continue speaking.')).toBe('Please continue speaking.');
   });
 
+  it('removes multiple bracketed tags while keeping the transcript between them', () => {
+    expect(cleanTranscript('Before [MUSIC] the spoken words [APPLAUSE] after.')).toBe('Before the spoken words after.');
+  });
+
   it('removes adjacent bracketed tags while preserving surrounding speech', () => {
     expect(cleanTranscript('Please [MUSIC][APPLAUSE] continue the rollout.')).toBe('Please continue the rollout.');
     expect(cleanTranscript('Hello[noise][inaudible]world')).toBe('Hello world');
