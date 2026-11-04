@@ -270,6 +270,20 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it.each([
+    ['inside', 'Ash\uFFFElr', 'Ash\\uFFFElr'],
+    ['leading', '\uFFFEAshlr', '\\uFFFEAshlr'],
+    ['trailing', 'Ashlr\uFFFE', 'Ashlr\\uFFFE'],
+    ['alone', '\uFFFE', '\\uFFFE'],
+  ])('rejects U+FFFE %s a canonical word and identifies it', (_where, canonical, shown) => {
+    expect(findUnencodableChar(canonical)).toBe('U+FFFE');
+    expect(() => parseLexicon({ terms: [{ canonical }] })).toThrow(
+      `terms[0].canonical: must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "${shown}"`,
+    );
+    const result = TermSchema.safeParse({ canonical });
+    expect(result.success).toBe(false);
+  });
+
   it('rejects U+FFFF in phonetic text and names the code point, field and term', () => {
     const input = parseYaml('terms:\n  - canonical: Ashlr.AI\n    phonetic: "ash\\uFFFFler"\n');
     const result = LexiconSchema.safeParse(input);
