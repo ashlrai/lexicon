@@ -28,6 +28,16 @@ describe('cleanTranscript contract', () => {
     expect(cleanTranscript(parseWhisperOutput(json, stdout))).toBe('Please send the report to the team.');
   });
 
+  it.each([
+    ['Whisper JSON segments', JSON.stringify({ transcription: [
+      { text: 'Before *door slams loudly*' },
+      { text: '*keep these four words* after.' },
+    ] }), 'ignored stdout'],
+    ['stdout fallback', undefined, 'Before *door slams loudly* *keep these four words* after.'],
+  ])('retains a four-word starred span from %s', (_source, json, stdout) => {
+    expect(cleanTranscript(parseWhisperOutput(json, stdout))).toBe('Before *keep these four words* after.');
+  });
+
   it('cleans tags and whitespace while preserving a four-word phrase', () => {
     const input = ' \t[MUSIC] Please *door slams loudly* keep *these four spoken words*\n(soft music) intact.  ';
     expect(cleanTranscript(input)).toBe('Please keep *these four spoken words* intact.');
