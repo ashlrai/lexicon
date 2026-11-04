@@ -1109,6 +1109,24 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it('rejects a 201-character phonetic in a later term after cleaning', () => {
+    const phonetic = 'p'.repeat(201);
+    const input = { terms: [
+      { canonical: 'First', phonetic: 'valid' },
+      { canonical: 'Second', phonetic: ` ${ZW}${phonetic} ` },
+    ] };
+
+    const result = LexiconSchema.safeParse(input);
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the phonetic limit to be enforced');
+    expect(result.error.issues).toMatchObject([
+      { code: 'too_big', path: ['terms', 1, 'phonetic'], maximum: 200, message: 'must be at most 200 characters' },
+    ]);
+    expect(() => parseLexicon(input)).toThrow(
+      'Invalid lexicon:\n  - terms[1].phonetic: must be at most 200 characters',
+    );
+  });
+
   it('applies the 80-character alias contract independently across terms and aliases', () => {
     const below = 'a'.repeat(79);
     const atLimit = 'b'.repeat(80);
