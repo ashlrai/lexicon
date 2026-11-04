@@ -90,9 +90,19 @@ function unencodableMessage(found: string): string {
   return `must not contain ${found} (${UNENCODABLE_NOTE})`;
 }
 
+/**
+ * `s` with each U+FFFE, U+FFFF and unpaired surrogate written `\uXXXX` and
+ * nothing else changed (a surrogate pair is untouched): how a diagnostic
+ * prints a value that may hold such a unit without echoing it into a
+ * terminal, log or model context it could not be written back from.
+ */
+export function escapeUnencodable(s: string): string {
+  return s.replace(UNENCODABLE_RE_G, (c) => `\\u${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`);
+}
+
 /** `s` with each unencodable code unit written as `\uXXXX`, cut to 40 characters, for naming a term in an error. */
 function showTermName(s: string): string {
-  const shown = s.replace(UNENCODABLE_RE_G, (c) => `\\u${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`);
+  const shown = escapeUnencodable(s);
   return shown.length > 40 ? `${shown.slice(0, 39)}\u2026` : shown;
 }
 

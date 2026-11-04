@@ -28,6 +28,7 @@ vi.mock('../src/core/schema.js', () => ({
   },
   emptyLexicon: (): Lexicon => ({ version: 1, terms: [] }),
   stripInvisible: (s: string): string => s.replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, ''),
+  escapeUnencodable: (s: string): string => s,
 }));
 
 /**
