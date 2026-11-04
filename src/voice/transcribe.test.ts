@@ -13,6 +13,27 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript('Ship it today [door closes loudly]')).toBe('Ship it today');
   });
 
+  describe('a bracketed tag at the beginning of the text', () => {
+    it.each([
+      ['a whisper tag', '[BLANK_AUDIO] Please send the report', 'Please send the report'],
+      ['a tag glued to the next word', '[MUSIC]Please send the report', 'Please send the report'],
+      ['a tag with inner spaces', '[ Pause in speech ] Ship it today', 'Ship it today'],
+      ['a tag followed by a line break', '[speaker 1]\nSend it to Ashlr.AI today', 'Send it to Ashlr.AI today'],
+      ['a tag whose words repeat later', '[inaudible] inaudible words stay', 'inaudible words stay'],
+      ['a following parenthetical', '[MUSIC] Send it (the draft) now', 'Send it (the draft) now'],
+    ])('removes the tag and keeps every following word: %s', (_description, input, expected) => {
+      expect(cleanTranscript(input)).toBe(expected);
+    });
+
+    it('removes consecutive leading tags', () => {
+      expect(cleanTranscript('[MUSIC] [BLANK_AUDIO] Ship it')).toBe('Ship it');
+    });
+
+    it('returns an empty string when the tag is the whole text', () => {
+      expect(cleanTranscript('[BLANK_AUDIO]')).toBe('');
+    });
+  });
+
   it.each([
     ['empty input', ''],
     ['spaces', '   '],
