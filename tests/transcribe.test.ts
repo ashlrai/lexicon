@@ -86,6 +86,12 @@ describe('cleanTranscript bracketed tags', () => {
     expect(cleanTranscript('Please send [background noise] the report.')).toBe('Please send the report.');
   });
 
+  it('removes a single tag between two words and keeps both words', () => {
+    expect(cleanTranscript('hello [MUSIC] world')).toBe('hello world');
+    expect(cleanTranscript('hello [MUSIC]\nworld')).toBe('hello world');
+    expect(cleanTranscript('hello[MUSIC]world')).toBe('hello world');
+  });
+
   it('separates spoken words when bracketed tags touch them', () => {
     expect(cleanTranscript('Please[door closes]send[unrecognized sound]the report.')).toBe('Please send the report.');
   });
