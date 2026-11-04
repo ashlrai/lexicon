@@ -1,6 +1,24 @@
-import { readFileSync } from 'node:fs';
-import { describe, expect, it } from 'vitest';
+/**
+ * The notes text boundary of docs/CONTRACT.md's LIMITS paragraph: `text`,
+ * 200 characters, caps a term's `notes` field (its sibling `phonetic` has its
+ * own suite in schema-phonetic-text-limit.test.ts). A note of exactly 200 code
+ * points is accepted; 201 is refused. The schema measures the cleaned value
+ * (invisible characters stripped, ends trimmed), so a raw field over 200 can
+ * land on the limit. The same number is enforced by two surfaces, and each is
+ * exercised here: the schema itself (TermSchema, LexiconSchema and
+ * parseLexicon) and the `lexicon add --notes` write path (runAdd on the real
+ * store, the addTerm call MCP add_term and POST /add share).
+ */
+import { existsSync, promises as fs, readFileSync } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { LIMITS, LexiconSchema, TermSchema, parseLexicon } from '../src/core/schema.js';
+import { readLexiconFile } from '../src/core/store.js';
+import { runAdd } from '../src/cli/commands.js';
+import { makeIO } from './helpers.js';
+
+const ZW = '\u200b'; // a zero-width space: stripped before the limit is measured
 
 const contract = readFileSync(new URL('../docs/CONTRACT.md', import.meta.url), 'utf8');
 
@@ -53,5 +71,52 @@ describe('notes text length boundary', () => {
     };
 
     expect(() => parseLexicon(raw)).toThrow(`terms[1].notes: must be at most ${limit} characters`);
+  });
+});
+
+describe('the same boundary through lexicon add --notes', () => {
+  let tmp: string;
+  let globalPath: string;
+
+  beforeEach(async () => {
+    tmp = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-notes-limit-'));
+    globalPath = path.join(tmp, 'lexicon.yaml');
+  });
+
+  afterEach(async () => {
+    await fs.rm(tmp, { recursive: true, force: true });
+  });
+
+  const opts = (notes: string) => ({ notes, globalPath, cwd: tmp });
+
+  it('writes a notes at the limit verbatim, and it reads back', async () => {
+    // A realistic note of exactly LIMITS.text characters: 'notes' x 40 = 200.
+    const atLimit = 'notes'.repeat(LIMITS.text / 5);
+    expect(atLimit).toHaveLength(LIMITS.text);
+
+    const code = await runAdd('Boundary Co', [], opts(atLimit), makeIO());
+    expect(code).toBe(0);
+
+    const file = await readLexiconFile(globalPath, 'global');
+    const term = file.lexicon.terms.find((t) => t.canonical === 'Boundary Co');
+    expect(term?.notes).toBe(atLimit);
+  });
+
+  it('refuses a notes one character over and writes nothing', async () => {
+    const overLimit = 'n'.repeat(LIMITS.text + 1);
+    await expect(runAdd('Boundary Co', [], opts(overLimit), makeIO())).rejects.toThrow(
+      `term not added: notes: must be at most ${LIMITS.text} characters`,
+    );
+    expect(existsSync(globalPath)).toBe(false);
+  });
+
+  it('writes a raw note that cleans to the limit without the invisible', async () => {
+    const raw = `${'n'.repeat(100)}${ZW}${'n'.repeat(100)}`; // 201 units, 200 cleaned
+    const code = await runAdd('Boundary Co', [], opts(raw), makeIO());
+    expect(code).toBe(0);
+
+    const file = await readLexiconFile(globalPath, 'global');
+    const term = file.lexicon.terms.find((t) => t.canonical === 'Boundary Co');
+    expect(term?.notes).toBe('n'.repeat(LIMITS.text));
   });
 });
