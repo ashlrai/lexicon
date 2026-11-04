@@ -242,6 +242,8 @@ Changing the code: [CONTRIBUTING.md](CONTRIBUTING.md), [docs/ARCHITECTURE.md](do
 
 Lexicon is one of the open-source tools from [Ashlr.AI](https://ashlr.ai). It does not need the others to run. How it sits next to Phantom: [docs/PHANTOM-USAGE.md](docs/PHANTOM-USAGE.md).
 
+Pellucid is now part of lexicon. Pellucid's ambiguity engine - the INCOSE rule layer, span resolution and confidence calibration - lives in `src/ambiguity/`. The two-stage design it feeds is in [docs/design/two-stage-correction.md](docs/design/two-stage-correction.md).
+
 ## Roadmap and non-goals
 
 This is not a dictation app. There is no hosted account and no sync. It is a file.
