@@ -46,3 +46,13 @@ describe('U+FFFE in a canonical word', () => {
     expect(TermSchema.safeParse({ canonical: 'Ash�lr￼' }).success).toBe(true);
   });
 });
+
+describe('U+FFFE diagnostic names the term', () => {
+  it('shows the offending canonical with the code point escaped, not raw', () => {
+    const result = TermSchema.safeParse({ canonical: 'Ash￾lr' });
+    if (result.success) throw new Error('Expected U+FFFE to be rejected');
+    const message = result.error.issues[0]?.message ?? '';
+    expect(message).toContain('in term "Ash\\uFFFElr"');
+    expect(message).not.toContain('￾');
+  });
+});
