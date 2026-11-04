@@ -344,6 +344,39 @@ describe('hardening (lexicon content reaches model context)', () => {
     ]);
   });
 
+  // Catches: the term name in a diagnostic is documented as at most 40
+  // characters. A canonical can be 80, so an unbounded name would let one bad
+  // alias flood the message; the cut keeps 39 characters plus an ellipsis.
+  it.each([
+    ['39 characters', 'a'.repeat(39), 'a'.repeat(39)],
+    ['exactly 40 characters', 'b'.repeat(40), 'b'.repeat(40)],
+    ['41 characters', 'c'.repeat(41), `${'c'.repeat(39)}…`],
+    ['the 80 character maximum', 'd'.repeat(LIMITS.word), `${'d'.repeat(39)}…`],
+  ])('bounds the term name in an unencodable-character diagnostic: %s', (_label, canonical, shown) => {
+    const result = TermSchema.safeParse({ canonical, aliases: ['bad￿'] });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected U+FFFF to be rejected');
+    const [issue] = result.error.issues;
+    expect(issue.message).toBe(
+      `must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "${shown}"`,
+    );
+    expect(shown.length).toBeLessThanOrEqual(40);
+  });
+
+  it('measures the 40-character bound after unencodable characters are written as escapes', () => {
+    // Six characters per escape: 7 escapes are 42 characters, so the name is cut.
+    const canonical = '￿'.repeat(7);
+    const result = TermSchema.safeParse({ canonical });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected U+FFFF to be rejected');
+    const name = /in term "(.*)"$/.exec(result.error.issues[0].message)?.[1] ?? '';
+    expect(name).toHaveLength(40);
+    expect(name.endsWith('…')).toBe(true);
+    expect(name.slice(0, 36)).toBe('\\uFFFF'.repeat(6));
+  });
+
   it('reports U+FFFF as the first unencodable character in settings', () => {
     const word = 'Rocket \u{1F680}\uFFFF\uFFFE';
 
