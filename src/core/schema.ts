@@ -271,7 +271,7 @@ function CleanWordList<T extends z.ZodType<string[] | undefined, unknown>>(list:
 }
 
 /** The free-text fields of a term `buildTerm` checks for unencodable characters. */
-const TERM_TEXT_FIELDS = ['canonical', 'aliases', 'never', 'phonetic', 'notes', 'createdAt'] as const;
+const TERM_TEXT_FIELDS = ['canonical', 'aliases', 'never', 'context', 'phonetic', 'notes', 'createdAt'] as const;
 
 /**
  * Refuse U+FFFE, U+FFFF and unpaired surrogates in any of a term's free-text
@@ -359,6 +359,7 @@ function buildTerm(category: ReturnType<typeof buildCategory>, scope: ReturnType
     // `pinProjectHits` in store.ts.
     hits: z.number().int().nonnegative().optional(),
     never: OptionalWordList(LIMITS.aliases, 'never words per term'),
+    context: OptionalWordList(LIMITS.aliases, 'context words per term'),
   }).superRefine(refuseUnencodable));
 }
 

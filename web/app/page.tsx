@@ -802,8 +802,8 @@ function InstallSection() {
                 finish.
               </p>
               <p>
-                <span className="font-mono text-paper">lexicon pack add developer</span>: 246
-                curated terms across seven packs.
+                <span className="font-mono text-paper">lexicon pack add developer</span>: 259
+                curated terms across eight packs.
               </p>
               <p>
                 <span className="font-mono text-paper">lexicon export wispr</span>: push the same
