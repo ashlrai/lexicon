@@ -1254,6 +1254,26 @@ describe('hardening (lexicon content reaches model context)', () => {
     ]);
   });
 
+  it('accepts exactly 64 never spellings per term and rejects a 65th', () => {
+    const never = Array.from({ length: LIMITS.aliases }, (_, i) => `never${i}`);
+    expect(never).toHaveLength(64);
+
+    const atLimit = LexiconSchema.safeParse({ terms: [{ canonical: 'X', never }] });
+    expect(atLimit.success).toBe(true);
+    if (!atLimit.success) throw atLimit.error;
+    expect(atLimit.data.terms[0].never).toEqual(never);
+
+    // Empties and invisible-only entries are cleaned away first, so they do not count.
+    expect(TermSchema.parse({ canonical: 'X', never: [...never.map((w) => ` ${ZW}${w} `), '', ' ', ZW] }).never).toEqual(never);
+
+    const overLimit = LexiconSchema.safeParse({ terms: [{ canonical: 'X', never: [...never, 'never64'] }] });
+    expect(overLimit.success).toBe(false);
+    if (overLimit.success) throw new Error('Expected the never limit to be enforced');
+    expect(overLimit.error.issues).toMatchObject([
+      { code: 'too_big', path: ['terms', 0, 'never'], maximum: 64, message: 'at most 64 never words per term' },
+    ]);
+  });
+
   it('counts repeated aliases toward the documented per-term limit', () => {
     expect(LIMITS.aliases).toBe(64);
     const aliases = Array.from({ length: 64 }, () => ' spelling ');
