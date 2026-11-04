@@ -1086,6 +1086,31 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it('accepts a valid surrogate pair in every free-text field, up to the documented limits', () => {
+    // A well-formed pair is one supplementary character, not an unpaired
+    // surrogate: the unencodable-character check must let it through.
+    const pair = '\u{1F680}';
+    expect(pair).toHaveLength(2);
+    const text = pair.repeat(LIMITS.text);
+    const word = pair.repeat(LIMITS.word);
+    const parsed = parseLexicon({
+      terms: [{ canonical: word, aliases: [word], never: [word], phonetic: word, notes: text }],
+    }).terms[0];
+    expect(parsed.canonical).toBe(word);
+    expect(parsed.aliases).toEqual([word]);
+    expect(parsed.never).toEqual([word]);
+    expect(parsed.phonetic).toBe(word);
+    expect(parsed.notes).toBe(text);
+
+    // One past each limit is still rejected.
+    expect(() => parseLexicon({ terms: [{ canonical: `${word}${pair}` }] })).toThrow(
+      /terms\[0\]\.canonical: must be at most 80 characters/,
+    );
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', notes: `${text}${pair}` }] })).toThrow(/terms\[0\]\.notes/);
+    // A pair is fine, but a pair followed by a lone high surrogate is not.
+    expect(LexiconSchema.safeParse({ terms: [{ canonical: `${pair}\uD800` }] }).success).toBe(false);
+  });
+
   it('rejects the Unicode line and paragraph separators like newlines', () => {
     const LS = cp(0x2028);
     const PS = cp(0x2029);
