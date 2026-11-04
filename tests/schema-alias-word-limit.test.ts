@@ -4,6 +4,31 @@ import { LIMITS, LexiconSchema, TermSchema } from '../src/core/schema.js';
 
 const contract = readFileSync(new URL('../docs/CONTRACT.md', import.meta.url), 'utf8');
 
+describe('alias length regression: hard-coded boundary against documented limit', () => {
+  const schemaSection = contract.split('## src/core/schema.ts\n')[1]?.split('\n## ')[0];
+  const contractMatch = schemaSection?.match(/`word` (\d+) \(canonical, alias\)/);
+  const documentedLimit = Number(contractMatch![1]);
+
+  it('contract documents 80 characters for alias length', () => {
+    expect(documentedLimit).toBe(80);
+    expect(LIMITS.word).toBe(80);
+  });
+
+  it('accepts an 80-character alias', () => {
+    const alias80 = 'a'.repeat(80);
+    expect(TermSchema.safeParse({ canonical: 'X', aliases: [alias80] }).success).toBe(true);
+  });
+
+  it('rejects an 81-character alias as exceeding the documented limit', () => {
+    const alias81 = 'a'.repeat(81);
+    const result = TermSchema.safeParse({ canonical: 'X', aliases: [alias81] });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues[0].message).toContain(`must be at most ${documentedLimit} characters`);
+    }
+  });
+});
+
 describe('alias word length boundary', () => {
   const schemaSection = contract.split('## src/core/schema.ts\n')[1]?.split('\n## ')[0];
   const match = schemaSection?.match(/`word` (\d+) \(canonical, alias\)/);
