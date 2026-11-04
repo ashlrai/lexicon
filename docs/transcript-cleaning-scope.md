@@ -51,6 +51,7 @@ This is pattern matching, not Markdown emphasis: `**bold**` loses its inner
 | `Keep * cough * here` | `Keep * cough * here` |
 | `Keep ** here` | `Keep ** here` |
 | `Keep *unfinished here` | `Keep *unfinished here` |
+| `Keep unfinished* here` | `Keep unfinished* here` |
 
 ## Parentheses
 
