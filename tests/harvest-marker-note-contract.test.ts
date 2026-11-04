@@ -108,6 +108,32 @@ describe('NOTE marker contract', () => {
     });
   });
 
+  it('recognizes README NOTE callouts: the marker is not proposed and names still count', async () => {
+    await withRepo(async (repo) => {
+      // The ways NOTE appears in real Markdown: a GitHub admonition, a bold
+      // callout and a plain blockquote label. The all-uppercase literal fails
+      // the prose capitalization pattern (the bold span is emphasised on top
+      // of that), and no form suppresses the rest of its sentence.
+      await fs.writeFile(path.join(repo, 'README.md'), [
+        '# Guide',
+        '',
+        '> [!NOTE]',
+        '> We use QuasarWidget in production.',
+        '',
+        '> **NOTE** NebulaWidget is on by default.',
+        '',
+        '> NOTE PulsarWidget ships today.',
+      ].join('\n'));
+
+      const candidates = await harvestRepo(repo, { git: false, minCount: 1 });
+      expect(candidates.map(({ canonical, category, count, evidence }) =>
+        ({ canonical, category, count, evidence }))).toEqual(
+        ['NebulaWidget', 'PulsarWidget', 'QuasarWidget'].map((canonical) => ({
+          canonical, category: 'brand', count: 1, evidence: ['README.md'],
+        })));
+    });
+  });
+
   it('is not a global ban: manifest names, directory names and dot-TLD brands keep their own paths', async () => {
     // A crate literally named NOTE: manifest extraction does not consult the
     // generic identifier set.
