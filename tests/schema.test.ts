@@ -279,6 +279,18 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(parseLexicon({ terms: [{ canonical: nice, aliases: ['zoe'] }] }).terms[0].canonical).toBe(nice);
   });
 
+  it('reports a lone high surrogate in a term name without throwing', () => {
+    const result = LexiconSchema.safeParse({ terms: [{ canonical: '\uD800' }] });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the unpaired surrogate to be rejected');
+    expect(result.error.issues).toMatchObject([{
+      code: 'custom',
+      path: ['terms', 0, 'canonical'],
+      message: 'must not contain U+D800 (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "\\uD800"',
+    }]);
+  });
+
   it('rejects U+FFFF in a canonical term and an alias with the offending character in the error', () => {
     const canonical = { terms: [{ canonical: 'Ash\uFFFFlr' }] };
     const alias = parseYaml('terms:\n  - canonical: Ashlr.AI\n    aliases: ["Ash\\uFFFFler"]\n');
