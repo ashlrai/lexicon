@@ -278,6 +278,23 @@ describe('readLexiconFile / writeLexiconFile', () => {
 });
 
 describe('loadLexicon / merge precedence', () => {
+  it('loads the documented maximum from YAML and rejects one more term', async () => {
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    // The contract specifies 5000 terms per collection, independent of LIMITS.
+    const terms = Array.from({ length: 5000 }, (_, i) => `  - canonical: Term${i}\n`).join('');
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, `version: 1\nterms:\n${terms}`);
+    expect((await loadLexicon({ cwd: tmp, globalPath })).global.lexicon.terms).toHaveLength(5000);
+
+    const overflow = `version: 1\nterms:\n${terms}  - canonical: Term5000\n`;
+    await fs.writeFile(globalPath, overflow);
+    await expect(loadLexicon({ cwd: tmp, globalPath })).rejects.toThrow(
+      'terms: at most 5000 terms',
+    );
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(overflow);
+  });
+
   it('project term wins on canonical collision, aliases unioned, settings merged', async () => {
     const { root, nested } = await makeRepo();
     const globalLex: Lexicon = {
