@@ -1009,6 +1009,16 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(TermSchema.safeParse({ canonical: 'X', phonetic: exact + 'n' }).success).toBe(false);
   });
 
+  it('rejects a 201-character note with the notes path and the 200 limit from docs/CONTRACT.md', () => {
+    const result = TermSchema.safeParse({ canonical: 'X', notes: 'n'.repeat(201) });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(LIMITS.text).toBe(200);
+    expect(result.error.issues).toHaveLength(1);
+    expect(result.error.issues[0].path).toEqual(['notes']);
+    expect(result.error.issues[0].message).toMatch(/must be at most 200 characters/);
+  });
+
   it('counts a 200-character note in characters, not UTF-16 units', () => {
     const rocket = '\u{1F680}'.repeat(200);
     expect(parseLexicon({ terms: [{ canonical: 'X', notes: rocket }] }).terms[0].notes).toBe(rocket);
