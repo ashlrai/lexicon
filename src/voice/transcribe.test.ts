@@ -13,6 +13,13 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript('Ship it today [door closes loudly]')).toBe('Ship it today');
   });
 
+  it('removes a one-word asterisk tag and keeps the surrounding words', () => {
+    expect(cleanTranscript('Ship *laughs* it today')).toBe('Ship it today');
+    expect(cleanTranscript('Ship it *laughs*')).toBe('Ship it');
+    expect(cleanTranscript('*laughs* Ship it')).toBe('Ship it');
+    expect(cleanTranscript('Ship it, *laughs* then deploy.')).toBe('Ship it, then deploy.');
+  });
+
   describe('a bracketed tag at the beginning of the text', () => {
     it.each([
       ['a whisper tag', '[BLANK_AUDIO] Please send the report', 'Please send the report'],
