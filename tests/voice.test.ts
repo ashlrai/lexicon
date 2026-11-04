@@ -1863,6 +1863,11 @@ describe('lexicon voice --json failures', () => {
 });
 
 describe('cleanTranscript', () => {
+  it('preserves ordinary unbracketed words while collapsing whitespace', () => {
+    expect(cleanTranscript('  Please play music, then\nwait in silence.  '))
+      .toBe('Please play music, then wait in silence.');
+  });
+
   it('removes starred spans of up to three words but preserves four-word spans', () => {
     expect(cleanTranscript('before *door slams loudly* after')).toBe('before after');
     expect(cleanTranscript('before *the door slams loudly* after')).toBe('before *the door slams loudly* after');
