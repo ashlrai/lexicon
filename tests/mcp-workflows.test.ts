@@ -335,6 +335,15 @@ describe('add_term argument descriptions', () => {
   });
 });
 
+describe('add_term notes at the documented limit', () => {
+  it('accepts exactly 200 characters and keeps them whole', async () => {
+    const notes = 'n'.repeat(200);
+    const added = await call('add_term', { canonical: 'Foo', notes });
+    expect(added.isError).toBeFalsy();
+    expect(JSON.stringify(JSON.parse((await call('list_terms', {})).text))).toContain(notes);
+  });
+});
+
 describe('suggest_canonical result shape', () => {
   it('is { heard, suggestions } with at most 3, as the description says', async () => {
     for (const canonical of ['Ashlr.AI', 'Ashley', 'Asher', 'Ashlar Labs', 'Ashland']) await call('add_term', { canonical, aliases: [] });
