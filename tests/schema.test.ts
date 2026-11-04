@@ -1243,6 +1243,16 @@ describe('hardening (lexicon content reaches model context)', () => {
     );
   });
 
+  it('enforces the alias word boundary in a YAML lexicon', () => {
+    const alias = 'a'.repeat(80);
+    const yaml = (value: string) => `terms:\n  - canonical: Example\n    aliases:\n      - ${value}\n`;
+
+    expect(parseLexicon(parseYaml(yaml(alias))).terms[0].aliases).toEqual([alias]);
+    expect(() => parseLexicon(parseYaml(yaml(`${alias}a`)))).toThrow(
+      'Invalid lexicon:\n  - terms[0].aliases[0]: must be at most 80 characters',
+    );
+  });
+
   it.each([
     { field: 'canonical', input: (word: string) => ({ terms: [{ canonical: word }] }), path: ['terms', 0, 'canonical'] },
     { field: 'aliases', input: (word: string) => ({ terms: [{ canonical: 'X', aliases: [word] }] }), path: ['terms', 0, 'aliases', 0] },
