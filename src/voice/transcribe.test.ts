@@ -154,6 +154,7 @@ describe('cleanTranscript', () => {
     ['across a line break', 'Please *door\nslams loudly* send the report.', 'Please send the report.'],
     ['with extra inner spaces', 'Please *door   slams  loudly* send it.', 'Please send it.'],
     ['uppercase', 'Please *DOOR SLAMS LOUDLY* send it.', 'Please send it.'],
+    ['between punctuated prose', 'Zoë asked, *heavy rain falling* "Is the café open?"', 'Zoë asked, "Is the café open?"'],
     ['twice in a row', 'Ship *one two three* *four five six* today.', 'Ship today.'],
     ['between tags of other kinds', 'Ship [noise] *a b c* (soft music) today.', 'Ship today.'],
   ])('removes a three-word asterisk tag %s and keeps the spoken words', (_description, input, expected) => {
