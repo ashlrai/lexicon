@@ -1024,6 +1024,16 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(parseLexicon({ terms: [{ canonical: 'X', notes: rocket }] }).terms[0].notes).toBe(rocket);
   });
 
+  it('rejects a 201-character note whatever its code points, measured after trimming and stripping invisibles', () => {
+    const rocket = '\u{1F680}';
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', notes: rocket.repeat(201) }] })).toThrow(
+      /terms\[0\]\.notes: must be at most 200 characters/,
+    );
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', notes: `${'n'.repeat(200)}x` }] })).toThrow(/terms\[0\]\.notes/);
+    // Padding and zero-width characters do not count toward the 200.
+    expect(parseLexicon({ terms: [{ canonical: 'X', notes: `  ${'n'.repeat(100)}${ZW}${'n'.repeat(100)}  ` }] }).terms[0].notes).toHaveLength(200);
+  });
+
   it('enforces length limits: canonical/alias 80, notes/phonetic 200', () => {
     expect(parseLexicon({ terms: [{ canonical: 'a'.repeat(LIMITS.word) }] }).terms[0].canonical).toHaveLength(80);
     expect(() => parseLexicon({ terms: [{ canonical: 'a'.repeat(LIMITS.word + 1) }] })).toThrow(/terms\[0\]\.canonical: must be at most 80 characters/);
