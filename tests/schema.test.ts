@@ -377,6 +377,24 @@ describe('hardening (lexicon content reaches model context)', () => {
   });
 
   it.each([
+    ['a canonical that is only a pair', '🚀'],
+    ['a pair at the start', '🚀Rocket'],
+    ['a pair at the end', 'Rocket🚀'],
+    ['adjacent pairs', '🚀🚀'],
+    ['the lowest and highest supplementary code points', '\u{10000}\u{10FFFF}'],
+  ])('accepts a valid supplementary character in a canonical word: %s', (_label, canonical) => {
+    expect(findUnencodableChar(canonical)).toBeUndefined();
+    expect(TermSchema.parse({ canonical })).toMatchObject({ canonical });
+    expect(parseLexicon({ terms: [{ canonical }] }).terms[0]?.canonical).toBe(canonical);
+  });
+
+  it('accepts a surrogate pair written as a YAML escape in a canonical word', () => {
+    const input = parseYaml('terms:\n  - canonical: "Rocket\\uD83D\\uDE80"\n');
+
+    expect(parseLexicon(input).terms[0]?.canonical).toBe('Rocket\u{1F680}');
+  });
+
+  it.each([
     ['a lone low surrogate', 'x\uDE80y', 'U+DE80'],
     ['the first low surrogate', '\uDC00', 'U+DC00'],
     ['a low surrogate before a high one (reversed pair)', '\uDE80\uD83D', 'U+DE80'],
