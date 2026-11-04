@@ -699,6 +699,17 @@ describe('hardening (lexicon content reaches model context)', () => {
     }
   });
 
+  it('escapes every mixed unencodable code unit in diagnostic term labels', () => {
+    const input = { terms: [{ canonical: 'A\uFFFE\uD800x\uDC00\uFFFF🚀', aliases: ['\uFFFF'] }] };
+    const reason = 'U+FFFE, U+FFFF and unpaired surrogates fit no file format';
+    const label = 'A\\uFFFE\\uD800x\\uDC00\\uFFFF🚀';
+
+    expect(() => parseLexicon(input)).toThrow(
+      `Invalid lexicon:\n  - terms[0].canonical: must not contain U+FFFE (${reason}) in term "${label}"\n` +
+      `  - terms[0].aliases[0]: must not contain U+FFFF (${reason}) in term "${label}"`,
+    );
+  });
+
   it.each([
     ['high first', 'D800', 'DFFF'],
     ['low first', 'DC00', 'DBFF'],
