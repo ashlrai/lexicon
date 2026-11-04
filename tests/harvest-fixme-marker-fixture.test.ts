@@ -9,14 +9,17 @@ const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixture
 // meets in real source: `//` line, `/* */` block, `#` hash and trailing
 // comments, plus `/** */` JSDoc, `///` doc comments, glued `//FIXME:`,
 // attributed `FIXME(maintainer):`, a FIXME line between two declarations, a
-// Python docstring and a lowercase `// fixme:` (the marker contract is the
-// exact uppercase literal, so the lowercase form is only a comment, not a
-// marker).
+// Python docstring, a FIXME inside a string literal, a lowercase `// fixme:`
+// (the marker contract is the exact uppercase literal, so the lowercase form
+// is only a comment, not a marker) and the mixed-case `// FixMe:` (a
+// different string under the same contract, harvested like any other
+// identifier).
 describe('harvest FIXME marker fixture', () => {
   it('recognizes FIXME comments across comment styles without proposing the marker', async () => {
     const candidates = await harvestRepo(FIXTURE, { git: false, minCount: 1, symbols: true });
-    // No casing of the marker is proposed; the directory name bucket is the
-    // only non-identifier candidate.
+    // No casing of the marker literal is proposed (`FixMe` is not the marker
+    // under the exact-case contract and is an identifier candidate like any
+    // other); the directory name bucket is the only non-identifier candidate.
     for (const spelling of ['FIXME', 'Fixme', 'fixme']) {
       expect(candidates.map((c) => c.canonical)).not.toContain(spelling);
     }
@@ -39,6 +42,9 @@ describe('harvest FIXME marker fixture', () => {
       OrbitIndex: ['docstr.py'],
       RiftScheduler: ['trail.py'],
       OnyxRouter: ['lower.ts'],
+      AmberVault: ['string.ts'],
+      FixMe: ['mixed.ts'],
+      OnyxCache: ['mixed.ts'],
     });
     // A FIXME comment does not alter surrounding text: the name in the
     // comment and the declaration beside it each count once, so files where
@@ -58,6 +64,9 @@ describe('harvest FIXME marker fixture', () => {
       OrbitIndex: 2,
       RiftScheduler: 1,
       OnyxRouter: 2,
+      AmberVault: 2,
+      FixMe: 1,
+      OnyxCache: 2,
     });
     for (const c of identifiers) {
       expect(c.source).toBe('harvest:repo');
@@ -68,14 +77,14 @@ describe('harvest FIXME marker fixture', () => {
   it('holds the comment-adjacent names as symbols-only without `symbols`', async () => {
     const held = await harvestReport(FIXTURE, { git: false, minCount: 1 });
     expect(held.candidates.map((c) => c.canonical)).toEqual(['fixme-marker']);
-    expect(held.symbolsOnly).toBe(13);
-    expect(held.filesScanned).toBe(12);
+    expect(held.symbolsOnly).toBe(16);
+    expect(held.filesScanned).toBe(14);
     expect(held.truncated).toBe(false);
     expect(held.belowMinCount).toBe(0);
 
     const rep = await harvestReport(FIXTURE, { git: false, minCount: 1, symbols: true });
     expect(rep.symbolsOnly).toBe(0);
     expect(rep.belowMinCount).toBe(0);
-    expect(rep.filesScanned).toBe(12);
+    expect(rep.filesScanned).toBe(14);
   });
 });
