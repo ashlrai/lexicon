@@ -113,4 +113,15 @@ describe('an overlength notes value', () => {
 
     expect(() => parseLexicon(parseYaml(doc))).toThrow(`terms[0].notes: must be at most ${limit} characters`);
   });
+
+  it('accepts a hand-edited YAML note at the 200-code-point boundary without truncation', () => {
+    const notes = `${'context '.repeat(24)}note 🚀!!`;
+    expect(Array.from(notes)).toHaveLength(200);
+    const doc = `terms:\n  - canonical: Boundary Co\n    notes: "${notes}"\n`;
+
+    expect(parseLexicon(parseYaml(doc)).terms[0].notes).toBe(notes);
+    expect(() => parseLexicon(parseYaml(doc.replace('🚀!!', '🚀!!!')))).toThrow(
+      'terms[0].notes: must be at most 200 characters',
+    );
+  });
 });
