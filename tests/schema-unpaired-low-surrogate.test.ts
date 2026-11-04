@@ -48,3 +48,29 @@ describe('unpaired low surrogate in a diagnostic', () => {
     expect(message).not.toMatch(/[\uD800-\uDFFF]/);
   });
 });
+
+describe('unpaired low surrogate in a long term name', () => {
+  const fail = (term: object) => {
+    const result = TermSchema.safeParse(term);
+    if (result.success) throw new Error('Expected rejection');
+    return result.error.issues.map(({ path, message }) => ({ path, message }));
+  };
+
+  it('keeps the offending unit in the message when the name is cut before it', () => {
+    const [issue] = fail({ canonical: `${'A'.repeat(50)}\uDC00` });
+    expect(issue.message).toBe(`must not contain U+DC00 (${UNENCODABLE_NOTE}) in term "${'A'.repeat(39)}\u2026"`);
+  });
+
+  it('names the unit in the leading clause even when the cut lands inside its escape', () => {
+    const [issue] = fail({ canonical: `${'A'.repeat(36)}\uDC00\uDC01` });
+    expect(issue.message).toMatch(/^must not contain U\+DC00 \(/);
+    expect(issue.message).not.toMatch(/[\uD800-\uDFFF]/);
+  });
+
+  it('reports every field holding a low surrogate, each with the same short name', () => {
+    const issues = fail({ canonical: `${'A'.repeat(50)}\uDC00`, aliases: ['a\uDC01'], notes: 'n\uDC02' });
+    expect(issues.map((i) => i.path)).toEqual([['canonical'], ['aliases', 0], ['notes']]);
+    expect(issues.map((i) => /U\+DC0\d/.exec(i.message)?.[0])).toEqual(['U+DC00', 'U+DC01', 'U+DC02']);
+    expect(new Set(issues.map((i) => /in term "(.*)"$/.exec(i.message)?.[1])).size).toBe(1);
+  });
+});
