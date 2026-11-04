@@ -120,6 +120,20 @@ describe('parseLexicon', () => {
     );
   });
 
+  it('identifies an overlong canonical among valid terms', () => {
+    const result = LexiconSchema.safeParse({ terms: [
+      { canonical: 'a'.repeat(80) },
+      { canonical: 'b'.repeat(81) },
+      { canonical: 'Valid' },
+    ] });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('expected an invalid canonical');
+    expect(result.error.issues).toMatchObject([
+      { code: 'too_big', path: ['terms', 1, 'canonical'], maximum: 80, message: 'must be at most 80 characters' },
+    ]);
+  });
+
   it('strips unknown keys instead of failing', () => {
     const lex = parseLexicon({ terms: [{ canonical: 'X', aliases: [], bogus: 1 }], extra: true });
     expect(lex.terms[0]).not.toHaveProperty('bogus');
