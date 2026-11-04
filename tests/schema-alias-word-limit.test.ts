@@ -1,6 +1,6 @@
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { LIMITS, LexiconSchema, TermSchema } from '../src/core/schema.js';
+import { LIMITS, LexiconSchema, TermSchema, parseLexicon } from '../src/core/schema.js';
 
 const contract = readFileSync(new URL('../docs/CONTRACT.md', import.meta.url), 'utf8');
 
@@ -53,6 +53,16 @@ describe('alias word length boundary', () => {
       expect(result.error.issues[0].path).toEqual(path);
       expect(result.error.issues[0].message).toContain(`must be at most ${limit} characters`);
     }
+  });
+
+  it('reports the limit through parseLexicon with the field path', () => {
+    const limit = Number(match![1]);
+    expect(parseLexicon({ terms: [{ canonical: 'X', aliases: ['a'.repeat(limit)] }] }).terms[0].aliases).toEqual([
+      'a'.repeat(limit),
+    ]);
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', aliases: ['a'.repeat(limit + 1)] }] })).toThrow(
+      `terms[0].aliases[0]: must be at most ${limit} characters`,
+    );
   });
 });
 
