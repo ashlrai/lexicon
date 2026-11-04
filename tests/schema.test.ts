@@ -1409,4 +1409,24 @@ describe('hardening (lexicon content reaches model context)', () => {
       'Invalid lexicon:\n  - terms: at most 5000 terms',
     );
   });
+
+  it('accepts exactly LIMITS.aliases never words and rejects one more, naming the path and the limit', () => {
+    const fixture = (n: number) => Array.from({ length: n }, (_, i) => `nope${i}`);
+    expect(LIMITS.aliases).toBe(64);
+    expect(parseLexicon({ terms: [{ canonical: 'Ashlr.AI', never: fixture(LIMITS.aliases) }] }).terms[0].never).toHaveLength(64);
+    expect(() => parseLexicon({ terms: [{ canonical: 'Ashlr.AI', never: fixture(LIMITS.aliases + 1) }] })).toThrow(
+      'Invalid lexicon:\n  - terms[0].never: at most 64 never words per term',
+    );
+    const result = TermSchema.safeParse({ canonical: 'X', never: fixture(LIMITS.aliases + 1) });
+    expect(result.success).toBe(false);
+    if (result.success) return;
+    expect(result.error.issues).toHaveLength(1);
+    expect(result.error.issues[0].path).toEqual(['never']);
+  });
+
+  it('rejects an over-limit never list read from YAML at the right term index', () => {
+    const items = Array.from({ length: LIMITS.aliases + 1 }, (_, i) => `    - w${i}`).join('\n');
+    const input = parseYaml(`terms:\n  - canonical: Fine\n  - canonical: Rocket\n    never:\n${items}\n`);
+    expect(() => parseLexicon(input)).toThrow('Invalid lexicon:\n  - terms[1].never: at most 64 never words per term');
+  });
 });
