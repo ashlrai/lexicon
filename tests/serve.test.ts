@@ -890,6 +890,16 @@ describe('POST /learn and POST /add', () => {
     expect(((await res.json()) as { term: { notes?: string } }).term.notes).toBe(notes);
   });
 
+  it('add refuses notes of 201 characters with a 400 diagnostic and writes nothing', async () => {
+    const res = await api('POST', '/add', { canonical: 'Overnote', notes: 'n'.repeat(201) });
+    expect(res.status).toBe(400);
+    const { error } = (await res.json()) as { error: string };
+    expect(error).toMatch(/^term not added: notes: must be at most 200 characters\. Nothing was written/);
+    expect(error).not.toContain('n'.repeat(201));
+    const body = (await (await api('GET', '/lexicon')).json()) as { lexicon: { terms: { canonical: string }[] } };
+    expect(body.lexicon.terms.some((t) => t.canonical === 'Overnote')).toBe(false);
+  });
+
   // Catches: over the 60-character cap the 400 said only the cap, though the
   // usual cause is a whole phrase sent as heard (MCP learn_correction says so).
   it('learn over the length cap is a 400 that says to send only the name', async () => {
