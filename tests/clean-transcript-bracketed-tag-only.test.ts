@@ -10,6 +10,9 @@ describe('cleanTranscript transcript of only a bracketed tag', () => {
     ['an empty tag', '[]'],
     ['a tag spanning a newline', '[one\ntwo]'],
     ['a tag with surrounding whitespace', '  \t[MUSIC]\n '],
+    ['a tag with punctuation and digits', '[Speaker_1 - (00:03.5)!]'],
+    ['a non-ASCII tag', '[música]'],
+    ['a very long tag', `[${'x'.repeat(10_000)}]`],
   ])('returns an empty string for %s', (_label, input) => {
     expect(cleanTranscript(input)).toBe('');
   });
