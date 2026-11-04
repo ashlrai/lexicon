@@ -34,4 +34,13 @@ describe('harvest FIXME marker', () => {
     const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
     expect(candidates.map((c) => c.canonical)).not.toContain('FIXME');
   });
+
+  it('ignores FIXME in block comments and the doc prose scan', async () => {
+    const dir = await repoWith('/* FIXME: drain NebulaQueue */\nclass NebulaQueue {}\n');
+    await fs.writeFile(path.join(dir, 'NOTES.md'), 'FIXME: tune NebulaQueue.\n');
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+    const names = candidates.map((c) => c.canonical);
+    expect(names).toContain('NebulaQueue');
+    expect(names).not.toContain('FIXME');
+  });
 });
