@@ -1051,6 +1051,21 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(result.error.issues[0].message).toMatch(/must be at most 200 characters/);
   });
 
+  it('rejects an over-limit note read from YAML, pointing at the term index and keeping the valid terms out of the error', () => {
+    const long = 'n'.repeat(LIMITS.text + 1);
+    const ok = 'n'.repeat(LIMITS.text);
+    const input = parseYaml(
+      `terms:\n  - canonical: Fine\n    notes: ${ok}\n  - canonical: Rocket\n    notes: ${long}\n`,
+    );
+    let message = '';
+    try {
+      parseLexicon(input);
+    } catch (e) {
+      message = (e as Error).message;
+    }
+    expect(message).toBe('Invalid lexicon:\n  - terms[1].notes: must be at most 200 characters');
+  });
+
   it('counts a 200-character note in characters, not UTF-16 units', () => {
     const rocket = '\u{1F680}'.repeat(200);
     expect(parseLexicon({ terms: [{ canonical: 'X', notes: rocket }] }).terms[0].notes).toBe(rocket);
