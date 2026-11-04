@@ -27,6 +27,13 @@ function bareLexicon(): { status: number | null; signal: NodeJS.Signals | null; 
 }
 
 describe('lexicon with no arguments', () => {
+  it('ignores a literal top-level home directory and tracks no files in it', () => {
+    const ignored = spawnSync('git', ['check-ignore', '--no-index', '-q', '~/.npm/_update-notifier-last-checked'], { cwd: repoRoot });
+    const tracked = spawnSync('git', ['ls-files', '--', '~'], { cwd: repoRoot, encoding: 'utf8' });
+    expect(ignored.status).toBe(0);
+    expect(tracked.status).toBe(0);
+    expect(tracked.stdout).toBe('');
+  });
   // Catches: a bare `lexicon` that crashed with an unhandled error (a stack
   // trace on stderr) instead of showing the usage a new user needs.
   it('prints the usage text and exits on its own, without a stack trace', () => {
