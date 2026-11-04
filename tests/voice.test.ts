@@ -429,6 +429,16 @@ describe('lexicon voice --toggle', () => {
     expect(w?.args).toEqual(expect.arrayContaining(['-f', wav, '-m', path.join(h.dir, 'models', 'ggml-base.en.bin'), '-l', 'en', '-nt', '-np', '-oj']));
   });
 
+  it('removes multiple bracketed tags from the transcript without losing surrounding words', async () => {
+    const h = await harness();
+    h.transcript = 'Please [MUSIC] ping Ashler [APPLAUSE] about the rollout.';
+    await runVoiceToggle(h.opts, h.io, h.deps);
+    h.out.length = 0;
+
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.out).toEqual(['Please ping Ashlr.AI about the rollout.\n']);
+  });
+
   /**
    * The data-loss bug this file exists to keep fixed. Every `--toggle` capture
    * is spawned with `-t 600`, so a recording nobody stopped ends itself at ten
