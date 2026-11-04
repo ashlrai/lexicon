@@ -883,6 +883,13 @@ describe('POST /learn and POST /add', () => {
     expect((await api('GET', '/stats')).status).toBe(200);
   });
 
+  it('add accepts notes of exactly the documented 200 characters and keeps them whole', async () => {
+    const notes = 'n'.repeat(200);
+    const res = await api('POST', '/add', { canonical: 'Ashlr.AI', notes });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { term: { notes?: string } }).term.notes).toBe(notes);
+  });
+
   // Catches: over the 60-character cap the 400 said only the cap, though the
   // usual cause is a whole phrase sent as heard (MCP learn_correction says so).
   it('learn over the length cap is a 400 that says to send only the name', async () => {
