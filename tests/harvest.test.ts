@@ -54,6 +54,16 @@ function byName(candidates: HarvestCandidate[], name: string): HarvestCandidate 
 }
 
 describe('harvestRepo', () => {
+  it('harvests the identifier associated with a HACK marker from a fixture', async () => {
+    const fixture = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'hack-marker');
+    const candidates = await harvestRepo(fixture, { git: false, minCount: 1, symbols: true });
+
+    expect(byName(candidates, 'HACK')).toBeUndefined();
+    expect(byName(candidates, 'NebulaGateway')).toMatchObject({
+      canonical: 'NebulaGateway', category: 'identifier', count: 1, evidence: ['workaround.ts'],
+    });
+  });
+
   it('finds the package name, classes, brands, authors and directory name', async () => {
     const candidates = await harvestRepo(repo);
     const names = candidates.map((c) => c.canonical);
