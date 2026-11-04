@@ -61,3 +61,24 @@ describe('transcribeFile bracketed tag between words', () => {
     expect(result.output).toBe('ping Ashlr.AI');
   });
 });
+
+describe('transcribeFile empty bracketed tag', () => {
+  // docs/CONTRACT.md: bracketed tags are always dropped, so `[]` goes too.
+  it.each([
+    ['one JSON segment', { segments: [' send [] report '] }],
+    ['the tag as its own JSON segment', { segments: [' send', ' []', ' report'] }],
+    ['a tag touching both words', { segments: ['send[]report'] }],
+    ['the stdout fallback', { stdout: 'send [] report' }],
+  ])('removes the empty tag and keeps both words from %s', async (_label, whisper) => {
+    const result = await transcribe(whisper);
+    expect(result.raw).toBe('send report');
+    expect(result.output).toBe('send report');
+    expect(result.raw).not.toContain('[');
+  });
+
+  it('still applies the lexicon to the words around an empty tag', async () => {
+    const result = await transcribe({ segments: [' ping [] ashler '] });
+    expect(result.raw).toBe('ping ashler');
+    expect(result.output).toBe('ping Ashlr.AI');
+  });
+});
