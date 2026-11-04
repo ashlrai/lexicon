@@ -6362,7 +6362,8 @@ function buildTerm(category, scope, source) {
     // call. Only `writeLexiconFile` decides what a project file may gain: see
     // `pinProjectHits` in store.ts.
     hits: number2().int().nonnegative().optional(),
-    never: OptionalWordList(LIMITS.aliases, "never words per term")
+    never: OptionalWordList(LIMITS.aliases, "never words per term"),
+    context: OptionalWordList(LIMITS.aliases, "context words per term")
   }).superRefine(refuseUnencodable));
 }
 function buildSettings() {
@@ -6442,7 +6443,7 @@ var init_schema = __esm({
     UNENCODABLE_RE_G = new RegExp(UNENCODABLE_RE.source, "g");
     UNENCODABLE_NOTE = "U+FFFE, U+FFFF and unpaired surrogates fit no file format";
     MODEL_PATH_MAX_CHARS = 120;
-    TERM_TEXT_FIELDS = ["canonical", "aliases", "never", "phonetic", "notes", "createdAt"];
+    TERM_TEXT_FIELDS = ["canonical", "aliases", "never", "context", "phonetic", "notes", "createdAt"];
     buildCategory = () => _enum(TERM_CATEGORIES);
     buildScope = () => _enum(TERM_SCOPES);
     buildSource = () => _enum(TERM_SOURCES);
@@ -19522,7 +19523,28 @@ function phoneticCandidates(entries2, length, minConfidence) {
   };
   return sorted.slice(lowerBound(Math.floor(ratio * length) - 1), lowerBound(Math.ceil(length / ratio) + 2));
 }
-function findBest(view, index, opts) {
+function contextPresent(scope, termIndex) {
+  const items = scope.contexts.get(termIndex);
+  if (items === void 0) return true;
+  const { tokens, from, to } = scope;
+  for (const item of items) {
+    const len = item.length;
+    for (let p = 0; p + len <= tokens.length; p++) {
+      if (p + len - 1 >= from && p <= to) continue;
+      let hit = true;
+      for (let k = 0; k < len; k++) {
+        const token = tokens[p + k];
+        if (token.textLower !== item[k] && token.baseLower !== item[k]) {
+          hit = false;
+          break;
+        }
+      }
+      if (hit) return true;
+    }
+  }
+  return false;
+}
+function findBest(view, index, opts, scope) {
   const state = { best: void 0 };
   const current = () => state.best;
   const alreadyCanonical = (entry) => view.original === entry.term.canonical || view.stem === entry.term.canonical;
@@ -19543,6 +19565,7 @@ function findBest(view, index, opts) {
       termIndex: entry.termIndex,
       noop: view.original === entry.term.canonical
     };
+    if (!cand.noop && entry.term.context !== void 0 && entry.term.context.length > 0 && !contextPresent(scope, entry.termIndex)) return;
     if (isBetter(cand, state.best)) state.best = cand;
   };
   const tryExact = (entries2, viaCollapsed) => {
@@ -19634,6 +19657,12 @@ function findReplacements(text, index, opts = {}) {
   };
   const tokens = tokenize(text, resolved.skipCode);
   const candidates = [];
+  const contexts = /* @__PURE__ */ new Map();
+  index.lexicon.terms.forEach((term, termIndex) => {
+    if (term.context === void 0 || term.context.length === 0) return;
+    const items = term.context.map((item) => foldLower(squash(item)).split(" ").filter((t) => t.length > 0)).filter((item) => item.length > 0);
+    if (items.length > 0) contexts.set(termIndex, items);
+  });
   const shouldStop = opts.shouldStop;
   for (let i = 0; i < tokens.length; i++) {
     if (i > 0 && shouldStop?.()) break;
@@ -19646,10 +19675,11 @@ function findReplacements(text, index, opts = {}) {
       if (last.skipped) break;
       if (n > 1 && !tokens[j - 1].joinsNext) break;
       const full = makeView(text, tokens, i, j, false, index.protectedWords);
-      let best = gluedAfter(text, full.end) ? void 0 : findBest(full, index, resolved);
+      const scope = { tokens, from: i, to: j, contexts };
+      let best = gluedAfter(text, full.end) ? void 0 : findBest(full, index, resolved, scope);
       if (last.baseEnd < last.end) {
         const alt = makeView(text, tokens, i, j, true, index.protectedWords);
-        const bestAlt = gluedAfter(text, alt.end) ? void 0 : findBest(alt, index, resolved);
+        const bestAlt = gluedAfter(text, alt.end) ? void 0 : findBest(alt, index, resolved, scope);
         if (bestAlt && (!best || bestAlt.termIndex === best.termIndex || bestAlt.confidence >= best.confidence)) best = bestAlt;
       }
       if (PLURAL_RE.test(last.text) && last.base === last.text && !(best && best.reason === "alias")) {
@@ -19657,7 +19687,7 @@ function findReplacements(text, index, opts = {}) {
         const swapped = tokens.slice(i, j);
         swapped.push({ ...last, text: stripped, base: stripped, textLower: last.textLower.slice(0, -1), baseLower: last.baseLower.slice(0, -1), end: last.end - 1, baseEnd: last.end - 1 });
         const view = makeView(text, swapped, 0, j - i, false, index.protectedWords);
-        const bestPl = gluedAfter(text, view.end) ? void 0 : findBest(view, index, resolved);
+        const bestPl = gluedAfter(text, view.end) ? void 0 : findBest(view, index, resolved, scope);
         if (bestPl && (best ? bestPl.termIndex === best.termIndex && bestPl.confidence > best.confidence : bestPl.reason === "alias")) best = bestPl;
       }
       if (best) candidates.push(best);
@@ -21204,7 +21234,7 @@ var init_packs = __esm({
       title: string2().trim().min(1).max(80),
       description: string2().trim().max(300).default(""),
       version: literal(1).default(1),
-      /** Community packs name their author; the vendored five leave it empty. */
+      /** Community packs name their author; the vendored packs leave it empty. */
       author: string2().trim().max(40).default(""),
       homepage: string2().trim().max(200).default(""),
       terms: array(unknown()).min(1, "a pack needs at least one term")

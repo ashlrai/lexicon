@@ -1264,6 +1264,7 @@ const TERM_KEY_ORDER: (keyof Term)[] = [
   'notes',
   'caseSensitive',
   'never',
+  'context',
   'scope',
   'source',
   'createdAt',
@@ -1845,8 +1846,9 @@ export type AddTermOptions = StoreOptions & {
 };
 
 /**
- * `term` with a trimmed canonical, deduped aliases and deduped never-words;
- * throws on an empty canonical or a blank alias or never word (see assertNoBlankEntries).
+ * `term` with a trimmed canonical, deduped aliases and deduped never and
+ * context words; throws on an empty canonical or a blank entry of any of them
+ * (see assertNoBlankEntries).
  */
 function prepareIncoming(term: Term): Term {
   const trimmed = term.canonical.trim();
@@ -1864,6 +1866,11 @@ function prepareIncoming(term: Term): Term {
   const never = dedupeCaseInsensitive((term.never ?? []).map(clean));
   if (never.length > 0) prepared.never = never;
   else delete prepared.never;
+  // A context word gates on tokens around a match, so it too is stored the way
+  // the matcher folds it (the never rule above).
+  const context = dedupeCaseInsensitive((term.context ?? []).map(clean));
+  if (context.length > 0) prepared.context = context;
+  else delete prepared.context;
   assertTermFields(prepared);
   return prepared;
 }
@@ -1874,8 +1881,9 @@ function clean(s: string): string {
 }
 
 /**
- * Refuse a blank alias or `never` word (empty, whitespace or invisible
- * characters only), naming the field and its index. A blank never word used
+ * Refuse a blank alias, `never` or `context` word (empty, whitespace or
+ * invisible characters only), naming the field and its index. A blank never
+ * word used
  * to be written as is (`never: [" "]` from MCP add_term or POST /add), a word
  * that guards nothing and that the schema then dropped on the next read; a
  * blank alias was dropped and the call answered success, so `aliases: ["  "]`
@@ -1897,7 +1905,7 @@ function showEntry(value: unknown): string {
 }
 
 function assertNoBlankEntries(term: Term): void {
-  for (const field of ['aliases', 'never'] as const) {
+  for (const field of ['aliases', 'never', 'context'] as const) {
     const list: readonly unknown[] = term[field] ?? [];
     const at = list.findIndex((s) => typeof s !== 'string' || BLANK_ENTRY_RE.test(s));
     if (at < 0) continue;
@@ -1924,8 +1932,8 @@ function assertTermFields(term: Term): void {
       .filter((issue): issue is string => issue !== undefined)
       .map((issue) => {
         // A list entry's index is into the deduplicated list, so name the entry too.
-        const at = /^(aliases|never)\[(\d+)\]/.exec(issue);
-        const value = at ? (term[at[1] as 'aliases' | 'never'] ?? [])[Number(at[2])] : undefined;
+        const at = /^(aliases|never|context)\[(\d+)\]/.exec(issue);
+        const value = at ? (term[at[1] as 'aliases' | 'never' | 'context'] ?? [])[Number(at[2])] : undefined;
         if (value === undefined) return issue;
         const shown = showEntry(value.length > 24 ? `${value.slice(0, 24)}...` : value);
         return issue.replace(/^[^:]+/, (field) => `${field} (${shown})`);
@@ -1949,6 +1957,9 @@ function mergeTermInto(file: LexiconFile, incoming: Term, scope: TermScope, opts
     existing.caseSensitive ??= incoming.caseSensitive;
     if (incoming.never?.length) {
       existing.never = dedupeCaseInsensitive([...(existing.never ?? []), ...incoming.never]);
+    }
+    if (incoming.context?.length) {
+      existing.context = dedupeCaseInsensitive([...(existing.context ?? []), ...incoming.context]);
     }
     // Every alias, never-word and field was already there: say so, rather than "merged".
     return JSON.stringify(existing) === before ? { term: existing, created: false, unchanged: true } : { term: existing, created: false };

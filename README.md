@@ -158,8 +158,8 @@ Rules: [docs/MATCHING.md](docs/MATCHING.md).
 
 - **One file**, `~/.config/lexicon/lexicon.yaml`. Project `.lexicon.yaml` merges only after `lexicon trust`.
 - **Twenty-one MCP tools** for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop.
-- **A CLI with 27 commands.** `lexicon --help` lists them. `docs/CLI.md` is generated from that help.
-- **246 terms across the seven packs** (developer, AI, business, voice tools, cloud and DevOps, legal profession, law and litigation). Community packs install from a registry after a checksum preview.
+- **A CLI with 28 commands.** `lexicon --help` lists them. `docs/CLI.md` is generated from that help.
+- **259 terms across the eight packs** (developer, AI, business, voice tools, cloud and DevOps, legal profession, law and litigation, Ashlr.AI fleet). Community packs install from a registry after a checksum preview.
 - **Sixteen export formats** and **eight importers**, including Wispr Flow, Superwhisper, macOS Text Replacement and espanso. `lexicon export` with no format lists them.
 - **The same correction in the browser, in any macOS text field, and from your own pipeline** (`normalize()`).
 

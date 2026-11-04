@@ -153,7 +153,7 @@ note says a project file was skipped as untrusted or changed:
 | Fix a dictated prompt | `normalize_transcript { text, dryRun?, minConfidence? }` |
 | Record a correction the user just made | `learn_correction { heard, meant, scope? }` |
 | "Did you mean X?" for an unknown garble | `suggest_canonical { heard }` |
-| Add a new term with metadata | `add_term { canonical, aliases?, phonetic?, category?, notes?, never?, scope? }` |
+| Add a new term with metadata | `add_term { canonical, aliases?, phonetic?, category?, notes?, never?, context?, scope? }` |
 | Look something up | `list_terms { query?, category?, offset?, limit? }` |
 | Seed from a repo | `harvest_repo { path?, limit?, minCount?, add? }` |
 | First-run onboarding (plan, then apply) | `setup_lexicon { company?, person?, clients?, packs?, harvest?, serve?, apply? }` |
