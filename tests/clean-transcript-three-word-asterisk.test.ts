@@ -1,9 +1,16 @@
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import { cleanTranscript, parseWhisperOutput } from '../src/voice/transcribe.js';
 
-// Contract: src/voice/transcribe.ts. cleanTranscript drops a starred run of
+// Contract: docs/CONTRACT.md. cleanTranscript drops a starred run of
 // one to three plain words, so three words is the longest tag it removes.
 describe('cleanTranscript three-word asterisk tag', () => {
+  it('documents the three-word boundary in the voice contract', () => {
+    const contract = readFileSync(new URL('../docs/CONTRACT.md', import.meta.url), 'utf8');
+    const voice = contract.split('\n').find((line) => line.includes('`cleanTranscript(text)`')) ?? '';
+    expect(voice).toContain('`*...*` of one to three plain words always');
+  });
+
   it('removes the tag and keeps every surrounding word in order', () => {
     expect(cleanTranscript('Please send *door slams shut* the report today.'))
       .toBe('Please send the report today.');
@@ -25,6 +32,7 @@ describe('cleanTranscript three-word asterisk tag', () => {
   it.each([
     ['a comma', '*door, slams shut*'],
     ['a digit', '*door slams 2*'],
+    ['four words', '*the door slams shut*'],
     ['a space inside the opening asterisk', '* door slams shut*'],
   ])('keeps a starred triple with %s', (_label, tag) => {
     expect(cleanTranscript(`Before ${tag} after.`)).toBe(`Before ${tag} after.`);
