@@ -95,6 +95,13 @@ describe('parseLexicon', () => {
     expect(lex.terms[0].aliases).toEqual(['Ashler']);
   });
 
+  it('accepts and preserves an 80-character alias on a valid term', () => {
+    const alias = 'a'.repeat(80);
+    const term = { canonical: 'Example', aliases: [alias], notes: 'A valid term' };
+
+    expect(TermSchema.parse(term)).toStrictEqual(term);
+  });
+
   it('accepts 80-character canonical names and aliases after trimming and stripping invisibles', () => {
     const word = 'a'.repeat(80);
     const lex = parseLexicon({ terms: [{ canonical: ` \u200B${word} `, aliases: [` ${word}\u200B `] }] });
