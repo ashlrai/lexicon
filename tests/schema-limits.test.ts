@@ -32,3 +32,18 @@ describe('aliases limit documented in CONTRACT.md', () => {
     }
   });
 });
+
+describe('text limit boundary', () => {
+  it('pins the text limit at 200', () => {
+    expect(LIMITS.text).toBe(200);
+  });
+
+  it.each(['notes', 'phonetic'] as const)('accepts a 200-character %s and rejects 201', (field) => {
+    expect(TermSchema.safeParse({ canonical: 'X', [field]: 'a'.repeat(200) }).success).toBe(true);
+    const r = TermSchema.safeParse({ canonical: 'X', [field]: 'a'.repeat(201) });
+    expect(r.success).toBe(false);
+    if (!r.success) {
+      expect(r.error.issues[0]).toMatchObject({ path: [field], message: 'must be at most 200 characters' });
+    }
+  });
+});
