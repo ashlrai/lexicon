@@ -355,6 +355,7 @@ describe('hardening (lexicon content reaches model context)', () => {
     ['canonical', { canonical: 'Ash\uFFFFlr' }, ['canonical'], 'Ash\\uFFFFlr'],
     ['aliases', { canonical: 'Ashlr.AI', aliases: ['valid', 'Ash\uFFFFler'] }, ['aliases', 1], 'Ashlr.AI'],
     ['never', { canonical: 'Ashlr.AI', never: ['valid', 'Ash\uFFFFler'] }, ['never', 1], 'Ashlr.AI'],
+    ['context', { canonical: 'Ashlr.AI', context: ['valid', 'Ash\uFFFFler'] }, ['context', 1], 'Ashlr.AI'],
     ['phonetic', { canonical: 'Ashlr.AI', phonetic: 'Ash\uFFFFler' }, ['phonetic'], 'Ashlr.AI'],
     ['notes', { canonical: 'Ashlr.AI', notes: 'Ash\uFFFFler' }, ['notes'], 'Ashlr.AI'],
     ['createdAt', { canonical: 'Ashlr.AI', createdAt: '2026\uFFFF' }, ['createdAt'], 'Ashlr.AI'],
@@ -369,6 +370,25 @@ describe('hardening (lexicon content reaches model context)', () => {
         message: `must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "${name}"`,
       },
     ]);
+  });
+
+  // Catches: `context` is in TERM_TEXT_FIELDS and, like `never`, is refused
+  // only by the term-level pass (its field schema leaves the per-entry
+  // unencodable check off). Dropping it from the list passed the suite.
+  it('rejects U+FFFF in a term context word and names the code point, index and term', () => {
+    const input = parseYaml('terms:\n  - canonical: Ashlr.AI\n    context: ["deploy\\uFFFFnow"]\n');
+    const result = LexiconSchema.safeParse(input);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected U+FFFF in context to be rejected');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['terms', 0, 'context', 0],
+        message: 'must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ashlr.AI"',
+      },
+    ]);
+    expect(() => parseLexicon(input)).toThrow('terms[0].context[0]: must not contain U+FFFF');
+    expect(findUnencodableChar('deploy\uFFFFnow')).toBe('U+FFFF');
   });
 
   // Catches: the term name in a diagnostic is documented as at most 40
@@ -547,6 +567,7 @@ describe('hardening (lexicon content reaches model context)', () => {
     [{ canonical: 'Ash\uFFFElr' }, ['canonical'], 'Ash\\uFFFElr'],
     [{ canonical: 'Ashlr.AI', aliases: ['valid', 'Ash\uFFFEler'] }, ['aliases', 1], 'Ashlr.AI'],
     [{ canonical: 'Ashlr.AI', never: ['valid', 'Ash\uFFFEler'] }, ['never', 1], 'Ashlr.AI'],
+    [{ canonical: 'Ashlr.AI', context: ['valid', 'Ash\uFFFEler'] }, ['context', 1], 'Ashlr.AI'],
     [{ canonical: 'Ashlr.AI', phonetic: 'ash\uFFFEler' }, ['phonetic'], 'Ashlr.AI'],
     [{ canonical: 'Ashlr.AI', notes: 'note\uFFFE' }, ['notes'], 'Ashlr.AI'],
     [{ canonical: 'Ashlr.AI', createdAt: '2026\uFFFE' }, ['createdAt'], 'Ashlr.AI'],
@@ -584,6 +605,7 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(() => parseLexicon({ terms: [{ canonical: 'X', notes: 'n\uFFFF' }] })).toThrow(/terms\[0\]\.notes: must not contain U\+FFFF .* in term "X"/);
     expect(() => parseLexicon({ terms: [{ canonical: 'X', phonetic: '\uD800' }] })).toThrow(/terms\[0\]\.phonetic: must not contain U\+D800/);
     expect(() => parseLexicon({ terms: [{ canonical: 'X', never: ['\uDBFF'] }] })).toThrow(/terms\[0\]\.never\[0\]: must not contain U\+DBFF/);
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', context: ['w\uFFFFd'] }] })).toThrow(/terms\[0\]\.context\[0\]: must not contain U\+FFFF/);
     expect(() => parseLexicon({ terms: [{ canonical: 'X', createdAt: '2026\uFFFE' }] })).toThrow(/terms\[0\]\.createdAt: must not contain U\+FFFE/);
     expect(() => parseLexicon({ terms: [], settings: { protectedWords: ['a\uFFFE'] } })).toThrow(/settings\.protectedWords\[0\]: must not contain U\+FFFE/);
     expect(() => parseLexicon({ terms: [], settings: { packs: ['\uD800'] } })).toThrow(/settings\.packs\[0\]: must not contain U\+D800/);
