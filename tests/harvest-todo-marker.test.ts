@@ -44,3 +44,22 @@ describe('harvest TODO marker', () => {
     expect(names).not.toContain('TODO');
   });
 });
+
+// A marker only counts as a standalone word. TODO inside a longer ordinary
+// word (Mastodon, TODOS, Todoist) is part of that word: harvest keeps the
+// whole word when it qualifies and never reports the embedded marker.
+describe('harvest TODO embedded in a longer word', () => {
+  it('keeps the whole word and never proposes the embedded marker', async () => {
+    const dir = await repoWith(
+      '// MASTODONTODOS and TodoistSync\nconst MastodonTodoist = 1;\n// MastodonTodoist TodoistSync TodoistSync\n',
+    );
+    await fs.writeFile(path.join(dir, 'README.md'), 'We use Mastodon and Mastodon daily. TODOS: none.\n');
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+    const names = candidates.map((c) => c.canonical);
+    expect(names).toContain('Mastodon');
+    expect(names).toContain('TodoistSync');
+    for (const embedded of ['TODO', 'Todo', 'todo', 'ToDo', 'TODOS']) {
+      expect(names).not.toContain(embedded);
+    }
+  });
+});
