@@ -131,4 +131,62 @@ describe('U+FFFE in a free-text field', () => {
     ]);
     expect(() => parseLexicon(input)).toThrow('terms[0].createdAt: must not contain U+FFFE');
   });
+  // Catches: the term name in a diagnostic is bounded at 40 characters.
+  // Mirrors the same tests in schema.test.ts but with U+FFFE instead of U+FFFF,
+  // ensuring the escape-then-truncate path in showTermName is tested for both
+  // noncharacters that refuseUnencodable detects.
+
+  it('truncates a long canonical name in a U+FFFE diagnostic from TermSchema', () => {
+    // A canonical well over 40 characters, with U+FFFE in another field to
+    // trigger refuseUnencodable. The canonical is clean (no unencodable chars)
+    // so showTermName does the plain 40-character cut.
+    const canonical = 'a'.repeat(45);
+    const result = TermSchema.safeParse({ canonical, notes: 'bad\uFFFE' });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected U+FFFE to be rejected');
+    const nameIssue = result.error.issues.find((i) => i.path[0] === 'notes');
+    expect(nameIssue).toBeDefined();
+    const shown = /in term "(.*)"$/.exec(nameIssue!.message)?.[1] ?? '';
+    expect(shown).toBe(`${'a'.repeat(39)}\u2026`);
+    expect(shown.length).toBe(40);
+  });
+
+  it('truncates a long canonical name in a U+FFFE diagnostic from parseLexicon', () => {
+    const canonical = 'x'.repeat(50);
+    const msg = () => parseLexicon({ terms: [{ canonical, notes: 'bad\uFFFE' }] });
+
+    expect(msg).toThrow(`terms[0].notes: must not contain U+FFFE (${UNENCODABLE_NOTE}) in term "${'x'.repeat(39)}\u2026"`);
+  });
+
+  it('measures the 40-character truncation boundary after escaping U+FFFE', () => {
+    // U+FFFE is one char that escapes to \\uFFFE (6 chars). 35 printable chars
+    // plus one U+FFFE gives 36 total, which escapes to 41 characters (35 + 6).
+    // That is over the 40-character limit, so showTermName truncates.
+    const canonical = 'A'.repeat(35) + '\uFFFE';
+    const result = TermSchema.safeParse({ canonical });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected U+FFFE to be rejected');
+    const name = /in term "(.*)"$/.exec(result.error.issues[0].message)?.[1] ?? '';
+    expect(name).toHaveLength(40);
+    expect(name.endsWith('\u2026')).toBe(true);
+    // 34 A's (39 slots for 39 printable) plus the ellipsis, with the escape
+    // consuming the extra 6 chars that pushed over the limit.
+    expect(name.slice(0, 34)).toBe('A'.repeat(34));
+  });
+
+  it('does not truncate a canonical that stays at 40 characters after escaping U+FFFE', () => {
+    // 34 printable chars plus one U+FFFE = 35 total. Escaped: 34 + 6 = 40 exactly.
+    // At the boundary, no truncation occurs.
+    const canonical = 'B'.repeat(34) + '\uFFFE';
+    const result = TermSchema.safeParse({ canonical });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected U+FFFE to be rejected');
+    const name = /in term "(.*)"$/.exec(result.error.issues[0].message)?.[1] ?? '';
+    expect(name).toHaveLength(40);
+    expect(name.endsWith('\u2026')).toBe(false);
+    expect(name).toBe('B'.repeat(34) + '\\uFFFE');
+  });
 });
