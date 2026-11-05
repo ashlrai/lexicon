@@ -1,3 +1,4 @@
+import { promises as fs } from 'node:fs';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
@@ -12,6 +13,17 @@ const FIXTURE = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixture
 // docstring and a lowercase `// note:` (the marker contract is the exact
 // uppercase literal, so the lowercase form is only a comment, not a marker).
 describe('harvest NOTE marker fixture', () => {
+  it('really contains the NOTE marker, so recognition is not vacuous', async () => {
+    const files = (await fs.readdir(FIXTURE)).sort();
+    expect(files).toHaveLength(12);
+    const withMarker: string[] = [];
+    for (const f of files) {
+      if (/\bNOTE\b/.test(await fs.readFile(path.join(FIXTURE, f), 'utf8'))) withMarker.push(f);
+    }
+    // Only lower.ts is deliberately lowercase (`// note:`).
+    expect(withMarker).toEqual(files.filter((f) => f !== 'lower.ts'));
+  });
+
   it('recognizes NOTE comments across comment styles without proposing the marker', async () => {
     const candidates = await harvestRepo(FIXTURE, { git: false, minCount: 1, symbols: true });
     // No casing of the marker is proposed; the directory name bucket is the
