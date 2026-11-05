@@ -9,6 +9,18 @@ describe('parseJsonc', () => {
     expect(Object.keys(parseJsonc('{"__proto__": {"x": 1}}') as object)).toEqual(['__proto__']);
   });
 
+  it('preserves comment-like text inside a quoted string while ignoring comments', () => {
+    const text = String.raw`{
+      // A real line comment
+      "value": "https://example.test/a/*literal*/ and \"// still text\"", /* a real block comment */
+      "after": true // another real comment
+    }`;
+    expect(parseJsonc(text)).toEqual({
+      value: 'https://example.test/a/*literal*/ and "// still text"',
+      after: true,
+    });
+  });
+
   it('names the line and column of what it cannot read', () => {
     expect(() => parseJsonc('{\n  "a": }')).toThrow(/line 2 column 8/);
     expect(() => parseJsonc('{ "a": 1 } x')).toThrow(/after the end/);
