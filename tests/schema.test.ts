@@ -973,6 +973,20 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(escapeUnencodable(`\uDC00${pair}`)).toBe(`\\uDC00${pair}`);
   });
 
+  it('keeps a valid surrogate pair in the term label when another field is invalid', () => {
+    const canonical = 'Launch \uD83D\uDE80';
+    const result = LexiconSchema.safeParse({ terms: [{ canonical, aliases: ['bad\uD800'] }] });
+
+    expect(findUnencodableChar(canonical)).toBeUndefined();
+    expect(TermSchema.parse({ canonical }).canonical).toBe(canonical);
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the unpaired alias surrogate to be rejected');
+    expect(result.error.issues).toEqual([expect.objectContaining({
+      path: ['terms', 0, 'aliases', 0],
+      message: `must not contain U+D800 (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "${canonical}"`,
+    })]);
+  });
+
   it.each([
     ['adjacent', '\uD83D\uDE80\uD842\uDFB7'],
     ['separated by text', '\uD83D\uDE80 and \uD842\uDFB7'],
