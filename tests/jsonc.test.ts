@@ -36,6 +36,11 @@ describe('parseJsonc', () => {
     expect(() => parseJsonc('﻿{}')).toThrow();
     expect(() => parseJsonc('')).toThrow(/end of input/);
   });
+
+  it('rejects unterminated block comments within and after a value', () => {
+    expect(() => parseJsonc('{ "a": 1, /* unfinished')).toThrow(/unterminated comment/);
+    expect(() => parseJsonc('{ "a": 1 } /* unfinished *')).toThrow(/unterminated comment/);
+  });
 });
 
 describe('editJsonText', () => {
