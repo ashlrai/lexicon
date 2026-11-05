@@ -8,6 +8,7 @@ import {
   LexiconSettingsSchema,
   TermSchema,
   emptyLexicon,
+  escapeUnencodable,
   findUnencodableChar,
   parseLexicon,
   sanitizeForDisplay,
@@ -957,6 +958,19 @@ describe('hardening (lexicon content reaches model context)', () => {
     }
     expect(findUnencodableChar(`${rocket}\uD800`)).toBe('U+D800');
     expect(findUnencodableChar(`\uDC00${rocket}`)).toBe('U+DC00');
+  });
+
+  it('preserves a valid supplementary character when escaping an adjacent unpaired surrogate', () => {
+    const pair = '\uD83D\uDE80';
+    const canonical = `Launch ${pair}`;
+    const result = LexiconSchema.safeParse({ terms: [{ canonical }] });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected the supplementary character to be accepted');
+    expect(result.data.terms[0].canonical).toBe(canonical);
+    expect(findUnencodableChar(canonical)).toBeUndefined();
+    expect(escapeUnencodable(`${pair}\uD800`)).toBe(`${pair}\\uD800`);
+    expect(escapeUnencodable(`\uDC00${pair}`)).toBe(`\\uDC00${pair}`);
   });
 
   it.each([
