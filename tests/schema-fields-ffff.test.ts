@@ -1,4 +1,8 @@
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { readLexiconFile } from '../src/core/store.js';
 import { LexiconSchema, TermSchema, UNENCODABLE_NOTE, findUnencodableChar, parseLexicon } from '../src/core/schema.js';
 
 const reason = `must not contain U+FFFF (${UNENCODABLE_NOTE})`;
@@ -95,5 +99,24 @@ describe('U+FFFF in a term', () => {
     if (result.success) throw new Error('Expected U+FFFF to be rejected');
     const shown = result.error.issues.find((i) => i.path[0] === 'notes')?.message.split(' in term ')[1];
     expect(shown).toBe(`"${'a'.repeat(39)}\u2026"`);
+  });
+});
+
+// A YAML double-quoted "\uFFFF" escape is the only way a file can hold the
+// unit; reading such a file must fail with a diagnostic that says U+FFFF.
+describe('U+FFFF in a lexicon file on disk', () => {
+  it('readLexiconFile rejects a YAML \\uFFFF escape and the message identifies U+FFFF', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-ffff-file-'));
+    try {
+      const file = path.join(dir, 'lexicon.yaml');
+      await fs.writeFile(file, 'terms:\n  - canonical: Ashlr.AI\n    aliases: ["Ash\\uFFFFler"]\n');
+      const err = await readLexiconFile(file, 'global').catch((e: unknown) => e);
+      const message = err instanceof Error ? err.message : '';
+      expect(message).toContain('U+FFFF');
+      expect(message).toContain('aliases[0]');
+      expect(message).not.toContain('\uFFFF');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });
