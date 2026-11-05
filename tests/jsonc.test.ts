@@ -9,6 +9,16 @@ describe('parseJsonc', () => {
     expect(Object.keys(parseJsonc('{"__proto__": {"x": 1}}') as object)).toEqual(['__proto__']);
   });
 
+  it('reads properties separated by a multiline block comment', () => {
+    const text = `{
+      "first": "original value",
+      /* A comment between properties
+         spanning multiple lines. */
+      "second": 42
+    }`;
+    expect(parseJsonc(text)).toEqual({ first: 'original value', second: 42 });
+  });
+
   it('names the line and column of what it cannot read', () => {
     expect(() => parseJsonc('{\n  "a": }')).toThrow(/line 2 column 8/);
     expect(() => parseJsonc('{ "a": 1 } x')).toThrow(/after the end/);
