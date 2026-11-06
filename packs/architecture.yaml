@@ -1,0 +1,43 @@
+# Opt-in vocabulary for architects and building designers.
+# Split and misspelled forms are synthetic candidates, not measured STT errors.
+name: architecture
+title: Architecture and building design
+description: Building-design terminology, standards and modeling tools for architects.
+version: 1
+terms:
+  - canonical: Revit
+    category: product
+    aliases: [revvit, rev it software]
+  - canonical: SketchUp
+    category: product
+    aliases: [sketchupp, sketch up software]
+  - canonical: Archicad
+    category: product
+    aliases: [archi cad, archicadd]
+  - canonical: AutoCAD
+    category: product
+    aliases: [auto cad, autocadd]
+  - canonical: BIM
+    category: acronym
+    aliases: [b i m, bee eye em]
+  - canonical: IFC
+    category: acronym
+    aliases: [i f c, eye ef see]
+  - canonical: fenestration
+    category: other
+    aliases: [fenestrationn, fenestrashun]
+  - canonical: clerestory
+    category: other
+    aliases: [clerestorie, clearstory]
+  - canonical: rainscreen
+    category: other
+    aliases: [rain screan, rainscreeen]
+  - canonical: soffit
+    category: other
+    aliases: [soffitt, sofitt]
+  - canonical: mullion
+    category: other
+    aliases: [mullionn, mullian]
+  - canonical: orthographic
+    category: other
+    aliases: [ortho graphic, orthografik]
