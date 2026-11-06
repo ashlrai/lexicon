@@ -45,6 +45,7 @@ This is pattern matching, not Markdown emphasis: `**bold**` loses its inner
 | `Before *door slams loudly* after` | `Before after` |
 | `This is *important* today` | `This is today` |
 | `Keep **bold** here` | `Keep * * here` |
+| `Keep **the door slams loudly** here` | `Keep **the door slams loudly** here` |
 | `Keep *the door slams loudly* here` | `Keep *the door slams loudly* here` |
 | `Keep *room 2* here` | `Keep *room 2* here` |
 | `Keep *well-known* here` | `Keep *well-known* here` |

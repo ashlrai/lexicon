@@ -78,6 +78,13 @@ describe('transcribeFile bracketed tag at the start', () => {
     expect(result.normalized.changed).toBe(true);
   });
 
+  it('removes a leading tag split across JSON segments before normalizing the following words', async () => {
+    const result = await transcribe({ segments: ['[BLANK_', 'AUDIO] ashler', ' sent the report.'] });
+    expect(result.raw).toBe('ashler sent the report.');
+    expect(result.normalized.input).toBe('ashler sent the report.');
+    expect(result.output).toBe('Ashlr.AI sent the report.');
+  });
+
   it('removes a leading tag alongside a trailing one in the same transcript', async () => {
     const result = await transcribe({ segments: ['[MUSIC] send the report [noise]'] });
     expect(result.raw).toBe('send the report');

@@ -139,6 +139,17 @@ describe('contract never-count limit', () => {
     expect(() => parseLexicon(raw)).toThrow(`terms[1].never: at most ${documentedLimit} never words per term`);
   });
 
+  it('shares the documented cap with term.context', () => {
+    // docs/term-capacity-reference.md: a term's `context` list rides the same
+    // `aliases` limit in the schema even though the contract line only names
+    // aliases and `never`.
+    const context = Array.from({ length: documentedLimit }, (_, i) => `scope${i}`);
+    expect(parseLexicon({ terms: [{ canonical: 'SaaS', context }] }).terms[0].context).toEqual(context);
+    expect(() => parseLexicon({ terms: [{ canonical: 'SaaS', context: [...context, 'extra'] }] })).toThrow(
+      `terms[0].context: at most ${documentedLimit} context words per term`,
+    );
+  });
+
   it('shares the documented cap with settings.packs', () => {
     // docs/term-capacity-reference.md: `settings.packs` rides the same
     // `aliases` limit in the schema even though the contract line only names

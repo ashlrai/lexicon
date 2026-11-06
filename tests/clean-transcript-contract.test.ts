@@ -18,6 +18,21 @@ describe('cleanTranscript contract', () => {
   });
 
   it.each([
+    ['between sentences', 'First sentence. *VERY loud noise* Second sentence!', 'First sentence. Second sentence!'],
+    ['touching surrounding text', 'Keep*random three words*both sides.', 'Keep both sides.'],
+    ['before speech', '*birds sing softly* The meeting starts now.', 'The meeting starts now.'],
+    ['after speech', 'The meeting starts now. *birds sing softly*', 'The meeting starts now.'],
+    ['with mixed whitespace', 'Send the report *door\tcloses\nloudly* to the team.', 'Send the report to the team.'],
+  ])('removes a three-word annotation %s without losing transcript text', (_position, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
+  it('removes a multiline bracketed tag while preserving surrounding speech', () => {
+    const input = 'Deploy café v2[door closes\nin hallway]after the review, Zoë.';
+    expect(cleanTranscript(input)).toBe('Deploy café v2 after the review, Zoë.');
+  });
+
+  it.each([
     ['Whisper JSON segments', JSON.stringify({ transcription: [
       { text: 'Please send the report' },
       { text: '*whispers*' },

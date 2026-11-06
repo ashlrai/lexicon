@@ -120,6 +120,14 @@ describe('cleanTranscript bracketed tags', () => {
 });
 
 describe('cleanTranscript asterisk tags', () => {
+  it.each(['laughs', 'door slams', 'door slams shut'])('removes *%s* at each position without losing speech', (direction) => {
+    expect(cleanTranscript(`*${direction}* Please send the report.`)).toBe('Please send the report.');
+    expect(cleanTranscript(`Please send *${direction}* the report.`)).toBe('Please send the report.');
+    expect(cleanTranscript(`Please send the report. *${direction}*`)).toBe('Please send the report.');
+    expect(cleanTranscript(`Please*${direction}*send the report.`)).toBe('Please send the report.');
+    expect(cleanTranscript(`*${direction}*`)).toBe('');
+  });
+
   it.each([
     ['one', 'Zoë said, *laughs* "send it!"', 'Zoë said, "send it!"'],
     ['two', 'Keep the café open; *door slams* notify the team.', 'Keep the café open; notify the team.'],
