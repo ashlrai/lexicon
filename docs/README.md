@@ -84,6 +84,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [aliases-onboarding-reference.md](aliases-onboarding-reference.md) | Suggesting and reviewing aliases in an onboarding form | |
 | [aliases-query-examples.md](aliases-query-examples.md) | Local API alias suggestion queries and responses | |
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Get started |
+| [contract-limits-reference.md](contract-limits-reference.md) | Schema limits, units and scope | |
 | [schema-limit-reference.md](schema-limit-reference.md) | File schema limits and their relationship to the contract | |
 | [term-capacity-reference.md](term-capacity-reference.md) | Term and alias count limits versus text-length limits, with sources | |
 | [schema-collection-limits.md](schema-collection-limits.md) | Alias and term collection limits and validation definitions | |
