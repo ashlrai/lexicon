@@ -29,4 +29,7 @@ describe('schema limits reference', () => {
     }
     expect(reference).toContain(`\`settings.packs\`: ${LIMITS.aliases} entries per settings list`);
   });
+  it('is linked from the documentation index', () => {
+    expect(readDoc('README.md')).toContain('[contract-limits-reference.md](contract-limits-reference.md)');
+  });
 });

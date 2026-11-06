@@ -7,6 +7,11 @@ const contract = readFileSync(new URL('../docs/CONTRACT.md', import.meta.url), '
 
 describe('schema collection limits reference', () => {
   it('records the contract values and corresponding validation definitions', () => {
+    expect(readFileSync(new URL('../docs/README.md', import.meta.url), 'utf8')).toContain('[schema-collection-limits.md](schema-collection-limits.md)');
+    expect(reference).toContain('[schema contract](CONTRACT.md#srccoreschemats)');
+    expect(reference).toContain('`never` list and for `settings.packs`');
+    expect(reference).toContain('64 aliases and 64 `never` entries at the same time');
+    expect(contract).toContain(`\`aliases\` ${LIMITS.aliases} (aliases and \`never\` per term), \`terms\` ${LIMITS.terms}`);
     for (const name of ['aliases', 'terms'] as const) {
       expect(reference).toContain(`| \`LIMITS.${name}\` | ${LIMITS[name]} |`);
       expect(contract).toContain(`\`${name}\` ${LIMITS[name]}`);
