@@ -5,7 +5,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 <!-- fresh:begin table:releases -->
 | Version | Released |
 |---|---|
-| 0.5.8 | 2026-11-01 |
+| 0.5.8 | 2026-11-05 |
 | 0.5.7 | 2026-10-31 |
 | 0.5.6 | 2026-10-18 |
 | 0.5.5 | 2026-10-14 |
@@ -22,16 +22,16 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 | 0.1.0 | 2026-09-19 |
 <!-- fresh:end -->
 
-## 0.5.8 (2026-11-01)
+## 0.5.8 (2026-11-05)
 
 ### Release scope and upgrade notes
 
-- This is an unpublished release candidate prepared on 2026-11-01. The date records preparation, not completed publication. The last verified npm `latest` and public GitHub release are 0.5.4: the v0.5.5 tag exists but its npm publication failed authentication, and the dated 0.5.6 and 0.5.7 sections record candidates that were never tagged. This section covers only the work landed since the 0.5.7 candidate was staged; the 0.5.5, 0.5.6 and 0.5.7 sections below carry the rest of the post-0.5.4 history. Publishing 0.5.8 ships all of it.
+- This unpublished release candidate was refreshed on 2026-11-05 against current main. The date records preparation, not completed publication. The last verified npm `latest` and public GitHub release remain 0.5.4. The immutable v0.5.7 candidate failed full CI on committed MCP bundle drift before tests ran; this candidate includes the regenerated bundle and all accumulated post-0.5.4 integration. Current OIDC publication acceptance has not yet been exercised.
 - Dry-run JSON output gains a `plan: true` marker on successful previews. Consumers keying on `dryRun: true` still work; `plan` distinguishes a preview result from an applied one, which `dryRun` alone could not once no-op results started reporting the requested mode.
 
 ### Added
 
-- Seventh starter pack: `legal` ("Law and litigation"), 25 terms and 50 aliases covering complementary legal Latin, litigation terms and spelled-out acronyms (res ipsa loquitur, remittitur, FRCP, UCC). It is offered unchecked in `lexicon setup` like the existing opt-in `profession-q8` pack. The vendored set is now seven packs: 246 terms and 497 aliases.
+- Starter pack: `legal` ("Law and litigation"), 25 terms and 50 aliases covering complementary legal Latin, litigation terms and spelled-out acronyms (res ipsa loquitur, remittitur, FRCP, UCC). It is offered unchecked in `lexicon setup` like the existing opt-in `profession-q8` pack. The vendored set now includes eight packs: 259 terms and 541 aliases.
 - `scripts/fast-check.sh` runs the package typecheck across all three tsconfigs and the lint check in parallel with incremental compiler caches kept in private git metadata, stopping at the first failure. It is a fast local gate, not a CI job.
 - `bench/daemon-latency.mjs` now also reports the resident expander's peak RSS: it spawns a real `lexicon daemon --expander` child that samples its own memory over stderr, warms it with `list --json` reads and prints a `resident daemon peak RSS` JSON row.
 - Documentation for surfaces and limits that previously existed only in code: alias-endpoint request/response and edge-case references, contract term and collection limits with examples, schema error name/preview/limit references, harvest marker catalog and boundary behavior, daemon and resident-expander scope and design questions, expander boundary map and per-platform questions, tray platform scope, Firefox extension publication readiness and submission checklist, and the October 31 issue proofs.
@@ -43,6 +43,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Fixed
 
+- Regenerate the committed MCP bundle so full qualification reaches the product tests instead of failing the bundle-drift check.
 - The MCP stdio server now exits when its host goes away: `stdin` `end` and `close` trigger the same idempotent shutdown as SIGINT/SIGTERM, closing the server (and any outstanding requests) instead of leaving an orphaned process.
 
 ### Internal
