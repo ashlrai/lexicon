@@ -59,4 +59,23 @@ describe('Firefox readiness documentation', () => {
     expect(doc).not.toMatch(/^- \[[xX]\]/m);
     expect(read('docs/README.md')).toContain('(firefox-addon-submission-checklist.md)');
   });
+
+  it('states AMO distribution is proposed and lists what maintainers verify before submission', async () => {
+    const doc = read('docs/firefox-extension-distribution.md');
+    const source = JSON.parse(read('extension/manifest.json')) as Record<string, unknown>;
+    const mod = await import(pathToFileURL(resolve(root, 'scripts/extension-manifest.mjs')).href);
+    const gecko = mod.firefoxManifest(source).browser_specific_settings.gecko;
+    for (const value of [gecko.id, gecko.strict_min_version, ...gecko.data_collection_permissions.required, ...(source.permissions as string[]), ...(source.optional_host_permissions as string[])]) {
+      expect(doc).toContain(`\`${value}\``);
+    }
+    expect(doc).toContain('https://github.com/ashlrai/lexicon/issues/12');
+    expect(doc).toContain('Mozilla Add-ons (AMO)\ndistribution');
+    expect(doc).toContain('Distribution is proposed, not done');
+    expect(doc).toContain('## Information maintainers must verify before submission');
+    expect(doc).toContain('npx web-ext lint --source-dir extension/dist-firefox');
+    expect(doc).toContain('npm run build:extension');
+    expect(doc).toContain('Publishing to AMO');
+    expect(doc).toContain('clean Firefox profile');
+    expect(doc).toContain('extension/lexicon-extension-firefox.zip');
+  });
 });

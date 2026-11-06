@@ -288,13 +288,19 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           .describe(
             `Ordinary words that must never be rewritten to this term even if they sound alike, e.g. ["sauce"] for SaaS; each at most ${LIMITS.word} characters, at most ${LIMITS.aliases} per term; a blank one is an error and nothing is written.`,
           ),
+        context: z
+          .array(z.string())
+          .optional()
+          .describe(
+            `Words that must also appear in the text for this term to apply, e.g. ["phantom"] for a Lucas -> locus alias that only fires in fleet talk; each at most ${LIMITS.word} characters, at most ${LIMITS.aliases} per term; a blank one is an error and nothing is written.`,
+          ),
         scope: z
           .enum(TERM_SCOPES)
           .optional()
           .describe("'global' (default, ~/.config/lexicon) or 'project' (.lexicon.yaml in the current repo)."),
       },
     },
-    async ({ canonical, aliases, phonetic, category, notes, never, scope }) =>
+    async ({ canonical, aliases, phonetic, category, notes, never, context, scope }) =>
       guarded(async () => {
         // Generated aliases only for a term this call creates: adding a never word,
         // phonetic, category or notes to an existing term must not append any.
@@ -309,6 +315,7 @@ export const registerTermTools: ToolRegistrar = (server, ctx) => {
           ...(category !== undefined ? { category } : {}),
           ...(notes !== undefined ? { notes } : {}),
           ...(never && never.length > 0 ? { never } : {}),
+          ...(context && context.length > 0 ? { context } : {}),
           ...(scope !== undefined ? { scope } : {}),
         };
         const writeOpts = await mcpWriteOpts(ctx);

@@ -77,7 +77,8 @@ it('preserves discovery schemas, annotations and parsed common command results',
     // Byte/4 is a reproducible estimate, not a model-specific tokenizer.
     if (process.env.LEXICON_AUDIT_REPORT) await fs.writeFile(process.env.LEXICON_AUDIT_REPORT, JSON.stringify(measurements, null, 2) + '\n');
     // Baseline: 53,285 bytes. Guard the reduction against future verbosity.
-    expect(measurements['tools/list']!.bytes).toBeLessThanOrEqual(51764);
+    // 52,025 with add_term's `context` arg (RQ-LEX-FLEET-GLOSSARY).
+    expect(measurements['tools/list']!.bytes).toBeLessThanOrEqual(52200);
   } finally {
     await client.close();
     await server.close();

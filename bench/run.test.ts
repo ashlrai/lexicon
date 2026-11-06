@@ -14,12 +14,12 @@ it.each([
   expect(reportPath(input)).toBe(expected);
 });
 
-it('writes the documented non-English baseline with comparable subset metrics', () => {
-  const readme = readFileSync('bench/README.md', 'utf8');
-  const section = readme.split('## Repeat the non-English-name benchmark')[1]?.split('\n## ')[0];
-  const command = section?.match(/```bash\n([^\n]+)\n```/)?.[1];
+it.each([['LF', '\n'], ['CRLF', '\r\n']])('runs the documented non-English baseline with %s Markdown and comparable subset metrics', (_label, eol) => {
+  const readme = readFileSync(new URL('./README.md', import.meta.url), 'utf8').replace(/\r?\n/g, eol);
+  const section = readme.split('## Repeat the non-English-name benchmark')[1]?.split(/\r?\n## /)[0];
+  const command = section?.match(/```bash\r?\n([^\r\n]+)\r?\n```/)?.[1];
   expect(command).toBe('npm run bench -- --out /tmp/lexicon-name-benchmark.json');
-  const pkg = JSON.parse(readFileSync('package.json', 'utf8')) as { scripts: { bench: string } };
+  const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { scripts: { bench: string } };
   expect(pkg.scripts.bench).toBe('node --import tsx bench/run.ts');
   const dir = mkdtempSync(join(tmpdir(), 'lexicon name bench &-'));
   try {

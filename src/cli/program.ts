@@ -5,6 +5,7 @@
  * barrel, commands.ts, or a cmd-*.ts file here.
  */
 import { Command, InvalidArgumentError } from 'commander';
+import type { ErrorOptions } from 'commander';
 import { packageVersion } from '../util/package.js';
 import { EXPORT_MAX_LIMIT, HARVEST_MAX_LIMIT, LIMITS, SUGGEST_MAX_LIMIT, AUTO_APPLY_CONFIDENCE, IMPORT_FORMATS } from '../core/caps.js';
 import { parseBackendName } from '../daemon/clipboard-backends.js';
@@ -31,6 +32,7 @@ import type { ImportGuidedOptions } from './cmd-import-guided.js';
 import type { LearnOptions, StatsOptions } from './cmd-learn.js';
 import type { PackCliOptions, PackDeps, PackRegistryCliOptions } from './cmd-pack.js';
 import type { PendingOptions } from './cmd-pending.js';
+import type { TermsAddOptions } from './cmd-terms.js';
 import type { EditOptions, ReviewOptions } from './cmd-review.js';
 import type { ServeOptions } from './cmd-serve.js';
 import type { SetupOptions } from './setup/types.js';
@@ -81,8 +83,21 @@ function positiveNumber(value: string): number {
 const EDIT_TAKES_NO_TERM =
   'error: lexicon edit takes no term: it opens the whole lexicon file in $VISUAL/$EDITOR. To change one term: lexicon add <canonical> <alias...>, or lexicon remove <term>';
 
+// Customize semantic hints at the error boundary so Commander still handles
+// unknown commands, including its spelling suggestions and usage exit code.
+class LexiconCommand extends Command {
+  override error(message: string, options?: ErrorOptions): never {
+    if (options?.code === 'commander.unknownCommand') {
+      const name = this.args[0] ?? '';
+      const hint = unknownCommandHint(name);
+      if (hint) message = `error: unknown command '${name}'\n(${hint})`;
+    }
+    return super.error(message, options);
+  }
+}
+
 export function buildProgram(io: IO): Command {
-  const program = new Command();
+  const program = new LexiconCommand();
 
   program
     .name('lexicon')
@@ -96,15 +111,6 @@ export function buildProgram(io: IO): Command {
       'after',
       '\nStart here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.\nCheck an install: lexicon doctor',
     );
-
-  // commander suggests by spelling alone; for names other tools use (`status`,
-  // `version`, `config`) name the lexicon command that does that job instead.
-  program.on('command:*', (operands: string[]) => {
-    const name = operands[0] ?? '';
-    const hint = unknownCommandHint(name);
-    if (hint) program.error(`error: unknown command '${name}'\n(${hint})`, { code: 'commander.unknownCommand' });
-    (program as unknown as { unknownCommand(): never }).unknownCommand();
-  });
 
   function withGlobals<T extends object>(opts: T): T & { cwd?: string } {
     const { cwd } = program.opts<{ cwd?: string }>();
@@ -137,6 +143,10 @@ export function buildProgram(io: IO): Command {
     .option(
       '--never <word...>',
       'words that must never be rewritten to this term even if they sound alike, e.g. --never sauce',
+    )
+    .option(
+      '--context <word...>',
+      'words that must also appear in the text for this term to apply, e.g. --context ashlr phantom',
     )
     .option('--json', 'print { ok: true, term, path, created, scope, suggested } as JSON (suggested: the generated aliases this call added), plus unchanged, conflicts and note when they apply')
     .action(async (canonical: string, aliases: string[], opts: AddOptions) => {
@@ -178,6 +188,39 @@ export function buildProgram(io: IO): Command {
       const { runList } = await import('./commands.js');
       done(await runList(withGlobals(opts), io));
     });
+
+  const terms = program
+    .command('terms')
+    .description('list terms (the `list` table under the name "terms"), or add one deterministically with `terms add`')
+    .option('--json', 'print terms as JSON (a bare array), as list --json')
+    .option('--full', 'print the object MCP list_terms returns as JSON, as list --full (implies --json)')
+    .option('--category <category>', 'only this category')
+    .option('--query <text>', 'only terms whose canonical or aliases contain this text')
+    .option('--offset <n>', 'skip this many matching terms first (default 0)', nonNegativeIntOption('--offset', 50))
+    .option('--limit <n>', 'print at most this many matching terms (default: every one)', positiveIntOption('--limit', 50))
+    .action(async (opts: ListOptions) => {
+      const { runList } = await import('./commands.js');
+      done(await runList(withGlobals(opts), io));
+    });
+
+  exampleAfterMissingArgument(
+    terms
+      .command('add')
+      .description('add a term with the spellings it is heard as; deterministic (no suggested aliases) and idempotent (a second identical run changes nothing)')
+      .argument('<canonical>', 'the correct spelling, e.g. locus')
+      .option('--heard <aliases...>', 'a spelling STT writes for this term; at least one is required')
+      .option('--context <words...>', 'a word that must also appear in the text for this term to apply (repeat as needed)')
+      .option('--project', 'write to the project .lexicon.yaml instead of the global one')
+      .option('--dry-run', 'report the term it would create or merge; write nothing')
+      .option('--json', 'print { ok: true, term, path, created, scope } as JSON, plus unchanged when nothing changed')
+      .action(async (canonical: string, opts: TermsAddOptions, command: Command) => {
+        const { runTermsAdd } = await import('./cmd-terms.js');
+        // `terms` also has --json, so commander claims the flag for the parent
+        // wherever it appears; optsWithGlobals() sees it either way.
+        done(await runTermsAdd(canonical, withGlobals({ ...command.optsWithGlobals<TermsAddOptions>(), ...opts }), io));
+      }),
+    '(e.g. lexicon terms add locus --heard Lucas; lexicon terms shows the terms; use lexicon terms add --help for usage)',
+  );
 
   program
     .command('normalize')
@@ -583,7 +626,7 @@ export function registerSetupCommands(program: Command, io: IO): void {
     .option('--app <app>', `dictation app to export for: ${SETUP_APPS.join('|')}`)
     .option('--export-dir <dir>', 'where to write the dictation export (default: ~/Desktop)')
     .option('--harvest', 'add the repo names to the project lexicon (with --yes it is skipped unless this is passed)')
-    .option('--packs <list>', 'comma-separated starter packs to install, or none (default: a checklist on a terminal, nothing with --yes; one of developer, ai, business, voice-tools, cloud-devops, profession-q8)')
+    .option('--packs <list>', 'comma-separated starter packs to install, or none (default: a checklist on a terminal, nothing with --yes; one of developer, ai, business, voice-tools, cloud-devops, profession-q8, legal, ashlr)')
     .option('--no-packs', 'skip the starter packs (no prompt)')
     .option('--no-harvest', 'skip the repo harvest (no prompt)')
     .option('--serve', 'install the local API login service (with --yes it is skipped unless this is passed)')
@@ -664,7 +707,7 @@ export function registerPackCommands(program: Command, io: IO, deps: PackDeps = 
 
   const pack = program
     .command('pack')
-    .description('starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate')
+    .description('starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8, legal, ashlr) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate')
     .action(() => {
       pack.outputHelp();
     });
