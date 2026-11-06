@@ -26,12 +26,31 @@ describe('schema collection limits reference', () => {
     expect(() => parseLexicon({ terms: [{ canonical: 'X', aliases: [...aliases, 'same'] }] })).toThrow(error);
   });
 
-  it('counts terms even when repeated and reports the documented error', () => {
-    const terms = Array.from({ length: LIMITS.terms }, () => ({ canonical: 'Repeated' }));
-    expect(LexiconSchema.parse({ terms }).terms).toHaveLength(LIMITS.terms);
-    const error = `terms: at most ${LIMITS.terms} terms`;
+  it('enforces the contract limit of 5000 terms even when they are repeated', () => {
+    // Keep the boundary independent of LIMITS so a contract change is deliberate.
+    expect(contract).toContain('`terms` 5000');
+    const terms = Array.from({ length: 5000 }, () => ({ canonical: 'Repeated' }));
+    expect(LexiconSchema.parse({ terms }).terms).toHaveLength(5000);
+    const overflow = { terms: [...terms, { canonical: 'Repeated' }] };
+    const result = LexiconSchema.safeParse(overflow);
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the terms limit to be enforced');
+    expect(result.error.issues).toMatchObject([
+      { code: 'too_big', path: ['terms'], maximum: 5000 },
+    ]);
+    const error = 'terms: at most 5000 terms';
     expect(reference).toContain(error);
-    expect(() => parseLexicon({ terms: [...terms, { canonical: 'Repeated' }] })).toThrow(error);
+    expect(() => parseLexicon(overflow)).toThrow(error);
+  });
+
+  it('accepts 5000 distinct terms with aliases in order and refuses the 5001st', () => {
+    const make = (i: number) => ({ canonical: `Term${i}`, aliases: [` alias ${i} `] });
+    const terms = Array.from({ length: 5000 }, (_, i) => make(i));
+    const parsed = parseLexicon({ terms });
+    expect(parsed.terms).toHaveLength(5000);
+    expect(parsed.terms[0]).toMatchObject({ canonical: 'Term0', aliases: ['alias 0'] });
+    expect(parsed.terms[4999]).toMatchObject({ canonical: 'Term4999', aliases: ['alias 4999'] });
+    expect(() => parseLexicon({ terms: [...terms, make(5000)] })).toThrow('terms: at most 5000 terms');
   });
 
   it('defaults missing and null collections but rejects null entries', () => {

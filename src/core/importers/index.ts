@@ -234,6 +234,10 @@ export function mergeRows(rows: readonly ImportRow[], source?: TermSource): { te
       const have = new Set((target.never ?? []).map((n) => n.toLowerCase()));
       target.never = [...(target.never ?? []), ...term.never.filter((n) => !have.has(n.toLowerCase()))];
     }
+    if (term.context?.length) {
+      const have = new Set((target.context ?? []).map((n) => n.toLowerCase()));
+      target.context = [...(target.context ?? []), ...term.context.filter((n) => !have.has(n.toLowerCase()))];
+    }
   }
   return { terms: [...byKey.values()], skipped };
 }

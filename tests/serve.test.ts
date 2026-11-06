@@ -874,6 +874,20 @@ describe('POST /learn and POST /add', () => {
     );
   });
 
+  // Catches: POST /learn relayed the refusal without the code unit named, or
+  // wrote it anyway (learnCorrection runs the same schema as POST /add).
+  it('learn refuses a heard carrying U+FFFE with a 400 that identifies it, and writes nothing', async () => {
+    const before = await fs.readFile(env.globalPath, 'utf8');
+    const res = await api('POST', '/learn', { heard: 'Ash\uFFFE', meant: 'Ashlr.AI' });
+    expect(res.status).toBe(400);
+    const { error } = (await res.json()) as { error: string };
+    expect(error).toBe(
+      'term not added: aliases[0] ("Ash\\uFFFE"): must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ashlr.AI". Nothing was written; fix that field and try again.',
+    );
+    expect(error).not.toContain('\uFFFE');
+    expect(await fs.readFile(env.globalPath, 'utf8')).toBe(before);
+  });
+
   it('add over the schema cap is a 400 naming the field, not an index into the lexicon file', async () => {
     const res = await api('POST', '/add', { canonical: 'Zed', aliases: ['x'.repeat(81)] });
     expect(res.status).toBe(400);
@@ -881,6 +895,40 @@ describe('POST /learn and POST /add', () => {
     expect(error).toMatch(/^term not added: aliases\[0\] \("x{24}\.\.\."\): must be at most 80 characters\. Nothing was written/);
     expect(error).not.toContain('terms[');
     expect((await api('GET', '/stats')).status).toBe(200);
+  });
+
+  it('add accepts notes of exactly the documented 200 characters and keeps them whole', async () => {
+    const notes = 'n'.repeat(200);
+    const res = await api('POST', '/add', { canonical: 'Ashlr.AI', notes });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { term: { notes?: string } }).term.notes).toBe(notes);
+  });
+
+  it('add refuses notes of 201 characters with a 400 diagnostic and writes nothing', async () => {
+    const res = await api('POST', '/add', { canonical: 'Overnote', notes: 'n'.repeat(201) });
+    expect(res.status).toBe(400);
+    const { error } = (await res.json()) as { error: string };
+    expect(error).toMatch(/^term not added: notes: must be at most 200 characters\. Nothing was written/);
+    expect(error).not.toContain('n'.repeat(201));
+    const body = (await (await api('GET', '/lexicon')).json()) as { lexicon: { terms: { canonical: string }[] } };
+    expect(body.lexicon.terms.some((t) => t.canonical === 'Overnote')).toBe(false);
+  });
+
+  it('add accepts a phonetic hint of exactly the documented 200 characters and keeps it whole', async () => {
+    const phonetic = 'p'.repeat(200);
+    const res = await api('POST', '/add', { canonical: 'Ashlr.AI', phonetic });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { term: { phonetic?: string } }).term.phonetic).toBe(phonetic);
+  });
+
+  it('add refuses a phonetic hint of 201 characters with a 400 diagnostic and writes nothing', async () => {
+    const res = await api('POST', '/add', { canonical: 'Overphon', phonetic: 'p'.repeat(201) });
+    expect(res.status).toBe(400);
+    const { error } = (await res.json()) as { error: string };
+    expect(error).toMatch(/^term not added: phonetic: must be at most 200 characters\. Nothing was written/);
+    expect(error).not.toContain('p'.repeat(201));
+    const body = (await (await api('GET', '/lexicon')).json()) as { lexicon: { terms: { canonical: string }[] } };
+    expect(body.lexicon.terms.some((t) => t.canonical === 'Overphon')).toBe(false);
   });
 
   // Catches: over the 60-character cap the 400 said only the cap, though the
@@ -3291,7 +3339,7 @@ describe('packs and aliases routes', () => {
     const res = await api2('GET', '/packs');
     expect(res.status).toBe(200);
     const body = (await res.json()) as { packs: { name: string; title: string; terms: number; aliases: number; installed: boolean; path: string }[]; installed: string[] };
-    expect(body.packs.map((p) => p.name)).toEqual(['ai', 'business', 'cloud-devops', 'developer', 'legal', 'profession-q8', 'voice-tools']);
+    expect(body.packs.map((p) => p.name)).toEqual(['ai', 'ashlr', 'business', 'cloud-devops', 'developer', 'legal', 'profession-q8', 'voice-tools']);
     expect(body.packs.every((p) => p.installed === false && p.terms > 0 && p.aliases > 0 && p.path.endsWith('.yaml'))).toBe(true);
     expect(body.installed).toEqual([]);
     expect((await api2('POST', '/packs', {})).status).toBe(405);
@@ -3573,6 +3621,28 @@ describe('packs and aliases routes', () => {
     } finally {
       await server.stop();
       await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
+  it('generates aliases from the canonical query without looking up or changing stored terms', async () => {
+    const lexiconPath = path.join(home2, 'aliases-contract.yaml');
+    const stored = 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [stored-only-spelling]\n';
+    await fs.writeFile(lexiconPath, stored);
+    const server = createServer({ port: 0, cwd: cwd2, globalPath: lexiconPath, quiet: true });
+    const serverInfo = await server.start();
+    try {
+      const request = (route: string) => fetch(`${serverInfo.url}${route}`, { headers: { Authorization: `Bearer ${serverInfo.token}` } });
+      const response = await request('/aliases?canonical=Ashlr.AI');
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ canonical: 'Ashlr.AI', aliases: suggestAliases('Ashlr.AI') });
+      expect(suggestAliases('Ashlr.AI')).not.toContain('stored-only-spelling');
+      expect(await fs.readFile(lexiconPath, 'utf8')).toBe(stored);
+
+      for (const route of ['/aliases?term=Ashlr.AI', '/aliases?canonical=Ashlr.AI&canonical=Ashlr.AI']) {
+        expect((await request(route)).status, route).toBe(400);
+      }
+    } finally {
+      await server.stop();
     }
   });
 

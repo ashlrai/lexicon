@@ -6,6 +6,23 @@ const doc = readFileSync(new URL('../docs/contract-term-limits.md', import.meta.
 const contract = readFileSync(new URL('../docs/CONTRACT.md', import.meta.url), 'utf8');
 
 describe('contract term limits reference', () => {
+  it.each(['a', '𠮷'])('enforces the documented alias word limit for %s', (character) => {
+    const match = contract.match(/`word` (\d+) \(canonical, alias\)/);
+    expect(match).not.toBeNull();
+    const documentedLimit = Number(match![1]);
+    expect(documentedLimit).toBe(80);
+
+    const alias = character.repeat(documentedLimit);
+    expect(TermSchema.parse({ canonical: 'Name', aliases: [alias] }).aliases).toEqual([alias]);
+
+    const result = TermSchema.safeParse({ canonical: 'Name', aliases: [alias + character] });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the alias to exceed the documented word limit');
+    expect(result.error.issues).toMatchObject([
+      { code: 'too_big', path: ['aliases', 0], maximum: documentedLimit, message: `must be at most ${documentedLimit} characters` },
+    ]);
+  });
+
   it.each(['a', '𠮷'])('enforces the documented canonical word limit for %s', (character) => {
     const match = contract.match(/`word` (\d+) \(canonical, alias\)/);
     expect(match).not.toBeNull();
@@ -55,6 +72,22 @@ describe('contract term limits reference', () => {
     const terms = Array.from({ length: LIMITS.terms }, (_, i) => ({ canonical: `Term${i}` }));
     expect(LexiconSchema.safeParse({ terms }).success).toBe(true);
     expect(LexiconSchema.safeParse({ terms: [...terms, { canonical: 'Overflow' }] }).success).toBe(false);
+  });
+
+  it('accepts 64 aliases per term and rejects 65', () => {
+    const match = contract.match(/`aliases` (\d+) \(aliases and `never` per term\)/);
+    expect(match).not.toBeNull();
+    expect(Number(match![1])).toBe(64);
+
+    const aliases = Array.from({ length: 64 }, (_, i) => `alias ${i}`);
+    expect(TermSchema.parse({ canonical: 'Name', aliases }).aliases).toEqual(aliases);
+
+    const result = TermSchema.safeParse({ canonical: 'Name', aliases: [...aliases, 'overflow'] });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the alias count to exceed the documented limit');
+    expect(result.error.issues).toMatchObject([
+      { code: 'too_big', path: ['aliases'], maximum: 64, message: 'at most 64 aliases per term' },
+    ]);
   });
 
   it('counts aliases and never lists separately', () => {

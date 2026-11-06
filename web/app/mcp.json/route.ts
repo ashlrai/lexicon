@@ -54,7 +54,7 @@ const MANIFEST = {
   runtime: { node: '>=20' },
   requiresApiKey: false,
   requiresAccount: false,
-  network: 'none beyond 127.0.0.1; the only outbound request in the codebase is `lexicon voice` fetching a whisper.cpp model on first use',
+  network: 'ordinary correction stays on the machine. lexicon voice downloads a whisper.cpp model on first use, lexicon pack fetches a registry you choose, and lexicon import --guided can call the GitHub API through an existing gh login',
 
   install: {
     recommended: PRIMARY_COMMAND,

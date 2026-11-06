@@ -19,10 +19,12 @@ import type { VoiceExec } from './process.js';
  * plain words (`*laughs*`, `*door slams*`), the way whisper writes its sound
  * effects, whatever the words are. Parenthesised tags are dropped
  * only when they look like a noise annotation (`(applause)`, `(soft music)`),
- * so a dictated parenthetical survives. Whitespace is collapsed and trimmed.
+ * so a dictated parenthetical survives. A tag that sits right before closing punctuation
+ * takes its leading space with it (`send [MUSIC].` -> `send.`). Whitespace is collapsed and trimmed.
  */
 export function cleanTranscript(text: string): string {
   return text
+    .replace(/\s*\[[^\]]*\](?=[.,;:!?])/g, '')
     .replace(/\[[^\]]*\]/g, ' ')
     .replace(/\(([A-Za-z]+(?:\s+[A-Za-z]+){0,2})\)/g, (m, inner: string) => (isNoiseTag(inner) ? ' ' : m))
     .replace(/\*([A-Za-z]+(?:\s+[A-Za-z]+){0,2})\*/g, ' ')

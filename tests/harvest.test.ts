@@ -54,6 +54,16 @@ function byName(candidates: HarvestCandidate[], name: string): HarvestCandidate 
 }
 
 describe('harvestRepo', () => {
+  it('harvests the identifier associated with a HACK marker from a fixture', async () => {
+    const fixture = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'hack-marker');
+    const candidates = await harvestRepo(fixture, { git: false, minCount: 1, symbols: true });
+
+    expect(byName(candidates, 'HACK')).toBeUndefined();
+    expect(byName(candidates, 'NebulaGateway')).toMatchObject({
+      canonical: 'NebulaGateway', category: 'identifier', count: 1, evidence: ['workaround.ts'],
+    });
+  });
+
   it('finds the package name, classes, brands, authors and directory name', async () => {
     const candidates = await harvestRepo(repo);
     const names = candidates.map((c) => c.canonical);
@@ -147,6 +157,53 @@ describe('harvestRepo', () => {
     });
   });
 
+  it('counts a name in an XXX comment as source evidence under the harvest contract', async () => {
+    const dir = path.join(tmp, 'xxx-contract', 'repo');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'note.ts'), '// XXX: revisit QuasarWidget\n');
+
+    const options = { git: false, minCount: 1 };
+    expect(await harvestRepo(dir, options)).toEqual([]);
+    const symbols = await harvestRepo(dir, { ...options, symbols: true });
+    expect(symbols).toHaveLength(1);
+    expect(symbols[0]).toMatchObject({
+      canonical: 'QuasarWidget', category: 'identifier', source: 'harvest:repo',
+      count: 1, evidence: ['note.ts'], suggestedAliases: [],
+    });
+
+    await fs.writeFile(path.join(dir, 'README.md'), 'We use QuasarWidget today.\n');
+    const corroborated = await harvestRepo(dir, options);
+    expect(corroborated).toHaveLength(1);
+    expect(corroborated[0]).toMatchObject({
+      canonical: 'QuasarWidget', category: 'brand', source: 'harvest:repo', count: 2,
+    });
+    expect(corroborated[0].evidence).toEqual(expect.arrayContaining(['note.ts', 'README.md']));
+    const withoutIdentifiers = await harvestRepo(dir, { ...options, identifiers: false });
+    expect(withoutIdentifiers).toHaveLength(1);
+    expect(withoutIdentifiers[0]).toMatchObject({ canonical: 'QuasarWidget', count: 1, evidence: ['README.md'] });
+  });
+
+  it('filters HACK in a comment while harvesting the adjacent name', async () => {
+    const dir = path.join(tmp, 'hack-comment', 'repo');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'note.ts'), '// HACK: revisit QuasarWidget\n');
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+    expect(candidates.map(({ canonical, category, source, count, evidence }) =>
+      ({ canonical, category, source, count, evidence }))).toEqual([{
+      canonical: 'QuasarWidget', category: 'identifier', source: 'harvest:repo',
+      count: 1, evidence: ['note.ts'],
+    }]);
+  });
+
+  it('does not invent a marker or candidate from ordinary comment text', async () => {
+    const dir = path.join(tmp, 'plain-comment', 'repo');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'note.ts'), '// revisit this after the next request\n');
+
+    expect(await harvestRepo(dir, { git: false, minCount: 1, symbols: true })).toEqual([]);
+  });
+
   it('filters NOTE itself while scanning marked and unmarked comments alike', async () => {
     const dir = path.join(tmp, 'note-contract', 'repo');
     await fs.mkdir(dir, { recursive: true });
@@ -163,15 +220,7 @@ describe('harvestRepo', () => {
     expect(await harvestRepo(dir, { ...options, minCount: 3 })).toEqual([]);
   });
 
-  it('does not harvest ordinary unmarked comment text as a marker or identifier', async () => {
-    const dir = path.join(tmp, 'unmarked-contract', 'repo');
-    await fs.mkdir(dir, { recursive: true });
-    await fs.writeFile(path.join(dir, 'plain.ts'), '// check the connection later\n');
-
-    expect(await harvestRepo(dir, { git: false, symbols: true, minCount: 1 })).toEqual([]);
-  });
-
-  it.each(['NOTE', 'HACK'])(
+  it.each(['FIXME', 'NOTE', 'HACK'])(
     'excludes %s in ordinary comments while counting the names in their text', async (marker) => {
       const dir = path.join(tmp, `ordinary-comment-${marker}`, 'repo');
       await fs.mkdir(dir, { recursive: true });

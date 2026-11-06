@@ -36,6 +36,14 @@ it.each([true, false, undefined])('preview markers require dryRun === true (%s)'
   expect(dryRunPlan(dryRun)).toEqual(dryRun === true ? { plan: true, dryRun: true } : {});
 });
 
+it('dryRunPlan is the only dry-run marker io.js offers', async () => {
+  // The dry-run plan markers used to be assembled from io.js's field-level
+  // `dryField`, which emitted { dryRun: true } without plan and red-did the
+  // scheduled suite. It is gone; dryRunPlan is the single marker helper.
+  const io = await import('../src/cli/io.js');
+  expect(io).not.toHaveProperty('dryField');
+});
+
 it.each(['init', 'add', 'add unchanged', 'remove', 'remove alias', 'learn', 'untrust', 'untrust absent', 'pack add', 'remove missing', 'alias missing'])(
   '%s marks successful previews, including no-ops, but never applied or failed results', async (command) => {
     if (command === 'untrust absent') await runUntrust(undefined, { cwd }, makeIO());

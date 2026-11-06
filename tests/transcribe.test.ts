@@ -86,6 +86,12 @@ describe('cleanTranscript bracketed tags', () => {
     expect(cleanTranscript('Please send [background noise] the report.')).toBe('Please send the report.');
   });
 
+  it('removes a single tag between two words and keeps both words', () => {
+    expect(cleanTranscript('hello [MUSIC] world')).toBe('hello world');
+    expect(cleanTranscript('hello [MUSIC]\nworld')).toBe('hello world');
+    expect(cleanTranscript('hello[MUSIC]world')).toBe('hello world');
+  });
+
   it('separates spoken words when bracketed tags touch them', () => {
     expect(cleanTranscript('Please[door closes]send[unrecognized sound]the report.')).toBe('Please send the report.');
   });
@@ -114,6 +120,14 @@ describe('cleanTranscript bracketed tags', () => {
 });
 
 describe('cleanTranscript asterisk tags', () => {
+  it.each(['laughs', 'door slams', 'door slams shut'])('removes *%s* at each position without losing speech', (direction) => {
+    expect(cleanTranscript(`*${direction}* Please send the report.`)).toBe('Please send the report.');
+    expect(cleanTranscript(`Please send *${direction}* the report.`)).toBe('Please send the report.');
+    expect(cleanTranscript(`Please send the report. *${direction}*`)).toBe('Please send the report.');
+    expect(cleanTranscript(`Please*${direction}*send the report.`)).toBe('Please send the report.');
+    expect(cleanTranscript(`*${direction}*`)).toBe('');
+  });
+
   it.each([
     ['one', 'Zoë said, *laughs* "send it!"', 'Zoë said, "send it!"'],
     ['two', 'Keep the café open; *door slams* notify the team.', 'Keep the café open; notify the team.'],
@@ -135,6 +149,11 @@ describe('cleanTranscript asterisk tags', () => {
   it('removes one-, two-, and three-word annotations in the same transcript', () => {
     expect(cleanTranscript('First *laughs* then *door slams* and *door slams loudly* finally done.'))
       .toBe('First then and finally done.');
+  });
+
+  it('retains a four-word annotation next to removed one- and three-word ones', () => {
+    expect(cleanTranscript('A *laughs* B *the door closes softly* C *door slams loudly* D.'))
+      .toBe('A B *the door closes softly* C D.');
   });
 
   it('removes a one-word annotation and preserves the surrounding speech', () => {
@@ -186,5 +205,12 @@ describe('cleanTranscript asterisk tags', () => {
   it('applies bracket cleaning before matching asterisks across newlines', () => {
     expect(cleanTranscript('Before *hello [noise]\nworld* after.')).toBe('Before after.');
     expect(cleanTranscript('Keep *laughs**coughs* and *one*two* here.')).toBe('Keep and two* here.');
+  });
+});
+
+describe('cleanTranscript asterisk-only transcripts', () => {
+  it('returns an empty string when the transcript is only a three-word asterisk tag', () => {
+    expect(cleanTranscript('*door slams shut*')).toBe('');
+    expect(cleanTranscript('  *door slams shut*\n')).toBe('');
   });
 });
