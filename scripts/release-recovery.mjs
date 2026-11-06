@@ -119,7 +119,7 @@ export function validatePolicyEvidence(policySha, e, localHashes) {
   assert.ok(['ahead', 'identical'].includes(e.ancestry.status));
   assert.equal(e.ancestry.merge_base_commit.sha, policySha, 'executing policy left protected main history');
   assert.equal(e.releaseWorkflow.state, 'active'); assert.equal(e.ciWorkflow.state, 'active');
-  same(Object.keys(localHashes).sort((a, b) => a.localeCompare(b, 'en')), [...POLICY_FILES].sort((a, b) => a.localeCompare(b, 'en'))); same(Object.keys(e.files).sort((a, b) => a.localeCompare(b, 'en')), [...POLICY_FILES].sort((a, b) => a.localeCompare(b, 'en')));
+  same(Object.keys(localHashes).sort(), [...POLICY_FILES].sort()); same(Object.keys(e.files).sort(), [...POLICY_FILES].sort());
   for (const path of POLICY_FILES) { assert.match(localHashes[path], /^[a-f0-9]{64}$/); same(e.files[path], localHashes[path]); }
 }
 async function livePolicy(policySha) {
