@@ -28,6 +28,7 @@ vi.mock('../src/core/schema.js', () => ({
   },
   emptyLexicon: (): Lexicon => ({ version: 1, terms: [] }),
   stripInvisible: (s: string): string => s.replace(/[\u200B-\u200F\u202A-\u202E\u2066-\u2069\uFEFF]/g, ''),
+  escapeUnencodable: (s: string): string => s,
 }));
 
 /**
@@ -278,6 +279,23 @@ describe('readLexiconFile / writeLexiconFile', () => {
 });
 
 describe('loadLexicon / merge precedence', () => {
+  it('loads the documented maximum from YAML and rejects one more term', async () => {
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    // The contract specifies 5000 terms per collection, independent of LIMITS.
+    const terms = Array.from({ length: 5000 }, (_, i) => `  - canonical: Term${i}\n`).join('');
+    await fs.mkdir(path.dirname(globalPath), { recursive: true });
+    await fs.writeFile(globalPath, `version: 1\nterms:\n${terms}`);
+    expect((await loadLexicon({ cwd: tmp, globalPath })).global.lexicon.terms).toHaveLength(5000);
+
+    const overflow = `version: 1\nterms:\n${terms}  - canonical: Term5000\n`;
+    await fs.writeFile(globalPath, overflow);
+    await expect(loadLexicon({ cwd: tmp, globalPath })).rejects.toThrow(
+      'terms: at most 5000 terms',
+    );
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(overflow);
+  });
+
   it('project term wins on canonical collision, aliases unioned, settings merged', async () => {
     const { root, nested } = await makeRepo();
     const globalLex: Lexicon = {
@@ -812,6 +830,53 @@ describe('addTerm', () => {
     expect(await fs.readFile(globalPath, 'utf8')).toBe(before);
   });
 
+  // Catches: the word limit lives in the schema (docs/CONTRACT.md: `word` 80,
+  // canonical and alias), so an 81-character canonical once reached
+  // writeLexiconFile's whole-file check and was refused as
+  // `Refusing to write lexicon at <path>: Invalid lexicon: - terms[<n>].canonical: ...`,
+  // an index into a file the caller never saw.
+  it('accepts a canonical at the documented word limit and refuses 81 characters, writing nothing', async () => {
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    const contract = await fs.readFile(new URL('../docs/CONTRACT.md', import.meta.url), 'utf8');
+    const limit = Number(/`word` (\d+) \(canonical, alias\)/.exec(contract)?.[1]);
+    expect(limit).toBe(80);
+    expect(limit).toBe(realSchema.LIMITS.word);
+
+    const at = 'a'.repeat(limit);
+    expect((await addTerm({ canonical: at, aliases: [] }, { cwd: tmp, globalPath })).term.canonical).toBe(at);
+    // Whitespace and invisible characters are stripped before the length counts.
+    const padded = ` ${'b'.repeat(limit)}\u200b `;
+    expect((await addTerm({ canonical: padded, aliases: [] }, { cwd: tmp, globalPath })).term.canonical).toBe('b'.repeat(limit));
+
+    const before = await fs.readFile(globalPath, 'utf8');
+    for (const over of [`${at}a`, `${at}\u200ba`]) {
+      expect(over.replace(/\u200b/g, '')).toHaveLength(81);
+      await expect(addTerm({ canonical: over, aliases: [] }, { cwd: tmp, globalPath })).rejects.toThrow(
+        `term not added: canonical: must be at most ${limit} characters. Nothing was written; fix that field and try again.`,
+      );
+    }
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(before);
+  });
+
+  // Catches: an alias or never word one character over the same limit was
+  // refused only by the write's whole-file parse, as `terms[<n>].aliases[i]`,
+  // an index the caller never saw, instead of naming the entry it was given.
+  it('refuses an alias or never word of 81 characters, naming the entry and writing nothing', async () => {
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    const word = 'n'.repeat(realSchema.LIMITS.word + 1);
+    expect(word).toHaveLength(81);
+    const shown = JSON.stringify(`${'n'.repeat(24)}...`);
+    await expect(addTerm({ canonical: 'SaaS', aliases: ['ok', word] }, { cwd: tmp, globalPath })).rejects.toThrow(
+      `term not added: aliases[1] (${shown}): must be at most ${realSchema.LIMITS.word} characters. Nothing was written; fix that field and try again.`,
+    );
+    await expect(addTerm({ canonical: 'SaaS', aliases: [], never: [word] }, { cwd: tmp, globalPath })).rejects.toThrow(
+      `term not added: never[0] (${shown}): must be at most ${realSchema.LIMITS.word} characters. Nothing was written; fix that field and try again.`,
+    );
+    expect((await readLexiconFile(globalPath, 'global')).exists).toBe(false);
+  });
+
   // Catches: addTerm wrote an alias as given, invisible characters and all,
   // so `Ash\u200bler` (or the zero-width space the claude-md export puts
   // between a backslash and a pipe, read back by lexicon import) was not a
@@ -876,6 +941,35 @@ describe('addTerms', () => {
 
   it('checks every canonical before it writes anything', async () => {
     await expect(addTerms([batch[0]!, { canonical: ' ', aliases: [] }], { cwd: tmp, globalPath })).rejects.toThrow('canonical must not be empty');
+    expect((await readLexiconFile(globalPath, 'global')).exists).toBe(false);
+  });
+
+  // Catches: the schema's word limit enforced only at write time, so a batch
+  // with an 81-character canonical refused on the file's `terms[<n>]` index,
+  // after the terms before it had already merged.
+  it('checks the word limit on every term before it writes anything', async () => {
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    const over = 'b'.repeat(realSchema.LIMITS.word + 1);
+    expect(over).toHaveLength(81);
+    await expect(addTerms([batch[0]!, { canonical: over, aliases: [] }], { cwd: tmp, globalPath })).rejects.toThrow(
+      `term not added: canonical: must be at most ${realSchema.LIMITS.word} characters. Nothing was written; fix that field and try again.`,
+    );
+    expect((await readLexiconFile(globalPath, 'global')).exists).toBe(false);
+  });
+
+  // Catches: an 81-character alias inside a batch's second term, where only
+  // the write's whole-file parse saw it, as `terms[<n>].aliases[<i>]`, after
+  // the first term had already merged.
+  it('checks the word limit on every alias in the batch before it writes anything', async () => {
+    const realSchema = await vi.importActual<typeof import('../src/core/schema.js')>('../src/core/schema.js');
+    schemaOverride.parseLexicon = realSchema.parseLexicon;
+    const over = 'n'.repeat(realSchema.LIMITS.word + 1);
+    expect(over).toHaveLength(81);
+    const shown = JSON.stringify(`${'n'.repeat(24)}...`);
+    await expect(addTerms([batch[0]!, { canonical: 'SaaS', aliases: ['ok', over] }], { cwd: tmp, globalPath })).rejects.toThrow(
+      `term not added: aliases[1] (${shown}): must be at most ${realSchema.LIMITS.word} characters. Nothing was written; fix that field and try again.`,
+    );
     expect((await readLexiconFile(globalPath, 'global')).exists).toBe(false);
   });
 });

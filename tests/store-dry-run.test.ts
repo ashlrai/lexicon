@@ -37,6 +37,18 @@ async function sameRefusal(
 }
 
 describe('store dry-run final validation', () => {
+  it('leaves persisted data unchanged when no terms are requested', async () => {
+    const original = 'version: 1\n# Keep this comment and formatting.\nterms:\n  - canonical: QuasarBridge\n    aliases: [quasar bridge]\n';
+    await fs.writeFile(globalPath, original);
+
+    const preview = await addTerms([], { globalPath, dryRun: true });
+
+    expect(preview.results).toEqual([]);
+    expect(preview.file.lexicon.terms).toEqual([{ canonical: 'QuasarBridge', aliases: ['quasar bridge'] }]);
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(original);
+    await expect(fs.stat(`${globalPath}.bak`)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
+
   it.each(['aliases', 'never'] as const)('refuses a merged term exceeding the %s limit in both preview and real writes', async (field) => {
     const original = JSON.stringify({ version: 1, terms: [{ canonical: 'QuasarBridge', aliases: [], [field]: Array.from({ length: LIMITS.aliases }, (_, i) => `spelling ${i}`) }] });
     const incoming: Term = { canonical: 'QuasarBridge', aliases: [], [field]: ['extra spelling'] };

@@ -2,7 +2,30 @@
 
 How to cut a release of `@ashlr/lexicon`. One tag drives everything: npm, the GitHub release and its download assets, and the Homebrew formula bump that follows.
 
-The version being cut is `package.json`'s `version`: <!-- fresh:begin pin:version -->0.5.7<!-- fresh:end -->. Every doc block between `fresh:begin` and `fresh:end` HTML-comment markers (the README release badge and git-tag pin, this number, the CHANGELOG release table) is regenerated from `package.json` and the dated CHANGELOG sections by `npm run fresh:sync`; `npm run fresh:check` fails on drift, so a release can gate on it the way the `docs` CI job gates on `check:facts`.
+The version being cut is `package.json`'s `version`: <!-- fresh:begin pin:version -->0.5.8<!-- fresh:end -->. Every doc block between `fresh:begin` and `fresh:end` HTML-comment markers (the README release badge and git-tag pin, this number, the CHANGELOG release table) is regenerated from `package.json` and the dated CHANGELOG sections by `npm run fresh:sync`; `npm run fresh:check` fails on drift, so a release can gate on it the way the `docs` CI job gates on `check:facts`.
+
+## Automatic releases
+
+A merged version bump on `main` releases itself. When a push to `main` changes
+`package.json`, `.github/workflows/auto-tag.yml` reads the new version, requires
+every required check green on that exact commit (fail closed: a missing or
+pending check waits about 9.5 minutes, a failed one stops the run at once) and
+creates `vX.Y.Z` with the ashlr-release GitHub App token, so the tag push itself
+starts `release.yml`. If no `release.yml` run for the tag appears within about
+two minutes, auto-tag dispatches it once. No PAT, no hold switch, no manual
+step. The manual tag-push path in step 2 is unchanged.
+
+Both one-command manual paths run the same gates:
+
+```bash
+gh workflow run auto-tag.yml -R ashlrai/lexicon                  # tag the version package.json on main declares
+gh workflow run release.yml -R ashlrai/lexicon -f version=X.Y.Z  # release tag vX.Y.Z, which must already exist
+```
+
+The `release.yml` dispatch path validates `version` as X.Y.Z, resolves `vX.Y.Z`
+and checks out that tag rather than the dispatch ref; full-suite evidence,
+source version agreement, OIDC provenance and the absence checks all still
+apply.
 
 ## 1. Bump the version
 
@@ -89,7 +112,9 @@ grep -c "/Users/" plugin/mcp-server.mjs plugin/hook.mjs plugin/hook-main.mjs   #
 ## 2. What the tag triggers
 
 `.github/workflows/release.yml` keeps the existing `v*` tag trigger and owner
-protections. It has two parallel qualification jobs with default
+protections, and also accepts `workflow_dispatch` with a required `version`
+input (see Automatic releases above). It has two parallel qualification jobs
+with default
 `contents: read`, followed by one publication job that needs both to succeed.
 Neither build job receives the npm publication secret or OIDC write authority.
 
@@ -117,11 +142,12 @@ Asset inspection reads a stable regular file descriptor, capped at 256 MiB, and
 refuses file identity or size changes. Assembly writes the inspected bytes to
 exclusive destination descriptors and preserves their qualified permission bits.
 These finite reads do not promise a wall-clock bound for slow filesystems.
-It requires the workflow GitHub token plus either GitHub Actions OIDC request
-material or the existing `NPM_TOKEN`, and proves that neither this tag's release
-nor this exact npm version already exists. OIDC request material alone does not
-prove that the package's trusted publisher has been configured. An HTTP failure
-is not treated as absence.
+It requires the workflow GitHub token plus GitHub Actions OIDC request material
+(npm trusted publishing), proves that neither this tag's release nor this exact
+npm version already exists, and refuses to run at all when an `NPM_TOKEN` secret
+is configured. OIDC request material alone does not prove that the package's
+trusted publisher has been configured. An HTTP failure is not treated as
+absence.
 
 The job publishes the original qualified `ashlr-lexicon-X.Y.Z.tgz` with
 `--provenance`; it does not rebuild or repack in the privileged job. It checks the
@@ -136,7 +162,48 @@ These registry and GitHub mutations are not an atomic transaction. A failure
 after npm accepts the immutable version can leave npm published and GitHub
 absent or draft. Report each delivery layer separately. The workflow refuses
 existing versions/releases instead of overwriting them on a rerun; preserve the
-failed attempt for review and follow the fix-forward policy below.
+failed attempt for review. Use the narrow recovery route below only for a proven
+accepted npm publication followed by registry-acceptance failure. Other failures
+continue to use the fix-forward policy below.
+
+### Recover delayed npm processing without publishing twice
+
+npm can accept the original archive and provenance while its backend continues
+processing the version. The public version may remain absent beyond the normal
+bounded acceptance window. Preserve the failed run; do not rerun its publish job,
+republish npm, move the tag or bump the candidate merely to retry delivery.
+
+After the exact public npm version becomes readable, dispatch the existing
+`release.yml` from canonical `main` with `recover_github_only=true`, the candidate
+`version`, original `recovery_run_id` and current `recovery_attempt`, successful
+`recovery_ci_run_id`, and exact `recovery_ubuntu_artifact_id` and
+`recovery_macos_artifact_id`. Obtain these identifiers from the original run, not
+from another build or locally repacked files.
+
+The recovery job has GitHub contents-write and actions-read permissions, with
+OIDC disabled. Normal publication jobs are excluded. It does not run npm publish
+or execute candidate scripts. Current trusted policy must descend from the tagged
+source and match the main workflow identity. It verifies successful full manual
+CI, the original current run attempt, both successful native producers, a
+successful npm-publish step followed by the sole registry-acceptance failure, and
+skipped GitHub publication steps. It binds exactly two original artifact IDs and
+SHA-256 ZIP digests, rejects expired or mixed-attempt artifacts, and extracts only
+the fixed flat inventory with bounded sizes. Existing source-carrier, archive
+closure, registry-byte and hosted-byte checks remain unchanged. Candidate and
+policy release-contract scripts must be identical; only the trusted policy copy
+runs. Immediately before draft creation and public publication, live checks
+require protected main to retain the executing policy in its history, both
+workflows to remain active, and the complete release/CI workflow and two verifier
+files to match current trusted main. App or documentation advances alone do not
+invalidate the frozen producer evidence. No GitHub write occurs until npm serves the original archive bytes.
+
+A changed tuple, incomplete evidence, registry mismatch or existing GitHub release
+stops recovery. Before publishing the draft, recovery also refuses to replace a
+newer published latest stable version; numeric version components are compared
+without JavaScript number rounding. A draft created by a later interrupted recovery is preserved for
+review; this route does not overwrite or automatically complete such a draft.
+A successful final public download establishes GitHub delivery. Native signing,
+notarization and install behavior retain the separate limitations below.
 
 Run the dependency-free contract checks before the tag:
 
@@ -165,13 +232,13 @@ The asset names are referenced by the README, the demo site (`site/index.html`) 
 The normal release job supports npm trusted publishing through GitHub Actions
 OIDC. This requires an existing package trusted-publisher configuration for
 `ashlrai/lexicon` and `release.yml`; the job's `id-token: write` permission and
-its npm CLI version support the token exchange and provenance. The repository's
-existing `NPM_TOKEN` remains an alternative with publish rights for
-`@ashlr/lexicon`. Build jobs have neither secret nor OIDC publication authority.
+its npm CLI version support the token exchange and provenance. Token-based npm
+auth is refused outright: a configured `NPM_TOKEN` fails the publish job before
+preflight. Build jobs have neither secret nor OIDC publication authority.
 This workflow does not configure the trusted publisher or provision credentials.
 
-The preflight checks for OIDC request material or an existing token; the npm
-publish step must still succeed and exact registry bytes must be accepted
+The preflight checks for OIDC request material; the npm publish step must still
+succeed and exact registry bytes must be accepted
 before any GitHub release is created. Missing or rejected authority is a
 failure, never a successful npm skip or a GitHub-only release. The maintainer
 must resolve existing access through the normal owner process; missing access

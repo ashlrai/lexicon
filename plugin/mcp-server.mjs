@@ -37004,6 +37004,15 @@ var init_mcp = __esm({
         this._promptHandlersInitialized = false;
         this.server = new Server(serverInfo, options);
         this._maxToolInputElements = resolveMaxToolInputElements(options?.maxToolInputElements);
+        if (options?.capabilities?.tools) {
+          this.setToolRequestHandlers();
+        }
+        if (options?.capabilities?.resources) {
+          this.setResourceRequestHandlers();
+        }
+        if (options?.capabilities?.prompts) {
+          this.setPromptRequestHandlers();
+        }
       }
       /**
        * Access experimental features.
@@ -38061,8 +38070,11 @@ function findUnencodableChar(s) {
 function unencodableMessage(found) {
   return `must not contain ${found} (${UNENCODABLE_NOTE})`;
 }
+function escapeUnencodable(s) {
+  return s.replace(UNENCODABLE_RE_G, (c) => `\\u${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`);
+}
 function showTermName(s) {
-  const shown = s.replace(UNENCODABLE_RE_G, (c) => `\\u${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`);
+  const shown = escapeUnencodable(s);
   return shown.length > 40 ? `${shown.slice(0, 39)}\u2026` : shown;
 }
 function stripInvisible(s) {
@@ -38169,7 +38181,8 @@ function buildTerm(category, scope, source) {
     // call. Only `writeLexiconFile` decides what a project file may gain: see
     // `pinProjectHits` in store.ts.
     hits: number2().int().nonnegative().optional(),
-    never: OptionalWordList(LIMITS.aliases, "never words per term")
+    never: OptionalWordList(LIMITS.aliases, "never words per term"),
+    context: OptionalWordList(LIMITS.aliases, "context words per term")
   }).superRefine(refuseUnencodable));
 }
 function buildSettings() {
@@ -38251,7 +38264,7 @@ var init_schema = __esm({
     UNENCODABLE_RE_G = new RegExp(UNENCODABLE_RE.source, "g");
     UNENCODABLE_NOTE = "U+FFFE, U+FFFF and unpaired surrogates fit no file format";
     MODEL_PATH_MAX_CHARS = 120;
-    TERM_TEXT_FIELDS = ["canonical", "aliases", "never", "phonetic", "notes", "createdAt"];
+    TERM_TEXT_FIELDS = ["canonical", "aliases", "never", "context", "phonetic", "notes", "createdAt"];
     buildCategory = () => _enum2(TERM_CATEGORIES);
     buildScope = () => _enum2(TERM_SCOPES);
     buildSource = () => _enum2(TERM_SOURCES);
@@ -51332,7 +51345,28 @@ function phoneticCandidates(entries2, length, minConfidence) {
   };
   return sorted.slice(lowerBound(Math.floor(ratio * length) - 1), lowerBound(Math.ceil(length / ratio) + 2));
 }
-function findBest(view, index, opts) {
+function contextPresent(scope, termIndex) {
+  const items = scope.contexts.get(termIndex);
+  if (items === void 0) return true;
+  const { tokens, from, to } = scope;
+  for (const item of items) {
+    const len = item.length;
+    for (let p = 0; p + len <= tokens.length; p++) {
+      if (p + len - 1 >= from && p <= to) continue;
+      let hit = true;
+      for (let k = 0; k < len; k++) {
+        const token = tokens[p + k];
+        if (token.textLower !== item[k] && token.baseLower !== item[k]) {
+          hit = false;
+          break;
+        }
+      }
+      if (hit) return true;
+    }
+  }
+  return false;
+}
+function findBest(view, index, opts, scope) {
   const state = { best: void 0 };
   const current = () => state.best;
   const alreadyCanonical = (entry) => view.original === entry.term.canonical || view.stem === entry.term.canonical;
@@ -51353,6 +51387,7 @@ function findBest(view, index, opts) {
       termIndex: entry.termIndex,
       noop: view.original === entry.term.canonical
     };
+    if (!cand.noop && entry.term.context !== void 0 && entry.term.context.length > 0 && !contextPresent(scope, entry.termIndex)) return;
     if (isBetter(cand, state.best)) state.best = cand;
   };
   const tryExact = (entries2, viaCollapsed) => {
@@ -51444,6 +51479,12 @@ function findReplacements(text, index, opts = {}) {
   };
   const tokens = tokenize(text, resolved.skipCode);
   const candidates = [];
+  const contexts = /* @__PURE__ */ new Map();
+  index.lexicon.terms.forEach((term, termIndex) => {
+    if (term.context === void 0 || term.context.length === 0) return;
+    const items = term.context.map((item) => foldLower(squash(item)).split(" ").filter((t) => t.length > 0)).filter((item) => item.length > 0);
+    if (items.length > 0) contexts.set(termIndex, items);
+  });
   const shouldStop = opts.shouldStop;
   for (let i = 0; i < tokens.length; i++) {
     if (i > 0 && shouldStop?.()) break;
@@ -51456,10 +51497,11 @@ function findReplacements(text, index, opts = {}) {
       if (last.skipped) break;
       if (n > 1 && !tokens[j - 1].joinsNext) break;
       const full = makeView(text, tokens, i, j, false, index.protectedWords);
-      let best = gluedAfter(text, full.end) ? void 0 : findBest(full, index, resolved);
+      const scope = { tokens, from: i, to: j, contexts };
+      let best = gluedAfter(text, full.end) ? void 0 : findBest(full, index, resolved, scope);
       if (last.baseEnd < last.end) {
         const alt = makeView(text, tokens, i, j, true, index.protectedWords);
-        const bestAlt = gluedAfter(text, alt.end) ? void 0 : findBest(alt, index, resolved);
+        const bestAlt = gluedAfter(text, alt.end) ? void 0 : findBest(alt, index, resolved, scope);
         if (bestAlt && (!best || bestAlt.termIndex === best.termIndex || bestAlt.confidence >= best.confidence)) best = bestAlt;
       }
       if (PLURAL_RE.test(last.text) && last.base === last.text && !(best && best.reason === "alias")) {
@@ -51467,7 +51509,7 @@ function findReplacements(text, index, opts = {}) {
         const swapped = tokens.slice(i, j);
         swapped.push({ ...last, text: stripped, base: stripped, textLower: last.textLower.slice(0, -1), baseLower: last.baseLower.slice(0, -1), end: last.end - 1, baseEnd: last.end - 1 });
         const view = makeView(text, swapped, 0, j - i, false, index.protectedWords);
-        const bestPl = gluedAfter(text, view.end) ? void 0 : findBest(view, index, resolved);
+        const bestPl = gluedAfter(text, view.end) ? void 0 : findBest(view, index, resolved, scope);
         if (bestPl && (best ? bestPl.termIndex === best.termIndex && bestPl.confidence > best.confidence : bestPl.reason === "alias")) best = bestPl;
       }
       if (best) candidates.push(best);
@@ -53686,19 +53728,25 @@ function prepareIncoming(term) {
   const never2 = dedupeCaseInsensitive((term.never ?? []).map(clean));
   if (never2.length > 0) prepared.never = never2;
   else delete prepared.never;
+  const context = dedupeCaseInsensitive((term.context ?? []).map(clean));
+  if (context.length > 0) prepared.context = context;
+  else delete prepared.context;
   assertTermFields(prepared);
   return prepared;
 }
 function clean(s) {
   return typeof s === "string" ? stripInvisible(s).trim() : s;
 }
+function showEntry(value) {
+  return escapeUnencodable(JSON.stringify(value) ?? String(value));
+}
 function assertNoBlankEntries(term) {
-  for (const field of ["aliases", "never"]) {
+  for (const field of ["aliases", "never", "context"]) {
     const list = term[field] ?? [];
     const at = list.findIndex((s) => typeof s !== "string" || BLANK_ENTRY_RE.test(s));
     if (at < 0) continue;
     throw new InputError(
-      `term not added: ${field}[${at}] (${JSON.stringify(list[at])}) is blank. Nothing was written; drop that entry or give the word and try again.`
+      `term not added: ${field}[${at}] (${showEntry(list[at])}) is blank. Nothing was written; drop that entry or give the word and try again.`
     );
   }
 }
@@ -53707,10 +53755,10 @@ function assertTermFields(term) {
     parseLexicon({ version: 1, terms: [term] });
   } catch (err) {
     const issues = errorMessage(err).split("\n").map((line2) => /^\s*-\s*terms\[0\]\.(.*)$/.exec(line2)?.[1]).filter((issue2) => issue2 !== void 0).map((issue2) => {
-      const at = /^(aliases|never)\[(\d+)\]/.exec(issue2);
+      const at = /^(aliases|never|context)\[(\d+)\]/.exec(issue2);
       const value = at ? (term[at[1]] ?? [])[Number(at[2])] : void 0;
       if (value === void 0) return issue2;
-      const shown = JSON.stringify(value.length > 24 ? `${value.slice(0, 24)}...` : value);
+      const shown = showEntry(value.length > 24 ? `${value.slice(0, 24)}...` : value);
       return issue2.replace(/^[^:]+/, (field) => `${field} (${shown})`);
     });
     if (issues.length === 0) throw err;
@@ -53730,6 +53778,9 @@ function mergeTermInto(file2, incoming, scope, opts) {
     existing.caseSensitive ??= incoming.caseSensitive;
     if (incoming.never?.length) {
       existing.never = dedupeCaseInsensitive([...existing.never ?? [], ...incoming.never]);
+    }
+    if (incoming.context?.length) {
+      existing.context = dedupeCaseInsensitive([...existing.context ?? [], ...incoming.context]);
     }
     return JSON.stringify(existing) === before ? { term: existing, created: false, unchanged: true } : { term: existing, created: false };
   }
@@ -54038,6 +54089,7 @@ var init_store = __esm({
       "notes",
       "caseSensitive",
       "never",
+      "context",
       "scope",
       "source",
       "createdAt",
@@ -58478,6 +58530,10 @@ function mergeRows(rows, source) {
       const have = new Set((target.never ?? []).map((n) => n.toLowerCase()));
       target.never = [...target.never ?? [], ...term.never.filter((n) => !have.has(n.toLowerCase()))];
     }
+    if (term.context?.length) {
+      const have = new Set((target.context ?? []).map((n) => n.toLowerCase()));
+      target.context = [...target.context ?? [], ...term.context.filter((n) => !have.has(n.toLowerCase()))];
+    }
   }
   return { terms: [...byKey.values()], skipped };
 }
@@ -60838,7 +60894,7 @@ async function uninstallLoadedPack(pack, recordAs, opts = {}) {
           shared.push(term.canonical);
           return true;
         }
-        if (effectiveHits(term, hits) > 0 || hasExtra(term.aliases, packTerm.aliases) || hasExtra(term.never, packTerm.never)) {
+        if (effectiveHits(term, hits) > 0 || hasExtra(term.aliases, packTerm.aliases) || hasExtra(term.never, packTerm.never) || hasExtra(term.context, packTerm.context)) {
           kept.push(term.canonical);
           return true;
         }
@@ -60891,7 +60947,7 @@ var init_packs = __esm({
       title: string2().trim().min(1).max(80),
       description: string2().trim().max(300).default(""),
       version: literal(1).default(1),
-      /** Community packs name their author; the vendored five leave it empty. */
+      /** Community packs name their author; the vendored packs leave it empty. */
       author: string2().trim().max(40).default(""),
       homepage: string2().trim().max(200).default(""),
       terms: array(unknown()).min(1, "a pack needs at least one term")
@@ -61152,6 +61208,7 @@ __export(core_exports3, {
   emptyLexiconNote: () => emptyLexiconNote,
   emptyNormalizeHint: () => emptyNormalizeHint,
   emptyStatsNote: () => emptyStatsNote,
+  escapeUnencodable: () => escapeUnencodable,
   exportAssemblyai: () => exportAssemblyai,
   exportAzure: () => exportAzure,
   exportClaudeMd: () => exportClaudeMd,
@@ -61697,10 +61754,13 @@ var init_terms = __esm({
             never: external_exports.array(external_exports.string()).optional().describe(
               `Ordinary words that must never be rewritten to this term even if they sound alike, e.g. ["sauce"] for SaaS; each at most ${LIMITS.word} characters, at most ${LIMITS.aliases} per term; a blank one is an error and nothing is written.`
             ),
+            context: external_exports.array(external_exports.string()).optional().describe(
+              `Words that must also appear in the text for this term to apply, e.g. ["phantom"] for a Lucas -> locus alias that only fires in fleet talk; each at most ${LIMITS.word} characters, at most ${LIMITS.aliases} per term; a blank one is an error and nothing is written.`
+            ),
             scope: external_exports.enum(TERM_SCOPES).optional().describe("'global' (default, ~/.config/lexicon) or 'project' (.lexicon.yaml in the current repo).")
           }
         },
-        async ({ canonical, aliases, phonetic, category, notes, never: never2, scope }) => guarded(async () => {
+        async ({ canonical, aliases, phonetic, category, notes, never: never2, context, scope }) => guarded(async () => {
           const given = aliases !== void 0;
           const term = {
             canonical,
@@ -61710,6 +61770,7 @@ var init_terms = __esm({
             ...category !== void 0 ? { category } : {},
             ...notes !== void 0 ? { notes } : {},
             ...never2 && never2.length > 0 ? { never: never2 } : {},
+            ...context && context.length > 0 ? { context } : {},
             ...scope !== void 0 ? { scope } : {}
           };
           const writeOpts = await mcpWriteOpts(ctx);
@@ -69029,6 +69090,7 @@ function createServer(opts = {}) {
       ...body.category !== void 0 ? { category: body.category } : {},
       ...body.notes !== void 0 ? { notes: body.notes } : {},
       ...body.never && body.never.length > 0 ? { never: body.never } : {},
+      ...body.context && body.context.length > 0 ? { context: body.context } : {},
       ...body.scope !== void 0 ? { scope: body.scope } : {}
     };
     const saved = await addTerm(term, {
@@ -69511,6 +69573,7 @@ var init_server3 = __esm({
       category: external_exports.enum(TERM_CATEGORIES2).optional(),
       notes: external_exports.string().optional(),
       never: external_exports.array(external_exports.string()).optional(),
+      context: external_exports.array(external_exports.string()).optional(),
       scope: external_exports.enum(TERM_SCOPES2).optional(),
       cwd: CwdField
     }).strict();
@@ -71564,7 +71627,7 @@ function registerServeCommands(program2, io) {
   });
 }
 function registerSetupCommands(program2, io) {
-  program2.command("setup").description("guided first-run: seed the lexicon, harvest the repo, install into your agents and dictation app").option("-y, --yes", "take every default without prompting").option("--clients <list>", `comma-separated clients to install into, or none (default: detect; one of ${SETUP_CLIENTS.join(", ")})`).option("--company <name>", `company or product name to seed (as you want it spelled; one line, at most ${LIMITS.word} characters)`).option("--person <name>", `your name to seed, one line of at most ${LIMITS.word} characters (default: git user.name, global then this repo, or $GIT_AUTHOR_NAME)`).option("--phonetic <hint>", "pronunciation hint for the company term, e.g. ASH-ler").option("--app <app>", `dictation app to export for: ${SETUP_APPS.join("|")}`).option("--export-dir <dir>", "where to write the dictation export (default: ~/Desktop)").option("--harvest", "add the repo names to the project lexicon (with --yes it is skipped unless this is passed)").option("--packs <list>", "comma-separated starter packs to install, or none (default: a checklist on a terminal, nothing with --yes; one of developer, ai, business, voice-tools, cloud-devops, profession-q8)").option("--no-packs", "skip the starter packs (no prompt)").option("--no-harvest", "skip the repo harvest (no prompt)").option("--serve", "install the local API login service (with --yes it is skipped unless this is passed)").option("--no-serve", "skip installing the local API login service (no prompt)").option("--dry-run", "detect and suggest only; write nothing and print what a run would do").option("--reseed", "also seed the guessed person/company (git user.name, package scope) when the lexicon already has terms").option("--home <dir>", "treat <dir> as the home directory (mainly for tests)").option("--json", "print a machine-readable summary on stdout, led by ok (progress goes to stderr; a refusal prints { ok: false, error, nextStep })").action(async (opts) => {
+  program2.command("setup").description("guided first-run: seed the lexicon, harvest the repo, install into your agents and dictation app").option("-y, --yes", "take every default without prompting").option("--clients <list>", `comma-separated clients to install into, or none (default: detect; one of ${SETUP_CLIENTS.join(", ")})`).option("--company <name>", `company or product name to seed (as you want it spelled; one line, at most ${LIMITS.word} characters)`).option("--person <name>", `your name to seed, one line of at most ${LIMITS.word} characters (default: git user.name, global then this repo, or $GIT_AUTHOR_NAME)`).option("--phonetic <hint>", "pronunciation hint for the company term, e.g. ASH-ler").option("--app <app>", `dictation app to export for: ${SETUP_APPS.join("|")}`).option("--export-dir <dir>", "where to write the dictation export (default: ~/Desktop)").option("--harvest", "add the repo names to the project lexicon (with --yes it is skipped unless this is passed)").option("--packs <list>", "comma-separated starter packs to install, or none (default: a checklist on a terminal, nothing with --yes; one of developer, ai, business, voice-tools, cloud-devops, profession-q8, legal, ashlr)").option("--no-packs", "skip the starter packs (no prompt)").option("--no-harvest", "skip the repo harvest (no prompt)").option("--serve", "install the local API login service (with --yes it is skipped unless this is passed)").option("--no-serve", "skip installing the local API login service (no prompt)").option("--dry-run", "detect and suggest only; write nothing and print what a run would do").option("--reseed", "also seed the guessed person/company (git user.name, package scope) when the lexicon already has terms").option("--home <dir>", "treat <dir> as the home directory (mainly for tests)").option("--json", "print a machine-readable summary on stdout, led by ok (progress goes to stderr; a refusal prints { ok: false, error, nextStep })").action(async (opts) => {
     const { runSetupCli: runSetupCli2 } = await Promise.resolve().then(() => (init_cmd_setup(), cmd_setup_exports));
     await runSetupCli2(program2, io, opts);
   });
@@ -73498,6 +73561,7 @@ async function runAdd(canonical, aliasArgs, opts, io, prompter) {
   if (category) term.category = category;
   if (opts.notes) term.notes = opts.notes;
   if (opts.never && opts.never.length > 0) term.never = [...opts.never];
+  if (opts.context && opts.context.length > 0) term.context = [...opts.context];
   const result = await addTerm(term, {
     scope,
     cwd,

@@ -9,12 +9,59 @@ describe('parseJsonc', () => {
     expect(Object.keys(parseJsonc('{"__proto__": {"x": 1}}') as object)).toEqual(['__proto__']);
   });
 
+  it('preserves comment-like text inside a quoted string while ignoring comments', () => {
+    const text = String.raw`{
+      // A real line comment
+      "value": "https://example.test/a/*literal*/ and \"// still text\"", /* a real block comment */
+      "after": true // another real comment
+    }`;
+    expect(parseJsonc(text)).toEqual({
+      value: 'https://example.test/a/*literal*/ and "// still text"',
+      after: true,
+    });
+  });
+
+  it('reads properties separated by a multiline block comment', () => {
+    const text = `{
+      "first": "original value",
+      /* A comment between properties
+         spanning multiple lines. */
+      "second": 42
+    }`;
+    expect(parseJsonc(text)).toEqual({ first: 'original value', second: 42 });
+  });
+
+  it('skips comments between nested array elements and keeps their order', () => {
+    const text = `{
+  "m": [
+    // first row
+    [1, /* one */ 2, // two
+     3],
+    /* between rows */
+    [ // open
+      [4, /* deep */ 5],
+      // before last
+      [6] // after last
+    ],
+    [], // empty row
+    [7, /* trailing */ ], // trailing comma
+  ]
+}`;
+    expect(parseJsonc(text)).toEqual({ m: [[1, 2, 3], [[4, 5], [6]], [], [7]] });
+    expect(parseJsonc('[[1]/* a */,/* b */[2]//c\n,[3]]')).toEqual([[1], [2], [3]]);
+  });
+
   it('names the line and column of what it cannot read', () => {
     expect(() => parseJsonc('{\n  "a": }')).toThrow(/line 2 column 8/);
     expect(() => parseJsonc('{ "a": 1 } x')).toThrow(/after the end/);
     expect(() => parseJsonc('/* open')).toThrow(/unterminated comment/);
     expect(() => parseJsonc('﻿{}')).toThrow();
     expect(() => parseJsonc('')).toThrow(/end of input/);
+  });
+
+  it('rejects unterminated block comments within and after a value', () => {
+    expect(() => parseJsonc('{ "a": 1, /* unfinished')).toThrow(/unterminated comment/);
+    expect(() => parseJsonc('{ "a": 1 } /* unfinished *')).toThrow(/unterminated comment/);
   });
 });
 

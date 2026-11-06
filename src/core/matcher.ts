@@ -32,7 +32,7 @@ import {
   isNonWordToken,
   loneTokenMinSim,
 } from './matcher/tuning.js';
-import { alphaOnly, similarity } from './matcher/text.js';
+import { alphaOnly, foldLower, similarity, squash } from './matcher/text.js';
 import { STOPLIST } from './stoplist.js';
 import { tokenize } from './matcher/tokenize.js';
 import type { Token } from './matcher/tokenize.js';
@@ -249,7 +249,52 @@ export function phoneticCandidates(entries: readonly PhoneticEntry[], length: nu
   return sorted.slice(lowerBound(Math.floor(ratio * length) - 1), lowerBound(Math.ceil(length / ratio) + 2));
 }
 
-function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<NormalizeOptions, 'dryRun' | 'shouldStop'>>): Candidate | undefined {
+/**
+ * What a context-gated term needs to see: the text's tokens (skipped regions
+ * included, `locus doctor` in backticks is still fleet talk), the window
+ * under trial (its own tokens are not evidence), and every gated term's
+ * context items as folded token runs (see MatchScope.contexts).
+ */
+interface MatchScope {
+  readonly tokens: readonly Token[];
+  readonly from: number;
+  readonly to: number;
+  /** termIndex -> context items, each split into folded tokens. */
+  readonly contexts: ReadonlyMap<number, readonly (readonly string[])[]>;
+}
+
+/**
+ * True when a context item of the term `termIndex` appears in the text as
+ * consecutive tokens, all of them outside the matched window [scope.from,
+ * scope.to]: the span being tried cannot be its own evidence, so `locus`
+ * with `context: [locus]` does not turn "ask Lucas about locus" into two
+ * "locus" by citing itself. A term not in `contexts` is ungated.
+ */
+function contextPresent(scope: MatchScope, termIndex: number): boolean {
+  const items = scope.contexts.get(termIndex);
+  if (items === undefined) return true;
+  const { tokens, from, to } = scope;
+  for (const item of items) {
+    const len = item.length;
+    for (let p = 0; p + len <= tokens.length; p++) {
+      // `to` is inclusive (makeView's last-token index): a run overlapping the
+      // window is not evidence; one starting after `to` is ("Lucas phantom").
+      if (p + len - 1 >= from && p <= to) continue;
+      let hit = true;
+      for (let k = 0; k < len; k++) {
+        const token = tokens[p + k];
+        if (token.textLower !== item[k] && token.baseLower !== item[k]) {
+          hit = false;
+          break;
+        }
+      }
+      if (hit) return true;
+    }
+  }
+  return false;
+}
+
+function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<NormalizeOptions, 'dryRun' | 'shouldStop'>>, scope: MatchScope): Candidate | undefined {
   // Held in an object read through a getter: TS does not invalidate narrowing of
   // a local across the closure calls below, so a plain `let best` narrows to never.
   const state: { best: Candidate | undefined } = { best: undefined };
@@ -277,6 +322,11 @@ function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<Nor
       termIndex: entry.termIndex,
       noop: view.original === entry.term.canonical,
     };
+    // A context-gated term only rewrites where its context is present: "Lucas"
+    // becomes `locus` in fleet talk and stays a person's name elsewhere. An
+    // already-canonical span still claims itself either way, or "locus" in a
+    // context-free text would be left for another term to rewrite.
+    if (!cand.noop && entry.term.context !== undefined && entry.term.context.length > 0 && !contextPresent(scope, entry.termIndex)) return;
     if (isBetter(cand, state.best)) state.best = cand;
   };
 
@@ -419,6 +469,17 @@ export function findReplacements(text: string, index: MatcherIndex, opts: Normal
   const tokens = tokenize(text, resolved.skipCode);
   const candidates: Candidate[] = [];
 
+  // Every gated term's context items, folded and tokenised once for the whole
+  // text (the empty map is the common case: `contexts.get` is the only cost).
+  const contexts = new Map<number, string[][]>();
+  index.lexicon.terms.forEach((term, termIndex) => {
+    if (term.context === undefined || term.context.length === 0) return;
+    const items = term.context
+      .map((item) => foldLower(squash(item)).split(' ').filter((t) => t.length > 0))
+      .filter((item) => item.length > 0);
+    if (items.length > 0) contexts.set(termIndex, items);
+  });
+
   const shouldStop = opts.shouldStop;
   for (let i = 0; i < tokens.length; i++) {
     if (i > 0 && shouldStop?.()) break;
@@ -433,14 +494,15 @@ export function findReplacements(text: string, index: MatcherIndex, opts: Normal
       if (n > 1 && !tokens[j - 1].joinsNext) break;
 
       const full = makeView(text, tokens, i, j, false, index.protectedWords);
-      let best = gluedAfter(text, full.end) ? undefined : findBest(full, index, resolved);
+      const scope: MatchScope = { tokens, from: i, to: j, contexts };
+      let best = gluedAfter(text, full.end) ? undefined : findBest(full, index, resolved, scope);
 
       // A trailing possessive ("ashler ai's") is almost never part of the
       // term: when the view without it matches the same term, or matches at
       // least as confidently, keep the 's in the text and replace only the base.
       if (last.baseEnd < last.end) {
         const alt = makeView(text, tokens, i, j, true, index.protectedWords);
-        const bestAlt = gluedAfter(text, alt.end) ? undefined : findBest(alt, index, resolved);
+        const bestAlt = gluedAfter(text, alt.end) ? undefined : findBest(alt, index, resolved, scope);
         if (bestAlt && (!best || bestAlt.termIndex === best.termIndex || bestAlt.confidence >= best.confidence)) best = bestAlt;
       }
       // A plural ("jots", "ollamas", "key pee eyes"): when the window minus its
@@ -455,7 +517,7 @@ export function findReplacements(text: string, index: MatcherIndex, opts: Normal
         const swapped = tokens.slice(i, j);
         swapped.push({ ...last, text: stripped, base: stripped, textLower: last.textLower.slice(0, -1), baseLower: last.baseLower.slice(0, -1), end: last.end - 1, baseEnd: last.end - 1 });
         const view = makeView(text, swapped, 0, j - i, false, index.protectedWords);
-        const bestPl = gluedAfter(text, view.end) ? undefined : findBest(view, index, resolved);
+        const bestPl = gluedAfter(text, view.end) ? undefined : findBest(view, index, resolved, scope);
         if (bestPl && (best ? bestPl.termIndex === best.termIndex && bestPl.confidence > best.confidence : bestPl.reason === 'alias')) best = bestPl;
       }
       if (best) candidates.push(best);

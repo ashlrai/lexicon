@@ -27,6 +27,13 @@ describe('normalize', () => {
     expect(r.replacements).toEqual([]);
   });
 
+  it('returns whitespace-only input byte for byte, unchanged and with no replacements', () => {
+    for (const text of ['', ' ', '   ', '\t', '\n', ' \t\r\n  ', '  ']) {
+      const r = normalize(text, LEX);
+      expect(r).toEqual({ input: text, output: text, replacements: [], changed: false });
+    }
+  });
+
   it('preserves whitespace, punctuation and possessives around matches', () => {
     const r = normalize("  Ashler's\tteam,  ashlar!\n(Cooper Nettie's)  ", LEX);
     expect(r.output).toBe("  Ashlr.AI's\tteam,  Ashlr.AI!\n(Kubernetes)  ");

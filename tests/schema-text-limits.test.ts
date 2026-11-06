@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
-import { LIMITS, parseLexicon } from '../src/core/schema.js';
+import { LIMITS, LexiconSchema, TermSchema, parseLexicon } from '../src/core/schema.js';
 
 const doc = readFileSync(new URL('../docs/schema-text-limits.md', import.meta.url), 'utf8');
 const contract = readFileSync(new URL('../docs/CONTRACT.md', import.meta.url), 'utf8');
@@ -24,6 +24,27 @@ describe('notes and phonetic text limits', () => {
     new Function('assert', 'parseLexicon', blocks[0][1].slice(imports.length))(assert, parseLexicon);
   });
 
+  it.each(['notes', 'phonetic'] as const)('enforces the contract limit through both schemas for %s', (field) => {
+    const schemaSection = contract.split('## src/core/schema.ts\n')[1]?.split('\n## ')[0];
+    const match = schemaSection?.match(/`text` (\d+) \(notes, phonetic\)/);
+    expect(match).toBeTruthy();
+    const limit = Number(match![1]);
+    const atLimit = 'x'.repeat(limit);
+
+    for (const [schema, wrap, path] of [
+      [TermSchema, (term: object) => term, [field]],
+      [LexiconSchema, (term: object) => ({ terms: [term] }), ['terms', 0, field]],
+    ] as const) {
+      expect(schema.safeParse(wrap({ canonical: 'X', [field]: atLimit })).success).toBe(true);
+      const result = schema.safeParse(wrap({ canonical: 'X', [field]: `${atLimit}x` }));
+      expect(result.success).toBe(false);
+      if (result.success) throw new Error('Expected an overlong field to be rejected');
+      expect(result.error.issues).toEqual(expect.arrayContaining([
+        expect.objectContaining({ path, message: `must be at most ${limit} characters` }),
+      ]));
+    }
+  });
+
   it.each(['notes', 'phonetic'] as const)('enforces the inclusive 200-code-point limit for %s', (field) => {
     for (const character of ['x', '🙂']) {
       const atLimit = character.repeat(200);
@@ -43,6 +64,42 @@ describe('notes and phonetic text limits', () => {
     const term = parseLexicon({ terms: [{ canonical: 'X', notes: text, phonetic: text }] }).terms[0];
     expect(term.notes).toBe(text);
     expect(term.phonetic).toBe(text);
+  });
+
+  it('reports an over-limit note alongside another invalid field in a later term', () => {
+    const raw = { terms: [
+      { canonical: 'Valid', notes: 'n'.repeat(200) },
+      { canonical: 'Invalid', notes: 'n'.repeat(201), phonetic: 'p'.repeat(201) },
+    ] };
+    const result = LexiconSchema.safeParse(raw);
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected both overlong fields to be rejected');
+    expect(result.error.issues).toHaveLength(2);
+    expect(result.error.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'too_big', path: ['terms', 1, 'notes'], maximum: 200 }),
+      expect.objectContaining({ code: 'too_big', path: ['terms', 1, 'phonetic'], maximum: 200 }),
+    ]));
+  });
+
+  it.each(['notes', 'phonetic'] as const)('reports only the term whose %s exceeds the documented boundary', (field) => {
+    const atLimit = 'n'.repeat(200);
+    const raw = {
+      terms: [
+        { canonical: 'Within limit', [field]: atLimit },
+        { canonical: 'Over limit', [field]: `${atLimit}n` },
+        { canonical: 'Also within limit', [field]: atLimit },
+      ],
+    };
+
+    const result = LexiconSchema.safeParse(raw);
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error(`Expected an overlong ${field} to be rejected`);
+    expect(result.error.issues).toHaveLength(1);
+    expect(result.error.issues[0]).toMatchObject({
+      path: ['terms', 1, field],
+      message: 'must be at most 200 characters',
+    });
+    expect(() => parseLexicon(raw)).toThrow(`terms[1].${field}: must be at most 200 characters`);
   });
 
   it.each(['notes', 'phonetic'])('rejects retained line breaks and unencodable text in %s', (field) => {

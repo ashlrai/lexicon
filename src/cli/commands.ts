@@ -347,6 +347,8 @@ export interface AddOptions extends CommonOptions {
   project?: boolean;
   suggest?: boolean;
   never?: string[];
+  /** Words that must also appear in the text for this term to apply. */
+  context?: string[];
   /** `-i`: confirm suggested aliases as a checklist, then ask for phonetic and category. */
   interactive?: boolean;
   /** Print `{ term, path, created, scope, suggested }` as JSON instead of the summary lines. */
@@ -461,6 +463,7 @@ export async function runAdd(
   if (opts.notes) term.notes = opts.notes;
   // Passed as given: addTerm trims them and refuses a blank one, as MCP add_term and POST /add do.
   if (opts.never && opts.never.length > 0) term.never = [...opts.never];
+  if (opts.context && opts.context.length > 0) term.context = [...opts.context];
 
   const result = await addTerm(term, {
     scope,
