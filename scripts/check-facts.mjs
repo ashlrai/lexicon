@@ -538,12 +538,12 @@ function scanTargets() {
   const out = [];
   const roots = [
     'README.md', 'CHANGELOG.md', 'CONTRIBUTING.md', 'SECURITY.md', 'CODE_OF_CONDUCT.md',
-    'CLAUDE.md', 'AGENTS.md', 'INTEGRATION.md', 'llms-install.md',
+    'CLAUDE.md', 'AGENTS.md', 'INTEGRATION.md', 'llms-install.md', 'llms.txt', 'llms-full.txt',
     'DESIGN-PACK-MARKETPLACE.md', 'DESIGN-VOCABULARY-IMPORT.md', 'package.json', '.claude-plugin',
     'docs', 'web/app', 'web/components', 'web/lib', 'site', 'extension/src', 'extension/public',
     'examples', 'skills', 'commands', 'bench', 'apps/macos',
   ];
-  const ok = /\.(md|mdx|html|ts|tsx|js|mjs|json|yaml|yml)$/i;
+  const ok = /\.(md|mdx|html|txt|ts|tsx|js|mjs|json|yaml|yml)$/i;
   const skipDir = /^(node_modules|dist|\.next|\.build|\.git|assets)$/;
   const walk = (rel) => {
     const abs = path.join(root, rel);

@@ -1,0 +1,65 @@
+# Transcript cleaning examples
+
+In `lexicon voice`, whisper.cpp's transcript is cleaned before lexicon
+corrections are applied. The examples show the cleaned `raw` result, not the
+later normalized `output`. Other input surfaces calling `normalize()` do not
+perform this cleaning. See the [full cleaning reference](voice-cleaning-reference.md)
+and [module contract](CONTRACT.md) for details.
+
+Each table shows the complete input and cleaned output. `""` represents an
+empty string, not two quotation marks in the result. Removed spans become
+spaces; the final step collapses whitespace and trims both ends.
+
+## Square brackets
+
+Every span from `[` to the next `]` is replaced with a space, even when it
+contains ordinary dictated words. An unmatched opening bracket is preserved,
+and so is a closing bracket with no opening one. Brackets are not parsed as
+nested structures.
+
+| Input | Cleaned output |
+|---|---|
+| `[BLANK_AUDIO]` | `""` |
+| `Hello [MUSIC] there.` | `Hello there.` |
+| `Send[door closes]the report.` | `Send the report.` |
+| `[noise][inaudible] Continue.` | `Continue.` |
+| `Keep [the title] here.` | `Keep here.` |
+| `Keep [unfinished` | `Keep [unfinished` |
+| `Keep unfinished] here.` | `Keep unfinished] here.` |
+| `Hello[]there.` | `Hello there.` |
+| `A [outer [inner] tail] B` | `A tail] B` |
+
+## Asterisks
+
+A span delimited by single asterisks is replaced with a space when it contains
+one to three ASCII-letter words separated by whitespace. The words do not have
+to describe a sound. Four words, punctuation, digits, non-ASCII letters, or
+spaces just inside the delimiters prevent a match. This is pattern matching,
+not Markdown parsing: adjacent matches are removed independently, and an
+unmatched asterisk can remain after a matching span is removed.
+
+| Input | Cleaned output |
+|---|---|
+| `Please *laughs* continue.` | `Please continue.` |
+| `Please *door slams* continue.` | `Please continue.` |
+| `Please*door slams loudly*continue.` | `Please continue.` |
+| `This is *important* today.` | `This is today.` |
+| `*cough*` | `""` |
+| `Keep *these four spoken words* here.` | `Keep *these four spoken words* here.` |
+| `Keep *hello!* and *café* here.` | `Keep *hello!* and *café* here.` |
+| `Keep *room 2* here.` | `Keep *room 2* here.` |
+| `Please *door  slams* continue.` | `Please continue.` |
+| `Keep * hello * here.` | `Keep * hello * here.` |
+| `Keep **bold** here.` | `Keep * * here.` |
+| `Keep *laughs**coughs* here.` | `Keep here.` |
+| `Keep *one*two* here.` | `Keep two* here.` |
+| `Before *hello [noise] world* after.` | `Before after.` |
+
+The last example reflects the order of operations: square-bracketed spans are
+removed before asterisk matching, so the remaining words form a matching span.
+Between those steps, the cleaner removes recognized parenthesized noise
+annotations. For example, `(soft music) Hello` becomes `Hello`;
+`(the new build)` stays. See the
+[full reference](voice-cleaning-reference.md) for those rules and examples.
+
+Back to [the docs index](README.md).

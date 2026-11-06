@@ -253,6 +253,8 @@ describe('normalize', () => {
     });
     const io = makeIO();
     await runNormalize(['deploy to head sner'], {}, io);
+    // The normalize mock above only rewrites 'Ashler'; the real example
+    // lexicon now also corrects 'head sner' (issue #217).
     expect(io.out).toBe('deploy to head sner\n');
     expect(io.err).toContain('no trusted terms yet, so this is the built-in example');
     expect(io.err).toContain('the project lexicon is not trusted, so its terms were not used; review it and run `lexicon trust` to use them');

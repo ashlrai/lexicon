@@ -22,7 +22,8 @@ npx vitest run bench                       # regression guard (thresholds in ben
 ## Repeat the non-English-name benchmark
 
 For the focused 35-name, five-language YAML fixture and side-by-side English baseline,
-run `node --import tsx scripts/bench-non-english.mjs`. Add `--json` for all scored cases.
+run `npm run bench:non-english` (`node --import tsx scripts/bench-non-english.mjs`).
+Add `--json` for all scored cases.
 Generated results: [BENCH-NON-ENGLISH.md](../docs/BENCH-NON-ENGLISH.md).
 
 From the repository root, with dependencies installed, run:

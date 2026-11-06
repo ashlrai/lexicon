@@ -360,6 +360,7 @@ const AddBody = z.object({
   category: z.enum(TERM_CATEGORIES).optional(),
   notes: z.string().optional(),
   never: z.array(z.string()).optional(),
+  context: z.array(z.string()).optional(),
   scope: z.enum(TERM_SCOPES).optional(),
   cwd: CwdField,
 }).strict();
@@ -1206,6 +1207,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
       ...(body.category !== undefined ? { category: body.category } : {}),
       ...(body.notes !== undefined ? { notes: body.notes } : {}),
       ...(body.never && body.never.length > 0 ? { never: body.never } : {}),
+      ...(body.context && body.context.length > 0 ? { context: body.context } : {}),
       ...(body.scope !== undefined ? { scope: body.scope } : {}),
     };
     const saved = await addTerm(term, {

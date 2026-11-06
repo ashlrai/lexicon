@@ -1,0 +1,86 @@
+# Starter pack: complementary legal vocabulary. `lexicon pack add legal`.
+# Prefer split legal spellings; never alias ordinary-word homophones.
+name: legal
+title: Law and litigation
+description: Legal Latin, litigation terminology and spelled-out legal acronyms.
+version: 1
+terms:
+  - canonical: res ipsa loquitur
+    category: other
+    aliases: [res ipsa loquiter, res ipsa loqui tur]
+  - canonical: non sequitur
+    category: other
+    aliases: [non sequiter, non sequi tur]
+  - canonical: inter alia
+    category: other
+    aliases: [inter ali a, inter alea]
+  - canonical: ultra vires
+    category: other
+    aliases: [ultra vi res, ultra viris]
+  - canonical: de novo
+    category: other
+    aliases: [de no vo, de novoh]
+  - canonical: en banc
+    category: other
+    aliases: [en bonk, en bank]
+    never: [bank, banks, bonk]
+  - canonical: ex parte
+    category: other
+    aliases: [ex partay, ex par te]
+    never: [party, part]
+  - canonical: in forma pauperis
+    category: other
+    aliases: [in forma pauperus, in forma pau peris]
+  - canonical: forum non conveniens
+    category: other
+    aliases: [forum non conveniance, forum non conven iens]
+  - canonical: quantum meruit
+    category: other
+    aliases: [quantum merit, quantum mer uit]
+  - canonical: promissory estoppel
+    category: other
+    aliases: [promisory estoppel, promissory estopple]
+  - canonical: equitable subrogation
+    category: other
+    aliases: [equitable subro gation, equitable subrogasion]
+  - canonical: interlocutory
+    category: other
+    aliases: [interlocu tory, interlocutery]
+  - canonical: justiciability
+    category: other
+    aliases: [justicia bility, justiciabilty]
+  - canonical: remittitur
+    category: other
+    aliases: [remit titur, remittiter]
+  - canonical: additur
+    category: other
+    aliases: [addi tur, additer]
+    never: [editor, auditor]
+  - canonical: supersedeas
+    category: other
+    aliases: [super sedeas, supersedias]
+  - canonical: sequestration
+    category: other
+    aliases: [seques tration, sequestracion]
+  - canonical: replevin
+    category: other
+    aliases: [reple vin, repleven]
+  - canonical: usufruct
+    category: other
+    aliases: [usu fruct, usufrukt]
+  - canonical: testator
+    category: other
+    aliases: [testa tor, testater]
+    never: [tester, taster]
+  - canonical: intestacy
+    category: other
+    aliases: [intes tacy, intestacey]
+  - canonical: FRCP
+    category: acronym
+    aliases: [f r c p, eff ar see pee]
+  - canonical: UCC
+    category: acronym
+    aliases: [u c c, yoo see see]
+  - canonical: SCOTUS
+    category: acronym
+    aliases: [s c o t u s, sco tus]

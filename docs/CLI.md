@@ -2,7 +2,7 @@
 
 Every command and flag, for when you know what you want to do and need the exact spelling. If you are still deciding, [QUICKSTART.md](QUICKSTART.md) and the task pages in [the docs index](README.md) are better starting points.
 
-Generated from `lexicon --help` (v0.5.6) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
+Generated from `lexicon --help` (v0.5.8) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
 
 Global option: `--cwd <dir>` sets the directory used to find the project `.lexicon.yaml`.
 
@@ -14,6 +14,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon add [options] <canonical> [aliases...]`](#lexicon-add) | add a term, or merge aliases into an existing one |
 | [`lexicon remove\|rm [options] <canonical>`](#lexicon-remove) | remove a term (project lexicon first, then global), or one alias of it with --alias |
 | [`lexicon list\|ls [options]`](#lexicon-list) | list terms from the merged global + project lexicon |
+| [`lexicon terms [options]`](#lexicon-terms) | list terms (the `list` table under the name "terms"), or add one deterministically with `terms add` |
 | [`lexicon normalize [options] [text...]`](#lexicon-normalize) | correct dictated text (from arguments, or stdin when omitted); stdout always round-trips the input, exit 1 if the lexicon could not be read |
 | [`lexicon harvest [options] [path]`](#lexicon-harvest) | scan a repository for names worth adding to the lexicon |
 | [`lexicon export [options] [format]`](#lexicon-export) | export the merged lexicon for another tool (run without a format to list them) |
@@ -36,7 +37,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon suggest [options]`](#lexicon-suggest) | suggest aliases, new terms, never-words and stale terms from your voice history |
 | [`lexicon review [options]`](#lexicon-review) | walk through existing terms and keep, delete or edit each one |
 | [`lexicon edit [options]`](#lexicon-edit) | open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards |
-| [`lexicon pack`](#lexicon-pack) | starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate |
+| [`lexicon pack`](#lexicon-pack) | starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8, legal, ashlr) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate |
 
 ## `lexicon`
 
@@ -56,6 +57,7 @@ Commands:
   add [options] <canonical> [aliases...]  add a term, or merge aliases into an existing one
   remove|rm [options] <canonical>         remove a term (project lexicon first, then global), or one alias of it with --alias
   list|ls [options]                       list terms from the merged global + project lexicon
+  terms [options]                         list terms (the `list` table under the name "terms"), or add one deterministically with `terms add`
   normalize [options] [text...]           correct dictated text (from arguments, or stdin when omitted); stdout always round-trips the input, exit 1 if the lexicon could not be read
   harvest [options] [path]                scan a repository for names worth adding to the lexicon
   export [options] [format]               export the merged lexicon for another tool (run without a format to list them)
@@ -78,7 +80,7 @@ Commands:
   suggest [options]                       suggest aliases, new terms, never-words and stale terms from your voice history
   review [options]                        walk through existing terms and keep, delete or edit each one
   edit [options]                          open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards
-  pack                                    starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate
+  pack                                    starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8, legal, ashlr) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate
   help [command]                          display help for command
 
 Start here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.
@@ -124,6 +126,8 @@ Options:
                          phonetic hint and category
   --never <word...>      words that must never be rewritten to this term even if
                          they sound alike, e.g. --never sauce
+  --context <word...>    words that must also appear in the text for this term
+                         to apply, e.g. --context ashlr phantom
   --json                 print { ok: true, term, path, created, scope, suggested
                          } as JSON (suggested: the generated aliases this call
                          added), plus unchanged, conflicts and note when they
@@ -176,6 +180,32 @@ Options:
   --limit <n>            print at most this many matching terms (default: every
                          one)
   -h, --help             display help for command
+```
+
+## `lexicon terms`
+
+```text
+Usage: lexicon terms [options] [command]
+
+list terms (the `list` table under the name "terms"), or add one
+deterministically with `terms add`
+
+Options:
+  --json                     print terms as JSON (a bare array), as list --json
+  --full                     print the object MCP list_terms returns as JSON, as
+                             list --full (implies --json)
+  --category <category>      only this category
+  --query <text>             only terms whose canonical or aliases contain this
+                             text
+  --offset <n>               skip this many matching terms first (default 0)
+  --limit <n>                print at most this many matching terms (default:
+                             every one)
+  -h, --help                 display help for command
+
+Commands:
+  add [options] <canonical>  add a term with the spellings it is heard as;
+                             deterministic (no suggested aliases) and idempotent
+                             (a second identical run changes nothing)
 ```
 
 ## `lexicon normalize`
@@ -627,7 +657,7 @@ Options:
   --packs <list>      comma-separated starter packs to install, or none
                       (default: a checklist on a terminal, nothing with --yes;
                       one of developer, ai, business, voice-tools, cloud-devops,
-                      profession-q8)
+                      profession-q8, legal, ashlr)
   --no-packs          skip the starter packs (no prompt)
   --no-harvest        skip the repo harvest (no prompt)
   --serve             install the local API login service (with --yes it is
@@ -710,8 +740,8 @@ Options:
 Usage: lexicon pack [options] [command]
 
 starter term packs (developer, ai, business, voice-tools, cloud-devops,
-profession-q8) and community packs (<author>/<name> via --registry): list, add,
-remove, show, search, update, validate
+profession-q8, legal, ashlr) and community packs (<author>/<name> via
+--registry): list, add, remove, show, search, update, validate
 
 Options:
   -h, --help                  display help for command
