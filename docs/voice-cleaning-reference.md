@@ -12,8 +12,9 @@ Cleaning applies these rules in order:
 
 1. Replace each square-bracketed span, from `[` through the next `]`, with a
    space, regardless of its contents. This also removes dictated text inside
-   brackets. An unmatched opening bracket is left in the transcript. Brackets
-   are not parsed as nested structures.
+   brackets. An unmatched opening bracket is left in the transcript, and so
+   is a closing bracket with no opening one. Brackets are not parsed as
+   nested structures.
 2. Replace a parenthesized span with a space only when it contains one to three
    ASCII-letter words separated by whitespace and looks like a noise tag. The
    check is case-insensitive. It recognizes `applause`, `laugh`, `laughs`,
@@ -50,6 +51,7 @@ denotes the empty string.
 | `[MUSIC][inaudible] Ready.` | `Ready.` |
 | `Keep [the new title] here.` | `Keep here.` |
 | `Keep [unfinished thought` | `Keep [unfinished thought` |
+| `Keep unfinished] here.` | `Keep unfinished] here.` |
 | `[BLANK_AUDIO]` | `""` |
 | `(APPLAUSE) Hello (soft music) there.` | `Hello there.` |
 | `Hello (speaking in French) there.` | `Hello there.` |
