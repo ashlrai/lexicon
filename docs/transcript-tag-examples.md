@@ -8,8 +8,8 @@ voice pipeline and [CONTRACT.md](CONTRACT.md) for the module contract.
 
 Square brackets remove everything from `[` through the next `]`, regardless of
 the contents. This includes ordinary dictated text, empty brackets and adjacent
-tags. An unmatched opening bracket remains. Square brackets are not parsed as
-nested structures.
+tags. An unmatched opening bracket remains, and so does a closing bracket
+with no opening one. Square brackets are not parsed as nested structures.
 
 Starred spans are removed when they contain one to three words made only of
 ASCII letters, separated by whitespace. The words need not describe a sound:
@@ -29,6 +29,7 @@ newline and `""` represents an empty result.
   { "input": "Hello[noise][applause]world", "cleaned": "Hello world" },
   { "input": "Keep [these words] and [] go", "cleaned": "Keep and go" },
   { "input": "Hello [unfinished thought", "cleaned": "Hello [unfinished thought" },
+  { "input": "Keep unfinished] here", "cleaned": "Keep unfinished] here" },
   { "input": "before [outer [inner] after] end", "cleaned": "before after] end" },
   { "input": "Wait *laughs* please", "cleaned": "Wait please" },
   { "input": "A *door slams* B *door slams loudly* C", "cleaned": "A B C" },
@@ -43,4 +44,8 @@ newline and `""` represents an empty result.
 
 These rules apply to `lexicon voice` transcription, not generally to every
 text normalization entry point. Review the transcript when literal bracketed
-or starred text matters, since cleaning can remove dictated words.
+or starred text matters, since cleaning can remove dictated words. See the
+[voice cleaning reference](voice-cleaning-reference.md) for the full rules and
+[transcript cleaning examples](transcript-cleaning-examples.md) for more cases.
+
+Back to [the docs index](README.md).

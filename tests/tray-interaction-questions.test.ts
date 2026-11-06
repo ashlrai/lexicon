@@ -25,4 +25,15 @@ describe('tray interaction questions', () => {
     expect(doc).toMatch(/\*\*Linux:\*\*[\s\S]*X11 and Wayland[\s\S]*desktop environment/);
     expect(doc).toMatch(/real target application[\s\S]*lexicon stats[\s\S]*verified paste/);
   });
+
+  it('covers shared state, trust, delivery races and observable desktop outcomes', () => {
+    expect(doc).toMatch(/voice --status[\s\S]*another terminal or shortcut/);
+    expect(doc).toMatch(/working directory[\s\S]*project\s+trust gate/);
+    expect(doc).toMatch(/intermediate status[\s\S]*pasting the old clipboard/);
+    expect(doc).toMatch(/Clipboard or focus changes[\s\S]*manual paste/);
+    expect(doc).toMatch(/Two actions overlap[\s\S]*clipboard contents remain/);
+    expect(doc).toMatch(/Sending input alone cannot establish[\s\S]*target\s+accepted it/);
+    expect(doc).toMatch(/final clipboard, actual target\s+result[\s\S]*hit was counted/);
+    expect(doc).toMatch(/without including real\s+transcripts or clipboard contents/);
+  });
 });

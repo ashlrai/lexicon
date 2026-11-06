@@ -39,6 +39,9 @@ explain the problem and disable everything except Preferences.
   on each invocation? How should the tray recover if the recorder stops on its
   own, the app quits during recording, or a second request arrives while
   transcription is running?
+- How should the tray reconcile its indicator with `lexicon voice --status`
+  when another terminal or shortcut starts or stops the same recording? Can a
+  user cancel a recording, and what should happen to its temporary audio?
 - What feedback and recovery should be offered for missing ffmpeg,
   whisper.cpp, model or microphone access? How should users understand that
   voice history is written by default and can be disabled?
@@ -59,6 +62,10 @@ explain the problem and disable everything except Preferences.
 - How should simultaneous Dictate and Fix clipboard requests be serialized so
   neither overwrites or pastes the other's text? What feedback should a
   no-change result receive without exposing clipboard contents in notifications?
+- Which working directory should the CLI use when launched from a tray? How
+  will the user know which project lexicon is active and whether the project
+  trust gate excluded it? A desktop launcher's working directory may not be the
+  target application's project.
 
 ## Platform and shortcut questions
 
@@ -76,6 +83,24 @@ explain the problem and disable everything except Preferences.
   choices, accessibility needs and packaging or signing requirements remain
   platform decisions?
 
+## Outcomes to decide before implementing delivery
+
+These are decision prompts, not a prescribed UI or a promise of native paste.
+The same questions apply to a menu action and its shortcut.
+
+| Situation | Decision needed |
+| --- | --- |
+| Voice start or a concurrent stop returns an intermediate status | How is progress shown without treating exit 0 as a transcript or pasting the old clipboard? |
+| Transcription completes but copying fails or nothing is heard | What can the user retry or recover, and how is failure distinguished from a successful copy? |
+| Clipboard text is unchanged, empty, binary, oversized or has no letters | Which outcomes permit manual paste, and how is a skipped value distinguished from unchanged text? |
+| Clipboard or focus changes between capture and delivery | Can the app detect the change, and should it stop, ask, or leave text for manual paste? How is the destination identified without exposing its contents? |
+| Two actions overlap, or the app exits during an operation | Which request wins, what is cancelled or allowed to finish, and what state and clipboard contents remain? |
+
+If native paste is offered, what evidence will demonstrate that a keystroke
+reached the intended field? Sending input alone cannot establish that the target
+accepted it. How long may the app retain transcripts, clipboard values and
+diagnostics, and how can it report errors without displaying sensitive text?
+
 ## Evidence needed
 
 For each supported desktop, record the OS, desktop session and clipboard
@@ -86,3 +111,10 @@ corrected text and `lexicon stats` when a correction is made. Distinguish a
 successful copy from a verified paste, and record unsupported or untested
 cases. Unit tests with injected dependencies cannot establish desktop focus,
 microphone or paste behavior; the issue's real-desktop check remains necessary.
+
+For each scenario, record the action and shortcut, initial focus and clipboard
+type, CLI status and user-visible feedback, final clipboard, actual target
+result, and whether the expected hit was counted. Include a target or clipboard
+change while transcription is in progress and a second action while the first
+is running. Record failures and unsupported cases without including real
+transcripts or clipboard contents; use disposable test text instead.

@@ -54,6 +54,16 @@ function byName(candidates: HarvestCandidate[], name: string): HarvestCandidate 
 }
 
 describe('harvestRepo', () => {
+  it('harvests the identifier associated with a HACK marker from a fixture', async () => {
+    const fixture = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'hack-marker');
+    const candidates = await harvestRepo(fixture, { git: false, minCount: 1, symbols: true });
+
+    expect(byName(candidates, 'HACK')).toBeUndefined();
+    expect(byName(candidates, 'NebulaGateway')).toMatchObject({
+      canonical: 'NebulaGateway', category: 'identifier', count: 1, evidence: ['workaround.ts'],
+    });
+  });
+
   it('finds the package name, classes, brands, authors and directory name', async () => {
     const candidates = await harvestRepo(repo);
     const names = candidates.map((c) => c.canonical);
@@ -147,6 +157,111 @@ describe('harvestRepo', () => {
     });
   });
 
+  it('counts a name in an XXX comment as source evidence under the harvest contract', async () => {
+    const dir = path.join(tmp, 'xxx-contract', 'repo');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'note.ts'), '// XXX: revisit QuasarWidget\n');
+
+    const options = { git: false, minCount: 1 };
+    expect(await harvestRepo(dir, options)).toEqual([]);
+    const symbols = await harvestRepo(dir, { ...options, symbols: true });
+    expect(symbols).toHaveLength(1);
+    expect(symbols[0]).toMatchObject({
+      canonical: 'QuasarWidget', category: 'identifier', source: 'harvest:repo',
+      count: 1, evidence: ['note.ts'], suggestedAliases: [],
+    });
+
+    await fs.writeFile(path.join(dir, 'README.md'), 'We use QuasarWidget today.\n');
+    const corroborated = await harvestRepo(dir, options);
+    expect(corroborated).toHaveLength(1);
+    expect(corroborated[0]).toMatchObject({
+      canonical: 'QuasarWidget', category: 'brand', source: 'harvest:repo', count: 2,
+    });
+    expect(corroborated[0].evidence).toEqual(expect.arrayContaining(['note.ts', 'README.md']));
+    const withoutIdentifiers = await harvestRepo(dir, { ...options, identifiers: false });
+    expect(withoutIdentifiers).toHaveLength(1);
+    expect(withoutIdentifiers[0]).toMatchObject({ canonical: 'QuasarWidget', count: 1, evidence: ['README.md'] });
+  });
+
+  it('filters HACK in a comment while harvesting the adjacent name', async () => {
+    const dir = path.join(tmp, 'hack-comment', 'repo');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'note.ts'), '// HACK: revisit QuasarWidget\n');
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+    expect(candidates.map(({ canonical, category, source, count, evidence }) =>
+      ({ canonical, category, source, count, evidence }))).toEqual([{
+      canonical: 'QuasarWidget', category: 'identifier', source: 'harvest:repo',
+      count: 1, evidence: ['note.ts'],
+    }]);
+  });
+
+  it('does not invent a marker or candidate from ordinary comment text', async () => {
+    const dir = path.join(tmp, 'plain-comment', 'repo');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'note.ts'), '// revisit this after the next request\n');
+
+    expect(await harvestRepo(dir, { git: false, minCount: 1, symbols: true })).toEqual([]);
+  });
+
+  it('filters NOTE itself while scanning marked and unmarked comments alike', async () => {
+    const dir = path.join(tmp, 'note-contract', 'repo');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'marked.ts'), '// NOTE: check QuasarWidget\n');
+    await fs.writeFile(path.join(dir, 'plain.ts'), '// check QuasarWidget\n');
+
+    const options = { git: false, symbols: true, minCount: 1 };
+    const candidates = await harvestRepo(dir, options);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      canonical: 'QuasarWidget', category: 'identifier', source: 'harvest:repo',
+      count: 2, evidence: ['marked.ts', 'plain.ts'],
+    });
+    expect(await harvestRepo(dir, { ...options, minCount: 3 })).toEqual([]);
+  });
+
+  it.each(['FIXME', 'NOTE', 'HACK'])(
+    'excludes %s in ordinary comments while counting the names in their text', async (marker) => {
+      const dir = path.join(tmp, `ordinary-comment-${marker}`, 'repo');
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, 'first.ts'), `// ${marker}: keep QuasarWidget available for the next request.\n`);
+      await fs.writeFile(path.join(dir, 'second.ts'), `/* ${marker}: retry QuasarWidget after the connection closes. */\n`);
+
+      const options = { git: false, symbols: true };
+      const candidates = await harvestRepo(dir, options);
+      expect(candidates.map(({ canonical, category, source, count, evidence }) =>
+        ({ canonical, category, source, count, evidence }))).toEqual([{
+        canonical: 'QuasarWidget', category: 'identifier', source: 'harvest:repo',
+        count: 2, evidence: ['first.ts', 'second.ts'],
+      }]);
+      expect(await harvestRepo(dir, { ...options, minCount: 3 })).toEqual([]);
+      expect(await harvestRepo(dir, { git: false })).toEqual([]);
+    },
+  );
+
+  it.each(['TODO', 'FIXME', 'NOTE', 'HACK', 'XXX'])(
+    'counts and ranks identifiers across separate lines with repeated %s markers', async (marker) => {
+      const dir = path.join(tmp, `repeated-${marker}`, 'repo');
+      await fs.mkdir(dir, { recursive: true });
+      await fs.writeFile(path.join(dir, 'markers.ts'), [
+        `// ${marker}: ZetaWidget`,
+        `// ${marker}: BetaWidget`,
+        `// ${marker}: AlphaWidget`,
+        `// ${marker}: ZetaWidget`,
+        `// ${marker}: GammaWidget`,
+        `// ${marker}: AlphaWidget`,
+      ].join('\n'));
+
+      const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+      expect(candidates.map(({ canonical, count, evidence }) => ({ canonical, count, evidence }))).toEqual([
+        { canonical: 'AlphaWidget', count: 2, evidence: ['markers.ts'] },
+        { canonical: 'ZetaWidget', count: 2, evidence: ['markers.ts'] },
+        { canonical: 'BetaWidget', count: 1, evidence: ['markers.ts'] },
+        { canonical: 'GammaWidget', count: 1, evidence: ['markers.ts'] },
+      ]);
+    },
+  );
+
   it('retains prose containing a marker substring while excluding marker comments', async () => {
     const dir = path.join(tmp, 'prose-markers');
     await fs.mkdir(dir);
@@ -187,6 +302,39 @@ describe('harvestRepo', () => {
     }
   });
 
+  it.each([':', ',', '.', '/', '-', '(', ')', '[', ']', '"', "'", '`', ';', '!', '?'])(
+    'uses punctuation %s as a boundary around markers and identifiers', async (punctuation) => {
+      const dir = path.join(tmp, `punctuation-${punctuation.charCodeAt(0)}`);
+      await fs.mkdir(dir);
+      const markers = ['TODO', 'FIXME', 'NOTE', 'HACK', 'XXX'];
+      await fs.writeFile(path.join(dir, 'markers.ts'), markers.map(
+        (marker) => `${marker}${punctuation}QuasarWidget${punctuation}${marker}`,
+      ).join('\n'));
+
+      const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+      expect(byName(candidates, 'QuasarWidget')).toMatchObject({
+        canonical: 'QuasarWidget', category: 'identifier', source: 'harvest:repo',
+        count: markers.length, evidence: ['markers.ts'],
+      });
+      for (const marker of markers) expect(byName(candidates, marker)).toBeUndefined();
+    },
+  );
+
+  it('does not treat underscores or glued markers as punctuation boundaries', async () => {
+    const dir = path.join(tmp, 'marker-word-boundaries');
+    await fs.mkdir(dir);
+    await fs.writeFile(path.join(dir, 'markers.ts'), [
+      'TODO_QuasarWidget QuasarWidget_TODO TODOQuasarWidget QuasarWidgetTODO',
+    ].join('\n'));
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+    expect(byName(candidates, 'QuasarWidget')).toBeUndefined();
+    expect(byName(candidates, 'TODOQuasarWidget')).toBeUndefined();
+    expect(byName(candidates, 'QuasarWidgetTODO')).toMatchObject({
+      canonical: 'QuasarWidgetTODO', category: 'identifier', count: 1, evidence: ['markers.ts'],
+    });
+  });
+
   it.each([
     ['TODO', 'Todo'],
     ['FIXME', 'Fixme'],
@@ -217,6 +365,26 @@ describe('harvestRepo', () => {
       expect(byName(withoutSymbols, name)).toBeUndefined();
     }
   });
+
+  it.each(['TODO', 'FIXME', 'NOTE', 'HACK', 'XXX'])(
+    'does not extract %s from the middle of longer words', async (marker) => {
+      const dir = path.join(tmp, `embedded-${marker}`, 'repo');
+      await fs.mkdir(dir, { recursive: true });
+      const identifier = `Quasar${marker}Beacon`;
+      await fs.writeFile(path.join(dir, 'first.ts'), [
+        `// ${identifier} x${marker}word 2${marker}word _${marker}word`,
+        `const message = '${identifier}';`,
+      ].join('\n'));
+      await fs.writeFile(path.join(dir, 'second.ts'), `// ${identifier}\n`);
+
+      const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+      expect(candidates.map(({ canonical, category, source, count, evidence }) =>
+        ({ canonical, category, source, count, evidence }))).toEqual([{
+        canonical: identifier, category: 'identifier', source: 'harvest:repo',
+        count: 3, evidence: ['first.ts', 'second.ts'],
+      }]);
+    },
+  );
 
   it.each(['TODO', 'FIXME', 'NOTE', 'HACK', 'XXX'])(
     'retains %s when it is a manifest package name', async (marker) => {
