@@ -874,6 +874,20 @@ describe('POST /learn and POST /add', () => {
     );
   });
 
+  // Catches: POST /learn relayed the refusal without the code unit named, or
+  // wrote it anyway (learnCorrection runs the same schema as POST /add).
+  it('learn refuses a heard carrying U+FFFE with a 400 that identifies it, and writes nothing', async () => {
+    const before = await fs.readFile(env.globalPath, 'utf8');
+    const res = await api('POST', '/learn', { heard: 'Ash\uFFFE', meant: 'Ashlr.AI' });
+    expect(res.status).toBe(400);
+    const { error } = (await res.json()) as { error: string };
+    expect(error).toBe(
+      'term not added: aliases[0] ("Ash\\uFFFE"): must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ashlr.AI". Nothing was written; fix that field and try again.',
+    );
+    expect(error).not.toContain('\uFFFE');
+    expect(await fs.readFile(env.globalPath, 'utf8')).toBe(before);
+  });
+
   it('add over the schema cap is a 400 naming the field, not an index into the lexicon file', async () => {
     const res = await api('POST', '/add', { canonical: 'Zed', aliases: ['x'.repeat(81)] });
     expect(res.status).toBe(400);
