@@ -309,6 +309,40 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: init, add, list',
   });
 });
 
+// Catches: an alias over the documented 80-character word limit reached the
+// file write before it was refused, and the refusal named an index into the
+// file (`terms[<n>].aliases[<i>]`) rather than the argument the user typed.
+describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: add refuses an alias over the word limit', () => {
+  it('exits 1, names the entry and the limit, and writes nothing: plain, --json and --dry-run alike', async () => {
+    const h = await cloneOf(shared, 'add-word-limit');
+    const before = await fs.readFile(h.globalPath, 'utf8');
+    const over = 'x'.repeat(81);
+    const shown = JSON.stringify(`${'x'.repeat(24)}...`);
+
+    const plain = await runCli(['add', 'Overlong', over], { env: h.env });
+    expect(plain.code).toBe(1);
+    expect(plain.stdout).toBe('');
+    expect(plain.stderr).toContain(
+      `lexicon: term not added: aliases[0] (${shown}): must be at most 80 characters. Nothing was written`,
+    );
+
+    const json = await runCli(['add', 'Overlong', over, '--json'], { env: h.env });
+    expect(json.code).toBe(1);
+    expect(JSON.parse(json.stdout)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining('aliases[0]'),
+      nextStep: expect.stringContaining('run the command again'),
+    });
+
+    // A preview must refuse what the write would refuse, not promise it.
+    const dry = await runCli(['add', 'Overlong', over, '--dry-run', '--json'], { env: h.env });
+    expect(dry.code).toBe(1);
+    expect(JSON.parse(dry.stdout)).toMatchObject({ ok: false });
+
+    expect(await fs.readFile(h.globalPath, 'utf8')).toBe(before);
+  });
+});
+
 // ---------------------------------------------------------------------------
 // normalize
 // ---------------------------------------------------------------------------

@@ -1,0 +1,64 @@
+# Starter pack: the Ashlr.AI fleet. Installed with `lexicon pack add ashlr`.
+# Aliases are what speech-to-text actually writes for these names. `locus`
+# carries a `context` list: its Lucas-shaped aliases only fire when a fleet
+# word is in the same text, so a person named Lucas in ordinary prose is left
+# alone. Ordinary English words are never aliases, and `phantom`/`lexicon`
+# are never words for the same reason: the product name is spelled like them.
+# See docs/PACKS.md.
+name: ashlr
+title: Ashlr.AI fleet
+description: Phantom, locus, Lexicon, Codex and the rest of the Ashlr.AI fleet, with the spellings speech-to-text writes for them.
+version: 1
+terms:
+  - canonical: Phantom
+    category: product
+    aliases: [fantom, fantum, phantum]
+    never: [phantom]
+    notes: the safe execution substrate; the ordinary word stays lowercase
+  - canonical: locus
+    category: product
+    aliases: [Lucas, lucus, locas, loukas]
+    context: [locus, ashlr, ashler, ashlar, ashlr-stack, ashlr-md, lexicon, phantom, fantom, phantom-secrets, codex, glm, stacksync, stack sync, devin]
+    notes: the identity plane; Lucas -> locus only where a fleet word is in the text
+  - canonical: Lexicon
+    category: product
+    aliases: [lexi con, lex a con]
+    never: [lexicon]
+    notes: this tool; the ordinary word and the `lexicon` CLI stay lowercase
+  - canonical: Ashlr.AI
+    category: brand
+    aliases: [ashler ai, ashler a i, ashlar ai, ashley ai, ashlr ai]
+    phonetic: ASH-ler-A-I
+    notes: the company; the dot is part of the name, never write "Ashlr AI"
+  - canonical: Ashlr
+    category: brand
+    aliases: [ashler, ashlar, ashlur]
+    phonetic: ASH-ler
+    notes: the fleet and product name, e.g. "ask Ashlr" for the fleet itself
+  - canonical: Sco
+    category: product
+    aliases: [scoe, sko, scho]
+  - canonical: Evan DeLoria
+    category: person
+    aliases: [Evan De Lauria, Evan de Loria, Evan Delaura, Evan Doloria]
+    phonetic: eh-VAN deh-LOR-ee-uh
+  - canonical: Stacksync
+    category: product
+    aliases: [stack sync, stacks inc, stacksink, stack sink]
+  - canonical: GLM
+    category: acronym
+    aliases: [g l m, gee el em, j l m, jlm]
+  - canonical: Codex
+    category: product
+    aliases: [codecks, codexx, kodecks]
+    notes: also in the ai pack (code x, code ex); this pack adds the fleet's own mishears
+  - canonical: phantom-secrets
+    category: product
+    aliases: [fantom secrets, phantom secret, fantom secret]
+    notes: the secrets service repo
+  - canonical: ashlr-stack
+    category: product
+    aliases: [ashler stack, ashlar stack, ashlr stak]
+  - canonical: ashlr-md
+    category: product
+    aliases: [ashler md, ashlar md, ashler m d]
