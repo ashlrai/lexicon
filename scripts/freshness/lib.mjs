@@ -196,6 +196,8 @@ function lineAt(text, i) {
  * marker. The file text is only changed where a block's content differs.
  */
 export function applyMarkers(text, truth) {
+  // Git can check docs out as CRLF; generated regions must keep that style.
+  const eol = text.includes('\r\n') ? '\r\n' : '\n';
   const problems = [];
   const blocks = [];
   let out = '';
@@ -236,7 +238,7 @@ export function applyMarkers(text, truth) {
       if (sameLine && !inline) {
         throw new Error(`'${open.name}' generates a multi-line block; put fresh:begin and fresh:end on their own lines`);
       }
-      newRegion = sameLine ? rendered : `\n${rendered}\n`;
+      newRegion = sameLine ? rendered : eol + rendered.replace(/\n/g, eol) + eol;
     } catch (err) {
       problems.push({ line: open.line, message: err.message });
       open = null;

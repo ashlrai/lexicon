@@ -15,6 +15,25 @@ on:
         description: "Stable version to release (X.Y.Z); tag vX.Y.Z must already exist"
         required: true
         type: string
+      recover_github_only:
+        description: "Recover GitHub delivery after an accepted npm publish and failed registry check"
+        type: boolean
+        default: false
+      recovery_run_id:
+        description: "Original failed tag-push release run ID"
+        type: string
+      recovery_attempt:
+        description: "Pinned current attempt of the original run"
+        type: string
+      recovery_ci_run_id:
+        description: "Successful full manual CI run on the immutable tag"
+        type: string
+      recovery_ubuntu_artifact_id:
+        description: "Exact qualified Ubuntu artifact ID from the original attempt"
+        type: string
+      recovery_macos_artifact_id:
+        description: "Exact qualified macOS artifact ID from the original attempt"
+        type: string
 
 # One release at a time; an in-flight run is never cancelled and a queued run
 # must still prove its version and release absent before publishing.
@@ -27,6 +46,7 @@ permissions:
 
 jobs:
   full-suite-evidence:
+    if: github.event_name != 'workflow_dispatch' || !inputs.recover_github_only
     # Release gate: the full suite (macOS and Windows included) must have
     # passed in a manual workflow_dispatch run of CI on this exact sha.
     name: Full suite green on release sha
@@ -180,11 +200,11 @@ jobs:
         run: |
           version=$(node scripts/release-contract.mjs source . "$RELEASE_TAG")
           test "$version" = "$VERSION"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: lexicon-release-ubuntu
           path: staged/ubuntu
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: lexicon-release-macos
           path: staged/macos
@@ -235,5 +255,81 @@ jobs:
           gh release edit "$RELEASE_TAG" --draft=false --latest
           gh release view "$RELEASE_TAG" --json tagName,isDraft,isPrerelease,assets > public-receipt.json
           gh release download "$RELEASE_TAG" --dir public-hosted
+          node scripts/release-contract.mjs hosted public-hosted "$VERSION" public-receipt.json public
+          cmp release/SHA256SUMS public-hosted/SHA256SUMS
+
+  github-recovery:
+    name: GitHub-only release recovery
+    if: >-
+      github.event_name == 'workflow_dispatch' && inputs.recover_github_only &&
+      github.repository == 'ashlrai/lexicon' && github.ref == 'refs/heads/main' && github.ref_protected &&
+      github.workflow_ref == 'ashlrai/lexicon/.github/workflows/release.yml@refs/heads/main'
+    runs-on: ubuntu-latest
+    timeout-minutes: 12
+    permissions:
+      contents: write
+      actions: read
+      id-token: none
+    env:
+      VERSION: ${{ inputs.version }}
+      RECOVERY_RUN_ID: ${{ inputs.recovery_run_id }}
+      RECOVERY_ATTEMPT: ${{ inputs.recovery_attempt }}
+      RECOVERY_CI_RUN_ID: ${{ inputs.recovery_ci_run_id }}
+      RECOVERY_UBUNTU_ARTIFACT_ID: ${{ inputs.recovery_ubuntu_artifact_id }}
+      RECOVERY_MACOS_ARTIFACT_ID: ${{ inputs.recovery_macos_artifact_id }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - name: Check out current trusted recovery policy
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7
+        with:
+          node-version: 22
+      - name: Test recovery policy and existing release contract
+        run: node --test scripts/release-contract.test.mjs scripts/release-recovery.test.mjs
+      - name: Bind original failed publication and preserve exact artifact ZIPs
+        id: original
+        run: node scripts/release-recovery.mjs prepare
+      - name: Read candidate source as data only
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ steps.original.outputs.source_sha }}
+          path: candidate
+          persist-credentials: false
+      - name: Revalidate candidate carriers with the unchanged trusted verifier
+        run: |
+          set -euo pipefail
+          cmp scripts/release-contract.mjs candidate/scripts/release-contract.mjs
+          node scripts/release-contract.mjs source candidate "v$VERSION"
+          node scripts/release-contract.mjs assemble staged release "$VERSION"
+      - name: Require actual public npm bytes before any GitHub write
+        run: node scripts/release-contract.mjs registry release "$VERSION"
+      - name: Revalidate current attempt, source, CI and artifact bindings
+        run: node scripts/release-recovery.mjs recheck
+      - name: Create draft and upload complete original assets without overwrite
+        run: |
+          set -euo pipefail
+          gh release create "v$VERSION" --draft --generate-notes --verify-tag
+          gh release upload "v$VERSION" \
+            "release/ashlr-lexicon-${VERSION}.tgz" \
+            release/lexicon-extension.zip release/lexicon-extension-firefox.zip \
+            release/LexiconBar.app.zip release/SHA256SUMS
+      - name: Verify exact draft asset inventory and hosted bytes
+        run: |
+          set -euo pipefail
+          gh release view "v$VERSION" --json tagName,isDraft,isPrerelease,assets > draft-receipt.json
+          gh release download "v$VERSION" --dir hosted
+          node scripts/release-contract.mjs hosted hosted "$VERSION" draft-receipt.json draft
+          cmp release/SHA256SUMS hosted/SHA256SUMS
+      - name: Recheck registry acceptance and publish verified draft
+        run: |
+          set -euo pipefail
+          node scripts/release-contract.mjs registry release "$VERSION"
+          node scripts/release-recovery.mjs recheck-final
+          gh release edit "v$VERSION" --draft=false --latest
+          gh release view "v$VERSION" --json tagName,isDraft,isPrerelease,assets > public-receipt.json
+          gh release download "v$VERSION" --dir public-hosted
           node scripts/release-contract.mjs hosted public-hosted "$VERSION" public-receipt.json public
           cmp release/SHA256SUMS public-hosted/SHA256SUMS

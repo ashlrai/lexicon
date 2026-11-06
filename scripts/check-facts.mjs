@@ -543,7 +543,7 @@ function scanTargets() {
     'docs', 'web/app', 'web/components', 'web/lib', 'site', 'extension/src', 'extension/public',
     'examples', 'skills', 'commands', 'bench', 'apps/macos',
   ];
-  const ok = /\.(md|mdx|html|ts|tsx|js|mjs|json|yaml|yml)$/i;
+  const ok = /\.(md|mdx|html|txt|ts|tsx|js|mjs|json|yaml|yml)$/i;
   const skipDir = /^(node_modules|dist|\.next|\.build|\.git|assets)$/;
   const walk = (rel) => {
     const abs = path.join(root, rel);

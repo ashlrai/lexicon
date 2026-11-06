@@ -87,3 +87,24 @@ describe('alias word length boundary: normalization and sibling lists', () => {
     expect(TermSchema.safeParse({ canonical: 'X', never: [`${at}a`] }).success).toBe(false);
   });
 });
+
+describe('alias word length boundary: edge cases', () => {
+  const parse = (alias: string) => TermSchema.safeParse({ canonical: 'X', aliases: [alias] });
+
+  it('measures the limit after trimming and stripping invisible characters', () => {
+    expect(parse(`  ${'a'.repeat(LIMITS.word)}  `).success).toBe(true);
+    expect(parse(`${'a'.repeat(LIMITS.word)}​`).success).toBe(true);
+    expect(parse(`  ${'a'.repeat(LIMITS.word + 1)}  `).success).toBe(false);
+  });
+
+  it('rejects one oversized alias among valid ones and points at its index', () => {
+    const result = TermSchema.safeParse({ canonical: 'X', aliases: ['ok', 'a'.repeat(LIMITS.word + 1)] });
+    expect(result.success).toBe(false);
+    if (!result.success) expect(result.error.issues[0].path).toEqual(['aliases', 1]);
+  });
+
+  it('rejects a boundary-plus-one multi-byte alias', () => {
+    expect(parse('é'.repeat(LIMITS.word)).success).toBe(true);
+    expect(parse('é'.repeat(LIMITS.word + 1)).success).toBe(false);
+  });
+});

@@ -121,6 +121,18 @@ describe('parseLexicon', () => {
     );
   });
 
+  it('enforces the alias word limit on hand-edited YAML after cleanup', () => {
+    const yaml = (alias: string) => parseYaml(
+      `terms:\n  - canonical: Example\n    aliases: [valid, " ${alias}\\u200B "]\n`,
+    );
+    const atLimit = 'a'.repeat(80);
+
+    expect(parseLexicon(yaml(atLimit)).terms[0].aliases).toEqual(['valid', atLimit]);
+    expect(() => parseLexicon(yaml(`${atLimit}a`))).toThrow(
+      'terms[0].aliases[1]: must be at most 80 characters',
+    );
+  });
+
   it('identifies an overlong canonical among valid terms', () => {
     const result = LexiconSchema.safeParse({ terms: [
       { canonical: 'a'.repeat(80) },
@@ -355,6 +367,7 @@ describe('hardening (lexicon content reaches model context)', () => {
     ['canonical', { canonical: 'Ash\uFFFFlr' }, ['canonical'], 'Ash\\uFFFFlr'],
     ['aliases', { canonical: 'Ashlr.AI', aliases: ['valid', 'Ash\uFFFFler'] }, ['aliases', 1], 'Ashlr.AI'],
     ['never', { canonical: 'Ashlr.AI', never: ['valid', 'Ash\uFFFFler'] }, ['never', 1], 'Ashlr.AI'],
+    ['context', { canonical: 'Ashlr.AI', context: ['valid', 'Ash\uFFFFler'] }, ['context', 1], 'Ashlr.AI'],
     ['phonetic', { canonical: 'Ashlr.AI', phonetic: 'Ash\uFFFFler' }, ['phonetic'], 'Ashlr.AI'],
     ['notes', { canonical: 'Ashlr.AI', notes: 'Ash\uFFFFler' }, ['notes'], 'Ashlr.AI'],
     ['createdAt', { canonical: 'Ashlr.AI', createdAt: '2026\uFFFF' }, ['createdAt'], 'Ashlr.AI'],
@@ -369,6 +382,25 @@ describe('hardening (lexicon content reaches model context)', () => {
         message: `must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "${name}"`,
       },
     ]);
+  });
+
+  // Catches: `context` is in TERM_TEXT_FIELDS and, like `never`, is refused
+  // only by the term-level pass (its field schema leaves the per-entry
+  // unencodable check off). Dropping it from the list passed the suite.
+  it('rejects U+FFFF in a term context word and names the code point, index and term', () => {
+    const input = parseYaml('terms:\n  - canonical: Ashlr.AI\n    context: ["deploy\\uFFFFnow"]\n');
+    const result = LexiconSchema.safeParse(input);
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected U+FFFF in context to be rejected');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['terms', 0, 'context', 0],
+        message: 'must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ashlr.AI"',
+      },
+    ]);
+    expect(() => parseLexicon(input)).toThrow('terms[0].context[0]: must not contain U+FFFF');
+    expect(findUnencodableChar('deploy\uFFFFnow')).toBe('U+FFFF');
   });
 
   // Catches: the term name in a diagnostic is documented as at most 40
@@ -547,6 +579,7 @@ describe('hardening (lexicon content reaches model context)', () => {
     [{ canonical: 'Ash\uFFFElr' }, ['canonical'], 'Ash\\uFFFElr'],
     [{ canonical: 'Ashlr.AI', aliases: ['valid', 'Ash\uFFFEler'] }, ['aliases', 1], 'Ashlr.AI'],
     [{ canonical: 'Ashlr.AI', never: ['valid', 'Ash\uFFFEler'] }, ['never', 1], 'Ashlr.AI'],
+    [{ canonical: 'Ashlr.AI', context: ['valid', 'Ash\uFFFEler'] }, ['context', 1], 'Ashlr.AI'],
     [{ canonical: 'Ashlr.AI', phonetic: 'ash\uFFFEler' }, ['phonetic'], 'Ashlr.AI'],
     [{ canonical: 'Ashlr.AI', notes: 'note\uFFFE' }, ['notes'], 'Ashlr.AI'],
     [{ canonical: 'Ashlr.AI', createdAt: '2026\uFFFE' }, ['createdAt'], 'Ashlr.AI'],
@@ -584,6 +617,7 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(() => parseLexicon({ terms: [{ canonical: 'X', notes: 'n\uFFFF' }] })).toThrow(/terms\[0\]\.notes: must not contain U\+FFFF .* in term "X"/);
     expect(() => parseLexicon({ terms: [{ canonical: 'X', phonetic: '\uD800' }] })).toThrow(/terms\[0\]\.phonetic: must not contain U\+D800/);
     expect(() => parseLexicon({ terms: [{ canonical: 'X', never: ['\uDBFF'] }] })).toThrow(/terms\[0\]\.never\[0\]: must not contain U\+DBFF/);
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', context: ['w\uFFFFd'] }] })).toThrow(/terms\[0\]\.context\[0\]: must not contain U\+FFFF/);
     expect(() => parseLexicon({ terms: [{ canonical: 'X', createdAt: '2026\uFFFE' }] })).toThrow(/terms\[0\]\.createdAt: must not contain U\+FFFE/);
     expect(() => parseLexicon({ terms: [], settings: { protectedWords: ['a\uFFFE'] } })).toThrow(/settings\.protectedWords\[0\]: must not contain U\+FFFE/);
     expect(() => parseLexicon({ terms: [], settings: { packs: ['\uD800'] } })).toThrow(/settings\.packs\[0\]: must not contain U\+D800/);
@@ -971,6 +1005,20 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(findUnencodableChar(canonical)).toBeUndefined();
     expect(escapeUnencodable(`${pair}\uD800`)).toBe(`${pair}\\uD800`);
     expect(escapeUnencodable(`\uDC00${pair}`)).toBe(`\\uDC00${pair}`);
+  });
+
+  it('keeps a valid surrogate pair in the term label when another field is invalid', () => {
+    const canonical = 'Launch \uD83D\uDE80';
+    const result = LexiconSchema.safeParse({ terms: [{ canonical, aliases: ['bad\uD800'] }] });
+
+    expect(findUnencodableChar(canonical)).toBeUndefined();
+    expect(TermSchema.parse({ canonical }).canonical).toBe(canonical);
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the unpaired alias surrogate to be rejected');
+    expect(result.error.issues).toEqual([expect.objectContaining({
+      path: ['terms', 0, 'aliases', 0],
+      message: `must not contain U+D800 (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "${canonical}"`,
+    })]);
   });
 
   it.each([
@@ -1454,6 +1502,16 @@ describe('hardening (lexicon content reaches model context)', () => {
     ]);
   });
 
+  it('rejects 65 distinct aliases in a YAML lexicon with a validation error', () => {
+    const aliases = Array.from({ length: 65 }, (_, i) => `alias${i}`);
+    const yaml = (words: string[]) => `terms:\n  - canonical: Example\n    aliases:\n${words.map((word) => `      - ${word}`).join('\n')}\n`;
+
+    expect(parseLexicon(parseYaml(yaml(aliases.slice(0, 64)))).terms[0].aliases).toEqual(aliases.slice(0, 64));
+    expect(() => parseLexicon(parseYaml(yaml(aliases)))).toThrow(
+      'Invalid lexicon:\n  - terms[0].aliases: at most 64 aliases per term',
+    );
+  });
+
   it('enforces the standalone term alias limit after cleaning the list', () => {
     const aliases = Array.from({ length: 64 }, (_, i) => `alias${i}`);
     const input = [...aliases.map((alias) => ` ${ZW}${alias} `), '', ' ', ZW];
@@ -1496,6 +1554,18 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(parseLexicon({ terms: [term] }).terms[0].aliases).toEqual(Array(64).fill('spelling'));
     expect(() => parseLexicon({ terms: [{ ...term, aliases: [...aliases, 'spelling'] }] })).toThrow(
       'Invalid lexicon:\n  - terms[0].aliases: at most 64 aliases per term',
+    );
+  });
+
+  it('counts never entries separately from aliases after cleaning, including duplicates', () => {
+    const aliases = Array.from({ length: 64 }, (_, i) => `alias${i}`);
+    const never = Array(64).fill(' excluded ');
+    const term = parseLexicon({ terms: [{ canonical: 'X', aliases, never: [...never, '', ' ', ZW] }] }).terms[0];
+    expect(term.aliases).toEqual(aliases);
+    expect(term.never).toEqual(Array(64).fill('excluded'));
+
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', aliases, never: [...never, 'another'] }] })).toThrow(
+      /terms\[0\]\.never: at most 64 never words per term/,
     );
   });
 
@@ -1549,5 +1619,16 @@ describe('hardening (lexicon content reaches model context)', () => {
     const items = Array.from({ length: LIMITS.aliases + 1 }, (_, i) => `    - w${i}`).join('\n');
     const input = parseYaml(`terms:\n  - canonical: Fine\n  - canonical: Rocket\n    never:\n${items}\n`);
     expect(() => parseLexicon(input)).toThrow('Invalid lexicon:\n  - terms[1].never: at most 64 never words per term');
+  });
+
+  it('accepts 64 never entries per term from YAML, including repeated entries', () => {
+    // The contract caps entries per term, not unique spellings or the whole file.
+    const items = Array.from({ length: 64 }, () => '    - repeated').join('\n');
+    const input = parseYaml(`terms:\n  - canonical: First\n    never:\n${items}\n  - canonical: Second\n    never:\n${items}\n`);
+    const parsed = parseLexicon(input);
+    expect(parsed.terms.map((term) => term.never)).toEqual([Array(64).fill('repeated'), Array(64).fill('repeated')]);
+
+    const overLimit = parseYaml(`terms:\n  - canonical: First\n    never:\n${items}\n    - repeated\n`);
+    expect(() => parseLexicon(overLimit)).toThrow('Invalid lexicon:\n  - terms[0].never: at most 64 never words per term');
   });
 });
