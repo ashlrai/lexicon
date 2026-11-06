@@ -200,7 +200,7 @@ jobs:
 
       - name: Release publication contract (offline synthetic fixtures)
         if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)) && (matrix.os == 'ubuntu-latest' && matrix.node == 22)
-        run: node --test scripts/release-contract.test.mjs
+        run: node --test scripts/release-contract.test.mjs scripts/release-recovery.test.mjs
 
       - run: npm ci
         if: (steps.scope.outputs.code == 'true' || matrix.node == 22)
