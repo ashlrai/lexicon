@@ -6,7 +6,7 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { assetNames } from './release-contract.mjs';
-import { validateRecoveryEnvironment, recoveryInputs, validateRecoveryEvidence, validatePolicyEvidence, validateArtifactBytes, extractArtifact } from './release-recovery.mjs';
+import { validateRecoveryEnvironment, recoveryInputs, validateRecoveryEvidence, validatePolicyEvidence, validateArtifactBytes, validateLatestStable, extractArtifact } from './release-recovery.mjs';
 
 const source = 'a'.repeat(40), policy = 'b'.repeat(40), repo = 'ashlrai/lexicon';
 const releasePath = '.github/workflows/release.yml', ciPath = '.github/workflows/ci.yml';
@@ -53,6 +53,17 @@ test('current protected policy closure tolerates unrelated main advances only', 
   const identical = evidence(); identical.ancestry.status = 'identical'; identical.branch.commit.sha = policy; assert.doesNotThrow(() => validatePolicyEvidence(policy, identical, hashes));
   for (const mutate of [e => { e.files[releasePath] = 'e'.repeat(64); }, e => { delete e.files[ciPath]; }, e => { e.branch.protected = false; }, e => { e.releaseWorkflow.state = 'disabled_manually'; }, e => { e.ciWorkflow.state = 'disabled_manually'; }, e => { e.ancestry.status = 'behind'; }, e => { e.ancestry.merge_base_commit.sha = source; }]) { const e = evidence(); mutate(e); assert.throws(() => validatePolicyEvidence(policy, e, hashes)); }
   const missing = { ...hashes }; delete missing[ciPath]; assert.throws(() => validatePolicyEvidence(policy, evidence(), missing));
+});
+
+test('GitHub-only recovery cannot downgrade a newer public stable release', () => {
+  const latest = version => ({ tag_name: `v${version}`, draft: false, prerelease: false, published_at: '2026-01-01T00:00:00Z' });
+  assert.doesNotThrow(() => validateLatestStable('0.5.8', null));
+  assert.doesNotThrow(() => validateLatestStable('0.5.8', latest('0.5.4')));
+  assert.doesNotThrow(() => validateLatestStable('0.5.8', latest('0.5.8')));
+  assert.throws(() => validateLatestStable('0.5.8', latest('0.5.10')));
+  assert.throws(() => validateLatestStable('0.5.8', latest('1.0.0')));
+  assert.throws(() => validateLatestStable('9007199254740992.99.99', latest('9007199254740993.0.0')));
+  for (const bad of [{ ...latest('0.5.4'), draft: true }, { ...latest('0.5.4'), prerelease: true }, { ...latest('0.5.4'), published_at: null }, latest('0.5.4-beta')]) assert.throws(() => validateLatestStable('0.5.8', bad));
 });
 
 test('actual artifact bytes must match both live digest and original ZIP size', () => {

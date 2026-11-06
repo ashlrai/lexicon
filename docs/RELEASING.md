@@ -198,7 +198,9 @@ files to match current trusted main. App or documentation advances alone do not
 invalidate the frozen producer evidence. No GitHub write occurs until npm serves the original archive bytes.
 
 A changed tuple, incomplete evidence, registry mismatch or existing GitHub release
-stops recovery. A draft created by a later interrupted recovery is preserved for
+stops recovery. Before publishing the draft, recovery also refuses to replace a
+newer published latest stable version; numeric version components are compared
+without JavaScript number rounding. A draft created by a later interrupted recovery is preserved for
 review; this route does not overwrite or automatically complete such a draft.
 A successful final public download establishes GitHub delivery. Native signing,
 notarization and install behavior retain the separate limitations below.

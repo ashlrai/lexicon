@@ -202,6 +202,26 @@ async function downloadArtifact(artifact, part, version) {
   const zip = join(ROOT, `${part}.zip`); writeFileSync(zip, bytes, { flag: 'wx', mode: 0o600 });
   extractArtifact(zip, join('staged', part), version, part);
 }
+/** A recovered older release must never displace a newer published stable. */
+export function validateLatestStable(version, latest) {
+  const candidate = releaseVersion(version); assert.ok(candidate.length <= 128);
+  if (latest === null) return;
+  assert.equal(latest.draft, false); assert.equal(latest.prerelease, false);
+  assert.ok(typeof latest.published_at === 'string' && Number.isFinite(Date.parse(latest.published_at)));
+  assert.ok(typeof latest.tag_name === 'string' && latest.tag_name.startsWith('v'));
+  const published = releaseVersion(latest.tag_name.slice(1)); assert.ok(published.length <= 128);
+  const a = candidate.split('.').map(BigInt), b = published.split('.').map(BigInt);
+  for (let i = 0; i < 3; i++) {
+    if (a[i] > b[i]) return;
+    assert.ok(a[i] === b[i], 'recovery cannot demote the published latest stable release');
+  }
+}
+async function latestStable(version) {
+  const response = await api('releases/latest');
+  if (response.status === 404) { validateLatestStable(version, null); return; }
+  assert.equal(response.status, 200, 'published latest evidence unavailable');
+  validateLatestStable(version, JSON.parse((await bounded(response, 2 * 1024 * 1024)).toString('utf8')));
+}
 async function main() {
   const input = recoveryInputs(process.env), command = process.argv[2];
   assert.ok(['prepare', 'recheck', 'recheck-final'].includes(command));
@@ -220,6 +240,7 @@ async function main() {
     // The final admission happens after all other reads and directly before
     // the workflow's draft creation or public edit, without freezing main.
     await livePolicy(input.policySha);
+    if (command === 'recheck-final') await latestStable(input.version);
   }
   console.log(JSON.stringify(proof));
 }
