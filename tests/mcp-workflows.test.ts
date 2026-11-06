@@ -344,6 +344,22 @@ describe('add_term notes at the documented limit', () => {
   });
 });
 
+describe('add_term phonetic at the documented limit', () => {
+  it('accepts exactly 200 characters and keeps them whole', async () => {
+    const phonetic = 'p'.repeat(200);
+    const added = await call('add_term', { canonical: 'Foo', phonetic });
+    expect(added.isError).toBeFalsy();
+    expect(JSON.stringify(JSON.parse((await call('list_terms', {})).text))).toContain(phonetic);
+  });
+
+  it('refuses 201 characters naming the field, and writes nothing', async () => {
+    const res = await call('add_term', { canonical: 'Overphon', phonetic: 'p'.repeat(201) });
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain('phonetic: must be at most 200 characters');
+    expect((await call('list_terms', {})).text).not.toContain('Overphon');
+  });
+});
+
 describe('suggest_canonical result shape', () => {
   it('is { heard, suggestions } with at most 3, as the description says', async () => {
     for (const canonical of ['Ashlr.AI', 'Ashley', 'Asher', 'Ashlar Labs', 'Ashland']) await call('add_term', { canonical, aliases: [] });

@@ -7,8 +7,11 @@
  * land on the limit. The same number is enforced by three surfaces, and each
  * is exercised here: the schema itself (TermSchema, LexiconSchema and
  * parseLexicon), the setup pre-check `setupHintProblem` that refuses a bad
- * `--phonetic` before any step runs, and the `lexicon add --phonetic` write
- * path (runAdd on the real store).
+ * `--phonetic` before any step runs, and the `lexicon add` write path (runAdd
+ * on the real store, through the --phonetic flag and the -i prompt). The MCP
+ * add_term and POST /add faces of the same write have their own boundary
+ * tests where those servers' harnesses live (mcp-workflows.test.ts,
+ * serve.test.ts).
  */
 import { existsSync, promises as fs, readFileSync } from 'node:fs';
 import os from 'node:os';
@@ -18,7 +21,7 @@ import { LIMITS, LexiconSchema, TermSchema, parseLexicon } from '../src/core/sch
 import { addTerm, addTerms, readLexiconFile } from '../src/core/store.js';
 import { runAdd } from '../src/cli/commands.js';
 import { setupHintProblem } from '../src/cli/setup/detect.js';
-import { makeIO } from './helpers.js';
+import { makeIO, scripted } from './helpers.js';
 
 const ZW = '\u200b'; // a zero-width space: stripped before the limit is measured
 
@@ -107,7 +110,7 @@ describe('phonetic text length boundary', () => {
   });
 });
 
-describe('the same boundary through lexicon add --phonetic', () => {
+describe('the same boundary through the lexicon add write path', () => {
   let tmp: string;
   let globalPath: string;
 
@@ -151,6 +154,26 @@ describe('the same boundary through lexicon add --phonetic', () => {
     const file = await readLexiconFile(globalPath, 'global');
     const term = file.lexicon.terms.find((t) => t.canonical === 'Boundary Co');
     expect(term?.phonetic).toBe('p'.repeat(LIMITS.text));
+  });
+
+  it('writes a hint at the limit the -i prompt collected, verbatim', async () => {
+    // The prompt is the one other way `lexicon add` takes a phonetic; the
+    // answers with aliases given are [phonetic, category].
+    const atLimit = 'p'.repeat(LIMITS.text);
+    const code = await runAdd('Boundary Co', ['boundary co'], { interactive: true, globalPath, cwd: tmp }, makeIO(), scripted([atLimit, '']));
+    expect(code).toBe(0);
+
+    const file = await readLexiconFile(globalPath, 'global');
+    const term = file.lexicon.terms.find((t) => t.canonical === 'Boundary Co');
+    expect(term?.phonetic).toBe(atLimit);
+  });
+
+  it('refuses a prompt answer one character over, the same as the flag, and writes nothing', async () => {
+    const overLimit = 'p'.repeat(LIMITS.text + 1);
+    await expect(
+      runAdd('Boundary Co', ['boundary co'], { interactive: true, globalPath, cwd: tmp }, makeIO(), scripted([overLimit, ''])),
+    ).rejects.toThrow(`term not added: phonetic: must be at most ${LIMITS.text} characters`);
+    expect(existsSync(globalPath)).toBe(false);
   });
 
   it('names the file, the field and the limit when a lexicon on disk has a phonetic one over', async () => {
