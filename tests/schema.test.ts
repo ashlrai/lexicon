@@ -121,6 +121,18 @@ describe('parseLexicon', () => {
     );
   });
 
+  it('enforces the alias word limit on hand-edited YAML after cleanup', () => {
+    const yaml = (alias: string) => parseYaml(
+      `terms:\n  - canonical: Example\n    aliases: [valid, " ${alias}\\u200B "]\n`,
+    );
+    const atLimit = 'a'.repeat(80);
+
+    expect(parseLexicon(yaml(atLimit)).terms[0].aliases).toEqual(['valid', atLimit]);
+    expect(() => parseLexicon(yaml(`${atLimit}a`))).toThrow(
+      'terms[0].aliases[1]: must be at most 80 characters',
+    );
+  });
+
   it('identifies an overlong canonical among valid terms', () => {
     const result = LexiconSchema.safeParse({ terms: [
       { canonical: 'a'.repeat(80) },
