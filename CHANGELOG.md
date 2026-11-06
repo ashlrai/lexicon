@@ -5,6 +5,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 <!-- fresh:begin table:releases -->
 | Version | Released |
 |---|---|
+| 0.5.9 | 2026-11-06 |
 | 0.5.8 | 2026-11-05 |
 | 0.5.7 | 2026-10-31 |
 | 0.5.6 | 2026-10-18 |
@@ -23,6 +24,12 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 <!-- fresh:end -->
 
 ## Unreleased
+
+## 0.5.9 (2026-11-06)
+
+### Release scope
+
+- This candidate includes the changes recorded in 0.5.8 and earlier, together with the architecture pack below and the merged documentation and regression coverage. On 2026-11-06, npm `latest` was 0.5.8; this heading records preparation, not publication.
 
 ### Added
 

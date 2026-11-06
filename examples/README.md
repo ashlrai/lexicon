@@ -1,9 +1,9 @@
 # Examples
 
-**Release preparation:** The 0.5.8 version and pins below describe an unpublished candidate refreshed on 2026-11-05. At preparation, npm `latest` was 0.5.4. Verify the public npm version and GitHub release before using a 0.5.8 install pin.
+**Release preparation:** The 0.5.9 version and pins below describe an unpublished candidate prepared on 2026-11-06. At preparation, npm `latest` was 0.5.8. Verify the public npm version and GitHub release before using a 0.5.9 install pin.
 
 Runnable copies of the snippets the docs describe, written against
-<!-- fresh:begin pin:npm -->`npm i -g @ashlr/lexicon@0.5.8`<!-- fresh:end -->.
+<!-- fresh:begin pin:npm -->`npm i -g @ashlr/lexicon@0.5.9`<!-- fresh:end -->.
 
 - `lexicon.example.yaml` - a commented starter lexicon: canonical spellings, the
   aliases speech-to-text produces, and the optional `phonetic`, `category`,
