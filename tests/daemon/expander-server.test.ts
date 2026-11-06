@@ -107,7 +107,7 @@ describe('issue #220 contract scope', () => {
     const section = contract.split('### Separate-process boundary (issue #220)')[1]?.split('## src/serve')[0];
     expect(section).toBeDefined();
     expect(section).toMatch(/Proposed surface:[\s\S]*system-wide text expander, separate from the CLI and\s+agent integrations/);
-    expect(section).toMatch(/any focused text\s+field without an agent in the loop/);
+    expect(section).toMatch(/focused text field across applications, without an agent in the loop/);
     expect(section).toMatch(/complete surface is not implemented/);
     expect(section).toMatch(/existing expansion core and socket server do not capture system-wide input\s+or apply changes to a focused field/);
   });
@@ -160,6 +160,20 @@ describe.skipIf(!posix)('resident expander over a Unix socket', () => {
     a.close();
     b.close();
     await r.stop();
+  });
+
+  it('never writes typed text to its output or error streams', async () => {
+    const r = await start();
+    const c = await connect(r.socketPath);
+    const secret = 'correct horse battery staple';
+    for (const ch of secret) await c.ask({ op: 'type', text: ch });
+    await c.ask({ op: 'type', text: ' ' });
+    await c.ask({ op: 'key', key: 'Backspace' });
+    await c.ask({ op: 'normalize', text: secret });
+    c.close();
+    await r.stop();
+    const streams = `${r.out.join('')}\n${r.err.join('')}`;
+    expect(streams).not.toContain(secret);
   });
 
   it('answers bad requests with an error and keeps the connection', async () => {

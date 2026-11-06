@@ -2,6 +2,7 @@ import { Clip } from '@/components/Clip';
 import { CommandLine } from '@/components/Copy';
 import { CorrectionProof } from '@/components/CorrectionProof';
 import { Faq } from '@/components/Faq';
+import { HowItWorks } from '@/components/HowItWorks';
 import { Install } from '@/components/Install';
 import { LiveDemo } from '@/components/LiveDemo';
 import { Platforms } from '@/components/Platforms';
@@ -88,6 +89,7 @@ export default async function Page() {
       <main>
         <Hero stars={starCount} />
         <Problem />
+        <HowItWorks />
         <Demo />
         <UseCases />
         <Coverage />
@@ -117,7 +119,10 @@ function Header({ stars }: { stars: number | null }) {
           </span>
         </a>
         <nav className="flex items-center gap-1 sm:gap-2">
-          <a href="#demo" className="micro hidden px-2 py-1 transition-colors hover:text-paper sm:inline">
+          <a href="#how" className="micro hidden px-2 py-1 transition-colors hover:text-paper sm:inline">
+            How
+          </a>
+          <a href="#demo" className="micro hidden px-2 py-1 transition-colors hover:text-paper md:inline">
             Demo
           </a>
           <a href="#use-cases" className="micro px-2 py-1 transition-colors hover:text-paper">
@@ -125,6 +130,9 @@ function Header({ stars }: { stars: number | null }) {
           </a>
           <a href="#numbers" className="micro hidden px-2 py-1 transition-colors hover:text-paper sm:inline">
             Numbers
+          </a>
+          <a href="#agents" className="micro hidden px-2 py-1 transition-colors hover:text-paper sm:inline">
+            Agents
           </a>
           <a href="#install" className="micro px-2 py-1 transition-colors hover:text-paper">
             Install
@@ -794,8 +802,8 @@ function InstallSection() {
                 finish.
               </p>
               <p>
-                <span className="font-mono text-paper">lexicon pack add developer</span>: 221
-                curated terms across six packs.
+                <span className="font-mono text-paper">lexicon pack add developer</span>: 271
+                curated terms across nine packs.
               </p>
               <p>
                 <span className="font-mono text-paper">lexicon export wispr</span>: push the same
@@ -898,10 +906,16 @@ function ForAgents() {
           <div>
             <h2 className="h2 max-w-[20ch]">If you are an agent reading this for someone.</h2>
             <p className="lede mt-6">
-              Your user keeps having one name come out wrong. Install Lexicon for them, add that
-              name, and verify it. Everything you need is machine-readable and linked below; you do
-              not have to scrape this page.
+              Your user keeps having one name come out wrong. Do not install Lexicon until they
+              have seen the plan. Preview with JSON, then apply.
             </p>
+            <pre className="mt-6 overflow-x-auto rounded-lg border border-rule bg-ink px-4 py-4 font-mono text-[0.78rem] leading-relaxed text-paper-2">
+              <code>{`lexicon setup --dry-run --json
+lexicon normalize "ask ashler to deploy kuber netties with post gressql" --json
+lexicon install claude --json
+lexicon install cursor --json
+lexicon install codex --json`}</code>
+            </pre>
 
             <dl className="mt-9 flex flex-col gap-5">
               <AgentLink
@@ -994,7 +1008,10 @@ function OpenSource() {
                   on Firefox Add-ons yet.
                 </li>
                 <li>The macOS app is ad-hoc signed, not notarized.</li>
-                <li>Windows and Linux systems have the CLI and the MCP server, but no tray app.</li>
+                <li>
+                  Linux has no tray app. Windows has a tray app that is unit-tested and has never
+                  been run on Windows, so do not install it as though it works.
+                </li>
                 <li>
                   Voice modes that never produce a text box, such as ChatGPT Voice and Gemini
                   Live, are out of reach: there is no transcript to correct. (<span

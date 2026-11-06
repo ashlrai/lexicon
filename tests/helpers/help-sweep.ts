@@ -23,7 +23,7 @@ if (moduleUrl === undefined || cwd === undefined || commands.length === 0) {
   process.stderr.write('usage: help-sweep <program module file URL> <cwd> <command>...\n');
   process.exit(2);
 }
-const program = ((await import(moduleUrl)) as { buildProgram: typeof buildProgram }).buildProgram;
+const program = ((await import(new URL(moduleUrl).href)) as { buildProgram: typeof buildProgram }).buildProgram;
 
 // Command handlers take this IO; --help never reaches one, so the sink only
 // has to exist.

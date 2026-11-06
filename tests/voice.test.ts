@@ -429,6 +429,16 @@ describe('lexicon voice --toggle', () => {
     expect(w?.args).toEqual(expect.arrayContaining(['-f', wav, '-m', path.join(h.dir, 'models', 'ggml-base.en.bin'), '-l', 'en', '-nt', '-np', '-oj']));
   });
 
+  it('removes multiple bracketed tags from the transcript without losing surrounding words', async () => {
+    const h = await harness();
+    h.transcript = 'Please [MUSIC] ping Ashler [APPLAUSE] about the rollout.';
+    await runVoiceToggle(h.opts, h.io, h.deps);
+    h.out.length = 0;
+
+    expect(await runVoiceToggle(h.opts, h.io, h.deps)).toBe(EXIT_OK);
+    expect(h.out).toEqual(['Please ping Ashlr.AI about the rollout.\n']);
+  });
+
   /**
    * The data-loss bug this file exists to keep fixed. Every `--toggle` capture
    * is spawned with `-t 600`, so a recording nobody stopped ends itself at ten
@@ -1168,6 +1178,82 @@ describe('lexicon voice (foreground)', () => {
     expect(parsed.ok).toBe(true);
   });
 
+  it('removes a leading Whisper tag before normalizing and delivering the spoken words', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    h.transcript = '[BLANK_AUDIO] Please ping ashler about the rollout.';
+
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_OK);
+    const result = JSON.parse(h.out[0]) as VoiceJsonResult;
+    expect(result.raw).toBe('Please ping ashler about the rollout.');
+    expect(result.output).toBe('Please ping Ashlr.AI about the rollout.');
+    expect(result.replacements.map((x) => [x.original, x.replacement])).toEqual([['ashler', 'Ashlr.AI']]);
+  });
+
+  it.each([
+    ['with spaces around the tags', 'Please ping ashler [MUSIC][APPLAUSE] about the cooper netties rollout.'],
+    ['without spaces around the tags', 'Please ping ashler[noise][inaudible]about the cooper netties rollout.'],
+  ])('removes adjacent Whisper tags %s before normalization and delivery', async (_description, transcript) => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    h.transcript = transcript;
+
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_OK);
+    const result = JSON.parse(h.out[0]) as VoiceJsonResult;
+    expect(result.raw).toBe('Please ping ashler about the cooper netties rollout.');
+    expect(result.output).toBe('Please ping Ashlr.AI about the Kubernetes rollout.');
+    expect(result.replacements.map(({ original, replacement }) => [original, replacement])).toEqual([
+      ['ashler', 'Ashlr.AI'],
+      ['cooper netties', 'Kubernetes'],
+    ]);
+    expect(await loadVoiceHistory(h.globalPath)).toMatchObject([{
+      raw: result.raw,
+      output: result.output,
+    }]);
+  });
+
+  it.each([
+    ['one', '*laughs*'],
+    ['two', '*door slams*'],
+    ['three', '*door slams loudly*'],
+  ])('removes a %s-word annotation from Whisper output before normalization', async (_length, annotation) => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    h.transcript = `Please ping ashler ${annotation} about the cooper netties rollout.`;
+
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_OK);
+    const result = JSON.parse(h.out[0]) as VoiceJsonResult;
+    expect(result.raw).toBe('Please ping ashler about the cooper netties rollout.');
+    expect(result.output).toBe('Please ping Ashlr.AI about the Kubernetes rollout.');
+    expect(result.replacements.map(({ original, replacement }) => [original, replacement])).toEqual([
+      ['ashler', 'Ashlr.AI'],
+      ['cooper netties', 'Kubernetes'],
+    ]);
+    expect(await loadVoiceHistory(h.globalPath)).toMatchObject([{
+      raw: result.raw,
+      output: result.output,
+    }]);
+  });
+
+  it('preserves a four-word starred span and surrounding speech through delivery', async () => {
+    const h = await harness();
+    h.deps.waitForStop = async () => 'enter';
+    h.transcript = '  Please ping ashler  *the door slams loudly*  about the cooper netties rollout.  ';
+
+    expect(await runVoice({ ...h.opts, json: true }, h.io, h.deps)).toBe(EXIT_OK);
+    const result = JSON.parse(h.out[0]) as VoiceJsonResult;
+    expect(result.raw).toBe('Please ping ashler *the door slams loudly* about the cooper netties rollout.');
+    expect(result.output).toBe('Please ping Ashlr.AI *the door slams loudly* about the Kubernetes rollout.');
+    expect(result.replacements.map(({ original, replacement }) => [original, replacement])).toEqual([
+      ['ashler', 'Ashlr.AI'],
+      ['cooper netties', 'Kubernetes'],
+    ]);
+    expect(await loadVoiceHistory(h.globalPath)).toMatchObject([{
+      raw: result.raw,
+      output: result.output,
+    }]);
+  });
+
   it('appends to voice/history.jsonl and records hits for the corrected terms', async () => {
     const h = await harness();
     h.deps.waitForStop = async () => 'enter';
@@ -1777,12 +1863,49 @@ describe('lexicon voice --json failures', () => {
 });
 
 describe('cleanTranscript', () => {
+  it('preserves ordinary unbracketed words while collapsing whitespace', () => {
+    expect(cleanTranscript('  Please play music, then\nwait in silence.  '))
+      .toBe('Please play music, then wait in silence.');
+  });
+
+  it('removes starred spans of up to three words but preserves four-word spans', () => {
+    expect(cleanTranscript('before *door slams loudly* after')).toBe('before after');
+    expect(cleanTranscript('before *the door slams loudly* after')).toBe('before *the door slams loudly* after');
+  });
+
   it('strips whisper tags, collapses whitespace and trims', () => {
     expect(cleanTranscript(' [BLANK_AUDIO] ')).toBe('');
     expect(cleanTranscript('[BLANK_AUDIO] Ping Ashler.  [MUSIC]\n about the  rollout. [inaudible]')).toBe('Ping Ashler. about the rollout.');
     expect(cleanTranscript('(applause) hello (soft music) there *laughs*')).toBe('hello there');
     // a dictated parenthetical is not a noise tag
     expect(cleanTranscript('deploy it (the new build) tonight')).toBe('deploy it (the new build) tonight');
+  });
+
+  it('removes a bracketed tag and keeps the spoken words on both sides', () => {
+    expect(cleanTranscript('Please [MUSIC] continue speaking.')).toBe('Please continue speaking.');
+  });
+
+  it('removes multiple bracketed tags while keeping the transcript between them', () => {
+    expect(cleanTranscript('Before [MUSIC] the spoken words [APPLAUSE] after.')).toBe('Before the spoken words after.');
+  });
+
+  it('removes adjacent bracketed tags while preserving surrounding speech', () => {
+    expect(cleanTranscript('Please [MUSIC][APPLAUSE] continue the rollout.')).toBe('Please continue the rollout.');
+    expect(cleanTranscript('Hello[noise][inaudible]world')).toBe('Hello world');
+    expect(cleanTranscript('[MUSIC][BLANK_AUDIO]')).toBe('');
+  });
+
+  it.each([
+    ['[MUSIC][APPLAUSE]Start speaking.', 'Start speaking.'],
+    ['Keep speaking.[noise][inaudible]', 'Keep speaking.'],
+    ['One[noise][music]two[applause][silence]three.', 'One two three.'],
+    ['Before[][BLANK_AUDIO][MUSIC]after', 'Before after'],
+  ])('removes adjacent tags from %s', (input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
+  it('preserves an unmatched opening bracket and the text after it', () => {
+    expect(cleanTranscript('  Hello [MUSIC] there [unfinished   thought  ')).toBe('Hello there [unfinished thought');
   });
 
   it('parseWhisperOutput joins JSON segments and falls back to stdout', () => {

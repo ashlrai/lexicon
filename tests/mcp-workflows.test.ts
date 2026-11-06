@@ -335,6 +335,31 @@ describe('add_term argument descriptions', () => {
   });
 });
 
+describe('add_term notes at the documented limit', () => {
+  it('accepts exactly 200 characters and keeps them whole', async () => {
+    const notes = 'n'.repeat(200);
+    const added = await call('add_term', { canonical: 'Foo', notes });
+    expect(added.isError).toBeFalsy();
+    expect(JSON.stringify(JSON.parse((await call('list_terms', {})).text))).toContain(notes);
+  });
+});
+
+describe('add_term phonetic at the documented limit', () => {
+  it('accepts exactly 200 characters and keeps them whole', async () => {
+    const phonetic = 'p'.repeat(200);
+    const added = await call('add_term', { canonical: 'Foo', phonetic });
+    expect(added.isError).toBeFalsy();
+    expect(JSON.stringify(JSON.parse((await call('list_terms', {})).text))).toContain(phonetic);
+  });
+
+  it('refuses 201 characters naming the field, and writes nothing', async () => {
+    const res = await call('add_term', { canonical: 'Overphon', phonetic: 'p'.repeat(201) });
+    expect(res.isError).toBe(true);
+    expect(res.text).toContain('phonetic: must be at most 200 characters');
+    expect((await call('list_terms', {})).text).not.toContain('Overphon');
+  });
+});
+
 describe('suggest_canonical result shape', () => {
   it('is { heard, suggestions } with at most 3, as the description says', async () => {
     for (const canonical of ['Ashlr.AI', 'Ashley', 'Asher', 'Ashlar Labs', 'Ashland']) await call('add_term', { canonical, aliases: [] });
@@ -1255,7 +1280,7 @@ describe('voice-context and lexicon://me', () => {
   // Catches: the skipped file's path went into raw markdown unsanitized, so a
   // bidi override in a cloned directory's name reached the conversation.
   it('sanitize the skipped project path', async () => {
-    const nasty = path.join(repo, 'evil‮name');
+    const nasty = path.join(repo, 'evil\u202ename');
     await fs.mkdir(path.join(nasty, '.git'), { recursive: true });
     await fs.writeFile(path.join(nasty, '.lexicon.yaml'), 'version: 1\nterms:\n  - canonical: Phantom\n    aliases: [Fantom]\n');
     const server = createServer({ cwd: nasty });
@@ -1269,7 +1294,7 @@ describe('voice-context and lexicon://me', () => {
       const me = (await client.readResource({ uri: 'lexicon://me' })).contents.map((c) => ('text' in c ? String(c.text) : '')).join('\n');
       for (const t of [text, me]) {
         expect(t).toContain('evilname');
-        expect(t).not.toContain('‮');
+        expect(t).not.toContain('\u202e');
         expect(t).not.toContain('Fantom');
       }
     } finally {
@@ -2203,7 +2228,7 @@ describe('MCP input edge cases', () => {
   it('add_pack names the available packs and the lowercase name for a miscased one', async () => {
     const r = await call('add_pack', { name: 'Developer' });
     expect(r.isError).toBe(true);
-    expect(r.text).toContain('available: ai, business, cloud-devops, developer, profession-q8, voice-tools');
+    expect(r.text).toContain('available: ai, architecture, ashlr, business, cloud-devops, developer, legal, profession-q8, voice-tools');
     expect(r.text).toContain('did you mean "developer"?');
     expect(r.text).toContain('Nothing was installed.');
   });

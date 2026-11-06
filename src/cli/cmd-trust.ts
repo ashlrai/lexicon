@@ -1,3 +1,4 @@
+import { dryRunPlan } from './dry-run-plan.js';
 /**
  * `lexicon trust [path]`, `lexicon untrust [path]`, `lexicon trust --list`.
  *
@@ -295,10 +296,10 @@ export async function runUntrust(target: string | undefined, opts: CommonOptions
   if (opts.json) {
     // `ok: true`, then the object MCP trust_project returns for action 'untrust'.
     printJson(io, jsonOk({
+      ...dryRunPlan(opts.dryRun),
       action: 'untrust',
       path: filePath,
       removed,
-      ...(opts.dryRun ? { dryRun: true } : {}),
       registry: getTrustPath({ cwd }),
       summary: removed
         ? `${opts.dryRun ? 'would untrust' : 'untrusted'} ${filePath}; it ${opts.dryRun ? 'would' : 'will'} no longer be merged`

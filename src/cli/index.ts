@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 /**
  * `lexicon` CLI. A lone --version / -V / -v is answered here, before commander
- * or the lexicon core load. Everything else is ./run.ts.
+ * or the lexicon core load. Read commands try the resident daemon first;
+ * fallback and all other commands use ./run.ts.
  */
 import { packageVersion } from '../util/package.js';
 
@@ -11,4 +12,16 @@ if (args.length === 1 && (args[0] === '--version' || args[0] === '-V' || args[0]
   process.exit(0);
 }
 
-await import('./run.js');
+const { isFastRead, tryFastRead } = await import('../daemon/fast-client.js');
+const result = isFastRead(args) ? await tryFastRead(args) : undefined;
+if (result) {
+  process.stdout.on('error', (err: NodeJS.ErrnoException) => {
+    if (err.code === 'EPIPE') process.exit(0);
+    throw err;
+  });
+  process.stdout.write(result.stdout);
+  process.stderr.write(result.stderr);
+  process.exitCode = result.code;
+} else {
+  await import('./run.js');
+}

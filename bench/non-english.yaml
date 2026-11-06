@@ -1,0 +1,37 @@
+# Synthetic English-STT spellings, curated from gen-corpus.ts for issue #8.
+# Canonicals and aliases remain in lexicon.yaml; hard variants are kept.
+- {lang: german, canonical: "Jürgen Meyer", heard: ["jurgen meyer", "yurgen mayer", "your gin meyer"]}
+- {lang: german, canonical: "Katja Schröder", heard: ["katja schroder", "katya shroder", "cat ya shroder"]}
+- {lang: german, canonical: "Lukas Weiß", heard: ["lucas weiss", "lukas vice", "lucas vice"]}
+- {lang: german, canonical: "Götz Neumann", heard: ["goetz neumann", "gerts noiman", "guts newman"]}
+- {lang: german, canonical: "Anke Bräutigam", heard: ["anke brautigam", "anka broytigam", "anchor broytee gam"]}
+- {lang: german, canonical: "Bärbel Hoffmann", heard: ["barbel hoffmann", "bear bell hoffman", "barbell hoffman"]}
+- {lang: german, canonical: "Friedrich Vogel", heard: ["friedrich fogle", "freed rich fogel", "frederick vogel"]}
+- {lang: spanish, canonical: "José García", heard: ["jose garcia", "hose garcia", "jose garsia"]}
+- {lang: spanish, canonical: "Joaquín Fernández", heard: ["joaquin fernandez", "wa keen fernandez", "wah keen fern and es"]}
+- {lang: spanish, canonical: "Guillermo Ortega", heard: ["gillermo ortega", "gear mo ortega", "wee yermo ortega"]}
+- {lang: spanish, canonical: "Ximena Navarro", heard: ["jimena navarro", "he mena navarro", "zimena navarro"]}
+- {lang: spanish, canonical: "Iñaki Mendoza", heard: ["inaki mendoza", "inyaki mendoza", "e naki mendoza"]}
+- {lang: spanish, canonical: "Rafael Muñoz", heard: ["rafael munoz", "rafael munez", "raphael munoz"]}
+- {lang: spanish, canonical: "Rodrigo Villalobos", heard: ["rodrigo villalobos", "rodrigo villa lobos", "rod rigo via lobos"]}
+- {lang: polish, canonical: "Szymon Kowalski", heard: ["shimon kowalski", "simon kovalski", "shy mon kowalski"]}
+- {lang: polish, canonical: "Wojciech Zieliński", heard: ["wojciech zielinski", "voy tech zielinski", "voycek zielinski"]}
+- {lang: polish, canonical: "Łukasz Nowak", heard: ["lukasz nowak", "wukash novak", "lucas novak"]}
+- {lang: polish, canonical: "Grzegorz Brzęczyszczykiewicz", heard: ["grzegorz brzeczyszczykiewicz", "gregors shes kovitch", "gregory brzezinski"]}
+- {lang: polish, canonical: "Katarzyna Wiśniewska", heard: ["katarzyna wisniewska", "katarzina vishnevska", "catalina wish nevsky"]}
+- {lang: polish, canonical: "Mikołaj Zielonka", heard: ["mikolaj zielonka", "mikoy zelonka", "nicolai zelonka"]}
+- {lang: polish, canonical: "Agnieszka Szczepańska", heard: ["agnieszka szczepanska", "agnieska shepanska", "agnes che panska"]}
+- {lang: japanese, canonical: "Yuki Tanaka", heard: ["yuki tanaka", "you key tanaka", "yookie tanaka"]}
+- {lang: japanese, canonical: "Rin Takahashi", heard: ["rin takahashi", "wren takahashi", "rin taka hashi"]}
+- {lang: japanese, canonical: "Satoshi Nakamura", heard: ["satoshi nakamura", "sato shi nakamura", "sa toshee nakamura"]}
+- {lang: japanese, canonical: "Naoki Kobayashi", heard: ["naoki kobayashi", "now key kobayashi", "nah oki koba yashi"]}
+- {lang: japanese, canonical: "Keisuke Yamaguchi", heard: ["keisuke yamaguchi", "kay suke yamaguchi", "case kay yamaguchi"]}
+- {lang: japanese, canonical: "Miyuki Tsukamoto", heard: ["miyuki tsukamoto", "mi yuki sukamoto", "me yuki tsuka moto"]}
+- {lang: japanese, canonical: "Ryota Miyazaki", heard: ["ryota miyazaki", "rio ta miyazaki", "ryo tah mia zaki"]}
+- {lang: arabic, canonical: "Mohammed Al-Rashid", heard: ["muhammad al rashid", "mohammed al rasheed", "mohamed al rasheed"]}
+- {lang: arabic, canonical: "Fatima Zahra", heard: ["fatima zahra", "fatima zara", "fatema zahra"]}
+- {lang: arabic, canonical: "Khalid Nasser", heard: ["khaled nasser", "khalid naser", "called nasser"]}
+- {lang: arabic, canonical: "Aisha Bakr", heard: ["aisha bakr", "aisha bakker", "asia bakr"]}
+- {lang: arabic, canonical: "Zainab Qureshi", heard: ["zaynab qureshi", "zainab koreshi", "zane ab koreshi"]}
+- {lang: arabic, canonical: "Omar Farouk", heard: ["omar farooq", "omar faruk", "oh mar farouk"]}
+- {lang: arabic, canonical: "Abdulrahman Haddad", heard: ["abdulrahman haddad", "abdul rahman haddad", "abdul rock man haddad"]}

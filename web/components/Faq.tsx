@@ -30,22 +30,20 @@ export function Faq() {
         <span className="entry-label">questions</span>
         <h2 className="h2 max-w-[20ch]">What people ask before they install it.</h2>
 
-        <dl className="mt-11 grid gap-px overflow-hidden rounded-lg border border-rule bg-rule md:grid-cols-2">
+        <div className="mt-11 grid gap-px overflow-hidden rounded-lg border border-rule bg-rule md:grid-cols-2">
           {FAQ.map((item) => (
-            // `min-w-0`: a grid item defaults to min-width:auto, so one long
-            // unbreakable command in an answer would widen the column past the
-            // viewport. On a phone that overflow is invisible, because the body
-            // hides it, and the text simply gets clipped at the right edge.
-            <div key={item.q} className="flex min-w-0 flex-col bg-ink px-5 py-7 sm:px-7">
-              <dt className="display mb-3 text-[1.25rem] leading-snug text-paper">
-                <h3>{item.q}</h3>
-              </dt>
-              <dd className="text-[0.92rem] leading-relaxed text-paper-2 [overflow-wrap:break-word]">
+            // Open by default so the answer is in the first paint, including
+            // for a reader with JavaScript off. The control still collapses.
+            <details key={item.q} open className="min-w-0 bg-ink px-5 py-7 sm:px-7">
+              <summary className="display cursor-pointer text-[1.25rem] leading-snug text-paper">
+                {item.q}
+              </summary>
+              <p className="mt-3 text-[0.92rem] leading-relaxed text-paper-2 [overflow-wrap:break-word]">
                 {withCode(item.a)}
-              </dd>
-            </div>
+              </p>
+            </details>
           ))}
-        </dl>
+        </div>
 
         <p className="mt-8 text-[0.88rem] leading-relaxed text-paper-3">
           The same answers live in{' '}
