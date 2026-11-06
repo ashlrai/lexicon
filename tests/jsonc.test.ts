@@ -9,6 +9,28 @@ describe('parseJsonc', () => {
     expect(Object.keys(parseJsonc('{"__proto__": {"x": 1}}') as object)).toEqual(['__proto__']);
   });
 
+  it('preserves comment-like text inside a quoted string while ignoring comments', () => {
+    const text = String.raw`{
+      // A real line comment
+      "value": "https://example.test/a/*literal*/ and \"// still text\"", /* a real block comment */
+      "after": true // another real comment
+    }`;
+    expect(parseJsonc(text)).toEqual({
+      value: 'https://example.test/a/*literal*/ and "// still text"',
+      after: true,
+    });
+  });
+
+  it('reads properties separated by a multiline block comment', () => {
+    const text = `{
+      "first": "original value",
+      /* A comment between properties
+         spanning multiple lines. */
+      "second": 42
+    }`;
+    expect(parseJsonc(text)).toEqual({ first: 'original value', second: 42 });
+  });
+
   it('skips comments between nested array elements and keeps their order', () => {
     const text = `{
   "m": [
