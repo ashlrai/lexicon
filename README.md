@@ -4,209 +4,143 @@
 
 # Lexicon
 
-**Release preparation:** The 0.5.8 version and pins below describe an unpublished candidate prepared on 2026-11-01. At preparation, npm `latest` was 0.5.4. Verify the public npm version and GitHub release before using a 0.5.8 install pin.
+**Speech-to-text gets English right and your names wrong.**
 
-**Dictate to your agent. Keep your spelling.**
-
-A personal lexicon for voice-to-agents.
-
-One YAML file of the words speech-to-text gets wrong, applied everywhere your voice
-lands: MCP, Claude Code, the browser, macOS.
+Lexicon is one YAML file of the words you actually say. It rewrites the transcript before an agent reads it. It is not a dictation app.
 
 [![CI](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml/badge.svg)](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/%40ashlr%2Flexicon)](https://www.npmjs.com/package/@ashlr/lexicon)
-<!-- fresh:begin badge:release -->[![source version](https://img.shields.io/badge/source-v0.5.8-blue)](package.json)<!-- fresh:end -->
+<!-- fresh:begin badge:release -->[![source version](https://img.shields.io/badge/source-v0.5.7-blue)](package.json)<!-- fresh:end -->
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node >=20](https://img.shields.io/node/v/%40ashlr%2Flexicon)](package.json)
 
-[**Live demo**](https://ashlrai.github.io/lexicon/) &nbsp;·&nbsp; [**Quickstart**](docs/QUICKSTART.md) &nbsp;·&nbsp; [**Docs**](docs/README.md) &nbsp;·&nbsp; [**lexicon.ashlr.ai**](https://lexicon.ashlr.ai)
+[**Live demo**](https://ashlrai.github.io/lexicon/) · [**Docs**](docs/README.md) · [**llms.txt**](llms.txt) · [**llms-full.txt**](llms-full.txt) · [**lexicon.ashlr.ai**](https://lexicon.ashlr.ai)
 
 </div>
 
-```text
-You said:        "tell Ashlr.AI to deploy the Kubernetes auth service"
-STT heard:       "tell Ashler to deploy the Cooper Nettie's off service"
-Agent received:  "tell Ashlr.AI to deploy the Kubernetes auth service"
-```
+## Start here (60 seconds)
 
-![The browser demo, three panels. Left, what STT heard: "tell ashler to deploy cooper netties on head sner and ping mason white about the sass pricing". Middle, what the agent gets: "tell Ashlr.AI to deploy Kubernetes on Hetzner and ping Mason Wyatt about the SaaS pricing", labelled 5 corrections in 0.80 ms, above a table giving each replacement its tier and confidence. Right, the lexicon YAML driving it.](docs/assets/demo.gif)
-
-[Watch the terminal setup demo](docs/assets/cli-setup.cast).
-
-That is the [live demo](https://ashlrai.github.io/lexicon/) running this repo's real matcher on your text, in your browser, with nothing installed. (Its Dictate button uses your browser's own speech recognizer, which in Chrome sends audio to Google.)
-
-## Measured
-
-Method, full tables and every failing case are in [docs/BENCHMARK.md](docs/BENCHMARK.md). Reproduce with `npm run bench` (no setup beyond a clone), or `npm run bench:audio && npm run bench:compare` (needs macOS and whisper.cpp).
-
-**Against the alternatives.** 330 clips of synthesized (text-to-speech) audio through whisper.cpp `small.en`, three voices. Same audio, same recognizer, same 70-term lexicon in every row; the only thing that changes is how the proper nouns get fixed.
-
-| how the words get fixed | proper nouns recovered | clean prose wrongly changed |
-| --- | --- | --- |
-| nothing, raw whisper.cpp | 45.9% | n/a, nothing runs |
-| exact-string substitution, the macOS Text Replacement approach | 62.0% | 0 of 72 |
-| the same, plus a casing rule per term | 71.3% | 0 of 72 |
-| whisper.cpp's own `--prompt` hint list | 76.0% | n/a, nothing runs |
-| **Lexicon** | **91.0%** | **0 of 72** |
-
-Every row uses the same curated seventy-term lexicon (`bench/lexicon.yaml`). The prose column is a property of the terms in the file as much as of the matcher, so a lexicon assembled some other way is a different measurement.
-
-Exact substitution recovers the spellings someone already wrote down, and nothing else. It cannot reach `Versal`, `Superbase`, `CloudFloor` or `pedantic`, because no table written by hand contains the mistake you have not heard yet. The phonetic and fuzzy tiers exist for that gap and recover 31 of the 279 term slots on their own, which is 11 points. The remaining 9 points over the casing-aware row come from the alias tier's tolerance for how the recognizer breaks a name into words, since that row already matches case. `--prompt` is a complement rather than a rival: stacked with the lexicon it reaches **95.7%**.
-
-Two honest notes about that table. Raw whisper.cpp cannot wrongly change prose because nothing runs, which is the absence of the feature rather than an advantage. `--prompt` is not the same case: it biases the recognizer itself, so whatever it changes is already in the transcript before scoring begins, while the metric counts sentences a post-pass altered. That cell is unmeasured rather than zero. Telling which way it goes would mean diffing prompted transcripts against unprompted ones, which this harness does not do.
-
-**Before and after.**
-
-| corpus | proper nouns recovered, raw STT | after lexicon | clean prose wrongly changed |
-| --- | --- | --- | --- |
-| TTS audio, whisper.cpp base.en (330 clips) | 41.9% | 82.8% | 0 of 72 |
-| TTS audio, whisper.cpp small.en with prompt hints | 76.0% | 95.7% | 0 of 72 |
-| synthetic STT errors (554 sentences, 112 terms) | 4.6% | 90.2% | 0 of 105 |
-| ... its non-English name subset (152 sentences) | 3.4% | 76.4% | 0 of 10 |
-
-Latency in that harness is about 0.3 ms per sentence. The TTS-audio rows use macOS text-to-speech read into whisper.cpp, so they are cleaner than a phone microphone. A separate same-VM comparison with espanso and whisper.cpp (install, latency, memory) is in [docs/BENCHMARKS.md](docs/BENCHMARKS.md).
-
-The synthetic 4.6% is not a claim that speech-to-text gets 5% of proper nouns right in general. Every sentence in that corpus was written to contain a mis-hearing, so 4.6% is only the handful that came out right anyway. The honest "before" number is the TTS-audio one, 41.9%.
-
-The non-English row is there on purpose: Double Metaphone is tuned for English, so the fixture measures the matcher's weakest spot instead of hiding it inside the headline. On the original cases alone recall is 96.8%. Both rows, and the per-language-family table, are in [docs/BENCHMARK.md](docs/BENCHMARK.md).
-
-The last column counts ordinary prose only. Each corpus also contains sentences deliberately built to trip the matcher (a bare "llama" next to an Ollama term, sound-alikes, code spans), marked `expected-hard`; with those included the false-positive rate is 14.2% (19 of 134) synthetic and 16.7% (15 of 90) on audio. Both numbers, and every failing case, are in [docs/BENCHMARK.md](docs/BENCHMARK.md).
-
-**Held-out check (separate internal run, unseen voice).** The tables above use a lexicon written for the test terms. To test the harder case, aliases were learned only from other sentences and voices, then scored on a voice and sentences never used for learning (63 clips). Synthetic speech from three open text-to-speech voices read into whisper.cpp, clips counted correct when every target term was recovered.
-
-| recognizer | raw | Lexicon, canonical terms only | Lexicon, plus aliases learned from other clips |
-| --- | --- | --- | --- |
-| whisper.cpp base.en | 16 of 63 | 38 of 63 | 44 of 63 |
-| whisper.cpp small.en | 25 of 63 | 39 of 63 | 42 of 63 |
-
-Clean prose changed by Lexicon: 0 of 60 in that run.
-
-**Whisper-prompt caveat.** On the same 378 clips, whisper's `--prompt` hint list alone lifted base.en from 97 to 228 and small.en from 141 to 320 clips correct, so a prompt is a strong baseline and Lexicon adds less on top of it (base.en 271, small.en 339 with Lexicon). The prompt also made base.en produce 55 degenerate transcripts (empty or looping text) against 5 without it, so a prompt is not free on small models. All audio here is synthetic, not microphone speech, and the harness is not yet published, so treat these as internal numbers until it is.
-
-## Install
-
-The package is [`@ashlr/lexicon`](https://www.npmjs.com/package/@ashlr/lexicon); the command is `lexicon`.
+Agents are first-class users. One command checks for Node 20+, installs the CLI, and runs `lexicon setup` when it has a terminal. Without a terminal (CI, a Dockerfile), under `sudo`, or with `LEXICON_NO_SETUP=1`, it only installs and ends with `run: lexicon setup`.
 
 ```bash
-curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh   # CLI + the setup wizard
-brew install ashlrai/tap/lexicon                               # or Homebrew (macOS, Linux)
-npm i -g @ashlr/lexicon                                        # or npm (Node 20+)
+curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
 ```
 
-Then open Claude Code and say a sentence with your company name in it. Done. A timed walkthrough of that install on a clean Linux VM, with notes for agents, is in [docs/FIRST-RUN.md](docs/FIRST-RUN.md).
-
-> This README describes the current source tree. Check `lexicon --version` for your installed version and `npm view @ashlr/lexicon version` for npm latest before relying on source features.
-
-The install script runs `lexicon setup` for you when it has a terminal to ask questions on; without one (CI, a Dockerfile), under `sudo`, or with `LEXICON_NO_SETUP=1` it installs only and tells you to run `lexicon setup` yourself, as after a Homebrew or npm install. Every step is optional and safe to rerun, and `lexicon setup --dry-run` writes nothing while describing the run you would get from the same command without it: the steps it would perform, and the ones it would stop and ask about, with the answer pressing Enter gives each.
-
-With Homebrew, always use the full tap name `ashlrai/tap/lexicon`. Plain `brew install lexicon` installs [dns-lexicon](https://github.com/dns-lexicon/dns-lexicon), an unrelated DNS tool in homebrew-core.
-
-<details>
-<summary>What <code>lexicon setup</code> does, in seven numbered steps</summary>
-
-1. Seeds the lexicon with your name and your company, with the misspellings STT will produce for each.
-2. Offers the starter packs as a checklist.
-3. Harvests the current repo for names already in your code.
-4. Registers the MCP server and hooks in every agent client it detects.
-5. Installs the local API as a login service.
-6. Exports to your dictation app.
-7. Dictates a sentence built from the terms it just seeded, and shows you the correction.
-
-The full walkthrough, with the real terminal output, is in [docs/QUICKSTART.md](docs/QUICKSTART.md).
-
-</details>
-
-Or skip the wizard and add one term by hand. The first argument is the canonical spelling, the rest are what STT actually produces:
+No global install:
 
 ```bash
-lexicon add Ashlr.AI Ashler Ashlar "Ashler AI" --phonetic ASH-ler
-lexicon normalize "tell Ashler to ship it"
-# tell Ashlr.AI to ship it
+npx @ashlr/lexicon@latest setup
 ```
 
-Ten minutes in, teach it the names you actually say. `lexicon import --guided` asks where your proper nouns live (your contacts, your calendar, your GitHub), shows each candidate with where it was seen, and writes only the ones you approve. Nothing is read until you check its box, and email and chat stay out entirely.
+Do not install it unasked. Preview the plan, show it, then apply. `--dry-run` writes nothing. Stdout is one JSON document. Read `ok` first.
 
-**Claude Code plugin**, if you would rather not install a CLI at all. No Node install step, no build:
+```bash
+lexicon setup --dry-run --json
+lexicon setup --yes --packs developer,ai --json
+```
+
+`--packs`, `--harvest` and `--serve` stay opt-in even with `--yes`, because each writes a lot or installs a service.
+
+![Speech-to-text wrote ashler, kuber netties and post gressql. Lexicon rewrites them to Ashlr.AI, Kubernetes and PostgreSQL. The rest of the sentence stays put.](docs/assets/hero.svg)
+
+Correct one sentence. With no lexicon of your own, arguments (not piped input) are corrected against a built-in example, and stderr says so. Nothing is written.
+
+```bash
+lexicon normalize "ask ashler to deploy kuber netties with post gressql" --json
+```
+
+```json
+{"ok":true,"input":"ask ashler to deploy kuber netties with post gressql","output":"ask Ashlr.AI to deploy Kubernetes with PostgreSQL","replacements":[{"start":4,"end":10,"original":"ashler","replacement":"Ashlr.AI","canonical":"Ashlr.AI","reason":"alias","confidence":1},{"start":21,"end":34,"original":"kuber netties","replacement":"Kubernetes","canonical":"Kubernetes","reason":"phonetic","confidence":0.8826923076923077},{"start":40,"end":52,"original":"post gressql","replacement":"PostgreSQL","canonical":"PostgreSQL","reason":"phonetic","confidence":0.8795454545454546}],"changed":true,"example":true}
+```
+
+`example: true` means those terms are the built-in sample, not the user's file yet.
+
+Add the spelling, still as JSON:
+
+```bash
+lexicon add Ashlr.AI Ashler Ashlar "Ashler AI" --phonetic ASH-ler --json
+```
+
+When the user corrects you, record it. `--dry-run` writes nothing.
+
+```bash
+lexicon learn --from "it's Ashlr.AI not Ashler" --dry-run --json
+```
+
+Check the install. Read `ready`, `summary` and `nextStep`.
+
+```bash
+lexicon doctor --json
+```
+
+The same contract, in one fetch: [llms.txt](llms.txt) (index) and [llms-full.txt](llms-full.txt) (install, tools, privacy, FAQ). The page written to an agent is [docs/AGENTS.md](docs/AGENTS.md). Copy-paste only, no commentary: [docs/COPY-PASTE.md](docs/COPY-PASTE.md).
+
+This tree is source version <!-- fresh:begin pin:version -->0.5.7<!-- fresh:end -->. On 2026-10-31, when that version was prepared, npm `latest` was 0.5.4. Check `lexicon --version` and `npm view @ashlr/lexicon version` before you pin.
+
+## MCP server
+
+Preview, then write. Without `--apply`, nothing is written. `--json` returns `{ ok, client, scope, applied, written, output }`.
+
+```bash
+lexicon install claude --json
+lexicon install claude --apply --json
+lexicon install cursor --json
+lexicon install cursor --apply --json
+lexicon install codex --json
+lexicon install codex --apply --json
+```
+
+Paste these only when `lexicon-mcp` is already on `PATH` (a global install). `lexicon install` writes the path that matches how Lexicon was installed, which is the safer call.
+
+Claude Code, Cursor (`~/.cursor/mcp.json`), and any other client that reads `mcpServers`:
+
+```json
+{
+  "mcpServers": {
+    "lexicon": {
+      "command": "lexicon-mcp",
+      "args": []
+    }
+  }
+}
+```
+
+Codex (`~/.codex/config.toml`):
+
+```toml
+[mcp_servers.lexicon]
+command = "lexicon-mcp"
+args = []
+```
+
+Claude Code also gets a `SessionStart` hook and a `UserPromptSubmit` hook from `lexicon install claude --apply`. Restart the client after `--apply`. Cursor needs a window reload.
+
+Environment variables the server reads (`LEXICON_PATH`, `LEXICON_HARVEST_ROOTS`, `LEXICON_REGISTRIES` and the rest): [docs/MCP.md](docs/MCP.md#environment-variables).
+
+These calls cover almost every session. The server has twenty-one MCP tools, three resources and two prompts. The full table is [docs/MCP.md](docs/MCP.md).
+
+- `normalize_transcript { text }` corrects a dictated string and returns `output`, `changed` and `replacements`.
+- `learn_correction { heard, meant }` records a correction the user just made.
+- `add_term { canonical, aliases?, phonetic? }` adds a spelling. Omit `aliases` and the server proposes the mis-hearings.
+- `setup_lexicon { apply? }` returns a plan and writes nothing until `apply: true`.
+- `lexicon_doctor {}` is the structured health check. Read `ready`, `summary` and `nextStep`.
+
+`setup_lexicon`, `install_client` and `trust_project` preview first. Do not set `LEXICON_TRUST_ALL=1` on a user's behalf.
+
+Plugin, if you would rather not install a CLI:
 
 ```bash
 claude plugin marketplace add ashlrai/lexicon
 claude plugin install lexicon@ashlrai
 ```
 
-`lexicon doctor` checks the install. There is no telemetry. Vocabulary and
-application state are local files; ordinary hooks, correction, MCP, local API
-and extension paths do not send transcripts to a remote service. Explicit
-network operations include `lexicon voice` fetching a whisper model on first
-use, `lexicon pack` fetching community packs from a `--registry` URL with
-checksum verification, and opting into the GitHub source in
-`lexicon import --guided`. That source calls the GitHub API through your existing `gh` configuration
-and login (normally `api.github.com`) for profile, organization membership,
-member-login and repository-name metadata; no new OAuth scopes are requested. The source is
-selected before inspection, and candidates are reviewed before writes. The
-install script, npm and Homebrew fetch the package itself. See
-[SECURITY.md](SECURITY.md).
-
-The guided GitHub importer is in source and the `v0.5.5` tag ([PR #25](https://github.com/ashlrai/lexicon/pull/25)). At preparation on 2026-11-01, that version was not published to npm or as a GitHub release. Check current availability before installing.
-
-## MCP setup
-
-`lexicon install <client> --apply` does this for you. To wire it by hand:
-
-```bash
-# Claude Code
-claude mcp add lexicon -- npx -y -p @ashlr/lexicon lexicon-mcp
-# Codex
-codex mcp add lexicon -- npx -y -p @ashlr/lexicon lexicon-mcp
-```
-
-Cursor (`~/.cursor/mcp.json`):
-
-```json
-{ "mcpServers": { "lexicon": { "command": "npx", "args": ["-y", "-p", "@ashlr/lexicon", "lexicon-mcp"] } } }
-```
-
-The environment variables the server reads (`LEXICON_PATH`, `LEXICON_HARVEST_ROOTS`, `LEXICON_REGISTRIES` and the rest) are listed in [docs/MCP.md](docs/MCP.md#environment-variables).
-
-## Why
-
-Speech-to-text is about 95% accurate on ordinary English and much worse on invented names. In the benchmark above, raw whisper.cpp base.en transcribed 117 of 279 dictated proper nouns correctly. "Ashlr.AI" becomes "Ashler", "Kubernetes" becomes "Cooper Nettie's", "SaaS" becomes "sauce", "auth" becomes "off". Those are exactly the words an agent needs to get right.
-
-Dictation apps (Wispr Flow, Superwhisper, Aqua) each keep their own dictionary and none of them share it. Agents (Claude Code `/voice`, ChatGPT voice, Codex, local Whisper) run their own recognizer with no user vocabulary at all. This is the portable layer in between: corrections happen after STT and before the model, wherever the text passes through.
-
-This is not a dictation app. It sits between whatever dictation you already use and whatever agent you talk to. The research behind that call, including the kill criteria, is in [docs/RESEARCH.md](docs/RESEARCH.md).
-
-## What you get
-
-- **Twenty-one MCP tools**, three resources and two prompts, for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop. Your agent can run its own setup: `setup_lexicon`, `lexicon_doctor`, `install_client`, `trust_project`, `import_dictionary`, `import_vocabulary` and `suggest_terms` mean "set up my lexicon" works without a terminal. The tools that change your machine preview first: `setup_lexicon` and `install_client` return a plan and write nothing until the agent passes `apply: true`, `uninstall_client` (the `lexicon uninstall` counterpart) is a dry run until `apply: true`, `trust_project` asks you directly (an MCP elicitation prompt the agent cannot answer) before pinning a file, `import_dictionary` takes `dryRun`, and `import_vocabulary` reads only explicitly selected sources, then requires a saved preview token and approved candidate ids with `apply: true`.
-- **A Claude Code plugin**: MCP server, `SessionStart` and `UserPromptSubmit` hooks, a `lexicon` skill and a `/lexicon` command. Installs from this repo's marketplace with no build step.
-- **A CLI with 27 commands**, from `lexicon add` to `lexicon voice`.
-- **246 starter terms** in seven packs (developer, AI, business, voice tools, cloud and DevOps, legal profession, law and litigation), one command each, plus community packs from registry indexes (`lexicon pack search cardiology --registry <index>`): checksums pinned at install, every install and update previewed before it writes.
-- **Sixteen export formats** (Wispr Flow, Superwhisper, macOS Text Replacement, espanso, Whisper and OpenAI prompts, Deepgram, AssemblyAI, Speechmatics, Azure, Google, CLAUDE.md, markdown, text, CSV, JSON) and **eight importers** (including the CLAUDE.md table it writes) for the dictionary you already trained.
-  `lexicon export` with no format lists them all. A mistyped format exits 1 with a suggestion, for example `lexicon export wisprr` prints `Did you mean wispr? Run: lexicon export wispr` in the current source.
-- **Repo harvesting**, a guided vocabulary import (`lexicon import --guided`: your contacts, calendar and GitHub, each source opt-in, every candidate approved before it is written), correction learning ("it's Ashlr.AI not Ashler"; corrections the prompt hook notices are also queued for review in `pending-aliases.yaml` next to your global lexicon, and nothing in the queue changes matching until you run `lexicon pending accept <id>`; `lexicon pending reject <id>` drops one, `LEXICON_QUEUE_CORRECTIONS=0` turns the queue off), usage stats, suggestions mined from your voice history, and a trust gate for project lexicons.
-- **A plain library.** `normalize()` is a pure function: text plus lexicon in, corrected text and a replacement list out.
-
-## Where it applies
-
-| Surface | How | Docs |
-|---|---|---|
-| Claude Code | Plugin, or MCP server plus two hooks that correct the prompt before the model reads it | [CLIENTS.md](docs/CLIENTS.md) |
-| Codex, Cursor, Windsurf, Gemini CLI, VS Code, Claude Desktop | `lexicon install <client> --apply` registers the MCP server; `lexicon uninstall <client>` takes out only what it wrote (`--dry-run` first) | [CLIENTS.md](docs/CLIENTS.md) |
-| Any MCP client | stdio server, twenty-one tools | [MCP.md](docs/MCP.md) |
-| ChatGPT, Claude.ai, Grok, Gemini, Perplexity, Poe, Copilot | Browser extension: rewrites the composer when you press send | [EXTENSION.md](docs/EXTENSION.md) |
-| Any macOS app, any dictation tool | LexiconBar menu bar app: rewrites dictated text in the focused field through Accessibility, with an undo bubble | [MACOS-APP.md](docs/MACOS-APP.md) |
-| Shortcuts, Raycast, scripts, your own app | `lexicon serve`: loopback HTTP API on `127.0.0.1:41733` behind a bearer token | [LOCAL-API.md](docs/LOCAL-API.md) |
-| Dictation without a dictation app | `lexicon voice`: ffmpeg records, whisper.cpp transcribes with your canonicals as prompt hints, the lexicon corrects | [VOICE.md](docs/VOICE.md) |
-| Any text field, any OS | `lexicon daemon --once --paste` on a hotkey | [DAEMON.md](docs/DAEMON.md) |
-| Wispr Flow, Superwhisper, macOS Text Replacement, espanso, Deepgram, Azure, Google | Export into their own dictionaries and biasing parameters | [EXPORTS.md](docs/EXPORTS.md) |
-| Your own STT pipeline | `npm i @ashlr/lexicon`, call `normalize()` between transcription and the model | [LIBRARY.md](docs/LIBRARY.md) |
-| Any of the above, on Windows or Linux | Which surfaces are tested in CI on each OS, which work but have never been run on real hardware, and which are not there at all | [PLATFORMS.md](docs/PLATFORMS.md) |
-
 ## How it works
 
-Three tiers over token windows: exact alias first, then double-metaphone phonetic, then Damerau-Levenshtein fuzzy above a confidence floor. Exact hits win the span; matches never overlap. A stoplist of about 3400 common English words, per-term `never` lists, and (with the default `skipCode`) code spans, URLs, emails, paths and glued identifiers are all off limits. That is why zero clean sentences changed in the benchmark. Every replacement reports its `reason` and `confidence`.
+![You speak, speech-to-text writes a guess, Lexicon rewrites the names it knows, and the agent reads the corrected line. Matching is alias, then phonetic, then fuzzy.](docs/assets/how-it-works.svg)
 
-With no lexicon of your own, `normalize` uses a built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS, Hetzner) and says so.
+Exact alias first, then double-metaphone phonetic, then Damerau-Levenshtein fuzzy above a confidence floor. Exact hits win the span. Matches never overlap. A stoplist of common English words, per-term `never` lists, and code spans, URLs, emails and paths are off limits. Every replacement reports `reason` and `confidence`.
+
+The same sentence, as a person would read it. Replacements go to stderr. The corrected line is stdout.
 
 ```bash
 lexicon normalize --diff "ask ashler to deploy kuber netties with post gressql"
@@ -218,84 +152,113 @@ lexicon normalize --diff "ask ashler to deploy kuber netties with post gressql"
 # stdout:  ask Ashlr.AI to deploy Kubernetes with PostgreSQL
 ```
 
-The rules in full, including every guard, are in [docs/MATCHING.md](docs/MATCHING.md).
+Rules: [docs/MATCHING.md](docs/MATCHING.md).
 
-## Repair with doctor --fix
+## What you get
 
-`lexicon doctor --fix` previews repairs for problems `lexicon doctor` reports and writes nothing (exit 0). `lexicon doctor --fix --apply` makes them, backing up each file first. `lexicon doctor --apply` without `--fix` is refused with exit 1. Add `--json` for one `{ mode, plan, outcome }` object. Check your installed version with `lexicon --version` and `lexicon doctor --help` for flag availability.
+- **One file**, `~/.config/lexicon/lexicon.yaml`. Project `.lexicon.yaml` merges only after `lexicon trust`.
+- **Twenty-one MCP tools** for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop.
+- **A CLI with 28 commands.** `lexicon --help` lists them. `docs/CLI.md` is generated from that help.
+- **259 terms across the eight packs** (developer, AI, business, voice tools, cloud and DevOps, legal profession, law and litigation, Ashlr.AI fleet). Community packs install from a registry after a checksum preview.
+- **Sixteen export formats** and **eight importers**, including Wispr Flow, Superwhisper, macOS Text Replacement and espanso. `lexicon export` with no format lists them.
+- **The same correction in the browser, in any macOS text field, and from your own pipeline** (`normalize()`).
 
-```console
-$ lexicon doctor --fix
-doctor --fix (dry run, nothing written):
-  would fix  move aside the trust registry (trust.json), which is not valid JSON (...)
-Run `lexicon doctor --fix --apply` to make these changes (each file is backed up first).
-$ lexicon doctor --fix --apply
-doctor --fix --apply:
-  fixed   move aside the trust registry (trust.json), which is not valid JSON (...)
-          backup: ~/.config/lexicon/trust.json.bak-<UTC stamp>
+![The browser demo. Left, what speech-to-text heard. Middle, the corrected line with each replacement's tier and confidence. Right, the lexicon YAML.](docs/assets/demo.gif)
+
+[Try it in the browser](https://ashlrai.github.io/lexicon/). The matcher runs on the page. The Dictate button uses the browser's speech recognizer, which in Chrome sends audio to Google.
+
+![A terminal running lexicon setup through seven steps and finishing on a dictated sentence corrected from Mason Wiatt and Ashler to Mason Wyatt and Ashlr.AI.](docs/assets/cli-setup.gif)
+
+[Watch the terminal setup recording](docs/assets/cli-setup.cast).
+
+![A TextEdit note where the dictated line rewrites itself in place to Ashlr.AI, Kubernetes and Vercel, with a bubble listing the three fixes.](docs/assets/fix-in-place.gif)
+
+| Surface | How |
+|---|---|
+| Claude Code | `lexicon install claude --apply`, or the plugin |
+| Codex, Cursor, and the other clients | `lexicon install cursor --json`, then the same command with `--apply` |
+| Browser chats | Extension from the [latest release](https://github.com/ashlrai/lexicon/releases/latest) |
+| Any macOS text field | LexiconBar menu bar app |
+| Shortcuts, Raycast, your own app | `lexicon serve` on `127.0.0.1:41733` |
+| Your own speech pipeline | `normalize()` between the recognizer and the model |
+
+Which of those exist on Windows and Linux: [docs/PLATFORMS.md](docs/PLATFORMS.md).
+
+## FAQ
+
+### Why does dictation get my company name wrong?
+
+The name is out of vocabulary. The recognizer picks the nearest common-sounding sequence it does know. "Ashlr.AI" becomes "Ashler". "Kubernetes" becomes "Cuban eats". The audio was fine. The vocabulary was missing. Lexicon maps the spelling you got back to the one you meant.
+
+### How does an agent install it?
+
+`curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh`, or `npx @ashlr/lexicon@latest setup`. Preview with `lexicon setup --dry-run --json`. The script runs setup only in a terminal. Under `sudo`, without a terminal, or with `LEXICON_NO_SETUP=1`, it prints `run: lexicon setup`.
+
+### Does this replace Wispr Flow or Superwhisper?
+
+No. It runs after whatever produced the transcript, and it exports into those dictionaries: `lexicon export wispr`, `lexicon export superwhisper`, `lexicon export macos`. `lexicon import` reads them back.
+
+### Is the transcript sent anywhere?
+
+Ordinary correction is local. There is no account, no sync and no telemetry. The CLI, hooks, MCP server, loopback API and extension do not send transcripts to a remote service. Three features use the network, and only when you turn them on: `lexicon voice` downloads a whisper.cpp model the first time (audio stays on the machine), `lexicon pack` fetches a community pack from a registry URL you choose, and the GitHub source in `lexicon import --guided` calls the GitHub API through your existing `gh` login. Email and chat are not imported. Threat model: [SECURITY.md](SECURITY.md).
+
+### What does it cost?
+
+Nothing. MIT license. No paid tier.
+
+More answers: [docs/FAQ.md](docs/FAQ.md).
+
+## Measured
+
+On 330 clips of synthesized speech through whisper.cpp `small.en` (three voices, the same 70-term lexicon in every row), Lexicon recovered **91.0%** of the proper nouns. Raw whisper.cpp recovered 45.9%. Clean prose wrongly changed: **0 of 72**. The audio is macOS text-to-speech read into whisper.cpp, cleaner than a phone microphone. Method, the other rows, and every failing case: [docs/BENCHMARK.md](docs/BENCHMARK.md). Reproduce with `npm run bench`.
+
+## Other installs
+
+```bash
+brew install ashlrai/tap/lexicon
+npm i -g @ashlr/lexicon
 ```
 
-What it repairs: a missing global lexicon is created empty (as `lexicon init` does), and an unusable `trust.json`, `hits.json`, pending corrections queue or index cache is copied to `<file>.bak-<UTC stamp>` and removed. What stays manual (listed as `manual`, never changed): a lexicon that does not parse (it holds your terms; fix it with `lexicon edit`), `serve.json` (it holds the pairing token), state paths that are a directory or symlink, and the Claude hook and MCP registration (`lexicon install claude --apply`). Details: [docs/doctor-fix.md](./docs/doctor-fix.md). To repair every Ashlr tool at once, see [Repair everything](https://github.com/ashlrai/ashlr-stack/blob/main/docs/getting-started-ecosystem.md#repair-everything) in the Ashlr Stack guide.
+Plain `brew install lexicon` is [dns-lexicon](https://github.com/dns-lexicon/dns-lexicon), a different project. Use the full tap name.
 
-## Documentation
+After 0.5.7 is published, <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.7`<!-- fresh:end --> installs that tag from GitHub and builds on install.
 
-**[The full index is in `docs/`](docs/README.md)**, grouped by task: get started, use it
-with your client, understand how it works, contribute, internals. The three pages most
-people need:
+Homebrew formula: [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap). Release zips (extension, LexiconBar, checksums): [GitHub releases](https://github.com/ashlrai/lexicon/releases/latest).
 
-| Page | What it covers |
+`lexicon doctor --fix` previews safe repairs and writes nothing. `lexicon doctor --fix --apply` makes them, after a backup. Details: [docs/doctor-fix.md](docs/doctor-fix.md).
+
+## Docs
+
+| You want | Read |
 |---|---|
-| [QUICKSTART.md](docs/QUICKSTART.md) | Five minutes from nothing to corrections in Claude Code, with what each setup step writes |
-| [CLIENTS.md](docs/CLIENTS.md) | Installing into Claude Code (plugin, hooks, headless) and every other agent client |
-| [FAQ.md](docs/FAQ.md) | The questions people ask before installing |
+| Commands only | [docs/COPY-PASTE.md](docs/COPY-PASTE.md) |
+| Install for someone else | [docs/AGENTS.md](docs/AGENTS.md) |
+| Five minutes, with what setup writes | [docs/QUICKSTART.md](docs/QUICKSTART.md) |
+| Every client | [docs/CLIENTS.md](docs/CLIENTS.md) |
+| Every tool | [docs/MCP.md](docs/MCP.md) |
+| The index | [docs/README.md](docs/README.md) |
 
-Writing an agent that installs this for someone? [docs/AGENTS.md](docs/AGENTS.md) is written
-to you. Changing the code? Start at [CONTRIBUTING.md](CONTRIBUTING.md) and
-[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Changing the code: [CONTRIBUTING.md](CONTRIBUTING.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-Also at the root: [SECURITY.md](SECURITY.md), [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md), [CHANGELOG.md](CHANGELOG.md).
+Lexicon is one of the open-source tools from [Ashlr.AI](https://ashlr.ai). It does not need the others to run. How it sits next to Phantom: [docs/PHANTOM-USAGE.md](docs/PHANTOM-USAGE.md).
 
-## Downloads
-
-Every [GitHub release](https://github.com/ashlrai/lexicon/releases/latest) attaches the browser extension for Chrome/Edge/Brave and for Firefox, `LexiconBar.app.zip` for macOS, the npm tarball for offline installs, and `SHA256SUMS`. The Homebrew formula lives in [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap). After 0.5.8 is published, <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.8`<!-- fresh:end --> installs that tag straight from GitHub and builds on install.
+Pellucid is now part of lexicon. Pellucid's ambiguity engine - the INCOSE rule layer, span resolution and confidence calibration - lives in `src/ambiguity/`. The two-stage design it feeds is in [docs/design/two-stage-correction.md](docs/design/two-stage-correction.md).
 
 ## Roadmap and non-goals
 
-Non-goals: this is not a dictation app, and there are no hosted accounts and no sync service. It is a file.
+This is not a dictation app. There is no hosted account and no sync. It is a file.
 
-- Chrome Web Store and Firefox AMO listings for the extension. Today it installs from the release zip.
-- Notarized macOS app. LexiconBar is ad-hoc signed, so the first launch needs right-click and Open.
-- Linux tray app with the same push-to-talk and fix-clipboard actions. The Windows one is built: see [docs/WINDOWS-APP.md](docs/WINDOWS-APP.md).
-- Non-English phonetics. Double metaphone is tuned for English; names in other languages fall back to fuzzy matching.
-- Real-microphone benchmark. The audio corpus is macOS text-to-speech read into whisper.cpp, not recorded speech.
+- The extension installs from the release zip. It is not in the Chrome Web Store or on Firefox Add-ons yet.
+- LexiconBar is ad-hoc signed, not notarized. The first launch needs right-click and Open.
+- Linux has no tray app. The Windows tray app is built and unit-tested, and it has never been run on Windows: [docs/WINDOWS-APP.md](docs/WINDOWS-APP.md).
+- Double metaphone is tuned for English. Names in other languages fall back to fuzzy matching.
+- The audio benchmark is text-to-speech read into whisper.cpp, not a phone microphone.
 
-## Part of the Ashlr ecosystem
+## Star Lexicon
 
-Lexicon is one of the open-source tools from [Ashlr](https://ashlr.ai), a forward-deployed engineering company. Each one installs and runs on its own:
+If this stopped an agent from shipping the wrong name, star the repo. That is how the next person who dictates a company name finds it.
 
-- **[Phantom](https://phm.dev)** (`phm`): the agent workbench. Source: [ashlrai/phantom](https://github.com/ashlrai/phantom).
-- **[Phantom Secrets](https://phm.dev/secrets)** (`phantom`): keeps real API keys out of agent context with `phm_` placeholders. Source: [ashlrai/phantom-secrets](https://github.com/ashlrai/phantom-secrets).
-- **[Locus](https://github.com/ashlrai/locus)** (`locus`): pins each agent session to one account.
-- **[Ashlr MD](https://md.ashlr.ai)**: a Markdown app with an MCP server.
-- **[Ashlr Stack](https://stack.ashlr.ai)** (`stack`): provisions services and stores their keys in Phantom Secrets.
-- **[ashlr-plugin](https://plugin.ashlr.ai/)** (`ashlr-plugin`): token-efficiency tools for Claude Code and Codex.
-
-### Working with Phantom
-
-Lexicon needs nothing from Phantom to run, and the two already meet in a working session:
-
-- **`phantom exec` leaves Lexicon alone.** [Phantom Secrets](https://phm.dev/secrets) starts an agent as `phantom exec -- <cmd>` (for example `phantom exec -- claude`) with `phm_` placeholders in place of real provider keys, swapped back in by a local proxy on the way out. Lexicon reads no provider key variable, so inside that session its hook, MCP server and CLI behave exactly as they do outside it: it never sees a placeholder and needs no `phm_` value of its own. The one token Lexicon keeps, the `serve.json` bearer for its loopback API, is a local token Phantom does not manage. Details: [docs/PHANTOM-USAGE.md](docs/PHANTOM-USAGE.md).
-- **`lexicon doctor` sees it.** An info-level line reports whether the `phantom` CLI is on PATH and whether it is running inside a `phantom exec` session, beside the same report for [Locus](https://github.com/ashlrai/locus) and [Ashlr MD](https://md.ashlr.ai) read through their `--ashlr-handshake` output. Every companion check is value-free (it confirms a marker or a version, never a secret) and report-only (it cannot change `ok`, `ready` or the exit code). These lines are in source (main) and not yet in a release.
-
-The deeper contract is [INTEGRATION.md](./INTEGRATION.md): a sketch, written from Lexicon's side, of how Phantom would consume the lexicon (the shared YAML file, the trust gate Phantom must not bypass, the `normalize()` / MCP / loopback-HTTP entry points, and the boundary that Lexicon builds no hosted sync). It changes nothing in Phantom core.
-
-### Post-quantum readiness
-
-[docs/PQ-READINESS.md](./docs/PQ-READINESS.md) records what Lexicon does with cryptography today (SHA-256 and SHA-512 hashes for integrity; no encryption, key exchange or signing in the shipped source) and what a migration would touch. It makes no claim that Lexicon is quantum-safe.
-
-## Contributing
-
-Good first issues are [labelled and scoped](https://github.com/ashlrai/lexicon/labels/good%20first%20issue): a new starter pack, an exporter, an importer, a harvester source. [CONTRIBUTING.md](CONTRIBUTING.md) has the setup, the test layout and a recipe for each.
+**[Star ashlrai/lexicon on GitHub](https://github.com/ashlrai/lexicon)**
 
 Found a name it gets wrong? [Open a misheard term issue](https://github.com/ashlrai/lexicon/issues/new?template=misheard_term.yml).
 

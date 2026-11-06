@@ -1,0 +1,67 @@
+# Lexicon
+
+> Speech-to-text gets English right and your names wrong. Lexicon is one YAML file of the words a person actually says. It rewrites the transcript before an agent reads it. It is not a dictation app.
+
+Agents are first-class users. Do not install it unasked. Preview, show the plan, then apply.
+
+Install (Node 20+). The script runs `lexicon setup` when it has a terminal. Without a terminal, under `sudo`, or with `LEXICON_NO_SETUP=1`, it only installs and ends with `run: lexicon setup`.
+
+```bash
+curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
+```
+
+No global install:
+
+```bash
+npx @ashlr/lexicon@latest setup
+```
+
+Preview, write nothing:
+
+```bash
+lexicon setup --dry-run --json
+```
+
+Correct a transcript. Stdout is one JSON document. Read `ok`, then `output`. `example: true` means the built-in sample stood in and nothing was written.
+
+```bash
+lexicon normalize "ask ashler to deploy kuber netties with post gressql" --json
+```
+
+MCP server. Preview (`applied` is false), then write:
+
+```bash
+lexicon install claude --json
+lexicon install claude --apply --json
+lexicon install cursor --json
+lexicon install cursor --apply --json
+lexicon install codex --json
+lexicon install codex --apply --json
+```
+
+Hand config, only when `lexicon-mcp` is on PATH.
+
+Claude Code and Cursor (`~/.cursor/mcp.json`):
+
+    {
+      "mcpServers": {
+        "lexicon": { "command": "lexicon-mcp", "args": [] }
+      }
+    }
+
+Codex (`~/.codex/config.toml`):
+
+    [mcp_servers.lexicon]
+    command = "lexicon-mcp"
+    args = []
+
+## Start here
+
+- [Full text](llms-full.txt): install, JSON commands, the twenty-one MCP tools, privacy, FAQ.
+- [Copy-paste commands](docs/COPY-PASTE.md): the same commands, nothing else.
+- [For agents](docs/AGENTS.md): when to install, what to ask, how to verify.
+- [MCP reference](docs/MCP.md): every tool, resource and prompt.
+- [Live demo](https://ashlrai.github.io/lexicon/): the real matcher in the browser.
+- [Landing page](https://lexicon.ashlr.ai): the same product, with /llms.txt, /llms-full.txt and /mcp.json.
+- [Repository](https://github.com/ashlrai/lexicon): MIT.
+- [npm](https://www.npmjs.com/package/@ashlr/lexicon): `@ashlr/lexicon`.

@@ -681,6 +681,24 @@ function init(): void {
     downloadText(`lexicon-${format}.${ext}`, ui.exportPreview.textContent ?? '', `${mime};charset=utf-8`);
   });
 
+  for (const button of document.querySelectorAll<HTMLButtonElement>('button[data-sample]')) {
+    button.addEventListener('click', () => {
+      const sample = button.dataset.sample ?? '';
+      if (button.dataset.phonetic !== undefined) {
+        ui.optPhonetic.checked = button.dataset.phonetic === '1';
+        state.settings.phonetic = ui.optPhonetic.checked;
+      }
+      if (button.dataset.fuzzy !== undefined) {
+        ui.optFuzzy.checked = button.dataset.fuzzy === '1';
+        state.settings.fuzzy = ui.optFuzzy.checked;
+      }
+      saveSettings();
+      ui.input.value = sample;
+      onInputChanged(sample);
+      ui.input.focus();
+    });
+  }
+
   // Header install snippet
   ui.copyInstall.addEventListener('click', async () => {
     const ok = await copyText('npm i -g @ashlr/lexicon');

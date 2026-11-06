@@ -268,7 +268,18 @@ test('workflow qualifies both read-only producers before a single privileged pub
   assert.match(workflow, /permissions:\n  contents: read/);
   assert.match(workflow, /tags: \['v\*'\]/);
   for (const job of [ubuntu, macos]) { assert.doesNotMatch(job, /secrets\.|npm publish|gh release|id-token: write|contents: write/); assert.match(job, /release-contract\.mjs source/); assert.match(job, /upload-artifact/); }
-  assert.match(publish, /needs: \[ubuntu, macos\]/);
+  // The manual path: a required X.Y.Z input, the existing tag resolved and
+  // checked out (sha-pinned, no persisted credentials), publish gated on the
+  // evidence job so its resolved tag is the single source of truth.
+  assert.match(workflow, /workflow_dispatch:\n    inputs:\n      version:\n        description:.*\n        required: true/);
+  assert.match(workflow, /tag \$tag must already exist/);
+  for (const job of [ubuntu, macos, publish]) {
+    assert.match(job, /actions\/checkout@[0-9a-f]{40} # v7/);
+    assert.match(job, /persist-credentials: false/);
+    assert.match(job, /refs\/tags\/\{0\}/);
+    assert.match(job, /RELEASE_TAG: \$\{\{ needs\.full-suite-evidence\.outputs\.tag \}\}/);
+  }
+  assert.match(publish, /needs: \[full-suite-evidence, ubuntu, macos\]/);
   assert.match(publish, /npm publish "\.\/release\/ashlr-lexicon-\$\{VERSION\}\.tgz" --provenance/);
   assert.doesNotMatch(publish, /--clobber|npm pack|npm ci|npm run build|Skipped npm publish/);
   const stages = ['mjs assemble', 'mjs preflight', 'npm publish', 'mjs registry', 'gh release create', 'gh release upload', 'mjs hosted', 'gh release edit'];

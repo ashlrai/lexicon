@@ -66,6 +66,8 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - Preserve the first complete voice-history record when the bounded tail starts exactly at its byte boundary. History trimming and term suggestions now discard only a genuinely cut record, including for Unicode input.
 
 
+- The MCP server (`lexicon-mcp`) exits when the host closes its stdin, not only on SIGINT or SIGTERM. The SDK transport watched only data and errors, so a host that disconnected left the server running with its requests outstanding. Shutdown runs once however many signals arrive.
+
 ### Internal
 
 - Guard dynamic imports in both test trees against bare filesystem paths on Windows, and assert the enumeration prose regression ceiling explicitly.
@@ -73,6 +75,8 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - Cover adjacent bracketed Whisper tags in the voice transcript cleaning tests.
 
 ### Changed
+
+- A successful `--dry-run --json` result of `init`, `add`, `remove` (term and `--alias`), `learn`, `untrust` and built-in `pack add` leads with `plan: true` beside `dryRun: true`, no-ops included, so a caller can tell a preview from an applied result without reading `dryRun`. Applied results and failures never carry `plan`. Additive; `dryRun: true` is unchanged. See docs/CONTRACT.md, Write previews.
 
 - The built-in example lexicon (`DEMO_LEXICON`), which `lexicon normalize` uses on argument text when your own lexicon is empty and `lexicon setup` falls back to for its closing demo, includes Hetzner again: `lexicon normalize "deploy on head sner"` now prints `deploy on Hetzner` with the example notice instead of echoing the input unchanged. The notice names the example's terms by reading them off `DEMO_LEXICON`, so it cannot drift from the term list. Closes #217.
 

@@ -19,6 +19,7 @@ describe('schema limit reference', () => {
     ['canonical', (s: string) => ({ terms: [{ canonical: s }] })],
     ['alias', (s: string) => ({ terms: [{ canonical: 'X', aliases: [s] }] })],
     ['never', (s: string) => ({ terms: [{ canonical: 'X', never: [s] }] })],
+    ['context', (s: string) => ({ terms: [{ canonical: 'X', context: [s] }] })],
     ['protectedWords', (s: string) => ({ settings: { protectedWords: [s] } })],
     ['packs', (s: string) => ({ settings: { packs: [s] } })],
   ])('documents the word limit applied to %s', (_field, input) => {
@@ -30,6 +31,7 @@ describe('schema limit reference', () => {
   it.each([
     ['aliases', (entries: string[]) => ({ terms: [{ canonical: 'X', aliases: entries }] }), LIMITS.aliases],
     ['never', (entries: string[]) => ({ terms: [{ canonical: 'X', never: entries }] }), LIMITS.aliases],
+    ['context', (entries: string[]) => ({ terms: [{ canonical: 'X', context: entries }] }), LIMITS.aliases],
     ['packs', (entries: string[]) => ({ settings: { packs: entries } }), LIMITS.aliases],
     ['protectedWords', (entries: string[]) => ({ settings: { protectedWords: entries } }), LIMITS.protectedWords],
   ])('counts cleaned %s entries without deduplicating', (_field, input, max) => {

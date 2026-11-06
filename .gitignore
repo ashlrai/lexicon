@@ -1,9 +1,12 @@
 /node_modules/
+# Guard against tools given a literal, relative HOME of `~`.
+/~/
 dist/
 *.log
 .DS_Store
 coverage/
 .lexicon.local.yaml
+.lexicon-dry-run-cli-*/
 .claude/launch.json
 site/dist/
 # TTS-audio benchmark artifacts (wav, transcripts, json); bench/audio/results.md is committed

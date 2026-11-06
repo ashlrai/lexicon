@@ -54,6 +54,16 @@ function byName(candidates: HarvestCandidate[], name: string): HarvestCandidate 
 }
 
 describe('harvestRepo', () => {
+  it('harvests the identifier associated with a HACK marker from a fixture', async () => {
+    const fixture = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'hack-marker');
+    const candidates = await harvestRepo(fixture, { git: false, minCount: 1, symbols: true });
+
+    expect(byName(candidates, 'HACK')).toBeUndefined();
+    expect(byName(candidates, 'NebulaGateway')).toMatchObject({
+      canonical: 'NebulaGateway', category: 'identifier', count: 1, evidence: ['workaround.ts'],
+    });
+  });
+
   it('finds the package name, classes, brands, authors and directory name', async () => {
     const candidates = await harvestRepo(repo);
     const names = candidates.map((c) => c.canonical);
@@ -192,6 +202,22 @@ describe('harvestRepo', () => {
     await fs.writeFile(path.join(dir, 'note.ts'), '// revisit this after the next request\n');
 
     expect(await harvestRepo(dir, { git: false, minCount: 1, symbols: true })).toEqual([]);
+  });
+
+  it('filters NOTE itself while scanning marked and unmarked comments alike', async () => {
+    const dir = path.join(tmp, 'note-contract', 'repo');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'marked.ts'), '// NOTE: check QuasarWidget\n');
+    await fs.writeFile(path.join(dir, 'plain.ts'), '// check QuasarWidget\n');
+
+    const options = { git: false, symbols: true, minCount: 1 };
+    const candidates = await harvestRepo(dir, options);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      canonical: 'QuasarWidget', category: 'identifier', source: 'harvest:repo',
+      count: 2, evidence: ['marked.ts', 'plain.ts'],
+    });
+    expect(await harvestRepo(dir, { ...options, minCount: 3 })).toEqual([]);
   });
 
   it.each(['FIXME', 'NOTE', 'HACK'])(

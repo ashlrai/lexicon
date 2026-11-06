@@ -12,11 +12,12 @@ The short pitch, the benchmark headline and the install commands are in the
 
 | Page | What it covers | Also listed under |
 |---|---|---|
+| [COPY-PASTE.md](COPY-PASTE.md) | The install, `--json` commands, and Claude, Cursor and Codex MCP snippets, with no commentary | |
 | [QUICKSTART.md](QUICKSTART.md) | Nothing to working corrections in Claude Code in five minutes, with what each setup step writes | |
 | [FIRST-RUN.md](FIRST-RUN.md) | First-run report measured October 26, 2026 on one Linux VM with Node already installed: install and setup demo timings (the first printed correction is the setup demo), a separate npx normalization timing, documentation findings, non-interactive agent behavior, write gates, JSON errors, MCP schemas and ranked follow-ups; compares npm 0.5.4 with source 0.5.6 | |
 | [CLIENTS.md](CLIENTS.md) | Installing into Claude Code (plugin, hooks, headless) and every other agent client. Read this one second | Use it with |
 | [FAQ.md](FAQ.md) | The questions people ask before installing | |
-| [PACKS.md](PACKS.md) | The seven starter packs, what is in each, and how install and remove behave | |
+| [PACKS.md](PACKS.md) | The eight starter packs, what is in each, and how install and remove behave | |
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Reference |
 | [PLATFORMS.md](PLATFORMS.md) | What works on macOS, Windows and Linux, what is tested in CI, and what is not there at all | |
 
@@ -84,6 +85,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [aliases-query-examples.md](aliases-query-examples.md) | Local API alias suggestion queries and responses | |
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Get started |
 | [schema-limit-reference.md](schema-limit-reference.md) | File schema limits and their relationship to the contract | |
+| [term-capacity-reference.md](term-capacity-reference.md) | Term and alias count limits versus text-length limits, with sources | |
 | [schema-collection-limits.md](schema-collection-limits.md) | Alias and term collection limits and validation definitions | |
 | [schema-text-limits.md](schema-text-limits.md) | Notes and phonetic text limits, counting and examples | |
 | [contract-term-limits.md](contract-term-limits.md) | Contract term limits, affected fields and counting rules | |
