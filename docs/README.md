@@ -84,6 +84,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [aliases-onboarding-reference.md](aliases-onboarding-reference.md) | Suggesting and reviewing aliases in an onboarding form | |
 | [aliases-query-examples.md](aliases-query-examples.md) | Local API alias suggestion queries and responses | |
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Get started |
+| [contract-limits-reference.md](contract-limits-reference.md) | Schema limits, units and scope | |
 | [schema-limit-reference.md](schema-limit-reference.md) | File schema limits and their relationship to the contract | |
 | [term-capacity-reference.md](term-capacity-reference.md) | Term and alias count limits versus text-length limits, with sources | |
 | [schema-collection-limits.md](schema-collection-limits.md) | Alias and term collection limits and validation definitions | |
@@ -133,6 +134,7 @@ Design notes and live records. You do not need these to use Lexicon.
 | [DOGFOOD.md](DOGFOOD.md) | A live run of the hooks and MCP server against the real Claude Code CLI, and the bugs it found |
 | [DOGFOOD-AGENT-NATIVE.md](DOGFOOD-AGENT-NATIVE.md) | The same treatment for the agent-native onboarding tools |
 | [resident-expander-scope.md](resident-expander-scope.md) | The scope outline for issue #220: the proposed system-wide expander, the pieces that exist, and the boundary left to build |
+| [daemon-acceptance-criteria.md](daemon-acceptance-criteria.md) | Issue #220's acceptance record: what the opt-in resident expander observably does, and which OS-integration decisions stay open |
 | [daemon-scope.md](daemon-scope.md) | Issue #220's resident expander scope, current boundary and open decisions |
 | [daemon-surface-scope.md](daemon-surface-scope.md) | Issue #220's requested surface alongside existing daemon behavior and the remaining gap |
 | [daemon-scope-questions.md](daemon-scope-questions.md) | Open questions on process lifetime, configuration and interactions with existing surfaces |
