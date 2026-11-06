@@ -15,6 +15,11 @@ const ticks = (text: string): string[] => [...text.matchAll(/`([^`]+)`/g)].map((
 const linked = (text: string, re: RegExp): string[] => [...text.matchAll(re)].map((m) => m[1]);
 
 describe('daemon acceptance criteria (issue #220)', () => {
+  it('is linked from the docs index', () => {
+    const index = readFileSync(new URL('README.md', docsUrl), 'utf8');
+    expect(index).toContain('[daemon-acceptance-criteria.md](daemon-acceptance-criteria.md)');
+  });
+
   it('keeps the implemented surface separate from the proposed one', () => {
     expect(observable).not.toBe('');
     expect(unresolved).not.toBe('');
