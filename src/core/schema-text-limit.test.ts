@@ -118,6 +118,29 @@ describe('the text limit (LIMITS.text)', () => {
       /terms\[0\]\.canonical: must be at most 80 characters/,
     );
   });
+  it('refuses phonetic-text overflow past the documented 200-character limit (docs/CONTRACT.md LIMITS.text)', () => {
+    // Explicit test: docs/CONTRACT.md documents LIMITS.text = 200 for the phonetic field.
+    // SafeString(LIMITS.text) enforces this on every parse path.
+    expect(LIMITS.text).toBe(200);
+    // Exactly at the boundary is accepted.
+    expect(parseLexicon({ terms: [{ canonical: 'X', phonetic: atLimit }] }).terms[0].phonetic).toBe(atLimit);
+    // One character over is rejected with the LIMITS.text error.
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', phonetic: overLimit }] })).toThrow(
+      'Invalid lexicon:\n  - terms[0].phonetic: must be at most 200 characters',
+    );
+    // Far past the boundary (10x the limit) is the same refusal.
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', phonetic: 'p'.repeat(2000) }] })).toThrow(
+      /terms\[0\]\.phonetic: must be at most 200 characters/,
+    );
+  });
+
+  it('refuses phonetic-text overflow with unencodable characters (docs/CONTRACT.md LIMITS paragraph)', () => {
+    // docs/CONTRACT.md: no U+FFFE, U+FFFF or unpaired surrogate in any field.
+    // refuseUnencodable checks TERM_TEXT_FIELDS which includes 'phonetic'.
+    expect(() => parseLexicon({ terms: [{ canonical: 'X', phonetic: `hint\uFFFEhere` }] })).toThrow(
+      /terms\[0\]\.phonetic: must not contain U\+FFFE \([^)]*\) in term "X"/,
+    );
+  });
 
   it('reaches only notes and phonetic: createdAt keeps its own 64 cap, settings.phonetic is a flag', () => {
     expect(() => parseLexicon({ terms: [{ canonical: 'X', createdAt: 'c'.repeat(100) }] })).toThrow(
