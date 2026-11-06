@@ -165,6 +165,23 @@ describe('the same boundary through lexicon add --phonetic', () => {
     expect(error!.message).toContain(bad);
     expect(error!.message).toContain(`terms[0].phonetic: must be at most ${LIMITS.text} characters`);
   });
+
+  it('reads a hand-edited YAML hint at the documented limit and rejects one character more', async () => {
+    const match = contract.match(/`text` (\d+) \(notes, phonetic\)/);
+    expect(match).not.toBeNull();
+    const limit = Number(match![1]);
+    const phonetic = `${'ash-'.repeat((limit - 4) / 4)}🙂abc`;
+    expect(Array.from(phonetic)).toHaveLength(limit);
+    const yaml = (value: string) => `terms:\n  - canonical: Boundary Co\n    phonetic: "${value}"\n`;
+
+    await fs.writeFile(globalPath, yaml(phonetic));
+    expect((await readLexiconFile(globalPath, 'global')).lexicon.terms[0].phonetic).toBe(phonetic);
+
+    await fs.writeFile(globalPath, yaml(`${phonetic}x`));
+    await expect(readLexiconFile(globalPath, 'global')).rejects.toThrow(
+      `terms[0].phonetic: must be at most ${limit} characters`,
+    );
+  });
 });
 
 describe('the same boundary through the core addTerm and addTerms', () => {
