@@ -22,6 +22,12 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 | 0.1.0 | 2026-09-19 |
 <!-- fresh:end -->
 
+## Unreleased
+
+### Added
+
+- Optional `architecture` starter pack: 12 building-design terms and 24 synthetic alias candidates. It is offered unchecked in setup; the default packs are unchanged. The current inventory is nine packs, 271 terms and 565 aliases. Existing prose, repeated installation and removal are covered by the pack tests.
+
 ## 0.5.8 (2026-11-05)
 
 ### Release scope and upgrade notes
