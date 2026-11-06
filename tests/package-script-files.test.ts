@@ -6,7 +6,7 @@ import { describe, it, expect } from 'vitest';
 const REPO_ROOT = join(__dirname, '..');
 
 describe('package scripts reference existing files', () => {
-  const pkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf-8'));
+  const pkg = JSON.parse(readFileSync(join(REPO_ROOT, 'package.json'), 'utf-8')) as { scripts?: Record<string, string> };
   const raw = pkg.scripts ?? {};
 
   // Extract every scripts/... path from all script values, filtering to

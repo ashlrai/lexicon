@@ -13,8 +13,9 @@ spaces; the final step collapses whitespace and trims both ends.
 ## Square brackets
 
 Every span from `[` to the next `]` is replaced with a space, even when it
-contains ordinary dictated words. An unmatched opening bracket is preserved.
-Brackets are not parsed as nested structures.
+contains ordinary dictated words. An unmatched opening bracket is preserved,
+and so is a closing bracket with no opening one. Brackets are not parsed as
+nested structures.
 
 | Input | Cleaned output |
 |---|---|

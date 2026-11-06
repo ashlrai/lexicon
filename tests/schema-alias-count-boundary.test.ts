@@ -46,6 +46,15 @@ describe('alias count boundary', () => {
     );
   });
 
+  it('rejects 65 aliases read from YAML with a validation error', () => {
+    const aliases = Array.from({ length: 65 }, (_, i) => `alias${i}`);
+    const yaml = ['version: 1', 'terms:', '  - canonical: Example', '    aliases:', ...aliases.map((a) => `      - ${a}`), ''].join('\n');
+
+    expect(() => parseLexicon(parseYaml(yaml))).toThrow(
+      'Invalid lexicon:\n  - terms[0].aliases: at most 64 aliases per term',
+    );
+  });
+
   it('counts the list after cleaning: raw entries that strip to nothing never count', () => {
     const padded = [...ALIASES.map((a) => `  ${a}\u200b `), '', ' ', '\t', '\u200b'];
     expect(padded).toHaveLength(LIMITS.aliases + 4);

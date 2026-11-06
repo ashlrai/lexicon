@@ -66,6 +66,21 @@ describe('notes and phonetic text limits', () => {
     expect(term.phonetic).toBe(text);
   });
 
+  it('reports an over-limit note alongside another invalid field in a later term', () => {
+    const raw = { terms: [
+      { canonical: 'Valid', notes: 'n'.repeat(200) },
+      { canonical: 'Invalid', notes: 'n'.repeat(201), phonetic: 'p'.repeat(201) },
+    ] };
+    const result = LexiconSchema.safeParse(raw);
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected both overlong fields to be rejected');
+    expect(result.error.issues).toHaveLength(2);
+    expect(result.error.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ code: 'too_big', path: ['terms', 1, 'notes'], maximum: 200 }),
+      expect.objectContaining({ code: 'too_big', path: ['terms', 1, 'phonetic'], maximum: 200 }),
+    ]));
+  });
+
   it.each(['notes', 'phonetic'] as const)('reports only the term whose %s exceeds the documented boundary', (field) => {
     const atLimit = 'n'.repeat(200);
     const raw = {

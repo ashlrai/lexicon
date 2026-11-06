@@ -1,4 +1,6 @@
 /node_modules/
+# Guard against tools given a literal, relative HOME of `~`.
+/~/
 dist/
 *.log
 .DS_Store
@@ -25,5 +27,7 @@ extension/*.zip
 *.bak
 *.lock
 .vitest
+# cli-dry-run tests bundle the CLI into the repo root; an interrupted run leaves it behind
+.lexicon-dry-run-cli-*/
 # loadLexicon's parsed-YAML cache beside a large global lexicon
 parse-cache.json

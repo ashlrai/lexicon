@@ -29,6 +29,12 @@ describe('cleanTranscript two-word asterisk tag', () => {
       .toBe('Please send the report today.');
   });
 
+  it('preserves the surrounding sentence when cleaned again', () => {
+    const cleaned = cleanTranscript('After the meeting, *phone rings* please call the team.');
+    expect(cleaned).toBe('After the meeting, please call the team.');
+    expect(cleanTranscript(cleaned)).toBe(cleaned);
+  });
+
   it.each([
     ['at the start', '*door slams* Please send the report.', 'Please send the report.'],
     ['at the end', 'Please send the report. *door slams*', 'Please send the report.'],

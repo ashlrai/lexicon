@@ -1863,6 +1863,11 @@ describe('lexicon voice --json failures', () => {
 });
 
 describe('cleanTranscript', () => {
+  it('preserves ordinary unbracketed words while collapsing whitespace', () => {
+    expect(cleanTranscript('  Please play music, then\nwait in silence.  '))
+      .toBe('Please play music, then wait in silence.');
+  });
+
   it('removes starred spans of up to three words but preserves four-word spans', () => {
     expect(cleanTranscript('before *door slams loudly* after')).toBe('before after');
     expect(cleanTranscript('before *the door slams loudly* after')).toBe('before *the door slams loudly* after');
@@ -1878,6 +1883,10 @@ describe('cleanTranscript', () => {
 
   it('removes a bracketed tag and keeps the spoken words on both sides', () => {
     expect(cleanTranscript('Please [MUSIC] continue speaking.')).toBe('Please continue speaking.');
+  });
+
+  it('removes multiple bracketed tags while keeping the transcript between them', () => {
+    expect(cleanTranscript('Before [MUSIC] the spoken words [APPLAUSE] after.')).toBe('Before the spoken words after.');
   });
 
   it('removes adjacent bracketed tags while preserving surrounding speech', () => {

@@ -154,6 +154,9 @@ describe('indexKey', () => {
     expect(key((l) => (l.terms[0].notes = 'n'))).toBe(base);
     expect(key((l) => (l.terms[0].category = 'brand'))).toBe(base);
     expect(key((l) => (l.terms[0].scope = 'project'))).toBe(base);
+    // context gates matches at findReplacements time off the live term, so it
+    // changes no index buildIndex produces and does not belong in the key.
+    expect(key((l) => (l.terms[0].context = ['fleet']))).toBe(base);
   });
 
   it('is pinned to the code that builds the index: change that code, bump INDEX_FORMAT_VERSION', () => {

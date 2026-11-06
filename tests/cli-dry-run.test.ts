@@ -363,7 +363,7 @@ describe('CLI dry-run previews', () => {
   it('project previews retain the untrusted-file refusal and do not pin content', () => {
     const projectPath = path.join(repo, '.lexicon.yaml');
     writeFileSync(projectPath, seed);
-    for (const args of [['add', 'NewName', 'new name', '--project'], ['remove', 'Ashlr.AI', '--project'], ['harvest', '--add', '--yes']]) {
+    for (const args of [['add', 'NewName', 'new name', '--project'], ['remove', 'Ashlr.AI', '--project'], ['learn', 'Ashlur', 'Ashlr.AI', '--project'], ['harvest', '--add', '--yes']]) {
       const result = lexicon([...args, '--dry-run', '--json']);
       expect(result.status).toBe(1);
       expect(JSON.parse(result.stdout)).toMatchObject({ ok: false });

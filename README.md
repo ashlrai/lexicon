@@ -10,7 +10,7 @@ Lexicon is one YAML file of the words you actually say. It rewrites the transcri
 
 [![CI](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml/badge.svg)](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/%40ashlr%2Flexicon)](https://www.npmjs.com/package/@ashlr/lexicon)
-<!-- fresh:begin badge:release -->[![source version](https://img.shields.io/badge/source-v0.5.7-blue)](package.json)<!-- fresh:end -->
+<!-- fresh:begin badge:release -->[![source version](https://img.shields.io/badge/source-v0.5.8-blue)](package.json)<!-- fresh:end -->
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node >=20](https://img.shields.io/node/v/%40ashlr%2Flexicon)](package.json)
 
@@ -75,7 +75,7 @@ lexicon doctor --json
 
 The same contract, in one fetch: [llms.txt](llms.txt) (index) and [llms-full.txt](llms-full.txt) (install, tools, privacy, FAQ). The page written to an agent is [docs/AGENTS.md](docs/AGENTS.md). Copy-paste only, no commentary: [docs/COPY-PASTE.md](docs/COPY-PASTE.md).
 
-This tree is source version <!-- fresh:begin pin:version -->0.5.7<!-- fresh:end -->. On 2026-10-31, when that version was prepared, npm `latest` was 0.5.4. Check `lexicon --version` and `npm view @ashlr/lexicon version` before you pin.
+This tree is source version <!-- fresh:begin pin:version -->0.5.8<!-- fresh:end -->. At this candidate's 2026-11-05 refresh, npm `latest` was 0.5.4. Check `lexicon --version` and `npm view @ashlr/lexicon version` before you pin.
 
 ## MCP server
 
@@ -158,8 +158,8 @@ Rules: [docs/MATCHING.md](docs/MATCHING.md).
 
 - **One file**, `~/.config/lexicon/lexicon.yaml`. Project `.lexicon.yaml` merges only after `lexicon trust`.
 - **Twenty-one MCP tools** for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop.
-- **A CLI with 27 commands.** `lexicon --help` lists them. `docs/CLI.md` is generated from that help.
-- **246 terms across the seven packs** (developer, AI, business, voice tools, cloud and DevOps, legal profession, law and litigation). Community packs install from a registry after a checksum preview.
+- **A CLI with 28 commands.** `lexicon --help` lists them. `docs/CLI.md` is generated from that help.
+- **259 terms across the eight packs** (developer, AI, business, voice tools, cloud and DevOps, legal profession, law and litigation, Ashlr.AI fleet). Community packs install from a registry after a checksum preview.
 - **Sixteen export formats** and **eight importers**, including Wispr Flow, Superwhisper, macOS Text Replacement and espanso. `lexicon export` with no format lists them.
 - **The same correction in the browser, in any macOS text field, and from your own pipeline** (`normalize()`).
 
@@ -221,7 +221,7 @@ npm i -g @ashlr/lexicon
 
 Plain `brew install lexicon` is [dns-lexicon](https://github.com/dns-lexicon/dns-lexicon), a different project. Use the full tap name.
 
-After 0.5.7 is published, <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.7`<!-- fresh:end --> installs that tag from GitHub and builds on install.
+After 0.5.8 is published, <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.8`<!-- fresh:end --> installs that tag from GitHub and builds on install.
 
 Homebrew formula: [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap). Release zips (extension, LexiconBar, checksums): [GitHub releases](https://github.com/ashlrai/lexicon/releases/latest).
 
@@ -241,6 +241,8 @@ Homebrew formula: [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap
 Changing the code: [CONTRIBUTING.md](CONTRIBUTING.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 Lexicon is one of the open-source tools from [Ashlr.AI](https://ashlr.ai). It does not need the others to run. How it sits next to Phantom: [docs/PHANTOM-USAGE.md](docs/PHANTOM-USAGE.md).
+
+Pellucid is now part of lexicon. Pellucid's ambiguity engine - the INCOSE rule layer, span resolution and confidence calibration - lives in `src/ambiguity/`. The two-stage design it feeds is in [docs/design/two-stage-correction.md](docs/design/two-stage-correction.md).
 
 ## Roadmap and non-goals
 
