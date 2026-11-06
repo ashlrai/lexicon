@@ -1,16 +1,27 @@
 /** CLI previews must be reachable through commander and preserve user files. */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from 'vitest';
+import { bundleChildEntry } from './helpers.js';
 
 const repoRoot = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const seed = 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [Ashler, Ashlar]\n';
+let cliDir: string;
+let cli: string;
 let home: string;
 let repo: string;
 let globalPath: string;
+
+beforeAll(async () => {
+  cliDir = mkdtempSync(path.join(os.tmpdir(), 'lexicon-dry-run-cli-'));
+  cpSync(path.join(repoRoot, 'package.json'), path.join(cliDir, 'package.json'));
+  cpSync(path.join(repoRoot, 'packs'), path.join(cliDir, 'packs'), { recursive: true });
+  cli = await bundleChildEntry("import './src/cli/index.js';", path.join(cliDir, 'cli.mjs'));
+});
+afterAll(() => rmSync(cliDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
 
 beforeEach(() => {
   home = realpathSync(mkdtempSync(path.join(os.tmpdir(), 'lexicon-dry-run-')));
@@ -30,7 +41,7 @@ function lexicon(args: string[], extraEnv: NodeJS.ProcessEnv = {}) {
     ...extraEnv,
   };
   delete env.LEXICON_TRUST_ALL;
-  const result = spawnSync(process.execPath, ['--import', 'tsx', 'src/cli/index.ts', '--cwd', repo, ...args], {
+  const result = spawnSync(process.execPath, [cli, '--cwd', repo, ...args], {
     cwd: repoRoot, env, encoding: 'utf8', timeout: 30_000,
   });
   expect(result.error).toBeUndefined();
@@ -236,7 +247,7 @@ describe('CLI dry-run previews', () => {
     expect(planned.stderr).toBe('');
     expect(planned.stdout).toBe(`would untrust ${projectPath}; it would no longer be merged\n`);
     expect(preview(['untrust'])).toEqual({
-      ok: true, action: 'untrust', path: projectPath, removed: true, dryRun: true,
+      ok: true, plan: true, action: 'untrust', path: projectPath, removed: true, dryRun: true,
       registry: registryPath, summary: `would untrust ${projectPath}; it would no longer be merged`,
     });
     expect(snapshot()).toEqual(before);
@@ -287,8 +298,10 @@ describe('CLI dry-run previews', () => {
 
     const applied = lexicon(['pack', 'add', 'developer', ...flags, '--json']);
     expect(applied.status, applied.stderr).toBe(0);
-    const { dryRun, ...expected } = plans[0];
+    const { ok, dryRun, plan, ...expected } = plans[0];
+    expect(ok).toBe(true);
     expect(dryRun).toBe(true);
+    expect(plan).toBe(true);
     expect(JSON.parse(applied.stdout)[0]).toEqual(expected);
     const installed = snapshot();
     const again = lexicon(['pack', 'add', 'developer', ...flags, '--dry-run', '--json']);
@@ -315,8 +328,9 @@ describe('CLI dry-run previews', () => {
 
     const applied = lexicon([...args, '--json']);
     expect(applied.status, applied.stderr).toBe(0);
-    const { dryRun, ...expected } = proposal;
+    const { dryRun, plan, ...expected } = proposal;
     expect(dryRun).toBe(true);
+    expect(plan).toBe(true);
     expect(JSON.parse(applied.stdout)).toEqual(expected);
     expect(readFileSync(globalPath, 'utf8')).not.toBe(seed);
   });
@@ -349,7 +363,7 @@ describe('CLI dry-run previews', () => {
   it('project previews retain the untrusted-file refusal and do not pin content', () => {
     const projectPath = path.join(repo, '.lexicon.yaml');
     writeFileSync(projectPath, seed);
-    for (const args of [['add', 'NewName', 'new name', '--project'], ['remove', 'Ashlr.AI', '--project'], ['harvest', '--add', '--yes']]) {
+    for (const args of [['add', 'NewName', 'new name', '--project'], ['remove', 'Ashlr.AI', '--project'], ['learn', 'Ashlur', 'Ashlr.AI', '--project'], ['harvest', '--add', '--yes']]) {
       const result = lexicon([...args, '--dry-run', '--json']);
       expect(result.status).toBe(1);
       expect(JSON.parse(result.stdout)).toMatchObject({ ok: false });

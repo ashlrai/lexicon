@@ -68,7 +68,17 @@ describe('first run of the lexicon CLI', () => {
       nextStep: 'see the usage: lexicon --help',
     });
     // A typo still gets commander's spelling suggestion, and a stranger nothing.
-    expect(lexicon(['stauts']).stderr).toContain('(Did you mean one of stats, status?)');
+    const typo = lexicon(['stauts']);
+    expect(typo.status).toBe(1);
+    expect(typo.stdout).toBe('');
+    expect(typo.stderr).toContain('(Did you mean one of stats, status?)');
+    const typoJson = lexicon(['stauts', '--json']);
+    expect(typoJson.status).toBe(1);
+    expect(JSON.parse(typoJson.stdout)).toEqual({
+      ok: false,
+      error: expect.stringContaining('(Did you mean one of stats, status?)'),
+      nextStep: 'see the usage: lexicon --help',
+    });
     const nope = lexicon(['definitely-not-a-command']);
     expect(nope.status).toBe(1);
     expect(nope.stderr).toContain("error: unknown command 'definitely-not-a-command'\n(use --help for usage)");

@@ -6,6 +6,8 @@
   <title>Lexicon demo: watch a mis-transcribed name get fixed</title>
   <meta name="description" content="Say your company name and watch it get fixed. @ashlr/lexicon rewrites what speech-to-text got wrong before your agent sees it. The matcher runs entirely in your browser; your lexicon never leaves this page.">
   <link rel="canonical" href="https://ashlrai.github.io/lexicon/">
+  <link rel="describedby" type="text/plain" href="https://lexicon.ashlr.ai/llms.txt">
+  <link rel="alternate" type="text/plain" href="https://lexicon.ashlr.ai/llms-full.txt" title="Lexicon for language models">
   <!--
     This page is the interactive demo; lexicon.ashlr.ai is the project's home.
     They are different content, so each is canonical for itself, but the link
@@ -58,6 +60,11 @@
         (<strong>Ashlr.AI</strong>, <strong>Kubernetes</strong>, <strong>SaaS</strong>) before an agent sees the prompt.
         This page runs the real matcher in your browser.
       </p>
+      <div class="tier-row" role="group" aria-label="Try one matcher">
+        <button type="button" class="btn btn-ghost btn-sm" data-sample="tell ashler to ship it" data-phonetic="0" data-fuzzy="0">Alias: ashler</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-sample="deploy kuber netties" data-phonetic="1" data-fuzzy="0">Phonetic: kuber netties</button>
+        <button type="button" class="btn btn-ghost btn-sm" data-sample="deploy kubernetees" data-phonetic="0" data-fuzzy="1">Fuzzy: kubernetees</button>
+      </div>
     </div>
   </header>
 
@@ -146,7 +153,7 @@
     <div class="install-panel">
       <header class="install-head">
         <h2 id="h-install">Install</h2>
-        <p class="install-lede">Pick one. Each takes about a minute. Afterwards nothing phones home: the only download the tool makes on its own is the whisper model for <code>lexicon voice</code>, and a community pack index is fetched only from a registry URL you gave it.</p>
+        <p class="install-lede">Pick one. Each takes about a minute. Ordinary correction stays on the machine. <code>lexicon voice</code> downloads a whisper model the first time, <code>lexicon pack</code> fetches a registry URL you chose, and the GitHub importer calls the GitHub API through your existing <code>gh</code> login.</p>
       </header>
 
       <ol class="install-options">
@@ -194,6 +201,29 @@
     </div>
   </section>
 
+  <section class="wrap star-band" aria-labelledby="h-star">
+    <h2 id="h-star">Star Lexicon</h2>
+    <p>If a name came out right, star the repo. That is how the next person who dictates a company name finds it.</p>
+    <p><a class="btn btn-primary" href="https://github.com/ashlrai/lexicon">Star on GitHub</a></p>
+  </section>
+
+  <section class="wrap faq-band" aria-labelledby="h-faq">
+    <h2 id="h-faq">Questions</h2>
+    <details open>
+      <summary>What is Lexicon?</summary>
+      <p>One YAML file of the words you say. It rewrites a transcript before an agent reads it. It is not a dictation app.</p>
+    </details>
+    <details open>
+      <summary>How does an agent install it?</summary>
+      <p><code>curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh</code>, then <code>lexicon setup --dry-run --json</code>. The script runs setup only in a terminal. Under <code>sudo</code>, without a terminal, or with <code>LEXICON_NO_SETUP=1</code>, it prints <code>run: lexicon setup</code>.</p>
+    </details>
+    <details open>
+      <summary>Does this page send my text anywhere?</summary>
+      <p>No. The matcher runs in your browser. Dictation is the exception: Chrome's speech recognizer sends audio to Google. The corrected text stays on the page.</p>
+    </details>
+    <p class="hint">The longer answers are on <a href="https://lexicon.ashlr.ai#faq">lexicon.ashlr.ai</a> and in <a href="https://lexicon.ashlr.ai/llms-full.txt">llms-full.txt</a>.</p>
+  </section>
+
   <footer class="site-footer">
     <div class="wrap">
       <p class="privacy">The matcher runs entirely in your browser. Your lexicon and your text never leave this page, and the page loads nothing from a third party. Dictation is the one exception: it uses your browser's speech recognizer, which in Chrome sends audio to Google.</p>
@@ -219,6 +249,32 @@
       </p>
     </div>
   </footer>
+
+  <script type="application/ld+json">
+  {
+    "@context": "https://schema.org",
+    "@type": "FAQPage",
+    "@id": "https://ashlrai.github.io/lexicon/#faq",
+    "isPartOf": { "@id": "https://ashlrai.github.io/lexicon/#webpage" },
+    "mainEntity": [
+      {
+        "@type": "Question",
+        "name": "What is Lexicon?",
+        "acceptedAnswer": { "@type": "Answer", "text": "One YAML file of the words you say. It rewrites a transcript before an agent reads it. It is not a dictation app." }
+      },
+      {
+        "@type": "Question",
+        "name": "How does an agent install it?",
+        "acceptedAnswer": { "@type": "Answer", "text": "curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh, then lexicon setup --dry-run --json. The script runs setup only in a terminal. Under sudo, without a terminal, or with LEXICON_NO_SETUP=1, it prints run: lexicon setup." }
+      },
+      {
+        "@type": "Question",
+        "name": "Does this page send my text anywhere?",
+        "acceptedAnswer": { "@type": "Answer", "text": "No. The matcher runs in your browser. Dictation is the exception: Chrome's speech recognizer sends audio to Google. The corrected text stays on the page." }
+      }
+    ]
+  }
+  </script>
 
   <script type="application/ld+json">
   {

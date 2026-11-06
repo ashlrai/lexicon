@@ -1,5 +1,5 @@
 import type { MetadataRoute } from 'next';
-import { sitemapEntries } from '../lib/sitemap.js';
+import { sitemapEntries } from '#site/sitemap';
 
 // Resolve Git during the build, while the checkout is available. Machine
 // payloads remain discoverable through alternates rather than the sitemap.

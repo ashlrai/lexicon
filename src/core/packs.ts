@@ -39,7 +39,7 @@ export interface PackInfo {
   title: string;
   description: string;
   version: 1;
-  /** Pack author (community packs); empty for the vendored five. */
+  /** Pack author (community packs); empty for the vendored packs. */
   author: string;
   /** Author homepage (community packs); empty when unset. */
   homepage: string;
@@ -126,7 +126,7 @@ const PackFileSchema = z.object({
   title: z.string().trim().min(1).max(80),
   description: z.string().trim().max(300).default(''),
   version: z.literal(1).default(1),
-  /** Community packs name their author; the vendored five leave it empty. */
+  /** Community packs name their author; the vendored packs leave it empty. */
   author: z.string().trim().max(40).default(''),
   homepage: z.string().trim().max(200).default(''),
   terms: z.array(z.unknown()).min(1, 'a pack needs at least one term'),
@@ -321,7 +321,7 @@ async function readTextIfAny(file: string): Promise<string | undefined> {
 
 /**
  * Install an already-loaded pack. `recordAs` is the name recorded in the
- * file's `settings.packs`: the plain pack name for the vendored five, the
+ * file's `settings.packs`: the plain pack name for the vendored packs, the
  * `author/name` ref for registry packs. See `installPack` for the semantics;
  * this is the half the registry reuses after downloading and verifying a
  * community pack file.
@@ -365,10 +365,15 @@ export async function installLoadedPack(
     // The bytes before and after say whether the install changed anything:
     // `merged` counts every term the file already had, gained alias or not.
     const before = await readTextIfAny(targetPath);
+    const current = await readLexiconFile(targetPath, scope);
+    const packs = dedupe([...(current.lexicon.settings?.packs ?? []), recordAs]);
+    // Validate the pack record before adding terms, for previews and real
+    // installs alike. Otherwise a full packs list previews successfully but
+    // a real install writes terms before failing to record the pack.
+    parseLexicon({ ...current.lexicon, settings: { ...current.lexicon.settings, packs } });
     const { file, results } = await addTerms(incoming, { ...storeOpts, scope, leaveUntrusted });
     const added = results.filter((r) => r.created).length;
     const merged = results.length - added;
-    const packs = dedupe([...(file.lexicon.settings?.packs ?? []), recordAs]);
     if (opts.dryRun) {
       // No bytes were written, so the before/after byte compare cannot speak:
       // "already installed" is what it would have meant, every term unchanged
@@ -505,7 +510,7 @@ export async function uninstallLoadedPack(
           shared.push(term.canonical);
           return true;
         }
-        if (effectiveHits(term, hits) > 0 || hasExtra(term.aliases, packTerm.aliases) || hasExtra(term.never, packTerm.never)) {
+        if (effectiveHits(term, hits) > 0 || hasExtra(term.aliases, packTerm.aliases) || hasExtra(term.never, packTerm.never) || hasExtra(term.context, packTerm.context)) {
           kept.push(term.canonical);
           return true;
         }

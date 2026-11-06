@@ -9,7 +9,7 @@ npx @ashlr/lexicon normalize "ping ashler about the cooper netties migration"
 ```
 
 ```text
-lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS).
+lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS, Hetzner).
 lexicon: run `lexicon setup` to build your own; nothing was written.
 ping Ashlr.AI about the Kubernetes migration
 ```
