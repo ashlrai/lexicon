@@ -162,7 +162,48 @@ These registry and GitHub mutations are not an atomic transaction. A failure
 after npm accepts the immutable version can leave npm published and GitHub
 absent or draft. Report each delivery layer separately. The workflow refuses
 existing versions/releases instead of overwriting them on a rerun; preserve the
-failed attempt for review and follow the fix-forward policy below.
+failed attempt for review. Use the narrow recovery route below only for a proven
+accepted npm publication followed by registry-acceptance failure. Other failures
+continue to use the fix-forward policy below.
+
+### Recover delayed npm processing without publishing twice
+
+npm can accept the original archive and provenance while its backend continues
+processing the version. The public version may remain absent beyond the normal
+bounded acceptance window. Preserve the failed run; do not rerun its publish job,
+republish npm, move the tag or bump the candidate merely to retry delivery.
+
+After the exact public npm version becomes readable, dispatch the existing
+`release.yml` from canonical `main` with `recover_github_only=true`, the candidate
+`version`, original `recovery_run_id` and current `recovery_attempt`, successful
+`recovery_ci_run_id`, and exact `recovery_ubuntu_artifact_id` and
+`recovery_macos_artifact_id`. Obtain these identifiers from the original run, not
+from another build or locally repacked files.
+
+The recovery job has GitHub contents-write and actions-read permissions, with
+OIDC disabled. Normal publication jobs are excluded. It does not run npm publish
+or execute candidate scripts. Current trusted policy must descend from the tagged
+source and match the main workflow identity. It verifies successful full manual
+CI, the original current run attempt, both successful native producers, a
+successful npm-publish step followed by the sole registry-acceptance failure, and
+skipped GitHub publication steps. It binds exactly two original artifact IDs and
+SHA-256 ZIP digests, rejects expired or mixed-attempt artifacts, and extracts only
+the fixed flat inventory with bounded sizes. Existing source-carrier, archive
+closure, registry-byte and hosted-byte checks remain unchanged. Candidate and
+policy release-contract scripts must be identical; only the trusted policy copy
+runs. Immediately before draft creation and public publication, live checks
+require protected main to retain the executing policy in its history, both
+workflows to remain active, and the complete release/CI workflow and two verifier
+files to match current trusted main. App or documentation advances alone do not
+invalidate the frozen producer evidence. No GitHub write occurs until npm serves the original archive bytes.
+
+A changed tuple, incomplete evidence, registry mismatch or existing GitHub release
+stops recovery. Before publishing the draft, recovery also refuses to replace a
+newer published latest stable version; numeric version components are compared
+without JavaScript number rounding. A draft created by a later interrupted recovery is preserved for
+review; this route does not overwrite or automatically complete such a draft.
+A successful final public download establishes GitHub delivery. Native signing,
+notarization and install behavior retain the separate limitations below.
 
 Run the dependency-free contract checks before the tag:
 
