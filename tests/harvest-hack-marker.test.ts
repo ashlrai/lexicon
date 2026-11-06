@@ -22,6 +22,29 @@ afterEach(async () => {
 // HACK is a recognized comment marker: harvest reads the comment for the
 // names around it but never proposes the marker word itself.
 describe('harvest HACK marker', () => {
+  it('counts a name found only in HACK comment text as source evidence', async () => {
+    const dir = await repoWith('// HACK: retry NebulaRelay after disconnect\n');
+    const options = { git: false, minCount: 1 };
+
+    expect(await harvestRepo(dir, options)).toEqual([]);
+    expect(await harvestRepo(dir, { ...options, symbols: true })).toEqual([
+      expect.objectContaining({
+        canonical: 'NebulaRelay', category: 'identifier', source: 'harvest:repo',
+        count: 1, evidence: ['marker.ts'],
+      }),
+    ]);
+
+    await fs.writeFile(path.join(dir, 'README.md'), 'We use NebulaRelay today.\n');
+    const corroborated = await harvestRepo(dir, options);
+    expect(corroborated).toEqual([
+      expect.objectContaining({ canonical: 'NebulaRelay', count: 2 }),
+    ]);
+    expect(corroborated[0]?.evidence).toEqual(expect.arrayContaining(['marker.ts', 'README.md']));
+    expect(await harvestRepo(dir, { ...options, identifiers: false })).toEqual([
+      expect.objectContaining({ canonical: 'NebulaRelay', count: 1, evidence: ['README.md'] }),
+    ]);
+  });
+
   it('harvests the name beside a HACK comment and not the marker', async () => {
     const dir = await repoWith('// HACK: retry in QuasarWidget\nclass QuasarWidget {}\n');
     const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
