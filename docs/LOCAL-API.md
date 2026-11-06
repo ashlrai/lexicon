@@ -65,7 +65,7 @@ always allowed; `*` is never honoured.
 
 ## Endpoints
 
-Eleven routes, twelve rows below: `/packs/:name` takes both a POST and a DELETE.
+Twelve routes, thirteen rows below: `/packs/:name` takes both a POST and a DELETE.
 Every request must carry a `Host` header of `127.0.0.1:<port>`,
 `localhost:<port>` or `[::1]:<port>` (with a non-loopback `--host`, the bound
 IP address as well); anything else is 403 on every route, which is what stops
