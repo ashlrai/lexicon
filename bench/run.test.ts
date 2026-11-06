@@ -2,7 +2,6 @@ import { execFileSync } from 'node:child_process';
 import { mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, relative, win32 } from 'node:path';
-import { fileURLToPath } from 'node:url';
 import { expect, it } from 'vitest';
 import { isNegative, loadCorpus, loadLexicon, runBench, type BenchReport } from './lib.js';
 import { reportPath } from './report-path.js';
@@ -22,7 +21,7 @@ it.each([['LF', '\n'], ['CRLF', '\r\n']])('runs the documented non-English basel
   expect(command).toBe('npm run bench -- --out /tmp/lexicon-name-benchmark.json');
   const pkg = JSON.parse(readFileSync(new URL('../package.json', import.meta.url), 'utf8')) as { scripts: { bench: string } };
   expect(pkg.scripts.bench).toBe('node --import tsx bench/run.ts');
-  const dir = mkdtempSync(join(tmpdir(), 'lexicon name bench-'));
+  const dir = mkdtempSync(join(tmpdir(), 'lexicon name bench &-'));
   try {
     const output = join(dir, 'results.json');
     const input = join(dir, 'corpus.jsonl');
@@ -35,15 +34,13 @@ it.each([['LF', '\n'], ['CRLF', '\r\n']])('runs the documented non-English basel
     ];
     if (cases.some((c) => c === undefined)) throw new Error('benchmark fixture is missing representative cases');
     writeFileSync(input, cases.map((c) => JSON.stringify(c)).join('\n') + '\n');
-    // Execute the verified npm script via Node: npm.cmd needs a shell on Windows.
-    const args = [...pkg.scripts.bench.split(' ').slice(1), ...command!.split(' ').slice(4)];
-    args[args.length - 1] = output;
-    args.push('--corpus', input);
-    const markdown = execFileSync(process.execPath, args, {
-      cwd: fileURLToPath(new URL('../', import.meta.url)),
-      encoding: 'utf8',
-      stdio: ['ignore', 'pipe', 'pipe'],
-    });
+    // Exercise the exact npm script without launching npm's platform-specific
+    // shell shim (npm.cmd is not directly executable on Windows). An empty
+    // PATH also proves this uses the current Node, not a globally found shim.
+    const env = Object.fromEntries(Object.entries(process.env).filter(([key]) => key.toLowerCase() !== 'path'));
+    const markdown = execFileSync(process.execPath, [
+      '--import', 'tsx', 'bench/run.ts', '--out', output, '--corpus', input,
+    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...env, PATH: '' } });
     const saved = JSON.parse(readFileSync(output, 'utf8')) as BenchReport & {
       corpus: string;
       lexicon: string;

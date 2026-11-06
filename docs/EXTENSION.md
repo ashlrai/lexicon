@@ -156,8 +156,8 @@ A composer inside an iframe is covered when the frame is part of the page (same 
 
 ## Firefox notes
 
-- `extension/dist-firefox` swaps `background.service_worker` for `background.scripts` (with `type: module`) and adds `browser_specific_settings.gecko` (the id Firefox needs for MV3 add-ons, and `strict_min_version` 127.0). Everything else is identical.
-- Firefox 127 or later is required: from 127 Firefox grants an MV3 add-on's host permissions when it is installed. Earlier releases left the chat sites and the local server unpermitted until each was allowed by hand, so the minimum was raised rather than asking for them at runtime.
+- `extension/dist-firefox` swaps `background.service_worker` for `background.scripts` (with `type: module`) and adds `browser_specific_settings.gecko` (the id Firefox needs for MV3 add-ons, and `strict_min_version` 140.0), including `data_collection_permissions` for chat messages, website content (learned vocabulary), and authentication information (the local API bearer token). The Chromium manifest is unchanged.
+- Firefox 140 or later is required so its built-in data transmission consent covers API mode. Mozilla counts data sent outside the browser, including to a local server, as transmission. Embedded correction stays inside the extension. See [Mozilla's consent guidance](https://extensionworkshop.com/documentation/develop/firefox-builtin-data-consent/).
 - Firefox loads it as a temporary add-on only (no signing). It is removed when Firefox exits; reload it from `about:debugging`.
 - The install grants the chat sites and `127.0.0.1` / `localhost` port 41733, but Firefox lets you revoke each one afterwards. If one was revoked, open the extension's permissions panel (`about:addons` > Lexicon > Permissions) and allow it again: without the loopback ones pairing from the `/pair` page, Test connection and Sync fail and corrections use the embedded lexicon.
 - `chrome.*` calls are used throughout; Firefox exposes the same namespace with promise support for MV3.

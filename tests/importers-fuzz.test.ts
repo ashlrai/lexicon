@@ -6,7 +6,7 @@ import { build } from 'esbuild';
 import { fileURLToPath } from 'node:url';
 import { promisify } from 'node:util';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { IMPORT_FORMATS } from '../src/core/importers/index.js';
+import { IMPORT_FORMATS, importLexicon, parseCsvImport } from '../src/core/importers/index.js';
 
 const run = promisify(execFile);
 const helper = fileURLToPath(new URL('./helpers/importers-fuzz.ts', import.meta.url));
@@ -42,4 +42,15 @@ describe('importers: deterministic malformed, huge and mixed-encoding corpus', (
     const counts = JSON.parse(stdout) as { accepted: number; refused: number };
     expect(counts.accepted + counts.refused).toBeGreaterThanOrEqual(scenario === 'corpus' ? 215 : 1);
   }, 20_000);
+});
+
+describe('importers: empty input regression', () => {
+  // Empty input cannot hang, so it needs no child-process deadline; running
+  // it in-process is what lets the exact documented result be asserted.
+  it('csv returns the documented empty result instead of throwing', () => {
+    // parseCsvImport's early return on zero records is the documented path;
+    // without it `records[0].fields` throws a TypeError on empty input.
+    expect(parseCsvImport('')).toEqual({ rows: [], skipped: [] });
+    expect(importLexicon('', 'csv')).toEqual({ terms: [], format: 'csv', skipped: [] });
+  });
 });

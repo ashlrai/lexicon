@@ -58,10 +58,21 @@ import { registerPackCommands, runPackAdd, runPackList, runPackRemove, runPackSh
 import { Command } from 'commander';
 import { makeIO } from './helpers.js';
 
-const PACK_NAMES = ['ai', 'business', 'cloud-devops', 'developer', 'profession-q8', 'voice-tools'];
+const PACK_NAMES = ['ai', 'ashlr', 'business', 'cloud-devops', 'developer', 'legal', 'profession-q8', 'voice-tools'];
 
 /** Minimum sizes the packs promise (docs/PACKS.md). */
-const MIN_TERMS: Record<string, number> = { developer: 50, 'cloud-devops': 20, ai: 30, business: 30, 'voice-tools': 12, 'profession-q8': 25 };
+const MIN_TERMS: Record<string, number> = { developer: 50, legal: 25, 'cloud-devops': 20, ai: 30, ashlr: 13, business: 30, 'voice-tools': 12, 'profession-q8': 25 };
+
+/**
+ * Canonicals two packs deliberately share: Codex is both a general coding
+ * agent (the ai pack's `code x`, `code ex`) and part of the fleet glossary
+ * (the ashlr pack's own mishears). Install merges their aliases and
+ * uninstalling one pack keeps the term (`shared`), so the overlap is safe;
+ * anything else across packs is still a bug.
+ */
+const SHARED_CANONICALS: Record<string, string[]> = {
+  Codex: ['ai', 'ashlr'],
+};
 
 /**
  * Aliases that ARE an ordinary word, on purpose. Each entry is a real STT
@@ -101,6 +112,7 @@ const STOPLIST_PHRASE_ALLOWLIST: Record<string, string[]> = {
   PlanetScale: ['planet scale'],
   Mixpanel: ['mix panel'],
   '1Password': ['one password'],
+  Stacksync: ['stack sink'],
 };
 
 
@@ -166,6 +178,30 @@ describe('shipped packs', () => {
     expect(normalize('serve this model with v l l m', pack.lexicon).output).toBe('serve this model with vLLM');
   });
 
+  it('the ashlr pack corrects the fleet names and gates Lucas on fleet context', async () => {
+    const pack = await loadPack('ashlr');
+    // The sentence the pack exists for: both mishears fixed in one pass, and
+    // 'Fantom' in the text is what lets 'Lucas' reach locus.
+    expect(normalize('open Fantom and run Lucas doctor', pack.lexicon).output).toBe('open Phantom and run locus doctor');
+    // A plain Lucas, with no fleet word around, stays the person's name.
+    for (const prose of ['tell Lucas to call me back', 'Lucas wrote the report', 'ask Lucas about lunch']) {
+      const result = normalize(prose, pack.lexicon);
+      expect(result.output, prose).toBe(prose);
+    }
+    // Every fleet word of the pack's context list, not just Fantom, is evidence.
+    expect(normalize('in lexicon, run Lucas doctor', pack.lexicon).output).toBe('in lexicon, run locus doctor');
+    expect(normalize('the ashlr-stack pr is Lucas work', pack.lexicon).output).toBe('the ashlr-stack pr is locus work');
+    // locus itself in the same text is evidence too.
+    expect(normalize('point Lucas at locus doctor', pack.lexicon).output).toBe('point locus at locus doctor');
+    // The rest of the fleet glossary.
+    expect(normalize('check ashler m d and ashler stack after the fantom secrets deploy', pack.lexicon).output)
+      .toBe('check ashlr-md and ashlr-stack after the phantom-secrets deploy');
+    expect(normalize('ask scoe or Evan Deloria about stacks inc and g l m', pack.lexicon).output)
+      .toBe('ask Sco or Evan DeLoria about Stacksync and GLM');
+    // `phantom` and `lexicon` the ordinary words stay lowercase.
+    expect(normalize('the lexicon of a phantom limb', pack.lexicon).changed).toBe(false);
+  });
+
   it('live in <package root>/packs and are all listed, sorted', async () => {
     const root = findPackageRoot();
     expect(root).toBeDefined();
@@ -197,7 +233,11 @@ describe('shipped packs', () => {
         expect(term.scope).toBeUndefined();
         expect(term.hits).toBeUndefined();
         const key = term.canonical.toLowerCase();
-        expect(seen.has(key), `${term.canonical} is in both ${seen.get(key)} and ${name}`).toBe(false);
+        const earlier = seen.get(key);
+        if (earlier !== undefined) {
+          // Only a canonical declared in SHARED_CANONICALS may repeat, and only in its declared pair.
+          expect([...(SHARED_CANONICALS[term.canonical] ?? [])].sort(), `${term.canonical} is in both ${earlier} and ${name}`).toEqual([earlier, name].sort());
+        }
         seen.set(key, name);
         const lowered = term.aliases.map((a) => a.toLowerCase());
         expect(new Set(lowered).size, `${name}: ${term.canonical} repeats an alias`).toBe(lowered.length);

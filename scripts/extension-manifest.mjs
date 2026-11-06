@@ -4,20 +4,26 @@
  */
 
 /**
- * Firefox grants a Manifest V3 add-on's `host_permissions` at install only
- * from 127 on. Before that the chat sites and the loopback server stayed
- * unpermitted until the user allowed each one in about:addons, so pairing,
- * Test connection and Sync failed and every correction fell back. The
- * minimum is raised instead of asking at runtime: the manifest's list stays
- * the one the user approves at install.
+ * Firefox 140 provides built-in consent for the data sent outside the browser.
+ * API mode sends chat text (/normalize), vocabulary (/learn), and the local
+ * server's bearer credential. Loopback traffic still counts as transmission:
+ * https://extensionworkshop.com/documentation/develop/firefox-builtin-data-consent/
  */
-export const FIREFOX_MIN_VERSION = '127.0';
+export const FIREFOX_MIN_VERSION = '140.0';
 
 /** `manifest` with `background.scripts` (Firefox has no MV3 service worker yet) and the gecko id and minimum version. */
 export function firefoxManifest(manifest) {
   return {
     ...manifest,
     background: { scripts: ['background.js'], type: 'module' },
-    browser_specific_settings: { gecko: { id: 'lexicon@ashlr.ai', strict_min_version: FIREFOX_MIN_VERSION } },
+    browser_specific_settings: {
+      gecko: {
+        id: 'lexicon@ashlr.ai',
+        strict_min_version: FIREFOX_MIN_VERSION,
+        data_collection_permissions: {
+          required: ['personalCommunications', 'websiteContent', 'authenticationInfo'],
+        },
+      },
+    },
   };
 }
