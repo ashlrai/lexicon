@@ -914,6 +914,23 @@ describe('POST /learn and POST /add', () => {
     expect(body.lexicon.terms.some((t) => t.canonical === 'Overnote')).toBe(false);
   });
 
+  it('add accepts a phonetic hint of exactly the documented 200 characters and keeps it whole', async () => {
+    const phonetic = 'p'.repeat(200);
+    const res = await api('POST', '/add', { canonical: 'Ashlr.AI', phonetic });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { term: { phonetic?: string } }).term.phonetic).toBe(phonetic);
+  });
+
+  it('add refuses a phonetic hint of 201 characters with a 400 diagnostic and writes nothing', async () => {
+    const res = await api('POST', '/add', { canonical: 'Overphon', phonetic: 'p'.repeat(201) });
+    expect(res.status).toBe(400);
+    const { error } = (await res.json()) as { error: string };
+    expect(error).toMatch(/^term not added: phonetic: must be at most 200 characters\. Nothing was written/);
+    expect(error).not.toContain('p'.repeat(201));
+    const body = (await (await api('GET', '/lexicon')).json()) as { lexicon: { terms: { canonical: string }[] } };
+    expect(body.lexicon.terms.some((t) => t.canonical === 'Overphon')).toBe(false);
+  });
+
   // Catches: over the 60-character cap the 400 said only the cap, though the
   // usual cause is a whole phrase sent as heard (MCP learn_correction says so).
   it('learn over the length cap is a 400 that says to send only the name', async () => {
