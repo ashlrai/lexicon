@@ -1392,6 +1392,81 @@ describe('a long text does not copy every earlier token per plural', () => {
   });
 });
 
+describe('context-gated terms', () => {
+  // `locus` is the fleet case the field exists for: "Lucas" is a mishear only
+  // where the fleet is being talked about. Context items match the text's
+  // tokens as written, so a misspelling counts only when it is listed too
+  // ('fantom' beside 'phantom', 'ashler' beside 'ashlr').
+  const LOCUS: Term = { canonical: 'locus', aliases: ['Lucas', 'lucus'], context: ['locus', 'ashlr', 'ashler', 'phantom', 'fantom'] };
+  const FLEET: Term[] = [LOCUS, { canonical: 'Phantom', aliases: ['fantom'] }, { canonical: 'Ashlr', aliases: ['ashler'] }];
+
+  it('rewrites the alias only where a context word appears in the text', () => {
+    expect(apply('open Fantom and run Lucas doctor', find('open Fantom and run Lucas doctor', FLEET))).toBe('open Phantom and run locus doctor');
+    expect(find('tell Lucas to call me back', FLEET)).toEqual([]);
+    expect(find('Lucas wrote the report', FLEET)).toEqual([]);
+    // Any context item opens the gate, not only the product's own name.
+    expect(apply('the ashler deploy is Lucas work', find('the ashler deploy is Lucas work', FLEET))).toBe('the Ashlr deploy is locus work');
+  });
+
+  it('counts the canonical itself as context', () => {
+    expect(apply('point Lucas at locus doctor', find('point Lucas at locus doctor', FLEET))).toBe('point locus at locus doctor');
+  });
+
+  it('does not let the matched window be its own evidence', () => {
+    const selfCited: Term = { canonical: 'locus', aliases: ['lucas'], context: ['lucas'] };
+    expect(find('lucas', [selfCited])).toEqual([]);
+    // Each "lucas" cites the other one, outside its own window.
+    expect(find('lucas and lucas', [selfCited]).map((r) => r.replacement)).toEqual(['locus', 'locus']);
+  });
+
+  it('an already-canonical span claims itself with or without context', () => {
+    // 'locus' here has no fleet word around, yet must not be rewritten to
+    // Locust by the fuzzy pass: the gate declines rewrites, not claims.
+    expect(find('the locus of control', [LOCUS, { canonical: 'Locust', aliases: ['locust'] }])).toEqual([]);
+  });
+
+  it('context words inside skipped code still count', () => {
+    // `fantom doctor` is skipped for rewriting, but it is still fleet talk.
+    expect(apply('tell Lucas to run `fantom doctor`', find('tell Lucas to run `fantom doctor`', FLEET))).toBe('tell locus to run `fantom doctor`');
+  });
+
+  it('counts a context word right next to the candidate', () => {
+    // Only the candidate's own span is excluded; the very next token is fair
+    // evidence, or "Lucas phantom" would stay unrewritten.
+    expect(apply('Lucas phantom', find('Lucas phantom', [LOCUS]))).toBe('locus phantom');
+    expect(apply('phantom Lucas', find('phantom Lucas', [LOCUS]))).toBe('phantom locus');
+  });
+
+  it('a multi-word context item has to appear as consecutive tokens', () => {
+    const gated: Term = { canonical: 'locus', aliases: ['lucas'], context: ['stack sync'] };
+    expect(apply('run stack sync for Lucas', find('run stack sync for Lucas', [gated]))).toBe('run stack sync for locus');
+    expect(find('the stack is not in sync for Lucas', [gated])).toEqual([]);
+  });
+
+  it('gates the inexact passes too, not just exact aliases', () => {
+    // A canonical-only term: 'lokus' reaches it only phonetically (LKS).
+    const gated: Term = { canonical: 'locus', aliases: [], context: ['phantom'] };
+    expect(find('a lokus of control', [gated])).toEqual([]);
+    expect(apply('a lokus in phantom', find('a lokus in phantom', [gated]))).toBe('a locus in phantom');
+    // And an explicit alias is gated through the exact pass like the rest.
+    const aliased: Term = { canonical: 'locus', aliases: ['lukus'], context: ['phantom'] };
+    expect(find('a lukus of control', [aliased])).toEqual([]);
+    expect(apply('a lukus in phantom', find('a lukus in phantom', [aliased]))).toBe('a locus in phantom');
+  });
+
+  it('a term without context, or with an empty list, is ungated', () => {
+    const plain: Term = { canonical: 'locus', aliases: ['lucas'] };
+    expect(apply('ask Lucas', find('ask Lucas', [plain]))).toBe('ask locus');
+    const emptied: Term = { canonical: 'locus', aliases: ['lucas'], context: [] };
+    expect(apply('ask Lucas', find('ask Lucas', [emptied]))).toBe('ask locus');
+  });
+
+  it('context items fold the way aliases fold', () => {
+    const gated: Term = { canonical: 'locus', aliases: ['lucas'], context: ['WróbLex'] };
+    expect(apply('wroblex deploy for Lucas', find('wroblex deploy for Lucas', [gated]))).toBe('wroblex deploy for locus');
+  });
+});
+
 describe('emailRanges', () => {
   const OLD = /[\w.+-]+@[\w-]+(?:\.[\w-]+)+/g;
   function viaRegex(text: string): Array<{ start: number; end: number }> {

@@ -76,6 +76,18 @@ export interface Term {
    * Per-term override of settings.protectedWords.
    */
   never?: string[];
+  /**
+   * Words or short phrases that must appear elsewhere in the text for this
+   * term to match at all; the matched window's own tokens are not evidence,
+   * and a skipped region (code, URL, path) still counts, `locus doctor` in
+   * backticks is still fleet talk. For a name that is only wrong in one
+   * context: `locus` with `context: [ashlr, phantom, lexicon]` rewrites
+   * "Lucas" in fleet talk and leaves a person named Lucas alone. Matching is
+   * token-wise on the matcher's fold, so "Ashlr.AI" answers an "ashlr.ai"
+   * context item. A term without `context`, or with an empty one, is
+   * ungated.
+   */
+  context?: string[];
 }
 
 export interface LexiconSettings {

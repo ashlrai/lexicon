@@ -37,11 +37,15 @@ settings:
 
 ## Per term
 
-`canonical`, `aliases`, optional `phonetic`, `category` (`brand`, `person`, `product`, `acronym`, `identifier`, `place`, `other`), `notes`, `never`, `caseSensitive`. The tool also records `source`, `createdAt` and, in the global file, `hits`. A project `.lexicon.yaml` is committed and shared, so your hit counts for its terms are kept in `hits.json` next to the global lexicon instead; `lexicon stats` adds the two together. A `hits:` committed into a project file before this was the rule still counts and is left alone, but nothing adds to it.
+`canonical`, `aliases`, optional `phonetic`, `category` (`brand`, `person`, `product`, `acronym`, `identifier`, `place`, `other`), `notes`, `never`, `context`, `caseSensitive`. The tool also records `source`, `createdAt` and, in the global file, `hits`. A project `.lexicon.yaml` is committed and shared, so your hit counts for its terms are kept in `hits.json` next to the global lexicon instead; `lexicon stats` adds the two together. A `hits:` committed into a project file before this was the rule still counts and is left alone, but nothing adds to it.
 
 ### `never`
 
 `never` is a per-term list of words that must not be rewritten to that canonical even when they sound alike. It is how `SaaS` avoids eating every "sauce" in your prompt while still catching "sass".
+
+### `context`
+
+`context` is a per-term list of words that must appear somewhere in the same text before the term may rewrite anything. It is how a canonical that sounds like an everyday word stays off outside its own domain: the `ashlr` pack's `locus` only fires where a fleet word (Ashlr, Phantom, Stacksync) is also in the text, so "Lucas" in a note about a person is left alone. The candidate's own span does not count toward its gate, words inside skipped code spans do count (they are still protected from rewriting), and a text that already spells the term correctly is claimed as itself regardless. A term with no `context`, or an empty list, is ungated.
 
 ## Settings
 

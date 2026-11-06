@@ -300,7 +300,6 @@ export async function runUntrust(target: string | undefined, opts: CommonOptions
       action: 'untrust',
       path: filePath,
       removed,
-      ...(opts.dryRun ? { dryRun: true } : {}),
       registry: getTrustPath({ cwd }),
       summary: removed
         ? `${opts.dryRun ? 'would untrust' : 'untrusted'} ${filePath}; it ${opts.dryRun ? 'would' : 'will'} no longer be merged`
