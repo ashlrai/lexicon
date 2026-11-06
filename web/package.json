@@ -6,6 +6,9 @@
   "homepage": "https://lexicon.ashlr.ai",
   "license": "MIT",
   "type": "module",
+  "imports": {
+    "#site/*": "./lib/*.ts"
+  },
   "scripts": {
     "prebuild": "node scripts/scan-media.mjs && node scripts/build-demo-bundle.mjs",
     "predev": "node scripts/scan-media.mjs && node scripts/build-demo-bundle.mjs",
