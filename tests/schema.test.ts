@@ -1502,6 +1502,16 @@ describe('hardening (lexicon content reaches model context)', () => {
     ]);
   });
 
+  it('rejects 65 distinct aliases in a YAML lexicon with a validation error', () => {
+    const aliases = Array.from({ length: 65 }, (_, i) => `alias${i}`);
+    const yaml = (words: string[]) => `terms:\n  - canonical: Example\n    aliases:\n${words.map((word) => `      - ${word}`).join('\n')}\n`;
+
+    expect(parseLexicon(parseYaml(yaml(aliases.slice(0, 64)))).terms[0].aliases).toEqual(aliases.slice(0, 64));
+    expect(() => parseLexicon(parseYaml(yaml(aliases)))).toThrow(
+      'Invalid lexicon:\n  - terms[0].aliases: at most 64 aliases per term',
+    );
+  });
+
   it('enforces the standalone term alias limit after cleaning the list', () => {
     const aliases = Array.from({ length: 64 }, (_, i) => `alias${i}`);
     const input = [...aliases.map((alias) => ` ${ZW}${alias} `), '', ' ', ZW];
