@@ -12,7 +12,8 @@ the contents of a lexicon file, through `LexiconSchema` or `parseLexicon`.
 The values are defined in [caps.ts](../src/core/caps.ts) and re-exported by
 `schema.ts`. `TermSchema` exposes the same term validation independently of
 `LexiconSchema`. The 64-entry cap is also used independently for each term's
-`never` list and for `settings.packs` through `OptionalWordList`. The separate
+`never` list and for `settings.packs` through `OptionalWordList`. A term can hold
+64 aliases and 64 `never` entries at the same time. The separate
 `settings.protectedWords` cap is 1000; see the [full limit reference](schema-limit-reference.md).
 
 For aliases, `CleanWordList` strips specified invisible characters, trims each
@@ -20,7 +21,9 @@ entry, and removes entries that are empty after cleaning before counting. It
 does not deduplicate: repeated nonempty entries each count. Each remaining alias
 must also pass the independent `LIMITS.word` length and character checks. An
 absent or null `aliases` field becomes an empty array; a null list entry is an
-error.
+error. The same cleaning and counting rules apply independently to `never`:
+an omitted or null `never` list stays absent, while an explicit `never: []`
+remains present.
 
 The terms limit counts array entries, including repeated terms. An absent or
 null `terms` field becomes an empty array; a null entry is an error. These are
