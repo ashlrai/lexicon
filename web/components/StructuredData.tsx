@@ -4,6 +4,7 @@ import {
   FAQ,
   MCP_TOOLS,
   NPM,
+  PRIMARY_COMMAND,
   REPO,
   SITE_URL,
   TAGLINE,
@@ -86,7 +87,7 @@ const graph = [
       'Browser extension for ChatGPT, Claude, Gemini, Grok, Perplexity, Copilot and Poe',
       'macOS menu bar app that rewrites any focused text field',
       'Sixteen export formats and seven dictionary importers',
-      'Runs entirely locally: no account, no telemetry, no network calls beyond loopback',
+      'Ordinary correction is local: no account and no telemetry. Voice model download, community packs and the GitHub importer use the network only when you turn them on',
     ],
     keywords:
       'dictation, speech to text, transcription, MCP server, Model Context Protocol, custom dictionary, proper nouns, Claude Code, Cursor, Codex',
@@ -103,6 +104,34 @@ const graph = [
       { '@type': 'ListItem', position: 1, name: 'Lexicon', item: SITE_URL },
       { '@type': 'ListItem', position: 2, name: 'Install', item: `${SITE_URL}#install` },
       { '@type': 'ListItem', position: 3, name: 'Frequently asked questions', item: `${SITE_URL}#faq` },
+    ],
+  },
+  {
+    '@type': 'HowTo',
+    '@id': `${SITE_URL}/#install-howto`,
+    name: 'Install Lexicon and register it with an agent',
+    description: 'One command installs the CLI. A JSON dry-run shows the plan. A second command registers Claude, Cursor or Codex.',
+    totalTime: 'PT1M',
+    tool: [{ '@type': 'HowToTool', name: 'Node.js 20 or newer' }],
+    step: [
+      {
+        '@type': 'HowToStep',
+        position: 1,
+        name: 'Install',
+        text: PRIMARY_COMMAND,
+      },
+      {
+        '@type': 'HowToStep',
+        position: 2,
+        name: 'Preview the plan',
+        text: 'lexicon setup --dry-run --json writes nothing. Read ok first.',
+      },
+      {
+        '@type': 'HowToStep',
+        position: 3,
+        name: 'Register the agent',
+        text: 'lexicon install claude --json, lexicon install cursor --json, or lexicon install codex --json. Add --apply only after the plan looks right.',
+      },
     ],
   },
   {

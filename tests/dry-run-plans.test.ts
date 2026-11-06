@@ -57,6 +57,9 @@ it.each(['add', 'remove', 'learn', 'init', 'untrust', 'pack add'] as const)(
       expect(code).toBe(0);
       if (json) {
         const output: unknown = JSON.parse(io.out);
+        // Pack add returns one result per requested pack; setup and the other
+        // previews expose their plan marker on the top-level object instead.
+        expect(Array.isArray(output)).toBe(command === 'pack add');
         const plan = Array.isArray(output) ? output[0] : output;
         expect(plan).toMatchObject({ ok: true, plan: true, dryRun: true });
         if (command === 'remove') expect(plan).toMatchObject({ canonical: 'Ashlr.AI', removed: true });

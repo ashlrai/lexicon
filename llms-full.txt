@@ -1,0 +1,190 @@
+# Lexicon
+
+> Speech-to-text gets English right and your names wrong. Lexicon is one local YAML file of the names, products and acronyms a person says. It rewrites the transcript before an agent reads it.
+
+Version in this source tree: see package.json. MIT. No account. No telemetry. Ordinary correction does not send the transcript anywhere.
+
+This file is the install contract. An agent that only fetches this document can preview, install, register Claude, Cursor and Codex, and verify, without opening another page. Do not install it unasked. Show the dry-run plan and wait.
+
+The short index is llms.txt. The site serves the same role at https://lexicon.ashlr.ai/llms.txt and https://lexicon.ashlr.ai/llms-full.txt.
+
+--------------------------------------------------------------------------------
+## Install
+
+Node 20 or newer.
+
+```bash
+curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
+```
+
+The script runs `lexicon setup` when it has a terminal. Without a terminal (CI, a Dockerfile), under `sudo`, or with `LEXICON_NO_SETUP=1`, it only installs and ends with `run: lexicon setup`.
+
+No global install:
+
+```bash
+npx @ashlr/lexicon@latest setup
+brew install ashlrai/tap/lexicon
+npm i -g @ashlr/lexicon
+```
+
+Plain `brew install lexicon` is a different project (dns-lexicon). Use the full tap name.
+
+Preview the plan. Stdout is one JSON document (`ok`, `plan`). Stderr is the human plan. Nothing is written.
+
+```bash
+lexicon setup --dry-run --json
+```
+
+Non-interactive apply. `--packs`, `--harvest` and `--serve` stay opt-in even with `--yes`.
+
+```bash
+lexicon setup --yes --packs developer,ai --json
+```
+
+Claude Code plugin, no CLI install:
+
+```bash
+claude plugin marketplace add ashlrai/lexicon
+claude plugin install lexicon@ashlrai
+```
+
+--------------------------------------------------------------------------------
+## Commands that print JSON
+
+Read `ok` first. A refusal is `{ ok: false, error, nextStep }` on stdout and a `lexicon:` line on stderr.
+
+Correct a transcript. Piped input is never rewritten by the built-in example. Arguments are, when the user has no terms yet, and `example` is then true.
+
+```bash
+lexicon normalize "ask ashler to deploy kuber netties with post gressql" --json
+```
+
+Stdout from a machine with an empty lexicon and no project file:
+
+    {"ok":true,"input":"ask ashler to deploy kuber netties with post gressql","output":"ask Ashlr.AI to deploy Kubernetes with PostgreSQL","replacements":[{"start":4,"end":10,"original":"ashler","replacement":"Ashlr.AI","canonical":"Ashlr.AI","reason":"alias","confidence":1},{"start":21,"end":34,"original":"kuber netties","replacement":"Kubernetes","canonical":"Kubernetes","reason":"phonetic","confidence":0.8826923076923077},{"start":40,"end":52,"original":"post gressql","replacement":"PostgreSQL","canonical":"PostgreSQL","reason":"phonetic","confidence":0.8795454545454546}],"changed":true,"example":true}
+
+The human form. Replacements go to stderr, rounded. The corrected line is stdout.
+
+```bash
+lexicon normalize --diff "ask ashler to deploy kuber netties with post gressql"
+```
+
+Add a spelling. `suggested` lists aliases the server proposed when you did not pass them.
+
+```bash
+lexicon add Ashlr.AI Ashler Ashlar "Ashler AI" --phonetic ASH-ler --json
+```
+
+Record a correction the user just made. `--dry-run` writes nothing.
+
+```bash
+lexicon learn --from "it's Ashlr.AI not Ashler" --dry-run --json
+```
+
+Health check. Read `ready`, `summary` and `nextStep`. `ok` means no check failed, which an empty lexicon also passes.
+
+```bash
+lexicon doctor --json
+```
+
+--------------------------------------------------------------------------------
+## MCP server
+
+Preview, then write. Without `--apply`, `applied` is false and `written` is empty. The block to paste is in `output`.
+
+```bash
+lexicon install claude --json
+lexicon install claude --apply --json
+lexicon install cursor --json
+lexicon install cursor --apply --json
+lexicon install codex --json
+lexicon install codex --apply --json
+```
+
+`lexicon install claude --apply` also merges SessionStart and UserPromptSubmit hooks into `~/.claude/settings.json`. Restart Claude Code and Codex after apply. Reload the Cursor window.
+
+Hand config, only when `lexicon-mcp` is on PATH after a global install. Prefer `lexicon install`, which writes the command that matches how Lexicon was installed.
+
+Claude Code and Cursor (`~/.cursor/mcp.json`):
+
+    {
+      "mcpServers": {
+        "lexicon": {
+          "command": "lexicon-mcp",
+          "args": []
+        }
+      }
+    }
+
+Codex (`~/.codex/config.toml`):
+
+    [mcp_servers.lexicon]
+    command = "lexicon-mcp"
+    args = []
+
+Server name `lexicon`, stdio. Environment variables: docs/MCP.md#environment-variables.
+
+Twenty-one MCP tools, three resources and two prompts. Call these five first:
+
+- `normalize_transcript { text }` returns `output`, `changed`, `replacements`.
+- `learn_correction { heard, meant }` records a correction. Highest-value call in the server.
+- `add_term { canonical, aliases?, phonetic? }` adds a spelling. Omit `aliases` and show the proposals.
+- `setup_lexicon { apply? }` returns a plan until `apply: true`.
+- `lexicon_doctor {}` is the structured check.
+
+`setup_lexicon`, `install_client` and `trust_project` change nothing until you say so. Never set `LEXICON_TRUST_ALL=1` for a user. A project `.lexicon.yaml` is untrusted until they review it.
+
+Full table: docs/MCP.md. Worked dialogues: docs/AGENT-NATIVE.md.
+
+--------------------------------------------------------------------------------
+## Verify
+
+```bash
+lexicon normalize "tell Ashler to ship it"
+lexicon doctor --json
+```
+
+Expect the first command to print `tell Ashlr.AI to ship it` once Ashlr.AI is in the lexicon (before that, the built-in example does the same and says so on stderr). In Claude Code the hooks load in a new session.
+
+--------------------------------------------------------------------------------
+## What it is not
+
+Not a dictation app and not a recognizer. Voice modes with no text box (ChatGPT Voice, Gemini Live) have nothing to correct. `lexicon voice` transcribes with the user's own local whisper.cpp. It does not hook anyone else's voice mode.
+
+The Windows tray app is built and unit-tested, and it has never been run on Windows. Do not install it as though it works. Linux has no tray app. The CLI, MCP server, hooks, plugin, local API and extension are tested in CI on Windows and Linux.
+
+--------------------------------------------------------------------------------
+## Privacy
+
+The lexicon is `~/.config/lexicon/lexicon.yaml`. No account, no sync, no telemetry.
+
+The CLI, hooks, MCP server, loopback API on 127.0.0.1:41733 and the browser extension do not send transcripts to a remote service.
+
+These use the network, and only when turned on:
+
+- `lexicon voice` downloads a whisper.cpp model on first use. Audio stays on the machine.
+- `lexicon pack` fetches a community pack from a `--registry` URL and checks its checksum.
+- The GitHub source in `lexicon import --guided` calls the GitHub API through the existing `gh` login. No new OAuth scopes. Email and chat are not imported.
+
+Threat model: SECURITY.md.
+
+--------------------------------------------------------------------------------
+## FAQ
+
+Why does dictation get a company name wrong? The name is out of vocabulary. The recognizer emits the nearest common-sounding sequence. Lexicon maps that spelling back.
+
+Does it replace Wispr Flow or Superwhisper? No. It runs after them, and `lexicon export wispr`, `lexicon export superwhisper` and `lexicon export macos` write their dictionary files. `lexicon import` reads them back.
+
+What does it cost? Nothing. MIT. No paid tier.
+
+On 330 clips of synthesized speech through whisper.cpp small.en, Lexicon recovered 91.0% of the proper nouns. Raw whisper.cpp recovered 45.9%. Clean prose wrongly changed: 0 of 72. The audio is text-to-speech, cleaner than a phone microphone. Method: docs/BENCHMARK.md.
+
+--------------------------------------------------------------------------------
+## Counts, from the source
+
+- Twenty-one MCP tools, three resources and two prompts.
+- A CLI with 28 commands.
+- Sixteen export formats and eight importers.
+- 271 terms across the nine packs.
+
+If a sentence here disagrees with `lexicon --help` or docs/MCP.md, the command and the MCP doc win.

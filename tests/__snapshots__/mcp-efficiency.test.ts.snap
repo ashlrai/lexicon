@@ -138,6 +138,12 @@ exports[`preserves discovery schemas, annotations and parsed common command resu
             ],
             "type": "string",
           },
+          "context": {
+            "items": {
+              "type": "string",
+            },
+            "type": "array",
+          },
           "never": {
             "items": {
               "type": "string",

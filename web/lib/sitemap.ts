@@ -1,6 +1,7 @@
-import { gitLastModified } from './git-lastmod.js';
-import { SITE_URL } from './site.js';
-import { useCases, useCasePath } from './use-cases.js';
+// Package-local imports resolve in both Turbopack and the root NodeNext checks.
+import { gitLastModified } from '#site/git-lastmod';
+import { SITE_URL } from '#site/site';
+import { useCases, useCasePath } from '#site/use-cases';
 
 export function sitemapEntries(): { url: string; lastModified: string | undefined }[] {
   const shared = ['web/app/layout.tsx', 'web/app/globals.css', 'web/lib/site.ts'];

@@ -874,6 +874,20 @@ describe('POST /learn and POST /add', () => {
     );
   });
 
+  // Catches: POST /learn relayed the refusal without the code unit named, or
+  // wrote it anyway (learnCorrection runs the same schema as POST /add).
+  it('learn refuses a heard carrying U+FFFE with a 400 that identifies it, and writes nothing', async () => {
+    const before = await fs.readFile(env.globalPath, 'utf8');
+    const res = await api('POST', '/learn', { heard: 'Ash\uFFFE', meant: 'Ashlr.AI' });
+    expect(res.status).toBe(400);
+    const { error } = (await res.json()) as { error: string };
+    expect(error).toBe(
+      'term not added: aliases[0] ("Ash\\uFFFE"): must not contain U+FFFE (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "Ashlr.AI". Nothing was written; fix that field and try again.',
+    );
+    expect(error).not.toContain('\uFFFE');
+    expect(await fs.readFile(env.globalPath, 'utf8')).toBe(before);
+  });
+
   it('add over the schema cap is a 400 naming the field, not an index into the lexicon file', async () => {
     const res = await api('POST', '/add', { canonical: 'Zed', aliases: ['x'.repeat(81)] });
     expect(res.status).toBe(400);
@@ -881,6 +895,40 @@ describe('POST /learn and POST /add', () => {
     expect(error).toMatch(/^term not added: aliases\[0\] \("x{24}\.\.\."\): must be at most 80 characters\. Nothing was written/);
     expect(error).not.toContain('terms[');
     expect((await api('GET', '/stats')).status).toBe(200);
+  });
+
+  it('add accepts notes of exactly the documented 200 characters and keeps them whole', async () => {
+    const notes = 'n'.repeat(200);
+    const res = await api('POST', '/add', { canonical: 'Ashlr.AI', notes });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { term: { notes?: string } }).term.notes).toBe(notes);
+  });
+
+  it('add refuses notes of 201 characters with a 400 diagnostic and writes nothing', async () => {
+    const res = await api('POST', '/add', { canonical: 'Overnote', notes: 'n'.repeat(201) });
+    expect(res.status).toBe(400);
+    const { error } = (await res.json()) as { error: string };
+    expect(error).toMatch(/^term not added: notes: must be at most 200 characters\. Nothing was written/);
+    expect(error).not.toContain('n'.repeat(201));
+    const body = (await (await api('GET', '/lexicon')).json()) as { lexicon: { terms: { canonical: string }[] } };
+    expect(body.lexicon.terms.some((t) => t.canonical === 'Overnote')).toBe(false);
+  });
+
+  it('add accepts a phonetic hint of exactly the documented 200 characters and keeps it whole', async () => {
+    const phonetic = 'p'.repeat(200);
+    const res = await api('POST', '/add', { canonical: 'Ashlr.AI', phonetic });
+    expect(res.status).toBe(200);
+    expect(((await res.json()) as { term: { phonetic?: string } }).term.phonetic).toBe(phonetic);
+  });
+
+  it('add refuses a phonetic hint of 201 characters with a 400 diagnostic and writes nothing', async () => {
+    const res = await api('POST', '/add', { canonical: 'Overphon', phonetic: 'p'.repeat(201) });
+    expect(res.status).toBe(400);
+    const { error } = (await res.json()) as { error: string };
+    expect(error).toMatch(/^term not added: phonetic: must be at most 200 characters\. Nothing was written/);
+    expect(error).not.toContain('p'.repeat(201));
+    const body = (await (await api('GET', '/lexicon')).json()) as { lexicon: { terms: { canonical: string }[] } };
+    expect(body.lexicon.terms.some((t) => t.canonical === 'Overphon')).toBe(false);
   });
 
   // Catches: over the 60-character cap the 400 said only the cap, though the
@@ -3291,7 +3339,7 @@ describe('packs and aliases routes', () => {
     const res = await api2('GET', '/packs');
     expect(res.status).toBe(200);
     const body = (await res.json()) as { packs: { name: string; title: string; terms: number; aliases: number; installed: boolean; path: string }[]; installed: string[] };
-    expect(body.packs.map((p) => p.name)).toEqual(['ai', 'business', 'cloud-devops', 'developer', 'legal', 'profession-q8', 'voice-tools']);
+    expect(body.packs.map((p) => p.name)).toEqual(['ai', 'architecture', 'ashlr', 'business', 'cloud-devops', 'developer', 'legal', 'profession-q8', 'voice-tools']);
     expect(body.packs.every((p) => p.installed === false && p.terms > 0 && p.aliases > 0 && p.path.endsWith('.yaml'))).toBe(true);
     expect(body.installed).toEqual([]);
     expect((await api2('POST', '/packs', {})).status).toBe(405);
@@ -3440,6 +3488,39 @@ describe('packs and aliases routes', () => {
     expect(((await removal.json()) as { error: string }).error).toContain('or retry with ?scope=global to use the global lexicon instead');
   });
 
+  it('serves the aliases endpoint example without changing the lexicon', async () => {
+    const doc = await fs.readFile(new URL('../docs/aliases-endpoint-example.md', import.meta.url), 'utf8');
+    const index = await fs.readFile(new URL('../docs/README.md', import.meta.url), 'utf8');
+    expect(index).toContain('(aliases-endpoint-example.md)');
+    expect(doc).toContain('onboarding form');
+    expect(doc).toContain('Authorization: Bearer <token>');
+    const example = doc.match(/```http\nGET (\/aliases\?canonical=[^\n]+)\n```\n\nHTTP (\d{3}):\n\n```json\n([^\n]+)\n```/);
+    expect(example).not.toBeNull();
+    expect(example![1]).toBe('/aliases?canonical=Mason%20Wyatt');
+    const before = await (await api2('GET', '/lexicon')).json();
+    const response = await api2('GET', example![1]!);
+    expect(response.status).toBe(Number(example![2]));
+    expect(await response.json()).toEqual(JSON.parse(example![3]!));
+    expect(await (await api2('GET', '/lexicon')).json()).toEqual(before);
+  });
+
+  it('serves the onboarding reference example without changing the lexicon', async () => {
+    const doc = await fs.readFile(new URL('../docs/aliases-onboarding-reference.md', import.meta.url), 'utf8');
+    const index = await fs.readFile(new URL('../docs/README.md', import.meta.url), 'utf8');
+    expect(index).toContain('(aliases-onboarding-reference.md)');
+    expect(doc).toContain('required `canonical` query parameter');
+    expect(doc).toContain('onboarding form');
+    expect(doc).toContain('`aliases: []`');
+    const example = doc.match(/```http\nGET (\/aliases\?canonical=[^\n]+)\n```\n\nHTTP (\d{3}):\n\n```json\n([^\n]+)\n```/);
+    expect(example).not.toBeNull();
+    expect(example![1]).toBe('/aliases?canonical=Mason%20Wyatt');
+    const before = await (await api2('GET', '/lexicon')).json();
+    const response = await api2('GET', example![1]!);
+    expect(response.status).toBe(Number(example![2]));
+    expect(await response.json()).toEqual(JSON.parse(example![3]!));
+    expect(await (await api2('GET', '/lexicon')).json()).toEqual(before);
+  });
+
   it('serves the URL-encoded aliases example in the contract', async () => {
     const contract = await fs.readFile(new URL('../docs/CONTRACT.md', import.meta.url), 'utf8');
     const example = contract.match(/For example, URL-encode the canonical name `Mason Wyatt`[\s\S]*?```http\s+GET (\/aliases\?canonical=[^\s]+)\s+```[\s\S]*?```json\s+([^\n]+)\s+```/);
@@ -3460,6 +3541,123 @@ describe('packs and aliases routes', () => {
       expect(response.status, route).toBe(Number(status));
       expect(await response.json(), route).toEqual(JSON.parse(body!));
     }
+  });
+
+  it('serves the aliases query examples with exactly the documented responses', async () => {
+    const doc = await fs.readFile(new URL('../docs/aliases-query-examples.md', import.meta.url), 'utf8');
+    const examples = [...doc.matchAll(/```http\nGET (\/aliases[^\n]*)\n```\n\nHTTP (\d{3}):\n\n```json\n([^\n]+)\n```/g)];
+    expect(examples.map((example) => example[1])).toEqual([
+      '/aliases?canonical=Mason%20Wyatt',
+      '/aliases?canonical=Bob',
+      '/aliases',
+    ]);
+    for (const [, route, status, body] of examples) {
+      const response = await api2('GET', route!);
+      expect(response.status, route).toBe(Number(status));
+      expect(await response.json(), route).toEqual(JSON.parse(body!));
+    }
+  });
+
+  it('serves the aliases endpoint walkthrough examples', async () => {
+    const doc = await fs.readFile(new URL('../docs/aliases-endpoint-examples.md', import.meta.url), 'utf8');
+    const examples = [...doc.matchAll(/```http\nGET (\/aliases[^\n]*)\n```\n\nHTTP (\d{3}):\n\n```json\n([^\n]+)\n```/g)];
+    expect(examples.map((example) => example[1])).toEqual([
+      '/aliases?canonical=Mason%20Wyatt',
+      '/aliases?canonical=%20Ashlr%E2%80%8B.AI%20',
+      '/aliases?canonical=Bob',
+      '/aliases',
+      '/aliases?canonical=Vercel&limit=3',
+    ]);
+    for (const [, route, status, body] of examples) {
+      const response = await api2('GET', route!);
+      expect(response.status, route).toBe(Number(status));
+      expect(await response.json(), route).toEqual(JSON.parse(body!));
+    }
+  });
+
+  it('serves the request and error examples in the aliases response reference', async () => {
+    const doc = await fs.readFile(new URL('../docs/aliases-response-reference.md', import.meta.url), 'utf8');
+    const examples = [...doc.matchAll(/```http\nGET (\/aliases[^\n]*)\n```[\s\S]*?HTTP (\d{3})[^\n]*\n\n```json\n([^\n]+)\n```/g)];
+    expect(examples.map((example) => example[2])).toEqual(['200', '400']);
+    for (const [, route, status, body] of examples) {
+      const response = await api2('GET', route!);
+      expect(response.status, route).toBe(Number(status));
+      expect(await response.json(), route).toEqual(JSON.parse(body!));
+    }
+  });
+
+  it('serves the documented alias edge cases without looking up or writing terms', async () => {
+    const doc = await fs.readFile(new URL('../docs/aliases-endpoint-edge-cases.md', import.meta.url), 'utf8');
+    const index = await fs.readFile(new URL('../docs/README.md', import.meta.url), 'utf8');
+    expect(index).toContain('(aliases-endpoint-edge-cases.md)');
+    const examples = [...doc.matchAll(/```http\nGET (\/aliases[^\n]*)\n```\n\nHTTP (\d{3}):\n\n```json\n([^\n]+)\n```/g)];
+    expect(examples.map((example) => example[1])).toEqual([
+      '/aliases',
+      '/aliases?canonical=%20%E2%80%8B%20',
+      '/aliases?canonical=Mason%20Wyatt',
+      '/aliases?canonical=Bob',
+    ]);
+
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-alias-edge-'));
+    const globalPath = path.join(dir, 'config', 'lexicon.yaml');
+    const server = createServer({ port: 0, cwd: dir, globalPath, quiet: true });
+    try {
+      const info = await server.start();
+      const get = (route: string) => fetch(`${info.url}${route}`, { headers: { Authorization: `Bearer ${info.token}` } });
+      const before = await (await get('/lexicon')).json();
+      expect((before as { lexicon: { terms: unknown[] } }).lexicon.terms).toEqual([]);
+      for (const [, route, status, body] of examples) {
+        const response = await get(route!);
+        expect(response.status, route).toBe(Number(status));
+        expect(await response.json(), route).toEqual(JSON.parse(body!));
+      }
+      expect(await (await get('/lexicon')).json()).toEqual(before);
+      await expect(fs.stat(globalPath)).rejects.toMatchObject({ code: 'ENOENT' });
+
+      await addTerm({ canonical: 'Mason Wyatt', aliases: ['a stored alias'] }, { cwd: dir, globalPath });
+      const response = await get('/aliases?canonical=Mason%20Wyatt');
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual(JSON.parse(examples[2]![3]!));
+    } finally {
+      await server.stop();
+      await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+    }
+  });
+
+  it('generates aliases from the canonical query without looking up or changing stored terms', async () => {
+    const lexiconPath = path.join(home2, 'aliases-contract.yaml');
+    const stored = 'version: 1\nterms:\n  - canonical: Ashlr.AI\n    aliases: [stored-only-spelling]\n';
+    await fs.writeFile(lexiconPath, stored);
+    const server = createServer({ port: 0, cwd: cwd2, globalPath: lexiconPath, quiet: true });
+    const serverInfo = await server.start();
+    try {
+      const request = (route: string) => fetch(`${serverInfo.url}${route}`, { headers: { Authorization: `Bearer ${serverInfo.token}` } });
+      const response = await request('/aliases?canonical=Ashlr.AI');
+      expect(response.status).toBe(200);
+      expect(await response.json()).toEqual({ canonical: 'Ashlr.AI', aliases: suggestAliases('Ashlr.AI') });
+      expect(suggestAliases('Ashlr.AI')).not.toContain('stored-only-spelling');
+      expect(await fs.readFile(lexiconPath, 'utf8')).toBe(stored);
+
+      for (const route of ['/aliases?term=Ashlr.AI', '/aliases?canonical=Ashlr.AI&canonical=Ashlr.AI']) {
+        expect((await request(route)).status, route).toBe(400);
+      }
+    } finally {
+      await server.stop();
+    }
+  });
+
+  it.each([
+    '/aliases?canonical=',
+    '/aliases?canonical',
+    '/aliases?canonical=%20%09%0A',
+    '/aliases?canonical=%E2%80%8B%EF%BB%BF',
+    `/aliases?canonical=${'%E2%80%8B'.repeat(81)}%20`,
+  ])('rejects an empty canonical query after cleaning: %s', async (route) => {
+    const response = await api2('GET', route);
+    expect(response.status).toBe(400);
+    expect(await response.json()).toEqual({
+      error: 'canonical query parameter is required (e.g. GET /aliases?canonical=Ashlr.AI)',
+    });
   });
 
   it('GET /aliases?canonical=X returns suggestAliases and 400 without a canonical', async () => {

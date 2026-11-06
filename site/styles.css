@@ -563,6 +563,24 @@ mark.hit[data-tip]:focus-visible::after { opacity: 1; transform: translateX(-50%
   overflow: auto;
 }
 
+.tier-row { display: flex; flex-wrap: wrap; gap: 8px; margin-top: 16px; }
+
+.star-band, .faq-band {
+  padding-bottom: 8px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+.star-band h2, .faq-band h2 { font-size: 22px; letter-spacing: -0.02em; }
+.faq-band details {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-sm);
+  padding: 12px 14px;
+}
+.faq-band summary { cursor: pointer; font-weight: 600; }
+.faq-band details p { margin: 8px 0 0; color: var(--muted); }
+
 /* --------------------------------------------------------------- install */
 
 .install-section { padding-bottom: 40px; }
