@@ -126,6 +126,7 @@ describe('the write path identifies U+FFFF and writes nothing', () => {
     ['canonical', () => ({ canonical: `Ash${FFFF}lr`, aliases: [] }), `canonical: ${reason} in term "Ash\\uFFFFlr"`],
     ['an alias', () => ({ canonical: 'X', aliases: ['ok', `a${FFFF}b`] }), `aliases[1] ("a\\uFFFFb"): ${reason} in term "X"`],
     ['a never word', () => ({ canonical: 'X', aliases: [], never: [`n${FFFF}`] }), `never[0] ("n\\uFFFF"): ${reason} in term "X"`],
+    ['a context word', () => ({ canonical: 'X', aliases: [], context: [`c${FFFF}`] }), `context[0] ("c\\uFFFF"): ${reason} in term "X"`],
     ['phonetic', () => ({ canonical: 'X', aliases: [], phonetic: `p${FFFF}` }), `phonetic: ${reason} in term "X"`],
     ['notes', () => ({ canonical: 'X', aliases: [], notes: `n${FFFF}` }), `notes: ${reason} in term "X"`],
     ['createdAt', () => ({ canonical: 'X', aliases: [], createdAt: `2026${FFFF}` }), `createdAt: ${reason} in term "X"`],
@@ -155,6 +156,30 @@ describe('the write path identifies U+FFFF and writes nothing', () => {
     await expect(learnCorrection({ heard: 'Ashler', meant: `Ash${FFFF}lr` }, opts())).rejects.toThrow(
       `term not added: canonical: ${reason} in term "Ash\\uFFFFlr". Nothing was written`,
     );
+    expect(existsSync(globalPath)).toBe(false);
+  });
+
+  it('learnCorrection refuses a heard carrying U+FFFF on a merge, leaving the existing term untouched', async () => {
+    // meant names an existing term: the same refusal names that term.
+    await addTerm({ canonical: 'SaaS', aliases: ['sass'] }, opts());
+    const before = await fs.readFile(globalPath, 'utf8');
+    await expect(learnCorrection({ heard: `sa${FFFF}s`, meant: 'SaaS' }, opts())).rejects.toThrow(
+      `term not added: aliases[0] ("sa\\uFFFFs"): ${reason} in term "SaaS". Nothing was written`,
+    );
+    expect(await fs.readFile(globalPath, 'utf8')).toBe(before);
+  });
+
+  it('names U+FFFF even when it falls past the cut of the echoed entry', async () => {
+    // The `(...)` of `term not added` shows at most 24 characters of the
+    // entry: a unit further in is cut from the preview but still identified
+    // in the reason.
+    const alias = `${'a'.repeat(24)}${FFFF}tail`;
+    const err = await addTerm({ canonical: 'X', aliases: [alias] }, opts()).catch((e: unknown) => e);
+    const message = err instanceof Error ? err.message : '';
+    expect(message).toBe(
+      `term not added: aliases[0] ("${'a'.repeat(24)}..."): ${reason} in term "X". Nothing was written; fix that field and try again.`,
+    );
+    expect(message).not.toContain(FFFF);
     expect(existsSync(globalPath)).toBe(false);
   });
 
