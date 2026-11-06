@@ -5,6 +5,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 <!-- fresh:begin table:releases -->
 | Version | Released |
 |---|---|
+| 0.5.8 | 2026-11-05 |
 | 0.5.7 | 2026-10-31 |
 | 0.5.6 | 2026-10-18 |
 | 0.5.5 | 2026-10-14 |
@@ -21,6 +22,53 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 | 0.1.0 | 2026-09-19 |
 <!-- fresh:end -->
 
+## 0.5.8 (2026-11-05)
+
+### Release scope and upgrade notes
+
+- This unpublished release candidate was refreshed on 2026-11-05 against current main. The date records preparation, not completed publication. The last verified npm `latest` and public GitHub release remain 0.5.4. The immutable v0.5.7 candidate failed full CI on committed MCP bundle drift before tests ran; this candidate includes the regenerated bundle and all accumulated post-0.5.4 integration. Current OIDC publication acceptance has not yet been exercised.
+- Dry-run JSON output gains a `plan: true` marker on successful previews. Consumers keying on `dryRun: true` still work; `plan` distinguishes a preview result from an applied one, which `dryRun` alone could not once no-op results started reporting the requested mode.
+
+### Added
+
+- Starter pack: `legal` ("Law and litigation"), 25 terms and 50 aliases covering complementary legal Latin, litigation terms and spelled-out acronyms (res ipsa loquitur, remittitur, FRCP, UCC). It is offered unchecked in `lexicon setup` like the existing opt-in `profession-q8` pack. The vendored set now includes eight packs: 259 terms and 541 aliases.
+- Starter pack `ashlr` ("Ashlr.AI fleet"), 13 terms and 44 aliases for the fleet's own products and people (Ashlr.AI, Phantom, locus, Lexicon, Stacksync, Evan DeLoria, Codex). Its product names are ordinary English words, so those spellings sit in `never` lists rather than aliases, and `locus` is the first `context`-gated term. Offered unchecked in `lexicon setup`.
+- Per-term `context` gates: a term can carry `context:` words that must also appear in the same text before its aliases fire, so `locus` with `context: [ashlr]` rewrites "Lucas" in fleet talk and leaves a person's name alone. The span under trial cannot be its own evidence, code spans still count as context while staying protected from rewriting, and a span already spelled canonically claims itself either way. `lexicon add --context`, `lexicon terms add --context`, MCP `add_term`, `POST /add` and the YAML `context:` field all write it (at most 64 words per term, the aliases cap); importers merge it, pack removal counts a context edit as a reason to keep the term, and the `json` export carries it. See docs/LEXICON-FILE.md#context.
+- `lexicon terms` and `lexicon terms add <canonical> --heard <aliases...>`: `terms` prints the `list` table under the name a person guesses for it, and `terms add` is the deterministic add (one canonical plus the spellings it is heard as, `--context`, `--project`, `--dry-run`, `--json`), with none of `add`'s suggested aliases, prompting or fallbacks, so the same line always produces the same file and the same JSON. A second identical run reports `unchanged`.
+- MCP resource `lexicon://glossary` (`application/json`): the same capped, trusted merged lexicon `lexicon://json` serves, plus `activePacks`, the deduplicated list of installed global and trusted project packs, for an agent that wants the team vocabulary read-only.
+- `src/ambiguity/` ports the Pellucid ambiguity engine: `runRuleLayer` finds vague INCOSE-rule terms, passive voice and dangling pronouns, with `dedupeFindings` collapsing overlapping spans; `resolveSpan` resolves model-reported spans trusting text over offsets; `defaultCalibrator` is PAV isotonic confidence calibration; `aggregateFindings` clusters overlapping findings and pools their confidence. No command calls it yet; the two-stage design it feeds is docs/design/two-stage-correction.md.
+- `scripts/fast-check.sh` runs the package typecheck across all three tsconfigs and the lint check in parallel with incremental compiler caches kept in private git metadata, stopping at the first failure. It is a fast local gate, not a CI job.
+- `bench/daemon-latency.mjs` now also reports the resident expander's peak RSS: it spawns a real `lexicon daemon --expander` child that samples its own memory over stderr, warms it with `list --json` reads and prints a `resident daemon peak RSS` JSON row.
+- Documentation for surfaces and limits that previously existed only in code: alias-endpoint request/response and edge-case references, contract term and collection limits with examples, schema error name/preview/limit references, harvest marker catalog and boundary behavior, daemon and resident-expander scope and design questions, expander boundary map and per-platform questions, tray platform scope, Firefox extension publication readiness and submission checklist, and the October 31 issue proofs.
+
+### Changed
+
+- The README release badge now reads "source version" and links `package.json` instead of pointing at the releases page, and the guided-importer note says the feature is in source and the `v0.5.5` tag rather than implying a published release. Install pins and docs now consistently distinguish the source version from what npm and GitHub actually serve. (#455)
+- The README now leads with the commands an agent can run (the one-line installer, a dry-run setup, a single `normalize`, `install --apply`), adds root `llms.txt` and `llms-full.txt`, and gains `docs/COPY-PASTE.md` (the commands with no commentary) and new hero and how-it-works diagrams. (#576)
+- The landing and demo pages answer agents as well as people: a clickable how-it-works, copyable JSON install commands, HowTo structured data, a demo that exercises each of the three matchers, an llms.txt link, and notes naming the features that actually use the network. (#577)
+- The Firefox extension build now requires Firefox 140 or newer and declares the built-in data-collection consent (`personalCommunications`, `websiteContent`, `authenticationInfo`) that version reads at install, instead of a 127 floor whose ungranted host permissions left pairing and sync broken. (#428)
+- `plugin/mcp-server.mjs` was rebuilt to match the current `src/` sources.
+
+### Fixed
+
+- Regenerate the committed MCP bundle so full qualification reaches the product tests instead of failing the bundle-drift check.
+- The MCP stdio server now exits when its host goes away: `stdin` `end` and `close` trigger the same idempotent shutdown as SIGINT/SIGTERM, closing the server (and any outstanding requests) instead of leaving an orphaned process.
+- `lexicon voice` transcript cleaning no longer leaves a doubled space where a bracketed tag sat right before closing punctuation: `send [MUSIC].` now cleans to `send.`, the tag taking its leading space with it.
+- A `term not added` diagnostic that names the offending value (a blank alias, an over-cap field) escapes U+FFFE, U+FFFF and unpaired surrogates as `\uXXXX` (through the new `escapeUnencodable`) instead of echoing a raw noncharacter into a terminal, log or MCP result it could not be written back from.
+- `lexicon <mistyped>` prints `error: unknown command '<mistyped>'` again instead of crashing on `program.unknownCommand is not a function` when the name matched no suggestion; under `--json` it prints the `{ ok: false, error, nextStep }` document.
+
+### Internal
+
+- Successful `--dry-run --json` previews now spread the shared `dryRunPlan` marker (`plan: true`, `dryRun: true`) ahead of the result payload in init, add, remove, remove-alias, learn, untrust and pack installs. Applied results and failures never carry `plan`.
+- Link-checker expectations use native paths, benchmark-launch and freshness test expectations are portable across platforms, and the freshness scan lists marked files in forward-slash UTF-16 order. (#430, #411, #415)
+- `actions/cache` in the macOS app workflow and `actions/download-artifact` in the release workflow are pinned to 40-hex commit SHAs. (#820)
+- `@modelcontextprotocol/sdk` 1.32.1 to 1.32.2 and `@types/chrome` updated. (#427, #426)
+- Removed the dead `dryField` helper; every dry-run JSON document builds the marker through `dryRunPlan`. (#581)
+- `check-facts` now actually scans `llms.txt` and `llms-full.txt`: both sat in its scan roots but the extension filter admitted no `.txt` files, so their stale command and pack counts went unnoticed.
+- New coverage for harvest-marker boundaries, prefixes and punctuation; schema text, word, error-length and first-invalid-unit limits; transcript cleaning scope and tag examples; whisper tag boundaries; tray action-map, scope, interaction and platform questions; and the source-versus-npm command contract.
+- Further coverage for schema alias, alias-count, term-count and U+FFFF diagnostic limits and ordering; `terms add` and context gating; the ambiguity port; `lexicon://glossary`; bracketed tags before punctuation, fallback and unmatched closing brackets, and plain transcripts; harvest note marker edges; and merge-conflict drivers across freshness, serve, JSONC, package-script and expander-server tests.
+- Removed `.lexicon-dry-run-cli-9FRnpQ/`, a bundled CLI artifact left by an interrupted `cli-dry-run` test and committed by accident. `.gitignore` now covers `.lexicon-dry-run-cli-*/` so a leftover test bundle cannot be swept into a commit again.
+
 ## 0.5.7 (2026-10-31)
 
 ### Release scope and upgrade notes
@@ -35,6 +83,8 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - Preserve the first complete voice-history record when the bounded tail starts exactly at its byte boundary. History trimming and term suggestions now discard only a genuinely cut record, including for Unicode input.
 
 
+- The MCP server (`lexicon-mcp`) exits when the host closes its stdin, not only on SIGINT or SIGTERM. The SDK transport watched only data and errors, so a host that disconnected left the server running with its requests outstanding. Shutdown runs once however many signals arrive.
+
 ### Internal
 
 - Guard dynamic imports in both test trees against bare filesystem paths on Windows, and assert the enumeration prose regression ceiling explicitly.
@@ -42,6 +92,8 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - Cover adjacent bracketed Whisper tags in the voice transcript cleaning tests.
 
 ### Changed
+
+- A successful `--dry-run --json` result of `init`, `add`, `remove` (term and `--alias`), `learn`, `untrust` and built-in `pack add` leads with `plan: true` beside `dryRun: true`, no-ops included, so a caller can tell a preview from an applied result without reading `dryRun`. Applied results and failures never carry `plan`. Additive; `dryRun: true` is unchanged. See docs/CONTRACT.md, Write previews.
 
 - The built-in example lexicon (`DEMO_LEXICON`), which `lexicon normalize` uses on argument text when your own lexicon is empty and `lexicon setup` falls back to for its closing demo, includes Hetzner again: `lexicon normalize "deploy on head sner"` now prints `deploy on Hetzner` with the example notice instead of echoing the input unchanged. The notice names the example's terms by reading them off `DEMO_LEXICON`, so it cannot drift from the term list. Closes #217.
 

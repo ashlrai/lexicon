@@ -1,10 +1,74 @@
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { cleanTranscript, parseWhisperOutput } from './transcribe.js';
+import { cleanTranscript, parseWhisperOutput, transcribeFile } from './transcribe.js';
 
 describe('cleanTranscript', () => {
+  it.each(['[BLANK_AUDIO]', '[MUSIC]', '[speaker 2]', '[]', '[background\nnoise]'])
+    ('returns no text for a transcript containing only %s', (tag) => {
+      expect(cleanTranscript(tag)).toBe('');
+    });
+
   it('returns an empty string for empty input after cleaning a transcript', () => {
-    expect(cleanTranscript('Hello [noise] world')).toBe('Hello world');
     expect(cleanTranscript('')).toBe('');
+  });
+
+  it('removes a bracketed tag between ordinary words while the words remain', () => {
+    expect(cleanTranscript('Hello [noise] world')).toBe('Hello world');
+  });
+
+  it('removes a bracketed annotation containing spaces and keeps the surrounding words', () => {
+    expect(cleanTranscript('Please [background music playing] send the report')).toBe('Please send the report');
+    expect(cleanTranscript('[ Pause in speech ] Ship it today')).toBe('Ship it today');
+    expect(cleanTranscript('Ship it today [door closes loudly]')).toBe('Ship it today');
+  });
+
+  it('removes a one-word asterisk tag and keeps the surrounding words', () => {
+    expect(cleanTranscript('Ship *laughs* it today')).toBe('Ship it today');
+    expect(cleanTranscript('Ship it *laughs*')).toBe('Ship it');
+    expect(cleanTranscript('*laughs* Ship it')).toBe('Ship it');
+    expect(cleanTranscript('Ship it, *laughs* then deploy.')).toBe('Ship it, then deploy.');
+  });
+
+  describe('a bracketed tag at the beginning of the text', () => {
+    it.each([
+      ['a whisper tag', '[BLANK_AUDIO] Please send the report', 'Please send the report'],
+      ['a tag glued to the next word', '[MUSIC]Please send the report', 'Please send the report'],
+      ['a tag with inner spaces', '[ Pause in speech ] Ship it today', 'Ship it today'],
+      ['a tag followed by a line break', '[speaker 1]\nSend it to Ashlr.AI today', 'Send it to Ashlr.AI today'],
+      ['a tag whose words repeat later', '[inaudible] inaudible words stay', 'inaudible words stay'],
+      ['a following parenthetical', '[MUSIC] Send it (the draft) now', 'Send it (the draft) now'],
+    ])('removes the tag and keeps every following word: %s', (_description, input, expected) => {
+      expect(cleanTranscript(input)).toBe(expected);
+    });
+
+    it('removes consecutive leading tags', () => {
+      expect(cleanTranscript('[MUSIC] [BLANK_AUDIO] Ship it')).toBe('Ship it');
+    });
+
+    it('returns an empty string when the tag is the whole text', () => {
+      expect(cleanTranscript('[BLANK_AUDIO]')).toBe('');
+    });
+  });
+
+  describe('a bracketed tag at the end of the text', () => {
+    it.each([
+      ['a whisper tag', 'Please send the report [BLANK_AUDIO]', 'Please send the report'],
+      ['a tag glued to the last word', 'Please send the report[MUSIC]', 'Please send the report'],
+      ['a tag with inner spaces', 'Ship it today [ Pause in speech ]', 'Ship it today'],
+      ['a tag after a line break', 'Send it to Ashlr.AI today\n[speaker 2]', 'Send it to Ashlr.AI today'],
+      ['trailing whitespace after the tag', 'Ship it today [inaudible]  \n', 'Ship it today'],
+      ['a tag after final punctuation', 'Ship it today. [MUSIC]', 'Ship it today.'],
+      ['a tag whose words repeat earlier', 'inaudible words stay [inaudible]', 'inaudible words stay'],
+      ['a preceding parenthetical', 'Send it (the draft) now [MUSIC]', 'Send it (the draft) now'],
+    ])('removes the tag and keeps the spoken text: %s', (_description, input, expected) => {
+      expect(cleanTranscript(input)).toBe(expected);
+    });
+
+    it('removes consecutive trailing tags', () => {
+      expect(cleanTranscript('Ship it [MUSIC] [BLANK_AUDIO]')).toBe('Ship it');
+    });
   });
 
   it.each([
@@ -34,9 +98,37 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript(prose)).toBe(prose);
   });
 
+  it('preserves an unmatched asterisk alongside ordinary text', () => {
+    expect(cleanTranscript('Please review the *draft today')).toBe('Please review the *draft today');
+    expect(cleanTranscript('Note * this stays')).toBe('Note * this stays');
+  });
+
   it('preserves multiline prose and spoken parentheticals while normalizing whitespace', () => {
     const prose = '  Please review the café menu (including the specials),\n\tthen send it to Zoë.  ';
     expect(cleanTranscript(prose)).toBe('Please review the café menu (including the specials), then send it to Zoë.');
+  });
+
+  it.each([
+    ['whitespace before a bracketed tag', 'Hello \t[noise]world', 'Hello world'],
+    ['whitespace after a bracketed tag', 'Hello[noise]\n world', 'Hello world'],
+    ['whitespace on both sides of a bracketed tag', 'Hello  [noise]\t\nworld', 'Hello world'],
+    ['whitespace on both sides of a parenthesized tag', 'Hello\n (soft music)\t world', 'Hello world'],
+    ['whitespace on both sides of a starred tag', 'Hello\t *laughs* \r\nworld', 'Hello world'],
+    ['Unicode whitespace around a tag', 'Hello\u00a0[noise]\u2003world', 'Hello world'],
+    ['a tag before speech', ' \t[noise]\n Hello world  ', 'Hello world'],
+    ['a tag after speech', '  Hello world \t[noise]\n ', 'Hello world'],
+    ['speech and tags at both ends', '\n[noise]\tHello world  *laughs*\r\n', 'Hello world'],
+  ])('normalizes %s without losing speech', (_description, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
+  it.each([
+    'Please send the report to the team.',
+    'The rollout finished at 3 pm and nobody noticed.',
+    'Did Zoë already ship the café menu?',
+    "Let's ping Ashlr.AI about Friday's deploy, then go home.",
+  ])('leaves the ordinary sentence without annotations unchanged: %s', (sentence) => {
+    expect(cleanTranscript(sentence)).toBe(sentence);
   });
 
   it.each([
@@ -76,6 +168,24 @@ describe('cleanTranscript', () => {
   });
 
   it.each([
+    ['at the start and the end', '[MUSIC]Please send the report.[noise]', 'Please send the report.'],
+    ['with speech between them', 'Please [MUSIC] send the report [inaudible] today.', 'Please send the report today.'],
+    ['touching different spoken words', 'Please[MUSIC]send the report[inaudible]today.', 'Please send the report today.'],
+    ['on separate lines like speaker labels', '[speaker 1]\nFirst part.\n[speaker 2]\nSecond part.', 'First part. Second part.'],
+  ])('removes two separated bracketed tags %s while the surrounding spoken words remain', (_description, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
+  it.each([
+    ['a spaced tag after a comma', 'First draft done, [speaker 2] then we ship.', 'First draft done, then we ship.'],
+    ['a tag touching the comma', 'First draft done,[speaker 2] then we ship.', 'First draft done, then we ship.'],
+    ['non-ASCII words around the tag', 'Zoë, please [phone rings] send the café menu.', 'Zoë, please send the café menu.'],
+    ['a sentence boundary on each side', 'Send it. [door closes] Then leave.', 'Send it. Then leave.'],
+  ])('removes a bracketed tag from mixed text with %s while preserving the surrounding words', (_description, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
+  it.each([
     ['an unmatched opening bracket', 'Please keep [unfinished speech.', 'Please keep [unfinished speech.'],
     ['an unmatched closing bracket', 'Please keep unfinished] speech.', 'Please keep unfinished] speech.'],
     ['an opening bracket after a complete tag', '  Please [noise] continue [unfinished\nthought  ', 'Please continue [unfinished thought'],
@@ -88,8 +198,48 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript('Please continue *whispers* with the rollout.')).toBe('Please continue with the rollout.');
   });
 
+  it.each([
+    ['at the start', '*door slams loudly* Please send the report.', 'Please send the report.'],
+    ['at the end', 'Please send the report. *door slams loudly*', 'Please send the report.'],
+    ['touching speech', 'Please*door slams loudly*send the report.', 'Please send the report.'],
+    ['across a line break', 'Please *door\nslams loudly* send the report.', 'Please send the report.'],
+    ['with extra inner spaces', 'Please *door   slams  loudly* send it.', 'Please send it.'],
+    ['uppercase', 'Please *DOOR SLAMS LOUDLY* send it.', 'Please send it.'],
+    ['between punctuated prose', 'Zoë asked, *heavy rain falling* "Is the café open?"', 'Zoë asked, "Is the café open?"'],
+    ['twice in a row', 'Ship *one two three* *four five six* today.', 'Ship today.'],
+    ['between tags of other kinds', 'Ship [noise] *a b c* (soft music) today.', 'Ship today.'],
+  ])('removes a three-word asterisk tag %s and keeps the spoken words', (_description, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
   it('removes up to three starred words but preserves a four-word span', () => {
     expect(cleanTranscript('Please continue *door slams loudly* with the rollout.')).toBe('Please continue with the rollout.');
     expect(cleanTranscript('Please keep *these four spoken words* intact.')).toBe('Please keep *these four spoken words* intact.');
+  });
+});
+
+describe('transcribeFile', () => {
+  it.each(['json', 'stdout'] as const)('returns no text for a tag-only transcript from %s', async (source) => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-transcribe-test-'));
+    try {
+      const result = await transcribeFile(path.join(dir, 'capture.wav'), {
+        lexicon: { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }] },
+        whisperCli: 'whisper-cli',
+        modelOptions: { globalPath: path.join(dir, 'lexicon.yaml'), env: {}, fallbackDirs: [], exists: () => true },
+        tmpDir: dir,
+        exec: async (_cmd, args) => {
+          if (source === 'json') {
+            const outBase = args[args.indexOf('-of') + 1];
+            await fs.writeFile(`${outBase}.json`, JSON.stringify({ transcription: [{ text: '[Ashler]' }] }));
+          }
+          return { code: 0, stdout: source === 'stdout' ? '[Ashler]' : 'ignored speech', stderr: '' };
+        },
+      });
+      expect(result.raw).toBe('');
+      expect(result.output).toBe('');
+      expect(result.normalized).toEqual({ input: '', output: '', replacements: [], changed: false });
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });

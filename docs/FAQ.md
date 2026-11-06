@@ -27,11 +27,11 @@ Yes, and in both directions. Lexicon runs after whatever produced the transcript
 
 ## Does Lexicon work in Slack, Mail, Notes and other Mac apps?
 
-Yes, through the macOS menu bar app. It watches the focused text field through the Accessibility API and rewrites dictated text in place, so it works in Slack, Mail, Notes, your editor, anywhere there is a text field, and you grant Accessibility permission once in System Settings > Privacy & Security. Local push-to-talk with whisper.cpp is built in, and so is a loopback HTTP API on 127.0.0.1 if you would rather call it from your own script. Windows and Linux have the CLI, the MCP server and the browser extension, but no tray app yet.
+Yes, through the macOS menu bar app. It watches the focused text field through the Accessibility API and rewrites dictated text in place, so it works in Slack, Mail, Notes, your editor, anywhere there is a text field, and you grant Accessibility permission once in System Settings > Privacy & Security. Local push-to-talk with whisper.cpp is built in, and so is a loopback HTTP API on 127.0.0.1 if you would rather call it from your own script. Linux has no tray app. Windows has a tray app that is unit-tested and has never been run on Windows, so do not install it as though it works. The CLI, the MCP server and the browser extension are tested in CI on both.
 
 ## Is my text sent anywhere?
 
-No. Your lexicon is a plain YAML file at `~/.config/lexicon/lexicon.yaml`: there is no account, no sync and no telemetry, and the CLI, the hooks, the MCP server, the local API and the browser extension make no network request beyond the loopback interface. The only outbound request anywhere in the codebase is `lexicon voice` downloading a whisper.cpp model the first time you use local push-to-talk; audio itself never leaves the machine. The full threat model, including how an untrusted project lexicon is kept out of model context, is in SECURITY.md.
+Ordinary correction does not send your transcript anywhere. The lexicon is a YAML file at `~/.config/lexicon/lexicon.yaml`. There is no account, no sync and no telemetry. The CLI, the hooks, the MCP server, the loopback API and the browser extension do not send transcripts to a remote service. Three features use the network, and only when you turn them on: `lexicon voice` downloads a whisper.cpp model the first time you use local push-to-talk (the audio stays on the machine), `lexicon pack` fetches a community pack from a registry URL you choose and checks its checksum, and the GitHub source in `lexicon import --guided` calls the GitHub API through your existing `gh` login. Email and chat are not imported. The threat model is in SECURITY.md.
 
 ## What is an MCP server, and do I need one?
 

@@ -1,6 +1,6 @@
 /** CLI previews must be reachable through commander and preserve user files. */
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, statSync, realpathSync, rmSync, writeFileSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -16,8 +16,9 @@ let repo: string;
 let globalPath: string;
 
 beforeAll(async () => {
-  // Keep package-root discovery (including built-in packs) identical to source runs.
-  cliDir = mkdtempSync(path.join(repoRoot, '.lexicon-dry-run-cli-'));
+  cliDir = mkdtempSync(path.join(os.tmpdir(), 'lexicon-dry-run-cli-'));
+  cpSync(path.join(repoRoot, 'package.json'), path.join(cliDir, 'package.json'));
+  cpSync(path.join(repoRoot, 'packs'), path.join(cliDir, 'packs'), { recursive: true });
   cli = await bundleChildEntry("import './src/cli/index.js';", path.join(cliDir, 'cli.mjs'));
 });
 afterAll(() => rmSync(cliDir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 }));
@@ -362,7 +363,7 @@ describe('CLI dry-run previews', () => {
   it('project previews retain the untrusted-file refusal and do not pin content', () => {
     const projectPath = path.join(repo, '.lexicon.yaml');
     writeFileSync(projectPath, seed);
-    for (const args of [['add', 'NewName', 'new name', '--project'], ['remove', 'Ashlr.AI', '--project'], ['harvest', '--add', '--yes']]) {
+    for (const args of [['add', 'NewName', 'new name', '--project'], ['remove', 'Ashlr.AI', '--project'], ['learn', 'Ashlur', 'Ashlr.AI', '--project'], ['harvest', '--add', '--yes']]) {
       const result = lexicon([...args, '--dry-run', '--json']);
       expect(result.status).toBe(1);
       expect(JSON.parse(result.stdout)).toMatchObject({ ok: false });
