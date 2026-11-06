@@ -180,11 +180,11 @@ jobs:
         run: |
           version=$(node scripts/release-contract.mjs source . "$RELEASE_TAG")
           test "$version" = "$VERSION"
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: lexicon-release-ubuntu
           path: staged/ubuntu
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8
         with:
           name: lexicon-release-macos
           path: staged/macos

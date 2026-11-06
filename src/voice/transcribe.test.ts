@@ -1,7 +1,15 @@
+import { promises as fs } from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { cleanTranscript, parseWhisperOutput } from './transcribe.js';
+import { cleanTranscript, parseWhisperOutput, transcribeFile } from './transcribe.js';
 
 describe('cleanTranscript', () => {
+  it.each(['[BLANK_AUDIO]', '[MUSIC]', '[speaker 2]', '[]', '[background\nnoise]'])
+    ('returns no text for a transcript containing only %s', (tag) => {
+      expect(cleanTranscript(tag)).toBe('');
+    });
+
   it('returns an empty string for empty input after cleaning a transcript', () => {
     expect(cleanTranscript('')).toBe('');
   });
@@ -101,6 +109,20 @@ describe('cleanTranscript', () => {
   });
 
   it.each([
+    ['whitespace before a bracketed tag', 'Hello \t[noise]world', 'Hello world'],
+    ['whitespace after a bracketed tag', 'Hello[noise]\n world', 'Hello world'],
+    ['whitespace on both sides of a bracketed tag', 'Hello  [noise]\t\nworld', 'Hello world'],
+    ['whitespace on both sides of a parenthesized tag', 'Hello\n (soft music)\t world', 'Hello world'],
+    ['whitespace on both sides of a starred tag', 'Hello\t *laughs* \r\nworld', 'Hello world'],
+    ['Unicode whitespace around a tag', 'Hello\u00a0[noise]\u2003world', 'Hello world'],
+    ['a tag before speech', ' \t[noise]\n Hello world  ', 'Hello world'],
+    ['a tag after speech', '  Hello world \t[noise]\n ', 'Hello world'],
+    ['speech and tags at both ends', '\n[noise]\tHello world  *laughs*\r\n', 'Hello world'],
+  ])('normalizes %s without losing speech', (_description, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
+  it.each([
     'Please send the report to the team.',
     'The rollout finished at 3 pm and nobody noticed.',
     'Did Zoë already ship the café menu?',
@@ -193,5 +215,31 @@ describe('cleanTranscript', () => {
   it('removes up to three starred words but preserves a four-word span', () => {
     expect(cleanTranscript('Please continue *door slams loudly* with the rollout.')).toBe('Please continue with the rollout.');
     expect(cleanTranscript('Please keep *these four spoken words* intact.')).toBe('Please keep *these four spoken words* intact.');
+  });
+});
+
+describe('transcribeFile', () => {
+  it.each(['json', 'stdout'] as const)('returns no text for a tag-only transcript from %s', async (source) => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-transcribe-test-'));
+    try {
+      const result = await transcribeFile(path.join(dir, 'capture.wav'), {
+        lexicon: { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }] },
+        whisperCli: 'whisper-cli',
+        modelOptions: { globalPath: path.join(dir, 'lexicon.yaml'), env: {}, fallbackDirs: [], exists: () => true },
+        tmpDir: dir,
+        exec: async (_cmd, args) => {
+          if (source === 'json') {
+            const outBase = args[args.indexOf('-of') + 1];
+            await fs.writeFile(`${outBase}.json`, JSON.stringify({ transcription: [{ text: '[Ashler]' }] }));
+          }
+          return { code: 0, stdout: source === 'stdout' ? '[Ashler]' : 'ignored speech', stderr: '' };
+        },
+      });
+      expect(result.raw).toBe('');
+      expect(result.output).toBe('');
+      expect(result.normalized).toEqual({ input: '', output: '', replacements: [], changed: false });
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 });

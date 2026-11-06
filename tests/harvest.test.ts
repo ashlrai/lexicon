@@ -204,6 +204,22 @@ describe('harvestRepo', () => {
     expect(await harvestRepo(dir, { git: false, minCount: 1, symbols: true })).toEqual([]);
   });
 
+  it('filters NOTE itself while scanning marked and unmarked comments alike', async () => {
+    const dir = path.join(tmp, 'note-contract', 'repo');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'marked.ts'), '// NOTE: check QuasarWidget\n');
+    await fs.writeFile(path.join(dir, 'plain.ts'), '// check QuasarWidget\n');
+
+    const options = { git: false, symbols: true, minCount: 1 };
+    const candidates = await harvestRepo(dir, options);
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      canonical: 'QuasarWidget', category: 'identifier', source: 'harvest:repo',
+      count: 2, evidence: ['marked.ts', 'plain.ts'],
+    });
+    expect(await harvestRepo(dir, { ...options, minCount: 3 })).toEqual([]);
+  });
+
   it.each(['FIXME', 'NOTE', 'HACK'])(
     'excludes %s in ordinary comments while counting the names in their text', async (marker) => {
       const dir = path.join(tmp, `ordinary-comment-${marker}`, 'repo');
