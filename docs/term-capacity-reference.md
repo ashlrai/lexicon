@@ -15,19 +15,20 @@ Sources: [CONTRACT.md](CONTRACT.md) (the `LIMITS` line under `src/core/schema.ts
 | Terms per lexicon file | 5000 | `terms` | `buildLexicon`, `.max(LIMITS.terms)` |
 | Aliases per term | 64 | `aliases` | `buildTerm`, `WordList(LIMITS.aliases, ...)` |
 | `never` words per term | 64 | `aliases` | `buildTerm`, `OptionalWordList(LIMITS.aliases, ...)` |
+| `context` words per term | 64 | `aliases` | `buildTerm`, `OptionalWordList(LIMITS.aliases, ...)` |
 | `settings.packs` entries | 64 | `aliases` | `buildSettings` |
 | `settings.protectedWords` entries | 1000 | `protectedWords` | `buildSettings` |
 
 The contract states `terms` 5000, `aliases` 64 (aliases and `never`) and
-`protectedWords` 1000. `settings.packs` shares the 64 cap in the schema but is
-not named in the contract line.
+`protectedWords` 1000. `context` and `settings.packs` share the 64 cap in the
+schema but are not named in the contract line.
 
 ## Text-length limits (how long)
 
 | What | Max characters | `LIMITS` key | Enforced in `schema.ts` |
 | --- | ---: | --- | --- |
 | `canonical` | 80 | `word` | `NonEmptyWord` |
-| Each alias, `never`, `protectedWords` or `packs` entry | 80 | `word` | `CleanWordList` |
+| Each alias, `never`, `context`, `protectedWords` or `packs` entry | 80 | `word` | `CleanWordList` |
 | `notes`, `phonetic` | 200 | `text` | `SafeString(LIMITS.text)` |
 | `createdAt` | 64 | none (literal) | `buildTerm` |
 

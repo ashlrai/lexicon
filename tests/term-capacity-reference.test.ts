@@ -11,6 +11,7 @@ describe('term capacity reference', () => {
     expect(counts).toContain(`| Terms per lexicon file | ${LIMITS.terms} | \`terms\``);
     expect(counts).toContain(`| Aliases per term | ${LIMITS.aliases} | \`aliases\``);
     expect(counts).toContain(`| \`never\` words per term | ${LIMITS.aliases} |`);
+    expect(counts).toContain(`| \`context\` words per term | ${LIMITS.aliases} |`);
     expect(counts).toContain(`| \`settings.protectedWords\` entries | ${LIMITS.protectedWords} |`);
     expect(lengths).toContain(`| \`canonical\` | ${LIMITS.word} | \`word\``);
     expect(lengths).toContain(`| \`notes\`, \`phonetic\` | ${LIMITS.text} | \`text\``);

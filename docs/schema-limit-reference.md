@@ -8,9 +8,9 @@ separate limit imposed by the CLI, MCP tools, importers, or exporters.
 
 | Limit | Maximum | Schema fields and unit |
 | --- | ---: | --- |
-| `word` | 80 | Unicode code points per `canonical`, each `aliases` or `never` entry, and each `settings.protectedWords` or `settings.packs` entry |
+| `word` | 80 | Unicode code points per `canonical`, each `aliases`, `never` or `context` entry, and each `settings.protectedWords` or `settings.packs` entry |
 | `text` | 200 | Unicode code points per `phonetic` or `notes` field |
-| `aliases` | 64 | Entries per term's `aliases` list, per term's `never` list, and per `settings.packs` list; each list has its own cap |
+| `aliases` | 64 | Entries per term's `aliases`, `never` or `context` list, and per `settings.packs` list; each list has its own cap |
 | `terms` | 5000 | Terms per lexicon file |
 | `protectedWords` | 1000 | Entries in `settings.protectedWords` per lexicon file |
 | `createdAt` | 64 | Unicode code points in a term's `createdAt`; this is a separate literal in the schema, not a `LIMITS` member |
@@ -29,8 +29,9 @@ not two UTF-16 code units.
 The numerical `LIMITS` values stated in the contract agree with the source.
 The contract's `LIMITS` summary names only canonical and alias for `word`, and
 only aliases and `never` for `aliases`. The schema additionally applies `word`
-to `never`, `settings.protectedWords`, and `settings.packs` entries, and applies
-`aliases` to the `settings.packs` list. The schema's separate 64-code-point
+to `never`, `context`, `settings.protectedWords`, and `settings.packs` entries,
+and applies `aliases` to the `context` and `settings.packs` lists. The schema's
+separate 64-code-point
 `createdAt` limit is also absent from that summary. These are omissions in the
 contract's summary, not conflicting numerical values. The contract's abbreviated
 `LexiconSettings` shape also omits `packs`, which the schema accepts.
