@@ -5,6 +5,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 <!-- fresh:begin table:releases -->
 | Version | Released |
 |---|---|
+| 0.5.8 | 2026-11-05 |
 | 0.5.7 | 2026-10-31 |
 | 0.5.6 | 2026-10-18 |
 | 0.5.5 | 2026-10-14 |
@@ -20,6 +21,37 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 | 0.2.0 | 2026-09-19 |
 | 0.1.0 | 2026-09-19 |
 <!-- fresh:end -->
+
+## 0.5.8 (2026-11-05)
+
+### Release scope and upgrade notes
+
+- This unpublished release candidate was refreshed on 2026-11-05 against current main. The date records preparation, not completed publication. The last verified npm `latest` and public GitHub release remain 0.5.4. The immutable v0.5.7 candidate failed full CI on committed MCP bundle drift before tests ran; this candidate includes the regenerated bundle and all accumulated post-0.5.4 integration. Current OIDC publication acceptance has not yet been exercised.
+- Dry-run JSON output gains a `plan: true` marker on successful previews. Consumers keying on `dryRun: true` still work; `plan` distinguishes a preview result from an applied one, which `dryRun` alone could not once no-op results started reporting the requested mode.
+
+### Added
+
+- Starter pack: `legal` ("Law and litigation"), 25 terms and 50 aliases covering complementary legal Latin, litigation terms and spelled-out acronyms (res ipsa loquitur, remittitur, FRCP, UCC). It is offered unchecked in `lexicon setup` like the existing opt-in `profession-q8` pack. The vendored set now includes eight packs: 259 terms and 541 aliases.
+- `scripts/fast-check.sh` runs the package typecheck across all three tsconfigs and the lint check in parallel with incremental compiler caches kept in private git metadata, stopping at the first failure. It is a fast local gate, not a CI job.
+- `bench/daemon-latency.mjs` now also reports the resident expander's peak RSS: it spawns a real `lexicon daemon --expander` child that samples its own memory over stderr, warms it with `list --json` reads and prints a `resident daemon peak RSS` JSON row.
+- Documentation for surfaces and limits that previously existed only in code: alias-endpoint request/response and edge-case references, contract term and collection limits with examples, schema error name/preview/limit references, harvest marker catalog and boundary behavior, daemon and resident-expander scope and design questions, expander boundary map and per-platform questions, tray platform scope, Firefox extension publication readiness and submission checklist, and the October 31 issue proofs.
+
+### Changed
+
+- The README release badge now reads "source version" and links `package.json` instead of pointing at the releases page, and the guided-importer note says the feature is in source and the `v0.5.5` tag rather than implying a published release. Install pins and docs now consistently distinguish the source version from what npm and GitHub actually serve. (#455)
+- `plugin/mcp-server.mjs` was rebuilt to match the current `src/` sources.
+
+### Fixed
+
+- Regenerate the committed MCP bundle so full qualification reaches the product tests instead of failing the bundle-drift check.
+- The MCP stdio server now exits when its host goes away: `stdin` `end` and `close` trigger the same idempotent shutdown as SIGINT/SIGTERM, closing the server (and any outstanding requests) instead of leaving an orphaned process.
+
+### Internal
+
+- Successful `--dry-run --json` previews now spread the shared `dryRunPlan` marker (`plan: true`, `dryRun: true`) ahead of the result payload in init, add, remove, remove-alias, learn, untrust and pack installs. Applied results and failures never carry `plan`.
+- Link-checker expectations use native paths, and benchmark-launch and freshness test expectations are portable across platforms. (#430, #411)
+- New coverage for harvest-marker boundaries, prefixes and punctuation; schema text, word, error-length and first-invalid-unit limits; transcript cleaning scope and tag examples; whisper tag boundaries; tray action-map, scope, interaction and platform questions; and the source-versus-npm command contract.
+- Removed `.lexicon-dry-run-cli-9FRnpQ/`, a bundled CLI artifact left by an interrupted `cli-dry-run` test and committed by accident. `.gitignore` now covers `.lexicon-dry-run-cli-*/` so a leftover test bundle cannot be swept into a commit again.
 
 ## 0.5.7 (2026-10-31)
 
