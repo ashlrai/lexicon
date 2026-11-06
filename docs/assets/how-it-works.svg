@@ -1,0 +1,32 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="960" height="300" viewBox="0 0 960 300" role="img" aria-labelledby="flowTitle flowDesc">
+  <title id="flowTitle">How Lexicon fits between speech-to-text and the agent</title>
+  <desc id="flowDesc">You speak. Speech-to-text writes a guess. Lexicon rewrites names it knows, by alias, then phonetic match, then fuzzy match. The agent reads the corrected line.</desc>
+  <rect width="960" height="300" rx="28" fill="#070a0f"/>
+  <g font-family="ui-sans-serif, system-ui, sans-serif">
+    <rect x="28" y="36" width="190" height="92" rx="16" fill="#101820" stroke="#243140"/>
+    <text x="123" y="74" fill="#8b97a6" font-size="14" text-anchor="middle">1</text>
+    <text x="123" y="102" fill="#e6e9ee" font-size="18" text-anchor="middle">You speak</text>
+    <rect x="266" y="36" width="190" height="92" rx="16" fill="#101820" stroke="#243140"/>
+    <text x="361" y="74" fill="#8b97a6" font-size="14" text-anchor="middle">2</text>
+    <text x="361" y="102" fill="#e6e9ee" font-size="18" text-anchor="middle">STT writes</text>
+    <rect x="504" y="36" width="190" height="92" rx="16" fill="#132028" stroke="#a4dded"/>
+    <text x="599" y="74" fill="#a4dded" font-size="14" text-anchor="middle">3</text>
+    <text x="599" y="102" fill="#e6e9ee" font-size="18" text-anchor="middle">Lexicon</text>
+    <rect x="742" y="36" width="190" height="92" rx="16" fill="#101820" stroke="#243140"/>
+    <text x="837" y="74" fill="#8b97a6" font-size="14" text-anchor="middle">4</text>
+    <text x="837" y="102" fill="#e6e9ee" font-size="18" text-anchor="middle">Agent reads</text>
+    <path d="M218 82h48" stroke="#3a4a5c" stroke-width="2" marker-end="url(#arrow)"/>
+    <path d="M456 82h48" stroke="#3a4a5c" stroke-width="2"/>
+    <path d="M694 82h48" stroke="#a4dded" stroke-width="2"/>
+    <text x="48" y="176" fill="#8b97a6" font-size="14" letter-spacing="1.2">THREE MATCHERS, FIRST HIT WINS</text>
+    <rect x="28" y="196" width="290" height="72" rx="14" fill="#101820" stroke="#243140"/>
+    <text x="48" y="226" fill="#a4dded" font-size="16">Alias</text>
+    <text x="48" y="250" fill="#c5ced8" font-size="14">exact spelling you listed</text>
+    <rect x="334" y="196" width="290" height="72" rx="14" fill="#101820" stroke="#243140"/>
+    <text x="354" y="226" fill="#a4dded" font-size="16">Phonetic</text>
+    <text x="354" y="250" fill="#c5ced8" font-size="14">sounds the same</text>
+    <rect x="640" y="196" width="292" height="72" rx="14" fill="#101820" stroke="#243140"/>
+    <text x="660" y="226" fill="#a4dded" font-size="16">Fuzzy</text>
+    <text x="660" y="250" fill="#c5ced8" font-size="14">spelled almost the same</text>
+  </g>
+</svg>

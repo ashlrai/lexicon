@@ -284,16 +284,6 @@ export function jsonOk<T extends object>(doc: T): { ok: true } & T {
 }
 
 /**
- * `{ dryRun: true }` to spread into a success or failure document when the
- * command only planned the change it describes: a script can tell `removed`
- * that did not happen from one that did.
- */
-export function dryField(dryRun: boolean | undefined): Record<string, unknown> {
-  return dryRun === true ? { dryRun: true } : {};
-}
-
-
-/**
  * A `--category` value, trimmed and lowercased; undefined when the flag is
  * absent. An unknown one is a CliRefusal naming the categories, so every
  * command that takes `--category` (list, add, export, review) gives the same

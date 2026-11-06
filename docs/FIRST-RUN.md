@@ -199,5 +199,5 @@ Ranked by how much of the product they touch.
 3. Medium: `--dry-run` on `add`, `remove`, `learn`, `init`, `untrust` and built-in `pack add` ([#219](https://github.com/ashlrai/lexicon/issues/219)).
 4. Medium: off a TTY, `lexicon trust` requires `--yes` ([#216](https://github.com/ashlrai/lexicon/pull/216)).
 5. Medium: lazy-load the CLI and MCP entry points to cut startup ([#212](https://github.com/ashlrai/lexicon/pull/212)).
-6. Large: a resident system-wide expander as a separate surface ([#220](https://github.com/ashlrai/lexicon/issues/220)).
+6. Large: a resident system-wide expander as a separate surface ([#220](https://github.com/ashlrai/lexicon/issues/220)); see the [scope outline](resident-expander-scope.md).
 7. Release: npm still serves 0.5.4 ([#221](https://github.com/ashlrai/lexicon/issues/221)).
