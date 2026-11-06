@@ -1598,4 +1598,15 @@ describe('hardening (lexicon content reaches model context)', () => {
     const input = parseYaml(`terms:\n  - canonical: Fine\n  - canonical: Rocket\n    never:\n${items}\n`);
     expect(() => parseLexicon(input)).toThrow('Invalid lexicon:\n  - terms[1].never: at most 64 never words per term');
   });
+
+  it('accepts 64 never entries per term from YAML, including repeated entries', () => {
+    // The contract caps entries per term, not unique spellings or the whole file.
+    const items = Array.from({ length: 64 }, () => '    - repeated').join('\n');
+    const input = parseYaml(`terms:\n  - canonical: First\n    never:\n${items}\n  - canonical: Second\n    never:\n${items}\n`);
+    const parsed = parseLexicon(input);
+    expect(parsed.terms.map((term) => term.never)).toEqual([Array(64).fill('repeated'), Array(64).fill('repeated')]);
+
+    const overLimit = parseYaml(`terms:\n  - canonical: First\n    never:\n${items}\n    - repeated\n`);
+    expect(() => parseLexicon(overLimit)).toThrow('Invalid lexicon:\n  - terms[0].never: at most 64 never words per term');
+  });
 });
