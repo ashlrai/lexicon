@@ -44,6 +44,25 @@ describe('cleanTranscript', () => {
     });
   });
 
+  describe('a bracketed tag at the end of the text', () => {
+    it.each([
+      ['a whisper tag', 'Please send the report [BLANK_AUDIO]', 'Please send the report'],
+      ['a tag glued to the last word', 'Please send the report[MUSIC]', 'Please send the report'],
+      ['a tag with inner spaces', 'Ship it today [ Pause in speech ]', 'Ship it today'],
+      ['a tag after a line break', 'Send it to Ashlr.AI today\n[speaker 2]', 'Send it to Ashlr.AI today'],
+      ['trailing whitespace after the tag', 'Ship it today [inaudible]  \n', 'Ship it today'],
+      ['a tag after final punctuation', 'Ship it today. [MUSIC]', 'Ship it today.'],
+      ['a tag whose words repeat earlier', 'inaudible words stay [inaudible]', 'inaudible words stay'],
+      ['a preceding parenthetical', 'Send it (the draft) now [MUSIC]', 'Send it (the draft) now'],
+    ])('removes the tag and keeps the spoken text: %s', (_description, input, expected) => {
+      expect(cleanTranscript(input)).toBe(expected);
+    });
+
+    it('removes consecutive trailing tags', () => {
+      expect(cleanTranscript('Ship it [MUSIC] [BLANK_AUDIO]')).toBe('Ship it');
+    });
+  });
+
   it.each([
     ['empty input', ''],
     ['spaces', '   '],
