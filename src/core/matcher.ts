@@ -93,6 +93,8 @@ interface WindowView {
    */
   readonly plainWord: boolean;
   readonly digitsOnly: boolean;
+  /** The \p{N} characters inside the window, in order ("kubernetes1" -> "1"); '' when none. */
+  readonly digits: string;
 }
 
 interface Candidate extends Replacement {
@@ -107,6 +109,14 @@ interface Candidate extends Replacement {
 }
 
 const REASON_RANK: Record<MatchReason, number> = { alias: 0, phonetic: 1, fuzzy: 2 };
+
+/** Every \p{N} character of a spelling, in order: "Ubuntu 22.04" -> "2204". */
+const DIGIT_CHARS_RE = /\p{N}/gu;
+
+function digitsOf(s: string): string {
+  const m = s.match(DIGIT_CHARS_RE);
+  return m === null ? '' : m.join('');
+}
 
 /**
  * Identifier glue. A window whose first token is directly preceded (no
@@ -183,6 +193,7 @@ function makeView(
   const norm = parts.join(' ');
   const normLower = lowerParts.join(' ');
   const collapsedRaw = norm.replace(/[^\p{L}\p{N}]+/gu, '');
+  const collapsed = normLower.replace(/[^\p{L}\p{N}]+/gu, '');
   return {
     start: first.start,
     end,
@@ -191,7 +202,7 @@ function makeView(
     norm,
     normLower,
     collapsedRaw,
-    collapsed: normLower.replace(/[^\p{L}\p{N}]+/gu, ''),
+    collapsed,
     tokenCount: to - from + 1,
     allStop,
     mostlyStop,
@@ -202,6 +213,7 @@ function makeView(
     loneToken: from === to,
     plainWord: from === to && PLAIN_WORD_RE.test(norm),
     digitsOnly: /^\p{N}+$/u.test(collapsedRaw),
+    digits: digitsOf(collapsed),
   };
 }
 
@@ -311,6 +323,15 @@ function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<Nor
   };
 
   const consider = (entry: AliasEntry | PhoneticEntry, reason: MatchReason, confidence: number): void => {
+    // Neither inexact pass prices a digit: the phonetic key drops them and the
+    // fuzzy score counts them as one ordinary edit, so "kubernetes1" reached
+    // "Kubernetes" at 0.91 and the rewrite deleted the 1 (and "gpt4" lost the
+    // 4). An exact hit already compared the collapsed forms, digits included,
+    // and an explicit alias is user intent, so only the inexact passes ask:
+    // the window's digits must be the canonical's own. "claude4" -> "Claude 4"
+    // keeps the 4; "kubernetes1" -> "Kubernetes" and "windows11" -> "Windows"
+    // are refused rather than silently losing the version.
+    if (reason !== 'alias' && view.digits !== '' && view.digits !== digitsOf(entry.term.canonical)) return;
     const cand: Candidate = {
       start: view.start,
       end: view.end,
