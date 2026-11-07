@@ -30,7 +30,7 @@ npm run build
 npm test
 ```
 
-Node 20 or newer. `npm run dev` rebuilds on change. `npm run typecheck` runs `tsc --noEmit` on the package and on the extension sources (`extension/tsconfig.json`).
+Node 20 or newer. `npm run dev` rebuilds on change. `npm run typecheck` runs `tsc --noEmit` on the package, extension, and site sources.
 
 ## The committed plugin bundles
 
@@ -52,7 +52,7 @@ npm install
 npm run build           # tsc -> dist/
 npm run build:bundle    # esbuild -> plugin/mcp-server.mjs + plugin/hook.mjs + plugin/hook-main.mjs (commit these)
 npm run check:bundle    # rebuild and fail if plugin/ differs from the checked-in files (CI runs this)
-npm run typecheck       # tsc --noEmit (package, then extension/tsconfig.json)
+npm run typecheck       # tsc --noEmit (package, extension, and site)
 npm test                # unit + integration + e2e (vitest)
 npm run test:e2e        # only tests/e2e.test.ts: the real CLI, hook and MCP server as subprocesses
 npm run bench           # synthetic accuracy benchmark (see bench/README.md)
@@ -84,7 +84,7 @@ src/daemon/      the clipboard watcher and its per-platform backends
 src/serve/       the local HTTP API (`lexicon serve`)
 src/voice/       ffmpeg + whisper.cpp push-to-talk (`lexicon voice`)
 plugin/          committed esbuild bundles of the MCP server and hook that the plugin runs
-packs/           the starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8)
+packs/           the starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8, legal)
 extension/       the browser extension (Manifest V3; built into extension/dist and dist-firefox)
 web/             the Next.js marketing site for lexicon.ashlr.ai (web/lib/generated holds a browser bundle of src/core)
 apps/macos/      LexiconBar, the SwiftPM menu bar app
@@ -150,7 +150,7 @@ To add a journey test:
 
 ## Adding a starter pack
 
-A pack for a profession the four shipped packs do not cover is the most useful thing a newcomer can add. The full recipe, including the one rule that decides the hard cases (never make an ordinary English word an alias on its own), is in [docs/PACKS.md](docs/PACKS.md#adding-a-pack-to-this-repo).
+A pack for a profession the shipped packs do not cover is the most useful thing a newcomer can add. The full recipe, including the one rule that decides the hard cases (never make an ordinary English word an alias on its own), is in [docs/PACKS.md](docs/PACKS.md#adding-a-pack-to-this-repo).
 
 ## Adding an exporter
 

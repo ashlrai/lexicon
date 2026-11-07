@@ -40,6 +40,17 @@ describe('source-backed documentation freshness', () => {
     }
   });
 
+  it('points the audio benchmark and client install guidance at their corresponding commands', () => {
+    const readme = read('README.md');
+    const scripts = JSON.parse(read('package.json')).scripts as Record<string, string>;
+    const measured = readme.split('## Measured')[1].split('## Other installs')[0];
+    expect(measured).toContain('npm run bench:audio');
+    expect(scripts['bench:audio']).toContain('bench/audio/');
+    const clients = readme.split('| Codex, Cursor, and the other clients |')[1].split('\n')[0];
+    expect(clients).toContain('lexicon install codex --json');
+    expect(clients).toContain('lexicon install cursor --json');
+  });
+
   it('uses existing CLI commands and flags in fenced shell examples', () => {
     // Capture command registration before parseAsync runs any command. One
     // source subprocess checks the whole tree without builds or user writes.

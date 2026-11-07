@@ -21,6 +21,12 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 | 0.1.0 | 2026-09-19 |
 <!-- fresh:end -->
 
+## Unreleased
+
+### Fixed
+
+- Unknown CLI commands report a usage error instead of throwing a TypeError. Spelling suggestions remain available alongside hints for commands such as `status`, `version`, and `config`.
+
 ## 0.5.7 (2026-10-31)
 
 ### Release scope and upgrade notes
