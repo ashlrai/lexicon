@@ -25,6 +25,15 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Fixed
+
+- Resolve the production sitemap's local imports in both Turbopack and the root NodeNext checks. (#828)
+
+### Internal
+
+- Add subprocess coverage that CLI dry-run previews leave lexicons, trust records and caches unchanged. (#402)
+- Expand schema collection-limit and daemon acceptance coverage. (#477, #431)
+
 ## 0.5.9 (2026-11-06)
 
 ### Release scope
