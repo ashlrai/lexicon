@@ -281,8 +281,9 @@ export async function runClipboardDaemon(opts: ClipboardDaemonOptions = {}): Pro
         lexiconLoadedAt = now;
         lexiconStamp = stamp;
       } catch (e) {
-        // Keep serving the previous lexicon (if any) while the file is broken.
-        if (!lexicon) throw e;
+        // A changed project file or trust registry can invalidate cached
+        // project terms. Never use the old view until that change loads.
+        if (!lexicon || stamp !== lexiconStamp) throw e;
         if (!quiet) err(`[${timestamp()}] lexicon reload failed, using previous: ${message(e)}\n`);
         lexiconLoadedAt = now;
         lexiconStamp = stamp;

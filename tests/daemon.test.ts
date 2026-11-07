@@ -387,6 +387,32 @@ describe('runClipboardDaemon', () => {
     }
   });
 
+  it('does not apply cached terms after a trust change if reloading fails', async () => {
+    const { mkdtempSync, writeFileSync, rmSync } = await import('node:fs');
+    const { tmpdir } = await import('node:os');
+    const { join } = await import('node:path');
+    const dir = mkdtempSync(join(tmpdir(), 'lexicon-daemon-trust-'));
+    watched.trust = join(dir, 'trust.json');
+    try {
+      const h = start('first Ashler');
+      await vi.advanceTimersByTimeAsync(0);
+      expect(h.write).toHaveBeenCalledTimes(1);
+      writeFileSync(watched.trust, '{}');
+      vi.mocked(core.loadLexicon).mockRejectedValueOnce(new Error('reload failed'));
+      h.clipboard = 'second Ashler';
+      await vi.advanceTimersByTimeAsync(250);
+      expect(h.write).toHaveBeenCalledTimes(1);
+      // The unchanged clipboard is retried after the transient failure.
+      await vi.advanceTimersByTimeAsync(250);
+      expect(h.write).toHaveBeenCalledTimes(2);
+      h.controller.abort();
+      await h.done;
+    } finally {
+      watched.trust = '/nonexistent/trust.json';
+      rmSync(dir, { recursive: true, force: true });
+    }
+  });
+
   // Catches: the first ctrl-C waited for the poll in flight and removed its
   // listener, so a second ctrl-C during a clipboard tool that hangs did
   // nothing the daemon could answer.
