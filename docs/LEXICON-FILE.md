@@ -37,7 +37,7 @@ settings:
 
 ## Per term
 
-`canonical`, `aliases`, optional `phonetic`, `category` (`brand`, `person`, `product`, `acronym`, `identifier`, `place`, `other`), `notes`, `never`, `context`, `caseSensitive`. The tool also records `source`, `createdAt` and, in the global file, `hits`. A project `.lexicon.yaml` is committed and shared, so your hit counts for its terms are kept in `hits.json` next to the global lexicon instead; `lexicon stats` adds the two together. A `hits:` committed into a project file before this was the rule still counts and is left alone, but nothing adds to it.
+`canonical`, `aliases`, optional `phonetic`, `category` (`brand`, `person`, `product`, `acronym`, `identifier`, `place`, `other`), `notes`, `never`, `context`, `caseSensitive`. The tool also records `source` and `createdAt`. New hit counts for both global and project terms are kept in `hits.json` next to the global lexicon; `lexicon stats` combines them with any existing `hits:` values in the lexicon files. Those existing values are preserved as a floor, but are not incremented.
 
 ### `never`
 
@@ -54,7 +54,7 @@ settings:
 | `minConfidence` | `0.82` | Minimum confidence a phonetic or fuzzy match needs before it is applied. An exact alias or canonical match scores 1.0, except one the text spells with a word break the term does not have ("open ai" for OpenAI), which scores 0.95, so a value above that refuses it |
 | `phonetic` | `true` | Enable double metaphone matching |
 | `fuzzy` | `true` | Enable edit-distance matching |
-| `protectedWords` | `[]` | Words no term may ever replace. Merged with the built-in stoplist |
+| `protectedWords` | `[]` | Words no term may replace, including explicit aliases. The built-in stoplist separately blocks phonetic and fuzzy guesses |
 | `skipCode` | `true` | Leave `code spans`, fenced blocks, URLs, emails and paths alone |
 
 `settings.packs` records which [starter packs](PACKS.md) were installed into that file.

@@ -138,7 +138,7 @@ claude plugin install lexicon@ashlrai
 
 ![You speak, speech-to-text writes a guess, Lexicon rewrites the names it knows, and the agent reads the corrected line. Matching is alias, then phonetic, then fuzzy.](docs/assets/how-it-works.svg)
 
-Exact alias first, then double-metaphone phonetic, then Damerau-Levenshtein fuzzy above a confidence floor. Exact hits win the span. Matches never overlap. A stoplist of common English words, per-term `never` lists, and code spans, URLs, emails and paths are off limits. Every replacement reports `reason` and `confidence`.
+Exact alias first, then double-metaphone phonetic, then Damerau-Levenshtein fuzzy above a confidence floor. Exact hits win the span. Matches never overlap. A stoplist of common English words blocks phonetic and fuzzy guesses, but explicit aliases override it. Per-term `never` lists and `protectedWords` also restrict replacements; code spans, URLs, emails and paths are skipped by default. Every replacement reports `reason` and `confidence`.
 
 The same sentence, as a person would read it. Replacements go to stderr. The corrected line is stdout.
 
@@ -212,7 +212,7 @@ More answers: [docs/FAQ.md](docs/FAQ.md).
 
 ## Measured
 
-On 330 clips of synthesized speech through whisper.cpp `small.en` (three voices, the same 70-term lexicon in every row), Lexicon recovered **91.0%** of the proper nouns. Raw whisper.cpp recovered 45.9%. Clean prose wrongly changed: **0 of 72**. The audio is macOS text-to-speech read into whisper.cpp, cleaner than a phone microphone. Method, the other rows, and every failing case: [docs/BENCHMARK.md](docs/BENCHMARK.md). Reproduce with `npm run bench`.
+On 330 clips of synthesized speech through whisper.cpp `small.en` (three voices, the same 70-term lexicon in every row), Lexicon recovered **91.0%** of the proper nouns. Raw whisper.cpp recovered 45.9%. Clean prose wrongly changed: **0 of 72**. The audio is macOS text-to-speech read into whisper.cpp, cleaner than a phone microphone. Method, the other rows, and every failing case: [docs/BENCHMARK.md](docs/BENCHMARK.md). Reproduce with `npm run bench:audio` (see [audio benchmark setup](bench/README.md)).
 
 ## Other installs
 
