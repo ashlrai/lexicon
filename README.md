@@ -176,7 +176,9 @@ Rules: [docs/MATCHING.md](docs/MATCHING.md).
 | Surface | How |
 |---|---|
 | Claude Code | `lexicon install claude --apply`, or the plugin |
-| Codex, Cursor, and the other clients | `lexicon install cursor --json`, then the same command with `--apply` |
+| Codex | `lexicon install codex --json`, then the same command with `--apply` |
+| Cursor | `lexicon install cursor --json`, then the same command with `--apply` |
+| Other supported clients | `lexicon install --help` lists client names; preview with `lexicon install <client> --json` before adding `--apply` |
 | Browser chats | Extension from the [latest release](https://github.com/ashlrai/lexicon/releases/latest) |
 | Any macOS text field | LexiconBar menu bar app |
 | Shortcuts, Raycast, your own app | `lexicon serve` on `127.0.0.1:41733` |
