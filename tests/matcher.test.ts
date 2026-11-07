@@ -1494,3 +1494,70 @@ describe('emailRanges', () => {
     }
   });
 });
+
+describe('digits glued inside a token are never silently deleted', () => {
+  // The phonetic key drops digits and the fuzzy score counts them as one
+  // ordinary edit, so before the guard "kubernetes1" reached "Kubernetes" at
+  // 0.91 and the rewrite deleted the 1; "gpt4" lost the 4 the same way. The
+  // exact pass was never affected: its collapsed comparison counts digits, so
+  // a canonical that carries them ("Ubuntu 22.04", "GPT-4") still matches the
+  // glued form at 1.00, and an explicit alias stays user intent.
+  const K8S: Term = { canonical: 'Kubernetes', aliases: [] };
+  const K8S1: Term = { canonical: 'Kubernetes 1', aliases: [] };
+  const GPT: Term = { canonical: 'GPT', aliases: [] };
+  const GPT4: Term = { canonical: 'GPT-4', aliases: [] };
+  const PG: Term = { canonical: 'PostgreSQL', aliases: [] };
+  const PG16: Term = { canonical: 'Postgres 16', aliases: [] };
+  const UBUNTU: Term = { canonical: 'Ubuntu', aliases: [] };
+  const UBUNTU2204: Term = { canonical: 'Ubuntu 22.04', aliases: [] };
+
+  it('refuses an inexact match whose rewrite would delete the digits', () => {
+    for (const [text, terms] of [
+      ['kubernetes1 is down', [K8S]],
+      ['the gpt4 model', [GPT]],
+      ['postgres16 backup failed', [PG]],
+      ['ubuntu2204 server', [UBUNTU]],
+      ['windows11 laptop', [{ canonical: 'Windows', aliases: [] }]],
+      ['node20 is out', [{ canonical: 'Node.js', aliases: [] }]],
+      ['ashlr.ai2 rocks', [ASHLR]],
+      ["kubernetes1's uptime", [K8S]],
+      ['kubernetes1s are running', [K8S]],
+      ['ubuntu2205 server', [UBUNTU2204]],
+      ['the gpt5 model', [GPT4]],
+      ['the gpt5 model', [GPT]],
+    ] as Array<[string, Term[]]>) {
+      expect(find(text, terms), text).toEqual([]);
+    }
+  });
+
+  it('still rewrites the glued form when the canonical carries the same digits', () => {
+    expect(apply('kubernetes1 is down', find('kubernetes1 is down', [K8S1]))).toBe('Kubernetes 1 is down');
+    expect(apply('the gpt4 model', find('the gpt4 model', [GPT4]))).toBe('the GPT-4 model');
+    expect(apply('postgres16 backup failed', find('postgres16 backup failed', [PG16]))).toBe('Postgres 16 backup failed');
+    expect(apply('ubuntu2204 server', find('ubuntu2204 server', [UBUNTU2204]))).toBe('Ubuntu 22.04 server');
+    // An inexact hit whose digits agree still stands: the typo is fixed and
+    // the version kept, through the phonetic pass as well as the exact one.
+    expect(apply('kubernetees1 is down', find('kubernetees1 is down', [K8S1]))).toBe('Kubernetes 1 is down');
+    expect(apply('ubunt2204 server', find('ubunt2204 server', [UBUNTU2204]))).toBe('Ubuntu 22.04 server');
+    // A canonical-only term with digits in its name reaches a garble the same way.
+    expect(apply('clawd 4 is here', find('clawd 4 is here', [{ canonical: 'Claude 4', aliases: [] }]))).toBe('Claude 4 is here');
+  });
+
+  it('a spaced version number was never glued and still works', () => {
+    expect(apply('we run cooper netties 1 here', find('we run cooper netties 1 here', [K8S1]))).toBe('we run Kubernetes 1 here');
+    expect(apply('pick 2 cooper netties please', find('pick 2 cooper netties please', [K8S]))).toBe('pick 2 Kubernetes please');
+  });
+
+  it('an explicit alias that carries the digits is still user intent', () => {
+    const term: Term = { canonical: 'Kubernetes', aliases: ['kubernetes1'] };
+    expect(apply('kubernetes1', find('kubernetes1', [term]))).toBe('Kubernetes');
+  });
+
+  it('a window with no digits is unconstrained, canonically versioned or not', () => {
+    expect(apply('kubernetees is down', find('kubernetees is down', [K8S]))).toBe('Kubernetes is down');
+    expect(apply('cooper netties i.e. Terraform', find('cooper netties i.e. Terraform', [K8S]))).toBe('Kubernetes i.e. Terraform');
+    // The guard only stops the window's own digits being deleted; a canonical
+    // that carries a version still supplies it, as before.
+    expect(apply('cooper netties is down', find('cooper netties is down', [K8S1]))).toBe('Kubernetes 1 is down');
+  });
+});

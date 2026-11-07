@@ -19442,6 +19442,10 @@ var init_enumeration = __esm({
 });
 
 // src/core/matcher.ts
+function digitsOf(s) {
+  const m = s.match(DIGIT_CHARS_RE);
+  return m === null ? "" : m.join("");
+}
 function gluedAfter(text, end) {
   return GLUE_AFTER.has(text.charAt(end));
 }
@@ -19478,6 +19482,7 @@ function makeView(text, tokens, from, to, possessiveBase, protectedWords) {
   const norm2 = parts.join(" ");
   const normLower = lowerParts.join(" ");
   const collapsedRaw = norm2.replace(/[^\p{L}\p{N}]+/gu, "");
+  const collapsed = normLower.replace(/[^\p{L}\p{N}]+/gu, "");
   return {
     start: first.start,
     end,
@@ -19486,7 +19491,7 @@ function makeView(text, tokens, from, to, possessiveBase, protectedWords) {
     norm: norm2,
     normLower,
     collapsedRaw,
-    collapsed: normLower.replace(/[^\p{L}\p{N}]+/gu, ""),
+    collapsed,
     tokenCount: to - from + 1,
     allStop,
     mostlyStop,
@@ -19496,7 +19501,8 @@ function makeView(text, tokens, from, to, possessiveBase, protectedWords) {
     edgeNonWordEnd: to > from && isNonWordToken(last.baseLower),
     loneToken: from === to,
     plainWord: from === to && PLAIN_WORD_RE.test(norm2),
-    digitsOnly: new RegExp("^\\p{N}+$", "u").test(collapsedRaw)
+    digitsOnly: new RegExp("^\\p{N}+$", "u").test(collapsedRaw),
+    digits: digitsOf(collapsed)
   };
 }
 function inventsBoundary(view, e) {
@@ -19554,6 +19560,7 @@ function findBest(view, index, opts, scope) {
     return never2.has(view.normLower) || never2.has(view.collapsed);
   };
   const consider = (entry, reason, confidence) => {
+    if (reason !== "alias" && view.digits !== "" && view.digits !== digitsOf(entry.term.canonical)) return;
     const cand = {
       start: view.start,
       end: view.end,
@@ -19735,7 +19742,7 @@ function clamp01(n) {
   if (Number.isNaN(n)) return DEFAULT_MIN_CONFIDENCE;
   return Math.min(1, Math.max(0, n));
 }
-var import_fastest_levenshtein2, REASON_RANK, GLUE_BEFORE, GLUE_AFTER, PLAIN_WORD_RE, PLURAL_RE, phoneticLengths, ENDS_IN_INITIALISM, SENTENCE_FOLLOWS;
+var import_fastest_levenshtein2, REASON_RANK, DIGIT_CHARS_RE, GLUE_BEFORE, GLUE_AFTER, PLAIN_WORD_RE, PLURAL_RE, phoneticLengths, ENDS_IN_INITIALISM, SENTENCE_FOLLOWS;
 var init_matcher = __esm({
   "src/core/matcher.ts"() {
     init_double_metaphone();
@@ -19750,6 +19757,7 @@ var init_matcher = __esm({
     init_build();
     init_stoplist();
     REASON_RANK = { alias: 0, phonetic: 1, fuzzy: 2 };
+    DIGIT_CHARS_RE = new RegExp("\\p{N}", "gu");
     GLUE_BEFORE = /* @__PURE__ */ new Set(["@", "/", "#", ":", "\\", "~", "_", "-"]);
     GLUE_AFTER = /* @__PURE__ */ new Set(["/", "\\", "_"]);
     PLAIN_WORD_RE = new RegExp("^\\p{Ll}+(?:-\\p{Ll}+)*$", "u");
