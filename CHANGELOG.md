@@ -28,11 +28,19 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 ### Fixed
 
 - Resolve the production sitemap's local imports in both Turbopack and the root NodeNext checks. (#828)
+- Preserve digit characters in phonetic and fuzzy matches: an inexact match cannot discard or change digits in the input, while explicit aliases remain authoritative. (#832)
+- Resolve equal-scoring fuzzy candidates by the documented reason and lexicon term order, regardless of index traversal order. (#836)
+- Stop the clipboard daemon from using a cached project lexicon after a changed file or trust registry fails to reload. (#834)
+
+### Changed
+
+- Clarify supported macOS fields and identify the setup recording as a historical capture.
 
 ### Internal
 
 - Add subprocess coverage that CLI dry-run previews leave lexicons, trust records and caches unchanged. (#402)
 - Expand schema collection-limit and daemon acceptance coverage. (#477, #431)
+- Refresh transitive dependencies and isolate the suggest-terms performance check. (#837)
 
 ## 0.5.9 (2026-11-06)
 

@@ -161,7 +161,7 @@ Rules: [docs/MATCHING.md](docs/MATCHING.md).
 - **A CLI with 28 commands.** `lexicon --help` lists them. `docs/CLI.md` is generated from that help.
 - **271 terms across the nine packs** (developer, AI, business, voice tools, cloud and DevOps, legal profession, law and litigation, Ashlr.AI fleet, architecture). Community packs install from a registry after a checksum preview.
 - **Sixteen export formats** and **eight importers**, including Wispr Flow, Superwhisper, macOS Text Replacement and espanso. `lexicon export` with no format lists them.
-- **The same correction in the browser, in any macOS text field, and from your own pipeline** (`normalize()`).
+- **Correction in supported browser composers, eligible macOS text fields, and your own pipeline** (`normalize()`). LexiconBar requires Accessibility access and skips secure fields and apps without suitable Accessibility text support; see [its limitations](docs/MACOS-APP.md#fix-everywhere).
 
 ![The browser demo. Left, what speech-to-text heard. Middle, the corrected line with each replacement's tier and confidence. Right, the lexicon YAML.](docs/assets/demo.gif)
 
@@ -169,7 +169,7 @@ Rules: [docs/MATCHING.md](docs/MATCHING.md).
 
 ![A terminal running lexicon setup through seven steps and finishing on a dictated sentence corrected from Mason Wiatt and Ashler to Mason Wyatt and Ashlr.AI.](docs/assets/cli-setup.gif)
 
-[Watch the terminal setup recording](docs/assets/cli-setup.cast).
+[Watch the terminal setup recording](docs/assets/cli-setup.cast). It shows version 0.5.1; use the current [CLI reference](docs/CLI.md) for today's prompts and flags.
 
 ![A TextEdit note where the dictated line rewrites itself in place to Ashlr.AI, Kubernetes and Vercel, with a bubble listing the three fixes.](docs/assets/fix-in-place.gif)
 

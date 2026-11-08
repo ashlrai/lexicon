@@ -21,6 +21,11 @@ operation, not a target or an end-to-end expansion guarantee. See
 | Expansion core | Each connection has a buffer. By default, exact aliases expand when whitespace completes a word; the server returns a backspace count and insertion text. Immediate Backspace can undo an expansion. | A client must observe input and apply the returned action. Neither the core nor the server captures system-wide input or edits a field. |
 | CLI, agent and desktop integrations | CLI and MCP accept supplied text; the hook adds context. The desktop apps have their own focused-field paths. | These are separate integrations, not clients of the expander socket, and do not establish the requested typing experience. |
 
+The clipboard watcher reloads its lexicon when the file or trust state changes.
+If that reload fails, it does not use the previous cached view for that changed
+state. A failed periodic reload with an unchanged state can keep the previous
+view and reports the failure unless quiet mode is enabled.
+
 System-wide expansion through the resident server is not yet an available
 feature: a platform client and its integration with the server are still
 needed. The current protocol and security details are documented in

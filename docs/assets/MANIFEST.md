@@ -182,7 +182,8 @@ directly on the dark page with no card needed.
 This is a **real, complete run** of the 0.5.1 CLI, executed against a throwaway
 `$HOME` in the session scratchpad. It seeded terms, installed all three default
 packs, and wrote all five agent client configs, inside the sandbox. Nothing on
-this Mac was modified.
+this Mac was modified. The recording is historical; consult [the current CLI
+reference](../CLI.md) for current commands and flags.
 
 **Alt text:** "A terminal running `lexicon setup` through seven steps (seeding the
 lexicon, installing starter packs, wiring up five agent clients, exporting for
@@ -265,7 +266,7 @@ Two further constraints worth recording for whoever retries:
   to that site. The clean alternative is the **Live** toggle on the extension's
   options page (off by default), which corrects 400 ms after you stop typing and
   shows the same toast with no submit at all, confirmed in
-  `extension/src/content-core.ts:216-238`, which calls `toastFor(...)` directly.
+  `extension/src/content-core.ts`, which calls `toastFor(...)` in the live path.
 - No pairing is needed. With no token the worker falls back to the bundled
   `examples/lexicon.example.yaml`, and the toast badge reads `embedded` rather than
   `local API`.
