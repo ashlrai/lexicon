@@ -4,6 +4,8 @@ What the matcher does to a sentence, and why it so rarely touches ordinary prose
 
 Matching runs in three tiers over token windows. Exact hits are resolved first (longest span, earliest start); phonetic and fuzzy hits only get the spans left over, and matches never overlap.
 
+For candidates on the same window, the highest confidence wins; equal confidence favors alias, then phonetic, then fuzzy, followed by lexicon term order. Fuzzy candidates with equal scores are considered even when the index visits a later term first.
+
 1. **Exact alias.** Word-boundary, multi-word, case-insensitive and diacritic-insensitive (`bjorn halvorsen` hits `Bjørn Halvorsen`) unless the term sets `caseSensitive`. Confidence 1.0, except for a boundary the matcher invented (below), which is 0.95.
 2. **Phonetic.** Double metaphone of a token window equals that of an alias or the canonical. Confidence about 0.9, scaled by length similarity.
 3. **Fuzzy.** Normalized Damerau-Levenshtein (adjacent-transposition-aware) similarity at or above `minConfidence`. Confidence equals the similarity.
