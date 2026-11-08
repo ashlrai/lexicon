@@ -51946,18 +51946,20 @@ function isHeldLockError(err) {
 async function withFileLock(target, fn, opts = {}) {
   const lockPath = `${await resolveLockTarget(target)}${LOCK_SUFFIX}`;
   const held = heldLocks.getStore();
-  if (held?.has(lockPath)) return fn();
+  if (held?.get(lockPath)?.live === true) return fn();
   const timeoutMs = opts.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
   const staleMs = opts.staleMs ?? DEFAULT_LOCK_STALE_MS;
   const queueTimeoutMs = opts.queueTimeoutMs ?? DEFAULT_LOCK_QUEUE_TIMEOUT_MS;
   const run = async () => {
     const token = await acquire(lockPath, target, timeoutMs, staleMs);
     const stopHeartbeat = startHeartbeat(lockPath, token, staleMs);
-    const next = new Set(held ?? []);
-    next.add(lockPath);
+    const entry = { live: true };
+    const next = new Map(held ?? []);
+    next.set(lockPath, entry);
     try {
       return await heldLocks.run(next, fn);
     } finally {
+      entry.live = false;
       stopHeartbeat();
       await release(lockPath, token);
     }

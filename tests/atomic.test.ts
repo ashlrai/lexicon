@@ -367,6 +367,287 @@ describe('the in-process queue is bounded', () => {
   });
 });
 
+describe('work that outlives its hold cannot borrow the lock', () => {
+  /**
+   * Catches: re-entrancy stored as a bare set of held lock paths. The
+   * `AsyncLocalStorage` store propagates to every async resource created
+   * inside `fn`, not only the ones `fn` awaits: a deferred continuation, a
+   * timer or a detached write scheduled under the lock still found the path
+   * marked held after the hold ended, skipped the queue and the file lock
+   * entirely, and ran its read-modify-write while another writer owned the
+   * lock. The counter repro below lost an increment on a real file. The
+   * entry a hold lends now dies in the hold's `finally`, so escaped work
+   * acquires through the queue like any other writer, while work that fires
+   * inside the hold still shares it.
+   */
+  const opts = { timeoutMs: 300, queueTimeoutMs: 300 };
+
+  /**
+   * Attach `task` to a gate inside a `withFileLock` on `target`, then return
+   * after the hold has been released. `fire` opens the gate later; the
+   * continuation was bound under the hold's async context, which is exactly
+   * how a deferred write scheduled under the lock escapes it.
+   */
+  async function escapedTask<T>(target: string, task: () => Promise<T>): Promise<{ fire: () => void; result: Promise<T> }> {
+    let fire!: () => void;
+    let result!: Promise<T>;
+    await withFileLock(target, async () => {
+      result = new Promise<void>((resolve) => {
+        fire = resolve;
+      }).then(task);
+    });
+    return { fire, result };
+  }
+
+  /**
+   * A writer that genuinely holds `target`'s lock, gated open so the test
+   * controls when it leaves. `work` runs inside the hold after the gate.
+   */
+  async function gatedHold(
+    target: string,
+    work?: () => Promise<void>,
+  ): Promise<{ done: Promise<void>; entered: Promise<void>; release: () => void; holds: () => boolean }> {
+    let active = false;
+    let release!: () => void;
+    let signal!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const entered = new Promise<void>((r) => {
+      signal = r;
+    });
+    const done = withFileLock(target, async () => {
+      active = true;
+      try {
+        signal();
+        await gate;
+        await work?.();
+      } finally {
+        active = false;
+      }
+    });
+    return { done, entered, release, holds: () => active };
+  }
+
+  it('a continuation attached inside the hold queues behind the next writer instead of walking in', async () => {
+    const dir = await scratch();
+    const target = path.join(dir, 'lexicon.yaml');
+    await fs.writeFile(target, 'x');
+
+    let second!: Awaited<ReturnType<typeof gatedHold>>;
+    let sawOtherHolder: boolean | undefined;
+    const escaped = await escapedTask(target, () =>
+      withFileLock(
+        target,
+        async () => {
+          sawOtherHolder = second.holds();
+          return 'entered';
+        },
+        opts,
+      ),
+    );
+    second = await gatedHold(target);
+    await second.entered;
+
+    escaped.fire();
+    // Under the defect the stale entry walks in at once, inside `second`'s
+    // hold; the dead entry sends it to the queue, where it waits its turn.
+    await new Promise((r) => setTimeout(r, 150));
+    second.release();
+    await second.done;
+
+    await expect(escaped.result).resolves.toBe('entered');
+    expect(sawOtherHolder).toBe(false);
+  });
+
+  it('the real-file repro: a delayed read-modify-write cannot overwrite the writer that followed its hold', async () => {
+    const dir = await scratch();
+    const target = path.join(dir, 'counter.txt');
+    await fs.writeFile(target, '0');
+
+    // The delayed task's read and write are separated by a gate, so under
+    // the defect the lost increment is a certainty rather than a scheduling
+    // hope: it reads '0' inside the next writer's hold, parks, and writes
+    // last.
+    let releaseDelayed!: () => void;
+    const delayedGate = new Promise<void>((r) => {
+      releaseDelayed = r;
+    });
+    const escaped = await escapedTask(target, () =>
+      withFileLock(
+        target,
+        async () => {
+          const n = Number(await fs.readFile(target, 'utf8'));
+          await delayedGate;
+          await writeFileAtomic(target, String(n + 1));
+        },
+        opts,
+      ),
+    );
+
+    // The next writer takes the lock for real and increments inside it.
+    const writer = await gatedHold(target, async () => {
+      const n = Number(await fs.readFile(target, 'utf8'));
+      await writeFileAtomic(target, String(n + 1));
+    });
+    await writer.entered;
+    escaped.fire();
+    // Room for the stale entry to take its read inside the writer's hold.
+    await new Promise((r) => setTimeout(r, 150));
+    writer.release();
+    await writer.done;
+    releaseDelayed();
+    await escaped.result;
+
+    expect(await fs.readFile(target, 'utf8')).toBe('2');
+  });
+
+  it('a timer scheduled under the hold cannot run inside the next hold', async () => {
+    const dir = await scratch();
+    const target = path.join(dir, 'lexicon.yaml');
+    await fs.writeFile(target, 'x');
+
+    let second!: Awaited<ReturnType<typeof gatedHold>>;
+    let sawOtherHolder: boolean | undefined;
+    let timerFired!: () => void;
+    const fired = new Promise<void>((r) => {
+      timerFired = r;
+    });
+    let mayAttempt!: () => void;
+    const attemptable = new Promise<void>((r) => {
+      mayAttempt = r;
+    });
+    let task!: Promise<void>;
+    await withFileLock(target, async () => {
+      setTimeout(() => {
+        timerFired();
+        // Wait for the next writer to be inside before attempting entry, so
+        // the attempt lands during its hold even if the timer won the race
+        // to fire.
+        task = attemptable.then(() =>
+          withFileLock(
+            target,
+            async () => {
+              sawOtherHolder = second.holds();
+            },
+            opts,
+          ),
+        );
+      }, 20);
+    });
+
+    second = await gatedHold(target);
+    await second.entered;
+    await fired;
+    mayAttempt();
+    // Under the defect the task walks straight in during `second`'s hold.
+    await new Promise((r) => setTimeout(r, 150));
+    second.release();
+    await second.done;
+    await task;
+
+    expect(sawOtherHolder).toBe(false);
+  });
+
+  it('still shares the hold with calls nested inside it', async () => {
+    const dir = await scratch();
+    const target = path.join(dir, 'lexicon.yaml');
+    await fs.writeFile(target, 'x');
+    // Tiny bounds: losing re-entrancy here does not hang, it queues the
+    // nested call behind its own hold and fails as a lock-ordering bug.
+    const tight = { timeoutMs: 60, queueTimeoutMs: 60 };
+    await expect(withFileLock(target, () => withFileLock(target, async () => 'nested', tight), tight)).resolves.toBe('nested');
+  });
+
+  it('still lets work that fires inside the hold borrow it', async () => {
+    const dir = await scratch();
+    const target = path.join(dir, 'lexicon.yaml');
+    await fs.writeFile(target, 'x');
+
+    let outerHolds = false;
+    let fire!: () => void;
+    let task!: Promise<string>;
+    let inside!: () => void;
+    let release!: () => void;
+    const gate = new Promise<void>((r) => {
+      release = r;
+    });
+    const entered = new Promise<void>((r) => {
+      inside = r;
+    });
+    const outer = withFileLock(target, async () => {
+      outerHolds = true;
+      try {
+        task = new Promise<void>((r) => {
+          fire = r;
+        }).then(() => withFileLock(target, async () => 'borrowed', opts));
+        inside();
+        await gate;
+      } finally {
+        outerHolds = false;
+      }
+    });
+    await entered;
+    fire();
+    // It resolves inside the hold: the entry is alive, so the borrow is the
+    // same one a nested call has always had.
+    await expect(task).resolves.toBe('borrowed');
+    expect(outerHolds).toBe(true);
+    release();
+    await outer;
+  });
+
+  it('two tasks that escaped the same hold take real turns and both increments land', async () => {
+    const dir = await scratch();
+    const target = path.join(dir, 'counter.txt');
+    await fs.writeFile(target, '0');
+
+    const inc = () =>
+      withFileLock(
+        target,
+        async () => {
+          const n = Number(await fs.readFile(target, 'utf8'));
+          // The read-modify-write gap the lock exists to close.
+          await new Promise((r) => setTimeout(r, 10));
+          await writeFileAtomic(target, String(n + 1));
+        },
+        opts,
+      );
+
+    let fire!: () => void;
+    let first!: Promise<void>;
+    let second!: Promise<void>;
+    await withFileLock(target, async () => {
+      const gate = new Promise<void>((r) => {
+        fire = r;
+      });
+      first = gate.then(inc);
+      second = gate.then(inc);
+    });
+
+    fire();
+    await Promise.all([first, second]);
+    expect(await fs.readFile(target, 'utf8')).toBe('2');
+  });
+
+  it('a delayed task cannot walk in while another process holds the lock', async () => {
+    const dir = await scratch();
+    const target = path.join(dir, 'lexicon.yaml');
+    await fs.writeFile(target, 'x');
+    const lockPath = `${target}${LOCK_SUFFIX}`;
+
+    const escaped = await escapedTask(target, () => withFileLock(target, async () => 'entered', opts));
+
+    // A live process that is not us owns the lock now: the one holder the
+    // stale check may never break.
+    await fs.writeFile(lockPath, lockPayload(livePid()));
+    escaped.fire();
+
+    await expect(escaped.result).rejects.toMatchObject({ name: 'FileLockError', held: true });
+    await expect(fs.readFile(lockPath, 'utf8')).resolves.toContain('not-ours');
+  });
+});
+
 describe('writeFileAtomic keeps the file it is replacing', () => {
   /**
    * Catches: calling `writeFileAtomic` with no mode and letting the rename
