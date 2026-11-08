@@ -33,14 +33,12 @@ function asFloat(value: unknown, fallback: number): number {
 }
 
 function asType(value: unknown, validTypes: readonly FindingType[]): FindingType {
-  return (FINDING_TYPES as readonly string[]).includes(value as string) &&
-    validTypes.includes(value as FindingType)
-    ? (value as FindingType)
-    : 'other';
+  const type = FINDING_TYPES.find((candidate) => candidate === value);
+  return type !== undefined && validTypes.includes(type) ? type : 'other';
 }
 
 function asSeverity(value: unknown): Severity {
-  return (SEVERITIES as readonly string[]).includes(value as string) ? (value as Severity) : 'medium';
+  return SEVERITIES.find((candidate) => candidate === value) ?? 'medium';
 }
 
 /**
