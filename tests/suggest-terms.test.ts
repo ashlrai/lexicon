@@ -384,35 +384,10 @@ describe('suggestTerms: performance', () => {
     expect(alias?.evidence).toHaveLength(5);
     expect(snippets.count).toBeLessThan(50);
   });
-
-  it('handles 1000 history lines and 200 terms in under 100 ms', async () => {
-    const terms: Term[] = [];
-    for (let i = 0; i < 200; i++) {
-      terms.push({ canonical: `Brand${i}corp`, aliases: [`brand ${i} corp`, `brandcorp${i}`], hits: i % 3, createdAt: OLD });
-    }
-    const lexicon: Lexicon = { version: 1, terms };
-    const vocabulary =
-      'please deploy the new build to versal tonight and ping ashlur about the process which lacks locks then talk to Siobhan Reilly before the standup so we can ship the release notes and update the changelog for brand7corp customers'.split(' ');
-    const history: VoiceHistoryEntry[] = [];
-    for (let i = 0; i < 1000; i++) {
-      const n = 6 + (i % 14);
-      const words: string[] = [];
-      for (let j = 0; j < n; j++) words.push(vocabulary[(i * 7 + j * 3) % vocabulary.length]);
-      const raw = words.join(' ');
-      // Every third line was corrected when it was recorded.
-      history.push(entry(raw, i % 3 === 0 ? normalize(raw, lexicon).output : raw));
-    }
-    const input: SuggestInput = { loaded: load(lexicon), history, now: NOW };
-    await suggestTerms(input); // warm up the JIT once, as a long-running MCP server would be
-    let best = Number.POSITIVE_INFINITY;
-    for (let run = 0; run < 3; run++) {
-      const t0 = performance.now();
-      const out = await suggestTerms(input);
-      best = Math.min(best, performance.now() - t0);
-      expect(out.length).toBeGreaterThan(0);
-    }
-    expect(best).toBeLessThan(100);
-  });
+  // The wall-clock bound ("1000 history lines and 200 terms in under 100 ms")
+  // lives in tests/suggest-terms-perf.test.ts, which vitest.config.ts runs in
+  // the serial `perf` project: a timing assertion here raced every other file
+  // for the CPU and missed the bound under load without any regression.
 });
 
 // ---------------------------------------------------------------------------

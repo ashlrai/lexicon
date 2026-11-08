@@ -12,6 +12,7 @@ const PERF_FILES = [
   'tests/matcher-perf.test.ts',
   'tests/matcher-linear-perf.test.ts',
   'tests/enumeration-paragraph.test.ts',
+  'tests/suggest-terms-perf.test.ts',
 ];
 
 export default defineConfig({
