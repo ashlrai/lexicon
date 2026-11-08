@@ -500,6 +500,16 @@ describe('phonetic pass', () => {
 });
 
 describe('fuzzy pass', () => {
+  it('breaks equal fuzzy scores by lexicon order, not spelling length', () => {
+    const terms: Term[] = [
+      { canonical: 'Abcdefghijklmnop', aliases: [] },
+      { canonical: 'Abcdefghi', aliases: [] },
+    ];
+    const opts = { phonetic: false, minConfidence: 0.75 };
+    expect(find('Abcdefghijkl', terms, opts)[0]).toMatchObject({ replacement: terms[0].canonical, reason: 'fuzzy', confidence: 0.75 });
+    expect(find('Abcdefghijkl', [...terms].reverse(), opts)[0]).toMatchObject({ replacement: terms[1].canonical, reason: 'fuzzy', confidence: 0.75 });
+  });
+
   it('rewrites Ashlet -> Ashlr.AI via the Ashler alias (phonetic keys differ)', () => {
     const reps = find('ask Ashlet about it', [ASHLR]);
     expect(reps).toHaveLength(1);
