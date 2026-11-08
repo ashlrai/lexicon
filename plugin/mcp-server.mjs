@@ -37004,15 +37004,6 @@ var init_mcp = __esm({
         this._promptHandlersInitialized = false;
         this.server = new Server(serverInfo, options);
         this._maxToolInputElements = resolveMaxToolInputElements(options?.maxToolInputElements);
-        if (options?.capabilities?.tools) {
-          this.setToolRequestHandlers();
-        }
-        if (options?.capabilities?.resources) {
-          this.setResourceRequestHandlers();
-        }
-        if (options?.capabilities?.prompts) {
-          this.setPromptRequestHandlers();
-        }
       }
       /**
        * Access experimental features.
@@ -51468,7 +51459,7 @@ function findBest(view, index, opts, scope) {
         const sim = similarity(a, b);
         if (sim < bar) continue;
         const soFar = current();
-        if (soFar && sim <= soFar.confidence) continue;
+        if (soFar && sim < soFar.confidence) continue;
         if (blocked(e)) continue;
         consider(e, "fuzzy", sim);
       }

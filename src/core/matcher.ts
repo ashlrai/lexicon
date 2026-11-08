@@ -464,7 +464,9 @@ function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<Nor
         const sim = similarity(a, b);
         if (sim < bar) continue;
         const soFar = current();
-        if (soFar && sim <= soFar.confidence) continue;
+        // Equal scores still need isBetter's reason and term-order tie break;
+        // buckets are sorted by spelling length, not lexicon order.
+        if (soFar && sim < soFar.confidence) continue;
         if (blocked(e)) continue;
         consider(e, 'fuzzy', sim);
       }

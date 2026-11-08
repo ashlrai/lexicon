@@ -19646,7 +19646,7 @@ function findBest(view, index, opts, scope) {
         const sim = similarity(a, b);
         if (sim < bar) continue;
         const soFar = current();
-        if (soFar && sim <= soFar.confidence) continue;
+        if (soFar && sim < soFar.confidence) continue;
         if (blocked(e)) continue;
         consider(e, "fuzzy", sim);
       }
