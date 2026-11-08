@@ -377,11 +377,30 @@ const ownedLocks = new Set<string>();
 let exitHookInstalled = false;
 
 /**
+ * One lock hold, for the re-entrancy below.
+ *
+ * `live` is what a hold lends and nothing more. The store propagates to
+ * every async resource created inside `fn`, including work `fn` never
+ * awaits: a deferred promise, a timer or a detached write scheduled under
+ * the lock still runs after the hold ends, and a bare set of paths used to
+ * answer it "held" forever. That task walked back in while another writer
+ * owned the lock and its read-modify-write overwrote the writer's update.
+ * The flag is cleared the moment the hold's `finally` runs, so work that
+ * outlives its hold acquires through the queue like any other writer, while
+ * work that fires inside the hold still shares it.
+ */
+interface HeldEntry {
+  live: boolean;
+}
+
+/**
  * Lock paths held by the current async call chain. `writeLexiconFile` takes
  * the same lock the mutation around it already holds, so the lock has to be
- * re-entrant or every `addTerm` would deadlock against itself.
+ * re-entrant or every `addTerm` would deadlock against itself. The entry,
+ * not the path, is what is borrowed: a stale entry (its hold released) is as
+ * good as no entry.
  */
-const heldLocks = new AsyncLocalStorage<ReadonlySet<string>>();
+const heldLocks = new AsyncLocalStorage<ReadonlyMap<string, HeldEntry>>();
 
 /** One in-flight chain per lock path: two async contexts in this process queue rather than race the file. */
 const queues = new Map<string, Promise<unknown>>();
@@ -400,7 +419,7 @@ export async function withFileLock<T>(
 ): Promise<T> {
   const lockPath = `${await resolveLockTarget(target)}${LOCK_SUFFIX}`;
   const held = heldLocks.getStore();
-  if (held?.has(lockPath)) return fn();
+  if (held?.get(lockPath)?.live === true) return fn();
 
   const timeoutMs = opts.timeoutMs ?? DEFAULT_LOCK_TIMEOUT_MS;
   const staleMs = opts.staleMs ?? DEFAULT_LOCK_STALE_MS;
@@ -409,11 +428,15 @@ export async function withFileLock<T>(
   const run = async (): Promise<T> => {
     const token = await acquire(lockPath, target, timeoutMs, staleMs);
     const stopHeartbeat = startHeartbeat(lockPath, token, staleMs);
-    const next = new Set(held ?? []);
-    next.add(lockPath);
+    const entry: HeldEntry = { live: true };
+    const next = new Map(held ?? []);
+    next.set(lockPath, entry);
     try {
       return await heldLocks.run(next, fn);
     } finally {
+      // Dead before the file lock goes: a task that escapes the hold must
+      // not slip back in during the release awaits either.
+      entry.live = false;
       stopHeartbeat();
       await release(lockPath, token);
     }
