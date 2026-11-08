@@ -115,6 +115,19 @@ describe('parseDetectorReport', () => {
     expect(report.findings[0]).toMatchObject({ type: 'other', severity: 'medium', confidence: 0.5 });
   });
 
+  it('accepts only known, detector-allowed types and known severities', () => {
+    const fields = [
+      { type: 'polysemy', severity: 'critical', expected: ['polysemy', 'critical'] },
+      { type: 'passive_voice', severity: 'low', expected: ['other', 'low'] },
+      { type: ['polysemy'], severity: { value: 'high' }, expected: ['other', 'medium'] },
+      { type: null, severity: null, expected: ['other', 'medium'] },
+    ];
+    const report = parseDetectorReport(spec.source, spec.validTypes, DOC, {
+      findings: fields.map(({ type, severity }) => ({ text: 'quickly', type, severity })),
+    });
+    expect(report.findings.map(({ type, severity }) => [type, severity])).toEqual(fields.map(({ expected }) => expected));
+  });
+
   it('drops report-level noise without losing valid findings', () => {
     const start = DOC.indexOf('quickly');
     const report = parseDetectorReport(spec.source, spec.validTypes, DOC, {
