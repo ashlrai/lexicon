@@ -63,6 +63,19 @@ describe('parseJsonc', () => {
     expect(() => parseJsonc('')).toThrow(/end of input/);
   });
 
+  it('rejects missing values in nested arrays at the offending comma', () => {
+    const text = `{
+  "rows": [
+    [1, 2],
+    [3, /* missing value */
+     , 4]
+  ]
+}`;
+    expect(() => parseJsonc(text)).toThrow('unexpected "," at line 5 column 6');
+    expect(() => parseJsonc('[[, 1]]')).toThrow('unexpected "," at line 1 column 3');
+    expect(() => parseJsonc('[[1,, 2]]')).toThrow('unexpected "," at line 1 column 5');
+  });
+
   it('rejects unterminated block comments within and after a value', () => {
     expect(() => parseJsonc('{ "a": 1, /* unfinished')).toThrow(/unterminated comment/);
     expect(() => parseJsonc('{ "a": 1 } /* unfinished *')).toThrow(/unterminated comment/);
