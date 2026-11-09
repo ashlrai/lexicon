@@ -14,8 +14,8 @@ const lexicon: Lexicon = {
   version: 1,
   terms: [
     { canonical: 'Zeta', aliases: ['zetta'], category: 'brand' },
-    { canonical: 'Äpple', aliases: ['epple'], category: 'brand' },
-    { canonical: 'Örebro', aliases: ['orebro'], category: 'place' },
+    { canonical: 'Äpple', aliases: ['äppel', 'りんご'], category: 'brand' },
+    { canonical: 'Örebro', aliases: ['œrebro', '오레브로'], category: 'place' },
     { canonical: 'Café', aliases: ['kaffay'], category: 'brand' },
     { canonical: 'Café', aliases: ['kafay'], category: 'brand' },
     { canonical: 'apple', aliases: ['appel'], category: 'brand' },
@@ -59,6 +59,17 @@ describe('export order', () => {
     expect(here.text.split('\n').slice(0, 2)).toEqual(['apple: appel', 'Apple: appul']);
     expect(here.text.indexOf('Äpple')).toBeLessThan(here.text.indexOf('Zeta'));
     expect(exportIn('sv_SE.UTF-8', lexicon)).toEqual(here);
+  });
+
+  it('retains non-ASCII aliases in formats that export aliases', () => {
+    const formats = ['wispr', 'superwhisper', 'macos', 'claude-md', 'csv', 'json',
+      'espanso', 'speechmatics', 'text', 'markdown'] as const;
+    for (const format of formats) {
+      const output = exportLexicon(lexicon, format);
+      for (const alias of ['äppel', 'りんご', 'œrebro', '오레브로']) {
+        expect(output, `${format} must retain ${alias}`).toContain(alias);
+      }
+    }
   });
 
   // Spellings the collation calls equal (one canonical in two Unicode forms)
