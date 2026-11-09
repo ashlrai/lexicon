@@ -9,6 +9,23 @@ const plist = (phrase: string, shortcut: string): string =>
   '<dict><key>phrase</key><string>Kubernetes</string><key>shortcut</key><string>cooper netties</string></dict>\n</array></plist>\n';
 
 describe('empty import document', () => {
+  it.each(['wispr', 'macos', 'espanso', 'superwhisper', 'markdown', 'text', 'csv', 'json'] as const)(
+    'handles empty input in the explicit %s format',
+    (format) => {
+      const errors: Partial<Record<typeof format, RegExp>> = {
+        macos: /macos: expected an Apple Text Replacement plist/i,
+        espanso: /espanso: expected a top-level `matches:` list/i,
+        superwhisper: /superwhisper: invalid JSON/i,
+      };
+      const error = errors[format];
+      if (error) {
+        expect(() => importLexicon('', format)).toThrow(error);
+      } else {
+        expect(importLexicon('', format)).toEqual({ format, terms: [], skipped: [] });
+      }
+    },
+  );
+
   it('returns an empty text import when the format is auto-detected', () => {
     expect(importLexicon('', 'auto')).toEqual({ format: 'text', terms: [], skipped: [] });
   });
