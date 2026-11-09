@@ -41,3 +41,20 @@ it.each([
 it('accepts a paired surrogate in a canonical name', () => {
   expect(parseLexicon({ terms: [{ canonical: 'word\uD83D\uDE00' }] }).terms[0].canonical).toBe('word\uD83D\uDE00');
 });
+
+it.each([
+  [34, `${'a'.repeat(34)}\\uFFFF`],
+  [35, `${'a'.repeat(35)}\\uFF…`],
+])('escapes the term name before limiting its display to 40 characters (prefix %i)', (prefixLength, displayedName) => {
+  const canonical = `${'a'.repeat(prefixLength)}\uFFFF`;
+  let message = '';
+  try {
+    parseLexicon({ terms: [{ canonical }] });
+  } catch (error) {
+    expect(error).toBeInstanceOf(Error);
+    message = (error as Error).message;
+  }
+  expect(displayedName).toHaveLength(40);
+  expect(message).toContain(`in term "${displayedName}"`);
+  expect(message).not.toContain('\uFFFF');
+});
