@@ -224,7 +224,7 @@ final class FocusWatcher: @unchecked Sendable {
     private func refreshFocus(pid: pid_t) {
         guard reading else { setCurrent(nil, value: ""); return }
         let appElement = AXUIElementCreateApplication(pid)
-        guard let focused = AX.element(appElement, kAXFocusedUIElementAttribute as String) else {
+        guard let focused = AX.focusedElement(appElement) else {
             escalateAccessibility(pid: pid, appElement: appElement)
             setCurrent(nil, value: "")
             return
@@ -404,7 +404,7 @@ final class FocusWatcher: @unchecked Sendable {
     private func poll() {
         guard running, reading, let app = activeApp, app.pid != ownPID else { return }
         let appElement = AXUIElementCreateApplication(app.pid)
-        let focused = AX.element(appElement, kAXFocusedUIElementAttribute as String)
+        let focused = AX.focusedElement(appElement)
         switch (current, focused) {
         case (nil, nil):
             return
