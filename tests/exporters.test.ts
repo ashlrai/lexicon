@@ -49,6 +49,21 @@ describe('exportLexicon', () => {
     expect(() => exportLexicon(lexicon, 'docx' as ExportFormat)).toThrow(/Unknown export format/);
   });
 
+  it('preserves Unicode terms and aliases in exported text', () => {
+    const term = { canonical: '東京 Café 🚀', aliases: ['とうきょう カフェ', 'café 🚀'] };
+    const unicode: Lexicon = { version: 1, terms: [term] };
+    // These speech-recognition formats intentionally export canonicals only.
+    const canonicalOnly: ExportFormat[] = ['whisper-prompt', 'deepgram', 'assemblyai', 'azure', 'google', 'openai'];
+    for (const format of EXPORT_FORMATS) {
+      const out = exportLexicon(unicode, format);
+      expect(out, format).toContain(term.canonical);
+      expect(out, format).not.toContain('\uFFFD');
+      if (!canonicalOnly.includes(format)) {
+        for (const alias of term.aliases) expect(out, format).toContain(alias);
+      }
+    }
+  });
+
   it('applies category filter and limit before dispatching', () => {
     const csv = exportLexicon(lexicon, 'csv', { categories: ['person'] });
     expect(csv.trim().split('\n')).toEqual(['canonical,alias,category,phonetic', 'Mason Wyatt,Mason White,person,']);
