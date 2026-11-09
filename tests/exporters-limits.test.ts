@@ -49,6 +49,14 @@ describe('empty lexicon exports', () => {
 });
 
 describe('whisper-prompt and openai: the prompt window Whisper reads', () => {
+  it.each(['whisper-prompt', 'openai'] as const)('%s keeps a single short name without omissions', (format) => {
+    const { text, notes, names } = exportLexiconWithNotes(lex([{ canonical: 'kubectl', aliases: [] }]), format);
+    expect(text).toBe('kubectl');
+    expect(estimateWhisperTokens(text)).toBeLessThanOrEqual(WHISPER_PROMPT_TOKEN_BUDGET);
+    expect(names).toBe(1);
+    expect(notes).toEqual([]);
+  });
+
   // Catches: the cap was 100 names whatever their length. Whisper keeps only
   // the last 224 tokens of a prompt and the names are written most important
   // first, so a long line lost exactly the names that mattered most.
