@@ -1,6 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
+import { EXPORT_ALIAS_ROW_FORMATS } from '../src/core/exporters/index.js';
 import {
   emptyExportNote,
   emptyExportReason,
@@ -40,6 +41,27 @@ describe('core notes', () => {
     expect(emptyExportReason(loadedOf(bare), 'csv', { limit: 5 })).toBe('no-rows');
     expect(emptyExportReason(loadedOf(bare), 'json', { limit: 5 })).toBeUndefined();
     expect(emptyExportReason(loadedOf(aliased), 'csv', { categories: ['brand'], limit: 1 })).toBeUndefined();
+  });
+
+  // Catches: a lexicon that has an alias being told "No exported term has an
+  // alias" (the no-rows note), for any alias-row format, any surface.
+  it('does not say aliases are absent when the lexicon has one', () => {
+    const mixed = [...bare, ...aliased];
+    for (const format of EXPORT_ALIAS_ROW_FORMATS) {
+      expect(emptyExportReason(loadedOf(aliased), format)).toBeUndefined();
+      expect(emptyExportReason(loadedOf(mixed), format)).toBeUndefined();
+      expect(emptyExportReason(loadedOf(mixed), format, { limit: 1 })).toBeUndefined();
+      expect(exportNote(loadedOf(mixed), format, { limit: 1 })).toBeUndefined();
+    }
+    // A blank alias is no alias: the note still fires, but an extra real one clears it.
+    const blank = [{ canonical: 'Quokka', aliases: ['  '], category: 'product' as const }];
+    expect(emptyExportReason(loadedOf(blank), 'csv')).toBe('no-rows');
+    expect(emptyExportReason(loadedOf([...blank, ...aliased]), 'csv')).toBeUndefined();
+    // The populated, aliased lexicon is not empty for stats, list or normalize either.
+    expect(emptyStatsNote(loadedOf(aliased))).toBeUndefined();
+    expect(emptyLexiconHint(loadedOf(aliased))).toBeUndefined();
+    expect(lexiconNote(loadedOf(aliased))).toBeUndefined();
+    expect(statsNote(loadedOf(aliased))).toBeUndefined();
   });
 
   it('keeps the wording each surface printed before the builders were shared', () => {
