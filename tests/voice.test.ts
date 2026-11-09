@@ -1863,6 +1863,18 @@ describe('lexicon voice --json failures', () => {
 });
 
 describe('cleanTranscript', () => {
+  it.each([
+    ['(soft *noise* music) hello', 'hello'],
+    ['  Hello [MUSIC] there *laughs*  ', 'Hello there'],
+    ['deploy it (the new build) tonight', 'deploy it (the new build) tonight'],
+    ['[BLANK_AUDIO]', ''],
+  ])('is stable when cleaned repeatedly: %s', (input, expected) => {
+    const cleaned = cleanTranscript(input);
+    expect(cleaned).toBe(expected);
+    expect(cleanTranscript(cleaned)).toBe(cleaned);
+    expect(cleanTranscript(cleanTranscript(cleaned))).toBe(cleaned);
+  });
+
   it('preserves plain transcript words and punctuation unchanged', () => {
     const transcript = "Hello, Mason! Let's ship version 2.0: is it ready? Yes; it is.";
     expect(cleanTranscript(transcript)).toBe(transcript);

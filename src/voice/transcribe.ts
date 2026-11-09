@@ -23,13 +23,19 @@ import type { VoiceExec } from './process.js';
  * takes its leading space with it (`send [MUSIC].` -> `send.`). Whitespace is collapsed and trimmed.
  */
 export function cleanTranscript(text: string): string {
-  return text
-    .replace(/\s*\[[^\]]*\](?=[.,;:!?])/g, '')
-    .replace(/\[[^\]]*\]/g, ' ')
-    .replace(/\(([A-Za-z]+(?:\s+[A-Za-z]+){0,2})\)/g, (m, inner: string) => (isNoiseTag(inner) ? ' ' : m))
-    .replace(/\*([A-Za-z]+(?:\s+[A-Za-z]+){0,2})\*/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
+  let previous: string;
+  do {
+    previous = text;
+    // Removing one annotation can reveal another, so continue to a fixed point.
+    text = text
+      .replace(/\s*\[[^\]]*\](?=[.,;:!?])/g, '')
+      .replace(/\[[^\]]*\]/g, ' ')
+      .replace(/\(([A-Za-z]+(?:\s+[A-Za-z]+){0,2})\)/g, (m, inner: string) => (isNoiseTag(inner) ? ' ' : m))
+      .replace(/\*([A-Za-z]+(?:\s+[A-Za-z]+){0,2})\*/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+  } while (text !== previous);
+  return text;
 }
 
 const NOISE_WORDS = /^(applause|laugh(s|ter|ing)?|music|silence|noise|inaudible|unintelligible|cough(s|ing)?|sigh(s)?|clapping|static|breathing|beep(s|ing)?|clears? throat|crosstalk|speaking in .*|foreign language|typing|chuckles?|pause)$/i;
