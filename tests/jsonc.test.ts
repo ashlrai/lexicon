@@ -21,6 +21,23 @@ describe('parseJsonc', () => {
     });
   });
 
+  it('keeps comment markers in keys and strings, including after escaped characters', () => {
+    const text = String.raw`{
+      "https://example.test/path?q=/*value*/#//fragment": [
+        "// at the start", "/* at the start", "unclosed /*", "unclosed //",
+        "escaped quote: \" // literal", "backslash: \\/* literal */"
+      ], // actual comment
+      "next": "intact" /* actual comment */
+    }`;
+    expect(parseJsonc(text)).toEqual({
+      'https://example.test/path?q=/*value*/#//fragment': [
+        '// at the start', '/* at the start', 'unclosed /*', 'unclosed //',
+        'escaped quote: " // literal', 'backslash: \\/* literal */',
+      ],
+      next: 'intact',
+    });
+  });
+
   it('reads a value followed by a line comment at end of file', () => {
     expect(parseJsonc('{"a": 1} // final comment')).toEqual({ a: 1 });
   });
