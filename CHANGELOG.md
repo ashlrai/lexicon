@@ -31,16 +31,20 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - Preserve digit characters in phonetic and fuzzy matches: an inexact match cannot discard or change digits in the input, while explicit aliases remain authoritative. (#832)
 - Resolve equal-scoring fuzzy candidates by the documented reason and lexicon term order, regardless of index traversal order. (#836)
 - Stop the clipboard daemon from using a cached project lexicon after a changed file or trust registry fails to reload. (#834)
+- Stop work that outlives a file-lock hold (a deferred promise, timer or detached write started under the lock) from re-entering as if it still held the lock; it now queues like any other writer, so it can no longer overwrite another writer's update. (#840)
 
 ### Changed
 
 - Clarify supported macOS fields and identify the setup recording as a historical capture.
+- Add a DeepWiki configuration (`.devin/wiki.json`) and `docs/DEEPWIKI.md` describing how the repository wiki is generated. (#842)
 
 ### Internal
 
 - Add subprocess coverage that CLI dry-run previews leave lexicons, trust records and caches unchanged. (#402)
 - Expand schema collection-limit and daemon acceptance coverage. (#477, #431)
 - Refresh transitive dependencies and isolate the suggest-terms performance check. (#837)
+- Bump the dev-dependencies group and regenerate the MCP server bundle so it registers tool, resource and prompt request handlers when the server declares those capabilities. (#833, #839)
+- Replace type-assertion membership checks in the ambiguity parser with narrowing lookups, and drop two redundant expressions in `cmd-learn` and `doctor-fix`. (#841, #843)
 
 ## 0.5.9 (2026-11-06)
 
