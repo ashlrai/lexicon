@@ -54,6 +54,21 @@ function byName(candidates: HarvestCandidate[], name: string): HarvestCandidate 
 }
 
 describe('harvestRepo', () => {
+  it('filters literal XXX beside ordinary prose while preserving adjacent names', async () => {
+    const dir = path.join(tmp, 'xxx-prose', 'repo');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'README.md'),
+      'We connect Mastodon XXX Quasar for ordinary conversations.\n');
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1 });
+    expect(byName(candidates, 'XXX')).toBeUndefined();
+    for (const name of ['Mastodon', 'Quasar']) {
+      expect(byName(candidates, name)).toMatchObject({
+        canonical: name, category: 'brand', count: 1, evidence: ['README.md'],
+      });
+    }
+  });
+
   it('ignores TODO in ordinary prose while retaining a valid brand', async () => {
     const dir = path.join(tmp, 'todo-prose', 'repo');
     await fs.mkdir(dir, { recursive: true });
