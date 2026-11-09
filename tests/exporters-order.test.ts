@@ -87,7 +87,9 @@ describe('export order', () => {
 
     // Pin the three distinct orderings, including the tie at the limit.
     expect(expected[0]?.[0]).toBe('Alpha: alfa\nBeta: beeta\nDelta: deltta\nZebra: zeebra\n');
+    expect(expected[0]?.[1]).toBe('Beta: beeta\nDelta: deltta\n');
     expect(expected[2]?.[0]).toBe('- **Zebra** (brand): zeebra\n- **Beta** (person): beeta\n- **Delta** (identifier): deltta\n- **Alpha** (place): alfa\n');
+    expect(expected[2]?.[1]).toBe('- **Beta** (person): beeta\n- **Delta** (identifier): deltta\n');
     expect(expected[3]).toEqual(['Delta, Beta, Zebra, Alpha', 'Delta, Beta']);
 
     for (const a of terms) for (const b of terms) for (const c of terms) for (const d of terms) {
