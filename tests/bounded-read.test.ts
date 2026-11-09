@@ -3,6 +3,7 @@ import { promises as fs, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { MAX_LEXICON_BYTES } from '../src/core/store.js';
 import { BoundedReadError, isBoundedReadError, readBoundedRegularFile, readRegularFileTail } from '../src/util/bounded-read.js';
 
 // The reader behind the trust gate's reads of someone else's repo files: it
@@ -43,6 +44,17 @@ describe('readBoundedRegularFile', () => {
     expect(isBoundedReadError(err)).toBe(true);
     expect(err.reason).toBe('too-large');
     expect(err.size).toBe(101);
+  });
+
+  it('accepts a file at MAX_LEXICON_BYTES and rejects one byte more', async () => {
+    const atLimit = Buffer.alloc(MAX_LEXICON_BYTES, 97);
+    const ok = await readBoundedRegularFile(await write('at-limit', atLimit), MAX_LEXICON_BYTES);
+    expect(ok.bytes.equals(atLimit)).toBe(true);
+
+    const err = await readBoundedRegularFile(await write('over-limit', Buffer.alloc(MAX_LEXICON_BYTES + 1, 97)), MAX_LEXICON_BYTES).catch((e) => e);
+    expect(isBoundedReadError(err)).toBe(true);
+    expect(err.reason).toBe('too-large');
+    expect(err.size).toBe(MAX_LEXICON_BYTES + 1);
   });
 
   it('reads a file larger than the 64 KiB read-ahead without truncating it', async () => {
