@@ -1863,6 +1863,11 @@ describe('lexicon voice --json failures', () => {
 });
 
 describe('cleanTranscript', () => {
+  it('preserves plain transcript words and punctuation unchanged', () => {
+    const transcript = "Hello, Mason! Let's ship version 2.0: is it ready? Yes; it is.";
+    expect(cleanTranscript(transcript)).toBe(transcript);
+  });
+
   it('preserves ordinary unbracketed words while collapsing whitespace', () => {
     expect(cleanTranscript('  Please play music, then\nwait in silence.  '))
       .toBe('Please play music, then wait in silence.');
