@@ -21,6 +21,20 @@ describe('parseJsonc', () => {
     });
   });
 
+  it('keeps comment markers immediately after escaped quotes inside strings', () => {
+    const text = String.raw`{
+      "line": "before\"// still in the string",
+      "block": "before\"/* still in the string */ after",
+      // A real comment must still be ignored.
+      "after": true
+    }`;
+    expect(parseJsonc(text)).toEqual({
+      line: 'before"// still in the string',
+      block: 'before"/* still in the string */ after',
+      after: true,
+    });
+  });
+
   it('reads properties separated by a multiline block comment', () => {
     const text = `{
       "first": "original value",
