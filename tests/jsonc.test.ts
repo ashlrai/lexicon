@@ -168,6 +168,70 @@ describe('editJsonText', () => {
     expect(editJsonText(text, { server: { args: ['one', 'two'] }, enabled: true })).toBe(text);
   });
 
+  // Catches: an edit touching a nested value may move only that value's own
+  // span; a comment beside it (or beside a sibling at any depth) is not part
+  // of the edit and has to survive byte for byte.
+  describe('nested values beside comments', () => {
+    it('changes a deeply nested value and keeps every neighboring comment and unrelated value', () => {
+      const text = [
+        '{',
+        '  "top": 1, // top note',
+        '  "outer": {',
+        '    // inner note',
+        '    "inner": {',
+        '      "flag": false, /* flag note */',
+        '      "name": "old" // name note',
+        '    },',
+        '    "list": [1, 2, 3]',
+        '  },',
+        '  "tail": "end" /* tail note */',
+        '}',
+        '',
+      ].join('\n');
+      const next = { top: 1, outer: { inner: { flag: false, name: 'new' }, list: [1, 2, 3] }, tail: 'end' };
+      const out = editJsonText(text, next);
+
+      expect(out).toBe(text.replace('"old"', '"new"'));
+      expect(parseJsonc(out)).toEqual(next);
+    });
+
+    it('edits a value sitting between a block comment and an inline comment', () => {
+      const text = '{\n  "cfg": {\n    // mode note\n    "mode": /* inline */ "old", /* trailing note */\n    "n": 1\n  }\n}\n';
+      const next = { cfg: { mode: 'new', n: 1 } };
+      const out = editJsonText(text, next);
+
+      expect(out).toBe(text.replace('"old"', '"new"'));
+      expect(parseJsonc(out)).toEqual(next);
+    });
+
+    it('adds a member or element inside a nested container without moving the neighboring comment', () => {
+      expect(editJsonText(
+        '{\n  "server": {\n    "command": "old" // keep command\n  },\n  "other": 1\n}\n',
+        { server: { command: 'old', timeout: 5 }, other: 1 },
+      )).toBe('{\n  "server": {\n    "command": "old", // keep command\n    "timeout": 5\n  },\n  "other": 1\n}\n');
+      expect(editJsonText(
+        '{\n  "args": [\n    "one", // one\n    "two"\n  ]\n}\n',
+        { args: ['one', 'two', 'three'] },
+      )).toBe('{\n  "args": [\n    "one", // one\n    "two",\n    "three"\n  ]\n}\n');
+    });
+
+    it('keeps the comment beside a nested value that is written whole', () => {
+      const text = '{\n  "server": {\n    "b": 1,\n    "a": 2 // inner note\n  }, // server note\n  "other": true\n}\n';
+      const out = editJsonText(text, { server: { a: 2, b: 1 }, other: true });
+
+      expect(out).toBe('{\n  "server": {\n    "a": 2,\n    "b": 1\n  }, // server note\n  "other": true\n}\n');
+      expect(parseJsonc(out)).toEqual({ server: { a: 2, b: 1 }, other: true });
+    });
+
+    it('replaces a nested scalar with a container without touching the neighboring comment', () => {
+      const text = '{\n  "opts": "old", // opts note\n  "other": [true]\n}\n';
+      const out = editJsonText(text, { opts: { a: 1 }, other: [true] });
+
+      expect(out).toBe('{\n  "opts": {\n    "a": 1\n  }, // opts note\n  "other": [true]\n}\n');
+      expect(parseJsonc(out)).toEqual({ opts: { a: 1 }, other: [true] });
+    });
+  });
+
   // Catches: removing a key wrote its whole object again through
   // JSON.stringify, so `lexicon uninstall` dropped every comment and the
   // formatting of the user's other servers along with the lexicon entry.
