@@ -432,6 +432,30 @@ describe('installPack / uninstallPack', () => {
     await fs.rm(home, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
   });
 
+  it('reports how to find a pack when selection is unknown and leaves the lexicon unchanged', async () => {
+    await addTerm({ canonical: 'Ashlr.AI', aliases: ['Ashler'] }, { globalPath });
+    await installPack('ai', { cwd, globalPath });
+    const before = await fs.readFile(globalPath, 'utf8');
+
+    for (const json of [false, true]) {
+      const io = makeIO();
+      expect(await runPackAdd(['nope'], { cwd, json }, io)).toBe(1);
+      expect(io.err).toContain('unknown pack "nope"');
+      expect(io.err).toContain('run lexicon pack list');
+      if (json) {
+        expect(JSON.parse(io.out)).toMatchObject({
+          ok: false,
+          ref: 'nope',
+          error: expect.stringContaining('unknown pack "nope"'),
+          nextStep: expect.stringContaining('run lexicon pack list'),
+        });
+      } else {
+        expect(io.out).toBe('');
+      }
+      expect(await fs.readFile(globalPath, 'utf8')).toBe(before);
+    }
+  });
+
   it('adds every term with source pack, records the pack in settings, and is idempotent', async () => {
     const pack = await loadPack('developer');
     const first = await installPack('developer', { cwd, globalPath });
