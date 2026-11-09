@@ -1882,6 +1882,11 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript('Please *laughs* continue speaking.')).toBe('Please continue speaking.');
   });
 
+  it('preserves an unmatched opening asterisk and the speech that follows', () => {
+    expect(cleanTranscript('Please continue *speaking after the pause.'))
+      .toBe('Please continue *speaking after the pause.');
+  });
+
   it('strips whisper tags, collapses whitespace and trims', () => {
     expect(cleanTranscript(' [BLANK_AUDIO] ')).toBe('');
     expect(cleanTranscript('[BLANK_AUDIO] Ping Ashler.  [MUSIC]\n about the  rollout. [inaudible]')).toBe('Ping Ashler. about the rollout.');
