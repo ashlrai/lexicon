@@ -19,6 +19,16 @@ describe('empty import document', () => {
   });
 });
 
+describe('truncated import document', () => {
+  it('rejects a truncated Superwhisper JSON document without returning its complete first entry', () => {
+    const content = '[{"original":"ashler","replacement":"Ashlr.AI"},' +
+      '{"original":"cooper netties","replacement":"Kubernetes"';
+
+    expect(() => importLexicon(content, 'superwhisper')).toThrow(/superwhisper: invalid JSON/i);
+    expect(() => importLexicon(content, 'auto')).toThrow(/starts like JSON but does not parse.*fix the file/i);
+  });
+});
+
 describe('macos importer: character references', () => {
   it('leaves an out-of-range numeric reference as text instead of throwing a RangeError', () => {
     expect(xmlUnescape('A&#99999999;B')).toBe('A&#99999999;B');
