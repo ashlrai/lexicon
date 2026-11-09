@@ -8,6 +8,17 @@ const plist = (phrase: string, shortcut: string): string =>
   `<?xml version="1.0"?>\n<plist><array>\n<dict><key>phrase</key><string>${phrase}</string><key>shortcut</key><string>${shortcut}</string></dict>\n` +
   '<dict><key>phrase</key><string>Kubernetes</string><key>shortcut</key><string>cooper netties</string></dict>\n</array></plist>\n';
 
+describe('empty import document', () => {
+  it('returns an empty text import when the format is auto-detected', () => {
+    expect(importLexicon('', 'auto')).toEqual({ format: 'text', terms: [], skipped: [] });
+  });
+
+  it('reports the missing matches list when an empty YAML file is detected as espanso', () => {
+    expect(() => importLexicon('', 'auto', { filename: 'matches.yaml' }))
+      .toThrow('espanso: expected a top-level `matches:` list');
+  });
+});
+
 describe('macos importer: character references', () => {
   it('leaves an out-of-range numeric reference as text instead of throwing a RangeError', () => {
     expect(xmlUnescape('A&#99999999;B')).toBe('A&#99999999;B');
