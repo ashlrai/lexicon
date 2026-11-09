@@ -649,6 +649,18 @@ describe('work that outlives its hold cannot borrow the lock', () => {
 });
 
 describe('writeFileAtomic keeps the file it is replacing', () => {
+  it('replaces an existing file with exact Unicode content without leaving a temp file', async () => {
+    const dir = await scratch();
+    const target = path.join(dir, 'lexicon.yaml');
+    const content = '日本語 café e\u0301 🧑🏽‍💻\n';
+    await fs.writeFile(target, 'old content that should be replaced\n');
+
+    await writeFileAtomic(target, content);
+
+    expect(await fs.readFile(target, 'utf8')).toBe(content);
+    expect(await leftoverTemps(target)).toEqual([]);
+  });
+
   /**
    * Catches: calling `writeFileAtomic` with no mode and letting the rename
    * carry a fresh temp file's `0666 & ~umask` onto the target. A lexicon the
