@@ -233,6 +233,10 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript('Please continue *door slams loudly* with the rollout.')).toBe('Please continue with the rollout.');
     expect(cleanTranscript('Please keep *these four spoken words* intact.')).toBe('Please keep *these four spoken words* intact.');
   });
+
+  it('preserves a four-word asterisked phrase on its own', () => {
+    expect(cleanTranscript('*these four spoken words*')).toBe('*these four spoken words*');
+  });
 });
 
 describe('transcribeFile', () => {
