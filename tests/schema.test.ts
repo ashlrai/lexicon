@@ -505,6 +505,25 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(name).not.toContain('\uD800');
   });
 
+  it('bounds and escapes a long invalid term in the parse error', () => {
+    const canonical = `prefix\uDC00${'x'.repeat(10_000)}`;
+    let message = '';
+    try {
+      parseLexicon({ terms: [{ canonical }] });
+    } catch (error) {
+      if (!(error instanceof Error)) throw error;
+      message = error.message;
+    }
+
+    expect(message).toContain(
+      `terms[0].canonical: must not contain U+DC00 (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "prefix\\uDC00${'x'.repeat(27)}…"`,
+    );
+    const name = /in term "([^"]*)"/.exec(message)?.[1];
+    expect(name).toHaveLength(40);
+    expect(message).not.toContain('\uDC00');
+    expect(message).not.toContain(canonical);
+  });
+
   it('reports U+FFFF as the first unencodable character in settings', () => {
     const word = 'Rocket \u{1F680}\uFFFF\uFFFE';
 
