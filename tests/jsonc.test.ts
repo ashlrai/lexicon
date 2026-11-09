@@ -190,6 +190,14 @@ describe('editJsonText', () => {
       expect(editJsonText(text, { a: 1 })).toBe('{\n  "a": 1 // a\n}');
     });
 
+    it('removes the only member while preserving surrounding content', () => {
+      const text = '/* before */\n{\n  "servers": { "lexicon": { "command": "node" } }, // keep\n  "enabled": true\n}\n// after\n';
+      const out = editJsonText(text, { servers: {}, enabled: true });
+
+      expect(parseJsonc(out)).toEqual({ servers: {}, enabled: true });
+      expect(out).toBe(text.replace('{ "lexicon": { "command": "node" } }', '{}'));
+    });
+
     it('handles one-line containers, trailing commas, arrays and removing everything', () => {
       expect(editJsonText('{ "a": 1, "b": 2 }', { b: 2 })).toBe('{ "b": 2 }');
       expect(editJsonText('{ "a": 1, "b": 2 }', { a: 1 })).toBe('{ "a": 1 }');
