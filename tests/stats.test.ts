@@ -29,6 +29,12 @@ const sample: Term[] = [
 ];
 
 describe('computeStats', () => {
+  it('counts every alias of a single term without counting extra terms', () => {
+    const stats = computeStats(loadedOf([{ canonical: 'Kubernetes', aliases: ['kuber netties', 'cooper netties', 'kube ernetes'] }], false));
+    expect(stats.termCount).toBe(1);
+    expect(stats.aliasCount).toBe(3);
+  });
+
   it('counts terms, aliases and hits and groups by category/source', () => {
     const stats = computeStats(loadedOf(sample));
     expect(stats.termCount).toBe(4);
