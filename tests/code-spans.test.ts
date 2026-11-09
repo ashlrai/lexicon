@@ -36,6 +36,17 @@ describe('code the matcher leaves alone', () => {
     expect(out('`` stray, ashler and `ashler`')).toBe('`` stray, Ashlr.AI and `ashler`');
   });
 
+  it('keeps punctuation between adjacent inline code spans outside both spans', () => {
+    const text = 'ashler `ashler run`,/`Ashlar stop` ashler';
+    const ranges = collectRanges(text);
+    expect(ranges.map(({ start, end }) => text.slice(start, end))).toEqual([
+      '`ashler run`',
+      '`Ashlar stop`',
+    ]);
+    expect(text.slice(ranges[0].end, ranges[1].start)).toBe(',/');
+    expect(out(text)).toBe('Ashlr.AI `ashler run`,/`Ashlar stop` Ashlr.AI');
+  });
+
   it('keeps a code span on one line, as before', () => {
     expect(out('``ashler\nashler``')).toBe('``Ashlr.AI\nAshlr.AI``');
   });
