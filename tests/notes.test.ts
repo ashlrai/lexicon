@@ -52,6 +52,10 @@ describe('core notes', () => {
       expect(emptyExportReason(loadedOf(mixed), format)).toBeUndefined();
       expect(emptyExportReason(loadedOf(mixed), format, { limit: 1 })).toBeUndefined();
       expect(exportNote(loadedOf(mixed), format, { limit: 1 })).toBeUndefined();
+      // Filtering mixed categories must inspect the selected term, not the first term.
+      expect(emptyExportReason(loadedOf(mixed), format, { categories: ['brand'], limit: 1 })).toBeUndefined();
+      expect(exportNote(loadedOf(mixed), format, { categories: ['brand'], limit: 1 })).toBeUndefined();
+      expect(emptyExportReason(loadedOf(mixed), format, { categories: ['product'] })).toBe('no-rows');
     }
     // A blank alias is no alias: the note still fires, but an extra real one clears it.
     const blank = [{ canonical: 'Quokka', aliases: ['  '], category: 'product' as const }];
