@@ -217,6 +217,13 @@ describe('exportLexicon', () => {
     expect(JSON.parse(exportLexicon(lexicon, 'json'))).toEqual(expected);
   });
 
+  it('json: escapes a newline in notes and parses it back unchanged', () => {
+    const term = { canonical: 'Lexicon', aliases: ['lexicun'], notes: 'first line\nsecond line' };
+    const out = exportLexicon({ version: 1, terms: [term] }, 'json');
+    expect(out).toContain('"notes": "first line\\nsecond line"');
+    expect(JSON.parse(out)).toEqual({ version: 1, terms: [term] });
+  });
+
   it('deepgram: keywords with boost by category, canonicals only', () => {
     const out = JSON.parse(exportLexicon(lexicon, 'deepgram')) as { keywords: string[] };
     expect(out.keywords).toHaveLength(lexicon.terms.length);
