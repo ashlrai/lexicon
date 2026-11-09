@@ -106,7 +106,17 @@ describe('computeStats', () => {
 
   it('handles an empty lexicon', () => {
     const stats = computeStats(loadedOf([], false));
-    expect(stats).toMatchObject({ termCount: 0, aliasCount: 0, totalHits: 0, topTerms: [], neverHit: [], neverHitCount: 0 });
+    expect(stats).toEqual({
+      termCount: 0,
+      aliasCount: 0,
+      totalHits: 0,
+      topTerms: [],
+      neverHit: [],
+      neverHitCount: 0,
+      byCategory: {},
+      bySource: {},
+      files: [{ path: '/fake/global.yaml', scope: 'global', terms: 0 }],
+    });
   });
 
   it('counts terms with no aliases', () => {
