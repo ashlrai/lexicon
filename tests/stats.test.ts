@@ -29,6 +29,18 @@ const sample: Term[] = [
 ];
 
 describe('computeStats', () => {
+  it('does not mutate the loaded lexicon while computing statistics', () => {
+    const loaded = loadedOf([
+      { canonical: 'Low', aliases: ['low alias'], hits: 1, scope: 'global' },
+      { canonical: 'High', aliases: ['high alias', 'another alias'], hits: 9, scope: 'project' },
+      { canonical: 'Never', aliases: [], scope: 'global' },
+    ]);
+    const before = structuredClone(loaded);
+
+    expect(computeStats(loaded).topTerms.map((term) => term.canonical)).toEqual(['High', 'Low']);
+    expect(loaded).toStrictEqual(before);
+  });
+
   it('counts every alias of a single term without counting extra terms', () => {
     const stats = computeStats(loadedOf([{ canonical: 'Kubernetes', aliases: ['kuber netties', 'cooper netties', 'kube ernetes'] }], false));
     expect(stats.termCount).toBe(1);
