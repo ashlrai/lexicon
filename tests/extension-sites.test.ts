@@ -5,7 +5,7 @@
 import { readFileSync } from 'node:fs';
 import { resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { ADAPTERS, siteRows } from '../extension/src/adapters.js';
+import { ADAPTERS, GENERIC, adapterFor, builtinPage, siteRows } from '../extension/src/adapters.js';
 import { createBackground } from '../extension/src/background-core.js';
 import type { KeyValueStore } from '../extension/src/background-core.js';
 import { ANY_SITE_HOSTS_LIMIT, STORAGE_KEYS, coerceHostList } from '../extension/src/shared.js';
@@ -64,5 +64,20 @@ describe('Options lists a site reached through "Any site"', () => {
     expect(coerceHostList(many)).toHaveLength(ANY_SITE_HOSTS_LIMIT);
     expect(coerceHostList(['ok.example.com', '<b>x</b>', 42, 'ok.example.com', 'UPPER.example.com'])).toEqual(['ok.example.com']);
     expect(coerceHostList('nope')).toEqual([]);
+  });
+});
+
+describe('a hostname that only ends with a supported host is not that site', () => {
+  it.each(['evilclaude.ai', 'notchatgpt.com', 'fakex.com', 'claude.ai.evil.com', 'xclaude.ai'])(
+    'adapterFor and builtinPage reject %s',
+    (host) => {
+      expect(adapterFor(host)).toBe(GENERIC);
+      expect(builtinPage(`https://${host}/`)).toBe(false);
+    },
+  );
+
+  it('still accepts the exact supported host', () => {
+    expect(adapterFor('claude.ai').id).not.toBe('generic');
+    expect(builtinPage('https://claude.ai/new')).toBe(true);
   });
 });
