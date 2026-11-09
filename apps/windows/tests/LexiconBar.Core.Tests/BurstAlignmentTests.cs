@@ -26,6 +26,24 @@ public class BurstAlignmentTests
 
     // ---------------------------------------------------------------- caret
 
+    [Theory]
+    [InlineData("")]
+    [InlineData("ping Ashlr.AI about the rollout")]
+    public void IdenticalTextRequiresNoReplacement(string text)
+    {
+        foreach (int? caret in new int?[] { null, 0, text.Length })
+        {
+            TextDiff.Delta delta = TextDiff.ComputeDelta(text, text, caret);
+            Assert.Equal(text.Length, delta.Location);
+            Assert.Equal(0, delta.Inserted);
+            Assert.Equal(0, delta.Removed);
+            Assert.Equal(0, delta.SlideLeft);
+            Assert.Equal(0, delta.SlideRight);
+            Assert.False(delta.Anchored);
+            Assert.False(delta.IsAmbiguous);
+        }
+    }
+
     [Fact]
     public void InsertionInFrontOfTextThatStartsTheSameWayIsAmbiguous()
     {
