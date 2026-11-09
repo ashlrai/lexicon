@@ -212,6 +212,23 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript(input)).toBe(expected);
   });
 
+  it.each([
+    ['in the middle', 'Please *door slams* send the report.', 'Please send the report.'],
+    ['at the start', '*door slams* Please send the report.', 'Please send the report.'],
+    ['at the end', 'Please send the report. *door slams*', 'Please send the report.'],
+    ['touching speech', 'Please*door slams*send the report.', 'Please send the report.'],
+    ['across a line break', 'Please *door\nslams* send the report.', 'Please send the report.'],
+    ['uppercase', 'Please *DOOR SLAMS* send it.', 'Please send it.'],
+    ['alone', '*door slams*', ''],
+  ])('removes a two-word asterisk tag %s and keeps the spoken words', (_description, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
+  it('removes one-, two- and three-word asterisk tags from the same transcript', () => {
+    expect(cleanTranscript('Ship *laughs* the build, *door slams* then *phone rings twice* deploy it.'))
+      .toBe('Ship the build, then deploy it.');
+  });
+
   it('removes up to three starred words but preserves a four-word span', () => {
     expect(cleanTranscript('Please continue *door slams loudly* with the rollout.')).toBe('Please continue with the rollout.');
     expect(cleanTranscript('Please keep *these four spoken words* intact.')).toBe('Please keep *these four spoken words* intact.');
