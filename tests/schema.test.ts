@@ -292,6 +292,17 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(parseLexicon({ terms: [{ canonical: nice, aliases: ['zoe'] }] }).terms[0].canonical).toBe(nice);
   });
 
+  it('accepts and preserves a paired surrogate in a term', () => {
+    const canonical = 'Rocket \uD83D\uDE80';
+    const alias = 'Launch \uD83D\uDE80';
+    const result = TermSchema.safeParse({ canonical, aliases: [alias] });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected the paired surrogate to be accepted');
+    expect(result.data.canonical).toBe(canonical);
+    expect(result.data.aliases).toEqual([alias]);
+  });
+
   it('reports a lone high surrogate in a term name without throwing', () => {
     const result = LexiconSchema.safeParse({ terms: [{ canonical: '\uD800' }] });
 
