@@ -51,10 +51,12 @@ describe('readBoundedRegularFile', () => {
     const ok = await readBoundedRegularFile(await write('at-limit', atLimit), MAX_LEXICON_BYTES);
     expect(ok.bytes.equals(atLimit)).toBe(true);
 
-    const err = await readBoundedRegularFile(await write('over-limit', Buffer.alloc(MAX_LEXICON_BYTES + 1, 97)), MAX_LEXICON_BYTES).catch((e) => e);
+    const overLimit = await write('over-limit', Buffer.alloc(MAX_LEXICON_BYTES + 1, 97));
+    const err = await readBoundedRegularFile(overLimit, MAX_LEXICON_BYTES).catch((e) => e);
     expect(isBoundedReadError(err)).toBe(true);
     expect(err.reason).toBe('too-large');
     expect(err.size).toBe(MAX_LEXICON_BYTES + 1);
+    expect(err.message).toBe(`${overLimit} is ${MAX_LEXICON_BYTES + 1} bytes`);
   });
 
   it('reads a file larger than the 64 KiB read-ahead without truncating it', async () => {
