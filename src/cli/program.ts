@@ -373,6 +373,16 @@ export function buildProgram(io: IO): Command {
       done(await runInstall('claude', withGlobals(opts), io));
     });
 
+  program
+    .command('test-select')
+    .description('select tests for changed repository files, falling back to the full suite')
+    .argument('[files...]', 'repository-relative changed paths (default: git changes including untracked files)')
+    .option('--json', 'print the selection and command argument arrays as JSON')
+    .action(async (files: string[], opts: { json?: boolean }) => {
+      const { runTestSelect } = await import('./cmd-test-select.js');
+      runTestSelect(files, withGlobals(opts), io);
+    });
+
   registerImportCommands(program, io);
   registerInstallCommands(program, io);
   registerUninstallCommands(program, io);
