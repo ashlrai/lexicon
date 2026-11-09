@@ -34,9 +34,8 @@ function learnCommand(heard: string | undefined, meant: string | undefined): str
 /**
  * `lexicon learn Ashler`: the error and next step for a single spelling. The
  * wording matches MCP learn_correction called with `heard` and no `meant`.
- * Exported for tests.
  */
-export function oneSpellingRefusal(word: string): [error: string, nextStep: string] {
+function oneSpellingRefusal(word: string): [error: string, nextStep: string] {
   const spelling = word.trim().replace(/\s+/g, ' ');
   return [
     `only one spelling was given ("${spelling}"); learn needs the spelling STT wrote and the one you meant, so nothing was learned`,
