@@ -11,6 +11,14 @@ const LEX: Lexicon = {
 const out = (text: string): string => normalize(text, LEX).output;
 
 describe('code the matcher leaves alone', () => {
+  it('preserves an alias in a backtick fence and normalizes it in following prose', () => {
+    const text = '```sh\nashler deploy\n```\nask ashler';
+    expect(collectRanges(text).map(({ start, end }) => text.slice(start, end))).toEqual([
+      '```sh\nashler deploy\n```',
+    ]);
+    expect(out(text)).toBe('```sh\nashler deploy\n```\nask Ashlr.AI');
+  });
+
   it('skips a tilde fence, the other fenced code block', () => {
     expect(out('~~~\nashler deploy\n~~~\nand ashler')).toBe('~~~\nashler deploy\n~~~\nand Ashlr.AI');
     expect(out('Run this:\n\n  ~~~sh\n  ashler run\n  ~~~\n')).toBe('Run this:\n\n  ~~~sh\n  ashler run\n  ~~~\n');
