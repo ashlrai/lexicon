@@ -412,6 +412,40 @@ describe('content: matching that stopped early', () => {
 // ---------------------------------------------------------------------------
 
 describe('toast', () => {
+  it('stays for eight seconds, pauses on hover, and restarts after leaving', () => {
+    vi.useFakeTimers();
+    try {
+      const host = showToast(document, []);
+      const box = host.shadowRoot!.querySelector<HTMLElement>('.toast')!;
+      vi.advanceTimersByTime(7999);
+      expect(host.isConnected).toBe(true);
+      box.dispatchEvent(new MouseEvent('mouseenter'));
+      vi.advanceTimersByTime(20_000);
+      expect(host.isConnected).toBe(true);
+      box.dispatchEvent(new MouseEvent('mouseleave'));
+      vi.advanceTimersByTime(7999);
+      expect(host.isConnected).toBe(true);
+      vi.advanceTimersByTime(1);
+      expect(host.isConnected).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it('does not let an older notice timer dismiss its replacement', () => {
+    vi.useFakeTimers();
+    try {
+      showToast(document, [], { durationMs: 100 });
+      const newer = showToast(document, [], { durationMs: 200 });
+      vi.advanceTimersByTime(100);
+      expect(newer.isConnected).toBe(true);
+      vi.advanceTimersByTime(100);
+      expect(newer.isConnected).toBe(false);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   it('renders the corrections and an undo link', () => {
     const corrections: Correction[] = [
       { start: 0, end: 6, original: 'Ashler', replacement: 'Ashlr.AI', canonical: 'Ashlr.AI', reason: 'alias', confidence: 1 },
