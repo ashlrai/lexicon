@@ -54,6 +54,19 @@ function byName(candidates: HarvestCandidate[], name: string): HarvestCandidate 
 }
 
 describe('harvestRepo', () => {
+  it.each([
+    ['empty', ''],
+    ['whitespace-only', ' \t\n\r\n'],
+  ])('returns no candidates for %s file contents', async (_label, content) => {
+    const dir = path.join(tmp, `empty-input-${_label}`, 'w');
+    await fs.mkdir(dir, { recursive: true });
+    for (const name of ['README.md', 'index.ts', 'package.json']) {
+      await fs.writeFile(path.join(dir, name), content);
+    }
+
+    await expect(harvestRepo(dir, { git: false, minCount: 1, symbols: true })).resolves.toEqual([]);
+  });
+
   it('filters literal XXX beside ordinary prose while preserving adjacent names', async () => {
     const dir = path.join(tmp, 'xxx-prose', 'repo');
     await fs.mkdir(dir, { recursive: true });
