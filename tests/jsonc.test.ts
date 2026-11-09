@@ -97,6 +97,13 @@ describe('parseJsonc', () => {
     expect(() => parseJsonc('{ "a": 1, /* unfinished')).toThrow(/unterminated comment/);
     expect(() => parseJsonc('{ "a": 1 } /* unfinished *')).toThrow(/unterminated comment/);
   });
+
+  it('reports unterminated strings and their location', () => {
+    expect(() => parseJsonc('"unfinished')).toThrow('unterminated string at line 1 column 12');
+    expect(() => parseJsonc('{"key')).toThrow('unterminated string at line 1 column 6');
+    expect(() => parseJsonc(String.raw`"a\"`)).toThrow('unterminated string at line 1 column 5');
+    expect(() => parseJsonc('{\n  "a": "open\n}')).toThrow('unterminated string at line 2 column 13');
+  });
 });
 
 describe('editJsonText', () => {
