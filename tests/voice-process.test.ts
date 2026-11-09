@@ -8,8 +8,27 @@ import path from 'node:path';
 import { describe, expect, it, vi } from 'vitest';
 import { defaultExec, defaultIsAlive, defaultKill, defaultSpawn } from '../src/voice/process.js';
 import { stopRecorder } from '../src/voice/recorder.js';
+import { transcribeFile } from '../src/voice/transcribe.js';
 
 const node = process.execPath;
+
+it('processes an empty transcript without introducing text', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-voice-empty-'));
+  try {
+    const result = await transcribeFile(path.join(dir, 'capture.wav'), {
+      lexicon: { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }] },
+      whisperCli: node,
+      modelOptions: { globalPath: path.join(dir, 'lexicon.yaml'), env: {}, fallbackDirs: [], exists: () => true },
+      tmpDir: dir,
+      exec: () => defaultExec(node, ['-e', 'process.stdout.write("")']),
+    });
+    expect(result.raw).toBe('');
+    expect(result.output).toBe('');
+    expect(result.normalized).toEqual({ input: '', output: '', replacements: [], changed: false });
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
 
 describe('defaultExec', () => {
   // Catches: Ctrl-C during transcription had no way to stop whisper-cli.
