@@ -58,4 +58,27 @@ describe('project init trust preflight', () => {
     await expect(fs.stat(path.join(repo, '.lexicon.yaml'))).rejects.toMatchObject({ code: 'ENOENT' });
     await expect(fs.stat(registry)).rejects.toMatchObject({ code: 'ENOENT' });
   });
+
+  it('previews a project path containing spaces without creating or modifying files', async () => {
+    const spacedRepo = path.join(dir, 'project with spaces');
+    const project = path.join(spacedRepo, '.lexicon.yaml');
+    await fs.mkdir(path.join(spacedRepo, '.git'), { recursive: true });
+
+    const missing = makeIO();
+    expect(await runInit({ cwd: spacedRepo, project: true, dryRun: true, json: true }, missing)).toBe(0);
+    expect(JSON.parse(missing.out)).toMatchObject({ ok: true, path: project, created: true, dryRun: true });
+    expect(await fs.readdir(spacedRepo)).toEqual(['.git']);
+    await expect(fs.stat(registry)).rejects.toMatchObject({ code: 'ENOENT' });
+
+    const content = 'version: 1\nterms: []\n';
+    await fs.writeFile(project, content);
+    const before = await fs.stat(project);
+    const existing = makeIO();
+    expect(await runInit({ cwd: spacedRepo, project: true, dryRun: true, json: true }, existing)).toBe(0);
+    expect(JSON.parse(existing.out)).toMatchObject({ ok: true, path: project, created: false, dryRun: true });
+    expect(await fs.readFile(project, 'utf8')).toBe(content);
+    expect((await fs.stat(project)).mtimeMs).toBe(before.mtimeMs);
+    expect((await fs.readdir(spacedRepo)).sort()).toEqual(['.git', '.lexicon.yaml']);
+    await expect(fs.stat(registry)).rejects.toMatchObject({ code: 'ENOENT' });
+  });
 });
