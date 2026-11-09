@@ -1063,6 +1063,37 @@ describe('hardening (lexicon content reaches model context)', () => {
     }
   });
 
+  it.each([
+    ['high', '\uD812', 'U+D812'],
+    ['low', '\uDC34', 'U+DC34'],
+  ])('rejects an isolated %s surrogate in every free-text field', (_kind, unit, code) => {
+    const value = `before${unit}after`;
+    const term = {
+      canonical: 'Rocket', aliases: [value], never: [value], context: [value],
+      phonetic: value, notes: value, createdAt: value,
+    };
+    const reason = `must not contain ${code} (U+FFFE, U+FFFF and unpaired surrogates fit no file format)`;
+    const termResult = TermSchema.safeParse(term);
+    expect(termResult.success).toBe(false);
+    if (termResult.success) throw new Error('Expected an isolated surrogate to be rejected');
+    expect(termResult.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      { path: ['aliases', 0], message: `${reason} in term "Rocket"` },
+      { path: ['never', 0], message: `${reason} in term "Rocket"` },
+      { path: ['context', 0], message: `${reason} in term "Rocket"` },
+      { path: ['phonetic'], message: `${reason} in term "Rocket"` },
+      { path: ['notes'], message: `${reason} in term "Rocket"` },
+      { path: ['createdAt'], message: `${reason} in term "Rocket"` },
+    ]);
+    const settings = LexiconSettingsSchema.safeParse({ protectedWords: [value], packs: [value] });
+    expect(settings.success).toBe(false);
+    if (settings.success) throw new Error('Expected an isolated surrogate to be rejected');
+    expect(settings.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      { path: ['protectedWords', 0], message: reason },
+      { path: ['packs', 0], message: reason },
+    ]);
+    expect(() => parseLexicon({ terms: [{ canonical: value }] })).toThrow(`terms[0].canonical: ${reason}`);
+  });
+
   it('accepts and preserves paired surrogates in term and settings text', () => {
     const rocket = '\uD83D\uDE80';
     const term = {
