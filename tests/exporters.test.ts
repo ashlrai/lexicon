@@ -383,6 +383,24 @@ describe('exportLexicon', () => {
 });
 
 describe('exports a real user would re-import', () => {
+  it.each([
+    ['wispr', 'wispr'],
+    ['superwhisper', 'superwhisper'],
+    ['macos', 'macos'],
+    ['csv', 'csv'],
+    ['espanso', 'espanso'],
+    ['json', 'json'],
+    ['text', 'text'],
+    ['markdown', 'markdown'],
+    ['claude-md', 'markdown'],
+  ] as const)('%s: Unicode canonical and aliases survive reimport', (exportFormat, importFormat) => {
+    const term = { canonical: '東京 Café 🚀', aliases: ['とうきょう カフェ', 'café 🚀'] };
+    const out = exportLexicon({ version: 1, terms: [term] }, exportFormat);
+    const back = importLexicon(out, importFormat);
+    expect(back.skipped).toEqual([]);
+    expect(back.terms.map(({ canonical, aliases }) => ({ canonical, aliases }))).toEqual([term]);
+  });
+
   // Catches: the claude-md note cell is `category notes (phonetic)` and the
   // markdown importer takes a trailing parenthesis as the phonetic hint, so a
   // note ending in one ("the CLI (not the app)") came back as notes "the CLI"
