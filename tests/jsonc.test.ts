@@ -92,6 +92,18 @@ describe('editJsonText', () => {
     expect(editJsonText(text, { a: [1, 2] })).toBe(text);
   });
 
+  it.each(['\n', '\r\n'])('preserves comments, spacing and the trailing newline on an unchanged edit (%j)', (newline) => {
+    const text = [
+      '/* leading comment */',
+      '{',
+      '\t"server" : { "args": [ "one" , "two" ] }, // keep spacing',
+      '\t"enabled": true, /* keep trailing comma */',
+      '}',
+      '',
+    ].join(newline);
+    expect(editJsonText(text, { server: { args: ['one', 'two'] }, enabled: true })).toBe(text);
+  });
+
   // Catches: removing a key wrote its whole object again through
   // JSON.stringify, so `lexicon uninstall` dropped every comment and the
   // formatting of the user's other servers along with the lexicon entry.
