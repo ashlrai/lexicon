@@ -139,6 +139,13 @@ describe('editJsonText', () => {
     expect(editJsonText(text, { a: [1, 2] })).toBe(text);
   });
 
+  it('returns an unchanged nested object with its comments byte for byte', () => {
+    const text = '{\r\n  "server": {\r\n    // Keep the command comment.\r\n    "options": { /* nested comment */\r\n      "enabled": true, // Keep the trailing comment.\r\n      "args": ["one", /* argument comment */ "two"],\r\n    },\r\n  }\r\n}\r\n';
+    const value = { server: { options: { enabled: true, args: ['one', 'two'] } } };
+
+    expect(editJsonText(text, value)).toBe(text);
+  });
+
   it.each(['\n', '\r\n'])('preserves comments, spacing and the trailing newline on an unchanged edit (%j)', (newline) => {
     const text = [
       '/* leading comment */',
