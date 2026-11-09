@@ -15,6 +15,15 @@ describe('YAML import complexity guard', () => {
     }
   });
 
+  it('ignores brackets after escaped quotes in double-quoted scalars at the nesting limit', () => {
+    const scalar = JSON.stringify(`escaped " quote ${'[{'.repeat(129)}${']}'.repeat(129)}`);
+    expect(() => guardYamlImport('['.repeat(128) + scalar + ']'.repeat(128))).not.toThrow();
+
+    const closingBrackets = JSON.stringify(`escaped " quote ${']}'.repeat(129)}`);
+    expect(() => guardYamlImport('['.repeat(128) + closingBrackets + ', []' + ']'.repeat(128)))
+      .toThrow(/nesting depth/);
+  });
+
   it('rejects adjacent quoted scalars but allows escapes and separators', () => {
     expect(() => guardYamlImport('""""')).toThrow(/adjacent quoted scalars/);
     for (const value of ['["a", "b"]', "['a''b', 'c']", '"a\\"b"', '"a": "b"']) {
