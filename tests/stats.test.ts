@@ -166,6 +166,18 @@ describe('computeStats', () => {
     expect(stats.termCount).toBe(2);
     expect(stats.aliasCount).toBe(0);
   });
+
+  it('sums populated alias lists while empty lists contribute zero', () => {
+    const stats = computeStats(loadedOf([
+      { canonical: 'Empty first', aliases: [] },
+      { canonical: 'Two aliases', aliases: ['first', 'second'] },
+      { canonical: 'Empty middle', aliases: [] },
+      { canonical: 'Three aliases', aliases: ['third', 'fourth', 'fifth'] },
+      { canonical: 'Empty last', aliases: [] },
+    ]));
+    expect(stats.termCount).toBe(5);
+    expect(stats.aliasCount).toBe(5);
+  });
 });
 
 describe('lexicon stats (CLI)', () => {
@@ -323,8 +335,9 @@ describe('lexicon stats (CLI)', () => {
     try {
       const code = await runStats({ cwd: tmp, json: true }, io);
       expect(code).toBe(0);
-      const stats = JSON.parse(out.join('')) as { termCount: number; topTerms: unknown[]; neverHit: string[]; files: { path: string }[] };
+      const stats = JSON.parse(out.join('')) as { termCount: number; aliasCount: number; topTerms: unknown[]; neverHit: string[]; files: { path: string }[] };
       expect(stats.termCount).toBe(2);
+      expect(stats.aliasCount).toBe(1);
       expect(stats.topTerms).toEqual([{ canonical: 'Ashlr.AI', hits: 2 }]);
       expect(stats.neverHit).toEqual(['Zoë']);
       expect(stats.files[0]?.path).toBe(globalPath);
