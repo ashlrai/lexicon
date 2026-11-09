@@ -12,6 +12,13 @@ const LEX: Lexicon = {
 };
 
 describe('normalize', () => {
+  it('uses supplied local context for gated terms without matching across fields', () => {
+    const lex: Lexicon = { version: 1, terms: [{ canonical: 'locus', aliases: ['Lucas'], context: ['phantom', 'com.example'] }] };
+    expect(normalize('ask Lucas', lex).output).toBe('ask Lucas');
+    expect(normalize('ask Lucas', lex, { context: { recentText: 'Working on phantom' } }).output).toBe('ask locus');
+    expect(normalize('ask Lucas', lex, { context: { bundleId: 'com.example' } }).output).toBe('ask locus');
+    expect(normalize('ask Lucas', lex, { context: { recentText: 'com', bundleId: 'example' } }).output).toBe('ask Lucas');
+  });
   it('rewrites aliases and reports changed', () => {
     const r = normalize('Ashler builds SaaS on Ashler AI.', LEX);
     expect(r.output).toBe('Ashlr.AI builds SaaS on Ashlr.AI.');

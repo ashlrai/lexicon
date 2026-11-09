@@ -185,6 +185,8 @@ export interface NormalizeOptions {
   phonetic?: boolean;
   fuzzy?: boolean;
   skipCode?: boolean;
+  /** Local caller context used as additional evidence for context-gated terms. */
+  context?: { recentText?: string; bundleId?: string };
   /** Return candidates without applying them (output === input). */
   dryRun?: boolean;
   /**
