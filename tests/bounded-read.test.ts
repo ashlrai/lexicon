@@ -37,6 +37,12 @@ describe('readBoundedRegularFile', () => {
     expect(r.bytes.length).toBe(0);
   });
 
+  it('finishes reading an empty file with a zero-byte limit', async () => {
+    const r = await readBoundedRegularFile(await write('empty-zero-limit', ''), 0);
+    expect(r.bytes).toEqual(Buffer.alloc(0));
+    expect(r.bytes.length).toBeLessThanOrEqual(0);
+  }, 1000);
+
   it('accepts a file of exactly maxBytes and refuses one byte more', async () => {
     const ok = await readBoundedRegularFile(await write('at', Buffer.alloc(100, 97)), 100);
     expect(ok.bytes.length).toBe(100);
