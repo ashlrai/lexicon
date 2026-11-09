@@ -38,6 +38,18 @@ public class BurstDetectorTests
         Assert.Equal(new SettleOutcome.Skipped(reason), outcome);
 
     [Fact]
+    public void EmptyKeystrokeSequenceNeverFires()
+    {
+        BurstDetector d = new(string.Empty);
+        double end = Type(string.Empty, d, string.Empty, 0);
+
+        Assert.False(d.HasPendingChanges);
+        Assert.Equal(string.Empty, d.LastStable);
+        Assert.Equal(SettleOutcome.Waiting.Instance, d.Settle(end + Settle));
+        Assert.Equal(SettleOutcome.Waiting.Instance, d.Settle(end + RunQuiet));
+    }
+
+    [Fact]
     public void CharAtATimeTypingNeverFires()
     {
         BurstDetector d = new(string.Empty);
