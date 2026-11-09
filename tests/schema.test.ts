@@ -893,6 +893,25 @@ describe('hardening (lexicon content reaches model context)', () => {
   });
 
   it.each([
+    ['\uFFFE', '\\uFFFE', 'U+FFFE'],
+    ['\uFFFF', '\\uFFFF', 'U+FFFF'],
+    ['\uD800', '\\uD800', 'U+D800'],
+    ['\uDBFF', '\\uDBFF', 'U+DBFF'],
+    ['\uDC00', '\\uDC00', 'U+DC00'],
+    ['\uDFFF', '\\uDFFF', 'U+DFFF'],
+  ])('escapes %s in error names while keeping ordinary Unicode readable', (unit, escaped, code) => {
+    const canonical = `Café 東京🚀${unit}é`;
+    const shown = `Café 東京🚀${escaped}é`;
+    const reason = 'U+FFFE, U+FFFF and unpaired surrogates fit no file format';
+
+    expect(escapeUnencodable(canonical)).toBe(shown);
+    expect(() => parseLexicon({ terms: [{ canonical, aliases: ['\uFFFF'] }] })).toThrow(
+      `Invalid lexicon:\n  - terms[0].canonical: must not contain ${code} (${reason}) in term "${shown}"\n` +
+      `  - terms[0].aliases[0]: must not contain U+FFFF (${reason}) in term "${shown}"`,
+    );
+  });
+
+  it.each([
     ['high first', 'D800', 'DFFF'],
     ['low first', 'DC00', 'DBFF'],
   ])('escapes every unpaired surrogate in YAML term previews (%s)', (_order, first, second) => {
