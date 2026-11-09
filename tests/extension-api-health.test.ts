@@ -185,6 +185,17 @@ describe('extension request timeouts', () => {
 });
 
 describe('extension /health identity', () => {
+  it('reports an unreachable local API without rejecting the health check', async () => {
+    const fetchMock = vi.fn().mockRejectedValue(new TypeError('Failed to fetch'));
+    const bg = createBackground({ fetch: fetchMock as typeof fetch, store: memoryStore({ settings: { token: TOKEN } }), defaultYaml: EXAMPLE_YAML });
+
+    const status = (await bg.handle({ type: 'status', probe: true })) as StatusReply;
+    expect(status).toMatchObject({ ok: true, activeMode: 'embedded', server: null, serverError: expect.stringContaining('cannot reach lexicon serve at http://127.0.0.1:41733') });
+    expect(connectionTestLine(status)).toContain('cannot reach lexicon serve');
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock.mock.calls[0][0]).toBe('http://127.0.0.1:41733/health');
+  });
+
   // Catches: any 2xx `{ ok: true }` counted as lexicon serve, so another
   // program on the port read as Connected and every correction was posted to it.
   it('counts only a /health with lexicon serve fields as the server', async () => {
