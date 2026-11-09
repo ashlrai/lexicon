@@ -316,6 +316,29 @@ describe('hardening (lexicon content reaches model context)', () => {
     }]);
   });
 
+  it.each([
+    ['canonical', { canonical: 'Ash\uD83Dlr' }, ['canonical'], 'U+D83D', 'Ash\\uD83Dlr'],
+    ['an alias', { canonical: 'Ashlr.AI', aliases: ['ok', 'Ash\uDE80ler'] }, ['aliases', 1], 'U+DE80', 'Ashlr.AI'],
+    ['a never entry', { canonical: 'Ashlr.AI', never: ['x\uD800'] }, ['never', 0], 'U+D800', 'Ashlr.AI'],
+    ['a context entry', { canonical: 'Ashlr.AI', context: ['a\uDBFFb'] }, ['context', 0], 'U+DBFF', 'Ashlr.AI'],
+  ] as const)('rejects an unpaired surrogate in %s and names the code unit', (_where, term, path, unit, shown) => {
+    const result = LexiconSchema.safeParse({ terms: [term] });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the unpaired surrogate to be rejected');
+    expect(result.error.issues).toHaveLength(1);
+    expect(result.error.issues[0].path).toEqual(['terms', 0, ...path]);
+    expect(result.error.issues[0].message).toBe(
+      `must not contain ${unit} (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "${shown}"`,
+    );
+    // The diagnostic carries the escape, never the raw surrogate.
+    expect(result.error.issues[0].message).not.toMatch(/[\uD800-\uDFFF]/);
+  });
+
+  it('still accepts a well-formed pair in an alias next to the rejected shapes', () => {
+    expect(parseLexicon({ terms: [{ canonical: 'Rocket', aliases: ['\u{1F680}ship'] }] }).terms[0].aliases).toEqual(['\u{1F680}ship']);
+  });
+
   it('identifies an unpaired low surrogate as U+DC00 anywhere in the text, but not a valid pair', () => {
     expect(findUnencodableChar('\uDC00')).toBe('U+DC00');
     expect(findUnencodableChar('Ash\uDC00lr')).toBe('U+DC00');
