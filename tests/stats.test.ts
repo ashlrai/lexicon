@@ -44,6 +44,21 @@ describe('computeStats', () => {
     expect(stats.bySource).toEqual({ user: 1, 'harvest:package': 1, learned: 1, unknown: 1 });
   });
 
+  it('counts missing category and source independently in their fallback buckets', () => {
+    const stats = computeStats(loadedOf([
+      { canonical: 'Neither', aliases: [] },
+      { canonical: 'Neither again', aliases: [] },
+      { canonical: 'Category only', aliases: [], category: 'other' },
+      { canonical: 'Source only', aliases: [], source: 'user' },
+      { canonical: 'Both', aliases: [], category: 'brand', source: 'user' },
+    ]));
+
+    expect(stats.byCategory).toEqual({ uncategorized: 3, other: 1, brand: 1 });
+    expect(stats.bySource).toEqual({ unknown: 3, user: 2 });
+    expect(Object.values(stats.byCategory).reduce((sum, count) => sum + count, 0)).toBe(stats.termCount);
+    expect(Object.values(stats.bySource).reduce((sum, count) => sum + count, 0)).toBe(stats.termCount);
+  });
+
   it('lists top terms by hits and the never-hit canonicals', () => {
     const stats = computeStats(loadedOf(sample));
     expect(stats.topTerms).toEqual([
