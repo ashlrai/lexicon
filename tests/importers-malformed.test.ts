@@ -36,6 +36,28 @@ describe('macos importer: character references', () => {
 });
 
 describe('csv importers: unterminated quote', () => {
+  it('starts a fresh import after a malformed file with a valid first row', () => {
+    const malformed = 'canonical,alias\nAshlr.AI,ashler\nKubernetes,"cooper netties\n';
+    expect(() => importLexicon(malformed, 'csv')).toThrow(/line 3.*never closes/);
+
+    expect(importLexicon('canonical,alias\nSupabase,super base\n', 'csv')).toEqual({
+      format: 'csv',
+      terms: [{ canonical: 'Supabase', aliases: ['super base'], source: 'import' }],
+      skipped: [],
+    });
+  });
+
+  it('discards merged rows after a late character validation error', () => {
+    const malformed = 'canonical,alias\nAshlr.AI,ashler\nBad\uFFFD,broken\n';
+    expect(() => importLexicon(malformed, 'csv')).toThrow(/replacement character/);
+
+    expect(importLexicon('canonical,alias\nAshlr.AI,ashlar\n', 'csv')).toEqual({
+      format: 'csv',
+      terms: [{ canonical: 'Ashlr.AI', aliases: ['ashlar'], source: 'import' }],
+      skipped: [],
+    });
+  });
+
   it('refuses a wispr file whose quote never closes instead of folding the rest of the file into one term', () => {
     const content = 'word,replacement\nashler,"Ashlr.AI\ncooper netties,Kubernetes\nsuper base,Supabase\n';
     expect(() => importLexicon(content, 'wispr')).toThrow(/line 2.*never closes/);
