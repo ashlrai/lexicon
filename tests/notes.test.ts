@@ -42,6 +42,14 @@ describe('core notes', () => {
     expect(emptyExportReason(loadedOf(aliased), 'csv', { categories: ['brand'], limit: 1 })).toBeUndefined();
   });
 
+  it('explains an empty alias-row export from a lexicon that has a term', () => {
+    const populated = loadedOf(bare);
+    expect(populated.merged.terms).toHaveLength(1);
+    expect(exportNote(populated, 'csv', {})).toBe(
+      'No exported term has an alias, and csv writes one row per alias, so the export has no rows; add one with: lexicon add <canonical> <alias>.',
+    );
+  });
+
   it('keeps the wording each surface printed before the builders were shared', () => {
     expect(emptyExportNote('no-terms', { format: 'csv', filter: '' })).toBe(
       'The lexicon has no terms yet, so the export is empty; run `lexicon setup`, or add one with: lexicon learn <heard> <meant>.',
