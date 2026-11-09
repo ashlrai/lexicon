@@ -47,6 +47,19 @@ describe('code the matcher leaves alone', () => {
     expect(out(text)).toBe('Ashlr.AI `ashler run`,/`Ashlar stop` Ashlr.AI');
   });
 
+  it('recognizes each inline span independently and corrects the prose between them', () => {
+    const text = '`ashler` and ashler then ``Ashlar `x` `` before `ashler`';
+    const ranges = collectRanges(text);
+    expect(ranges.map(({ start, end }) => text.slice(start, end))).toEqual([
+      '`ashler`',
+      '``Ashlar `x` ``',
+      '`ashler`',
+    ]);
+    expect(text.slice(ranges[0].end, ranges[1].start)).toBe(' and ashler then ');
+    expect(text.slice(ranges[1].end, ranges[2].start)).toBe(' before ');
+    expect(out(text)).toBe('`ashler` and Ashlr.AI then ``Ashlar `x` `` before `ashler`');
+  });
+
   it('keeps a code span on one line, as before', () => {
     expect(out('``ashler\nashler``')).toBe('``Ashlr.AI\nAshlr.AI``');
   });
