@@ -29,6 +29,27 @@ const sample: Term[] = [
 ];
 
 describe('computeStats', () => {
+  it('returns the same statistics on repeated calls regardless of other calls', () => {
+    const first = loadedOf(structuredClone(sample));
+    const second = loadedOf([{ canonical: 'Other', aliases: ['another'], hits: 5 }], false);
+    const firstBefore = structuredClone(first);
+    const secondBefore = structuredClone(second);
+
+    const firstResult = computeStats(first);
+    const secondResult = computeStats(second);
+    expect(computeStats(second)).toEqual(secondResult);
+    expect(computeStats(first)).toEqual(firstResult);
+    expect(first).toEqual(firstBefore);
+    expect(second).toEqual(secondBefore);
+
+    // Results own their collections: modifying one must not affect later calls.
+    firstResult.topTerms[0]!.hits = 999;
+    firstResult.neverHit.push('Added');
+    firstResult.byCategory.brand = 999;
+    firstResult.files[0]!.terms = 999;
+    expect(computeStats(first)).toEqual(computeStats(firstBefore));
+  });
+
   it('counts every alias of a single term without counting extra terms', () => {
     const stats = computeStats(loadedOf([{ canonical: 'Kubernetes', aliases: ['kuber netties', 'cooper netties', 'kube ernetes'] }], false));
     expect(stats.termCount).toBe(1);
