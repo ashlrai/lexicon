@@ -36,6 +36,12 @@ describe('code the matcher leaves alone', () => {
     expect(out('`` stray, ashler and `ashler`')).toBe('`` stray, Ashlr.AI and `ashler`');
   });
 
+  it('treats an unmatched backtick in prose as literal text', () => {
+    const text = 'ask ashler about `the deploy, then tell Ashlar';
+    expect(collectRanges(text)).toEqual([]);
+    expect(out(text)).toBe('ask Ashlr.AI about `the deploy, then tell Ashlr.AI');
+  });
+
   it('keeps punctuation between adjacent inline code spans outside both spans', () => {
     const text = 'ashler `ashler run`,/`Ashlar stop` ashler';
     const ranges = collectRanges(text);
