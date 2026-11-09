@@ -1909,6 +1909,7 @@ describe('cleanTranscript', () => {
 
   it('removes a bracketed tag and keeps the spoken words on both sides', () => {
     expect(cleanTranscript('Please [MUSIC] continue speaking.')).toBe('Please continue speaking.');
+    expect(cleanTranscript('hello[MUSIC]world')).toBe('hello world');
   });
 
   it('removes multiple bracketed tags while keeping the transcript between them', () => {
