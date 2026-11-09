@@ -304,6 +304,29 @@ describe('hardening (lexicon content reaches model context)', () => {
     }]);
   });
 
+  it('reports a lone low surrogate as U+DC00 in a term name without throwing', () => {
+    const result = LexiconSchema.safeParse({ terms: [{ canonical: '\uDC00' }] });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the unpaired low surrogate to be rejected');
+    expect(result.error.issues).toMatchObject([{
+      code: 'custom',
+      path: ['terms', 0, 'canonical'],
+      message: 'must not contain U+DC00 (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "\\uDC00"',
+    }]);
+  });
+
+  it('identifies an unpaired low surrogate as U+DC00 anywhere in the text, but not a valid pair', () => {
+    expect(findUnencodableChar('\uDC00')).toBe('U+DC00');
+    expect(findUnencodableChar('Ash\uDC00lr')).toBe('U+DC00');
+    // A low surrogate that follows another low surrogate has no high half before it.
+    expect(findUnencodableChar('\uDC00\uDC00')).toBe('U+DC00');
+    // A reversed pair is two unpaired halves; the first one found is the low surrogate.
+    expect(findUnencodableChar('\uDC00\uD800')).toBe('U+DC00');
+    // A well-formed pair (U+1F680) is fine.
+    expect(findUnencodableChar('🚀')).toBeUndefined();
+  });
+
   it('rejects U+FFFF in a canonical term and an alias with the offending character in the error', () => {
     const canonical = { terms: [{ canonical: 'Ash\uFFFFlr' }] };
     const alias = parseYaml('terms:\n  - canonical: Ashlr.AI\n    aliases: ["Ash\\uFFFFler"]\n');
