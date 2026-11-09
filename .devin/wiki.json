@@ -1,0 +1,19 @@
+{
+  "repo_notes": [
+    {
+      "content": "Lexicon (@ashlr/lexicon) is a TypeScript, Node.js and ESM personal lexicon that corrects speech-to-text transcripts before they reach agents. Source is the ground truth: src/core contains matching, storage and trust; src/cli and src/mcp expose it; src/hooks supplies Claude Code hooks. Explain data flow with diagrams and cite source files. docs/ARCHITECTURE.md explains design decisions and docs/CONTRACT.md describes the public API."
+    },
+    {
+      "content": "Distinguish global and trusted project lexicons, and explain preview and explicit application for agent-initiated writes. Do not include secret values, personal transcripts or real machine paths."
+    }
+  ],
+  "pages": [
+    { "title": "Overview", "purpose": "What Lexicon does and how transcripts flow through its surfaces" },
+    { "title": "Matching and normalization", "purpose": "Alias, phonetic and fuzzy matching, stoplist and normalization", "parent": "Overview" },
+    { "title": "Storage and trust", "purpose": "Global and project lexicons, merging, trust and write boundaries", "parent": "Overview" },
+    { "title": "CLI", "purpose": "Command dispatch, setup, review, import and export", "parent": "Overview" },
+    { "title": "MCP and hooks", "purpose": "MCP tools, resources and prompts, and Claude Code hook behavior", "parent": "Overview" },
+    { "title": "Integrations", "purpose": "Local API, browser extension, clipboard daemon and voice flow", "parent": "Overview" },
+    { "title": "Development and testing", "purpose": "Repository layout, tests, generated docs and plugin bundles", "parent": "Overview" }
+  ]
+}
