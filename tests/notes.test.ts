@@ -1,7 +1,7 @@
 import { readFileSync, readdirSync } from 'node:fs';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
-import { EXPORT_ALIAS_ROW_FORMATS } from '../src/core/exporters/index.js';
+import { EXPORT_ALIAS_ROW_FORMATS, exportLexicon } from '../src/core/exporters/index.js';
 import {
   emptyExportNote,
   emptyExportReason,
@@ -41,6 +41,13 @@ describe('core notes', () => {
     expect(emptyExportReason(loadedOf(bare), 'csv', { limit: 5 })).toBe('no-rows');
     expect(emptyExportReason(loadedOf(bare), 'json', { limit: 5 })).toBeUndefined();
     expect(emptyExportReason(loadedOf(aliased), 'csv', { categories: ['brand'], limit: 1 })).toBeUndefined();
+  });
+
+  it('does not report an empty JSON export for a term without aliases', () => {
+    const loaded = loadedOf(bare);
+    expect(JSON.parse(exportLexicon(loaded.merged, 'json')).terms).toEqual(bare);
+    expect(emptyExportReason(loaded, 'json')).toBeUndefined();
+    expect(exportNote(loaded, 'json', {})).toBeUndefined();
   });
 
   // Catches: a lexicon that has an alias being told "No exported term has an
