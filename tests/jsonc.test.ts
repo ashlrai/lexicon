@@ -21,6 +21,23 @@ describe('parseJsonc', () => {
     });
   });
 
+  it('distinguishes escaped quotes beside comment markers from real comments', () => {
+    const text = String.raw`{
+      "line": "before\"//inside\"after",// "ignored /*
+      "block": "before\"/*inside*/\"after",/* "ignored // */
+      "slashes": "backslash\\\"//still inside", // real comment
+      "endsInSlash": "backslash\\"/* real comment */,
+      "next": "intact"
+    }`;
+    expect(parseJsonc(text)).toEqual({
+      line: 'before"//inside"after',
+      block: 'before"/*inside*/"after',
+      slashes: 'backslash\\"//still inside',
+      endsInSlash: 'backslash\\',
+      next: 'intact',
+    });
+  });
+
   it('reads a value followed by a line comment at end of file', () => {
     expect(parseJsonc('{"a": 1} // final comment')).toEqual({ a: 1 });
   });
