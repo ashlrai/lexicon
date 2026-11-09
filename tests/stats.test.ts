@@ -73,6 +73,15 @@ describe('computeStats', () => {
     const stats = computeStats(loadedOf([], false));
     expect(stats).toMatchObject({ termCount: 0, aliasCount: 0, totalHits: 0, topTerms: [], neverHit: [], neverHitCount: 0 });
   });
+
+  it('counts terms with no aliases', () => {
+    const stats = computeStats(loadedOf([
+      { canonical: 'First', aliases: [] },
+      { canonical: 'Second', aliases: [] },
+    ]));
+    expect(stats.termCount).toBe(2);
+    expect(stats.aliasCount).toBe(0);
+  });
 });
 
 describe('lexicon stats (CLI)', () => {
