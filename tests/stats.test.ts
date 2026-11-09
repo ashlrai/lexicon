@@ -69,6 +69,24 @@ describe('computeStats', () => {
     expect(stats.neverHitCount).toBe(30);
   });
 
+  it('keeps the highest-hit terms when more than the limit have hits', () => {
+    // Put the least-used terms first so truncating before sorting fails.
+    const terms: Term[] = Array.from({ length: TOP_TERMS + 3 }, (_, i) => ({
+      canonical: `Term${i + 1}`,
+      aliases: [],
+      hits: i + 1,
+    }));
+    const topTerms = computeStats(loadedOf(terms)).topTerms;
+
+    expect(topTerms).toHaveLength(TOP_TERMS);
+    expect(topTerms).toEqual(
+      terms.slice(3).reverse().map(({ canonical, hits }) => ({ canonical, hits })),
+    );
+    for (const excluded of terms.slice(0, 3)) {
+      expect(topTerms.every((term) => term.hits > excluded.hits!)).toBe(true);
+    }
+  });
+
   it('handles an empty lexicon', () => {
     const stats = computeStats(loadedOf([], false));
     expect(stats).toMatchObject({ termCount: 0, aliasCount: 0, totalHits: 0, topTerms: [], neverHit: [], neverHitCount: 0 });
