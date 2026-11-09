@@ -88,6 +88,16 @@ describe('editJsonText', () => {
     expect(editJsonText(text, { keep: [1, 2], x: { command: 'new' } })).toBe('{\n  "keep": [1, 2],  // mine\n  "x": { "command": "new" }\n}\n');
   });
 
+  it('edits a nested value in a CRLF document without changing its line endings', () => {
+    const text = '{\r\n  // client settings\r\n  "server": {\r\n    "command": "old",\r\n    "enabled": true\r\n  }\r\n}\r\n';
+    const next = { server: { command: 'new', enabled: true } };
+    const out = editJsonText(text, next);
+
+    expect(parseJsonc(out)).toEqual(next);
+    expect(out).toBe(text.replace('"old"', '"new"'));
+    expect(out).not.toMatch(/(?<!\r)\n|\r(?!\n)/);
+  });
+
   it('adds a key after a same-line comment and keeps a missing trailing newline', () => {
     expect(editJsonText('{\n  "a": 1 // one\n}', { a: 1, b: 2 })).toBe('{\n  "a": 1, // one\n  "b": 2\n}');
     expect(editJsonText('{ "a": 1 }', { a: 1, b: [2] })).toBe('{ "a": 1, "b": [2] }');
