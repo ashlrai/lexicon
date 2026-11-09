@@ -18,7 +18,19 @@ describe('findOnPath', () => {
     };
     expect(await findOnPath('xclip', { platform: 'linux', env: { PATH: '/usr/bin:/usr/local/bin' }, exists })).toBe('/usr/local/bin/xclip');
     expect(probed).toEqual(['/usr/bin/xclip', '/usr/local/bin/xclip']);
-    expect(await findOnPath('xclip', { platform: 'linux', env: { PATH: '' }, exists })).toBeUndefined();
+  });
+
+  it('does not search the current directory when PATH is empty', async () => {
+    const dir = await fs.mkdtemp(path.join(process.cwd(), '.which-test-'));
+    const executable = path.join(dir, 'local-tool');
+    const relativeExecutable = path.relative(process.cwd(), executable);
+    try {
+      await fs.writeFile(executable, '', { mode: 0o755 });
+      expect(await findOnPath(relativeExecutable, { env: { PATH: '' } })).toBeUndefined();
+      expect(findOnPathSync(relativeExecutable, { env: { PATH: '' } })).toBeUndefined();
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 
   it('on win32 tries PATHEXT extensions (then the bare name) in every PATH entry', async () => {
