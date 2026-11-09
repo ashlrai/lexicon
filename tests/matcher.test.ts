@@ -70,6 +70,14 @@ describe('helpers', () => {
   });
 });
 
+describe('empty index', () => {
+  it('returns no replacements for nonempty text when there are no terms', () => {
+    const text = 'Ask Ashler to deploy Cooper Netties';
+    expect(findReplacements(text, buildIndex(lex([])))).toEqual([]);
+    expect(findReplacements(text, buildIndex(lex([ASHLR, K8S]))).length).toBeGreaterThan(0);
+  });
+});
+
 describe('exact alias pass', () => {
   it('matches a single-word alias with confidence 1', () => {
     const reps = find('I work at Ashler now', [ASHLR]);
