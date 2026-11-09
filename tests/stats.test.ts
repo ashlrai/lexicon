@@ -112,6 +112,21 @@ describe('computeStats', () => {
     expect(computeStats(loadedOf(sample, false)).files).toHaveLength(1);
   });
 
+  it('counts project-only terms without adding global terms', () => {
+    const terms: Term[] = [
+      { canonical: 'Kubernetes', aliases: ['cooper netties'], scope: 'project' },
+      { canonical: 'Kubectl', aliases: ['cube control', 'kube control'], scope: 'project' },
+    ];
+    const stats = computeStats(loadedOf(terms));
+
+    expect(stats.termCount).toBe(2);
+    expect(stats.aliasCount).toBe(3);
+    expect(stats.files).toEqual([
+      { path: '/fake/global.yaml', scope: 'global', terms: 0 },
+      { path: '/fake/repo/.lexicon.yaml', scope: 'project', terms: 2 },
+    ]);
+  });
+
   it('caps topTerms and neverHit', () => {
     const many: Term[] = [];
     for (let i = 0; i < 30; i++) many.push({ canonical: `Hit${i}`, aliases: [], hits: 100 - i });
