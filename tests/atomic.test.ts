@@ -649,6 +649,18 @@ describe('work that outlives its hold cannot borrow the lock', () => {
 });
 
 describe('writeFileAtomic creates a file', () => {
+  it('writes and replaces a file whose name contains spaces', async () => {
+    const dir = await scratch();
+    const target = path.join(dir, 'my lexicon file.yaml');
+
+    await writeFileAtomic(target, 'first contents\n');
+    expect(await fs.readFile(target, 'utf8')).toBe('first contents\n');
+
+    await writeFileAtomic(target, 'replacement contents\n');
+    expect(await fs.readFile(target, 'utf8')).toBe('replacement contents\n');
+    expect(await leftoverTemps(target)).toEqual([]);
+  });
+
   it('preserves Unicode content and leaves no temporary file', async () => {
     const dir = await scratch();
     const target = path.join(dir, 'lexicon.yaml');
