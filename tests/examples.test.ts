@@ -47,6 +47,18 @@ describe('examples/', () => {
     expect(normalize(ordinary, lexicon).output).toBe(ordinary);
   });
 
+  it('lexicon.example.yaml parses to the same lexicon twice without mutating its input', () => {
+    const raw = parseYaml(readFileSync(path.join(root, 'examples', 'lexicon.example.yaml'), 'utf8'));
+    const snapshot = structuredClone(raw);
+    const first = parseLexicon(raw);
+    expect(raw).toEqual(snapshot);
+    const second = parseLexicon(raw);
+    expect(raw).toEqual(snapshot);
+    expect(first.terms.length).toBeGreaterThan(0);
+    expect(second).toEqual(first);
+    expect(second).not.toBe(first);
+  });
+
   it('stt-pipeline.ts fixes every misheard term before the LLM sees it', () => {
     const r = runExample('stt-pipeline.ts');
     expect(r.err).toBe('');
