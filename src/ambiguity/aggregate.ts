@@ -12,7 +12,7 @@
  */
 import { defaultCalibrator } from './calibrate.js';
 import type { AmbiguityFinding, DetectorReport, FindingVote, Severity } from './types.js';
-import { SEVERITIES, SOURCE_ENSEMBLE, SOURCE_RULES } from './types.js';
+import { SOURCE_ENSEMBLE, SOURCE_RULES } from './types.js';
 
 const SEVERITY_RANK: Record<Severity, number> = { low: 0, medium: 1, high: 2, critical: 3 };
 
