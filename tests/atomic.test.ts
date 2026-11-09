@@ -648,6 +648,19 @@ describe('work that outlives its hold cannot borrow the lock', () => {
   });
 });
 
+describe('writeFileAtomic creates a file', () => {
+  it('preserves Unicode content and leaves no temporary file', async () => {
+    const dir = await scratch();
+    const target = path.join(dir, 'lexicon.yaml');
+    const content = 'Café\n日本語\n👩🏽‍💻\ne\u0301\n';
+
+    await writeFileAtomic(target, content);
+
+    expect(await fs.readFile(target, 'utf8')).toBe(content);
+    expect(await leftoverTemps(target)).toEqual([]);
+  });
+});
+
 describe('writeFileAtomic keeps the file it is replacing', () => {
   /**
    * Catches: calling `writeFileAtomic` with no mode and letting the rename
