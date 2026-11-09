@@ -87,6 +87,19 @@ describe('locateTool / locateToolSync', () => {
     expect(locateToolSync(names, env)).toBe(path.join(root, 'b', 'whisper-cli'));
   });
 
+  it('returns the complete executable path when its directory contains spaces', async () => {
+    const dir = path.join(root, 'directory with spaces');
+    const executable = path.join(dir, 'space-tool');
+    await fs.mkdir(dir);
+    await fs.writeFile(executable, '', { mode: 0o755 });
+    const spaceEnv = { PATH: dir };
+
+    expect(await findOnPath('space-tool', { env: spaceEnv })).toBe(executable);
+    expect(findOnPathSync('space-tool', { env: spaceEnv })).toBe(executable);
+    expect(await locateTool(['space-tool'], { env: spaceEnv, extraDirs: [] })).toBe(executable);
+    expect(locateToolSync(['space-tool'], spaceEnv)).toBe(executable);
+  });
+
   it('falls back to the well-known directories after PATH', async () => {
     const found = await locateTool(['ffmpeg'], {
       env: { PATH: '/nowhere' },
