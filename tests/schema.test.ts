@@ -505,6 +505,18 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(name).not.toContain('\uD800');
   });
 
+  it('does not split a supplementary character at the truncation boundary', () => {
+    const canonical = `${'a'.repeat(38)}🚀\uFFFF`;
+    const result = TermSchema.safeParse({ canonical });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected U+FFFF to be rejected');
+    const name = /in term "(.*)"$/.exec(result.error.issues[0].message)?.[1];
+    expect(name).toBe(`${'a'.repeat(38)}…`);
+    expect(name!.length).toBeLessThanOrEqual(40);
+    expect(Buffer.from(name!, 'utf8').toString('utf8')).toBe(name);
+  });
+
   it('bounds and escapes a long invalid term in the parse error', () => {
     const canonical = `prefix\uDC00${'x'.repeat(10_000)}`;
     let message = '';
