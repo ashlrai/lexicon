@@ -94,7 +94,7 @@ const STATE_EFFECT: Record<StateFile, string> = {
 	index_cache: "lexicon writes a new one on the next match",
 };
 
-export function describeFix(f: PlannedFix): string {
+function describeFix(f: PlannedFix): string {
 	if (f.kind === "create_global_lexicon")
 		return `create the missing global lexicon (empty, as lexicon init does): ${f.file}`;
 	return `move aside the ${STATE_LABEL[f.target]}, which ${f.reason} (${STATE_EFFECT[f.target]}): ${f.file}`;
@@ -319,7 +319,7 @@ export interface DoctorFixOptions extends CommonOptions {
 }
 
 /** The `--apply` refusal: it only means something with `--fix`. */
-export const APPLY_WITHOUT_FIX =
+const APPLY_WITHOUT_FIX =
 	"--apply needs --fix (lexicon doctor --fix previews, lexicon doctor --fix --apply repairs)";
 
 export async function runDoctorFix(
