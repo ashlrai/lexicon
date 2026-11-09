@@ -21,6 +21,10 @@ describe('parseJsonc', () => {
     });
   });
 
+  it('reads a value followed by a line comment at end of file', () => {
+    expect(parseJsonc('{"a": 1} // final comment')).toEqual({ a: 1 });
+  });
+
   it('reads properties separated by a multiline block comment', () => {
     const text = `{
       "first": "original value",
