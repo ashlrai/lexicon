@@ -935,6 +935,7 @@ describe('hardening (lexicon content reaches model context)', () => {
 
   it.each([
     ['U+FFFF then U+FFFE', '\uFFFFa\uFFFE', 'U+FFFF'],
+    ['U+FFFE then U+FFFF', '\uFFFEa\uFFFF', 'U+FFFE'],
     ['U+FFFE then an unpaired high surrogate', '\uFFFEa\uD800', 'U+FFFE'],
     ['an unpaired high surrogate then U+FFFF', '\uD800a\uFFFF', 'U+D800'],
     ['an unpaired low surrogate after a valid pair', '\u{1F680}\uDC00a\uFFFE', 'U+DC00'],
