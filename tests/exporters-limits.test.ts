@@ -178,7 +178,10 @@ describe('google and azure: phrase-set limits', () => {
     expect(notes[1]).toContain('left out 1 phrase past the 1000 kept');
     expect(notes[1]).toContain('"Name1000"');
     // 100 characters (code points) is still fine.
-    const ok = exportLexiconWithNotes(lex([{ canonical: 'é'.repeat(100), aliases: [] }]), 'google');
+    const boundary = 'é'.repeat(100);
+    const ok = exportLexiconWithNotes(lex([{ canonical: boundary, aliases: [] }]), 'google');
+    const kept = (JSON.parse(ok.text) as { adaptation: { phraseSets: { phrases: { value: string }[] }[] } }).adaptation.phraseSets[0].phrases;
+    expect(kept.map((phrase) => phrase.value)).toEqual([boundary]);
     expect(ok.notes).toEqual([]);
   });
 
