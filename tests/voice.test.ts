@@ -1878,6 +1878,10 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript('before *the door slams loudly* after')).toBe('before *the door slams loudly* after');
   });
 
+  it('removes a one-word starred sound marker while preserving adjacent speech', () => {
+    expect(cleanTranscript('Please *laughs* continue speaking.')).toBe('Please continue speaking.');
+  });
+
   it('strips whisper tags, collapses whitespace and trims', () => {
     expect(cleanTranscript(' [BLANK_AUDIO] ')).toBe('');
     expect(cleanTranscript('[BLANK_AUDIO] Ping Ashler.  [MUSIC]\n about the  rollout. [inaudible]')).toBe('Ping Ashler. about the rollout.');
