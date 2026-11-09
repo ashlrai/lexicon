@@ -8,6 +8,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { EXPORT_FORMATS, exportLexicon } from '../src/core/exporters/index.js';
+import { parseCsv } from '../src/core/importers/csv-parse.js';
 import type { Lexicon } from '../src/core/types.js';
 
 const lexicon: Lexicon = {
@@ -35,6 +36,24 @@ function exportIn(locale: string, input: Lexicon): Record<string, string> {
 }
 
 describe('export order', () => {
+  it('round-trips CSV fields containing commas and quotes', () => {
+    const input: Lexicon = {
+      version: 1,
+      terms: [
+        { canonical: 'Acme, "North"', aliases: ['acme, north', 'acme "north"'], category: 'brand', phonetic: 'ak, "mee"' },
+        { canonical: '"Quoted"', aliases: ['a, "quoted" alias'], phonetic: 'say "quote"' },
+      ],
+    };
+
+    const rows = parseCsv(exportLexicon(input, 'csv')).map((record) => record.fields);
+    expect(rows).toEqual([
+      ['canonical', 'alias', 'category', 'phonetic'],
+      ['Acme, "North"', 'acme, north', 'brand', 'ak, "mee"'],
+      ['Acme, "North"', 'acme "north"', 'brand', 'ak, "mee"'],
+      ['"Quoted"', 'a, "quoted" alias', '', 'say "quote"'],
+    ]);
+  });
+
   it('produces identical output on repeated exports without changing the terms', () => {
     const input: Lexicon = structuredClone(lexicon);
     const original = structuredClone(input);
