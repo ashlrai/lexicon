@@ -15,6 +15,11 @@ describe('YAML import complexity guard', () => {
     }
   });
 
+  it('ignores brackets on both sides of doubled quotes in a single-quoted scalar', () => {
+    const scalar = `['${'['.repeat(129)}''${'{'.repeat(129)}']`;
+    expect(() => guardYamlImport(scalar)).not.toThrow();
+  });
+
   it('rejects adjacent quoted scalars but allows escapes and separators', () => {
     expect(() => guardYamlImport('""""')).toThrow(/adjacent quoted scalars/);
     for (const value of ['["a", "b"]', "['a''b', 'c']", '"a\\"b"', '"a": "b"']) {
