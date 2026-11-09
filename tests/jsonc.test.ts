@@ -75,6 +75,15 @@ describe('editJsonText', () => {
     expect(editJsonText(text, { keep: [1, 2], x: { command: 'new' } })).toBe('{\n  "keep": [1, 2],  // mine\n  "x": { "command": "new" }\n}\n');
   });
 
+  it('escapes quotes and backslashes in an edited value while preserving comments', () => {
+    const text = '{\n  // Keep this unrelated comment\n  "value": "old",\n  "other": true\n}';
+    const value = String.raw`C:\Users\name\"quoted"\file`;
+    const out = editJsonText(text, { value, other: true });
+
+    expect(parseJsonc(out)).toEqual({ value, other: true });
+    expect(out).toContain('// Keep this unrelated comment');
+  });
+
   it('adds a key after a same-line comment and keeps a missing trailing newline', () => {
     expect(editJsonText('{\n  "a": 1 // one\n}', { a: 1, b: 2 })).toBe('{\n  "a": 1, // one\n  "b": 2\n}');
     expect(editJsonText('{ "a": 1 }', { a: 1, b: [2] })).toBe('{ "a": 1, "b": [2] }');
