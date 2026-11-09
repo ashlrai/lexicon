@@ -126,7 +126,7 @@ describe('exportLexicon', () => {
   it('superwhisper: JSON array of original/replacement pairs', () => {
     const out = JSON.parse(exportLexicon(lexicon, 'superwhisper')) as { original: string; replacement: string }[];
     expect(out).toHaveLength(ALIAS_COUNT);
-    expect(out[0]).toEqual({ original: 'Ashler', replacement: 'Ashlr.AI' });
+    expect(out[1]).toEqual({ original: 'Ashler', replacement: 'Ashlr.AI' });
     expect(out.every((e) => Object.keys(e).sort().join() === 'original,replacement')).toBe(true);
     expect(exportLexicon(lexicon, 'superwhisper')).toContain('\n  {');
   });
@@ -207,13 +207,16 @@ describe('exportLexicon', () => {
     const lines = exportLexicon(lexicon, 'csv').trim().split('\n');
     expect(lines[0]).toBe('canonical,alias,category,phonetic');
     expect(lines).toHaveLength(ALIAS_COUNT + 1);
-    expect(lines[1]).toBe('Ashlr.AI,Ashler,brand,ASH-ler');
-    expect(lines[2]).toBe('Ashlr.AI,"Ashley, our AI",brand,ASH-ler');
+    expect(lines[2]).toBe('Ashlr.AI,Ashler,brand,ASH-ler');
+    expect(lines[3]).toBe('Ashlr.AI,"Ashley, our AI",brand,ASH-ler');
     expect(lines).toContain('Mason Wyatt,Mason White,person,');
   });
 
   it('json: raw lexicon, without the merged-only scope and hits', () => {
-    const expected = { ...lexicon, terms: lexicon.terms.map(({ scope: _s, hits: _h, ...t }) => t) };
+    const expected = { ...lexicon, terms: [5, 0, 3, 2, 4, 1].map((i) => {
+      const { scope: _s, hits: _h, ...term } = lexicon.terms[i]!;
+      return term;
+    }) };
     expect(JSON.parse(exportLexicon(lexicon, 'json'))).toEqual(expected);
   });
 
@@ -239,7 +242,7 @@ describe('exportLexicon', () => {
     const text = exportLexicon(lexicon, 'espanso');
     const parsed = parseYaml(text) as { matches: { trigger: string; replace: string; word: boolean; propagate_case: boolean }[] };
     expect(parsed.matches).toHaveLength(ALIAS_COUNT);
-    expect(parsed.matches[0]).toEqual({ trigger: 'Ashler', replace: 'Ashlr.AI', word: true, propagate_case: false });
+    expect(parsed.matches[1]).toEqual({ trigger: 'Ashler', replace: 'Ashlr.AI', word: true, propagate_case: false });
     expect(parsed.matches.find((m) => m.trigger === 'Open "Claw"')?.replace).toBe('OpenClaw');
   });
 
@@ -276,7 +279,7 @@ describe('exportLexicon', () => {
     // Catches: the pairs were named only in the file's comment, so
     // `export --json` (dropped) and the MCP note said nothing was left out.
     expect(exportLexiconWithNotes(odd, 'espanso').notes).toEqual([
-      `left out 2 pairs espanso would not type as written (a canonical holding a literal \\{\\{ or \\}\\}): ${JSON.stringify('odd -> x\\{\\{y')} and ${JSON.stringify('odder -> p\\}\\}q')}`,
+      `left out 2 pairs espanso would not type as written (a canonical holding a literal \\{\\{ or \\}\\}): ${JSON.stringify('odder -> p\\}\\}q')} and ${JSON.stringify('odd -> x\\{\\{y')}`,
     ]);
     // A name without braces is written as before.
     expect(exportLexicon(lexicon, 'espanso')).not.toContain('# left out');

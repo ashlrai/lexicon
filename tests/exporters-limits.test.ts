@@ -322,7 +322,7 @@ describe('espanso and macos: ambiguous scalars and shared triggers', () => {
     expect(text).toMatch(/word: true\n/);
     expect(text).not.toMatch(/(trigger|replace): [^"]/);
     const parsed = parseYaml(text, { version: '1.1' }) as { matches: { trigger: unknown; replace: unknown }[] };
-    expect(parsed.matches.map((m) => m.trigger)).toEqual(ambiguous);
+    expect(parsed.matches.map((m) => m.trigger).sort()).toEqual([...ambiguous].sort());
     expect(parsed.matches.every((m) => typeof m.replace === 'string')).toBe(true);
   });
 

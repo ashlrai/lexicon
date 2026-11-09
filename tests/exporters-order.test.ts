@@ -77,8 +77,7 @@ describe('export order', () => {
       { canonical: 'Beta', aliases: ['beeta'], category: 'person', hits: 2 },
       { canonical: 'Delta', aliases: ['deltta'], category: 'identifier', hits: 5 },
     ];
-    const formats = ['text', 'claude-md', 'markdown', 'whisper-prompt', 'openai',
-      'deepgram', 'assemblyai', 'speechmatics', 'azure', 'google'] as const;
+    const formats = EXPORT_FORMATS;
     const baseline: Lexicon = { version: 1, terms };
     const expected = formats.map((format) => [
       exportLexicon(baseline, format),
@@ -86,9 +85,10 @@ describe('export order', () => {
     ]);
 
     // Pin the three distinct orderings, including the tie at the limit.
-    expect(expected[0]?.[0]).toBe('Alpha: alfa\nBeta: beeta\nDelta: deltta\nZebra: zeebra\n');
-    expect(expected[2]?.[0]).toBe('- **Zebra** (brand): zeebra\n- **Beta** (person): beeta\n- **Delta** (identifier): deltta\n- **Alpha** (place): alfa\n');
-    expect(expected[3]).toEqual(['Delta, Beta, Zebra, Alpha', 'Delta, Beta']);
+    expect(exportLexicon(baseline, 'text')).toBe('Alpha: alfa\nBeta: beeta\nDelta: deltta\nZebra: zeebra\n');
+    expect(exportLexicon(baseline, 'markdown')).toBe('- **Zebra** (brand): zeebra\n- **Beta** (person): beeta\n- **Delta** (identifier): deltta\n- **Alpha** (place): alfa\n');
+    expect(exportLexicon(baseline, 'whisper-prompt')).toBe('Delta, Beta, Zebra, Alpha');
+    expect(exportLexicon(baseline, 'whisper-prompt', { limit: 2 })).toBe('Delta, Beta');
 
     for (const a of terms) for (const b of terms) for (const c of terms) for (const d of terms) {
       const permutation = [a, b, c, d];

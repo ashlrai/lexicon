@@ -56978,7 +56978,7 @@ function sortByCategory(terms) {
 }
 function aliasPairs(lexicon) {
   const out = [];
-  for (const term of lexicon.terms) {
+  for (const term of [...lexicon.terms].sort((a, b) => compareText(a.canonical, b.canonical))) {
     const canonical = term.canonical.normalize("NFC");
     const seen = /* @__PURE__ */ new Set();
     for (const alias of term.aliases) {
@@ -57364,11 +57364,12 @@ var init_google = __esm({
 
 // src/core/exporters/json.ts
 function exportJson(lexicon, _opts = {}) {
-  const terms = lexicon.terms.map(({ scope: _scope, hits: _hits, ...rest }) => rest);
+  const terms = [...lexicon.terms].sort((a, b) => compareText(a.canonical, b.canonical)).map(({ scope: _scope, hits: _hits, ...rest }) => rest);
   return JSON.stringify({ ...lexicon, terms }, null, 2) + "\n";
 }
 var init_json2 = __esm({
   "src/core/exporters/json.ts"() {
+    init_shared();
   }
 });
 

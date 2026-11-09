@@ -54,7 +54,8 @@ describe('macos export is XML a parser accepts', () => {
     const doc = new DOMParser().parseFromString(exportLexicon(lex, 'macos'), 'application/xml');
     expect(doc.getElementsByTagName('parsererror')).toHaveLength(0);
     const strings = Array.from(doc.getElementsByTagName('string')).map((n) => n.textContent);
-    expect(strings).toEqual(names.flatMap((n, i) => [n, `${n} alias ${i}`]));
+    const pairs = Array.from({ length: strings.length / 2 }, (_, i) => strings.slice(i * 2, i * 2 + 2));
+    expect(pairs.sort()).toEqual(names.map((n, i) => [n, `${n} alias ${i}`]).sort());
   });
 
   // Catches: macos.ts kept its own copy of the schema's regex, so a change to

@@ -11,8 +11,10 @@
  * them, and the MCP `lexicon://json` resource keeps the merged view whole.
  */
 import type { ExportOptions, Lexicon } from '../types.js';
+import { compareCanonical } from './shared.js';
 
 export function exportJson(lexicon: Lexicon, _opts: ExportOptions = {}): string {
-  const terms = lexicon.terms.map(({ scope: _scope, hits: _hits, ...rest }) => rest);
+  const terms = [...lexicon.terms].sort((a, b) => compareCanonical(a.canonical, b.canonical))
+    .map(({ scope: _scope, hits: _hits, ...rest }) => rest);
   return JSON.stringify({ ...lexicon, terms }, null, 2) + '\n';
 }

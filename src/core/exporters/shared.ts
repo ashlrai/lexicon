@@ -72,7 +72,7 @@ export interface AliasPair {
  */
 export function aliasPairs(lexicon: Lexicon): AliasPair[] {
   const out: AliasPair[] = [];
-  for (const term of lexicon.terms) {
+  for (const term of [...lexicon.terms].sort((a, b) => compareCanonical(a.canonical, b.canonical))) {
     const canonical = term.canonical.normalize('NFC');
     const seen = new Set<string>();
     for (const alias of term.aliases) {
