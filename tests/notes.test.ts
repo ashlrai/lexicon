@@ -43,6 +43,14 @@ describe('core notes', () => {
     expect(emptyExportReason(loadedOf(aliased), 'csv', { categories: ['brand'], limit: 1 })).toBeUndefined();
   });
 
+  it('reports a category with no matches regardless of alias availability', () => {
+    for (const terms of [bare, aliased, [...bare, ...aliased]]) {
+      for (const format of ['csv', 'json'] as const) {
+        expect(emptyExportReason(loadedOf(terms), format, { categories: ['person'] })).toBe('no-match');
+      }
+    }
+  });
+
   // Catches: a lexicon that has an alias being told "No exported term has an
   // alias" (the no-rows note), for any alias-row format, any surface.
   it('does not say aliases are absent when the lexicon has one', () => {
