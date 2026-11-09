@@ -107,6 +107,16 @@ describe('parseJsonc', () => {
 });
 
 describe('editJsonText', () => {
+  it('changes a nested scalar while preserving the adjacent comment', () => {
+    const text = '{\n  "server": {\n    "command": "old", // keep this explanation\n    "enabled": true\n  }\n}\n';
+    const next = { server: { command: 'new', enabled: true } };
+    const out = editJsonText(text, next);
+
+    expect(parseJsonc(out)).toEqual(next);
+    expect(out).toBe(text.replace('"old"', '"new"'));
+    expect(out).toContain('// keep this explanation');
+  });
+
   it('replaces only a changed value, in place', () => {
     const text = '{\n  "keep": [1, 2],  // mine\n  "x": { "command": "old" }\n}\n';
     expect(editJsonText(text, { keep: [1, 2], x: { command: 'new' } })).toBe('{\n  "keep": [1, 2],  // mine\n  "x": { "command": "new" }\n}\n');
