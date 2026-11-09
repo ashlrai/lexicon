@@ -1863,6 +1863,10 @@ describe('lexicon voice --json failures', () => {
 });
 
 describe('cleanTranscript', () => {
+  it('returns an empty string for an empty transcript', () => {
+    expect(cleanTranscript('')).toBe('');
+  });
+
   it.each([
     ['(soft *noise* music) hello', 'hello'],
     ['  Hello [MUSIC] there *laughs*  ', 'Hello there'],
