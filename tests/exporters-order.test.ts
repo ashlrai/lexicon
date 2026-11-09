@@ -13,7 +13,7 @@ import type { Lexicon } from '../src/core/types.js';
 const lexicon: Lexicon = {
   version: 1,
   terms: [
-    { canonical: 'Zeta', aliases: ['zetta'], category: 'brand' },
+    { canonical: 'Zeta', aliases: ['zetta', 'zeta spelling'], category: 'brand' },
     { canonical: 'Äpple', aliases: ['epple'], category: 'brand' },
     { canonical: 'Örebro', aliases: ['orebro'], category: 'place' },
     { canonical: 'Café', aliases: ['kaffay'], category: 'brand' },
@@ -41,10 +41,12 @@ describe('export order', () => {
 
     for (const format of EXPORT_FORMATS) {
       for (const options of [{}, { limit: 2 }]) {
+        const label = `${format} ${JSON.stringify(options)}`;
         const first = exportLexicon(input, format, options);
+        expect(input, `${label} must preserve the input after the first export`).toEqual(original);
         const second = exportLexicon(input, format, options);
-        expect(second, `${format} ${JSON.stringify(options)}`).toBe(first);
-        expect(input, `${format} must preserve the input`).toEqual(original);
+        expect(input, `${label} must preserve the input after the second export`).toEqual(original);
+        expect(second, label).toBe(first);
       }
     }
   });
