@@ -27,6 +27,12 @@ describe('YAML import complexity guard', () => {
       .toEqual([{ canonical: 'Ashlr.AI', aliases: ['ashler', 'ashlar'], source: 'import' }]);
   });
 
+  it('preserves brackets in a quoted espanso replacement and its triggers', () => {
+    const content = 'matches:\n  - triggers: [":bracket", ":brackets"]\n    replace: "Array [item] {value}"\n';
+    expect(importLexicon(content, 'espanso').terms)
+      .toEqual([{ canonical: 'Array [item] {value}', aliases: ['bracket', 'brackets'], source: 'import' }]);
+  });
+
   it('rejects an empty YAML document without importing terms', () => {
     for (const content of ['', '---\n', '# empty document\n']) {
       expect(() => importLexicon(content, 'espanso'))
