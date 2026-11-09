@@ -30,6 +30,29 @@ it('processes an empty transcript without introducing text', async () => {
   }
 });
 
+it.each([
+  ['adjacent bracket tags', 'Send[noise][music]Ashler the report [MUSIC].', 'Send Ashler the report.', 'Send Ashlr.AI the report.'],
+  ['adjacent noise annotations', 'Tell *laughs*(soft music) Ashler (the lead) to continue.', 'Tell Ashler (the lead) to continue.', 'Tell Ashlr.AI (the lead) to continue.'],
+  ['ordinary text', 'Please send the report (including the notes) today.', 'Please send the report (including the notes) today.', 'Please send the report (including the notes) today.'],
+])('processes %s without losing surrounding words', async (_label, transcript, raw, output) => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-voice-text-'));
+  try {
+    const result = await transcribeFile(path.join(dir, 'capture.wav'), {
+      lexicon: { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }] },
+      whisperCli: node,
+      modelOptions: { globalPath: path.join(dir, 'lexicon.yaml'), env: {}, fallbackDirs: [], exists: () => true },
+      tmpDir: dir,
+      exec: () => defaultExec(node, ['-e', `process.stdout.write(${JSON.stringify(transcript)})`]),
+    });
+    expect(result.raw).toBe(raw);
+    expect(result.normalized.input).toBe(raw);
+    expect(result.output).toBe(output);
+    expect(result.normalized.output).toBe(output);
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
+
 describe('defaultExec', () => {
   // Catches: Ctrl-C during transcription had no way to stop whisper-cli.
   it('stops the child when the signal aborts and resolves with code null', async () => {
