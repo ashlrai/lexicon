@@ -125,4 +125,29 @@ describe('export order', () => {
       expect(input.terms).toEqual(originalOrder);
     }
   });
+
+  it('keeps input order in JSON and alias-row formats, even after limiting', () => {
+    const terms: Lexicon['terms'] = [
+      { canonical: 'Alpha', aliases: ['alfa'], hits: 3 },
+      { canonical: 'Beta', aliases: ['beeta'], hits: 1 },
+      { canonical: 'Gamma', aliases: ['gama'], hits: 2 },
+    ];
+    const formats = ['json', 'csv', 'wispr', 'superwhisper', 'macos', 'espanso'] as const;
+
+    for (const ordered of [terms, [...terms].reverse()]) {
+      const input: Lexicon = { version: 1, terms: ordered };
+      for (const format of formats) {
+        const output = exportLexicon(input, format);
+        const limited = exportLexicon(input, format, { limit: 2 });
+        const expected = ordered.map((term) => term.canonical);
+        const selected = expected.filter((name) => name !== 'Beta');
+        for (const name of expected) expect(output, format).toContain(name);
+        expect(output.indexOf(expected[0]), format).toBeLessThan(output.indexOf(expected[1]));
+        expect(output.indexOf(expected[1]), format).toBeLessThan(output.indexOf(expected[2]));
+        expect(limited).not.toContain('Beta');
+        expect(limited.indexOf(selected[0])).toBeGreaterThanOrEqual(0);
+        expect(limited.indexOf(selected[0])).toBeLessThan(limited.indexOf(selected[1]));
+      }
+    }
+  });
 });
