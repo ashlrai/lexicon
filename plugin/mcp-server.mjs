@@ -69604,7 +69604,7 @@ var init_server3 = __esm({
       "GET /export/:format"
     ];
     BODY_SHAPES = {
-      "/normalize": "POST /normalize takes { text, dryRun?, minConfidence?, cwd? }",
+      "/normalize": "POST /normalize takes { text, context?, dryRun?, minConfidence?, cwd? }",
       "/learn": "POST /learn takes { heard, meant, scope?, cwd? }",
       "/add": "POST /add takes { canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }",
       "/packs/:name": "POST /packs/:name takes { scope?, cwd? } or an empty body"

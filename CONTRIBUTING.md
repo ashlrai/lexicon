@@ -102,6 +102,13 @@ Module layout and design decisions are in [docs/ARCHITECTURE.md](docs/ARCHITECTU
 
 ## Tests
 
+For a quick local check, run `lexicon test-select` from the repository root. It
+prints commands for the current staged, unstaged, and untracked changes. Pass
+repository-relative paths to select for a specific change, or add `--json` for
+structured command argument arrays. Run the commands from the repository root.
+Unknown paths, deleted tests, and an empty change list select `npm test`.
+This is a conservative starting point; run the full suite before claiming a change works.
+
 Vitest. Tests live under `tests/`, one file per module:
 
 ```text
