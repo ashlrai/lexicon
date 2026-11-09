@@ -53,6 +53,20 @@ describe('computeStats', () => {
     expect(stats.neverHit).toEqual(['Mason Wyatt', 'Zoë']);
   });
 
+  it('sums mixed hit counts and lists only terms with no hits', () => {
+    const terms: Term[] = [
+      { canonical: 'First', aliases: [], hits: 2 },
+      { canonical: 'Unset', aliases: [] },
+      { canonical: 'Second', aliases: [], hits: 7 },
+      { canonical: 'Zero', aliases: [], hits: 0 },
+      { canonical: 'Third', aliases: [], hits: 1 },
+    ];
+    const stats = computeStats(loadedOf(terms));
+    expect(stats.totalHits).toBe(10);
+    expect(stats.neverHit).toEqual(['Unset', 'Zero']);
+    expect(stats.neverHitCount).toBe(2);
+  });
+
   it('reports each file with its own term count', () => {
     const stats = computeStats(loadedOf(sample));
     expect(stats.files).toEqual([
