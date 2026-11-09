@@ -37,6 +37,25 @@ async function sameRefusal(
 }
 
 describe('store dry-run final validation', () => {
+  it('plans additions to an existing store without changing its bytes', async () => {
+    const original = Buffer.from('version: 1\r\n# Hand-written formatting stays intact.\r\nterms:\r\n  - canonical: QuasarBridge\r\n    aliases: [quasar bridge]\r\n');
+    const backup = Buffer.from('existing backup\n');
+    await fs.writeFile(globalPath, original);
+    await fs.writeFile(`${globalPath}.bak`, backup);
+
+    const preview = await addTerms([
+      { canonical: 'QuasarBridge', aliases: ['quasar brij'] },
+      { canonical: 'NebulaGate', aliases: ['nebula gate'] },
+    ], { globalPath, dryRun: true });
+
+    expect(preview.file.lexicon.terms).toEqual(expect.arrayContaining([
+      expect.objectContaining({ canonical: 'QuasarBridge', aliases: ['quasar bridge', 'quasar brij'] }),
+      expect.objectContaining({ canonical: 'NebulaGate', aliases: ['nebula gate'] }),
+    ]));
+    expect(await fs.readFile(globalPath)).toEqual(original);
+    expect(await fs.readFile(`${globalPath}.bak`)).toEqual(backup);
+  });
+
   it('leaves persisted data unchanged when no terms are requested', async () => {
     const original = 'version: 1\n# Keep this comment and formatting.\nterms:\n  - canonical: QuasarBridge\n    aliases: [quasar bridge]\n';
     await fs.writeFile(globalPath, original);
