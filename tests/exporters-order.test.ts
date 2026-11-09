@@ -35,6 +35,20 @@ function exportIn(locale: string, input: Lexicon): Record<string, string> {
 }
 
 describe('export order', () => {
+  it('produces identical output on repeated exports without changing the terms', () => {
+    const input: Lexicon = structuredClone(lexicon);
+    const original = structuredClone(input);
+
+    for (const format of EXPORT_FORMATS) {
+      for (const options of [{}, { limit: 2 }]) {
+        const first = exportLexicon(input, format, options);
+        const second = exportLexicon(input, format, options);
+        expect(second, `${format} ${JSON.stringify(options)}`).toBe(first);
+        expect(input, `${format} must preserve the input`).toEqual(original);
+      }
+    }
+  });
+
   // Catches: sortByImportance, sortByCategory and the text exporter used
   // localeCompare without a locale, so under LANG=sv_SE.UTF-8 the same
   // lexicon exported in another order and --limit kept other terms.
