@@ -8,7 +8,7 @@ import { resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { EXPORT_FORMATS, exportLexicon } from '../src/core/exporters/index.js';
-import type { Lexicon } from '../src/core/types.js';
+import type { ExportFormat, Lexicon } from '../src/core/types.js';
 
 const lexicon: Lexicon = {
   version: 1,
@@ -35,6 +35,39 @@ function exportIn(locale: string, input: Lexicon): Record<string, string> {
 }
 
 describe('export order', () => {
+  it('preserves each format for an empty lexicon deterministically', () => {
+    const input: Lexicon = { version: 1, terms: [] };
+    const original = structuredClone(input);
+    const expected: Record<ExportFormat, string> = {
+      wispr: 'word,replacement\n',
+      superwhisper: '[]\n',
+      'whisper-prompt': '',
+      macos: '<?xml version="1.0" encoding="UTF-8"?>\n<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">\n<plist version="1.0">\n<array>\n</array>\n</plist>\n',
+      'claude-md': '## Voice lexicon\n\nThe user dictates with speech-to-text. When a transcript contains one of these spellings, they mean the canonical term. Always write the canonical form.\n\n| Canonical | Sounds like / STT writes | Note |\n| --- | --- | --- |\n\nIf a word looks like a garbled proper noun and is not listed, ask rather than guess.\n',
+      csv: 'canonical,alias,category,phonetic\n',
+      json: '{\n  "version": 1,\n  "terms": []\n}\n',
+      deepgram: '{\n  "keyterm": [],\n  "keywords": []\n}\n',
+      espanso: 'matches: []\n',
+      assemblyai: '{\n  "word_boost": [],\n  "boost_param": "high"\n}\n',
+      speechmatics: '{\n  "additional_vocab": []\n}\n',
+      azure: '{\n  "phraseList": []\n}\n',
+      google: '{\n  "adaptation": {\n    "phraseSets": [\n      {\n        "phrases": []\n      }\n    ]\n  }\n}\n',
+      openai: '',
+      text: '',
+      markdown: '',
+    };
+
+    expect(Object.keys(expected).sort()).toEqual([...EXPORT_FORMATS].sort());
+    for (const format of EXPORT_FORMATS) {
+      for (const options of [{}, { limit: 2 }]) {
+        expect(exportLexicon(input, format, options), format).toBe(expected[format]);
+        expect(exportLexicon(input, format, options), format).toBe(expected[format]);
+        expect(input, `${format} must preserve the input`).toEqual(original);
+      }
+    }
+    expect(exportIn('sv_SE.UTF-8', input)).toEqual({ ...expected, limit: expected.csv });
+  });
+
   it('produces identical output on repeated exports without changing the terms', () => {
     const input: Lexicon = structuredClone(lexicon);
     const original = structuredClone(input);
