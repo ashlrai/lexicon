@@ -204,6 +204,21 @@ public class UndoPlannerTests
     }
 
     [Fact]
+    public void IdenticalBeforeAndAfterTextProducesNoUndoEdit()
+    {
+        RecordingField field = Ordinary();
+        UndoLedger ledger = new();
+        ledger.Record(new UndoLedger.Entry(
+            "field-1", new TextSpan(0, "Ashlr.AI".Length), "Ashlr.AI", "Ashlr.AI", Corrected));
+
+        UndoDecision decision = UndoPlanner.Plan(new ReadPolicy(), field, ledger, watching: true, Limit);
+
+        Assert.Equal(1, field.Reads);
+        UndoDecision.Nothing nothing = Assert.IsType<UndoDecision.Nothing>(decision);
+        Assert.Equal(Corrected, nothing.CurrentText);
+    }
+
+    [Fact]
     public void NothingToUndoWhenNoCorrectionWasEverRecorded()
     {
         RecordingField field = Ordinary();
