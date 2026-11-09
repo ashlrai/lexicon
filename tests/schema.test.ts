@@ -1315,6 +1315,18 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(parseLexicon({ terms: [{ canonical: 'X', notes: `  ${'n'.repeat(100)}${ZW}${'n'.repeat(100)}  ` }] }).terms[0].notes).toHaveLength(200);
   });
 
+  it('accepts an 80-character canonical word and rejects an 81-character word', () => {
+    const canonical = 'a'.repeat(80);
+    expect(TermSchema.parse({ canonical }).canonical).toBe(canonical);
+    const result = TermSchema.safeParse({ canonical: `${canonical}a` });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toEqual(expect.arrayContaining([
+        expect.objectContaining({ path: ['canonical'], message: 'must be at most 80 characters' }),
+      ]));
+    }
+  });
+
   it('enforces length limits: canonical/alias 80, notes/phonetic 200', () => {
     expect(parseLexicon({ terms: [{ canonical: 'a'.repeat(LIMITS.word) }] }).terms[0].canonical).toHaveLength(80);
     expect(() => parseLexicon({ terms: [{ canonical: 'a'.repeat(LIMITS.word + 1) }] })).toThrow(/terms\[0\]\.canonical: must be at most 80 characters/);
