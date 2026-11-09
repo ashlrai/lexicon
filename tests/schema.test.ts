@@ -493,6 +493,18 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(name.slice(0, 36)).toBe('\\uFFFF'.repeat(6));
   });
 
+  it('escapes an unpaired surrogate in a truncated term label', () => {
+    const canonical = `${'a'.repeat(30)}\uD800${'b'.repeat(10)}`;
+    const result = TermSchema.safeParse({ canonical });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the unpaired surrogate to be rejected');
+    const name = /in term "(.*)"$/.exec(result.error.issues[0].message)?.[1];
+    expect(name).toBe(`${'a'.repeat(30)}\\uD800bbb…`);
+    expect(name).toHaveLength(40);
+    expect(name).not.toContain('\uD800');
+  });
+
   it('reports U+FFFF as the first unencodable character in settings', () => {
     const word = 'Rocket \u{1F680}\uFFFF\uFFFE';
 
