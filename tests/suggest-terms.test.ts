@@ -227,6 +227,25 @@ describe('suggestTerms: the file each suggestion touches', () => {
 });
 
 describe('suggestTerms: dedupe, evidence, limits, empty input', () => {
+  it('returns one deterministic term suggestion for repeated occurrences of a candidate', async () => {
+    const history = [
+      entry('talk to Siobhan Reilly'),
+      entry('talk to Siobhan Reilly'),
+      entry('ask Siobhan Reilly tomorrow'),
+      entry('talk to Siobhan Reilly'),
+    ];
+    const input = { loaded: load({ version: 1 as const, terms: [] }), history, now: NOW };
+    const out = await suggestTerms(input);
+    const candidates = out.filter((s) => s.kind === 'term' && s.canonical === 'Siobhan Reilly');
+    expect(candidates).toHaveLength(1);
+    expect(candidates[0]).toMatchObject({
+      count: 4,
+      reason: 'capitalized name seen 4 times in transcripts and not in the lexicon',
+      evidence: ['talk to Siobhan Reilly', 'ask Siobhan Reilly tomorrow'],
+    });
+    expect(await suggestTerms(input)).toEqual(out);
+  });
+
   it('reports one alias suggestion per (canonical, alias) even when several signals cite it', async () => {
     const history = [
       ...makeHistory(),
