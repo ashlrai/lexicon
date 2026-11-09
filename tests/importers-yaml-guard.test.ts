@@ -26,4 +26,13 @@ describe('YAML import complexity guard', () => {
     expect(importLexicon('matches:\n  - triggers: [":ashler", ":ashlar"]\n    replace: Ashlr.AI\n', 'espanso').terms)
       .toEqual([{ canonical: 'Ashlr.AI', aliases: ['ashler', 'ashlar'], source: 'import' }]);
   });
+
+  it('rejects an empty YAML document without importing terms', () => {
+    for (const content of ['', '---\n', '# empty document\n']) {
+      expect(() => importLexicon(content, 'espanso'))
+        .toThrow('espanso: expected a top-level `matches:` list');
+      expect(() => importLexicon(content, 'auto', { filename: 'matches.yaml' }))
+        .toThrow('espanso: expected a top-level `matches:` list');
+    }
+  });
 });
