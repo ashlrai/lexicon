@@ -1,4 +1,5 @@
-import { readFileSync, readdirSync } from 'node:fs';
+import { promises as fs, readFileSync, readdirSync } from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { EXPORT_ALIAS_ROW_FORMATS, exportLexicon } from '../src/core/exporters/index.js';
@@ -14,6 +15,7 @@ import {
   skippedProjectNote,
 } from '../src/core/notes.js';
 import { emptyLexiconHint } from '../src/daemon/clipboard.js';
+import { addTerm, findTerm, loadLexicon, readLexiconFile } from '../src/core/store.js';
 import { skippedProjectJson } from '../src/cli/io.js';
 import { exportNote, lexiconNote, statsNote } from '../src/serve/server.js';
 import type { Lexicon, LoadedLexicon } from '../src/core/types.js';
@@ -140,6 +142,25 @@ describe('core notes', () => {
     expect(noTermMatchesNote({ filter: 'the category and query given', filters: 2, total: 1, lister: { name: 'list_terms', verb: 'returns' } })).toBe(
       'No term matches the category and query given; the lexicon has 1 term in all, which list_terms without them returns.',
     );
+  });
+
+  // Catches: a term `notes` written through addTerm losing or altering
+  // non-ASCII text on the way through the YAML file (quoting, escaping or a
+  // normalisation form change), so the agent reads back something other than
+  // what the user wrote.
+  it('round-trips a Unicode term note through the lexicon file unchanged', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-notes-'));
+    try {
+      const globalPath = path.join(dir, 'lexicon.yaml');
+      const note = 'Café ☕ naïve 👍🏽 مرحبا 🚀';
+      await addTerm({ canonical: 'Quokka', aliases: ['Quok'], notes: note }, { cwd: dir, globalPath });
+      const loaded = await loadLexicon({ cwd: dir, globalPath });
+      expect(findTerm(loaded.merged, 'Quokka')?.notes).toBe(note);
+      const file = await readLexiconFile(globalPath, 'global');
+      expect(findTerm(file.lexicon, 'Quokka')?.notes).toBe(note);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
   });
 
   // Catches: a surface spelling the "no terms yet", "only terms are in the
