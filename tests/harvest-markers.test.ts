@@ -43,3 +43,27 @@ it('filters marker words from source while retaining adjacent identifiers', asyn
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+it('keeps the case-sensitive marker contract: lowercase marker text is never a candidate', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-markers-lower-'));
+  try {
+    await fs.writeFile(path.join(dir, 'lower.ts'), [
+      '// todo: QuasarWidget',
+      '// fixme: QuasarWidget',
+      '// note: QuasarWidget',
+      '// hack: QuasarWidget',
+      '// xxx: QuasarWidget',
+    ].join('\n'));
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+    const lowered = new Set(['todo', 'fixme', 'note', 'hack', 'xxx']);
+    // Lowercase marker words are not identifier-shaped, so none surface as candidates.
+    expect(candidates.filter(({ canonical }) => lowered.has(canonical.toLowerCase()))).toEqual([]);
+    // The adjacent identifier is still harvested once per line.
+    expect(candidates).toContainEqual(expect.objectContaining({
+      canonical: 'QuasarWidget', count: 5, evidence: ['lower.ts'],
+    }));
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
