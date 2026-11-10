@@ -61,7 +61,7 @@ import { makeIO } from './helpers.js';
 const PACK_NAMES = ['ai', 'architecture', 'ashlr', 'business', 'cloud-devops', 'developer', 'legal', 'profession-q8', 'voice-tools'];
 
 /** Minimum sizes the packs promise (docs/PACKS.md). */
-const MIN_TERMS: Record<string, number> = { architecture: 12, developer: 50, legal: 25, 'cloud-devops': 20, ai: 30, ashlr: 13, business: 30, 'voice-tools': 12, 'profession-q8': 25 };
+const MIN_TERMS: Record<string, number> = { architecture: 12, developer: 50, legal: 25, 'cloud-devops': 20, ai: 30, ashlr: 14, business: 30, 'voice-tools': 12, 'profession-q8': 25 };
 
 /**
  * Canonicals two packs deliberately share: Codex is both a general coding
@@ -81,6 +81,7 @@ const SHARED_CANONICALS: Record<string, string[]> = {
  */
 const STOPLIST_ALIAS_ALLOWLIST: Record<string, string[]> = {
   SaaS: ['sass'],
+  Weyv: ['wave'],
 };
 
 /**
@@ -221,6 +222,28 @@ describe('shipped packs', () => {
       .toBe('ask Sco or Evan DeLoria about Stacksync and GLM');
     // `phantom` and `lexicon` the ordinary words stay lowercase.
     expect(normalize('the lexicon of a phantom limb', pack.lexicon).changed).toBe(false);
+    // Weyv: product cues rewrite "wave"/"weyv"; ordinary wave stays a wave.
+    const weyv = pack.lexicon.terms.find((t) => t.canonical === 'Weyv');
+    expect(weyv?.aliases).toEqual(['wave']);
+    expect(weyv?.context).toEqual(['push', 'repo', 'widget', 'app', 'build', 'ship', 'incredible', 'macos']);
+    for (const [input, output] of [
+      ['push weyv', 'push Weyv'],
+      ['weyv widget', 'Weyv widget'],
+      ['the weyv repo', 'the Weyv repo'],
+      ['make weyv incredible', 'make Weyv incredible'],
+      ['push wave', 'push Weyv'],
+      ['the wave repo', 'the Weyv repo'],
+      ['wave widget', 'Weyv widget'],
+      ['make wave incredible', 'make Weyv incredible'],
+      ['build the macos wave app', 'build the macos Weyv app'],
+      ['ship wave', 'ship Weyv'],
+    ] as const) {
+      expect(normalize(input, pack.lexicon).output, input).toBe(output);
+    }
+    for (const prose of ['one wave', 'a wave of PRs', 'sound wave', 'wave goodbye', 'heat wave', 'make waves']) {
+      const result = normalize(prose, pack.lexicon);
+      expect(result.output, prose).toBe(prose);
+    }
   });
 
   it('live in <package root>/packs and are all listed, sorted', async () => {
@@ -291,9 +314,12 @@ describe('shipped packs', () => {
     }
     expect(offenders).toEqual([]);
     expect(phrases).toEqual([]);
-    // The allowlisted word carries its own guard.
+    // The allowlisted words carry their own guards.
     const business = await loadPack('business');
     expect(business.lexicon.terms.find((t) => t.canonical === 'SaaS')?.never).toContain('sauce');
+    const ashlr = await loadPack('ashlr');
+    const weyv = ashlr.lexicon.terms.find((t) => t.canonical === 'Weyv');
+    expect(weyv?.context).toEqual(expect.arrayContaining(['push', 'repo', 'widget', 'incredible', 'macos']));
   });
 
   it('holds the misspellings the real-audio benchmark recorded', async () => {
