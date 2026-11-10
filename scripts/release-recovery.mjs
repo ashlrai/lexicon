@@ -52,9 +52,23 @@ export function validateRecoveryEvidence(input, e) {
   assert.equal(e.ciWorkflow.path, '.github/workflows/ci.yml');
   const run = e.run; integer(run.repository.id);
   assert.equal(run.head_repository.id, run.repository.id);
-  same([run.id, run.run_attempt, run.event, run.head_sha, run.head_branch, run.workflow_id, run.path],
-    [input.runId, input.attempt, 'push', e.sourceSha, tag, e.releaseWorkflow.id, '.github/workflows/release.yml']);
+  same([run.id, run.run_attempt, run.head_sha, run.workflow_id, run.path],
+    [input.runId, input.attempt, e.sourceSha, e.releaseWorkflow.id, '.github/workflows/release.yml']);
   assert.equal(run.repository.full_name, REPO); assert.equal(run.head_repository.full_name, REPO); done(run, 'failure');
+  // A tag push records the tag name. A workflow_dispatch of this same workflow
+  // (auto-tag's fallback, or the manual release command) records main or the
+  // tag. Either way the run commit has to be the tagged commit. npm integrity
+  // stays a separate exact-match gate in the caller.
+  switch (run.event) {
+    case 'push':
+      assert.equal(run.head_branch, tag, 'tag push must be for this tag');
+      break;
+    case 'workflow_dispatch':
+      assert.ok(run.head_branch === 'main' || run.head_branch === tag, 'workflow_dispatch must run on main or this tag');
+      break;
+    default:
+      assert.fail('release run must be a tag push or a workflow_dispatch');
+  }
   const jobs = list(e.jobs, 'jobs');
   for (const name of ['Full suite green on release sha', 'ubuntu', 'macos']) done(one(jobs, name));
   for (const job of jobs) {
@@ -72,8 +86,9 @@ export function validateRecoveryEvidence(input, e) {
     'Recheck registry acceptance and publish verified draft']) done(one(steps, name), 'skipped');
   assert.equal(steps.filter(step => step.conclusion === 'failure').length, 1);
   const ci = e.ciRun;
-  same([ci.id, ci.event, ci.head_sha, ci.head_branch, ci.workflow_id, ci.path],
-    [input.ciRunId, 'workflow_dispatch', e.sourceSha, tag, e.ciWorkflow.id, '.github/workflows/ci.yml']);
+  same([ci.id, ci.event, ci.head_sha, ci.workflow_id, ci.path],
+    [input.ciRunId, 'workflow_dispatch', e.sourceSha, e.ciWorkflow.id, '.github/workflows/ci.yml']);
+  assert.ok(ci.head_branch === tag || ci.head_branch === 'main', 'full-suite CI must be this tag or main at the tagged commit');
   assert.equal(ci.repository.full_name, REPO); assert.equal(ci.head_repository.full_name, REPO);
   same([ci.repository.id, ci.head_repository.id], [run.repository.id, run.repository.id]); integer(ci.run_attempt); done(ci);
   const ciJobs = list(e.ciJobs, 'jobs');

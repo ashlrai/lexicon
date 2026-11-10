@@ -8,7 +8,7 @@ import { fileURLToPath } from 'node:url';
 import { syncBuiltinESMExports } from 'node:module';
 import { spawnSync } from 'node:child_process';
 import { test } from 'node:test';
-import { assetNames, assemble, checkSource, checksum, preflight, releaseVersion, validateAssets, verifyHosted, verifyRegistry } from './release-contract.mjs';
+import { REGISTRY_ACCEPT_BUDGET_MS, acceptRegistry, assetNames, assemble, checkSource, checksum, preflight, registryAcceptDelayMs, releaseVersion, validateAssets, verifyHosted, verifyRegistry } from './release-contract.mjs';
 
 const root = fileURLToPath(new URL('..', import.meta.url));
 const version = JSON.parse(readFileSync(join(root, 'package.json'), 'utf8')).version;
@@ -259,6 +259,102 @@ test('registry exact-version SHA512 and downloaded bytes must equal original arc
   for (const metadata of [{ ...pkg, version: '9.9.9' }, { ...pkg, name: 'other' }, { ...pkg, dist: { ...pkg.dist, integrity: 'sha512-other' } }, { ...pkg, dist: { ...pkg.dist, tarball: 'https://evil.invalid/file.tgz' } }]) await assert.rejects(verifyRegistry(release, version, fetcher(metadata)));
   await assert.rejects(verifyRegistry(release, version, fetcher(pkg, Buffer.from('different registry bytes'))));
   await assert.rejects(verifyRegistry(release, version, fetcher(pkg, original, 404)));
+});
+test('registry acceptance polls while the version is unreadable and fails closed on integrity mismatch', { timeout: 5_000 }, async (t) => {
+  const { release } = complete(t);
+  const original = readFileSync(join(release, `ashlr-lexicon-${version}.tgz`));
+  const integrity = `sha512-${createHash('sha512').update(original).digest('base64')}`;
+  const tarball = `https://registry.npmjs.org/@ashlr/lexicon/-/lexicon-${version}.tgz`;
+  const pkg = { name: '@ashlr/lexicon', version, dist: { integrity, tarball } };
+  const metadata = (body, status = 200) => ({ status, json: async () => body });
+  const archive = (body = original, status = 200) => ({ status, body: [body] });
+  const route = (meta, bytes = original, tarballStatus = 200) => async (url) => url.endsWith('.tgz') ? archive(bytes, tarballStatus) : meta;
+  assert.equal(REGISTRY_ACCEPT_BUDGET_MS, 10 * 60 * 1000);
+  assert.equal(registryAcceptDelayMs(0), 2_000);
+  assert.equal(registryAcceptDelayMs(4), 32_000);
+  assert.equal(registryAcceptDelayMs(5), 60_000);
+  assert.equal(registryAcceptDelayMs(14), 60_000);
+  assert.throws(() => registryAcceptDelayMs(15));
+  assert.throws(() => registryAcceptDelayMs(-1));
+
+  let reads = 0;
+  const appeared = route(metadata(pkg));
+  const delays = [];
+  let clock = 0;
+  await acceptRegistry(release, version, async (url) => {
+    if (!url.endsWith('.tgz')) reads += 1;
+    if (reads < 3) return metadata(null, 404);
+    return appeared(url);
+  }, { now: () => clock, sleep: async (ms) => { delays.push(ms); clock += ms; } });
+  assert.deepEqual(delays, [2_000, 4_000]);
+  assert.equal(reads, 3);
+
+  let mismatchReads = 0;
+  let mismatchSleeps = 0;
+  const mismatched = { ...pkg, dist: { ...pkg.dist, integrity: 'sha512-other' } };
+  await assert.rejects(acceptRegistry(release, version, async (url) => {
+    mismatchReads += 1;
+    return route(metadata(mismatched))(url);
+  }, { sleep: async () => { mismatchSleeps += 1; }, now: () => 0 }), /npm archive integrity differs/);
+  assert.equal(mismatchReads, 1);
+  assert.equal(mismatchSleeps, 0);
+
+  let byteReads = 0;
+  let byteSleeps = 0;
+  await assert.rejects(acceptRegistry(release, version, async (url) => {
+    byteReads += 1;
+    return route(metadata(pkg), Buffer.from('different registry bytes'))(url);
+  }, { sleep: async () => { byteSleeps += 1; }, now: () => 0 }), /downloaded npm archive differs/);
+  assert.equal(byteReads, 2);
+  assert.equal(byteSleeps, 0);
+
+  let absentIntegritySleeps = 0;
+  let absentIntegrityReads = 0;
+  await acceptRegistry(release, version, async (url) => {
+    if (url.endsWith('.tgz')) return archive();
+    absentIntegrityReads += 1;
+    if (absentIntegrityReads === 1) return metadata({ ...pkg, dist: {} });
+    return metadata(pkg);
+  }, { sleep: async () => { absentIntegritySleeps += 1; }, now: () => 0 });
+  assert.equal(absentIntegritySleeps, 1);
+
+  const pendingDelays = [];
+  let pendingClock = 0;
+  await assert.rejects(acceptRegistry(release, version, async () => metadata(null, 404), {
+    now: () => pendingClock,
+    sleep: async (ms) => { pendingDelays.push(ms); pendingClock += ms; },
+  }), /exact npm version is not readable/);
+  const expectedDelays = [2_000, 4_000, 8_000, 16_000, 32_000, 60_000, 60_000, 60_000, 60_000, 60_000, 60_000, 60_000, 60_000, 58_000];
+  assert.deepEqual(pendingDelays, expectedDelays);
+  assert.equal(pendingDelays.reduce((sum, delay) => sum + delay, 0), REGISTRY_ACCEPT_BUDGET_MS);
+
+  let cappedReads = 0;
+  const cappedDelays = [];
+  await assert.rejects(acceptRegistry(release, version, async () => { cappedReads += 1; return metadata(null, 404); }, {
+    now: () => 0,
+    sleep: async (ms) => { cappedDelays.push(ms); },
+  }), /exact npm version is not readable/);
+  assert.equal(cappedReads, 16);
+  assert.equal(cappedDelays.length, 15);
+
+  let transportReads = 0;
+  await acceptRegistry(release, version, async (url) => {
+    transportReads += 1;
+    if (transportReads === 1) { const error = new Error('timed out'); error.name = 'TimeoutError'; throw error; }
+    return appeared(url);
+  }, { sleep: async () => {}, now: () => 0 });
+  assert.equal(transportReads, 3);
+
+  let fatalReads = 0;
+  await assert.rejects(acceptRegistry(release, version, async () => { fatalReads += 1; throw new Error('registry identity rejected'); }, {
+    sleep: async () => { throw new Error('mismatch must not be retried'); },
+    now: () => 0,
+  }), /registry identity rejected/);
+  assert.equal(fatalReads, 1);
+  await assert.rejects(acceptRegistry(release, version, async () => { throw new Error('budget must be refused before a read'); }, { budgetMs: REGISTRY_ACCEPT_BUDGET_MS + 1 }), /registry acceptance budget exceeds 10 minutes/);
+  const contract = readFileSync(join(root, 'scripts/release-contract.mjs'), 'utf8');
+  assert.match(contract, /acceptRegistry\(root, version\)/);
+  assert.doesNotMatch(contract, /attempt < 12/);
 });
 test('workflow qualifies both read-only producers before a single privileged publication job', () => {
   const workflow = readFileSync(join(root, '.github/workflows/release.yml'), 'utf8');

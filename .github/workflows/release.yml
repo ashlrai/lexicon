@@ -20,13 +20,13 @@ on:
         type: boolean
         default: false
       recovery_run_id:
-        description: "Original failed tag-push release run ID"
+        description: "Original failed release run ID (tag push or workflow_dispatch for this tag and commit)"
         type: string
       recovery_attempt:
         description: "Pinned current attempt of the original run"
         type: string
       recovery_ci_run_id:
-        description: "Successful full manual CI run on the immutable tag"
+        description: "Successful full manual CI run on the tagged commit"
         type: string
       recovery_ubuntu_artifact_id:
         description: "Exact qualified Ubuntu artifact ID from the original attempt"
@@ -265,7 +265,9 @@ jobs:
       github.repository == 'ashlrai/lexicon' && github.ref == 'refs/heads/main' && github.ref_protected &&
       github.workflow_ref == 'ashlrai/lexicon/.github/workflows/release.yml@refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    # Registry acceptance may poll for up to 10 minutes. The rest is artifact
+    # binding and the draft, then public, GitHub release.
+    timeout-minutes: 25
     permissions:
       contents: write
       actions: read
