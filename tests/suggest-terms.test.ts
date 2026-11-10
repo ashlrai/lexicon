@@ -304,6 +304,18 @@ describe('suggestTerms: dedupe, evidence, limits, empty input', () => {
     expect(await suggestTerms({ loaded: load({ version: 1, terms: [] }), history: [], now: NOW })).toEqual([]);
   });
 
+  it('returns no suggestions for empty-text history entries against an empty lexicon', async () => {
+    const history = [entry(''), entry('   '), entry('\n\t')];
+    const out = await suggestTerms({ loaded: load({ version: 1, terms: [] }), history, now: NOW });
+    expect(out).toEqual([]);
+    expect(out).toHaveLength(0);
+  });
+
+  it('returns no suggestions for empty input even with an explicit limit', async () => {
+    const out = await suggestTerms({ loaded: load({ version: 1, terms: [] }), history: [], now: NOW, limit: 5 });
+    expect(out).toEqual([]);
+  });
+
   it('with no history only the stale check can fire', async () => {
     const out = await suggestTerms({ loaded: load(makeLexicon()), history: [], now: NOW });
     expect(out.map((s) => s.kind)).toEqual(['stale', 'stale']);
