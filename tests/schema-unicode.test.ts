@@ -20,6 +20,25 @@ const PAIR = '\u{1F680}'; // U+1F680 ROCKET, one valid surrogate pair
 
 const reason = (unit: string) => `must not contain ${unit} (${UNENCODABLE_NOTE})`;
 
+describe('U+FFFE is rejected', () => {
+  it('identifies and escapes U+FFFE in the offending field', () => {
+    const result = TermSchema.safeParse({ canonical: 'word\uFFFE' });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected rejection');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      { path: ['canonical'], message: `${reason('U+FFFE')} in term "word\\uFFFE"` },
+    ]);
+  });
+
+  it.each(['\uFFFD', '\u{10000}'])('accepts nearby valid character %j', (character) => {
+    expect(findUnencodableChar(character)).toBeUndefined();
+    const result = TermSchema.safeParse({ canonical: `word${character}` });
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected acceptance');
+    expect(result.data.canonical).toBe(`word${character}`);
+  });
+});
+
 describe('unpaired low surrogate is identified by its code unit', () => {
   it.each([
     ['at the start of the string', `${LOW}Rocket`, 'U+DC00'],
