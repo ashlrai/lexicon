@@ -196,9 +196,11 @@ have to be the tagged commit. Any other event, branch, or commit is refused.
 It binds exactly two original artifact IDs and
 SHA-256 ZIP digests, rejects expired or mixed-attempt artifacts, and extracts only
 the fixed flat inventory with bounded sizes. Existing source-carrier, archive
-closure, registry-byte and hosted-byte checks remain unchanged. Candidate and
-policy release-contract scripts must be identical; only the trusted policy copy
-runs. Immediately before draft creation and public publication, live checks
+closure, registry-byte and hosted-byte checks remain unchanged. The candidate
+release-contract script must match the contract at the tagged source commit,
+not the running policy copy. Only the trusted policy copy runs, and it may be
+strictly stronger than the tagged copy. Immediately before draft creation and
+public publication, live checks
 require protected main to retain the executing policy in its history, both
 workflows to remain active, and the complete release/CI workflow and two verifier
 files to match current trusted main. App or documentation advances alone do not
