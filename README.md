@@ -10,7 +10,7 @@ Lexicon is one YAML file of the words you actually say. It rewrites the transcri
 
 [![CI](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml/badge.svg)](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/%40ashlr%2Flexicon)](https://www.npmjs.com/package/@ashlr/lexicon)
-<!-- fresh:begin badge:release -->[![source version](https://img.shields.io/badge/source-v0.5.11-blue)](package.json)<!-- fresh:end -->
+<!-- fresh:begin badge:release -->[![source version](https://img.shields.io/badge/source-v0.5.12-blue)](package.json)<!-- fresh:end -->
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node >=20](https://img.shields.io/node/v/%40ashlr%2Flexicon)](package.json)
 
@@ -75,7 +75,7 @@ lexicon doctor --json
 
 The same contract, in one fetch: [llms.txt](llms.txt) (index) and [llms-full.txt](llms-full.txt) (install, tools, privacy, FAQ). The page written to an agent is [docs/AGENTS.md](docs/AGENTS.md). Copy-paste only, no commentary: [docs/COPY-PASTE.md](docs/COPY-PASTE.md).
 
-This tree is source version <!-- fresh:begin pin:version -->0.5.11<!-- fresh:end -->. At this candidate's 2026-11-06 preparation, npm `latest` was 0.5.8. Check `lexicon --version` and `npm view @ashlr/lexicon version` before you pin.
+This tree is source version <!-- fresh:begin pin:version -->0.5.12<!-- fresh:end -->. At this candidate's 2026-11-06 preparation, npm `latest` was 0.5.8. Check `lexicon --version` and `npm view @ashlr/lexicon version` before you pin.
 
 ## MCP server
 
@@ -223,7 +223,7 @@ npm i -g @ashlr/lexicon
 
 Plain `brew install lexicon` is [dns-lexicon](https://github.com/dns-lexicon/dns-lexicon), a different project. Use the full tap name.
 
-After 0.5.9 is published, <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.11`<!-- fresh:end --> installs that tag from GitHub and builds on install.
+After 0.5.9 is published, <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.12`<!-- fresh:end --> installs that tag from GitHub and builds on install.
 
 Homebrew formula: [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap). Release zips (extension, LexiconBar, checksums): [GitHub releases](https://github.com/ashlrai/lexicon/releases/latest).
 
