@@ -4,8 +4,8 @@
 class Lexicon < Formula
   desc "Personal lexicon for voice-to-agents: fixes the words STT gets wrong"
   homepage "https://github.com/ashlrai/lexicon"
-  url "https://github.com/ashlrai/lexicon/archive/refs/tags/v0.5.4.tar.gz"
-  sha256 "44e79f5a422caf6abf0cafe6088b536ecdc103539ae003cd526a65b654b60a53"
+  url "https://github.com/ashlrai/lexicon/archive/refs/tags/v0.5.12.tar.gz"
+  sha256 "f92311db6b036edf1c6abe3637eb302e6d17a21f1a61ef0f1a42f14762a6c613"
   license "MIT"
   head "https://github.com/ashlrai/lexicon.git", branch: "main"
 
