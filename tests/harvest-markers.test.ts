@@ -27,3 +27,19 @@ it('filters marker words from source while retaining adjacent identifiers', asyn
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+it('filters a marker touching punctuation and retains the adjacent identifier', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-marker-punctuation-'));
+  try {
+    await fs.writeFile(path.join(dir, 'markers.ts'), '// (TODO:QuasarWidget),\n');
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+    const identifiers = candidates.filter(({ category }) => category === 'identifier');
+    expect(identifiers).toEqual([expect.objectContaining({
+      canonical: 'QuasarWidget', count: 1, evidence: ['markers.ts'],
+    })]);
+    expect(candidates.map(({ canonical }) => canonical)).not.toContain('TODO');
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
