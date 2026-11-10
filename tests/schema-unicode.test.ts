@@ -100,6 +100,24 @@ describe('unpaired low surrogate is identified by its code unit', () => {
   });
 });
 
+describe('a term with two different unencodable code units', () => {
+  it.each([
+    ['U+FFFE before a low surrogate', `a\uFFFEb${LOW}`, 'U+FFFE', 'a\\uFFFEb\\uDC00'],
+    ['a low surrogate before U+FFFE', `a${LOW}b\uFFFE`, 'U+DC00', 'a\\uDC00b\\uFFFE'],
+    ['U+FFFF before a lone high surrogate', `x\uFFFFy\uD800`, 'U+FFFF', 'x\\uFFFFy\\uD800'],
+  ])('names only the first offending unit: %s', (_d, canonical, first, shown) => {
+    expect(findUnencodableChar(canonical)).toBe(first);
+    const result = TermSchema.safeParse({ canonical });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected rejection');
+    // One issue for the field, naming the first unit; the second is only
+    // visible in the escaped term name, never reported as its own issue.
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      { path: ['canonical'], message: `${reason(first)} in term "${shown}"` },
+    ]);
+  });
+});
+
 describe('a valid surrogate pair is accepted', () => {
   it.each([PAIR, '\u{1D7D8}', '\u{20000}'])('findUnencodableChar accepts %j', (s) => {
     expect(findUnencodableChar(s)).toBeUndefined();
