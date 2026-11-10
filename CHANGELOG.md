@@ -32,6 +32,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 - GitHub-only release recovery accepts a failed run of `release.yml` that was a tag push or a `workflow_dispatch` on the tagged commit. The npm version check polls for up to 10 minutes while that version is not readable yet, and an integrity mismatch still fails immediately.
 - Recovery binds the candidate release-contract script to the contract at the tagged source commit, so a later stricter verifier on main can still recover that tag.
+- Recovery resolves git at a fixed absolute path instead of searching PATH (Sonar S4036).
 
 ## 0.5.12 (2026-11-09)
 
