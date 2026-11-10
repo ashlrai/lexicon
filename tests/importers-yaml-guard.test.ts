@@ -15,6 +15,15 @@ describe('YAML import complexity guard', () => {
     }
   });
 
+  it('ignores brackets after escaped quotes in double-quoted scalars at the nesting limit', () => {
+    const scalar = JSON.stringify(`escaped " quote ${'[{'.repeat(129)}${']}'.repeat(129)}`);
+    expect(() => guardYamlImport('['.repeat(128) + scalar + ']'.repeat(128))).not.toThrow();
+
+    const closingBrackets = JSON.stringify(`escaped " quote ${']}'.repeat(129)}`);
+    expect(() => guardYamlImport('['.repeat(128) + closingBrackets + ', []' + ']'.repeat(128)))
+      .toThrow(/nesting depth/);
+  });
+
   it('rejects adjacent quoted scalars but allows escapes and separators', () => {
     expect(() => guardYamlImport('""""')).toThrow(/adjacent quoted scalars/);
     for (const value of ['["a", "b"]', "['a''b', 'c']", '"a\\"b"', '"a": "b"']) {
@@ -25,6 +34,12 @@ describe('YAML import complexity guard', () => {
   it('keeps a normal nested espanso import working', () => {
     expect(importLexicon('matches:\n  - triggers: [":ashler", ":ashlar"]\n    replace: Ashlr.AI\n', 'espanso').terms)
       .toEqual([{ canonical: 'Ashlr.AI', aliases: ['ashler', 'ashlar'], source: 'import' }]);
+  });
+
+  it('preserves brackets in a quoted espanso replacement and its triggers', () => {
+    const content = 'matches:\n  - triggers: [":bracket", ":brackets"]\n    replace: "Array [item] {value}"\n';
+    expect(importLexicon(content, 'espanso').terms)
+      .toEqual([{ canonical: 'Array [item] {value}', aliases: ['bracket', 'brackets'], source: 'import' }]);
   });
 
   it('rejects an empty YAML document without importing terms', () => {

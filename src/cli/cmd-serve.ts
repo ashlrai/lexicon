@@ -21,7 +21,6 @@ import { fail, jsonError, jsonOk, line, refuse, safe, safeError, safeLines, safe
 import type { CommonOptions, IO } from './io.js';
 import {
   LAUNCH_AGENT_LABEL,
-  SCHEDULED_TASK_NAME,
   SYSTEMD_UNIT_NAME,
   launchAgentLogPath,
   launchAgentPath,

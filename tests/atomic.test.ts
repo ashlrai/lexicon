@@ -649,6 +649,22 @@ describe('work that outlives its hold cannot borrow the lock', () => {
 });
 
 describe('writeFileAtomic creates a file', () => {
+  it('surfaces a failure to create a missing parent without leaving a target', async () => {
+    const dir = await scratch();
+    const parent = path.join(dir, 'missing');
+    const target = path.join(parent, 'lexicon.yaml');
+    const failure = Object.assign(new Error('parent creation denied'), { code: 'EACCES' });
+    const mkdir = vi.spyOn(fs, 'mkdir').mockRejectedValueOnce(failure);
+    try {
+      await expect(writeFileAtomic(target, 'contents')).rejects.toBe(failure);
+    } finally {
+      mkdir.mockRestore();
+    }
+    await expect(fs.stat(target)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.stat(parent)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fs.readdir(dir)).toEqual([]);
+  });
+
   it('writes and replaces a file whose name contains spaces', async () => {
     const dir = await scratch();
     const target = path.join(dir, 'my lexicon file.yaml');

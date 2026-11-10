@@ -33,6 +33,19 @@ describe('findOnPath', () => {
     }
   });
 
+  it.each(['linux', 'win32'] as const)('returns no match without probing an empty PATH on %s', async (platform) => {
+    const probed: string[] = [];
+    const env = { PATH: '' };
+    const exists = async (candidate: string) => {
+      probed.push(candidate);
+      return true;
+    };
+
+    expect(await findOnPath('tool', { platform, env, exists })).toBeUndefined();
+    expect(findOnPathSync('tool', { platform, env })).toBeUndefined();
+    expect(probed).toEqual([]);
+  });
+
   it('on win32 tries PATHEXT extensions (then the bare name) in every PATH entry', async () => {
     const probed: string[] = [];
     const exists = async (c: string) => {
