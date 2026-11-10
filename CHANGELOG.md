@@ -28,11 +28,25 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Added
+
+- `POST /normalize` and `normalize()` take an optional `context` (`recentText`, `bundleId`): words in it count as evidence for a term's `context` gate without being part of the corrected text or the reported spans. LexiconBar's Fix everywhere sends the field text ahead of the burst (up to 4,000 characters) and the focused app's bundle identifier, so a gated term can fire on what the field already held and which app holds it. (#851, #852)
+- `lexicon test-select [files...]` prints the tests a set of changed repository files should run (a `tests/*.test.ts` file maps to itself), falling back to the full suite when nothing is passed or a path has no reviewed mapping. `--json` prints the selection and the command argument arrays. (#906)
+
 ### Fixed
 
 - GitHub-only release recovery accepts a failed run of `release.yml` that was a tag push or a `workflow_dispatch` on the tagged commit. The npm version check polls for up to 10 minutes while that version is not readable yet, and an integrity mismatch still fails immediately.
 - Recovery binds the candidate release-contract script to the contract at the tagged source commit, so a later stricter verifier on main can still recover that tag.
 - Recovery resolves git at a fixed absolute path instead of searching PATH (Sonar S4036).
+- Voice transcript cleaning repeats its passes until the text stops changing, so an annotation another removal exposes is removed too: `(soft *noise* music)` loses `*noise*` to the asterisk pass, after which the parentheses qualify as a noise tag. (#882)
+- A term name truncated to 40 characters in a schema error no longer ends on half of a surrogate pair. (#975)
+- The browser extension's correction toast stays for 8 seconds (was 3), and the timer that dismisses it removes that toast rather than whichever toast is in the document when it fires. (#853)
+- The Windows tray no longer offers an undo that would restore the text the field already shows. (#896)
+
+### Internal
+
+- Drop dead imports in `src/ambiguity`, `cmd-serve`, `cmd-setup` and the clipboard daemon, and delete the committed `artifacts/bundle-diff.patch` (gitignored now; check:bundle still writes it on drift), `docs/issue-proofs-oct31.md` and `docs/ux/correction-notice.md`. (#983)
+- Regression coverage across some sixty test files: schema text, word, alias-count and surrogate boundaries; transcript cleaning (adjacent, consecutive, mixed, unmatched and empty annotations); harvest markers; importer and exporter edges; extension frames, sites and API health; serve protocol and cache; voice models and process; `test-select`; and the macOS and Windows tray apps.
 
 ## 0.5.12 (2026-11-09)
 
