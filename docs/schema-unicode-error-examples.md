@@ -66,8 +66,9 @@ Invalid lexicon:
   - terms[0].canonical: must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\uFF…"
 ```
 
-The cut can also split a valid surrogate pair: the limit counts UTF-16 code
-units, not code points. Use the zero-based field path and the original input
+The limit counts UTF-16 code units, not code points, and a cut that would
+land inside a valid surrogate pair drops the whole pair instead of leaving
+half of it. Use the zero-based field path and the original input
 to find and replace the invalid unit; the preview is a label, not a repair or
 a serialized copy of the name. List indexes refer to the cleaned list.
 See the [preview reference](schema-error-preview-reference.md) for details and

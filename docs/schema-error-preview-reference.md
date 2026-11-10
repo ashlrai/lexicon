@@ -14,14 +14,17 @@ for complete messages.
    is replaced in the label by a literal `\uXXXX`, with four uppercase hex
    digits. A valid surrogate pair is preserved. Each escape occupies six
    UTF-16 code units.
-3. If the escaped label exceeds 40 UTF-16 code units, it is sliced to its
-   first 39 code units and `…` is appended. Otherwise it is shown in full.
-   The ellipsis is included in the 40-unit limit.
+3. If the escaped label exceeds 40 UTF-16 code units, it is cut and `…` is
+   appended. The cut keeps at most 39 code units before the ellipsis, and
+   when the cut would land between the halves of a valid surrogate pair the
+   whole pair is left out instead. Otherwise it is shown in full. The
+   ellipsis is included in the 40-unit limit.
 
 The cutoff counts UTF-16 code units, not Unicode code points, graphemes or
 bytes. A supplementary character such as `🚀` occupies two units. A cut can
-split an escape or even a surrogate pair, leaving an unpaired surrogate in the
-JavaScript error string. The label is not a serialization format: ordinary
+split an escape, but never a valid surrogate pair: a pair at the boundary is
+dropped whole, so the label never holds an unpaired surrogate the input did
+not have. The label is not a serialization format: ordinary
 quotes and backslashes in the canonical are not escaped by this operation.
 Use the field path and original input to identify and fix the offending value.
 
