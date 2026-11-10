@@ -1920,6 +1920,15 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript('Before [MUSIC] the spoken words [APPLAUSE] after.')).toBe('Before the spoken words after.');
   });
 
+  it.each([
+    ['[MUSIC] First sentence [noise]. Then speak [APPLAUSE]!', 'First sentence. Then speak!'],
+    ['Start[noise]middle words[music]end', 'Start middle words end'],
+    ['Before [MUSIC]\n  keep\tthese words [inaudible] after', 'Before keep these words after'],
+    ['[MUSIC] spoken words [APPLAUSE]', 'spoken words'],
+  ])('keeps intervening speech when removing separated tags from %s', (input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
   it('removes adjacent bracketed tags while preserving surrounding speech', () => {
     expect(cleanTranscript('Please [MUSIC][APPLAUSE] continue the rollout.')).toBe('Please continue the rollout.');
     expect(cleanTranscript('Hello[noise][inaudible]world')).toBe('Hello world');
