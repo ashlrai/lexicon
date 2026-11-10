@@ -9,6 +9,15 @@ import { cleanTranscript, parseWhisperOutput } from '../src/voice/transcribe.js'
 const contract = readFileSync(new URL('../docs/CONTRACT.md', import.meta.url), 'utf8');
 const bullet = contract.split('\n').find((line) => line.includes('`cleanTranscript(text)`')) ?? '';
 
+describe('transcribe asterisks: annotations', () => {
+  it.each([
+    ['one word', 'Please *laughs* continue speaking.', 'Please continue speaking.'],
+    ['three words', 'Please *door slams loudly* continue speaking.', 'Please continue speaking.'],
+  ])('removes a %s annotation and retains surrounding speech', (_length, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+});
+
 describe('transcribe asterisks: four-word span', () => {
   it('documents the one-to-three-word rule in docs/CONTRACT.md', () => {
     expect(bullet).toContain('`*...*` of one to three plain words always');
