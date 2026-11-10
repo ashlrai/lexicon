@@ -1,3 +1,4 @@
+import { execFileSync, spawnSync } from 'node:child_process';
 import { describe, expect, it } from 'vitest';
 import path from 'node:path';
 import { commandLine, conflictNote, conflictRemoveCommand, hostPlatform, posixShellWord, powerShellWord, shellWord } from '../src/core/index.js';
@@ -83,5 +84,31 @@ describe('printed commands use the shared shell quoting', () => {
     } finally {
       globalThis.process = saved;
     }
+  });
+});
+
+// Catches: quoting that reads correctly as a string but splits or expands at
+// the real shell boundary, so a pasted `lexicon add 'Two Words'` arrives as
+// two arguments or with a `$` expanded. Runs the printed line through an
+// actual sh (and PowerShell where one is installed) and has node report the
+// argv it received, so the assertion is on what the shell delivered, not on
+// the shape of the quoted text.
+describe('printed commands keep each argument whole at the shell boundary', () => {
+  const probe = 'process.stdout.write(JSON.stringify(process.argv.slice(1)))';
+  const payload = ['two words', "O'Brien", 'costs $5', '*.yaml', '--note=see below'];
+  const argv = ['node', '-e', probe, ...payload];
+  const posix = process.platform !== 'win32';
+  const pwsh = ['pwsh', 'powershell'].find(
+    (cmd) => spawnSync(cmd, ['-NoProfile', '-Command', 'exit 0'], { stdio: 'ignore' }).status === 0,
+  );
+
+  it.runIf(posix)('sh hands a space-containing argument to the command as one argument', () => {
+    const out = execFileSync('sh', ['-c', commandLine(argv, 'linux')], { encoding: 'utf8' });
+    expect(JSON.parse(out)).toEqual(payload);
+  });
+
+  it.runIf(pwsh !== undefined)('PowerShell hands a space-containing argument to the command as one argument', () => {
+    const out = execFileSync(pwsh as string, ['-NoProfile', '-Command', commandLine(argv, 'win32')], { encoding: 'utf8' });
+    expect(JSON.parse(out)).toEqual(payload);
   });
 });

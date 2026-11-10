@@ -505,6 +505,18 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(name).not.toContain('\uD800');
   });
 
+  it('does not split a supplementary character at the truncation boundary', () => {
+    const canonical = `${'a'.repeat(38)}🚀\uFFFF`;
+    const result = TermSchema.safeParse({ canonical });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected U+FFFF to be rejected');
+    const name = /in term "(.*)"$/.exec(result.error.issues[0].message)?.[1];
+    expect(name).toBe(`${'a'.repeat(38)}…`);
+    expect(name!.length).toBeLessThanOrEqual(40);
+    expect(Buffer.from(name!, 'utf8').toString('utf8')).toBe(name);
+  });
+
   it('bounds and escapes a long invalid term in the parse error', () => {
     const canonical = `prefix\uDC00${'x'.repeat(10_000)}`;
     let message = '';
@@ -893,6 +905,25 @@ describe('hardening (lexicon content reaches model context)', () => {
   });
 
   it.each([
+    ['\uFFFE', '\\uFFFE', 'U+FFFE'],
+    ['\uFFFF', '\\uFFFF', 'U+FFFF'],
+    ['\uD800', '\\uD800', 'U+D800'],
+    ['\uDBFF', '\\uDBFF', 'U+DBFF'],
+    ['\uDC00', '\\uDC00', 'U+DC00'],
+    ['\uDFFF', '\\uDFFF', 'U+DFFF'],
+  ])('escapes %s in error names while keeping ordinary Unicode readable', (unit, escaped, code) => {
+    const canonical = `Café 東京🚀${unit}é`;
+    const shown = `Café 東京🚀${escaped}é`;
+    const reason = 'U+FFFE, U+FFFF and unpaired surrogates fit no file format';
+
+    expect(escapeUnencodable(canonical)).toBe(shown);
+    expect(() => parseLexicon({ terms: [{ canonical, aliases: ['\uFFFF'] }] })).toThrow(
+      `Invalid lexicon:\n  - terms[0].canonical: must not contain ${code} (${reason}) in term "${shown}"\n` +
+      `  - terms[0].aliases[0]: must not contain U+FFFF (${reason}) in term "${shown}"`,
+    );
+  });
+
+  it.each([
     ['high first', 'D800', 'DFFF'],
     ['low first', 'DC00', 'DBFF'],
   ])('escapes every unpaired surrogate in YAML term previews (%s)', (_order, first, second) => {
@@ -1061,6 +1092,37 @@ describe('hardening (lexicon content reaches model context)', () => {
         },
       ]);
     }
+  });
+
+  it.each([
+    ['high', '\uD812', 'U+D812'],
+    ['low', '\uDC34', 'U+DC34'],
+  ])('rejects an isolated %s surrogate in every free-text field', (_kind, unit, code) => {
+    const value = `before${unit}after`;
+    const term = {
+      canonical: 'Rocket', aliases: [value], never: [value], context: [value],
+      phonetic: value, notes: value, createdAt: value,
+    };
+    const reason = `must not contain ${code} (U+FFFE, U+FFFF and unpaired surrogates fit no file format)`;
+    const termResult = TermSchema.safeParse(term);
+    expect(termResult.success).toBe(false);
+    if (termResult.success) throw new Error('Expected an isolated surrogate to be rejected');
+    expect(termResult.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      { path: ['aliases', 0], message: `${reason} in term "Rocket"` },
+      { path: ['never', 0], message: `${reason} in term "Rocket"` },
+      { path: ['context', 0], message: `${reason} in term "Rocket"` },
+      { path: ['phonetic'], message: `${reason} in term "Rocket"` },
+      { path: ['notes'], message: `${reason} in term "Rocket"` },
+      { path: ['createdAt'], message: `${reason} in term "Rocket"` },
+    ]);
+    const settings = LexiconSettingsSchema.safeParse({ protectedWords: [value], packs: [value] });
+    expect(settings.success).toBe(false);
+    if (settings.success) throw new Error('Expected an isolated surrogate to be rejected');
+    expect(settings.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      { path: ['protectedWords', 0], message: reason },
+      { path: ['packs', 0], message: reason },
+    ]);
+    expect(() => parseLexicon({ terms: [{ canonical: value }] })).toThrow(`terms[0].canonical: ${reason}`);
   });
 
   it('accepts and preserves paired surrogates in term and settings text', () => {

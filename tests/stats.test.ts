@@ -29,6 +29,27 @@ const sample: Term[] = [
 ];
 
 describe('computeStats', () => {
+  it('returns the same statistics on repeated calls regardless of other calls', () => {
+    const first = loadedOf(structuredClone(sample));
+    const second = loadedOf([{ canonical: 'Other', aliases: ['another'], hits: 5 }], false);
+    const firstBefore = structuredClone(first);
+    const secondBefore = structuredClone(second);
+
+    const firstResult = computeStats(first);
+    const secondResult = computeStats(second);
+    expect(computeStats(second)).toEqual(secondResult);
+    expect(computeStats(first)).toEqual(firstResult);
+    expect(first).toEqual(firstBefore);
+    expect(second).toEqual(secondBefore);
+
+    // Results own their collections: modifying one must not affect later calls.
+    firstResult.topTerms[0]!.hits = 999;
+    firstResult.neverHit.push('Added');
+    firstResult.byCategory.brand = 999;
+    firstResult.files[0]!.terms = 999;
+    expect(computeStats(first)).toEqual(computeStats(firstBefore));
+  });
+
   it('counts every alias of a single term without counting extra terms', () => {
     const stats = computeStats(loadedOf([{ canonical: 'Kubernetes', aliases: ['kuber netties', 'cooper netties', 'kube ernetes'] }], false));
     expect(stats.termCount).toBe(1);
@@ -91,6 +112,21 @@ describe('computeStats', () => {
     expect(computeStats(loadedOf(sample, false)).files).toHaveLength(1);
   });
 
+  it('counts project-only terms without adding global terms', () => {
+    const terms: Term[] = [
+      { canonical: 'Kubernetes', aliases: ['cooper netties'], scope: 'project' },
+      { canonical: 'Kubectl', aliases: ['cube control', 'kube control'], scope: 'project' },
+    ];
+    const stats = computeStats(loadedOf(terms));
+
+    expect(stats.termCount).toBe(2);
+    expect(stats.aliasCount).toBe(3);
+    expect(stats.files).toEqual([
+      { path: '/fake/global.yaml', scope: 'global', terms: 0 },
+      { path: '/fake/repo/.lexicon.yaml', scope: 'project', terms: 2 },
+    ]);
+  });
+
   it('caps topTerms and neverHit', () => {
     const many: Term[] = [];
     for (let i = 0; i < 30; i++) many.push({ canonical: `Hit${i}`, aliases: [], hits: 100 - i });
@@ -144,6 +180,18 @@ describe('computeStats', () => {
     ]));
     expect(stats.termCount).toBe(2);
     expect(stats.aliasCount).toBe(0);
+  });
+
+  it('sums populated alias lists while empty lists contribute zero', () => {
+    const stats = computeStats(loadedOf([
+      { canonical: 'Empty first', aliases: [] },
+      { canonical: 'Two aliases', aliases: ['first', 'second'] },
+      { canonical: 'Empty middle', aliases: [] },
+      { canonical: 'Three aliases', aliases: ['third', 'fourth', 'fifth'] },
+      { canonical: 'Empty last', aliases: [] },
+    ]));
+    expect(stats.termCount).toBe(5);
+    expect(stats.aliasCount).toBe(5);
   });
 });
 
@@ -207,8 +255,22 @@ describe('lexicon stats (CLI)', () => {
       expect(await runStats({ cwd: tmp }, { stdout: (s) => void text.push(s), stderr: () => undefined })).toBe(0);
       expect(text.join('')).toMatch(/^terms: 0 {3}aliases: 0 {3}hits: 0\nThe lexicon has no terms yet, so nothing is corrected or counted; run `lexicon setup`/);
       const json: string[] = [];
-      expect(await runStats({ cwd: tmp, json: true }, { stdout: (s) => void json.push(s), stderr: () => undefined })).toBe(0);
-      expect(JSON.parse(json.join(''))).toMatchObject({ ok: true, termCount: 0, note });
+      const errors: string[] = [];
+      expect(await runStats({ cwd: tmp, json: true }, { stdout: (s) => void json.push(s), stderr: (s) => void errors.push(s) })).toBe(0);
+      expect(JSON.parse(json.join(''))).toMatchObject({
+        ok: true,
+        termCount: 0,
+        aliasCount: 0,
+        totalHits: 0,
+        neverHitCount: 0,
+        topTerms: [],
+        neverHit: [],
+        byCategory: {},
+        bySource: {},
+        files: [{ path: path.join(tmp, 'config', 'lexicon.yaml'), scope: 'global', terms: 0 }],
+        note,
+      });
+      expect(errors).toEqual([]);
     } finally {
       if (prev === undefined) delete process.env.LEXICON_PATH;
       else process.env.LEXICON_PATH = prev;
@@ -302,8 +364,9 @@ describe('lexicon stats (CLI)', () => {
     try {
       const code = await runStats({ cwd: tmp, json: true }, io);
       expect(code).toBe(0);
-      const stats = JSON.parse(out.join('')) as { termCount: number; topTerms: unknown[]; neverHit: string[]; files: { path: string }[] };
+      const stats = JSON.parse(out.join('')) as { termCount: number; aliasCount: number; topTerms: unknown[]; neverHit: string[]; files: { path: string }[] };
       expect(stats.termCount).toBe(2);
+      expect(stats.aliasCount).toBe(1);
       expect(stats.topTerms).toEqual([{ canonical: 'Ashlr.AI', hits: 2 }]);
       expect(stats.neverHit).toEqual(['Zoë']);
       expect(stats.files[0]?.path).toBe(globalPath);
