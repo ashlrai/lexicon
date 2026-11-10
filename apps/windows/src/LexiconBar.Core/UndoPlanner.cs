@@ -86,7 +86,8 @@ public static class UndoPlanner
         string current = read.Value ?? string.Empty;
         if (!ledger.CanUndo(field.Key, current)
             || ledger.Last is not UndoLedger.Entry entry
-            || entry.FieldTextBefore is not string restored)
+            || entry.FieldTextBefore is not string restored
+            || restored == current)
         {
             return new UndoDecision.Nothing(current);
         }

@@ -201,6 +201,27 @@ describe('a compressed model download', () => {
 });
 
 describe('a download that fails says why', () => {
+  it('reports an unknown model from a 404 and uses an existing custom model without a download', async () => {
+    const d = tmp();
+    const globalPath = path.join(d, 'lexicon.yaml');
+    const download = vi.fn(async () => { throw Object.assign(new Error('not found'), { status: 404 }); });
+    const fetch = vi.fn();
+    vi.stubGlobal('fetch', fetch);
+    const opts = { globalPath, env: {}, fallbackDirs: [], download, log: () => undefined, progress: () => undefined };
+
+    await expect(ensureModel('large-v999', opts)).rejects.toThrow('there is no whisper model named large-v999');
+    expect(download).toHaveBeenCalledOnce();
+    expect(fetch).not.toHaveBeenCalled();
+
+    const custom = path.join(d, 'models', modelFileName('custom'));
+    mkdirSync(path.dirname(custom), { recursive: true });
+    writeFileSync(custom, MODEL);
+    download.mockClear();
+    await expect(ensureModel('custom', opts)).resolves.toMatchObject({ name: 'custom', path: custom, present: true });
+    expect(download).not.toHaveBeenCalled();
+    expect(fetch).not.toHaveBeenCalled();
+  });
+
   // Catches: every failed download said "check the network", for a misspelt model name (a 404) and a full disk alike.
   it('names a model that does not exist instead of blaming the network', async () => {
     const d = tmp();

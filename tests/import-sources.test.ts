@@ -345,6 +345,19 @@ describe('mergeCandidates', () => {
 });
 
 describe('harvestImportSources', () => {
+  it('imports an available empty source without fabricating entries', async () => {
+    const dir = mkdtempSync(path.join(os.tmpdir(), 'lexicon-import-empty-'));
+    try {
+      const globalPath = path.join(dir, 'lexicon.yaml');
+      const d = contactsDeps('');
+      expect(await getImportSource('contacts').checkAvailable(d)).toEqual({ available: true });
+      const candidates = await harvestImportSources(['contacts'], d);
+      expect(candidates).toEqual([]);
+      expect(await applyImportCandidates(candidates, { globalPath })).toEqual({ added: 0, merged: 0, skipped: 0 });
+      expect(existsSync(globalPath)).toBe(false);
+    } finally { rmSync(dir, { recursive: true, force: true }); }
+  });
+
   it('skips unimplemented and unavailable sources', async () => {
     const d = deps({ platform: 'linux' });
     const out = await harvestImportSources(['contacts', 'email', 'github'], d);

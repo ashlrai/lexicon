@@ -266,7 +266,7 @@ final class FixEngine: @unchecked Sendable {
         lastRequestAt[field.key] = now
         inFlight = true
         let started = now
-        client.normalize(burst.text) { [weak self] result in
+        client.normalize(burst, bundleID: field.bundleID) { [weak self] result in
             guard let self else { return }
             self.ax.async {
                 self.inFlight = false

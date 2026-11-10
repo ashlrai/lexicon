@@ -49,6 +49,21 @@ describe('exportLexicon', () => {
     expect(() => exportLexicon(lexicon, 'docx' as ExportFormat)).toThrow(/Unknown export format/);
   });
 
+  it('preserves Unicode terms and aliases in exported text', () => {
+    const term = { canonical: '東京 Café 🚀', aliases: ['とうきょう カフェ', 'café 🚀'] };
+    const unicode: Lexicon = { version: 1, terms: [term] };
+    // These speech-recognition formats intentionally export canonicals only.
+    const canonicalOnly: ExportFormat[] = ['whisper-prompt', 'deepgram', 'assemblyai', 'azure', 'google', 'openai'];
+    for (const format of EXPORT_FORMATS) {
+      const out = exportLexicon(unicode, format);
+      expect(out, format).toContain(term.canonical);
+      expect(out, format).not.toContain('\uFFFD');
+      if (!canonicalOnly.includes(format)) {
+        for (const alias of term.aliases) expect(out, format).toContain(alias);
+      }
+    }
+  });
+
   it('applies category filter and limit before dispatching', () => {
     const csv = exportLexicon(lexicon, 'csv', { categories: ['person'] });
     expect(csv.trim().split('\n')).toEqual(['canonical,alias,category,phonetic', 'Mason Wyatt,Mason White,person,']);
@@ -200,6 +215,13 @@ describe('exportLexicon', () => {
   it('json: raw lexicon, without the merged-only scope and hits', () => {
     const expected = { ...lexicon, terms: lexicon.terms.map(({ scope: _s, hits: _h, ...t }) => t) };
     expect(JSON.parse(exportLexicon(lexicon, 'json'))).toEqual(expected);
+  });
+
+  it('json: escapes a newline in notes and parses it back unchanged', () => {
+    const term = { canonical: 'Lexicon', aliases: ['lexicun'], notes: 'first line\nsecond line' };
+    const out = exportLexicon({ version: 1, terms: [term] }, 'json');
+    expect(out).toContain('"notes": "first line\\nsecond line"');
+    expect(JSON.parse(out)).toEqual({ version: 1, terms: [term] });
   });
 
   it('deepgram: keywords with boost by category, canonicals only', () => {
@@ -361,6 +383,24 @@ describe('exportLexicon', () => {
 });
 
 describe('exports a real user would re-import', () => {
+  it.each([
+    ['wispr', 'wispr'],
+    ['superwhisper', 'superwhisper'],
+    ['macos', 'macos'],
+    ['csv', 'csv'],
+    ['espanso', 'espanso'],
+    ['json', 'json'],
+    ['text', 'text'],
+    ['markdown', 'markdown'],
+    ['claude-md', 'markdown'],
+  ] as const)('%s: Unicode canonical and aliases survive reimport', (exportFormat, importFormat) => {
+    const term = { canonical: '東京 Café 🚀', aliases: ['とうきょう カフェ', 'café 🚀'] };
+    const out = exportLexicon({ version: 1, terms: [term] }, exportFormat);
+    const back = importLexicon(out, importFormat);
+    expect(back.skipped).toEqual([]);
+    expect(back.terms.map(({ canonical, aliases }) => ({ canonical, aliases }))).toEqual([term]);
+  });
+
   // Catches: the claude-md note cell is `category notes (phonetic)` and the
   // markdown importer takes a trailing parenthesis as the phonetic hint, so a
   // note ending in one ("the CLI (not the app)") came back as notes "the CLI"

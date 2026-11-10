@@ -210,13 +210,13 @@ jobs:
           path: staged/macos
       - name: Validate complete qualified artifact closure
         run: node scripts/release-contract.mjs assemble staged release "$VERSION"
-      # npm trusted publishing (OIDC): npm >= 11.5.1 exchanges this job's
+      # npm trusted publishing (OIDC): pinned npm 11.19.0 exchanges this job's
       # id-token for a short-lived publish credential, so no NPM_TOKEN secret
       # is needed once the trusted publisher is configured on npmjs.com
       # (package settings -> Trusted publisher -> ashlrai/lexicon, release.yml).
       # OIDC only: token-based npm auth is refused (RQ-LEXNOTOKENQ8).
       - name: Use an npm CLI that supports trusted publishing
-        run: npm install -g "npm@^11.5.1" && npm --version
+        run: npm install -g npm@11.19.0 && npm --version
       - name: Refuse token-based npm auth
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}

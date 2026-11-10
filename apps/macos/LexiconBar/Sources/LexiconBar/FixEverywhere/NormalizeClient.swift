@@ -76,8 +76,20 @@ final class NormalizeClient: @unchecked Sendable {
         lock.lock(); cached = nil; lock.unlock()
     }
 
-    /// POST /normalize with `text`. Completion runs on an arbitrary queue.
-    func normalize(_ text: String, completion: @escaping (Result<NormalizeResponse, Failure>) -> Void) {
+    /// Context is evidence only; the API returns offsets in the burst itself.
+    static func requestBody(burst: Burst, bundleID: String?) -> [String: Any] {
+        let prefixRange = NSRange(location: 0, length: max(0, burst.range.location))
+        let prefix = TextDiff.substring(burst.fullText, utf16: prefixRange) ?? ""
+        var context: [String: String] = [:]
+        if !prefix.isEmpty { context["recentText"] = String(prefix.suffix(4_000)) }
+        if let bundleID, !bundleID.isEmpty { context["bundleId"] = bundleID }
+        var body: [String: Any] = ["text": burst.text]
+        if !context.isEmpty { body["context"] = context }
+        return body
+    }
+
+    /// POST /normalize. Completion runs on an arbitrary queue.
+    func normalize(_ burst: Burst, bundleID: String?, completion: @escaping (Result<NormalizeResponse, Failure>) -> Void) {
         guard let creds = credentials() else {
             completion(.failure(.noCredentials(NormalizeClient.serveJSONPath)))
             return
@@ -87,7 +99,7 @@ final class NormalizeClient: @unchecked Sendable {
         request.timeoutInterval = timeout
         request.setValue("application/json", forHTTPHeaderField: "Content-Type")
         request.setValue("Bearer \(creds.token)", forHTTPHeaderField: "Authorization")
-        request.httpBody = try? JSONSerialization.data(withJSONObject: ["text": text])
+        request.httpBody = try? JSONSerialization.data(withJSONObject: Self.requestBody(burst: burst, bundleID: bundleID))
         session.dataTask(with: request) { [weak self] data, response, error in
             if let error {
                 self?.invalidateCredentials()

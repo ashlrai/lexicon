@@ -32196,37 +32196,6 @@ var require_utils = __commonJS({
       }
       return output2.join("");
     }
-    function removeDotSegmentsRelative(path31) {
-      if (path31 === "" || path31[0] === "/") {
-        return removeDotSegments(path31);
-      }
-      const segments = path31.split("/");
-      const last = segments.length - 1;
-      const output2 = [];
-      let trailingDirectory = false;
-      for (let i = 0; i <= last; i++) {
-        const segment = segments[i];
-        if (segment === "." || segment === "..") {
-          if (segment === "..") {
-            if (output2.length !== 0 && output2[output2.length - 1] !== "..") {
-              output2.pop();
-            } else {
-              output2.push("..");
-            }
-          }
-          trailingDirectory = i === last;
-        } else {
-          output2.push(segment);
-        }
-      }
-      if (trailingDirectory && output2[output2.length - 1] !== "..") {
-        output2.push("");
-      }
-      if (output2.length === 0 || output2[0] === "" || output2[0].includes(":")) {
-        output2.unshift(".");
-      }
-      return output2.join("/");
-    }
     var HOST_DELIMS = { "@": "%40", "/": "%2F", "?": "%3F", "#": "%23", ":": "%3A" };
     var HOST_DELIM_RE = /[@/?#:]/g;
     var HOST_DELIM_NO_COLON_RE = /[@/?#]/g;
@@ -32487,7 +32456,6 @@ var require_utils = __commonJS({
       encodeFragment,
       escapePreservingEscapes,
       removeDotSegments,
-      removeDotSegmentsRelative,
       isIPv4: isIPv42,
       isUUID,
       normalizeIPv6,
@@ -32711,18 +32679,16 @@ var require_schemes = __commonJS({
 var require_fast_uri = __commonJS({
   "node_modules/fast-uri/index.js"(exports, module) {
     "use strict";
-    var { normalizeIPv6, removeDotSegments, removeDotSegmentsRelative, recomposeAuthority, normalizePercentEncoding, normalizePathEncoding, serializePathEncoding, normalizeQueryFragmentEncoding, encodeQuery, encodeFragment, reescapeHostDelimiters, isIPv4: isIPv42, nonSimpleDomain } = require_utils();
+    var { normalizeIPv6, removeDotSegments, recomposeAuthority, normalizePercentEncoding, normalizePathEncoding, serializePathEncoding, normalizeQueryFragmentEncoding, encodeQuery, encodeFragment, reescapeHostDelimiters, isIPv4: isIPv42, nonSimpleDomain } = require_utils();
     var { SCHEMES, getSchemeHandler } = require_schemes();
     var VALID_SCHEME = /^[A-Za-z][A-Za-z0-9+.-]*$/u;
     var MALFORMED_SCHEME_ERROR = "URI scheme is malformed.";
-    var MALFORMED_HOST_ERROR = "URI host is malformed.";
-    var FORBIDDEN_DOMAIN_HOST_CHARACTER = /[\0-\x20"#/:<>?@[\\\]^`{|}\x7F]/u;
-    function validateScheme(scheme) {
-      const stringScheme = String(scheme);
-      if (!VALID_SCHEME.test(stringScheme)) {
+    function decodeValidScheme(scheme) {
+      const decodedScheme = unescape(String(scheme));
+      if (!VALID_SCHEME.test(decodedScheme)) {
         throw new TypeError(MALFORMED_SCHEME_ERROR);
       }
-      return stringScheme;
+      return decodedScheme;
     }
     function normalize2(uri, options) {
       if (typeof uri === "string") {
@@ -32759,9 +32725,6 @@ var require_fast_uri = __commonJS({
       const resolvedSchemeHandler = getSchemeHandler(options && options.scheme || resolved.scheme);
       const resolvedHost = resolved.host;
       const resolvedHostIsIP = resolvedHost !== void 0 && resolvedHost !== "" && (isIPv42(resolvedHost) || normalizeIPv6(resolvedHost).isIPV6);
-      if (hasForbiddenDomainHost(resolved, options || {}, resolvedSchemeHandler, resolvedHostIsIP)) {
-        throw new Error(MALFORMED_HOST_ERROR);
-      }
       canonicalizeHost(resolved, options || {}, resolvedSchemeHandler, resolvedHostIsIP);
       const encodedASCIIHost = resolvedHost && resolvedHost.indexOf("%") !== -1 && !new RegExp("\\P{ASCII}", "u").test(resolvedHost);
       if (resolved.error && !encodedASCIIHost) {
@@ -32803,15 +32766,14 @@ var require_fast_uri = __commonJS({
             if (relative2.path[0] === "/") {
               target.path = removeDotSegments(relative2.path);
             } else {
-              const baseHasAuthority = base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0;
-              if (baseHasAuthority && !base.path) {
+              if ((base.userinfo !== void 0 || base.host !== void 0 || base.port !== void 0) && !base.path) {
                 target.path = "/" + relative2.path;
               } else if (!base.path) {
                 target.path = relative2.path;
               } else {
                 target.path = base.path.slice(0, base.path.lastIndexOf("/") + 1) + relative2.path;
               }
-              target.path = base.scheme === void 0 && !baseHasAuthority && target.path[0] !== "/" ? removeDotSegmentsRelative(target.path) : removeDotSegments(target.path);
+              target.path = removeDotSegments(target.path);
             }
             target.query = relative2.query;
           }
@@ -32849,13 +32811,12 @@ var require_fast_uri = __commonJS({
       const options = Object.assign({}, opts);
       const uriTokens = [];
       if (component.scheme) {
-        component.scheme = validateScheme(component.scheme);
+        component.scheme = decodeValidScheme(component.scheme);
       }
       const schemeHandler = getSchemeHandler(options.scheme || component.scheme);
       if (schemeHandler && schemeHandler.serialize) schemeHandler.serialize(component, options);
       const hasAuthority = component.userinfo !== void 0 || component.host !== void 0 || component.port !== void 0;
-      const schemelessReference = (component.scheme === void 0 || options.reference === "suffix") && !hasAuthority;
-      const pathNoScheme = !options.skipEscape && schemelessReference;
+      const pathNoScheme = !options.skipEscape && component.scheme === void 0 && !hasAuthority;
       if (component.path !== void 0) {
         if (!options.skipEscape) {
           component.path = serializePathEncoding(component.path, pathNoScheme);
@@ -32864,7 +32825,7 @@ var require_fast_uri = __commonJS({
         }
       }
       if (options.reference !== "suffix" && component.scheme) {
-        component.scheme = validateScheme(component.scheme);
+        component.scheme = decodeValidScheme(component.scheme);
         uriTokens.push(component.scheme, ":");
       }
       const authority = recomposeAuthority(component);
@@ -32880,9 +32841,9 @@ var require_fast_uri = __commonJS({
       if (component.path !== void 0) {
         let s = component.path;
         if (!options.absolutePath && (!schemeHandler || !schemeHandler.absolutePath)) {
-          s = schemelessReference && s[0] !== "/" ? removeDotSegmentsRelative(s) : removeDotSegments(s);
+          s = removeDotSegments(s);
         }
-        if (schemelessReference) {
+        if (pathNoScheme) {
           s = serializePathEncoding(s, true);
         }
         if (authority === void 0 && s[0] === "/" && s[1] === "/") {
@@ -32929,33 +32890,15 @@ var require_fast_uri = __commonJS({
       return hasMalformedPercentEncoding(matches[3]) || host !== void 0 && !isIPLiteral(host) && hasMalformedPercentEncoding(host) || hasMalformedPercentEncoding(matches[6]) || hasMalformedPercentEncoding(matches[7]) || hasMalformedPercentEncoding(matches[8]);
     }
     function canonicalizeHost(parsed, options, schemeHandler, isIP) {
-      if (hasForbiddenDomainHost(parsed, options, schemeHandler, isIP)) {
-        parsed.error = parsed.error || MALFORMED_HOST_ERROR;
-        return true;
-      }
       if (!options.unicodeSupport && (!schemeHandler || !schemeHandler.unicodeSupport) && parsed.host && !isIPLiteral(parsed.host) && (options.domainHost || schemeHandler && schemeHandler.domainHost) && isIP === false && nonSimpleDomain(parsed.host)) {
-        let url2;
         try {
-          url2 = new URL("http://" + parsed.host);
+          parsed.host = new URL("http://" + parsed.host).hostname;
         } catch (e) {
           parsed.error = parsed.error || "Host's domain name can not be converted to ASCII: " + e;
           return true;
         }
-        if (!isHostOnlyURL(url2)) {
-          parsed.error = parsed.error || MALFORMED_HOST_ERROR;
-          return true;
-        }
-        parsed.host = url2.hostname;
       }
       return false;
-    }
-    function hasForbiddenDomainHost(parsed, options, schemeHandler, isIP) {
-      return Boolean(
-        parsed.host && isIP === false && !isIPLiteral(parsed.host) && (options.domainHost || schemeHandler && schemeHandler.domainHost) && FORBIDDEN_DOMAIN_HOST_CHARACTER.test(parsed.host)
-      );
-    }
-    function isHostOnlyURL(url2) {
-      return url2.username === "" && url2.password === "" && url2.port === "" && url2.pathname === "/" && url2.search === "" && url2.hash === "" && url2.hostname !== "";
     }
     function parseWithStatus(uri, opts) {
       const options = Object.assign({}, opts);
@@ -33011,8 +32954,9 @@ var require_fast_uri = __commonJS({
         parsed.query = matches[7];
         parsed.fragment = matches[8];
         if (parsed.scheme !== void 0) {
-          if (VALID_SCHEME.test(parsed.scheme)) {
-            parsed.scheme = parsed.scheme.toLowerCase();
+          const decodedScheme = unescape(parsed.scheme);
+          if (VALID_SCHEME.test(decodedScheme)) {
+            parsed.scheme = decodedScheme.toLowerCase();
           } else {
             parsed.error = parsed.error || MALFORMED_SCHEME_ERROR;
             malformedScheme = true;
@@ -33040,7 +32984,7 @@ var require_fast_uri = __commonJS({
             malformedIPLiteral = hasIPLiteralBracket && (!bracketedIPLiteral || ipv6result.error === true);
             parsed.host = isIP ? ipv6result.host : ipv6result.host.toLowerCase();
             if (malformedIPLiteral) {
-              parsed.error = parsed.error || MALFORMED_HOST_ERROR;
+              parsed.error = parsed.error || "URI host is malformed.";
               malformedAuthorityOrPort = true;
             }
           } else {
@@ -33068,7 +33012,7 @@ var require_fast_uri = __commonJS({
           if (!isIP) {
             host = normalizePercentEncoding(host.toLowerCase());
           }
-          parsed.host = isIP || options.scheme !== "null" ? reescapeHostDelimiters(host, isIP) : host;
+          parsed.host = reescapeHostDelimiters(host, isIP);
         }
         if (!schemeHandler || schemeHandler && !schemeHandler.skipNormalize) {
           if (parsed.path) {
@@ -37060,15 +37004,6 @@ var init_mcp = __esm({
         this._promptHandlersInitialized = false;
         this.server = new Server(serverInfo, options);
         this._maxToolInputElements = resolveMaxToolInputElements(options?.maxToolInputElements);
-        if (options?.capabilities?.tools) {
-          this.setToolRequestHandlers();
-        }
-        if (options?.capabilities?.resources) {
-          this.setResourceRequestHandlers();
-        }
-        if (options?.capabilities?.prompts) {
-          this.setPromptRequestHandlers();
-        }
       }
       /**
        * Access experimental features.
@@ -38131,7 +38066,9 @@ function escapeUnencodable(s) {
 }
 function showTermName(s) {
   const shown = escapeUnencodable(s);
-  return shown.length > 40 ? `${shown.slice(0, 39)}\u2026` : shown;
+  if (shown.length <= 40) return shown;
+  const end = /[\uD800-\uDBFF]/.test(shown[38]) && /[\uDC00-\uDFFF]/.test(shown[39]) ? 38 : 39;
+  return `${shown.slice(0, end)}\u2026`;
 }
 function stripInvisible(s) {
   return s.replace(INVISIBLE_RE, "");
@@ -51413,6 +51350,9 @@ function contextPresent(scope, termIndex) {
   const { tokens, from, to } = scope;
   for (const item of items) {
     const len = item.length;
+    for (const tokens2 of scope.externalTokens) for (let p = 0; p + len <= tokens2.length; p++) {
+      if (item.every((word, k) => tokens2[p + k].textLower === word || tokens2[p + k].baseLower === word)) return true;
+    }
     for (let p = 0; p + len <= tokens.length; p++) {
       if (p + len - 1 >= from && p <= to) continue;
       let hit = true;
@@ -51541,6 +51481,7 @@ function findReplacements(text, index, opts = {}) {
     skipCode: opts.skipCode ?? index.skipCode
   };
   const tokens = tokenize(text, resolved.skipCode);
+  const externalTokens = [opts.context?.recentText, opts.context?.bundleId].map((value) => value ? tokenize(value, false) : []);
   const candidates = [];
   const contexts = /* @__PURE__ */ new Map();
   index.lexicon.terms.forEach((term, termIndex) => {
@@ -51560,7 +51501,7 @@ function findReplacements(text, index, opts = {}) {
       if (last.skipped) break;
       if (n > 1 && !tokens[j - 1].joinsNext) break;
       const full = makeView(text, tokens, i, j, false, index.protectedWords);
-      const scope = { tokens, from: i, to: j, contexts };
+      const scope = { tokens, externalTokens, from: i, to: j, contexts };
       let best = gluedAfter(text, full.end) ? void 0 : findBest(full, index, resolved, scope);
       if (last.baseEnd < last.end) {
         const alt = makeView(text, tokens, i, j, true, index.protectedWords);
@@ -69095,6 +69036,7 @@ function createServer(opts = {}) {
     let timedOut = false;
     const result = normalizeWithIndex(body.text, entry.index, {
       shouldStop: () => timedOut ||= Date.now() - started >= normalizeBudgetMs,
+      ...body.context !== void 0 ? { context: body.context } : {},
       ...body.dryRun !== void 0 ? { dryRun: body.dryRun } : {},
       ...body.minConfidence !== void 0 ? { minConfidence: body.minConfidence } : {}
     });
@@ -69622,6 +69564,7 @@ var init_server3 = __esm({
     CwdField = external_exports.string().min(1).optional();
     NormalizeBody = external_exports.object({
       text: external_exports.string(),
+      context: external_exports.object({ recentText: external_exports.string().max(1e5).optional(), bundleId: external_exports.string().max(255).optional() }).strict().optional(),
       dryRun: external_exports.boolean().optional(),
       minConfidence: external_exports.number().min(0).max(1).optional(),
       cwd: CwdField
@@ -69663,7 +69606,7 @@ var init_server3 = __esm({
       "GET /export/:format"
     ];
     BODY_SHAPES = {
-      "/normalize": "POST /normalize takes { text, dryRun?, minConfidence?, cwd? }",
+      "/normalize": "POST /normalize takes { text, context?, dryRun?, minConfidence?, cwd? }",
       "/learn": "POST /learn takes { heard, meant, scope?, cwd? }",
       "/add": "POST /add takes { canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }",
       "/packs/:name": "POST /packs/:name takes { scope?, cwd? } or an empty body"
