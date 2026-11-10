@@ -27,3 +27,28 @@ it('filters marker words from source while retaining adjacent identifiers', asyn
     await fs.rm(dir, { recursive: true, force: true });
   }
 });
+
+it('retains identifiers with a marker embedded in a longer word', async () => {
+  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-markers-'));
+  try {
+    await fs.writeFile(path.join(dir, 'embedded.ts'), [
+      '// TODO: standalone marker still filtered',
+      'class TodoList {}',
+      'class NoteWorthy {}',
+      'class FixmeWidget {}',
+      'class HackDayPlanner {}',
+      'class XxxFactor {}',
+    ].join('\n'));
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+    const names = candidates.map(({ canonical }) => canonical);
+    expect(names).not.toContain('TODO');
+    for (const embedded of ['TodoList', 'NoteWorthy', 'FixmeWidget', 'HackDayPlanner', 'XxxFactor']) {
+      expect(candidates).toContainEqual(expect.objectContaining({
+        canonical: embedded, category: 'identifier', evidence: ['embedded.ts'],
+      }));
+    }
+  } finally {
+    await fs.rm(dir, { recursive: true, force: true });
+  }
+});
