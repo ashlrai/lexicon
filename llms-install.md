@@ -34,7 +34,7 @@ That installs the latest release. To pin the release this page was written for:
 
 <!-- fresh:begin install:npm -->
 ```bash
-npm install -g @ashlr/lexicon@0.5.10
+npm install -g @ashlr/lexicon@0.5.11
 ```
 <!-- fresh:end -->
 
