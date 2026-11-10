@@ -54,6 +54,47 @@ function byName(candidates: HarvestCandidate[], name: string): HarvestCandidate 
 }
 
 describe('harvestRepo', () => {
+  it.each([
+    ['empty', ''],
+    ['whitespace-only', ' \t\n\r\n'],
+  ])('returns no candidates for %s file contents', async (_label, content) => {
+    const dir = path.join(tmp, `empty-input-${_label}`, 'w');
+    await fs.mkdir(dir, { recursive: true });
+    for (const name of ['README.md', 'index.ts', 'package.json']) {
+      await fs.writeFile(path.join(dir, name), content);
+    }
+
+    await expect(harvestRepo(dir, { git: false, minCount: 1, symbols: true })).resolves.toEqual([]);
+  });
+
+  it('filters literal XXX beside ordinary prose while preserving adjacent names', async () => {
+    const dir = path.join(tmp, 'xxx-prose', 'repo');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'README.md'),
+      'We connect Mastodon XXX Quasar for ordinary conversations.\n');
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1 });
+    expect(byName(candidates, 'XXX')).toBeUndefined();
+    for (const name of ['Mastodon', 'Quasar']) {
+      expect(byName(candidates, name)).toMatchObject({
+        canonical: name, category: 'brand', count: 1, evidence: ['README.md'],
+      });
+    }
+  });
+
+  it('ignores TODO in ordinary prose while retaining a valid brand', async () => {
+    const dir = path.join(tmp, 'todo-prose', 'repo');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'README.md'),
+      'Our TODO is to connect Mastodon. Another TODO keeps Mastodon available.\n');
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1 });
+    expect(byName(candidates, 'TODO')).toBeUndefined();
+    expect(byName(candidates, 'Mastodon')).toMatchObject({
+      canonical: 'Mastodon', category: 'brand', count: 2, evidence: ['README.md'],
+    });
+  });
+
   it('harvests the identifier associated with a HACK marker from a fixture', async () => {
     const fixture = path.join(path.dirname(fileURLToPath(import.meta.url)), 'fixtures', 'hack-marker');
     const candidates = await harvestRepo(fixture, { git: false, minCount: 1, symbols: true });
@@ -220,7 +261,7 @@ describe('harvestRepo', () => {
     expect(await harvestRepo(dir, { ...options, minCount: 3 })).toEqual([]);
   });
 
-  it.each(['FIXME', 'NOTE', 'HACK'])(
+  it.each(['TODO', 'FIXME', 'NOTE', 'HACK', 'XXX'])(
     'excludes %s in ordinary comments while counting the names in their text', async (marker) => {
       const dir = path.join(tmp, `ordinary-comment-${marker}`, 'repo');
       await fs.mkdir(dir, { recursive: true });

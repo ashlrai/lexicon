@@ -103,7 +103,10 @@ export function escapeUnencodable(s: string): string {
 /** `s` with each unencodable code unit written as `\uXXXX`, cut to 40 characters, for naming a term in an error. */
 function showTermName(s: string): string {
   const shown = escapeUnencodable(s);
-  return shown.length > 40 ? `${shown.slice(0, 39)}\u2026` : shown;
+  if (shown.length <= 40) return shown;
+  // Do not leave half of a valid surrogate pair at the truncation boundary.
+  const end = /[\uD800-\uDBFF]/.test(shown[38]) && /[\uDC00-\uDFFF]/.test(shown[39]) ? 38 : 39;
+  return `${shown.slice(0, end)}\u2026`;
 }
 
 export function stripInvisible(s: string): string {

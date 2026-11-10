@@ -11,6 +11,14 @@ const LEX: Lexicon = {
 const out = (text: string): string => normalize(text, LEX).output;
 
 describe('code the matcher leaves alone', () => {
+  it('preserves an alias in a backtick fence and normalizes it in following prose', () => {
+    const text = '```sh\nashler deploy\n```\nask ashler';
+    expect(collectRanges(text).map(({ start, end }) => text.slice(start, end))).toEqual([
+      '```sh\nashler deploy\n```',
+    ]);
+    expect(out(text)).toBe('```sh\nashler deploy\n```\nask Ashlr.AI');
+  });
+
   it('skips a tilde fence, the other fenced code block', () => {
     expect(out('~~~\nashler deploy\n~~~\nand ashler')).toBe('~~~\nashler deploy\n~~~\nand Ashlr.AI');
     expect(out('Run this:\n\n  ~~~sh\n  ashler run\n  ~~~\n')).toBe('Run this:\n\n  ~~~sh\n  ashler run\n  ~~~\n');
@@ -34,6 +42,36 @@ describe('code the matcher leaves alone', () => {
     expect(out('``a ` ashler`` ashler')).toBe('``a ` ashler`` Ashlr.AI');
     // An unmatched run is literal text; the single-backtick span after it still counts.
     expect(out('`` stray, ashler and `ashler`')).toBe('`` stray, Ashlr.AI and `ashler`');
+  });
+
+  it('treats an unmatched backtick in prose as literal text', () => {
+    const text = 'ask ashler about `the deploy, then tell Ashlar';
+    expect(collectRanges(text)).toEqual([]);
+    expect(out(text)).toBe('ask Ashlr.AI about `the deploy, then tell Ashlr.AI');
+  });
+
+  it('keeps punctuation between adjacent inline code spans outside both spans', () => {
+    const text = 'ashler `ashler run`,/`Ashlar stop` ashler';
+    const ranges = collectRanges(text);
+    expect(ranges.map(({ start, end }) => text.slice(start, end))).toEqual([
+      '`ashler run`',
+      '`Ashlar stop`',
+    ]);
+    expect(text.slice(ranges[0].end, ranges[1].start)).toBe(',/');
+    expect(out(text)).toBe('Ashlr.AI `ashler run`,/`Ashlar stop` Ashlr.AI');
+  });
+
+  it('recognizes each inline span independently and corrects the prose between them', () => {
+    const text = '`ashler` and ashler then ``Ashlar `x` `` before `ashler`';
+    const ranges = collectRanges(text);
+    expect(ranges.map(({ start, end }) => text.slice(start, end))).toEqual([
+      '`ashler`',
+      '``Ashlar `x` ``',
+      '`ashler`',
+    ]);
+    expect(text.slice(ranges[0].end, ranges[1].start)).toBe(' and ashler then ');
+    expect(text.slice(ranges[1].end, ranges[2].start)).toBe(' before ');
+    expect(out(text)).toBe('`ashler` and Ashlr.AI then ``Ashlar `x` `` before `ashler`');
   });
 
   it('keeps a code span on one line, as before', () => {

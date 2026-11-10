@@ -38066,7 +38066,9 @@ function escapeUnencodable(s) {
 }
 function showTermName(s) {
   const shown = escapeUnencodable(s);
-  return shown.length > 40 ? `${shown.slice(0, 39)}\u2026` : shown;
+  if (shown.length <= 40) return shown;
+  const end = /[\uD800-\uDBFF]/.test(shown[38]) && /[\uDC00-\uDFFF]/.test(shown[39]) ? 38 : 39;
+  return `${shown.slice(0, end)}\u2026`;
 }
 function stripInvisible(s) {
   return s.replace(INVISIBLE_RE, "");
@@ -69604,7 +69606,7 @@ var init_server3 = __esm({
       "GET /export/:format"
     ];
     BODY_SHAPES = {
-      "/normalize": "POST /normalize takes { text, dryRun?, minConfidence?, cwd? }",
+      "/normalize": "POST /normalize takes { text, context?, dryRun?, minConfidence?, cwd? }",
       "/learn": "POST /learn takes { heard, meant, scope?, cwd? }",
       "/add": "POST /add takes { canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }",
       "/packs/:name": "POST /packs/:name takes { scope?, cwd? } or an empty body"

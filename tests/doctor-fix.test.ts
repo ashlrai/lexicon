@@ -161,6 +161,27 @@ describe("lexicon doctor --fix", () => {
 		expect((await planFixes(fixEnv())).fixes).toEqual([]);
 	});
 
+	it("leaves the fixture unchanged when the same fix is applied twice", async () => {
+		const dir = path.dirname(globalPath);
+		await fs.writeFile(path.join(dir, "trust.json"), "{ broken json");
+		const options = { fix: true, apply: true, json: true, cwd: tmp };
+		const first = io();
+		expect(await runDoctorFix(options, first, fixEnv())).toBe(0);
+		const firstResult = JSON.parse(first.out);
+		expect(firstResult.outcome.results).toHaveLength(2);
+		expect(
+			firstResult.outcome.results.every((r: { applied: boolean }) => r.applied),
+		).toBe(true);
+		const afterFirst = await snapshot(dir);
+
+		const second = io();
+		expect(await runDoctorFix(options, second, fixEnv())).toBe(0);
+		const secondResult = JSON.parse(second.out);
+		expect(secondResult.plan.fixes).toEqual([]);
+		expect(secondResult.outcome).toBeNull();
+		expect(await snapshot(dir)).toEqual(afterFirst);
+	});
+
 	it("leaves an unparseable lexicon and serve.json as manual items", async () => {
 		await fs.writeFile(globalPath, "terms: [: oops");
 		const before = await snapshot(path.dirname(globalPath));

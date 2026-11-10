@@ -128,6 +128,24 @@ describe('requestUrl', () => {
 });
 
 describe('lexicon cache', () => {
+  it('reuses the cached lexicon for repeated reads of unchanged data', async () => {
+    const cwd = path.join(home, 'unchanged');
+    await fs.mkdir(cwd, { recursive: true });
+    const health = `/health?cwd=${encodeURIComponent(cwd)}`;
+    const loadsOfCwd = (): number => gate.loads.filter((loadedCwd) => loadedCwd === cwd).length;
+
+    const first = await api('GET', health);
+    expect(first.status).toBe(200);
+    const firstBody = await first.json();
+    expect(firstBody).toMatchObject({ terms: 1 });
+    expect(loadsOfCwd()).toBe(1);
+
+    const second = await api('GET', health);
+    expect(second.status).toBe(first.status);
+    expect(await second.json()).toEqual(firstBody);
+    expect(loadsOfCwd()).toBe(1);
+  });
+
   it('does not cache a load that started before a write and finished after its invalidation', async () => {
     // A cwd nothing has loaded yet, so the first request misses the cache.
     const cwd = path.join(home, 'race');

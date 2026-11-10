@@ -42,6 +42,7 @@ public class BurstDetectorTests
     {
         BurstDetector d = new(string.Empty);
         double end = Type(string.Empty, d, string.Empty, 0);
+        d.Record(string.Empty, end);
 
         Assert.False(d.HasPendingChanges);
         Assert.Equal(string.Empty, d.LastStable);

@@ -124,6 +124,7 @@ public class AppExclusionsTests
         AppExclusions cleared = new(Array.Empty<string>());
 
         Assert.True(cleared.IsEmpty);
+        Assert.False(cleared.IsExcluded("notepad.exe"));
         Assert.False(cleared.IsExcluded("1Password.exe"));
         Assert.False(cleared.IsExcluded("lsass.exe"));
         Assert.False(cleared.IsExcluded("WindowsTerminal.exe"));

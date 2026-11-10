@@ -6259,7 +6259,9 @@ function escapeUnencodable(s) {
 }
 function showTermName(s) {
   const shown = escapeUnencodable(s);
-  return shown.length > 40 ? `${shown.slice(0, 39)}\u2026` : shown;
+  if (shown.length <= 40) return shown;
+  const end = /[\uD800-\uDBFF]/.test(shown[38]) && /[\uDC00-\uDFFF]/.test(shown[39]) ? 38 : 39;
+  return `${shown.slice(0, end)}\u2026`;
 }
 function stripInvisible(s) {
   return s.replace(INVISIBLE_RE, "");

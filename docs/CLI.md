@@ -23,6 +23,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon mcp`](#lexicon-mcp) | start the stdio MCP server (what `claude mcp add` points at) |
 | [`lexicon hook`](#lexicon-hook) | run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON from stdin) |
 | [`lexicon daemon [options]`](#lexicon-daemon) | watch the clipboard (macOS, Linux, Windows) and correct dictated text in place |
+| [`lexicon test-select [options] [files...]`](#lexicon-test-select) | select tests for changed repository files, falling back to the full suite |
 | [`lexicon import [options] [file] [format]`](#lexicon-import) | import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub |
 | [`lexicon install [options] [client]`](#lexicon-install) | print (or with --apply, write) the MCP config for an agent client; no client lists them |
 | [`lexicon uninstall [options] [client]`](#lexicon-uninstall) | remove the MCP config (and, for claude, the hooks) lexicon install wrote for a client; nothing else is touched |
@@ -66,6 +67,7 @@ Commands:
   mcp                                     start the stdio MCP server (what `claude mcp add` points at)
   hook                                    run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON from stdin)
   daemon [options]                        watch the clipboard (macOS, Linux, Windows) and correct dictated text in place
+  test-select [options] [files...]        select tests for changed repository files, falling back to the full suite
   import [options] [file] [format]        import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub
   install [options] [client]              print (or with --apply, write) the MCP config for an agent client; no client lists them
   uninstall [options] [client]            remove the MCP config (and, for claude, the hooks) lexicon install wrote for a client; nothing else is touched
@@ -380,6 +382,22 @@ Options:
   --socket <path>   with --expander: the socket to listen on (default
                     $XDG_RUNTIME_DIR/lexicon/expander.sock)
   -h, --help        display help for command
+```
+
+## `lexicon test-select`
+
+```text
+Usage: lexicon test-select [options] [files...]
+
+select tests for changed repository files, falling back to the full suite
+
+Arguments:
+  files       repository-relative changed paths (default: git changes including
+              untracked files)
+
+Options:
+  --json      print the selection and command argument arrays as JSON
+  -h, --help  display help for command
 ```
 
 ## `lexicon import`
