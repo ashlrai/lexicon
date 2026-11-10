@@ -69,8 +69,9 @@ The 41-character canonical is valid; only its label in the error is shortened.
 The schema first escapes invalid code units in the cleaned canonical, then, if
 the resulting label exceeds 40 UTF-16 code units, keeps the first 39 and adds
 `…`. This is a display limit, separate from the canonical's length limit.
-Because the cut is by code unit, it can even split an escape or a surrogate
-pair; use the field path and the original input to find the full name.
+Because the cut is by code unit, it can split an escape, but it backs off one
+unit rather than leave half of a valid surrogate pair; use the field path and
+the original input to find the full name.
 
 <!-- schema-example -->
 ```yaml

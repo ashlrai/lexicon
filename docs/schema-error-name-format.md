@@ -17,11 +17,13 @@ The format comes from [`showTermName` and `refuseUnencodable`](../src/core/schem
    surrogate pair remains intact at this stage. Each escape is six UTF-16
    code units.
 3. If the escaped name exceeds 40 UTF-16 code units, the first 39 units are
-   retained and `…` is appended. A name of exactly 40 units is not shortened.
+   retained and `…` is appended. When those 39 units would end on the first
+   half of a valid surrogate pair, the cut backs off one more unit so the
+   label never holds half a pair. A name of exactly 40 units is not shortened.
 
 The cutoff is applied after escaping and counts code units, not bytes, Unicode
-code points, or graphemes. It can cut through an escape or a valid surrogate
-pair. Ordinary quotes and backslashes are not escaped, so this label is not a
+code points, or graphemes. It can cut through an escape, but not a valid
+surrogate pair. Ordinary quotes and backslashes are not escaped, so this label is not a
 serialized string or a way to recover the original name. Use the field path
 and original input to locate and fix the invalid value.
 

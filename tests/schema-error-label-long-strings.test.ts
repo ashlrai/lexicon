@@ -87,11 +87,13 @@ describe('schema error labels for long invalid strings', () => {
     expect(label).toHaveLength(LABEL_MAX);
   });
 
-  it('cuts a valid pair at the boundary as documented, leaving only a half of that pair', () => {
+  it('backs off one unit at the boundary rather than split a valid pair', () => {
     const canonical = 'A'.repeat(38) + '\u{1F600}' + 'B'.repeat(10) + '￿';
     const label = labelOf(message({ terms: [{ canonical }] }));
-    expect(label).toBe(`${'A'.repeat(38)}\uD83D…`);
-    expect(label).toHaveLength(LABEL_MAX);
+    expect(label).toBe(`${'A'.repeat(38)}…`);
+    expect(label).toHaveLength(LABEL_MAX - 1);
+    expect(label).not.toMatch(/[\uD800-\uDBFF](?![\uDC00-\uDFFF])/);
+    expect(label).not.toMatch(/(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/);
   });
 
   it('labels every invalid field of a long term with the same bounded name', () => {

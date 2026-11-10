@@ -50,7 +50,9 @@ The schema strips its specified invisible characters and trims the canonical
 before constructing the label. It escapes every rejected code unit in the
 cleaned name as six literal characters (`\uXXXX`), then limits the label to
 40 UTF-16 code units. If it is longer, the first 39 units are followed by
-`…`. This limit includes the ellipsis and applies only to the error label.
+`…`, except that a cut landing on the first half of a valid surrogate pair
+backs off one unit so the label never holds half a pair. This limit includes
+the ellipsis and applies only to the error label.
 
 Here, 35 `A` characters plus the six-character escape make 41 units. The
 cut falls inside the escape:
@@ -66,9 +68,10 @@ Invalid lexicon:
   - terms[0].canonical: must not contain U+FFFF (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA\uFF…"
 ```
 
-The cut can also split a valid surrogate pair: the limit counts UTF-16 code
-units, not code points. Use the zero-based field path and the original input
-to find and replace the invalid unit; the preview is a label, not a repair or
-a serialized copy of the name. List indexes refer to the cleaned list.
+The cut can split an escape, but it never splits a valid surrogate pair: the
+limit counts UTF-16 code units, not code points, and backs off one unit when
+the cut would land on half a pair. Use the zero-based field path and the
+original input to find and replace the invalid unit; the preview is a label,
+not a repair or a serialized copy of the name. List indexes refer to the cleaned list.
 See the [preview reference](schema-error-preview-reference.md) for details and
 [schema error examples](schema-error-examples.md) for settings errors.

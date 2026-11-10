@@ -37,8 +37,9 @@ units for the preview. If that result is at most 40 UTF-16 code units long, it
 is shown in full. Otherwise the preview contains its first 39 UTF-16 code
 units followed by `…`, for a total of 40. This is a limit on the error label,
 not the length limit for a valid canonical. An escape consumes six code units
-and a supplementary character consumes two, so this cut can split either an
-escape or a surrogate pair.
+and a supplementary character consumes two, so this cut can split an escape.
+When the cut would land on the first half of a valid surrogate pair, it backs
+off one unit instead, so the label never holds half a pair.
 
 At exactly 40 code units after escaping, the whole label is shown:
 
