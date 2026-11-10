@@ -30,6 +30,20 @@ describe('U+FFFE is rejected', () => {
     ]);
   });
 
+  it('rejects a term whose alias carries U+FFFE and names the field path', () => {
+    const result = LexiconSchema.safeParse({
+      terms: [{ canonical: 'Rocket', aliases: ['ship', `rock\uFFFEet`] }],
+    });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected rejection');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['terms', 0, 'aliases', 1],
+        message: `${reason('U+FFFE')} in term "Rocket"`,
+      },
+    ]);
+  });
+
   it.each(['\uFFFD', '\u{10000}'])('accepts nearby valid character %j', (character) => {
     expect(findUnencodableChar(character)).toBeUndefined();
     const result = TermSchema.safeParse({ canonical: `word${character}` });
