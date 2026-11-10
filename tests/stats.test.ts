@@ -255,8 +255,22 @@ describe('lexicon stats (CLI)', () => {
       expect(await runStats({ cwd: tmp }, { stdout: (s) => void text.push(s), stderr: () => undefined })).toBe(0);
       expect(text.join('')).toMatch(/^terms: 0 {3}aliases: 0 {3}hits: 0\nThe lexicon has no terms yet, so nothing is corrected or counted; run `lexicon setup`/);
       const json: string[] = [];
-      expect(await runStats({ cwd: tmp, json: true }, { stdout: (s) => void json.push(s), stderr: () => undefined })).toBe(0);
-      expect(JSON.parse(json.join(''))).toMatchObject({ ok: true, termCount: 0, note });
+      const errors: string[] = [];
+      expect(await runStats({ cwd: tmp, json: true }, { stdout: (s) => void json.push(s), stderr: (s) => void errors.push(s) })).toBe(0);
+      expect(JSON.parse(json.join(''))).toMatchObject({
+        ok: true,
+        termCount: 0,
+        aliasCount: 0,
+        totalHits: 0,
+        neverHitCount: 0,
+        topTerms: [],
+        neverHit: [],
+        byCategory: {},
+        bySource: {},
+        files: [{ path: path.join(tmp, 'config', 'lexicon.yaml'), scope: 'global', terms: 0 }],
+        note,
+      });
+      expect(errors).toEqual([]);
     } finally {
       if (prev === undefined) delete process.env.LEXICON_PATH;
       else process.env.LEXICON_PATH = prev;
