@@ -237,6 +237,37 @@ async function latestStable(version) {
   assert.equal(response.status, 200, 'published latest evidence unavailable');
   validateLatestStable(version, JSON.parse((await bounded(response, 2 * 1024 * 1024)).toString('utf8')));
 }
+const CONTRACT = 'scripts/release-contract.mjs';
+const git = (repo, args, extra = {}) => execFileSync('git', ['-C', repo, ...args], { timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'], ...extra });
+/** Bind the candidate contract to the tagged source, not the running policy copy. */
+export function assertCandidateContractMatchesTag({ sourceSha, candidateHead, candidateBytes, tagBytes }) {
+  assert.match(sourceSha, SHA); assert.match(candidateHead, SHA);
+  assert.equal(candidateHead, sourceSha, 'candidate checkout is not the tagged source');
+  assert.ok(Buffer.isBuffer(candidateBytes) && candidateBytes.length > 0, 'candidate release contract missing or empty');
+  assert.ok(Buffer.isBuffer(tagBytes) && tagBytes.length > 0, 'tagged release contract missing or empty');
+  assert.deepEqual(candidateBytes, tagBytes, 'candidate release contract does not match the tagged source');
+}
+export function taggedReleaseContract(repo, sourceSha) {
+  assert.match(sourceSha, SHA);
+  const bytes = git(repo, ['show', `${sourceSha}:${CONTRACT}`]);
+  assert.ok(Buffer.isBuffer(bytes) && bytes.length > 0, 'tagged release contract missing or empty');
+  return bytes;
+}
+export function checkoutHeadSha(repo) {
+  const head = git(repo, ['rev-parse', 'HEAD'], { encoding: 'utf8', maxBuffer: 4096 }).trim();
+  assert.match(head, SHA);
+  return head;
+}
+export function assertCandidateContractFromCheckout({ proofPath, candidateRoot }) {
+  const proof = JSON.parse(readFileSync(proofPath, 'utf8'));
+  assert.match(proof.sourceSha, SHA);
+  assertCandidateContractMatchesTag({
+    sourceSha: proof.sourceSha,
+    candidateHead: checkoutHeadSha(candidateRoot),
+    candidateBytes: readFileSync(join(candidateRoot, CONTRACT)),
+    tagBytes: taggedReleaseContract(candidateRoot, proof.sourceSha),
+  });
+}
 async function main() {
   const input = recoveryInputs(process.env), command = process.argv[2];
   assert.ok(['prepare', 'recheck', 'recheck-final'].includes(command));
@@ -259,6 +290,12 @@ async function main() {
   }
   console.log(JSON.stringify(proof));
 }
+function refuse() { console.error('Release recovery refused; credentials and response bodies are not logged.'); process.exitCode = 1; }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  main().catch(() => { console.error('Release recovery refused; credentials and response bodies are not logged.'); process.exitCode = 1; });
+  if (process.argv[2] === 'assert-candidate-contract') {
+    try { assertCandidateContractFromCheckout({ proofPath: join(ROOT, 'proof.json'), candidateRoot: 'candidate' }); }
+    catch { refuse(); }
+  } else {
+    main().catch(() => { refuse(); });
+  }
 }

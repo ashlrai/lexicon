@@ -303,7 +303,7 @@ jobs:
       - name: Revalidate candidate carriers with the unchanged trusted verifier
         run: |
           set -euo pipefail
-          cmp scripts/release-contract.mjs candidate/scripts/release-contract.mjs
+          node scripts/release-recovery.mjs assert-candidate-contract
           node scripts/release-contract.mjs source candidate "v$VERSION"
           node scripts/release-contract.mjs assemble staged release "$VERSION"
       - name: Require actual public npm bytes before any GitHub write

@@ -1,12 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { existsSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { assetNames } from './release-contract.mjs';
-import { validateRecoveryEnvironment, recoveryInputs, validateRecoveryEvidence, validatePolicyEvidence, validateArtifactBytes, validateLatestStable, extractArtifact } from './release-recovery.mjs';
+import { validateRecoveryEnvironment, recoveryInputs, validateRecoveryEvidence, validatePolicyEvidence, validateArtifactBytes, validateLatestStable, extractArtifact, assertCandidateContractMatchesTag, assertCandidateContractFromCheckout } from './release-recovery.mjs';
 
 const source = 'a'.repeat(40), policy = 'b'.repeat(40), repo = 'ashlrai/lexicon';
 const releasePath = '.github/workflows/release.yml', ciPath = '.github/workflows/ci.yml';
@@ -143,11 +143,43 @@ test('workflow isolates recovery and rechecks before every GitHub mutation', () 
   assert.doesNotMatch(workflow, /Original failed tag-push release run ID/);
   assert.match(workflow, /description: "Successful full manual CI run on the tagged commit"/);
   assert.doesNotMatch(recovery, /\bnpm\s+(?:publish|install|ci)\b|secrets\.|ACTIONS_ID_TOKEN_REQUEST/);
-  assert.match(recovery, /cmp scripts\/release-contract\.mjs candidate\/scripts\/release-contract\.mjs/);
+  assert.match(recovery, /node scripts\/release-recovery\.mjs assert-candidate-contract/);
+  assert.doesNotMatch(recovery, /cmp scripts\/release-contract\.mjs candidate\/scripts\/release-contract\.mjs/);
   const registry = recovery.indexOf('mjs registry release'), recheck = recovery.indexOf('mjs recheck\n'), create = recovery.indexOf('gh release create');
   assert.ok(registry >= 0 && recheck > registry && create > recheck);
   const final = recovery.indexOf('mjs recheck-final'), edit = recovery.indexOf('gh release edit');
   assert.ok(final > create && edit > final);
   const uses = [...recovery.matchAll(/^\s+(?:-\s+)?uses: (\S+)/gm)].map(m => m[1]);
   assert.equal(uses.length, 3); for (const action of uses) assert.match(action, /^[^@]+@[a-f0-9]{40}$/);
+});
+
+test('candidate release contract is bound to the tagged source, not the running policy copy', () => {
+  const contract = Buffer.from('contract-v1\n');
+  assert.doesNotThrow(() => assertCandidateContractMatchesTag({ sourceSha: source, candidateHead: source, candidateBytes: Buffer.from(contract), tagBytes: Buffer.from(contract) }));
+  assert.throws(() => assertCandidateContractMatchesTag({ sourceSha: source, candidateHead: source, candidateBytes: Buffer.from('other\n'), tagBytes: contract }));
+  assert.throws(() => assertCandidateContractMatchesTag({ sourceSha: source, candidateHead: policy, candidateBytes: contract, tagBytes: contract }));
+  assert.throws(() => assertCandidateContractMatchesTag({ sourceSha: source, candidateHead: source, candidateBytes: Buffer.alloc(0), tagBytes: contract }));
+  assert.throws(() => assertCandidateContractMatchesTag({ sourceSha: source, candidateHead: source, candidateBytes: contract, tagBytes: Buffer.alloc(0) }));
+  assert.throws(() => assertCandidateContractMatchesTag({ sourceSha: 'abc', candidateHead: 'abc', candidateBytes: contract, tagBytes: contract }));
+  assert.throws(() => assertCandidateContractMatchesTag({ sourceSha: source, candidateHead: source, candidateBytes: 'contract-v1\n', tagBytes: contract }));
+});
+
+test('candidate contract matches git show of the tagged source and fails when the working tree drifts', () => {
+  const root = mkdtempSync(join(tmpdir(), 'lexicon-contract-'));
+  const git = (args, extra = {}) => execFileSync('git', ['-C', root, ...args], { stdio: 'pipe', ...extra });
+  try {
+    mkdirSync(join(root, 'scripts'));
+    writeFileSync(join(root, 'scripts/release-contract.mjs'), 'tag-contract\n');
+    git(['init', '--initial-branch=main']);
+    git(['add', 'scripts/release-contract.mjs']);
+    git(['-c', 'user.name=test', '-c', 'user.email=test@example.com', '-c', 'commit.gpgsign=false', 'commit', '-m', 'tag']);
+    const sha = git(['rev-parse', 'HEAD'], { encoding: 'utf8' }).trim();
+    writeFileSync(join(root, 'proof.json'), JSON.stringify({ sourceSha: sha }));
+    assert.doesNotThrow(() => assertCandidateContractFromCheckout({ proofPath: join(root, 'proof.json'), candidateRoot: root }));
+    writeFileSync(join(root, 'scripts/release-contract.mjs'), 'dirty-main-copy\n');
+    assert.throws(() => assertCandidateContractFromCheckout({ proofPath: join(root, 'proof.json'), candidateRoot: root }));
+    writeFileSync(join(root, 'scripts/release-contract.mjs'), 'tag-contract\n');
+    writeFileSync(join(root, 'proof.json'), JSON.stringify({ sourceSha: policy }));
+    assert.throws(() => assertCandidateContractFromCheckout({ proofPath: join(root, 'proof.json'), candidateRoot: root }));
+  } finally { rmSync(root, { recursive: true, force: true }); }
 });
