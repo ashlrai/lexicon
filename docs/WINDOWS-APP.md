@@ -8,7 +8,7 @@ Source: `apps/windows` (C#, .NET 8, WinForms, no third-party runtime dependencie
 
 > ## Read this first
 >
-> **The UI Automation half of this app has never been run.** It was written on a Mac, which cross-compiles the binary perfectly well and cannot execute a single line of it. The pure logic (burst detection, splice math, the secret-field heuristic, the read gate, bubble content and placement) is covered by 214 unit tests that pass on macOS, Linux and Windows. Everything that touches UIA, SendInput, the tray, the registry or the clipboard is **unverified**, and [there is a list](#what-is-verified-and-what-is-not) rather than a vague disclaimer.
+> **The UI Automation half of this app has never been run.** It was written on a Mac, which cross-compiles the binary perfectly well and cannot execute a single line of it. The pure logic (burst detection, splice math, the secret-field heuristic, the read gate, bubble content and placement) is covered by 227 unit tests that pass on macOS, Linux and Windows. Everything that touches UIA, SendInput, the tray, the registry or the clipboard is **unverified**, and [there is a list](#what-is-verified-and-what-is-not) rather than a vague disclaimer.
 >
 > Before trusting it with anything you care about, run [the manual test script](#manual-test-script). It takes about ten minutes.
 
@@ -227,7 +227,7 @@ The token is read lazily and re-read after any failure, so restarting the server
 
 - `dotnet build -c Release` succeeds for the whole solution, warnings-as-errors, on macOS.
 - `dotnet publish -r win-x64 --self-contained` produces a single 72 MB `LexiconBar.exe` (`PE32+ executable (GUI) x86-64`), cross-compiled from macOS.
-- **214 unit tests pass**, on macOS, covering:
+- **227 unit tests pass**, on macOS, covering:
   - the burst detector, ported case for case from `BurstDetectorTests.swift`: typing never fires, streamed dictation coalesces, a paste fires at the settle delay, the run cap, hard refusals, UTF-16 maths with emoji, CRLF;
   - the splice and alignment maths, ported from `BurstAlignmentTests.swift`, covering the ambiguous-window regression, caret anchoring, stale snapshots, multi-replacement splices, newline refusal, the undo ledger;
   - the secret-field heuristic, including the whole-word cases ("shipping" vs "pin") and a pinned known-miss for pluralized all-caps acronyms;
@@ -278,7 +278,7 @@ In the order I would bet on:
 5. **Balloon tips and the drawn icon at 150% DPI.** Cosmetic, near-certain to need a tweak.
 6. **`Text_TextChanged` not firing in Electron.** Expected; the poll is the mitigation, and the symptom is a slower correction, not a wrong one.
 
-The parts I am *least* worried about are the ones that are tested: if a correction lands, it should land on the right span, because that is the logic the 214 tests cover and it is the same logic that has been running on macOS.
+The parts I am *least* worried about are the ones that are tested: if a correction lands, it should land on the right span, because that is the logic the 227 tests cover and it is the same logic that has been running on macOS.
 
 ## Manual test script
 
@@ -360,7 +360,7 @@ Requirements: the **.NET 8 SDK**. No Visual Studio, no Windows.
 ```bash
 cd apps/windows
 dotnet build -c Release                      # whole solution
-dotnet test  -c Release                      # the 214 portable tests
+dotnet test  -c Release                      # the 227 portable tests
 dotnet publish src/LexiconBar.App/LexiconBar.App.csproj \
   -c Release -r win-x64 --self-contained -o artifacts/win-x64
 ```
@@ -395,7 +395,7 @@ The same line is where the privacy decisions go, for the same reason. `FieldGate
 
 ### CI
 
-`.github/workflows/windows-app.yml` runs on any change under `apps/windows/`. Its `test-portable` job runs the 214 portable tests and the win-x64 cross-build on Linux, which is the gate that matters day to day, since the app is built on a Mac. Its `build-windows` job builds the solution, runs the same tests and publishes `LexiconBar.exe` as an artifact on `windows-latest`. Neither job touches UI Automation, for the reason above.
+`.github/workflows/windows-app.yml` runs on any change under `apps/windows/`. Its `test-portable` job runs the 227 portable tests and the win-x64 cross-build on Linux, which is the gate that matters day to day, since the app is built on a Mac. Its `build-windows` job builds the solution, runs the same tests and publishes `LexiconBar.exe` as an artifact on `windows-latest`. Neither job touches UI Automation, for the reason above.
 
 ## Troubleshooting
 

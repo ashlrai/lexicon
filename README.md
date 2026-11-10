@@ -121,7 +121,7 @@ These calls cover almost every session. The server has twenty-one MCP tools, thr
 
 - `normalize_transcript { text }` corrects a dictated string and returns `output`, `changed` and `replacements`.
 - `learn_correction { heard, meant }` records a correction the user just made.
-- `add_term { canonical, aliases?, phonetic? }` adds a spelling. Omit `aliases` and the server proposes the mis-hearings.
+- `add_term { canonical, aliases?, phonetic?, category?, notes? }` adds a spelling. Omit `aliases` and the server proposes the mis-hearings.
 - `setup_lexicon { apply? }` returns a plan and writes nothing until `apply: true`.
 - `lexicon_doctor {}` is the structured health check. Read `ready`, `summary` and `nextStep`.
 

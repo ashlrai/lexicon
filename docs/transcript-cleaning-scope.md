@@ -81,7 +81,10 @@ any span whose contents do not fit the one-to-three-plain-words shape.
 ## Boundaries
 
 The passes run in a fixed order: brackets, parentheses, asterisks, then
-whitespace. A span removed by an earlier pass can complete a later one
+whitespace, and the whole sequence repeats until the text stops changing, so
+a span removed by a later pass can also complete an earlier one (`(soft
+*noise* music)` loses `*noise*` first, after which `(soft music)` qualifies
+as a noise tag). A span removed by an earlier pass can complete a later one
 (`*hello [noise] world*` cleans to a space), and a span that fails its own
 shape check keeps its delimiters even when a later pass removes what was
 inside (`(*laughs*)` leaves `( )`).
