@@ -45,6 +45,29 @@ test('original source, run, jobs and artifact evidence are bound', () => {
   assert.throws(() => validateRecoveryEvidence({ ...input, macosId: input.ubuntuId }, fixture()));
 });
 
+test('a failed release run is admitted for a tag push or a workflow_dispatch on the tagged commit', () => {
+  const dispatched = fixture();
+  dispatched.run.event = 'workflow_dispatch';
+  dispatched.run.head_branch = 'main';
+  assert.equal(validateRecoveryEvidence(input, dispatched).sourceSha, source);
+  const onTag = fixture();
+  onTag.run.event = 'workflow_dispatch';
+  onTag.run.head_branch = 'v1.2.3';
+  assert.doesNotThrow(() => validateRecoveryEvidence(input, onTag));
+  const ciOnMain = fixture();
+  ciOnMain.ciRun.head_branch = 'main';
+  assert.equal(validateRecoveryEvidence(input, ciOnMain).sourceSha, source);
+  const rejected = {
+    schedule: e => { e.run.event = 'schedule'; },
+    feature: e => { e.run.event = 'workflow_dispatch'; e.run.head_branch = 'feature'; },
+    otherSha: e => { e.run.event = 'workflow_dispatch'; e.run.head_branch = 'main'; e.run.head_sha = policy; },
+    pushOnMain: e => { e.run.head_branch = 'main'; },
+    ciFeature: e => { e.ciRun.head_branch = 'feature'; },
+    ciPush: e => { e.ciRun.event = 'push'; e.ciRun.head_branch = 'main'; },
+  };
+  for (const [name, mutate] of Object.entries(rejected)) { const e = fixture(); mutate(e); assert.throws(() => validateRecoveryEvidence(input, e), name); }
+});
+
 test('current protected policy closure tolerates unrelated main advances only', () => {
   const paths = [releasePath, ciPath, 'scripts/release-recovery.mjs', 'scripts/release-contract.mjs'];
   const hashes = Object.fromEntries(paths.map((p, i) => [p, String(i).repeat(64)]));
@@ -115,6 +138,10 @@ test('workflow isolates recovery and rechecks before every GitHub mutation', () 
     assert.match(job, /needs: \[[^\]]*full-suite-evidence/);
   }
   assert.match(recovery, /permissions:\n      contents: write\n      actions: read\n      id-token: none/);
+  assert.match(recovery, /timeout-minutes: 25/);
+  assert.match(workflow, /description: "Original failed release run ID \(tag push or workflow_dispatch for this tag and commit\)"/);
+  assert.doesNotMatch(workflow, /Original failed tag-push release run ID/);
+  assert.match(workflow, /description: "Successful full manual CI run on the tagged commit"/);
   assert.doesNotMatch(recovery, /\bnpm\s+(?:publish|install|ci)\b|secrets\.|ACTIONS_ID_TOKEN_REQUEST/);
   assert.match(recovery, /cmp scripts\/release-contract\.mjs candidate\/scripts\/release-contract\.mjs/);
   const registry = recovery.indexOf('mjs registry release'), recheck = recovery.indexOf('mjs recheck\n'), create = recovery.indexOf('gh release create');

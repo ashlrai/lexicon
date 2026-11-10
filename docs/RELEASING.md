@@ -151,8 +151,11 @@ absence.
 
 The job publishes the original qualified `ashlr-lexicon-X.Y.Z.tgz` with
 `--provenance`; it does not rebuild or repack in the privileged job. It checks the
-exact registry name/version, SHA-512 integrity and downloaded archive bytes,
-with bounded retries for registry propagation. Only then does it create a draft
+exact registry name/version, SHA-512 integrity and downloaded archive bytes.
+While the version is not readable yet it polls for up to 10 minutes, backing
+off from 2 seconds to 60 seconds. A digest that is present and different fails
+immediately, and so does a downloaded archive whose bytes do not match. Only
+then does it create a draft
 GitHub release and upload the complete assets without overwrite. It verifies
 hosted inventory, sizes, checksums and bytes against the qualified files,
 rechecks npm acceptance, and makes the draft public. A final download verifies
@@ -186,7 +189,11 @@ or execute candidate scripts. Current trusted policy must descend from the tagge
 source and match the main workflow identity. It verifies successful full manual
 CI, the original current run attempt, both successful native producers, a
 successful npm-publish step followed by the sole registry-acceptance failure, and
-skipped GitHub publication steps. It binds exactly two original artifact IDs and
+skipped GitHub publication steps. The original release run may be the tag push
+or a workflow_dispatch of this same workflow, on `main` or on the tag, and the
+full-suite CI run may be a workflow_dispatch on the tag or on `main`. Both runs
+have to be the tagged commit. Any other event, branch, or commit is refused.
+It binds exactly two original artifact IDs and
 SHA-256 ZIP digests, rejects expired or mixed-attempt artifacts, and extracts only
 the fixed flat inventory with bounded sizes. Existing source-carrier, archive
 closure, registry-byte and hosted-byte checks remain unchanged. Candidate and

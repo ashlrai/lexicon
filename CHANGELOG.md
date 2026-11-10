@@ -28,6 +28,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Fixed
+
+- GitHub-only release recovery accepts a failed run of `release.yml` that was a tag push or a `workflow_dispatch` on the tagged commit. The npm version check polls for up to 10 minutes while that version is not readable yet, and an integrity mismatch still fails immediately.
+
 ## 0.5.12 (2026-11-09)
 
 ### Fixed
