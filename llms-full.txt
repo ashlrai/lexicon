@@ -185,6 +185,6 @@ On 330 clips of synthesized speech through whisper.cpp small.en, Lexicon recover
 - Twenty-one MCP tools, three resources and two prompts.
 - A CLI with 29 commands.
 - Sixteen export formats and eight importers.
-- 271 terms across the nine packs.
+- 272 terms across the nine packs.
 
 If a sentence here disagrees with `lexicon --help` or docs/MCP.md, the command and the MCP doc win.

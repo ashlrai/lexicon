@@ -967,7 +967,7 @@ describe('POST /learn and POST /add', () => {
       created: true,
     });
     const health = (await (await fetch(`${info.url}/health`)).json()) as { terms: number };
-    expect(health.terms).toBe(2);
+    expect(health.terms).toBe(3);
   });
 
   it('add with only never on an existing term appends no generated aliases', async () => {
@@ -1068,7 +1068,7 @@ describe('GET /lexicon, /export/:format, /stats', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { lexicon: { version: number; terms: unknown[] }; paths: { global: string; project?: string }; projectTrust?: string; skippedProject?: string };
     expect(body.lexicon.version).toBe(1);
-    expect(body.lexicon.terms.length).toBe(2);
+    expect(body.lexicon.terms.length).toBe(3);
     expect(body.paths.global).toBe(env.globalPath);
     expect(body.paths.project).toBeUndefined();
     expect(body.skippedProject).toBeUndefined();
@@ -1137,9 +1137,9 @@ describe('GET /lexicon, /export/:format, /stats', () => {
       expect(res.status).toBe(200);
       return (await res.text()).split('\n').filter((l) => l !== '');
     };
-    // The lexicon holds Ashlr.AI (brand) and Entire.io (product, added by the /add test above).
+    // The lexicon holds Ashlr.AI (brand), Entire.io (product, added by the /add test above), and Zorvex (added by the context test).
     const canonicals = async (route: string): Promise<string[]> => (await lines(route)).map((l) => l.split(':')[0]);
-    expect(await canonicals('/export/text')).toEqual(['Ashlr.AI', 'Entire.io']);
+    expect(await canonicals('/export/text')).toEqual(['Ashlr.AI', 'Entire.io', 'Zorvex']);
     expect(await canonicals('/export/text?category=brand')).toEqual(['Ashlr.AI']);
     expect(await canonicals('/export/text?category=Product')).toEqual(['Entire.io']);
     expect(await canonicals('/export/text?category=brand,product')).toEqual(['Ashlr.AI', 'Entire.io']);
@@ -1249,7 +1249,7 @@ describe('GET /lexicon, /export/:format, /stats', () => {
     const res = await api('GET', '/stats');
     expect(res.status).toBe(200);
     const body = (await res.json()) as LexiconStats;
-    expect(body.termCount).toBe(2);
+    expect(body.termCount).toBe(3);
     expect(body.totalHits).toBeGreaterThanOrEqual(1);
     expect(Array.isArray(body.topTerms)).toBe(true);
     expect(body.files[0]?.scope).toBe('global');
@@ -2080,7 +2080,7 @@ describe('lexicon serve (CLI)', () => {
   it('--status reports up against the running server and down otherwise', async () => {
     const up = memIO();
     expect(await runServe({ status: true, port: info.port, globalPath: env.globalPath }, up)).toBe(0);
-    expect(up.out.join('')).toContain(`lexicon serve is up at http://127.0.0.1:${info.port} (version 9.9.9, 2 terms)`);
+    expect(up.out.join('')).toContain(`lexicon serve is up at http://127.0.0.1:${info.port} (version 9.9.9, 3 terms)`);
 
     const closed = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
     const c = await closed.start();

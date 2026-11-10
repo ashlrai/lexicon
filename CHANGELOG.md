@@ -26,6 +26,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Added
+
+- `Weyv` in the ashlr pack: a music visualizer product name. The `wave` alias is context-gated, so "push wave" and "the weyv repo" become Weyv, while "sound wave" and "a wave of PRs" stay as they are.
+
 ## 0.5.10 (2026-11-09)
 
 ### Fixed
