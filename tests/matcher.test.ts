@@ -766,6 +766,18 @@ describe('robustness', () => {
     expect(find('Ashler', [])).toEqual([]);
   });
 
+  it('returns no replacements for an empty string with a populated index', () => {
+    const index = buildIndex(lex([
+      ASHLR,
+      { canonical: 'Supabase', aliases: ['super base'], category: 'brand' },
+      { canonical: 'LexiconStore', aliases: [], category: 'identifier' },
+    ]));
+    expect(findReplacements('', index)).toEqual([]);
+    expect(findReplacements('', index, { phonetic: true, fuzzy: true, skipCode: true, minConfidence: 0 })).toEqual([]);
+    expect(findReplacements('', index, { phonetic: false, fuzzy: false })).toEqual([]);
+    expect(findReplacements('', index, { context: { recentText: 'Ashler super base', bundleId: 'com.apple.Terminal' } })).toEqual([]);
+  });
+
   it('ignores blank aliases and blank never entries', () => {
     const reps = find('Ashler', [{ canonical: 'Ashlr.AI', aliases: ['', '  ', 'Ashler'], never: [''] }]);
     expect(reps).toHaveLength(1);
