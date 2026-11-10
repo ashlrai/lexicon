@@ -39,6 +39,39 @@ describe('U+FFFE is rejected', () => {
   });
 });
 
+describe('U+FFFF is rejected', () => {
+  it('identifies and escapes U+FFFF in the offending field', () => {
+    const result = TermSchema.safeParse({ canonical: 'word\uFFFF' });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected rejection');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      { path: ['canonical'], message: `${reason('U+FFFF')} in term "word\\uFFFF"` },
+    ]);
+  });
+
+  it('names U+FFFF in every free-text field and reports it by code point', () => {
+    expect(findUnencodableChar('a\uFFFFb')).toBe('U+FFFF');
+    expect(findUnencodableChar(escapeUnencodable('a\uFFFFb'))).toBeUndefined();
+    const result = LexiconSchema.safeParse({
+      terms: [{ canonical: 'Fine', aliases: ['ok', 'bad\uFFFF'] }],
+    });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected rejection');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      { path: ['terms', 0, 'aliases', 1], message: `${reason('U+FFFF')} in term "Fine"` },
+    ]);
+  });
+
+  it('reports the first of U+FFFE and U+FFFF by position', () => {
+    expect(findUnencodableChar('\uFFFFx\uFFFE')).toBe('U+FFFF');
+    expect(findUnencodableChar('\uFFFEx\uFFFF')).toBe('U+FFFE');
+  });
+
+  it('accepts U+10FFFF, the astral character that ends in FFFF', () => {
+    expect(findUnencodableChar('\u{10FFFF}')).toBeUndefined();
+  });
+});
+
 describe('unpaired low surrogate is identified by its code unit', () => {
   it.each([
     ['at the start of the string', `${LOW}Rocket`, 'U+DC00'],
