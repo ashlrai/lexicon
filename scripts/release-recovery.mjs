@@ -1,7 +1,7 @@
 /** GitHub-only recovery for an accepted npm publish whose registry check failed. */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { accessSync, appendFileSync, constants as Fs, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -238,7 +238,16 @@ async function latestStable(version) {
   validateLatestStable(version, JSON.parse((await bounded(response, 2 * 1024 * 1024)).toString('utf8')));
 }
 const CONTRACT = 'scripts/release-contract.mjs';
-const git = (repo, args, extra = {}) => execFileSync('git', ['-C', repo, ...args], { timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'], ...extra });
+const GIT_PATHS = process.platform === 'win32'
+  ? ['C:\\Program Files\\Git\\cmd\\git.exe', 'C:\\Program Files\\Git\\bin\\git.exe']
+  : ['/usr/bin/git', '/bin/git'];
+export function resolveGit() {
+  for (const p of GIT_PATHS) {
+    try { accessSync(p, Fs.F_OK); return p; } catch { /* next fixed path */ }
+  }
+  assert.fail('git executable not found at a fixed path');
+}
+const git = (repo, args, extra = {}) => execFileSync(resolveGit(), ['-C', repo, ...args], { timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'], ...extra });
 /** Bind the candidate contract to the tagged source, not the running policy copy. */
 export function assertCandidateContractMatchesTag({ sourceSha, candidateHead, candidateBytes, tagBytes }) {
   assert.match(sourceSha, SHA); assert.match(candidateHead, SHA);

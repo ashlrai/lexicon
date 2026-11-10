@@ -3,10 +3,10 @@ import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
 import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
-import { join } from 'node:path';
+import { isAbsolute, join } from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { assetNames } from './release-contract.mjs';
-import { validateRecoveryEnvironment, recoveryInputs, validateRecoveryEvidence, validatePolicyEvidence, validateArtifactBytes, validateLatestStable, extractArtifact, assertCandidateContractMatchesTag, assertCandidateContractFromCheckout } from './release-recovery.mjs';
+import { validateRecoveryEnvironment, recoveryInputs, validateRecoveryEvidence, validatePolicyEvidence, validateArtifactBytes, validateLatestStable, extractArtifact, assertCandidateContractMatchesTag, assertCandidateContractFromCheckout, resolveGit } from './release-recovery.mjs';
 
 const source = 'a'.repeat(40), policy = 'b'.repeat(40), repo = 'ashlrai/lexicon';
 const releasePath = '.github/workflows/release.yml', ciPath = '.github/workflows/ci.yml';
@@ -182,4 +182,10 @@ test('candidate contract matches git show of the tagged source and fails when th
     writeFileSync(join(root, 'proof.json'), JSON.stringify({ sourceSha: policy }));
     assert.throws(() => assertCandidateContractFromCheckout({ proofPath: join(root, 'proof.json'), candidateRoot: root }));
   } finally { rmSync(root, { recursive: true, force: true }); }
+});
+
+test('recovery git calls use a fixed absolute executable', () => {
+  const resolved = resolveGit();
+  assert.ok(isAbsolute(resolved));
+  assert.match(resolved, /(?:^|[\\/])git(?:\.exe)?$/i);
 });
