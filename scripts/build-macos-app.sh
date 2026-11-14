@@ -74,9 +74,9 @@ if [ -f "$KEYCHAIN" ] && [ -f "$PASS_FILE" ]; then
   security unlock-keychain -p "$(cat "$PASS_FILE")" "$KEYCHAIN" 2>/dev/null || true
 fi
 
-if security find-identity -p codesigning 2>/dev/null | grep -qF "\"$IDENTITY\""; then
+if security find-identity -p codesigning "$KEYCHAIN" 2>/dev/null | grep -qF "\"$IDENTITY\""; then
   echo "==> codesign ($IDENTITY)"
-  codesign --force --options runtime --timestamp=none --sign "$IDENTITY" "$APP"
+  codesign --force --options runtime --timestamp=none --sign "$IDENTITY" --keychain "$KEYCHAIN" "$APP"
   SIGNED_WITH="$IDENTITY"
 else
   echo "==> codesign (ad-hoc)"
