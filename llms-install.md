@@ -1,7 +1,5 @@
 # Install Lexicon
 
-**Release preparation:** The 0.5.9 version and pins below describe an unpublished candidate prepared on 2026-11-06. At preparation, npm `latest` was 0.5.8. Verify the public npm version and GitHub release before using a 0.5.9 install pin.
-
 Instructions for an AI assistant installing this MCP server on behalf of its user.
 Follow them in order. Local correction needs no API key or account:
 do not ask the user for credentials. Installation downloads the package; optional

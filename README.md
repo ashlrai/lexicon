@@ -75,7 +75,7 @@ lexicon doctor --json
 
 The same contract, in one fetch: [llms.txt](llms.txt) (index) and [llms-full.txt](llms-full.txt) (install, tools, privacy, FAQ). The page written to an agent is [docs/AGENTS.md](docs/AGENTS.md). Copy-paste only, no commentary: [docs/COPY-PASTE.md](docs/COPY-PASTE.md).
 
-This tree is source version <!-- fresh:begin pin:version -->0.5.12<!-- fresh:end -->. At this candidate's 2026-11-06 preparation, npm `latest` was 0.5.8. Check `lexicon --version` and `npm view @ashlr/lexicon version` before you pin.
+This tree is source version <!-- fresh:begin pin:version -->0.5.12<!-- fresh:end -->. npm `latest` matches it (0.5.12 was published on 2026-11-10). Check `lexicon --version` and `npm view @ashlr/lexicon version` before you pin.
 
 ## MCP server
 
@@ -223,7 +223,7 @@ npm i -g @ashlr/lexicon
 
 Plain `brew install lexicon` is [dns-lexicon](https://github.com/dns-lexicon/dns-lexicon), a different project. Use the full tap name.
 
-After 0.5.9 is published, <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.12`<!-- fresh:end --> installs that tag from GitHub and builds on install.
+<!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.12`<!-- fresh:end --> installs that tag from GitHub and builds on install.
 
 Homebrew formula: [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap). Release zips (extension, LexiconBar, checksums): [GitHub releases](https://github.com/ashlrai/lexicon/releases/latest).
 

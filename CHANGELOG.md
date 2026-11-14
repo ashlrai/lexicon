@@ -47,6 +47,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 - Drop dead imports in `src/ambiguity`, `cmd-serve`, `cmd-setup` and the clipboard daemon, and delete the committed `artifacts/bundle-diff.patch` (gitignored now; check:bundle still writes it on drift), `docs/issue-proofs-oct31.md` and `docs/ux/correction-notice.md`. (#983)
 - CI retries the apt install of the display and clipboard tools (three attempts, refreshing the index between tries) so a stale runner mirror no longer fails the clipboard job. (#1021)
+- Drop the "unpublished 0.5.9 candidate" notices from the README and `llms-install.md`: npm `latest` is 0.5.12, so the pins they describe are published.
 - Regression coverage across some sixty test files: schema text, word, alias-count and surrogate boundaries; transcript cleaning (adjacent, consecutive, mixed, unmatched and empty annotations); harvest markers; importer and exporter edges; extension frames, sites and API health; serve protocol and cache; voice models and process; `test-select`; and the macOS and Windows tray apps.
 
 ## 0.5.12 (2026-11-09)
