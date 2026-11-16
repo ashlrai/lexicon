@@ -1,9 +1,8 @@
 # Examples
 
-**Release preparation:** The 0.5.9 version and pins below describe an unpublished candidate prepared on 2026-11-06. At preparation, npm `latest` was 0.5.8. Verify the public npm version and GitHub release before using a 0.5.9 install pin.
-
 Runnable copies of the snippets the docs describe, written against
 <!-- fresh:begin pin:npm -->`npm i -g @ashlr/lexicon@0.5.12`<!-- fresh:end -->.
+npm `latest` matches; confirm with `npm view @ashlr/lexicon version` before you pin an older tag.
 
 - `lexicon.example.yaml` - a commented starter lexicon: canonical spellings, the
   aliases speech-to-text produces, and the optional `phonetic`, `category`,
@@ -16,35 +15,11 @@ Runnable copies of the snippets the docs describe, written against
 - `claude-settings.hook.json` - the SessionStart and UserPromptSubmit hook
   registration for Claude Code's `settings.json`.
 
-## Starter-pack proposal: building architecture
+## Architecture starter pack
 
-For [issue #4](https://github.com/ashlrai/lexicon/issues/4), a future opt-in
-pack could help architects dictating about building design and coordination
-software. The built-in packs do not cover this profession. These are candidate
-splits, not verified transcript errors; collect real STT examples and review
-false positives before shipping a pack. In particular, avoid ordinary English
-words as standalone aliases, since explicit aliases override the stoplist.
-
-```yaml
-version: 1
-terms:
-  - canonical: Revit
-    category: product
-    aliases: [re vit]
-  - canonical: Archicad
-    category: product
-    aliases: [archi cad]
-  - canonical: AutoCAD
-    category: product
-    aliases: [auto cad]
-  - canonical: Navisworks
-    category: product
-    aliases: [navis works]
-  - canonical: Enscape
-    category: product
-    aliases: [en scape]
-```
-
-This is a proposal, not an installable built-in pack. To develop it further,
-follow the [pack contribution guide](../docs/PACKS.md#adding-a-pack-to-this-repo)
-and check candidate aliases against actual dictation and ordinary sentences.
+The building-design pack proposed for [issue #4](https://github.com/ashlrai/lexicon/issues/4)
+ships as the opt-in `architecture` pack (12 terms, 24 aliases: Archicad, BIM,
+clerestory, rainscreen and related modeling tools). Install it with
+`lexicon pack add architecture`, or offer it unchecked in `lexicon setup`.
+See [docs/PACKS.md](../docs/PACKS.md) for the full roster and how to contribute
+another pack.

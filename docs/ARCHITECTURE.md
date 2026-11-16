@@ -38,8 +38,8 @@ src/
     harvest.ts              harvestRepo(): candidate terms from a codebase
     packs.ts                listPacks(), loadPack(), installPack(): the curated lexicons in packs/*.yaml
     demo.ts                 demonstrate(): the before/after pair the setup wizard and the site both show
-    exporters/              exportLexicon(), one file per format (15)
-    importers/              importLexicon(), detectImportFormat(), one file per format (7)
+    exporters/              exportLexicon(), one file per format (16)
+    importers/              importLexicon(), detectImportFormat(), one file per format (8)
     index.ts                the only cross-module import path; the npm package entry point
   daemon/
     clipboard.ts            clipboard watcher (lexicon daemon): loop mode and --once for shortcuts
@@ -69,9 +69,13 @@ src/
     cmd-doctor.ts           doctor
     cmd-import.ts           import
     cmd-install.ts          install [client]
+    cmd-uninstall.ts        uninstall [client]
     cmd-trust.ts            trust, untrust
     cmd-learn.ts            learn, stats
-    cmd-pack.ts             pack list/add/remove/show
+    cmd-pending.ts          pending list/accept/reject (hook-queued corrections)
+    cmd-pack.ts             pack list/add/remove/show/search/update/validate
+    cmd-terms.ts            terms / terms add
+    cmd-test-select.ts      test-select (changed files to test runners)
     cmd-review.ts           the interactive walkthroughs: harvest --add, review, edit
     cmd-serve.ts            serve (foreground, --show, --status, --pair, --install/--uninstall)
     cmd-voice.ts            voice
@@ -96,7 +100,7 @@ site/                       the demo page (GitHub Pages) and, after build, insta
 scripts/
   build-bundle.mjs          produces plugin/*.mjs (npm run build:bundle; CI runs check:bundle)
   build-extension.mjs       produces extension/dist, dist-firefox and the zips
-  extension-manifest.mjs    the Firefox manifest (gecko id, strict_min_version 127)
+  extension-manifest.mjs    the Firefox manifest (gecko id, strict_min_version 140)
   build-macos-app.sh        builds and ad-hoc signs apps/macos/build/LexiconBar.app
   build-site.mjs            produces site/dist including install.sh
   gen-cli-docs.ts           produces docs/CLI.md from every command's --help
