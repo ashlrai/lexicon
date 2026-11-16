@@ -720,6 +720,16 @@ describe('Host guard (DNS rebinding)', () => {
 // ---------------------------------------------------------------------------
 
 describe('POST /normalize', () => {
+  it('passes local context to the matcher and rejects unknown context fields', async () => {
+    const add = await api('POST', '/add', { canonical: 'Zorvex', aliases: ['Zorviks'], context: ['project-zorvex'] });
+    expect(add.status).toBe(200);
+    const without = await api('POST', '/normalize', { text: 'Zorviks', dryRun: true });
+    expect(((await without.json()) as NormalizeResult).replacements).toHaveLength(0);
+    const withContext = await api('POST', '/normalize', { text: 'Zorviks', context: { recentText: 'project-zorvex' }, dryRun: true });
+    expect(((await withContext.json()) as NormalizeResult).replacements[0]?.canonical).toBe('Zorvex');
+    const invalid = await api('POST', '/normalize', { text: 'Zorviks', context: { unknown: 'value' } });
+    expect(invalid.status).toBe(400);
+  });
   it('corrects "ping ashler" and returns a summary', async () => {
     const res = await api('POST', '/normalize', { text: 'ping ashler' });
     expect(res.status).toBe(200);
@@ -957,7 +967,7 @@ describe('POST /learn and POST /add', () => {
       created: true,
     });
     const health = (await (await fetch(`${info.url}/health`)).json()) as { terms: number };
-    expect(health.terms).toBe(2);
+    expect(health.terms).toBe(3);
   });
 
   it('add with only never on an existing term appends no generated aliases', async () => {
@@ -1058,7 +1068,7 @@ describe('GET /lexicon, /export/:format, /stats', () => {
     expect(res.status).toBe(200);
     const body = (await res.json()) as { lexicon: { version: number; terms: unknown[] }; paths: { global: string; project?: string }; projectTrust?: string; skippedProject?: string };
     expect(body.lexicon.version).toBe(1);
-    expect(body.lexicon.terms.length).toBe(2);
+    expect(body.lexicon.terms.length).toBe(3);
     expect(body.paths.global).toBe(env.globalPath);
     expect(body.paths.project).toBeUndefined();
     expect(body.skippedProject).toBeUndefined();
@@ -1127,9 +1137,9 @@ describe('GET /lexicon, /export/:format, /stats', () => {
       expect(res.status).toBe(200);
       return (await res.text()).split('\n').filter((l) => l !== '');
     };
-    // The lexicon holds Ashlr.AI (brand) and Entire.io (product, added by the /add test above).
+    // The lexicon holds Ashlr.AI (brand), Entire.io (product, added by the /add test above), and Zorvex (added by the context test).
     const canonicals = async (route: string): Promise<string[]> => (await lines(route)).map((l) => l.split(':')[0]);
-    expect(await canonicals('/export/text')).toEqual(['Ashlr.AI', 'Entire.io']);
+    expect(await canonicals('/export/text')).toEqual(['Ashlr.AI', 'Entire.io', 'Zorvex']);
     expect(await canonicals('/export/text?category=brand')).toEqual(['Ashlr.AI']);
     expect(await canonicals('/export/text?category=Product')).toEqual(['Entire.io']);
     expect(await canonicals('/export/text?category=brand,product')).toEqual(['Ashlr.AI', 'Entire.io']);
@@ -1219,7 +1229,7 @@ describe('GET /lexicon, /export/:format, /stats', () => {
   it('POST routes refuse a query parameter and write nothing', async () => {
     const before = await fs.readFile(env.globalPath, 'utf8');
     const cases: [string, unknown, string][] = [
-      ['/normalize?cwd=/tmp', { text: 'ping ashler' }, 'POST /normalize takes { text, dryRun?, minConfidence?, cwd? }'],
+      ['/normalize?cwd=/tmp', { text: 'ping ashler' }, 'POST /normalize takes { text, context?, dryRun?, minConfidence?, cwd? }'],
       ['/learn?scope=project', { heard: 'Ashlur', meant: 'Ashlr.AI' }, 'POST /learn takes { heard, meant, scope?, cwd? }'],
       ['/add?dryRun=1', { canonical: 'Querystringco' }, 'POST /add takes { canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }'],
       ['/packs/developer?scope=project', {}, 'POST /packs/:name takes { scope?, cwd? } or an empty body'],
@@ -1239,7 +1249,7 @@ describe('GET /lexicon, /export/:format, /stats', () => {
     const res = await api('GET', '/stats');
     expect(res.status).toBe(200);
     const body = (await res.json()) as LexiconStats;
-    expect(body.termCount).toBe(2);
+    expect(body.termCount).toBe(3);
     expect(body.totalHits).toBeGreaterThanOrEqual(1);
     expect(Array.isArray(body.topTerms)).toBe(true);
     expect(body.files[0]?.scope).toBe('global');
@@ -1432,8 +1442,8 @@ describe('limits and errors', () => {
   // first request built by guesswork had to go read the docs.
   it('every body 400 names the fields its route takes', async () => {
     const cases: [string, unknown, string][] = [
-      ['/normalize', {}, 'POST /normalize takes { text, dryRun?, minConfidence?, cwd? }'],
-      ['/normalize', '{"text": ', 'POST /normalize takes { text, dryRun?, minConfidence?, cwd? }'],
+      ['/normalize', {}, 'POST /normalize takes { text, context?, dryRun?, minConfidence?, cwd? }'],
+      ['/normalize', '{"text": ', 'POST /normalize takes { text, context?, dryRun?, minConfidence?, cwd? }'],
       ['/learn', '[1]', 'POST /learn takes { heard, meant, scope?, cwd? }'],
       ['/learn', { heard: 'x' }, 'POST /learn takes { heard, meant, scope?, cwd? }'],
       ['/add', { name: 'Zed' }, 'POST /add takes { canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }'],
@@ -1446,7 +1456,7 @@ describe('limits and errors', () => {
     }
     const empty = await fetch(`${info.url}/normalize`, { method: 'POST', headers: { Authorization: `Bearer ${info.token}` } });
     expect(empty.status).toBe(400);
-    expect(await empty.json()).toEqual({ error: 'request body must be a JSON object (POST /normalize takes { text, dryRun?, minConfidence?, cwd? })' });
+    expect(await empty.json()).toEqual({ error: 'request body must be a JSON object (POST /normalize takes { text, context?, dryRun?, minConfidence?, cwd? })' });
   });
 
   /**
@@ -2070,7 +2080,7 @@ describe('lexicon serve (CLI)', () => {
   it('--status reports up against the running server and down otherwise', async () => {
     const up = memIO();
     expect(await runServe({ status: true, port: info.port, globalPath: env.globalPath }, up)).toBe(0);
-    expect(up.out.join('')).toContain(`lexicon serve is up at http://127.0.0.1:${info.port} (version 9.9.9, 2 terms)`);
+    expect(up.out.join('')).toContain(`lexicon serve is up at http://127.0.0.1:${info.port} (version 9.9.9, 3 terms)`);
 
     const closed = createServer({ port: 0, cwd: env.cwd, globalPath: env.globalPath, quiet: true });
     const c = await closed.start();

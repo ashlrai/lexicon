@@ -19,11 +19,9 @@ import {
   createClipboardBackend,
   defaultClipboardExec,
   detectClipboardBackend,
-  isClipboardBackendName,
   parseBackendName,
   isClipboardTooLarge,
   powershellShell,
-  CLIPBOARD_BACKEND_NAMES,
 } from './clipboard-backends.js';
 import type { ClipboardBackend, ClipboardBackendName, ClipboardExec } from './clipboard-backends.js';
 import { findOnPath } from '../util/which.js';

@@ -648,7 +648,60 @@ describe('work that outlives its hold cannot borrow the lock', () => {
   });
 });
 
+describe('writeFileAtomic creates a file', () => {
+  it('surfaces a failure to create a missing parent without leaving a target', async () => {
+    const dir = await scratch();
+    const parent = path.join(dir, 'missing');
+    const target = path.join(parent, 'lexicon.yaml');
+    const failure = Object.assign(new Error('parent creation denied'), { code: 'EACCES' });
+    const mkdir = vi.spyOn(fs, 'mkdir').mockRejectedValueOnce(failure);
+    try {
+      await expect(writeFileAtomic(target, 'contents')).rejects.toBe(failure);
+    } finally {
+      mkdir.mockRestore();
+    }
+    await expect(fs.stat(target)).rejects.toMatchObject({ code: 'ENOENT' });
+    await expect(fs.stat(parent)).rejects.toMatchObject({ code: 'ENOENT' });
+    expect(await fs.readdir(dir)).toEqual([]);
+  });
+
+  it('writes and replaces a file whose name contains spaces', async () => {
+    const dir = await scratch();
+    const target = path.join(dir, 'my lexicon file.yaml');
+
+    await writeFileAtomic(target, 'first contents\n');
+    expect(await fs.readFile(target, 'utf8')).toBe('first contents\n');
+
+    await writeFileAtomic(target, 'replacement contents\n');
+    expect(await fs.readFile(target, 'utf8')).toBe('replacement contents\n');
+    expect(await leftoverTemps(target)).toEqual([]);
+  });
+
+  it('preserves Unicode content and leaves no temporary file', async () => {
+    const dir = await scratch();
+    const target = path.join(dir, 'lexicon.yaml');
+    const content = 'Café\n日本語\n👩🏽‍💻\ne\u0301\n';
+
+    await writeFileAtomic(target, content);
+
+    expect(await fs.readFile(target, 'utf8')).toBe(content);
+    expect(await leftoverTemps(target)).toEqual([]);
+  });
+});
+
 describe('writeFileAtomic keeps the file it is replacing', () => {
+  it('replaces an existing file with exact Unicode content without leaving a temp file', async () => {
+    const dir = await scratch();
+    const target = path.join(dir, 'lexicon.yaml');
+    const content = '日本語 café e\u0301 🧑🏽‍💻\n';
+    await fs.writeFile(target, 'old content that should be replaced\n');
+
+    await writeFileAtomic(target, content);
+
+    expect(await fs.readFile(target, 'utf8')).toBe(content);
+    expect(await leftoverTemps(target)).toEqual([]);
+  });
+
   /**
    * Catches: calling `writeFileAtomic` with no mode and letting the rename
    * carry a fresh temp file's `0666 & ~umask` onto the target. A lexicon the

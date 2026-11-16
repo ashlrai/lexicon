@@ -18,7 +18,32 @@ describe('findOnPath', () => {
     };
     expect(await findOnPath('xclip', { platform: 'linux', env: { PATH: '/usr/bin:/usr/local/bin' }, exists })).toBe('/usr/local/bin/xclip');
     expect(probed).toEqual(['/usr/bin/xclip', '/usr/local/bin/xclip']);
-    expect(await findOnPath('xclip', { platform: 'linux', env: { PATH: '' }, exists })).toBeUndefined();
+  });
+
+  it('does not search the current directory when PATH is empty', async () => {
+    const dir = await fs.mkdtemp(path.join(process.cwd(), '.which-test-'));
+    const executable = path.join(dir, 'local-tool');
+    const relativeExecutable = path.relative(process.cwd(), executable);
+    try {
+      await fs.writeFile(executable, '', { mode: 0o755 });
+      expect(await findOnPath(relativeExecutable, { env: { PATH: '' } })).toBeUndefined();
+      expect(findOnPathSync(relativeExecutable, { env: { PATH: '' } })).toBeUndefined();
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
+  it.each(['linux', 'win32'] as const)('returns no match without probing an empty PATH on %s', async (platform) => {
+    const probed: string[] = [];
+    const env = { PATH: '' };
+    const exists = async (candidate: string) => {
+      probed.push(candidate);
+      return true;
+    };
+
+    expect(await findOnPath('tool', { platform, env, exists })).toBeUndefined();
+    expect(findOnPathSync('tool', { platform, env })).toBeUndefined();
+    expect(probed).toEqual([]);
   });
 
   it('on win32 tries PATHEXT extensions (then the bare name) in every PATH entry', async () => {
@@ -85,6 +110,19 @@ describe('locateTool / locateToolSync', () => {
 
   it('prefers the first candidate name over an earlier PATH entry (sync)', () => {
     expect(locateToolSync(names, env)).toBe(path.join(root, 'b', 'whisper-cli'));
+  });
+
+  it('returns the complete executable path when its directory contains spaces', async () => {
+    const dir = path.join(root, 'directory with spaces');
+    const executable = path.join(dir, 'space-tool');
+    await fs.mkdir(dir);
+    await fs.writeFile(executable, '', { mode: 0o755 });
+    const spaceEnv = { PATH: dir };
+
+    expect(await findOnPath('space-tool', { env: spaceEnv })).toBe(executable);
+    expect(findOnPathSync('space-tool', { env: spaceEnv })).toBe(executable);
+    expect(await locateTool(['space-tool'], { env: spaceEnv, extraDirs: [] })).toBe(executable);
+    expect(locateToolSync(['space-tool'], spaceEnv)).toBe(executable);
   });
 
   it('falls back to the well-known directories after PATH', async () => {

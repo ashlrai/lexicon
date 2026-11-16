@@ -802,7 +802,7 @@ function InstallSection() {
                 finish.
               </p>
               <p>
-                <span className="font-mono text-paper">lexicon pack add developer</span>: 271
+                <span className="font-mono text-paper">lexicon pack add developer</span>: 272
                 curated terms across nine packs.
               </p>
               <p>

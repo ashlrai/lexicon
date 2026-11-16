@@ -8,6 +8,44 @@ const plist = (phrase: string, shortcut: string): string =>
   `<?xml version="1.0"?>\n<plist><array>\n<dict><key>phrase</key><string>${phrase}</string><key>shortcut</key><string>${shortcut}</string></dict>\n` +
   '<dict><key>phrase</key><string>Kubernetes</string><key>shortcut</key><string>cooper netties</string></dict>\n</array></plist>\n';
 
+describe('empty import document', () => {
+  it.each(['wispr', 'macos', 'espanso', 'superwhisper', 'markdown', 'text', 'csv', 'json'] as const)(
+    'handles empty input in the explicit %s format',
+    (format) => {
+      const errors: Partial<Record<typeof format, RegExp>> = {
+        macos: /macos: expected an Apple Text Replacement plist/i,
+        espanso: /espanso: expected a top-level `matches:` list/i,
+        superwhisper: /superwhisper: invalid JSON/i,
+      };
+      const error = errors[format];
+      if (error) {
+        expect(() => importLexicon('', format)).toThrow(error);
+      } else {
+        expect(importLexicon('', format)).toEqual({ format, terms: [], skipped: [] });
+      }
+    },
+  );
+
+  it('returns an empty text import when the format is auto-detected', () => {
+    expect(importLexicon('', 'auto')).toEqual({ format: 'text', terms: [], skipped: [] });
+  });
+
+  it('reports the missing matches list when an empty YAML file is detected as espanso', () => {
+    expect(() => importLexicon('', 'auto', { filename: 'matches.yaml' }))
+      .toThrow('espanso: expected a top-level `matches:` list');
+  });
+});
+
+describe('truncated import document', () => {
+  it('rejects a truncated Superwhisper JSON document without returning its complete first entry', () => {
+    const content = '[{"original":"ashler","replacement":"Ashlr.AI"},' +
+      '{"original":"cooper netties","replacement":"Kubernetes"';
+
+    expect(() => importLexicon(content, 'superwhisper')).toThrow(/superwhisper: invalid JSON/i);
+    expect(() => importLexicon(content, 'auto')).toThrow(/starts like JSON but does not parse.*fix the file/i);
+  });
+});
+
 describe('macos importer: character references', () => {
   it('leaves an out-of-range numeric reference as text instead of throwing a RangeError', () => {
     expect(xmlUnescape('A&#99999999;B')).toBe('A&#99999999;B');
@@ -25,6 +63,28 @@ describe('macos importer: character references', () => {
 });
 
 describe('csv importers: unterminated quote', () => {
+  it('starts a fresh import after a malformed file with a valid first row', () => {
+    const malformed = 'canonical,alias\nAshlr.AI,ashler\nKubernetes,"cooper netties\n';
+    expect(() => importLexicon(malformed, 'csv')).toThrow(/line 3.*never closes/);
+
+    expect(importLexicon('canonical,alias\nSupabase,super base\n', 'csv')).toEqual({
+      format: 'csv',
+      terms: [{ canonical: 'Supabase', aliases: ['super base'], source: 'import' }],
+      skipped: [],
+    });
+  });
+
+  it('discards merged rows after a late character validation error', () => {
+    const malformed = 'canonical,alias\nAshlr.AI,ashler\nBad\uFFFD,broken\n';
+    expect(() => importLexicon(malformed, 'csv')).toThrow(/replacement character/);
+
+    expect(importLexicon('canonical,alias\nAshlr.AI,ashlar\n', 'csv')).toEqual({
+      format: 'csv',
+      terms: [{ canonical: 'Ashlr.AI', aliases: ['ashlar'], source: 'import' }],
+      skipped: [],
+    });
+  });
+
   it('refuses a wispr file whose quote never closes instead of folding the rest of the file into one term', () => {
     const content = 'word,replacement\nashler,"Ashlr.AI\ncooper netties,Kubernetes\nsuper base,Supabase\n';
     expect(() => importLexicon(content, 'wispr')).toThrow(/line 2.*never closes/);

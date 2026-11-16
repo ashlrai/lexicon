@@ -46,6 +46,12 @@ public class NormalizeResponseTests
     }
 
     [Fact]
+    public void WhitespaceOnlyResponseIsNotUsable()
+    {
+        Assert.Null(NormalizeResponse.Parse(" \t\r\n "));
+    }
+
+    [Fact]
     public void MalformedRepliesNeverThrow()
     {
         Assert.Null(NormalizeResponse.Parse("not json"));

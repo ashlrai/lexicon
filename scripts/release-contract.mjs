@@ -121,18 +121,39 @@ export async function preflight(version, env = process.env, fetcher = fetch) {
   const registry = await request(`https://registry.npmjs.org/@ashlr%2Flexicon/${version}`, {}, fetcher);
   assert.equal(registry.status, 404, 'npm version absence could not be proven; use a new fix-forward version');
 }
+export class RegistryPendingError extends Error {
+  constructor(message) {
+    super(message);
+    this.name = 'RegistryPendingError';
+  }
+}
+export const REGISTRY_ACCEPT_BUDGET_MS = 10 * 60 * 1000;
+const REGISTRY_ACCEPT_MAX_ATTEMPTS = 16;
+export function registryAcceptDelayMs(attempt) {
+  assert.ok(Number.isSafeInteger(attempt) && attempt >= 0 && attempt < REGISTRY_ACCEPT_MAX_ATTEMPTS - 1);
+  return Math.min(60_000, 2_000 * 2 ** Math.min(attempt, 5));
+}
+function isRegistryPending(error) {
+  // Non-200 and transport failures mean the version is not readable yet.
+  // A present digest or downloaded archive that differs is an AssertionError
+  // and must not be retried.
+  return error instanceof RegistryPendingError || error?.name === 'TimeoutError' || error?.name === 'AbortError' || error instanceof TypeError;
+}
 export async function verifyRegistry(root, version, fetcher = fetch) {
   validateAssets(root, version);
   const expected = `sha512-${createHash('sha512').update(bytes(root, `ashlr-lexicon-${version}.tgz`)).digest('base64')}`;
   const response = await request(`https://registry.npmjs.org/@ashlr%2Flexicon/${version}`, {}, fetcher);
-  assert.equal(response.status, 200, 'exact npm version is not readable');
+  if (response.status !== 200) throw new RegistryPendingError('exact npm version is not readable');
   const pkg = await response.json();
   assert.equal(pkg.name, PACKAGE);
   assert.equal(pkg.version, version);
-  assert.equal(pkg.dist?.integrity, expected, 'npm archive integrity differs');
-  assert.equal(pkg.dist?.tarball, `https://registry.npmjs.org/@ashlr/lexicon/-/lexicon-${version}.tgz`, 'unexpected npm tarball URL');
-  const tarball = await request(pkg.dist.tarball, {}, fetcher);
-  assert.equal(tarball.status, 200, 'npm archive is not readable');
+  const integrity = pkg.dist?.integrity;
+  const tarballUrl = pkg.dist?.tarball;
+  if (typeof integrity !== 'string' || typeof tarballUrl !== 'string') throw new RegistryPendingError('exact npm version is not readable');
+  assert.equal(integrity, expected, 'npm archive integrity differs');
+  assert.equal(tarballUrl, `https://registry.npmjs.org/@ashlr/lexicon/-/lexicon-${version}.tgz`, 'unexpected npm tarball URL');
+  const tarball = await request(tarballUrl, {}, fetcher);
+  if (tarball.status !== 200) throw new RegistryPendingError('npm archive is not readable');
   let size = 0;
   const hash = createHash('sha512');
   for await (const chunk of tarball.body) {
@@ -142,6 +163,27 @@ export async function verifyRegistry(root, version, fetcher = fetch) {
   }
   assert.equal(`sha512-${hash.digest('base64')}`, expected, 'downloaded npm archive differs');
 }
+/** Poll until the exact version is readable. A wrong digest fails immediately. */
+export async function acceptRegistry(root, version, fetcher = fetch, options = {}) {
+  const budgetMs = options.budgetMs ?? REGISTRY_ACCEPT_BUDGET_MS;
+  assert.ok(Number.isSafeInteger(budgetMs) && budgetMs >= 0 && budgetMs <= REGISTRY_ACCEPT_BUDGET_MS, 'registry acceptance budget exceeds 10 minutes');
+  const sleep = options.sleep ?? ((ms) => new Promise((done) => setTimeout(done, ms)));
+  const now = options.now ?? Date.now;
+  const started = now();
+  for (let attempt = 0; attempt < REGISTRY_ACCEPT_MAX_ATTEMPTS; attempt++) {
+    try {
+      await verifyRegistry(root, version, fetcher);
+      return;
+    } catch (error) {
+      if (!isRegistryPending(error)) throw error;
+      const elapsed = now() - started;
+      if (attempt === REGISTRY_ACCEPT_MAX_ATTEMPTS - 1 || elapsed >= budgetMs) throw error;
+      const delay = Math.min(registryAcceptDelayMs(attempt), budgetMs - elapsed);
+      if (delay <= 0) throw error;
+      await sleep(delay);
+    }
+  }
+}
 async function main() {
   const [command, root, version, part] = process.argv.slice(2);
   if (command === 'source') console.log(checkSource(root, version));
@@ -150,14 +192,8 @@ async function main() {
   else if (command === 'assets') validateAssets(root, version);
   else if (command === 'hosted') verifyHosted(root, version, JSON.parse(readFileSync(part)), process.argv[6] === 'draft');
   else if (command === 'preflight') await preflight(root);
-  else if (command === 'registry') {
-    let passed = false;
-    for (let attempt = 0; attempt < 12; attempt++) {
-      try { await verifyRegistry(root, version); passed = true; break; }
-      catch { if (attempt < 11) await new Promise((done) => setTimeout(done, 10_000)); }
-    }
-    assert.ok(passed, 'exact npm archive acceptance failed; release remains unpublished');
-  } else throw new Error('unknown release contract command');
+  else if (command === 'registry') await acceptRegistry(root, version);
+  else throw new Error('unknown release contract command');
 }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   main().catch(() => { console.error('Release contract failed; no credentials or response bodies are logged.'); process.exitCode = 1; });

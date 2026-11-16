@@ -1,7 +1,7 @@
 /** GitHub-only recovery for an accepted npm publish whose registry check failed. */
 import assert from 'node:assert/strict';
 import { createHash } from 'node:crypto';
-import { appendFileSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { accessSync, appendFileSync, constants as Fs, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join, resolve } from 'node:path';
 import { pathToFileURL } from 'node:url';
@@ -52,9 +52,23 @@ export function validateRecoveryEvidence(input, e) {
   assert.equal(e.ciWorkflow.path, '.github/workflows/ci.yml');
   const run = e.run; integer(run.repository.id);
   assert.equal(run.head_repository.id, run.repository.id);
-  same([run.id, run.run_attempt, run.event, run.head_sha, run.head_branch, run.workflow_id, run.path],
-    [input.runId, input.attempt, 'push', e.sourceSha, tag, e.releaseWorkflow.id, '.github/workflows/release.yml']);
+  same([run.id, run.run_attempt, run.head_sha, run.workflow_id, run.path],
+    [input.runId, input.attempt, e.sourceSha, e.releaseWorkflow.id, '.github/workflows/release.yml']);
   assert.equal(run.repository.full_name, REPO); assert.equal(run.head_repository.full_name, REPO); done(run, 'failure');
+  // A tag push records the tag name. A workflow_dispatch of this same workflow
+  // (auto-tag's fallback, or the manual release command) records main or the
+  // tag. Either way the run commit has to be the tagged commit. npm integrity
+  // stays a separate exact-match gate in the caller.
+  switch (run.event) {
+    case 'push':
+      assert.equal(run.head_branch, tag, 'tag push must be for this tag');
+      break;
+    case 'workflow_dispatch':
+      assert.ok(run.head_branch === 'main' || run.head_branch === tag, 'workflow_dispatch must run on main or this tag');
+      break;
+    default:
+      assert.fail('release run must be a tag push or a workflow_dispatch');
+  }
   const jobs = list(e.jobs, 'jobs');
   for (const name of ['Full suite green on release sha', 'ubuntu', 'macos']) done(one(jobs, name));
   for (const job of jobs) {
@@ -72,8 +86,9 @@ export function validateRecoveryEvidence(input, e) {
     'Recheck registry acceptance and publish verified draft']) done(one(steps, name), 'skipped');
   assert.equal(steps.filter(step => step.conclusion === 'failure').length, 1);
   const ci = e.ciRun;
-  same([ci.id, ci.event, ci.head_sha, ci.head_branch, ci.workflow_id, ci.path],
-    [input.ciRunId, 'workflow_dispatch', e.sourceSha, tag, e.ciWorkflow.id, '.github/workflows/ci.yml']);
+  same([ci.id, ci.event, ci.head_sha, ci.workflow_id, ci.path],
+    [input.ciRunId, 'workflow_dispatch', e.sourceSha, e.ciWorkflow.id, '.github/workflows/ci.yml']);
+  assert.ok(ci.head_branch === tag || ci.head_branch === 'main', 'full-suite CI must be this tag or main at the tagged commit');
   assert.equal(ci.repository.full_name, REPO); assert.equal(ci.head_repository.full_name, REPO);
   same([ci.repository.id, ci.head_repository.id], [run.repository.id, run.repository.id]); integer(ci.run_attempt); done(ci);
   const ciJobs = list(e.ciJobs, 'jobs');
@@ -222,6 +237,46 @@ async function latestStable(version) {
   assert.equal(response.status, 200, 'published latest evidence unavailable');
   validateLatestStable(version, JSON.parse((await bounded(response, 2 * 1024 * 1024)).toString('utf8')));
 }
+const CONTRACT = 'scripts/release-contract.mjs';
+const GIT_PATHS = process.platform === 'win32'
+  ? ['C:\\Program Files\\Git\\cmd\\git.exe', 'C:\\Program Files\\Git\\bin\\git.exe']
+  : ['/usr/bin/git', '/bin/git'];
+export function resolveGit() {
+  for (const p of GIT_PATHS) {
+    try { accessSync(p, Fs.F_OK); return p; } catch { /* next fixed path */ }
+  }
+  assert.fail('git executable not found at a fixed path');
+}
+const git = (repo, args, extra = {}) => execFileSync(resolveGit(), ['-C', repo, ...args], { timeout: 15000, stdio: ['ignore', 'pipe', 'pipe'], ...extra });
+/** Bind the candidate contract to the tagged source, not the running policy copy. */
+export function assertCandidateContractMatchesTag({ sourceSha, candidateHead, candidateBytes, tagBytes }) {
+  assert.match(sourceSha, SHA); assert.match(candidateHead, SHA);
+  assert.equal(candidateHead, sourceSha, 'candidate checkout is not the tagged source');
+  assert.ok(Buffer.isBuffer(candidateBytes) && candidateBytes.length > 0, 'candidate release contract missing or empty');
+  assert.ok(Buffer.isBuffer(tagBytes) && tagBytes.length > 0, 'tagged release contract missing or empty');
+  assert.deepEqual(candidateBytes, tagBytes, 'candidate release contract does not match the tagged source');
+}
+export function taggedReleaseContract(repo, sourceSha) {
+  assert.match(sourceSha, SHA);
+  const bytes = git(repo, ['show', `${sourceSha}:${CONTRACT}`]);
+  assert.ok(Buffer.isBuffer(bytes) && bytes.length > 0, 'tagged release contract missing or empty');
+  return bytes;
+}
+export function checkoutHeadSha(repo) {
+  const head = git(repo, ['rev-parse', 'HEAD'], { encoding: 'utf8', maxBuffer: 4096 }).trim();
+  assert.match(head, SHA);
+  return head;
+}
+export function assertCandidateContractFromCheckout({ proofPath, candidateRoot }) {
+  const proof = JSON.parse(readFileSync(proofPath, 'utf8'));
+  assert.match(proof.sourceSha, SHA);
+  assertCandidateContractMatchesTag({
+    sourceSha: proof.sourceSha,
+    candidateHead: checkoutHeadSha(candidateRoot),
+    candidateBytes: readFileSync(join(candidateRoot, CONTRACT)),
+    tagBytes: taggedReleaseContract(candidateRoot, proof.sourceSha),
+  });
+}
 async function main() {
   const input = recoveryInputs(process.env), command = process.argv[2];
   assert.ok(['prepare', 'recheck', 'recheck-final'].includes(command));
@@ -244,6 +299,12 @@ async function main() {
   }
   console.log(JSON.stringify(proof));
 }
+function refuse() { console.error('Release recovery refused; credentials and response bodies are not logged.'); process.exitCode = 1; }
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
-  main().catch(() => { console.error('Release recovery refused; credentials and response bodies are not logged.'); process.exitCode = 1; });
+  if (process.argv[2] === 'assert-candidate-contract') {
+    try { assertCandidateContractFromCheckout({ proofPath: join(ROOT, 'proof.json'), candidateRoot: 'candidate' }); }
+    catch { refuse(); }
+  } else {
+    main().catch(() => { refuse(); });
+  }
 }

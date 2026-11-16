@@ -341,6 +341,7 @@ const CwdField = z.string().min(1).optional();
 
 const NormalizeBody = z.object({
   text: z.string(),
+  context: z.object({ recentText: z.string().max(100_000).optional(), bundleId: z.string().max(255).optional() }).strict().optional(),
   dryRun: z.boolean().optional(),
   minConfidence: z.number().min(0).max(1).optional(),
   cwd: CwdField,
@@ -401,7 +402,7 @@ const ROUTES: readonly string[] = [
  * only `Unrecognized key`.
  */
 const BODY_SHAPES = {
-  '/normalize': 'POST /normalize takes { text, dryRun?, minConfidence?, cwd? }',
+  '/normalize': 'POST /normalize takes { text, context?, dryRun?, minConfidence?, cwd? }',
   '/learn': 'POST /learn takes { heard, meant, scope?, cwd? }',
   '/add': 'POST /add takes { canonical, aliases?, phonetic?, category?, notes?, never?, scope?, cwd? }',
   '/packs/:name': 'POST /packs/:name takes { scope?, cwd? } or an empty body',
@@ -1137,6 +1138,7 @@ export function createServer(opts: ServeServerOptions = {}): LexiconHttpServer {
     let timedOut = false;
     const result = normalizeWithIndex(body.text, entry.index, {
       shouldStop: () => (timedOut ||= Date.now() - started >= normalizeBudgetMs),
+      ...(body.context !== undefined ? { context: body.context } : {}),
       ...(body.dryRun !== undefined ? { dryRun: body.dryRun } : {}),
       ...(body.minConfidence !== undefined ? { minConfidence: body.minConfidence } : {}),
     });

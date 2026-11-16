@@ -5,6 +5,9 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 <!-- fresh:begin table:releases -->
 | Version | Released |
 |---|---|
+| 0.5.12 | 2026-11-09 |
+| 0.5.11 | 2026-11-09 |
+| 0.5.10 | 2026-11-09 |
 | 0.5.9 | 2026-11-06 |
 | 0.5.8 | 2026-11-05 |
 | 0.5.7 | 2026-10-31 |
@@ -24,6 +27,47 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 <!-- fresh:end -->
 
 ## Unreleased
+
+### Added
+
+- `POST /normalize` and `normalize()` take an optional `context` (`recentText`, `bundleId`): words in it count as evidence for a term's `context` gate without being part of the corrected text or the reported spans. LexiconBar's Fix everywhere sends the field text ahead of the burst (up to 4,000 characters) and the focused app's bundle identifier, so a gated term can fire on what the field already held and which app holds it. (#851, #852)
+- `lexicon test-select [files...]` prints the tests a set of changed repository files should run (a `tests/*.test.ts` file maps to itself), falling back to the full suite when nothing is passed or a path has no reviewed mapping. `--json` prints the selection and the command argument arrays. (#906)
+
+### Fixed
+
+- GitHub-only release recovery accepts a failed run of `release.yml` that was a tag push or a `workflow_dispatch` on the tagged commit. The npm version check polls for up to 10 minutes while that version is not readable yet, and an integrity mismatch still fails immediately. (#1008)
+- Recovery binds the candidate release-contract script to the contract at the tagged source commit, so a later stricter verifier on main can still recover that tag. (#1009)
+- Recovery resolves git at a fixed absolute path instead of searching PATH (Sonar S4036). (#1011)
+- Voice transcript cleaning repeats its passes until the text stops changing, so an annotation another removal exposes is removed too: `(soft *noise* music)` loses `*noise*` to the asterisk pass, after which the parentheses qualify as a noise tag. (#882)
+- A term name truncated to 40 characters in a schema error no longer ends on half of a surrogate pair. (#975)
+- The browser extension's correction toast stays for 8 seconds (was 3), and the timer that dismisses it removes that toast rather than whichever toast is in the document when it fires. (#853)
+- The Windows tray no longer offers an undo that would restore the text the field already shows. (#896)
+
+### Internal
+
+- Drop dead imports in `src/ambiguity`, `cmd-serve`, `cmd-setup` and the clipboard daemon, and delete the committed `artifacts/bundle-diff.patch` (gitignored now; check:bundle still writes it on drift), `docs/issue-proofs-oct31.md` and `docs/ux/correction-notice.md`. (#983)
+- CI retries the apt install of the display and clipboard tools (three attempts, refreshing the index between tries) so a stale runner mirror no longer fails the clipboard job. (#1021)
+- Bump the Homebrew formula (`packaging/homebrew/lexicon.rb`) to the 0.5.12 tag archive, so `brew install` no longer lags npm `latest`. (#1010)
+- Drop the "unpublished 0.5.9 candidate" notices from the README, `llms-install.md` and `examples/README.md`: npm `latest` is 0.5.12, so the pins they describe are published. `examples/README.md` now points at the shipped `architecture` pack instead of describing it as a future proposal.
+- Name all nine starter packs in the CLI help (`lexicon pack`, `lexicon setup --packs`) and the MCP voice-context guidance: `architecture`, `legal` and `ashlr` were missing from those lists even though `list_packs` already returned them. Align `INTEGRATION.md`, `CLAUDE.md` handler names, and `docs/ARCHITECTURE.md` exporter/importer counts (16/8) and Firefox `strict_min_version` (140) with the same roster.
+- Bump `commander` from 14.0.3 to 15.1.0 (CLI framework major) and refresh the committed MCP plugin bundle so `check:bundle` matches. (#1025) commander 15 declares `engines.node: >=22.12.0` while this package still advertises `>=20` (and an earlier release note pinned commander to `^14` for that reason); Node 20 CI and install copy are unchanged until engines are decided separately.
+- Bump `jsdom` from 30.1.3 to 31.0.0 (extension test runner major). (#1024)
+- Remove em-dashes from the Fix-everywhere paragraph in `SECURITY.md`.
+- Regression coverage across some sixty test files: schema text, word, alias-count, surrogate and U+FFFF boundaries; transcript cleaning (adjacent, consecutive, mixed, unmatched and empty annotations); harvest markers; importer and exporter edges; extension frames, sites and API health; serve protocol and cache; voice models and process; `test-select`; and the macOS and Windows tray apps.
+
+## 0.5.12 (2026-11-09)
+
+### Fixed
+
+- Rebuild the committed plugin bundle so it matches the current dependencies (check:bundle was failing on a fresh install).
+
+## 0.5.11 (2026-11-09)
+
+### Added
+
+- `Weyv` in the ashlr pack: a music visualizer product name. The `wave` alias is context-gated, so "push wave" and "the weyv repo" become Weyv, while "sound wave" and "a wave of PRs" stay as they are.
+
+## 0.5.10 (2026-11-09)
 
 ### Fixed
 

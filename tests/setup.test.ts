@@ -269,6 +269,32 @@ describe('runSetup --yes', () => {
     expect(f.installed).toHaveLength(2);
   });
 
+  it('keeps generated client configuration unchanged when setup runs twice with the same choices', async () => {
+    const cursor = path.join(home, '.cursor', 'mcp.json');
+    const codex = path.join(home, '.codex', 'config.toml');
+    await fs.mkdir(path.dirname(cursor), { recursive: true });
+    await fs.mkdir(path.dirname(codex), { recursive: true });
+    await fs.writeFile(cursor, '{"mcpServers":{"other":{"command":"other","args":[]}}}\n');
+    await fs.writeFile(codex, 'model = "example"\n\n[mcp_servers.other]\ncommand = "other"\n');
+
+    const f = fakes({ installClient: undefined });
+    const opts = { yes: true, clients: 'cursor,codex', company: 'Ashlr.AI', packs: 'none', harvest: false };
+    const first = await run(opts, f);
+    expect(first.code).toBe(0);
+    const firstCursor = await fs.readFile(cursor, 'utf8');
+    const firstCodex = await fs.readFile(codex, 'utf8');
+    expect(Object.keys(JSON.parse(firstCursor).mcpServers).sort()).toEqual(['lexicon', 'other']);
+    expect(firstCodex.match(/^\[mcp_servers\.lexicon\]$/gm)).toHaveLength(1);
+    expect(firstCodex).toContain('[mcp_servers.other]');
+
+    const second = await run(opts, f);
+    expect(second.code).toBe(0);
+    expect(second.summary.termsAdded).toEqual([]);
+    expect(second.summary.clients.map((client) => client.status)).toEqual(['installed', 'installed']);
+    expect(await fs.readFile(cursor, 'utf8')).toBe(firstCursor);
+    expect(await fs.readFile(codex, 'utf8')).toBe(firstCodex);
+  });
+
   it('--clients none skips the client step entirely', async () => {
     const f = fakes();
     const { summary, io } = await run({ yes: true, clients: 'none', company: 'Ashlr.AI' }, f);

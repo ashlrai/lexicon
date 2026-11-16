@@ -108,3 +108,26 @@ describe('alias word length boundary: edge cases', () => {
     expect(parse('é'.repeat(LIMITS.word + 1)).success).toBe(false);
   });
 });
+
+describe('mixed Unicode word length boundary', () => {
+  it.each(['canonical', 'aliases', 'never'] as const)(
+    'counts code points across mixed-width characters in %s',
+    (field) => {
+      const word = 'a'.repeat(40) + '🙂'.repeat(40);
+      const term = (value: string) => field === 'canonical'
+        ? { canonical: value }
+        : { canonical: 'X', [field]: [value] };
+
+      expect(Array.from(word)).toHaveLength(80);
+      expect(TermSchema.safeParse(term(word)).success).toBe(true);
+      const result = TermSchema.safeParse(term(`${word}é`));
+      expect(result.success).toBe(false);
+      if (result.success) throw new Error('Expected an 81-character word to be rejected');
+      expect(result.error.issues).toMatchObject([{
+        code: 'too_big',
+        path: field === 'canonical' ? [field] : [field, 0],
+        maximum: 80,
+      }]);
+    },
+  );
+});

@@ -27,9 +27,10 @@ describe('schema error preview reference', () => {
     expect(label.length).toBe(40);
   });
 
-  it('can cut a valid surrogate pair at the preview boundary', () => {
+  it('keeps the preview well-formed at a surrogate pair boundary', () => {
     const message = errorMessage('A'.repeat(38) + '🚀B');
-    expect(message).toContain(`in term "${'A'.repeat(38)}\uD83D…"`);
+    expect(message).toContain(`in term "${'A'.repeat(38)}…"`);
+    expect(Buffer.from(message, 'utf8').toString('utf8')).toBe(message);
   });
 
   it('does not add a term label to settings errors', () => {

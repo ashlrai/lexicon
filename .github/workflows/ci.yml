@@ -461,8 +461,17 @@ jobs:
       - name: Install a display and the clipboard tools
         if: (steps.scope.outputs.code == 'true' || (matrix.os == 'ubuntu-latest' && matrix.node == 22)) && (matrix.os == 'ubuntu-latest' && matrix.node == 22)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends xvfb xclip xsel wl-clipboard systemd
+          # Runner mirrors occasionally serve stale indexes ("Unable to fetch some
+          # archives"). Retry network fetches and refresh the index between tries.
+          for attempt in 1 2 3; do
+            sudo apt-get update -o Acquire::Retries=3 || true
+            if sudo apt-get install -y --no-install-recommends --fix-missing -o Acquire::Retries=3 xvfb xclip xsel wl-clipboard systemd; then
+              exit 0
+            fi
+            echo "apt install failed (attempt $attempt), retrying"
+            sleep $((attempt * 5))
+          done
+          exit 1
 
       # xclip and xsel need a display. xvfb-run gives them one, so these run
       # for real instead of being skipped for want of an X server.

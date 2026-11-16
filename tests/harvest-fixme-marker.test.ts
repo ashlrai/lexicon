@@ -19,6 +19,17 @@ afterEach(async () => {
 // FIXME is a recognized comment marker: harvest reads the comment for the
 // names around it but never proposes the marker word itself.
 describe('harvest FIXME marker', () => {
+  it('leaves an ordinary candidate unchanged when a FIXME marker is present', async () => {
+    const dir = await repoWith('class QuasarWidget {}\n');
+    const options = { git: false, minCount: 1, symbols: true };
+    const control = await harvestRepo(dir, options);
+    expect(control.map(({ canonical }) => canonical)).toContain('QuasarWidget');
+    expect(control.map(({ canonical }) => canonical)).not.toContain('FIXME');
+
+    await fs.writeFile(path.join(dir, 'marker.ts'), '// FIXME\nclass QuasarWidget {}\n');
+    expect(await harvestRepo(dir, options)).toEqual(control);
+  });
+
   it('harvests the name beside a FIXME comment and not the marker', async () => {
     const dir = await repoWith('// FIXME: retry in QuasarWidget\nclass QuasarWidget {}\n');
     const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });

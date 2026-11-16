@@ -70,6 +70,14 @@ describe('helpers', () => {
   });
 });
 
+describe('empty index', () => {
+  it('returns no replacements for nonempty text when there are no terms', () => {
+    const text = 'Ask Ashler to deploy Cooper Netties';
+    expect(findReplacements(text, buildIndex(lex([])))).toEqual([]);
+    expect(findReplacements(text, buildIndex(lex([ASHLR, K8S]))).length).toBeGreaterThan(0);
+  });
+});
+
 describe('exact alias pass', () => {
   it('matches a single-word alias with confidence 1', () => {
     const reps = find('I work at Ashler now', [ASHLR]);
@@ -756,6 +764,18 @@ describe('robustness', () => {
   it('handles empty input and empty lexicon', () => {
     expect(find('', [ASHLR])).toEqual([]);
     expect(find('Ashler', [])).toEqual([]);
+  });
+
+  it('returns no replacements for an empty string with a populated index', () => {
+    const index = buildIndex(lex([
+      ASHLR,
+      { canonical: 'Supabase', aliases: ['super base'], category: 'brand' },
+      { canonical: 'LexiconStore', aliases: [], category: 'identifier' },
+    ]));
+    expect(findReplacements('', index)).toEqual([]);
+    expect(findReplacements('', index, { phonetic: true, fuzzy: true, skipCode: true, minConfidence: 0 })).toEqual([]);
+    expect(findReplacements('', index, { phonetic: false, fuzzy: false })).toEqual([]);
+    expect(findReplacements('', index, { context: { recentText: 'Ashler super base', bundleId: 'com.apple.Terminal' } })).toEqual([]);
   });
 
   it('ignores blank aliases and blank never entries', () => {

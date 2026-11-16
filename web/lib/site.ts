@@ -10,14 +10,14 @@
  *
  * Every number below is derived from the repo and checked by
  * `node scripts/check-facts.mjs`: twenty-one MCP tools, three resources, two
- * prompts, sixteen export formats, eight importers, 271 terms across the nine packs.
+ * prompts, sixteen export formats, eight importers, 272 terms across the nine packs.
  */
 
 export const SITE_URL = 'https://lexicon.ashlr.ai';
 export const REPO = 'https://github.com/ashlrai/lexicon';
 export const NPM = 'https://www.npmjs.com/package/@ashlr/lexicon';
 export const DEMO = 'https://ashlrai.github.io/lexicon/';
-export const VERSION = '0.5.9';
+export const VERSION = '0.5.12';
 
 export const DOC = (file: string) => `${REPO}/blob/main/${file}`;
 export const BENCHMARK = DOC('docs/BENCHMARK.md');
@@ -180,7 +180,7 @@ export const DOC_LINKS: { label: string; href: string; blurb: string }[] = [
   { label: 'Exports and imports', href: DOC('docs/EXPORTS.md'), blurb: 'Sixteen export formats and eight importers.' },
   { label: 'Browser extension', href: DOC('docs/EXTENSION.md'), blurb: 'ChatGPT, Claude, Gemini, Grok, Perplexity, Copilot, Poe.' },
   { label: 'macOS menu bar app', href: DOC('docs/MACOS-APP.md'), blurb: 'Any text field, via the Accessibility API.' },
-  { label: 'CLI reference', href: DOC('docs/CLI.md'), blurb: 'All twenty-eight commands.' },
+  { label: 'CLI reference', href: DOC('docs/CLI.md'), blurb: 'All twenty-nine commands.' },
   { label: 'Benchmark and method', href: BENCHMARK, blurb: 'The numbers, the corpus and what still fails.' },
   { label: 'Security and trust model', href: DOC('SECURITY.md'), blurb: 'What is local, and how project files are gated.' },
 ];

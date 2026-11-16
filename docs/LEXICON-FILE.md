@@ -45,7 +45,7 @@ settings:
 
 ### `context`
 
-`context` is a per-term list of words that must appear somewhere in the same text before the term may rewrite anything. It is how a canonical that sounds like an everyday word stays off outside its own domain: the `ashlr` pack's `locus` only fires where a fleet word (Ashlr, Phantom, Stacksync) is also in the text, so "Lucas" in a note about a person is left alone. The candidate's own span does not count toward its gate, words inside skipped code spans do count (they are still protected from rewriting), and a text that already spells the term correctly is claimed as itself regardless. A term with no `context`, or an empty list, is ungated.
+`context` is a per-term list of words that must appear somewhere in the same text before the term may rewrite anything. It is how a canonical that sounds like an everyday word stays off outside its own domain: the `ashlr` pack's `locus` only fires where a fleet word (Ashlr, Phantom, Stacksync) is also in the text, so "Lucas" in a note about a person is left alone. The candidate's own span does not count toward its gate, words inside skipped code spans do count (they are still protected from rewriting), and a text that already spells the term correctly is claimed as itself regardless. The words do not have to sit inside the text being corrected: `normalize()` and `POST /normalize` accept a caller `context` (`recentText`, `bundleId`) whose words count the same way, which is how LexiconBar fires a gated term on the app and the field around the correction. A term with no `context`, or an empty list, is ungated.
 
 ## Settings
 

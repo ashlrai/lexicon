@@ -123,6 +123,27 @@ describe('Expect: 100-continue', () => {
   });
 });
 
+describe('an unknown route', () => {
+  it('returns the documented 404 and continues serving requests', async () => {
+    const headers = { Authorization: `Bearer ${info.token}` };
+    const missing = await fetch(`${info.url}/normalise`, { method: 'POST', headers });
+    expect(missing.status).toBe(404);
+    expect(missing.headers.get('content-type')).toMatch(/^application\/json/);
+    expect(await missing.json()).toEqual({
+      error: 'no route for POST /normalise (routes: GET /health, GET /info, GET /pair, POST /normalize, POST /learn, POST /add, ' +
+        'GET /lexicon, GET /stats, GET /packs, POST /packs/:name, DELETE /packs/:name, GET /aliases, GET /export/:format)',
+    });
+
+    const next = await fetch(`${info.url}/normalize`, {
+      method: 'POST',
+      headers: { ...headers, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ text: 'ping ashler', dryRun: true }),
+    });
+    expect(next.status).toBe(200);
+    expect((await next.json() as { replacements: Array<{ canonical: string }> }).replacements.map((r) => r.canonical)).toEqual(['Ashlr.AI']);
+  });
+});
+
 describe('requests the HTTP parser cannot read', () => {
   // Catches: Node's default answer to a malformed request is a bare status
   // line with no body, where every other error of the API is `{ error }`.

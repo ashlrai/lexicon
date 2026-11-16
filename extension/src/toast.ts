@@ -150,13 +150,13 @@ export function showToast(doc: Document, corrections: readonly Correction[], opt
   (doc.body ?? doc.documentElement).appendChild(host);
 
   const duration = opts.durationMs ?? TOAST_MS;
-  let timer = doc.defaultView?.setTimeout(() => removeToast(doc), duration);
+  let timer = doc.defaultView?.setTimeout(() => host.remove(), duration);
   box.addEventListener('mouseenter', () => {
     if (timer !== undefined) doc.defaultView?.clearTimeout(timer);
     timer = undefined;
   });
   box.addEventListener('mouseleave', () => {
-    timer = doc.defaultView?.setTimeout(() => removeToast(doc), duration);
+    timer = doc.defaultView?.setTimeout(() => host.remove(), duration);
   });
   return host;
 }

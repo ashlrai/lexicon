@@ -10,7 +10,7 @@ Lexicon is one YAML file of the words you actually say. It rewrites the transcri
 
 [![CI](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml/badge.svg)](https://github.com/ashlrai/lexicon/actions/workflows/ci.yml)
 [![npm](https://img.shields.io/npm/v/%40ashlr%2Flexicon)](https://www.npmjs.com/package/@ashlr/lexicon)
-<!-- fresh:begin badge:release -->[![source version](https://img.shields.io/badge/source-v0.5.9-blue)](package.json)<!-- fresh:end -->
+<!-- fresh:begin badge:release -->[![source version](https://img.shields.io/badge/source-v0.5.12-blue)](package.json)<!-- fresh:end -->
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node >=20](https://img.shields.io/node/v/%40ashlr%2Flexicon)](package.json)
 
@@ -75,7 +75,7 @@ lexicon doctor --json
 
 The same contract, in one fetch: [llms.txt](llms.txt) (index) and [llms-full.txt](llms-full.txt) (install, tools, privacy, FAQ). The page written to an agent is [docs/AGENTS.md](docs/AGENTS.md). Copy-paste only, no commentary: [docs/COPY-PASTE.md](docs/COPY-PASTE.md).
 
-This tree is source version <!-- fresh:begin pin:version -->0.5.9<!-- fresh:end -->. At this candidate's 2026-11-06 preparation, npm `latest` was 0.5.8. Check `lexicon --version` and `npm view @ashlr/lexicon version` before you pin.
+This tree is source version <!-- fresh:begin pin:version -->0.5.12<!-- fresh:end -->. npm `latest` matches it (0.5.12 was published on 2026-11-10). Check `lexicon --version` and `npm view @ashlr/lexicon version` before you pin.
 
 ## MCP server
 
@@ -121,7 +121,7 @@ These calls cover almost every session. The server has twenty-one MCP tools, thr
 
 - `normalize_transcript { text }` corrects a dictated string and returns `output`, `changed` and `replacements`.
 - `learn_correction { heard, meant }` records a correction the user just made.
-- `add_term { canonical, aliases?, phonetic? }` adds a spelling. Omit `aliases` and the server proposes the mis-hearings.
+- `add_term { canonical, aliases?, phonetic?, category?, notes? }` adds a spelling. Omit `aliases` and the server proposes the mis-hearings.
 - `setup_lexicon { apply? }` returns a plan and writes nothing until `apply: true`.
 - `lexicon_doctor {}` is the structured health check. Read `ready`, `summary` and `nextStep`.
 
@@ -158,8 +158,8 @@ Rules: [docs/MATCHING.md](docs/MATCHING.md).
 
 - **One file**, `~/.config/lexicon/lexicon.yaml`. Project `.lexicon.yaml` merges only after `lexicon trust`.
 - **Twenty-one MCP tools** for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop.
-- **A CLI with 28 commands.** `lexicon --help` lists them. `docs/CLI.md` is generated from that help.
-- **271 terms across the nine packs** (developer, AI, business, voice tools, cloud and DevOps, legal profession, law and litigation, Ashlr.AI fleet, architecture). Community packs install from a registry after a checksum preview.
+- **A CLI with 29 commands.** `lexicon --help` lists them. `docs/CLI.md` is generated from that help.
+- **272 terms across the nine packs** (developer, AI, business, voice tools, cloud and DevOps, legal profession, law and litigation, Ashlr.AI fleet, architecture). Community packs install from a registry after a checksum preview.
 - **Sixteen export formats** and **eight importers**, including Wispr Flow, Superwhisper, macOS Text Replacement and espanso. `lexicon export` with no format lists them.
 - **Correction in supported browser composers, eligible macOS text fields, and your own pipeline** (`normalize()`). LexiconBar requires Accessibility access and skips secure fields and apps without suitable Accessibility text support; see [its limitations](docs/MACOS-APP.md#fix-everywhere).
 
@@ -223,7 +223,7 @@ npm i -g @ashlr/lexicon
 
 Plain `brew install lexicon` is [dns-lexicon](https://github.com/dns-lexicon/dns-lexicon), a different project. Use the full tap name.
 
-After 0.5.9 is published, <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.9`<!-- fresh:end --> installs that tag from GitHub and builds on install.
+<!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.12`<!-- fresh:end --> installs that tag from GitHub and builds on install.
 
 Homebrew formula: [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap). Release zips (extension, LexiconBar, checksums): [GitHub releases](https://github.com/ashlrai/lexicon/releases/latest).
 

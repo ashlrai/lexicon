@@ -21,6 +21,27 @@ describe('parseJsonc', () => {
     });
   });
 
+  it('distinguishes escaped quotes beside comment markers from real comments', () => {
+    const text = String.raw`{
+      "line": "before\"//inside\"after",// "ignored /*
+      "block": "before\"/*inside*/\"after",/* "ignored // */
+      "slashes": "backslash\\\"//still inside", // real comment
+      "endsInSlash": "backslash\\"/* real comment */,
+      "next": "intact"
+    }`;
+    expect(parseJsonc(text)).toEqual({
+      line: 'before"//inside"after',
+      block: 'before"/*inside*/"after',
+      slashes: 'backslash\\"//still inside',
+      endsInSlash: 'backslash\\',
+      next: 'intact',
+    });
+  });
+
+  it('reads a value followed by a line comment at end of file', () => {
+    expect(parseJsonc('{"a": 1} // final comment')).toEqual({ a: 1 });
+  });
+
   it('reads properties separated by a multiline block comment', () => {
     const text = `{
       "first": "original value",
@@ -59,16 +80,56 @@ describe('parseJsonc', () => {
     expect(() => parseJsonc('')).toThrow(/end of input/);
   });
 
+  it('rejects missing values in nested arrays at the offending comma', () => {
+    const text = `{
+  "rows": [
+    [1, 2],
+    [3, /* missing value */
+     , 4]
+  ]
+}`;
+    expect(() => parseJsonc(text)).toThrow('unexpected "," at line 5 column 6');
+    expect(() => parseJsonc('[[, 1]]')).toThrow('unexpected "," at line 1 column 3');
+    expect(() => parseJsonc('[[1,, 2]]')).toThrow('unexpected "," at line 1 column 5');
+  });
+
   it('rejects unterminated block comments within and after a value', () => {
     expect(() => parseJsonc('{ "a": 1, /* unfinished')).toThrow(/unterminated comment/);
     expect(() => parseJsonc('{ "a": 1 } /* unfinished *')).toThrow(/unterminated comment/);
   });
+
+  it('reports unterminated strings and their location', () => {
+    expect(() => parseJsonc('"unfinished')).toThrow('unterminated string at line 1 column 12');
+    expect(() => parseJsonc('{"key')).toThrow('unterminated string at line 1 column 6');
+    expect(() => parseJsonc(String.raw`"a\"`)).toThrow('unterminated string at line 1 column 5');
+    expect(() => parseJsonc('{\n  "a": "open\n}')).toThrow('unterminated string at line 2 column 13');
+  });
 });
 
 describe('editJsonText', () => {
+  it('changes a nested scalar while preserving the adjacent comment', () => {
+    const text = '{\n  "server": {\n    "command": "old", // keep this explanation\n    "enabled": true\n  }\n}\n';
+    const next = { server: { command: 'new', enabled: true } };
+    const out = editJsonText(text, next);
+
+    expect(parseJsonc(out)).toEqual(next);
+    expect(out).toBe(text.replace('"old"', '"new"'));
+    expect(out).toContain('// keep this explanation');
+  });
+
   it('replaces only a changed value, in place', () => {
     const text = '{\n  "keep": [1, 2],  // mine\n  "x": { "command": "old" }\n}\n';
     expect(editJsonText(text, { keep: [1, 2], x: { command: 'new' } })).toBe('{\n  "keep": [1, 2],  // mine\n  "x": { "command": "new" }\n}\n');
+  });
+
+  it('edits a nested value in a CRLF document without changing its line endings', () => {
+    const text = '{\r\n  // client settings\r\n  "server": {\r\n    "command": "old",\r\n    "enabled": true\r\n  }\r\n}\r\n';
+    const next = { server: { command: 'new', enabled: true } };
+    const out = editJsonText(text, next);
+
+    expect(parseJsonc(out)).toEqual(next);
+    expect(out).toBe(text.replace('"old"', '"new"'));
+    expect(out).not.toMatch(/(?<!\r)\n|\r(?!\n)/);
   });
 
   it('adds a key after a same-line comment and keeps a missing trailing newline', () => {
@@ -86,6 +147,89 @@ describe('editJsonText', () => {
   it('is the identity when nothing changed', () => {
     const text = '{\n\t// c\n\t"a": [ 1 ,2 ],\n}';
     expect(editJsonText(text, { a: [1, 2] })).toBe(text);
+  });
+
+  it('returns an unchanged nested object with its comments byte for byte', () => {
+    const text = '{\r\n  "server": {\r\n    // Keep the command comment.\r\n    "options": { /* nested comment */\r\n      "enabled": true, // Keep the trailing comment.\r\n      "args": ["one", /* argument comment */ "two"],\r\n    },\r\n  }\r\n}\r\n';
+    const value = { server: { options: { enabled: true, args: ['one', 'two'] } } };
+
+    expect(editJsonText(text, value)).toBe(text);
+  });
+
+  it.each(['\n', '\r\n'])('preserves comments, spacing and the trailing newline on an unchanged edit (%j)', (newline) => {
+    const text = [
+      '/* leading comment */',
+      '{',
+      '\t"server" : { "args": [ "one" , "two" ] }, // keep spacing',
+      '\t"enabled": true, /* keep trailing comma */',
+      '}',
+      '',
+    ].join(newline);
+    expect(editJsonText(text, { server: { args: ['one', 'two'] }, enabled: true })).toBe(text);
+  });
+
+  // Catches: an edit touching a nested value may move only that value's own
+  // span; a comment beside it (or beside a sibling at any depth) is not part
+  // of the edit and has to survive byte for byte.
+  describe('nested values beside comments', () => {
+    it('changes a deeply nested value and keeps every neighboring comment and unrelated value', () => {
+      const text = [
+        '{',
+        '  "top": 1, // top note',
+        '  "outer": {',
+        '    // inner note',
+        '    "inner": {',
+        '      "flag": false, /* flag note */',
+        '      "name": "old" // name note',
+        '    },',
+        '    "list": [1, 2, 3]',
+        '  },',
+        '  "tail": "end" /* tail note */',
+        '}',
+        '',
+      ].join('\n');
+      const next = { top: 1, outer: { inner: { flag: false, name: 'new' }, list: [1, 2, 3] }, tail: 'end' };
+      const out = editJsonText(text, next);
+
+      expect(out).toBe(text.replace('"old"', '"new"'));
+      expect(parseJsonc(out)).toEqual(next);
+    });
+
+    it('edits a value sitting between a block comment and an inline comment', () => {
+      const text = '{\n  "cfg": {\n    // mode note\n    "mode": /* inline */ "old", /* trailing note */\n    "n": 1\n  }\n}\n';
+      const next = { cfg: { mode: 'new', n: 1 } };
+      const out = editJsonText(text, next);
+
+      expect(out).toBe(text.replace('"old"', '"new"'));
+      expect(parseJsonc(out)).toEqual(next);
+    });
+
+    it('adds a member or element inside a nested container without moving the neighboring comment', () => {
+      expect(editJsonText(
+        '{\n  "server": {\n    "command": "old" // keep command\n  },\n  "other": 1\n}\n',
+        { server: { command: 'old', timeout: 5 }, other: 1 },
+      )).toBe('{\n  "server": {\n    "command": "old", // keep command\n    "timeout": 5\n  },\n  "other": 1\n}\n');
+      expect(editJsonText(
+        '{\n  "args": [\n    "one", // one\n    "two"\n  ]\n}\n',
+        { args: ['one', 'two', 'three'] },
+      )).toBe('{\n  "args": [\n    "one", // one\n    "two",\n    "three"\n  ]\n}\n');
+    });
+
+    it('keeps the comment beside a nested value that is written whole', () => {
+      const text = '{\n  "server": {\n    "b": 1,\n    "a": 2 // inner note\n  }, // server note\n  "other": true\n}\n';
+      const out = editJsonText(text, { server: { a: 2, b: 1 }, other: true });
+
+      expect(out).toBe('{\n  "server": {\n    "a": 2,\n    "b": 1\n  }, // server note\n  "other": true\n}\n');
+      expect(parseJsonc(out)).toEqual({ server: { a: 2, b: 1 }, other: true });
+    });
+
+    it('replaces a nested scalar with a container without touching the neighboring comment', () => {
+      const text = '{\n  "opts": "old", // opts note\n  "other": [true]\n}\n';
+      const out = editJsonText(text, { opts: { a: 1 }, other: [true] });
+
+      expect(out).toBe('{\n  "opts": {\n    "a": 1\n  }, // opts note\n  "other": [true]\n}\n');
+      expect(parseJsonc(out)).toEqual({ opts: { a: 1 }, other: [true] });
+    });
   });
 
   // Catches: removing a key wrote its whole object again through
@@ -118,6 +262,14 @@ describe('editJsonText', () => {
       expect(editJsonText(text, { b: 2, c: 3 })).toBe('{\n  "b": 2,\n  // c is next\n  "c": 3\n}');
       expect(editJsonText(text, { a: 1, c: 3 })).toBe('{\n  "a": 1, // a\n  // c is next\n  "c": 3\n}');
       expect(editJsonText(text, { a: 1 })).toBe('{\n  "a": 1 // a\n}');
+    });
+
+    it('removes the only member while preserving surrounding content', () => {
+      const text = '/* before */\n{\n  "servers": { "lexicon": { "command": "node" } }, // keep\n  "enabled": true\n}\n// after\n';
+      const out = editJsonText(text, { servers: {}, enabled: true });
+
+      expect(parseJsonc(out)).toEqual({ servers: {}, enabled: true });
+      expect(out).toBe(text.replace('{ "lexicon": { "command": "node" } }', '{}'));
     });
 
     it('handles one-line containers, trailing commas, arrays and removing everything', () => {

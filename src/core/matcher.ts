@@ -269,6 +269,7 @@ export function phoneticCandidates(entries: readonly PhoneticEntry[], length: nu
  */
 interface MatchScope {
   readonly tokens: readonly Token[];
+  readonly externalTokens: readonly (readonly Token[])[];
   readonly from: number;
   readonly to: number;
   /** termIndex -> context items, each split into folded tokens. */
@@ -288,6 +289,9 @@ function contextPresent(scope: MatchScope, termIndex: number): boolean {
   const { tokens, from, to } = scope;
   for (const item of items) {
     const len = item.length;
+    for (const tokens of scope.externalTokens) for (let p = 0; p + len <= tokens.length; p++) {
+      if (item.every((word, k) => tokens[p + k].textLower === word || tokens[p + k].baseLower === word)) return true;
+    }
     for (let p = 0; p + len <= tokens.length; p++) {
       // `to` is inclusive (makeView's last-token index): a run overlapping the
       // window is not evidence; one starting after `to` is ("Lucas phantom").
@@ -306,7 +310,7 @@ function contextPresent(scope: MatchScope, termIndex: number): boolean {
   return false;
 }
 
-function findBest(view: WindowView, index: MatcherIndex, opts: Required<Omit<NormalizeOptions, 'dryRun' | 'shouldStop'>>, scope: MatchScope): Candidate | undefined {
+function findBest(view: WindowView, index: MatcherIndex, opts: Required<Pick<NormalizeOptions, 'minConfidence' | 'phonetic' | 'fuzzy' | 'skipCode'>>, scope: MatchScope): Candidate | undefined {
   // Held in an object read through a getter: TS does not invalidate narrowing of
   // a local across the closure calls below, so a plain `let best` narrows to never.
   const state: { best: Candidate | undefined } = { best: undefined };
@@ -490,6 +494,8 @@ export function findReplacements(text: string, index: MatcherIndex, opts: Normal
   };
 
   const tokens = tokenize(text, resolved.skipCode);
+  const externalTokens = [opts.context?.recentText, opts.context?.bundleId]
+    .map((value) => value ? tokenize(value, false) : []);
   const candidates: Candidate[] = [];
 
   // Every gated term's context items, folded and tokenised once for the whole
@@ -517,7 +523,7 @@ export function findReplacements(text: string, index: MatcherIndex, opts: Normal
       if (n > 1 && !tokens[j - 1].joinsNext) break;
 
       const full = makeView(text, tokens, i, j, false, index.protectedWords);
-      const scope: MatchScope = { tokens, from: i, to: j, contexts };
+      const scope: MatchScope = { tokens, externalTokens, from: i, to: j, contexts };
       let best = gluedAfter(text, full.end) ? undefined : findBest(full, index, resolved, scope);
 
       // A trailing possessive ("ashler ai's") is almost never part of the

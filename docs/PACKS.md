@@ -1,6 +1,6 @@
 # Starter packs
 
-Nine curated term files ship with the package, in [`packs/`](../packs). They are the words a new user would otherwise type by hand on day one: 271 terms and 565 aliases across developer tooling, AI, business, cloud and DevOps, dictation apps, legal terminology, the Ashlr.AI fleet, and architecture.
+Nine curated term files ship with the package, in [`packs/`](../packs). They are the words a new user would otherwise type by hand on day one: 272 terms and 566 aliases across developer tooling, AI, business, cloud and DevOps, dictation apps, legal terminology, the Ashlr.AI fleet, and architecture.
 
 ```bash
 lexicon pack list                    # what exists, and which you have
@@ -20,7 +20,7 @@ lexicon pack remove business         # take one back out
 | `legal` | 25 | 50 | Complementary legal Latin, litigation and acronyms (res ipsa loquitur, remittitur, FRCP, UCC) |
 | `architecture` | 12 | 24 | Opt-in building-design terminology and modeling tools (Archicad, BIM, clerestory, rainscreen) |
 | `profession-q8` | 25 | 31 | Opt-in legal terminology, research tools and spelled-out acronyms (voir dire, res judicata, habeas corpus, subpoena, certiorari) |
-| `ashlr` | 13 | 44 | The Ashlr.AI fleet, its products and people (Ashlr.AI, locus, Phantom, Stacksync, Evan DeLoria, Codex) |
+| `ashlr` | 14 | 45 | The Ashlr.AI fleet, its products and people (Ashlr.AI, locus, Phantom, Stacksync, Evan DeLoria, Codex), and Weyv |
 
 `lexicon setup` offers the packs as a checklist with `developer`, `ai` and `voice-tools` checked and `architecture`, `ashlr`, `business`, `cloud-devops`, `legal` and `profession-q8` offered unchecked, one yes/no each: the business and cloud packs are mostly acronyms speech-to-text already gets right, the legal and architecture packs are opt-in domain vocabulary, and `ashlr` is one team's namespace. `--packs a,b` or `--no-packs` decides it without a prompt; under `--yes` nothing is installed unless you pass `--packs`, because a pack is a hundred-odd global terms.
 
@@ -38,7 +38,7 @@ Project-scope installs go through the [trust gate](TRUST.md) like every other wr
 
 Some aliases are spellings speech-to-text engines actually produced. Where the TTS-audio benchmark recorded a spelling it is in the pack ("cuban eats" for Kubernetes, "and Tropic" for Anthropic, "Olima" for Ollama, "whisper flow" for Wispr Flow); other packs include plausible splits and phoneme swaps from the synthetic corpus ("dock her", "engine x", "post gress"). The architecture pack contains synthetic candidate spellings, not measured STT errors.
 
-One rule decides the hard cases: **an ordinary English word is never an alias on its own.** Vercel is left without "vessel", Deel without "deal", Brex without "bricks", and Claude without "cloud", because "the cloud" and "close the deal" are sentences people say. `SaaS -> sass` is the single exception, and it carries `never: [sauce]` so the term cannot eat the other one. Forty-three terms across the nine packs carry a `never` list for the same reason. The `ashlr` pack goes further: its product names are ordinary English words (`phantom`, `lexicon`), so the ordinary spellings are `never` words, and `locus` also carries a [`context`](LEXICON-FILE.md#context) list. Its `Lucas` alias only fires when a fleet word is in the same text, so "open Fantom and run Lucas doctor" becomes "open Phantom and run locus doctor" while a person named Lucas in ordinary prose is left alone.
+One rule decides the hard cases: **an ordinary English word is never an alias on its own.** Vercel is left without "vessel", Deel without "deal", Brex without "bricks", and Claude without "cloud", because "the cloud" and "close the deal" are sentences people say. `SaaS -> sass` is the single exception, and it carries `never: [sauce]` so the term cannot eat the other one. Forty-three terms across the nine packs carry a `never` list for the same reason. The `ashlr` pack goes further: its product names are ordinary English words (`phantom`, `lexicon`), so the ordinary spellings are `never` words, and `locus` also carries a [`context`](LEXICON-FILE.md#context) list. Its `Lucas` alias only fires when a fleet word is in the same text, so "open Fantom and run Lucas doctor" becomes "open Phantom and run locus doctor" while a person named Lucas in ordinary prose is left alone. `Weyv` is the other context-gated term: `wave` is an alias, and it only fires when a product cue (push, repo, widget, app, build, ship, incredible, macOS) is in the same text, so "push wave" becomes "push Weyv" while "a wave of PRs" and "sound wave" stay as they are.
 
 This is the same precision rule the benchmark measures: zero of 95 clean synthetic sentences and zero of 72 clean spoken sentences were changed. See [BENCHMARK.md](BENCHMARK.md).
 

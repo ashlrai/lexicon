@@ -29,14 +29,16 @@ function runExample(file: string) {
 }
 
 describe('examples/', () => {
-  it('the architecture proposal is valid lexicon YAML and corrects its candidate aliases', () => {
+  it('examples/README.md points at the shipped architecture pack, which corrects its aliases', async () => {
     const readme = readFileSync(path.join(root, 'examples', 'README.md'), 'utf8');
-    const section = readme.split('## Starter-pack proposal: building architecture')[1];
-    expect(section).toBeDefined();
-    const yaml = section.match(/```yaml\n([\s\S]*?)\n```/)?.[1];
-    expect(yaml).toBeDefined();
-    const lexicon = parseLexicon(parseYaml(yaml!));
-    expect(lexicon.terms.length).toBeGreaterThanOrEqual(5);
+    expect(readme).toContain('## Architecture starter pack');
+    expect(readme).toMatch(/lexicon pack add architecture/);
+    expect(readme).not.toMatch(/unpublished candidate|future opt-in|not an installable built-in pack/);
+
+    const { loadPack } = await import('../src/core/packs.js');
+    const pack = await loadPack('architecture');
+    expect(pack.terms).toBeGreaterThanOrEqual(5);
+    const lexicon = pack.lexicon;
     for (const term of lexicon.terms) {
       expect(term.aliases.length).toBeGreaterThan(0);
       for (const alias of term.aliases) {
@@ -45,6 +47,18 @@ describe('examples/', () => {
     }
     const ordinary = 'Please sketch the building and review the plans.';
     expect(normalize(ordinary, lexicon).output).toBe(ordinary);
+  });
+
+  it('lexicon.example.yaml parses to the same lexicon twice without mutating its input', () => {
+    const raw = parseYaml(readFileSync(path.join(root, 'examples', 'lexicon.example.yaml'), 'utf8'));
+    const snapshot = structuredClone(raw);
+    const first = parseLexicon(raw);
+    expect(raw).toEqual(snapshot);
+    const second = parseLexicon(raw);
+    expect(raw).toEqual(snapshot);
+    expect(first.terms.length).toBeGreaterThan(0);
+    expect(second).toEqual(first);
+    expect(second).not.toBe(first);
   });
 
   it('stt-pipeline.ts fixes every misheard term before the LLM sees it', () => {

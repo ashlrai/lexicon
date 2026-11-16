@@ -1863,6 +1863,27 @@ describe('lexicon voice --json failures', () => {
 });
 
 describe('cleanTranscript', () => {
+  it('returns an empty string for an empty transcript', () => {
+    expect(cleanTranscript('')).toBe('');
+  });
+
+  it.each([
+    ['(soft *noise* music) hello', 'hello'],
+    ['  Hello [MUSIC] there *laughs*  ', 'Hello there'],
+    ['deploy it (the new build) tonight', 'deploy it (the new build) tonight'],
+    ['[BLANK_AUDIO]', ''],
+  ])('is stable when cleaned repeatedly: %s', (input, expected) => {
+    const cleaned = cleanTranscript(input);
+    expect(cleaned).toBe(expected);
+    expect(cleanTranscript(cleaned)).toBe(cleaned);
+    expect(cleanTranscript(cleanTranscript(cleaned))).toBe(cleaned);
+  });
+
+  it('preserves plain transcript words and punctuation unchanged', () => {
+    const transcript = "Hello, Mason! Let's ship version 2.0: is it ready? Yes; it is.";
+    expect(cleanTranscript(transcript)).toBe(transcript);
+  });
+
   it('preserves ordinary unbracketed words while collapsing whitespace', () => {
     expect(cleanTranscript('  Please play music, then\nwait in silence.  '))
       .toBe('Please play music, then wait in silence.');
@@ -1871,6 +1892,15 @@ describe('cleanTranscript', () => {
   it('removes starred spans of up to three words but preserves four-word spans', () => {
     expect(cleanTranscript('before *door slams loudly* after')).toBe('before after');
     expect(cleanTranscript('before *the door slams loudly* after')).toBe('before *the door slams loudly* after');
+  });
+
+  it('removes a one-word starred sound marker while preserving adjacent speech', () => {
+    expect(cleanTranscript('Please *laughs* continue speaking.')).toBe('Please continue speaking.');
+  });
+
+  it('preserves an unmatched opening asterisk and the speech that follows', () => {
+    expect(cleanTranscript('Please continue *speaking after the pause.'))
+      .toBe('Please continue *speaking after the pause.');
   });
 
   it('strips whisper tags, collapses whitespace and trims', () => {
@@ -1883,10 +1913,20 @@ describe('cleanTranscript', () => {
 
   it('removes a bracketed tag and keeps the spoken words on both sides', () => {
     expect(cleanTranscript('Please [MUSIC] continue speaking.')).toBe('Please continue speaking.');
+    expect(cleanTranscript('hello[MUSIC]world')).toBe('hello world');
   });
 
   it('removes multiple bracketed tags while keeping the transcript between them', () => {
     expect(cleanTranscript('Before [MUSIC] the spoken words [APPLAUSE] after.')).toBe('Before the spoken words after.');
+  });
+
+  it.each([
+    ['[MUSIC] First sentence [noise]. Then speak [APPLAUSE]!', 'First sentence. Then speak!'],
+    ['Start[noise]middle words[music]end', 'Start middle words end'],
+    ['Before [MUSIC]\n  keep\tthese words [inaudible] after', 'Before keep these words after'],
+    ['[MUSIC] spoken words [APPLAUSE]', 'spoken words'],
+  ])('keeps intervening speech when removing separated tags from %s', (input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
   });
 
   it('removes adjacent bracketed tags while preserving surrounding speech', () => {
