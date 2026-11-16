@@ -27,7 +27,7 @@
 #   a self-signed 10-year RSA-2048 certificate, "LexiconBar Local Signing",
 #   with basicConstraints=critical,CA:false and extendedKeyUsage=codeSigning
 #   and the matching private key, both inside that keychain
-#   the keychain added to this user's `security list-keychains -d user` list
+#   codesign uses this keychain by path; no search-list change is needed
 #
 # A keychain of its own, rather than the login keychain, is what makes this
 # non-interactive. `security set-key-partition-list` has to be given the
@@ -48,7 +48,7 @@
 #   security delete-keychain ~/Library/Keychains/lexiconbar-signing.keychain-db
 #   rm -f ~/Library/Application\ Support/LexiconBar/signing-keychain.password
 #
-# (`security delete-keychain` also drops it from the search list.) After
+# After
 # removing it, builds fall back to ad-hoc signing and the grant goes back to
 # needing a remove-and-re-add on every build.
 
@@ -104,12 +104,12 @@ a dialog). Nothing was left half-done; make the certificate by hand instead:
      Certificate Type:  Code Signing
      Tick "Let me override defaults".
   4. Continue through the pages; a validity of 3650 days is a good choice.
-     Leave the key pair as RSA 2048. Specify "login" as the keychain.
-  5. Finish, then in the "login" keychain find the new certificate, open it,
+     Leave the key pair as RSA 2048. Specify "$KEYCHAIN" as the keychain.
+  5. Finish, then in that keychain find the new certificate, open it,
      expand "Trust" and set "Code Signing" to "Always Trust" (optional: codesign
      does not require it, but it quiets \`security find-identity -v\`).
   6. Check it is there:
-       security find-identity -p codesigning | grep "$IDENTITY"
+       security find-identity -p codesigning "$KEYCHAIN" | grep "$IDENTITY"
   7. Build:
        scripts/build-macos-app.sh
      The first build will ask once whether codesign may use the key. Click
@@ -118,24 +118,13 @@ a dialog). Nothing was left half-done; make the certificate by hand instead:
 EOF
 }
 
-# The identity as codesign will look it up: any keychain in the search list.
+# Look up the identity only in the keychain used for signing.
 find_identity_line() {
-  security find-identity -p codesigning 2>/dev/null | grep -F "\"$IDENTITY\"" | head -1 || true
+  security find-identity -p codesigning "$KEYCHAIN" 2>/dev/null | grep -F "\"$IDENTITY\"" | head -1 || true
 }
 
 cert_sha1() {
   find_identity_line | sed -n 's/^ *[0-9]*) *\([0-9A-F]*\) .*/\1/p'
-}
-
-in_search_list() {
-  security list-keychains -d user 2>/dev/null | sed 's/^ *"//;s/"$//' | grep -Fqx "$KEYCHAIN"
-}
-
-add_to_search_list() {
-  local existing
-  existing="$(security list-keychains -d user | sed 's/^ *"//;s/"$//' | grep -Fvx "$KEYCHAIN" || true)"
-  # shellcheck disable=SC2086
-  security list-keychains -d user -s $existing "$KEYCHAIN" >/dev/null
 }
 
 report() {
@@ -267,12 +256,7 @@ if [ "$status" != "0" ]; then
 fi
 say "    key usable by codesign with no prompt"
 
-# 5. codesign only looks in the search list, so put it there.
-if ! in_search_list; then
-  add_to_search_list
-  say "    added to the keychain search list"
-fi
-
+# 5. Check the identity in its keychain without changing the search list.
 LINE="$(find_identity_line)"
 [ -n "$LINE" ] || { printf 'error: the identity was imported but codesign cannot see it.\n' >&2; manual_steps; exit 1; }
 
@@ -293,7 +277,7 @@ cat > "$SMOKE/Contents/Info.plist" <<'EOF'
 EOF
 status=0
 run_limited 40 codesign --force --options runtime --timestamp=none \
-  --sign "$IDENTITY" "$SMOKE" >/dev/null 2>&1 || status=$?
+  --sign "$IDENTITY" --keychain "$KEYCHAIN" "$SMOKE" >/dev/null 2>&1 || status=$?
 if [ "$status" != "0" ]; then
   if [ "$status" = "124" ]; then
     printf 'error: codesign did not finish; it is waiting on a keychain dialog.\n' >&2

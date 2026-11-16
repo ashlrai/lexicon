@@ -214,12 +214,12 @@ The script is idempotent: run it again and it reports the identity it already ma
 
 ### Where the key lives
 
-The certificate and its private key go in a keychain of their own, `~/Library/Keychains/lexiconbar-signing.keychain-db`, whose password is generated and kept in `~/Library/Application Support/LexiconBar/signing-keychain.password` (mode 0600). That is what makes the whole thing non-interactive: `security set-key-partition-list` must be given the keychain's password or macOS puts up a dialog, and the login keychain's password is yours, not ours. A keychain we create has a password we can supply, so `codesign` never asks for anything. The keychain is added to your `security list-keychains -d user` search list, which is how `codesign` finds the identity, and `build-macos-app.sh` unlocks it before signing (it is locked again after a reboot).
+The certificate and its private key go in a keychain of their own, `~/Library/Keychains/lexiconbar-signing.keychain-db`, whose password is generated and kept in `~/Library/Application Support/LexiconBar/signing-keychain.password` (mode 0600). That is what makes the whole thing non-interactive: `security set-key-partition-list` must be given the keychain's password or macOS puts up a dialog, and the login keychain's password is yours, not ours. A keychain we create has a password we can supply, so `codesign` never asks for anything. `codesign` receives the keychain by path, without adding it to your keychain search list, and `build-macos-app.sh` unlocks it before signing (it is locked again after a reboot).
 
-`security find-identity -v -p codesigning` will still report **0 valid identities**: `-v` means "valid" in the sense of "chains to a trusted root", and a self-signed certificate does not. That does not matter: `codesign` signs with it happily. To see it, drop the `-v`:
+`security find-identity -v -p codesigning ~/Library/Keychains/lexiconbar-signing.keychain-db` will still report **0 valid identities**: `-v` means "valid" in the sense of "chains to a trusted root", and a self-signed certificate does not. That does not matter: `codesign` signs with it happily. To see it, drop the `-v`:
 
 ```bash
-security find-identity -p codesigning     # 1) 8F4EEC66… "LexiconBar Local Signing" (CSSMERR_TP_NOT_TRUSTED)
+security find-identity -p codesigning ~/Library/Keychains/lexiconbar-signing.keychain-db  # 1) 8F4EEC66… "LexiconBar Local Signing" (CSSMERR_TP_NOT_TRUSTED)
 scripts/make-signing-identity.sh --show   # the same, with the DR it produces
 ```
 
