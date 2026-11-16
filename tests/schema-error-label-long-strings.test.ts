@@ -94,6 +94,14 @@ describe('schema error labels for long invalid strings', () => {
     expect(label).toHaveLength(39);
   });
 
+  it('keeps a surrogate pair that ends exactly at the cut intact', () => {
+    // 37 'A' plus an emoji fill units 37 and 38 of the 39-unit slice.
+    const canonical = 'A'.repeat(37) + '\u{1F600}' + 'B'.repeat(10);
+    const label = labelOf(message({ terms: [{ canonical, notes: 'bad\uFFFE' }] }));
+    expect(label).toBe(`${'A'.repeat(37)}\u{1F600}…`);
+    expect(label).toHaveLength(LABEL_MAX);
+  });
+
   it('labels every invalid field of a long term with the same bounded name', () => {
     const canonical = 'L'.repeat(70);
     const msg = message({ terms: [{ canonical, aliases: ['a￿'], never: ['b\uD800'], notes: 'c￾' }] });
