@@ -15,14 +15,16 @@ for complete messages.
    digits. A valid surrogate pair is preserved. Each escape occupies six
    UTF-16 code units.
 3. If the escaped label exceeds 40 UTF-16 code units, it is sliced to its
-   first 39 code units and `…` is appended. Otherwise it is shown in full.
+   first 39 code units and `…` is appended. When that cut would land on the
+   first half of a valid surrogate pair, the slice ends one unit earlier so
+   the label never holds half a pair. Otherwise it is shown in full.
    The ellipsis is included in the 40-unit limit.
 
 The cutoff counts UTF-16 code units, not Unicode code points, graphemes or
 bytes. A supplementary character such as `🚀` occupies two units. A cut can
-split an escape or even a surrogate pair, leaving an unpaired surrogate in the
-JavaScript error string. The label is not a serialization format: ordinary
-quotes and backslashes in the canonical are not escaped by this operation.
+split an escape, but not a valid surrogate pair. The label is not a
+serialization format: ordinary quotes and backslashes in the canonical are
+not escaped by this operation.
 Use the field path and original input to identify and fix the offending value.
 
 | Cleaned canonical | Label in the error | Reason |
