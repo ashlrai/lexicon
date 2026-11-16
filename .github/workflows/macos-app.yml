@@ -3,10 +3,17 @@
 # Node test matrix does not wait on a macOS runner.
 name: macOS app
 
-# Desktop app builds run with the scheduled full suite (6 AM and 6 PM ET) and
-# on dispatch, not on PRs or pushes. A red scheduled run files a P0
-# FIX-MAIN issue (fix-main.yml).
+# Desktop app builds run after a main push that touches this app, on the daily
+# schedule, and on dispatch. Not on PRs or the merge queue. A red scheduled
+# run files a P0 FIX-MAIN issue (fix-main.yml).
 on:
+  push:
+    branches: [main]
+    paths:
+      - "apps/macos/**"
+      - "scripts/build-macos-app.sh"
+      - "package.json"
+      - ".github/workflows/macos-app.yml"
   schedule:
     - cron: "0 10 * * *"
   workflow_dispatch:
@@ -14,10 +21,12 @@ on:
 permissions:
   contents: read
 
-# Cancel superseded PR runs only; main runs are never cancelled.
+# A burst of pushes to one ref shares a group and the newer run cancels the
+# older. Schedule and dispatch keep a per-run group so a main push cannot
+# cancel them.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event.pull_request.number || github.sha }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: macos-app-${{ github.event_name == 'push' && github.ref || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'push' }}
 
 jobs:
   build:
