@@ -15,7 +15,7 @@ import path from 'node:path';
 import { parse as parseYaml } from 'yaml';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
 import { LIMITS, parseLexicon } from './schema.js';
-import { addTerm, addTerms } from './store.js';
+import { addTerm, addTerms, loadLexicon } from './store.js';
 import type { Term } from './types.js';
 
 const ZW = '\u200b'; // a zero-width space: stripped before the limit is measured
@@ -214,6 +214,16 @@ describe('the same text limit on the write path', () => {
     const yaml = await fs.readFile(globalPath, 'utf8');
     expect(yaml).not.toContain(ZW);
     expect(parseLexicon(parseYaml(yaml)).terms[0].notes).toBe(atLimit);
+  });
+
+  it('reads a hand-written file whose notes sit exactly at the limit, and refuses one past it', async () => {
+    const yamlWith = (notes: string) => `terms:\n  - canonical: X\n    notes: ${notes}\n`;
+    await fs.writeFile(globalPath, yamlWith(atLimit));
+    const loaded = await loadLexicon({ ...opts(), dryRun: true });
+    expect(loaded.merged.terms[0].notes).toBe(atLimit);
+
+    await fs.writeFile(globalPath, yamlWith(overLimit));
+    await expect(loadLexicon({ ...opts(), dryRun: true })).rejects.toThrow(/terms\[0\]\.notes: must be at most 200 characters/);
   });
 
   it('writes a blank text field as the empty string, not as a refusal', async () => {
