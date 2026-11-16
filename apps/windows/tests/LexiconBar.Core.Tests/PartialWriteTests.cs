@@ -113,6 +113,21 @@ public class PartialWriteTests
     // ---------------------------------------------------- backspace and type
 
     [Fact]
+    public void EmptyReplacementReportsNoCharactersWritten()
+    {
+        const string before = "I use ashler";
+        RewritePlan plan = Plan(before, new TextSpan(6, 6), string.Empty);
+
+        PartialWrite partial = PartialWrite.OverTail(plan, before, 2)!;
+
+        Assert.NotNull(partial);
+        Assert.Empty(partial.WrittenText);
+        Assert.Equal("I use ashl", partial.FieldText);
+        Assert.Equal(before, partial.Undone);
+        Assert.Null(PartialWrite.OverSelection(plan, before, 0));
+    }
+
+    [Fact]
     public void BackspacesThatLandedWithoutTheirRetypeAreRecorded()
     {
         const string before = "I use ashler";

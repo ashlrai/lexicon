@@ -3,6 +3,7 @@ import { promises as fs, statSync } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { MAX_LEXICON_BYTES } from '../src/core/store.js';
 import { BoundedReadError, isBoundedReadError, readBoundedRegularFile, readRegularFileTail } from '../src/util/bounded-read.js';
 
 // The reader behind the trust gate's reads of someone else's repo files: it
@@ -36,6 +37,12 @@ describe('readBoundedRegularFile', () => {
     expect(r.bytes.length).toBe(0);
   });
 
+  it('finishes reading an empty file with a zero-byte limit', async () => {
+    const r = await readBoundedRegularFile(await write('empty-zero-limit', ''), 0);
+    expect(r.bytes).toEqual(Buffer.alloc(0));
+    expect(r.bytes.length).toBeLessThanOrEqual(0);
+  }, 1000);
+
   it('accepts a file of exactly maxBytes and refuses one byte more', async () => {
     const ok = await readBoundedRegularFile(await write('at', Buffer.alloc(100, 97)), 100);
     expect(ok.bytes.length).toBe(100);
@@ -43,6 +50,19 @@ describe('readBoundedRegularFile', () => {
     expect(isBoundedReadError(err)).toBe(true);
     expect(err.reason).toBe('too-large');
     expect(err.size).toBe(101);
+  });
+
+  it('accepts a file at MAX_LEXICON_BYTES and rejects one byte more', async () => {
+    const atLimit = Buffer.alloc(MAX_LEXICON_BYTES, 97);
+    const ok = await readBoundedRegularFile(await write('at-limit', atLimit), MAX_LEXICON_BYTES);
+    expect(ok.bytes.equals(atLimit)).toBe(true);
+
+    const overLimit = await write('over-limit', Buffer.alloc(MAX_LEXICON_BYTES + 1, 97));
+    const err = await readBoundedRegularFile(overLimit, MAX_LEXICON_BYTES).catch((e) => e);
+    expect(isBoundedReadError(err)).toBe(true);
+    expect(err.reason).toBe('too-large');
+    expect(err.size).toBe(MAX_LEXICON_BYTES + 1);
+    expect(err.message).toBe(`${overLimit} is ${MAX_LEXICON_BYTES + 1} bytes`);
   });
 
   it('reads a file larger than the 64 KiB read-ahead without truncating it', async () => {

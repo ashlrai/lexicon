@@ -373,6 +373,16 @@ export function buildProgram(io: IO): Command {
       done(await runInstall('claude', withGlobals(opts), io));
     });
 
+  program
+    .command('test-select')
+    .description('select tests for changed repository files, falling back to the full suite')
+    .argument('[files...]', 'repository-relative changed paths (default: git changes including untracked files)')
+    .option('--json', 'print the selection and command argument arrays as JSON')
+    .action(async (files: string[], opts: { json?: boolean }) => {
+      const { runTestSelect } = await import('./cmd-test-select.js');
+      runTestSelect(files, withGlobals(opts), io);
+    });
+
   registerImportCommands(program, io);
   registerInstallCommands(program, io);
   registerUninstallCommands(program, io);
@@ -626,7 +636,7 @@ export function registerSetupCommands(program: Command, io: IO): void {
     .option('--app <app>', `dictation app to export for: ${SETUP_APPS.join('|')}`)
     .option('--export-dir <dir>', 'where to write the dictation export (default: ~/Desktop)')
     .option('--harvest', 'add the repo names to the project lexicon (with --yes it is skipped unless this is passed)')
-    .option('--packs <list>', 'comma-separated starter packs to install, or none (default: a checklist on a terminal, nothing with --yes; one of developer, ai, business, voice-tools, cloud-devops, profession-q8, legal, ashlr)')
+    .option('--packs <list>', 'comma-separated starter packs to install, or none (default: a checklist on a terminal, nothing with --yes; one of developer, ai, business, voice-tools, cloud-devops, profession-q8, legal, ashlr, architecture)')
     .option('--no-packs', 'skip the starter packs (no prompt)')
     .option('--no-harvest', 'skip the repo harvest (no prompt)')
     .option('--serve', 'install the local API login service (with --yes it is skipped unless this is passed)')
@@ -707,7 +717,7 @@ export function registerPackCommands(program: Command, io: IO, deps: PackDeps = 
 
   const pack = program
     .command('pack')
-    .description('starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8, legal, ashlr) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate')
+    .description('starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8, legal, ashlr, architecture) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate')
     .action(() => {
       pack.outputHelp();
     });

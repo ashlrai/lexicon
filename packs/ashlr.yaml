@@ -4,6 +4,8 @@
 # word is in the same text, so a person named Lucas in ordinary prose is left
 # alone. Ordinary English words are never aliases, and `phantom`/`lexicon`
 # are never words for the same reason: the product name is spelled like them.
+# `Weyv` is the other context-gated term: `wave` is an alias, and it only
+# fires when a product cue is in the same text, so ordinary "wave" stays.
 # See docs/PACKS.md.
 name: ashlr
 title: Ashlr.AI fleet
@@ -62,3 +64,8 @@ terms:
   - canonical: ashlr-md
     category: product
     aliases: [ashler md, ashlar md, ashler m d]
+  - canonical: Weyv
+    category: product
+    aliases: [wave]
+    context: [push, repo, widget, app, build, ship, incredible, macos]
+    notes: Weyv, a music visualizer product name; wave becomes Weyv only where a product cue is in the text

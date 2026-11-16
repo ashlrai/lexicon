@@ -235,4 +235,13 @@ describe('the same text limit on the write path', () => {
     await expect(addTerm({ canonical: 'X', aliases: [], phonetic: overLimit }, opts())).rejects.toThrow('term not added:');
     expect(await fs.readFile(globalPath, 'utf8')).toBe(before);
   });
+
+  it('accepts notes padded past the raw limit when trimming lands on it', async () => {
+    // 204 raw characters, 200 once the padding is trimmed: the cap is measured
+    // on the cleaned value, so the write path stores the trimmed text rather
+    // than refusing a field a reader would see as exactly at the limit.
+    const { term } = await addTerm({ canonical: 'X', aliases: [], notes: `  ${atLimit}  ` }, opts());
+    expect(term.notes).toBe(atLimit);
+    expect(parseLexicon(parseYaml(await fs.readFile(globalPath, 'utf8'))).terms[0].notes).toBe(atLimit);
+  });
 });

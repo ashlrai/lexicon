@@ -5,9 +5,23 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { afterAll, describe, expect, it } from 'vitest';
 import { applyMarkers, blockNames, loadTruth, markedFiles, planFreshness, renderBlock, repoRoot } from '../scripts/freshness/lib.mjs';
+import { suggestTerms } from '../src/core/index.js';
 
 const syncScript = fileURLToPath(new URL('../scripts/freshness/sync.mjs', import.meta.url));
 const checkScript = fileURLToPath(new URL('../scripts/freshness/check.mjs', import.meta.url));
+
+it('classifies an unused term as stale at exactly 30 days', async () => {
+  const now = Date.parse('2026-09-19T12:00:00.000Z');
+  const boundary = now - 30 * 24 * 60 * 60 * 1000;
+  const lexicon = { version: 1 as const, terms: [
+    { canonical: 'Boundary', aliases: [], createdAt: new Date(boundary).toISOString() },
+    { canonical: 'Younger', aliases: [], createdAt: new Date(boundary + 1).toISOString() },
+  ] };
+  const loaded = { merged: lexicon, global: { path: '/unused/lexicon.yaml', scope: 'global' as const, lexicon, exists: true } };
+
+  const suggestions = await suggestTerms({ loaded, history: [], now });
+  expect(suggestions.filter((s) => s.kind === 'stale').map((s) => s.canonical)).toEqual(['Boundary']);
+});
 
 // Source and the latest dated CHANGELOG entry differ on purpose; a dated
 // entry alone is not proof that a package or release was published.

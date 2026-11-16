@@ -49,6 +49,14 @@ describe('empty lexicon exports', () => {
 });
 
 describe('whisper-prompt and openai: the prompt window Whisper reads', () => {
+  it.each(['whisper-prompt', 'openai'] as const)('%s keeps a single short name without omissions', (format) => {
+    const { text, notes, names } = exportLexiconWithNotes(lex([{ canonical: 'kubectl', aliases: [] }]), format);
+    expect(text).toBe('kubectl');
+    expect(estimateWhisperTokens(text)).toBeLessThanOrEqual(WHISPER_PROMPT_TOKEN_BUDGET);
+    expect(names).toBe(1);
+    expect(notes).toEqual([]);
+  });
+
   // Catches: the cap was 100 names whatever their length. Whisper keeps only
   // the last 224 tokens of a prompt and the names are written most important
   // first, so a long line lost exactly the names that mattered most.
@@ -138,6 +146,23 @@ describe('whisper-prompt and openai: the prompt window Whisper reads', () => {
     expect(exportLexicon(lex(Array.from({ length: 100 }, (_, i) => ({ canonical: `東京${i}`, aliases: [] }))), 'whisper-prompt').split(', ').length).toBeLessThan(40);
   });
 
+  it.each(['whisper-prompt', 'openai'] as const)('%s preserves Unicode names within the prompt budget', (format) => {
+    const spellings = ['東京', 'Tōkyō', 'café', '😀'];
+    const terms: Term[] = Array.from({ length: 100 }, (_, i) => ({
+      canonical: `${spellings[i % spellings.length]}${String(i).padStart(3, '0')}`,
+      aliases: [],
+      hits: 100 - i,
+    }));
+    const { text, notes, names } = exportLexiconWithNotes(lex(terms), format);
+    const kept = text.split(', ');
+    expect(kept).toEqual(terms.slice(0, kept.length).map((term) => term.canonical));
+    expect(kept.slice(0, 4)).toEqual(['東京000', 'Tōkyō001', 'café002', '😀003']);
+    expect(names).toBe(kept.length);
+    expect(kept.length).toBeLessThan(terms.length);
+    expect(estimateWhisperTokens(text)).toBeLessThanOrEqual(WHISPER_PROMPT_TOKEN_BUDGET);
+    expect(notes.join(' ')).toContain(`left out ${terms.length - kept.length} names`);
+  });
+
   // Catches: the byte count came from Buffer.byteLength, a node-only global
   // that throws ReferenceError in the browser bundle site/app.ts builds.
   // TextEncoder counts the same bytes and exists on both sides.
@@ -170,8 +195,24 @@ describe('google and azure: phrase-set limits', () => {
     expect(notes[1]).toContain('left out 1 phrase past the 1000 kept');
     expect(notes[1]).toContain('"Name1000"');
     // 100 characters (code points) is still fine.
-    const ok = exportLexiconWithNotes(lex([{ canonical: 'é'.repeat(100), aliases: [] }]), 'google');
+    const boundary = 'é'.repeat(100);
+    const ok = exportLexiconWithNotes(lex([{ canonical: boundary, aliases: [] }]), 'google');
+    const kept = (JSON.parse(ok.text) as { adaptation: { phraseSets: { phrases: { value: string }[] }[] } }).adaptation.phraseSets[0].phrases;
+    expect(kept.map((phrase) => phrase.value)).toEqual([boundary]);
     expect(ok.notes).toEqual([]);
+  });
+
+  it('google: counts Unicode code points at the phrase boundary and preserves spelling', () => {
+    const boundary = '😀'.repeat(99) + 'é';
+    const over = boundary + '東';
+    const { text, notes } = exportLexiconWithNotes(lex([
+      { canonical: boundary, aliases: [], hits: 2 },
+      { canonical: over, aliases: [], hits: 1 },
+    ]), 'google');
+    const phrases = (JSON.parse(text) as { adaptation: { phraseSets: { phrases: { value: string }[] }[] } }).adaptation.phraseSets[0].phrases;
+    expect(Array.from(boundary)).toHaveLength(100);
+    expect(phrases.map((phrase) => phrase.value)).toEqual([boundary]);
+    expect(notes).toEqual([`left out 1 phrase over Google's 100 characters per phrase: "${over}"`]);
   });
 
   it('azure: caps phraseList at 500, the most used kept', () => {

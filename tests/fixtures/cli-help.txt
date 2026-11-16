@@ -22,6 +22,7 @@ Commands:
   mcp                                     start the stdio MCP server (what `claude mcp add` points at)
   hook                                    run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON from stdin)
   daemon [options]                        watch the clipboard (macOS, Linux, Windows) and correct dictated text in place
+  test-select [options] [files...]        select tests for changed repository files, falling back to the full suite
   import [options] [file] [format]        import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub
   install [options] [client]              print (or with --apply, write) the MCP config for an agent client; no client lists them
   uninstall [options] [client]            remove the MCP config (and, for claude, the hooks) lexicon install wrote for a client; nothing else is touched
@@ -36,7 +37,7 @@ Commands:
   suggest [options]                       suggest aliases, new terms, never-words and stale terms from your voice history
   review [options]                        walk through existing terms and keep, delete or edit each one
   edit [options]                          open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards
-  pack                                    starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8, legal, ashlr) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate
+  pack                                    starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8, legal, ashlr, architecture) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate
   help [command]                          display help for command
 
 Start here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.

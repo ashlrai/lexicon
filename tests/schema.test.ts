@@ -292,6 +292,17 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(parseLexicon({ terms: [{ canonical: nice, aliases: ['zoe'] }] }).terms[0].canonical).toBe(nice);
   });
 
+  it('accepts and preserves a paired surrogate in a term', () => {
+    const canonical = 'Rocket \uD83D\uDE80';
+    const alias = 'Launch \uD83D\uDE80';
+    const result = TermSchema.safeParse({ canonical, aliases: [alias] });
+
+    expect(result.success).toBe(true);
+    if (!result.success) throw new Error('Expected the paired surrogate to be accepted');
+    expect(result.data.canonical).toBe(canonical);
+    expect(result.data.aliases).toEqual([alias]);
+  });
+
   it('reports a lone high surrogate in a term name without throwing', () => {
     const result = LexiconSchema.safeParse({ terms: [{ canonical: '\uD800' }] });
 
@@ -302,6 +313,52 @@ describe('hardening (lexicon content reaches model context)', () => {
       path: ['terms', 0, 'canonical'],
       message: 'must not contain U+D800 (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "\\uD800"',
     }]);
+  });
+
+  it('reports a lone low surrogate as U+DC00 in a term name without throwing', () => {
+    const result = LexiconSchema.safeParse({ terms: [{ canonical: '\uDC00' }] });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the unpaired low surrogate to be rejected');
+    expect(result.error.issues).toMatchObject([{
+      code: 'custom',
+      path: ['terms', 0, 'canonical'],
+      message: 'must not contain U+DC00 (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "\\uDC00"',
+    }]);
+  });
+
+  it.each([
+    ['canonical', { canonical: 'Ash\uD83Dlr' }, ['canonical'], 'U+D83D', 'Ash\\uD83Dlr'],
+    ['an alias', { canonical: 'Ashlr.AI', aliases: ['ok', 'Ash\uDE80ler'] }, ['aliases', 1], 'U+DE80', 'Ashlr.AI'],
+    ['a never entry', { canonical: 'Ashlr.AI', never: ['x\uD800'] }, ['never', 0], 'U+D800', 'Ashlr.AI'],
+    ['a context entry', { canonical: 'Ashlr.AI', context: ['a\uDBFFb'] }, ['context', 0], 'U+DBFF', 'Ashlr.AI'],
+  ] as const)('rejects an unpaired surrogate in %s and names the code unit', (_where, term, path, unit, shown) => {
+    const result = LexiconSchema.safeParse({ terms: [term] });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the unpaired surrogate to be rejected');
+    expect(result.error.issues).toHaveLength(1);
+    expect(result.error.issues[0].path).toEqual(['terms', 0, ...path]);
+    expect(result.error.issues[0].message).toBe(
+      `must not contain ${unit} (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "${shown}"`,
+    );
+    // The diagnostic carries the escape, never the raw surrogate.
+    expect(result.error.issues[0].message).not.toMatch(/[\uD800-\uDFFF]/);
+  });
+
+  it('still accepts a well-formed pair in an alias next to the rejected shapes', () => {
+    expect(parseLexicon({ terms: [{ canonical: 'Rocket', aliases: ['\u{1F680}ship'] }] }).terms[0].aliases).toEqual(['\u{1F680}ship']);
+  });
+
+  it('identifies an unpaired low surrogate as U+DC00 anywhere in the text, but not a valid pair', () => {
+    expect(findUnencodableChar('\uDC00')).toBe('U+DC00');
+    expect(findUnencodableChar('Ash\uDC00lr')).toBe('U+DC00');
+    // A low surrogate that follows another low surrogate has no high half before it.
+    expect(findUnencodableChar('\uDC00\uDC00')).toBe('U+DC00');
+    // A reversed pair is two unpaired halves; the first one found is the low surrogate.
+    expect(findUnencodableChar('\uDC00\uD800')).toBe('U+DC00');
+    // A well-formed pair (U+1F680) is fine.
+    expect(findUnencodableChar('🚀')).toBeUndefined();
   });
 
   it('rejects U+FFFF in a canonical term and an alias with the offending character in the error', () => {
@@ -434,6 +491,49 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(name).toHaveLength(40);
     expect(name.endsWith('…')).toBe(true);
     expect(name.slice(0, 36)).toBe('\\uFFFF'.repeat(6));
+  });
+
+  it('escapes an unpaired surrogate in a truncated term label', () => {
+    const canonical = `${'a'.repeat(30)}\uD800${'b'.repeat(10)}`;
+    const result = TermSchema.safeParse({ canonical });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected the unpaired surrogate to be rejected');
+    const name = /in term "(.*)"$/.exec(result.error.issues[0].message)?.[1];
+    expect(name).toBe(`${'a'.repeat(30)}\\uD800bbb…`);
+    expect(name).toHaveLength(40);
+    expect(name).not.toContain('\uD800');
+  });
+
+  it('does not split a supplementary character at the truncation boundary', () => {
+    const canonical = `${'a'.repeat(38)}🚀\uFFFF`;
+    const result = TermSchema.safeParse({ canonical });
+
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected U+FFFF to be rejected');
+    const name = /in term "(.*)"$/.exec(result.error.issues[0].message)?.[1];
+    expect(name).toBe(`${'a'.repeat(38)}…`);
+    expect(name!.length).toBeLessThanOrEqual(40);
+    expect(Buffer.from(name!, 'utf8').toString('utf8')).toBe(name);
+  });
+
+  it('bounds and escapes a long invalid term in the parse error', () => {
+    const canonical = `prefix\uDC00${'x'.repeat(10_000)}`;
+    let message = '';
+    try {
+      parseLexicon({ terms: [{ canonical }] });
+    } catch (error) {
+      if (!(error instanceof Error)) throw error;
+      message = error.message;
+    }
+
+    expect(message).toContain(
+      `terms[0].canonical: must not contain U+DC00 (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "prefix\\uDC00${'x'.repeat(27)}…"`,
+    );
+    const name = /in term "([^"]*)"/.exec(message)?.[1];
+    expect(name).toHaveLength(40);
+    expect(message).not.toContain('\uDC00');
+    expect(message).not.toContain(canonical);
   });
 
   it('reports U+FFFF as the first unencodable character in settings', () => {
@@ -805,6 +905,25 @@ describe('hardening (lexicon content reaches model context)', () => {
   });
 
   it.each([
+    ['\uFFFE', '\\uFFFE', 'U+FFFE'],
+    ['\uFFFF', '\\uFFFF', 'U+FFFF'],
+    ['\uD800', '\\uD800', 'U+D800'],
+    ['\uDBFF', '\\uDBFF', 'U+DBFF'],
+    ['\uDC00', '\\uDC00', 'U+DC00'],
+    ['\uDFFF', '\\uDFFF', 'U+DFFF'],
+  ])('escapes %s in error names while keeping ordinary Unicode readable', (unit, escaped, code) => {
+    const canonical = `Café 東京🚀${unit}é`;
+    const shown = `Café 東京🚀${escaped}é`;
+    const reason = 'U+FFFE, U+FFFF and unpaired surrogates fit no file format';
+
+    expect(escapeUnencodable(canonical)).toBe(shown);
+    expect(() => parseLexicon({ terms: [{ canonical, aliases: ['\uFFFF'] }] })).toThrow(
+      `Invalid lexicon:\n  - terms[0].canonical: must not contain ${code} (${reason}) in term "${shown}"\n` +
+      `  - terms[0].aliases[0]: must not contain U+FFFF (${reason}) in term "${shown}"`,
+    );
+  });
+
+  it.each([
     ['high first', 'D800', 'DFFF'],
     ['low first', 'DC00', 'DBFF'],
   ])('escapes every unpaired surrogate in YAML term previews (%s)', (_order, first, second) => {
@@ -847,6 +966,7 @@ describe('hardening (lexicon content reaches model context)', () => {
 
   it.each([
     ['U+FFFF then U+FFFE', '\uFFFFa\uFFFE', 'U+FFFF'],
+    ['U+FFFE then U+FFFF', '\uFFFEa\uFFFF', 'U+FFFE'],
     ['U+FFFE then an unpaired high surrogate', '\uFFFEa\uD800', 'U+FFFE'],
     ['an unpaired high surrogate then U+FFFF', '\uD800a\uFFFF', 'U+D800'],
     ['an unpaired low surrogate after a valid pair', '\u{1F680}\uDC00a\uFFFE', 'U+DC00'],
@@ -972,6 +1092,37 @@ describe('hardening (lexicon content reaches model context)', () => {
         },
       ]);
     }
+  });
+
+  it.each([
+    ['high', '\uD812', 'U+D812'],
+    ['low', '\uDC34', 'U+DC34'],
+  ])('rejects an isolated %s surrogate in every free-text field', (_kind, unit, code) => {
+    const value = `before${unit}after`;
+    const term = {
+      canonical: 'Rocket', aliases: [value], never: [value], context: [value],
+      phonetic: value, notes: value, createdAt: value,
+    };
+    const reason = `must not contain ${code} (U+FFFE, U+FFFF and unpaired surrogates fit no file format)`;
+    const termResult = TermSchema.safeParse(term);
+    expect(termResult.success).toBe(false);
+    if (termResult.success) throw new Error('Expected an isolated surrogate to be rejected');
+    expect(termResult.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      { path: ['aliases', 0], message: `${reason} in term "Rocket"` },
+      { path: ['never', 0], message: `${reason} in term "Rocket"` },
+      { path: ['context', 0], message: `${reason} in term "Rocket"` },
+      { path: ['phonetic'], message: `${reason} in term "Rocket"` },
+      { path: ['notes'], message: `${reason} in term "Rocket"` },
+      { path: ['createdAt'], message: `${reason} in term "Rocket"` },
+    ]);
+    const settings = LexiconSettingsSchema.safeParse({ protectedWords: [value], packs: [value] });
+    expect(settings.success).toBe(false);
+    if (settings.success) throw new Error('Expected an isolated surrogate to be rejected');
+    expect(settings.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      { path: ['protectedWords', 0], message: reason },
+      { path: ['packs', 0], message: reason },
+    ]);
+    expect(() => parseLexicon({ terms: [{ canonical: value }] })).toThrow(`terms[0].canonical: ${reason}`);
   });
 
   it('accepts and preserves paired surrogates in term and settings text', () => {
@@ -1256,6 +1407,18 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(() => parseLexicon({ terms: [{ canonical: 'X', notes: `${'n'.repeat(200)}x` }] })).toThrow(/terms\[0\]\.notes/);
     // Padding and zero-width characters do not count toward the 200.
     expect(parseLexicon({ terms: [{ canonical: 'X', notes: `  ${'n'.repeat(100)}${ZW}${'n'.repeat(100)}  ` }] }).terms[0].notes).toHaveLength(200);
+  });
+
+  it('accepts an 80-character canonical word and rejects an 81-character word', () => {
+    const canonical = 'a'.repeat(80);
+    expect(TermSchema.parse({ canonical }).canonical).toBe(canonical);
+    const result = TermSchema.safeParse({ canonical: `${canonical}a` });
+    expect(result.success).toBe(false);
+    if (!result.success) {
+      expect(result.error.issues).toEqual(expect.arrayContaining([
+        expect.objectContaining({ path: ['canonical'], message: 'must be at most 80 characters' }),
+      ]));
+    }
   });
 
   it('enforces length limits: canonical/alias 80, notes/phonetic 200', () => {

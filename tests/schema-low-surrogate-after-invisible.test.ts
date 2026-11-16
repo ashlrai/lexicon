@@ -49,3 +49,18 @@ describe('low surrogate next to a stripped zero-width character', () => {
     expect(LexiconSchema.safeParse({ terms: [{ canonical: 'x​\uDC00' }] }).success).toBe(false);
   });
 });
+
+describe('high surrogate next to a stripped zero-width character', () => {
+  it('reports U+D800 at the alias path after stripping the character', () => {
+    const raw = { terms: [{ canonical: 'Rocket', aliases: ['ok', 'x\uD800\u200B'] }] };
+    const result = LexiconSchema.safeParse(raw);
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected rejection');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      { path: ['terms', 0, 'aliases', 1], message: `${reason('U+D800')} in term "Rocket"` },
+    ]);
+    expect(() => parseLexicon(raw)).toThrow(
+      `terms[0].aliases[1]: ${reason('U+D800')} in term "Rocket"`,
+    );
+  });
+});

@@ -48,7 +48,7 @@ import { bold, dim, fail, jsonError, safe, safeMessage, safePath, shownCommand, 
 import { errorMessage } from '../util/errors.js';
 import type { IO } from './io.js';
 import { PromptClosedError, createPrompter, isInteractive, onlyStdoutRedirected } from './prompt.js';
-import { SETUP_APPS, SETUP_CLIENTS } from './setup/types.js';
+import { SETUP_APPS } from './setup/types.js';
 import type { Ctx, SetupDeps, SetupOptions, SetupPlan, SetupSummary } from './setup/types.js';
 import { defaultSetupExec, isSetupApp, parseClientList, parsePackList, setupHintProblem, setupNameProblem } from './setup/detect.js';
 import {

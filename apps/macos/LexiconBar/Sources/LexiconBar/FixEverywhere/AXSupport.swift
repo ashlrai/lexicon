@@ -71,6 +71,15 @@ enum AX {
         return unsafeDowncast(value, to: AXUIElement.self)
     }
 
+    /// Some web containers expose focus on the focused window rather than on
+    /// the application. Only follow explicit focus attributes, never search
+    /// the tree for a field that might not actually have keyboard focus.
+    static func focusedElement(_ app: AXUIElement) -> AXUIElement? {
+        if let focused = element(app, kAXFocusedUIElementAttribute as String) { return focused }
+        guard let window = element(app, kAXFocusedWindowAttribute as String) else { return nil }
+        return element(window, kAXFocusedUIElementAttribute as String)
+    }
+
     static func range(_ element: AXUIElement, _ attribute: String) -> NSRange? {
         guard let value = copy(element, attribute), CFGetTypeID(value) == AXValueGetTypeID() else { return nil }
         let axValue = unsafeDowncast(value, to: AXValue.self)

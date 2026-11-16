@@ -17,11 +17,11 @@ One source of truth, three scopes:
 - **Project** `.lexicon.yaml` at a git root: per-repo terms, merged only when
   trusted (`lexicon trust`). Phantom must surface the trust preview and never
   auto-trust on the user's behalf; a hostile repo's terms reach model context.
-- **Packs** (`packs/*.yaml`, installed via `lexicon pack add`): 271 curated
+- **Packs** (`packs/*.yaml`, installed via `lexicon pack add`): 272 curated
   starter terms across the nine packs: developer tooling, AI, business,
-  cloud and DevOps, dictation apps, two legal sets, and the Ashlr.AI fleet.
-  Phantom can offer these as a checklist during onboarding, the way
-  `lexicon setup` does.
+  voice tools, cloud and DevOps, legal profession, law and litigation,
+  the Ashlr.AI fleet, and architecture. Phantom can offer these as a
+  checklist during onboarding, the way `lexicon setup` does.
 
 Term shape: `canonical` (the spelling the user wants), `aliases` (what STT
 actually writes), `phonetic` (pronunciation hint), `category`

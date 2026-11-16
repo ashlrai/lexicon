@@ -6259,7 +6259,9 @@ function escapeUnencodable(s) {
 }
 function showTermName(s) {
   const shown = escapeUnencodable(s);
-  return shown.length > 40 ? `${shown.slice(0, 39)}\u2026` : shown;
+  if (shown.length <= 40) return shown;
+  const end = /[\uD800-\uDBFF]/.test(shown[38]) && /[\uDC00-\uDFFF]/.test(shown[39]) ? 38 : 39;
+  return `${shown.slice(0, end)}\u2026`;
 }
 function stripInvisible(s) {
   return s.replace(INVISIBLE_RE, "");
@@ -19535,6 +19537,9 @@ function contextPresent(scope, termIndex) {
   const { tokens, from, to } = scope;
   for (const item of items) {
     const len = item.length;
+    for (const tokens2 of scope.externalTokens) for (let p = 0; p + len <= tokens2.length; p++) {
+      if (item.every((word, k) => tokens2[p + k].textLower === word || tokens2[p + k].baseLower === word)) return true;
+    }
     for (let p = 0; p + len <= tokens.length; p++) {
       if (p + len - 1 >= from && p <= to) continue;
       let hit = true;
@@ -19663,6 +19668,7 @@ function findReplacements(text, index, opts = {}) {
     skipCode: opts.skipCode ?? index.skipCode
   };
   const tokens = tokenize(text, resolved.skipCode);
+  const externalTokens = [opts.context?.recentText, opts.context?.bundleId].map((value) => value ? tokenize(value, false) : []);
   const candidates = [];
   const contexts = /* @__PURE__ */ new Map();
   index.lexicon.terms.forEach((term, termIndex) => {
@@ -19682,7 +19688,7 @@ function findReplacements(text, index, opts = {}) {
       if (last.skipped) break;
       if (n > 1 && !tokens[j - 1].joinsNext) break;
       const full = makeView(text, tokens, i, j, false, index.protectedWords);
-      const scope = { tokens, from: i, to: j, contexts };
+      const scope = { tokens, externalTokens, from: i, to: j, contexts };
       let best = gluedAfter(text, full.end) ? void 0 : findBest(full, index, resolved, scope);
       if (last.baseEnd < last.end) {
         const alt = makeView(text, tokens, i, j, true, index.protectedWords);

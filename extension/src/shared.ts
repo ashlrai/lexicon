@@ -65,7 +65,7 @@ export function coerceHostList(raw: unknown): string[] {
 }
 export const LIVE_DEBOUNCE_MS = 400;
 export const PRECHECK_DEBOUNCE_MS = 250;
-export const TOAST_MS = 3000;
+export const TOAST_MS = 8000;
 export const HEALTH_TTL_MS = 10_000;
 /** Timeout for /health, /normalize and /stats: quick reads a correction waits on. */
 export const FETCH_TIMEOUT_MS = 1500;

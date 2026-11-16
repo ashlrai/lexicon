@@ -97,6 +97,33 @@ describe('extension: composers inside iframes', () => {
     expect(ta.value).toBe('ping Ashlr.AI about it\n');
   });
 
+  it('selects nested frames using the tab, rather than the immediate parent', async () => {
+    const outer = document.createElement('iframe');
+    document.body.appendChild(outer);
+    const inner = outer.contentDocument!.createElement('iframe');
+    outer.contentDocument!.body.appendChild(inner);
+    const win = inner.contentWindow as Window;
+    const doc = inner.contentDocument as Document;
+    const ta = doc.createElement('textarea');
+    doc.body.appendChild(ta);
+    ta.value = 'ping ashler';
+
+    expect(frameScope(win)).toEqual({ url: window.location.href, topUrl: window.location.href });
+    booted = await bootContent({ win, doc, loadSettings: () => Promise.resolve({ anySite: true }), onSettings: () => undefined, send: fakeSend, pollMs: 60_000 });
+    ta.focus();
+    ta.dispatchEvent(new KeyboardEvent('keydown', { key: 'Enter', bubbles: true, cancelable: true }));
+    await booted?.content.idle();
+    expect(ta.value).toBe('ping Ashlr.AI\n');
+
+    // Chromium reports ancestor origins from the immediate parent to the tab.
+    const ancestors = ['https://widget.example', 'https://example.com'];
+    const chat = frameScope(crossOriginFrame('https://claude.ai/embed', ancestors));
+    expect(chat).toEqual({ url: 'https://claude.ai/embed', topUrl: 'https://example.com/' });
+    expect(scopeActive({ sites: { 'widget.example': false }, anySite: false }, chat!)).toBe(true);
+    expect(scopeActive({ sites: { 'example.com': false }, anySite: false }, chat!)).toBe(false);
+    expect(frameScope(crossOriginFrame('https://ads.example.net/frame', ancestors))).toBeNull();
+  });
+
   it('does not start in a cross-origin frame that is not a chat site', async () => {
     const result = await bootContent({ win: window, doc: document, frame: crossOriginFrame('https://ads.example.net/frame'), loadSettings: () => Promise.resolve({ anySite: true }), onSettings: () => undefined, send: fakeSend });
     expect(result).toBeUndefined();

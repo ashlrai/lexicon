@@ -29,6 +29,33 @@ const sample: Term[] = [
 ];
 
 describe('computeStats', () => {
+  it('returns the same statistics on repeated calls regardless of other calls', () => {
+    const first = loadedOf(structuredClone(sample));
+    const second = loadedOf([{ canonical: 'Other', aliases: ['another'], hits: 5 }], false);
+    const firstBefore = structuredClone(first);
+    const secondBefore = structuredClone(second);
+
+    const firstResult = computeStats(first);
+    const secondResult = computeStats(second);
+    expect(computeStats(second)).toEqual(secondResult);
+    expect(computeStats(first)).toEqual(firstResult);
+    expect(first).toEqual(firstBefore);
+    expect(second).toEqual(secondBefore);
+
+    // Results own their collections: modifying one must not affect later calls.
+    firstResult.topTerms[0]!.hits = 999;
+    firstResult.neverHit.push('Added');
+    firstResult.byCategory.brand = 999;
+    firstResult.files[0]!.terms = 999;
+    expect(computeStats(first)).toEqual(computeStats(firstBefore));
+  });
+
+  it('counts every alias of a single term without counting extra terms', () => {
+    const stats = computeStats(loadedOf([{ canonical: 'Kubernetes', aliases: ['kuber netties', 'cooper netties', 'kube ernetes'] }], false));
+    expect(stats.termCount).toBe(1);
+    expect(stats.aliasCount).toBe(3);
+  });
+
   it('counts terms, aliases and hits and groups by category/source', () => {
     const stats = computeStats(loadedOf(sample));
     expect(stats.termCount).toBe(4);
@@ -36,6 +63,21 @@ describe('computeStats', () => {
     expect(stats.totalHits).toBe(15);
     expect(stats.byCategory).toEqual({ brand: 1, product: 1, person: 1, uncategorized: 1 });
     expect(stats.bySource).toEqual({ user: 1, 'harvest:package': 1, learned: 1, unknown: 1 });
+  });
+
+  it('counts missing category and source independently in their fallback buckets', () => {
+    const stats = computeStats(loadedOf([
+      { canonical: 'Neither', aliases: [] },
+      { canonical: 'Neither again', aliases: [] },
+      { canonical: 'Category only', aliases: [], category: 'other' },
+      { canonical: 'Source only', aliases: [], source: 'user' },
+      { canonical: 'Both', aliases: [], category: 'brand', source: 'user' },
+    ]));
+
+    expect(stats.byCategory).toEqual({ uncategorized: 3, other: 1, brand: 1 });
+    expect(stats.bySource).toEqual({ unknown: 3, user: 2 });
+    expect(Object.values(stats.byCategory).reduce((sum, count) => sum + count, 0)).toBe(stats.termCount);
+    expect(Object.values(stats.bySource).reduce((sum, count) => sum + count, 0)).toBe(stats.termCount);
   });
 
   it('lists top terms by hits and the never-hit canonicals', () => {
@@ -47,6 +89,20 @@ describe('computeStats', () => {
     expect(stats.neverHit).toEqual(['Mason Wyatt', 'Zoë']);
   });
 
+  it('sums mixed hit counts and lists only terms with no hits', () => {
+    const terms: Term[] = [
+      { canonical: 'First', aliases: [], hits: 2 },
+      { canonical: 'Unset', aliases: [] },
+      { canonical: 'Second', aliases: [], hits: 7 },
+      { canonical: 'Zero', aliases: [], hits: 0 },
+      { canonical: 'Third', aliases: [], hits: 1 },
+    ];
+    const stats = computeStats(loadedOf(terms));
+    expect(stats.totalHits).toBe(10);
+    expect(stats.neverHit).toEqual(['Unset', 'Zero']);
+    expect(stats.neverHitCount).toBe(2);
+  });
+
   it('reports each file with its own term count', () => {
     const stats = computeStats(loadedOf(sample));
     expect(stats.files).toEqual([
@@ -54,6 +110,21 @@ describe('computeStats', () => {
       { path: '/fake/repo/.lexicon.yaml', scope: 'project', terms: 1 },
     ]);
     expect(computeStats(loadedOf(sample, false)).files).toHaveLength(1);
+  });
+
+  it('counts project-only terms without adding global terms', () => {
+    const terms: Term[] = [
+      { canonical: 'Kubernetes', aliases: ['cooper netties'], scope: 'project' },
+      { canonical: 'Kubectl', aliases: ['cube control', 'kube control'], scope: 'project' },
+    ];
+    const stats = computeStats(loadedOf(terms));
+
+    expect(stats.termCount).toBe(2);
+    expect(stats.aliasCount).toBe(3);
+    expect(stats.files).toEqual([
+      { path: '/fake/global.yaml', scope: 'global', terms: 0 },
+      { path: '/fake/repo/.lexicon.yaml', scope: 'project', terms: 2 },
+    ]);
   });
 
   it('caps topTerms and neverHit', () => {
@@ -69,9 +140,58 @@ describe('computeStats', () => {
     expect(stats.neverHitCount).toBe(30);
   });
 
+  it('keeps the highest-hit terms when more than the limit have hits', () => {
+    // Put the least-used terms first so truncating before sorting fails.
+    const terms: Term[] = Array.from({ length: TOP_TERMS + 3 }, (_, i) => ({
+      canonical: `Term${i + 1}`,
+      aliases: [],
+      hits: i + 1,
+    }));
+    const topTerms = computeStats(loadedOf(terms)).topTerms;
+
+    expect(topTerms).toHaveLength(TOP_TERMS);
+    expect(topTerms).toEqual(
+      terms.slice(3).reverse().map(({ canonical, hits }) => ({ canonical, hits })),
+    );
+    for (const excluded of terms.slice(0, 3)) {
+      expect(topTerms.every((term) => term.hits > excluded.hits!)).toBe(true);
+    }
+  });
+
   it('handles an empty lexicon', () => {
     const stats = computeStats(loadedOf([], false));
-    expect(stats).toMatchObject({ termCount: 0, aliasCount: 0, totalHits: 0, topTerms: [], neverHit: [], neverHitCount: 0 });
+    expect(stats).toEqual({
+      termCount: 0,
+      aliasCount: 0,
+      totalHits: 0,
+      topTerms: [],
+      neverHit: [],
+      neverHitCount: 0,
+      byCategory: {},
+      bySource: {},
+      files: [{ path: '/fake/global.yaml', scope: 'global', terms: 0 }],
+    });
+  });
+
+  it('counts terms with no aliases', () => {
+    const stats = computeStats(loadedOf([
+      { canonical: 'First', aliases: [] },
+      { canonical: 'Second', aliases: [] },
+    ]));
+    expect(stats.termCount).toBe(2);
+    expect(stats.aliasCount).toBe(0);
+  });
+
+  it('sums populated alias lists while empty lists contribute zero', () => {
+    const stats = computeStats(loadedOf([
+      { canonical: 'Empty first', aliases: [] },
+      { canonical: 'Two aliases', aliases: ['first', 'second'] },
+      { canonical: 'Empty middle', aliases: [] },
+      { canonical: 'Three aliases', aliases: ['third', 'fourth', 'fifth'] },
+      { canonical: 'Empty last', aliases: [] },
+    ]));
+    expect(stats.termCount).toBe(5);
+    expect(stats.aliasCount).toBe(5);
   });
 });
 
@@ -135,8 +255,22 @@ describe('lexicon stats (CLI)', () => {
       expect(await runStats({ cwd: tmp }, { stdout: (s) => void text.push(s), stderr: () => undefined })).toBe(0);
       expect(text.join('')).toMatch(/^terms: 0 {3}aliases: 0 {3}hits: 0\nThe lexicon has no terms yet, so nothing is corrected or counted; run `lexicon setup`/);
       const json: string[] = [];
-      expect(await runStats({ cwd: tmp, json: true }, { stdout: (s) => void json.push(s), stderr: () => undefined })).toBe(0);
-      expect(JSON.parse(json.join(''))).toMatchObject({ ok: true, termCount: 0, note });
+      const errors: string[] = [];
+      expect(await runStats({ cwd: tmp, json: true }, { stdout: (s) => void json.push(s), stderr: (s) => void errors.push(s) })).toBe(0);
+      expect(JSON.parse(json.join(''))).toMatchObject({
+        ok: true,
+        termCount: 0,
+        aliasCount: 0,
+        totalHits: 0,
+        neverHitCount: 0,
+        topTerms: [],
+        neverHit: [],
+        byCategory: {},
+        bySource: {},
+        files: [{ path: path.join(tmp, 'config', 'lexicon.yaml'), scope: 'global', terms: 0 }],
+        note,
+      });
+      expect(errors).toEqual([]);
     } finally {
       if (prev === undefined) delete process.env.LEXICON_PATH;
       else process.env.LEXICON_PATH = prev;
@@ -230,8 +364,9 @@ describe('lexicon stats (CLI)', () => {
     try {
       const code = await runStats({ cwd: tmp, json: true }, io);
       expect(code).toBe(0);
-      const stats = JSON.parse(out.join('')) as { termCount: number; topTerms: unknown[]; neverHit: string[]; files: { path: string }[] };
+      const stats = JSON.parse(out.join('')) as { termCount: number; aliasCount: number; topTerms: unknown[]; neverHit: string[]; files: { path: string }[] };
       expect(stats.termCount).toBe(2);
+      expect(stats.aliasCount).toBe(1);
       expect(stats.topTerms).toEqual([{ canonical: 'Ashlr.AI', hits: 2 }]);
       expect(stats.neverHit).toEqual(['Zoë']);
       expect(stats.files[0]?.path).toBe(globalPath);

@@ -2,7 +2,7 @@
 
 Every command and flag, for when you know what you want to do and need the exact spelling. If you are still deciding, [QUICKSTART.md](QUICKSTART.md) and the task pages in [the docs index](README.md) are better starting points.
 
-Generated from `lexicon --help` (v0.5.9) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
+Generated from `lexicon --help` (v0.5.12) by `npm run docs:cli`. Do not edit by hand; change the command definitions in `src/cli/` and re-run the generator.
 
 Global option: `--cwd <dir>` sets the directory used to find the project `.lexicon.yaml`.
 
@@ -23,6 +23,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon mcp`](#lexicon-mcp) | start the stdio MCP server (what `claude mcp add` points at) |
 | [`lexicon hook`](#lexicon-hook) | run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON from stdin) |
 | [`lexicon daemon [options]`](#lexicon-daemon) | watch the clipboard (macOS, Linux, Windows) and correct dictated text in place |
+| [`lexicon test-select [options] [files...]`](#lexicon-test-select) | select tests for changed repository files, falling back to the full suite |
 | [`lexicon import [options] [file] [format]`](#lexicon-import) | import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub |
 | [`lexicon install [options] [client]`](#lexicon-install) | print (or with --apply, write) the MCP config for an agent client; no client lists them |
 | [`lexicon uninstall [options] [client]`](#lexicon-uninstall) | remove the MCP config (and, for claude, the hooks) lexicon install wrote for a client; nothing else is touched |
@@ -37,7 +38,7 @@ Global option: `--cwd <dir>` sets the directory used to find the project `.lexic
 | [`lexicon suggest [options]`](#lexicon-suggest) | suggest aliases, new terms, never-words and stale terms from your voice history |
 | [`lexicon review [options]`](#lexicon-review) | walk through existing terms and keep, delete or edit each one |
 | [`lexicon edit [options]`](#lexicon-edit) | open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards |
-| [`lexicon pack`](#lexicon-pack) | starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8, legal, ashlr) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate |
+| [`lexicon pack`](#lexicon-pack) | starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8, legal, ashlr, architecture) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate |
 
 ## `lexicon`
 
@@ -66,6 +67,7 @@ Commands:
   mcp                                     start the stdio MCP server (what `claude mcp add` points at)
   hook                                    run as a Claude Code UserPromptSubmit or SessionStart hook (reads the hook JSON from stdin)
   daemon [options]                        watch the clipboard (macOS, Linux, Windows) and correct dictated text in place
+  test-select [options] [files...]        select tests for changed repository files, falling back to the full suite
   import [options] [file] [format]        import an existing dictionary (Wispr Flow, Superwhisper, macOS, espanso, markdown, text, csv, json) into the lexicon, or --guided to harvest names from your contacts, calendar and GitHub
   install [options] [client]              print (or with --apply, write) the MCP config for an agent client; no client lists them
   uninstall [options] [client]            remove the MCP config (and, for claude, the hooks) lexicon install wrote for a client; nothing else is touched
@@ -80,7 +82,7 @@ Commands:
   suggest [options]                       suggest aliases, new terms, never-words and stale terms from your voice history
   review [options]                        walk through existing terms and keep, delete or edit each one
   edit [options]                          open the global lexicon (or --project) in $VISUAL/$EDITOR and validate it afterwards
-  pack                                    starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8, legal, ashlr) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate
+  pack                                    starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8, legal, ashlr, architecture) and community packs (<author>/<name> via --registry): list, add, remove, show, search, update, validate
   help [command]                          display help for command
 
 Start here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.
@@ -382,6 +384,22 @@ Options:
   -h, --help        display help for command
 ```
 
+## `lexicon test-select`
+
+```text
+Usage: lexicon test-select [options] [files...]
+
+select tests for changed repository files, falling back to the full suite
+
+Arguments:
+  files       repository-relative changed paths (default: git changes including
+              untracked files)
+
+Options:
+  --json      print the selection and command argument arrays as JSON
+  -h, --help  display help for command
+```
+
 ## `lexicon import`
 
 ```text
@@ -657,7 +675,7 @@ Options:
   --packs <list>      comma-separated starter packs to install, or none
                       (default: a checklist on a terminal, nothing with --yes;
                       one of developer, ai, business, voice-tools, cloud-devops,
-                      profession-q8, legal, ashlr)
+                      profession-q8, legal, ashlr, architecture)
   --no-packs          skip the starter packs (no prompt)
   --no-harvest        skip the repo harvest (no prompt)
   --serve             install the local API login service (with --yes it is
@@ -740,8 +758,8 @@ Options:
 Usage: lexicon pack [options] [command]
 
 starter term packs (developer, ai, business, voice-tools, cloud-devops,
-profession-q8, legal, ashlr) and community packs (<author>/<name> via
---registry): list, add, remove, show, search, update, validate
+profession-q8, legal, ashlr, architecture) and community packs (<author>/<name>
+via --registry): list, add, remove, show, search, update, validate
 
 Options:
   -h, --help                  display help for command

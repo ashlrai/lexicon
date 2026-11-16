@@ -20,13 +20,13 @@ on:
         type: boolean
         default: false
       recovery_run_id:
-        description: "Original failed tag-push release run ID"
+        description: "Original failed release run ID (tag push or workflow_dispatch for this tag and commit)"
         type: string
       recovery_attempt:
         description: "Pinned current attempt of the original run"
         type: string
       recovery_ci_run_id:
-        description: "Successful full manual CI run on the immutable tag"
+        description: "Successful full manual CI run on the tagged commit"
         type: string
       recovery_ubuntu_artifact_id:
         description: "Exact qualified Ubuntu artifact ID from the original attempt"
@@ -210,13 +210,13 @@ jobs:
           path: staged/macos
       - name: Validate complete qualified artifact closure
         run: node scripts/release-contract.mjs assemble staged release "$VERSION"
-      # npm trusted publishing (OIDC): npm >= 11.5.1 exchanges this job's
+      # npm trusted publishing (OIDC): pinned npm 11.19.0 exchanges this job's
       # id-token for a short-lived publish credential, so no NPM_TOKEN secret
       # is needed once the trusted publisher is configured on npmjs.com
       # (package settings -> Trusted publisher -> ashlrai/lexicon, release.yml).
       # OIDC only: token-based npm auth is refused (RQ-LEXNOTOKENQ8).
       - name: Use an npm CLI that supports trusted publishing
-        run: npm install -g "npm@^11.5.1" && npm --version
+        run: npm install -g npm@11.19.0 && npm --version
       - name: Refuse token-based npm auth
         env:
           NPM_TOKEN: ${{ secrets.NPM_TOKEN }}
@@ -265,7 +265,9 @@ jobs:
       github.repository == 'ashlrai/lexicon' && github.ref == 'refs/heads/main' && github.ref_protected &&
       github.workflow_ref == 'ashlrai/lexicon/.github/workflows/release.yml@refs/heads/main'
     runs-on: ubuntu-latest
-    timeout-minutes: 12
+    # Registry acceptance may poll for up to 10 minutes. The rest is artifact
+    # binding and the draft, then public, GitHub release.
+    timeout-minutes: 25
     permissions:
       contents: write
       actions: read
@@ -301,7 +303,7 @@ jobs:
       - name: Revalidate candidate carriers with the unchanged trusted verifier
         run: |
           set -euo pipefail
-          cmp scripts/release-contract.mjs candidate/scripts/release-contract.mjs
+          node scripts/release-recovery.mjs assert-candidate-contract
           node scripts/release-contract.mjs source candidate "v$VERSION"
           node scripts/release-contract.mjs assemble staged release "$VERSION"
       - name: Require actual public npm bytes before any GitHub write
