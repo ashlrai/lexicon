@@ -101,6 +101,12 @@ describe('unpaired high surrogate is identified by its code unit', () => {
 });
 
 describe('unpaired low surrogate is identified by its code unit', () => {
+  it('rejects a term consisting only of an isolated low surrogate and names its code unit', () => {
+    expect(() => parseLexicon({ terms: [{ canonical: LOW }] })).toThrow(
+      `Invalid lexicon:\n  - terms[0].canonical: ${reason('U+DC00')} in term "\\uDC00"`,
+    );
+  });
+
   it.each([
     ['at the start of the string', `${LOW}Rocket`, 'U+DC00'],
     ['at the end of the string', `Rocket${LOW}`, 'U+DC00'],
