@@ -86,6 +86,20 @@ describe('U+FFFF is rejected', () => {
   });
 });
 
+describe('unpaired high surrogate is identified by its code unit', () => {
+  it('rejects an isolated high surrogate in a term and escapes it in the error', () => {
+    const result = TermSchema.safeParse({ canonical: 'Ro\uD800cket' });
+    expect(result.success).toBe(false);
+    if (result.success) throw new Error('Expected rejection');
+    expect(result.error.issues.map(({ path, message }) => ({ path, message }))).toEqual([
+      {
+        path: ['canonical'],
+        message: `${reason('U+D800')} in term "Ro\\uD800cket"`,
+      },
+    ]);
+  });
+});
+
 describe('unpaired low surrogate is identified by its code unit', () => {
   it.each([
     ['at the start of the string', `${LOW}Rocket`, 'U+DC00'],

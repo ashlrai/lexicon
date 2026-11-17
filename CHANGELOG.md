@@ -45,6 +45,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Internal
 
+- Test that an isolated high surrogate in a term is rejected with its code unit and escaped term name in the validation error.
 - Add regression tests for literal note markers, Unicode pack round-trips, smoke home paths with spaces, and empty registry listings.
 - Test that a failed atomic replacement preserves the original file bytes and removes its temporary file.
 - Drop dead imports in `src/ambiguity`, `cmd-serve`, `cmd-setup` and the clipboard daemon, and delete the committed `artifacts/bundle-diff.patch` (gitignored now; check:bundle still writes it on drift), `docs/issue-proofs-oct31.md` and `docs/ux/correction-notice.md`. (#983)
