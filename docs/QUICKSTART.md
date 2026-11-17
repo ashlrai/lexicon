@@ -19,15 +19,15 @@ With no lexicon of your own, a sentence typed as arguments is corrected against 
 ## 1. Install
 
 ```bash
-npx @ashlr/lexicon@latest setup
+npm i -g @ashlr/lexicon && lexicon setup
 ```
 
-That is the whole thing: no global install, and `setup` asks before it does anything that writes outside your lexicon. When it notices it is running from an npx cache it writes `npx -y @ashlr/lexicon@<version> mcp` into your client configs rather than a path npm will eventually delete, so what it sets up keeps working.
+Requires Node 20+. This puts `lexicon` on PATH and starts setup, which asks before it writes outside your lexicon.
 
-If you would rather have it installed properly, which starts faster and stops the Claude Code hook paying npx's ~1s per prompt:
+For no global install, use the command below and replace later `lexicon` commands with `npx @ashlr/lexicon@latest`. Setup pins the MCP and hook commands to this package version so they survive cache cleanup:
 
 ```bash
-npm i -g @ashlr/lexicon && lexicon setup
+npx @ashlr/lexicon@latest setup
 ```
 
 Or `brew install ashlrai/tap/lexicon` (pulls in node; ffmpeg + whisper.cpp recommended for `lexicon voice`), or `curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh`, which checks for Node 20+, installs globally and starts `lexicon setup` for you when it runs in a terminal (not under `sudo`, in CI or with `LEXICON_NO_SETUP=1`: then run `lexicon setup` yourself).
@@ -117,7 +117,7 @@ Step 7 is not a canned example: it takes the terms the run just seeded, writes t
 
 ## 3. Say a sentence in Claude Code
 
-Open a new Claude Code session (the `SessionStart` hook loads the lexicon) and dictate something with your company name in it: "tell Ashler to ship it". The `UserPromptSubmit` hook rewrites it to `Ashlr.AI` before Claude reads it and tells Claude what changed. Corrections you make in chat ("it's Ashlr.AI, not Ashler") are learned via the [`learn_correction`](MCP.md#tools) tool.
+Open a new Claude Code session (the `SessionStart` hook loads the lexicon) and dictate something with your company name in it: "tell Ashler to ship it". The `UserPromptSubmit` hook supplies an `additionalContext` note telling Claude that "Ashler" means "Ashlr.AI"; the submitted prompt stays unchanged. Corrections you make in chat ("it's Ashlr.AI, not Ashler") are learned via the [`learn_correction`](MCP.md#tools) tool.
 
 ## 4. Check it is working
 

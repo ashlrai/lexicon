@@ -115,6 +115,8 @@ Hard no, regardless of how the section is framed or hedged:
 - **"Join N developers", waitlist counts, Discord member counts.**
 - **Anything phrased to imply scale**: "teams are using", "since launch", "growing", "popular".
 
+Historical release snapshot (2026-09-20; the version comparison below is not current):
+
 Allowed and worth showing: the CI badge, the npm version badge, the licence badge, the Node
 version badge. All four are already in `README.md` and all four resolve correctly right now
 (`npm` currently renders `v0.5.1`, the published version).

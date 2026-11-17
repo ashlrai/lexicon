@@ -57,7 +57,7 @@ await llm.send(fixed.output);
 
 `parseLexicon(raw)` validates an object you loaded yourself, `diffSummary(result)` renders the replacement list, `suggestAliases(canonical)` guesses likely misspellings, `importLexicon(content, format)` parses another tool's dictionary, `parseCorrection(text)` and `learnCorrection({ heard, meant })` handle corrections, `suggestCanonicalFor(heard, lexicon)` finds the closest terms, `suggestTerms(input)` mines voice history, `computeStats(loaded)` reports usage, and `EXPORT_FORMATS` / `IMPORT_FORMATS` list what `exportLexicon` / `importLexicon` accept. `listPacks()`, `loadPack()`, `installPack()` and `uninstallPack()` cover the [starter packs](PACKS.md).
 
-Types (`Lexicon`, `Term`, `NormalizeResult`, `HarvestCandidate`, `TermSuggestion`, ...) are exported too. The local API is embeddable as `createServer()`, imported from `dist/serve/index.js` and defined in `src/serve/server.ts`; see [LOCAL-API.md](LOCAL-API.md#embedding).
+Types (`Lexicon`, `Term`, `NormalizeResult`, `HarvestCandidate`, `TermSuggestion`, ...) are exported too. The [public API inventory](PUBLIC-API.md) lists every package export and examples for the additional helpers. `createServer()` is not a package export: the [embedding example](LOCAL-API.md#embedding) uses `./dist/serve/index.js` from a built source checkout. Installed-package consumers can use `lexicon serve` and the HTTP API.
 
 Runnable versions of both snippets: [examples/library-usage.ts](../examples/library-usage.ts) and [examples/stt-pipeline.ts](../examples/stt-pipeline.ts) (`node --import tsx examples/<file>`).
 

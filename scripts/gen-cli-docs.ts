@@ -77,6 +77,34 @@ function anchor(name: string): string {
   return name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
 }
 
+const examples: Record<string, string> = {
+  'terms add': 'terms add Ashlr.AI --heard Ashler --dry-run --json',
+  'pending list': 'pending list --json',
+  'pending accept': 'pending accept --all --dry-run --json',
+  'pending reject': 'pending reject --all --dry-run --json',
+  'pack list': 'pack list --json',
+  'pack add': 'pack add developer --dry-run --json',
+  'pack remove': 'pack remove developer --dry-run --json',
+  'pack show': 'pack show developer --json',
+  'pack search': 'pack search cardiology --registry registry/index.example.yaml --json',
+  'pack update': 'pack update --dry-run --json',
+  'pack validate': 'pack validate registry/packs/cardiology.yaml --json',
+};
+
+function nestedRows(args: string[], output: string): string[] {
+  if (!/^Commands:$/m.test(output)) return [];
+  return parseCommands(output).flatMap((command) => {
+    const child = [...args, command.name];
+    const name = child.join(' ');
+    const childHelp = help(child);
+    const options = [...childHelp.matchAll(/^ {2}(-[^\n]*?) {2,}/gm)].map((m) => `\`${m[1]}\``).join(', ');
+    const example = examples[name];
+    if (!example) throw new Error(`add a copy-paste example for lexicon ${name}`);
+    const cells = [`\`lexicon ${args.join(' ')} ${command.signature}\``, command.description, options, `\`lexicon ${example}\``];
+    return [`| ${cells.map((cell) => cell.replaceAll('|', '\\|')).join(' | ')} |`, ...nestedRows(child, childHelp)];
+  });
+}
+
 async function main(): Promise<void> {
   const pkg = JSON.parse(await fs.readFile(path.join(REPO_ROOT, 'package.json'), 'utf8')) as { version: string };
   const top = help([]);
@@ -109,12 +137,18 @@ async function main(): Promise<void> {
   out.push('## `lexicon`');
   out.push('');
   out.push(fence(top));
+  const nested: string[] = [];
   for (const c of commands) {
     out.push('');
     out.push(`## \`lexicon ${c.name}\``);
     out.push('');
-    out.push(fence(help([c.name])));
+    const output = help([c.name]);
+    out.push(fence(output));
+    nested.push(...nestedRows([c.name], output));
   }
+  out.push('', '## Nested commands', '',
+    'All options below come from each command\'s `--help`; use it for defaults and argument descriptions. Global `--cwd <dir>` also applies. Write examples preview with `--dry-run`. The registry and pack-file examples run from a source checkout.', '',
+    '| Command | Does | Options | Example |', '|---|---|---|---|', ...nested);
   out.push('');
   // Points onward, never back at QUICKSTART.md, which is where most readers of
   // this page came from. No em-dashes: CONTRIBUTING.md bans them in docs, and
