@@ -1,3 +1,11 @@
+## Quick start
+
+```bash
+npm install -g @ashlr/lexicon # requires Node.js 20+
+lexicon add Ashlr.AI Ashler
+lexicon normalize "ask Ashler to ship it" --json
+```
+
 <div align="center">
 
 <img src="docs/assets/logo-400.png" alt="" width="88" height="88">
@@ -77,7 +85,7 @@ Exit code 0 means every check passed. Exit code 1 means at least one check faile
 
 The same contract, in one fetch: [llms.txt](llms.txt) (index) and [llms-full.txt](llms-full.txt) (install, tools, privacy, FAQ). The page written to an agent is [docs/AGENTS.md](docs/AGENTS.md). Copy-paste only, no commentary: [docs/COPY-PASTE.md](docs/COPY-PASTE.md).
 
-This tree is source version <!-- fresh:begin pin:version -->0.5.12<!-- fresh:end -->. npm `latest` matches it (0.5.12 was published on 2026-11-10). Check `lexicon --version` and `npm view @ashlr/lexicon version` before you pin.
+This tree is source version <!-- fresh:begin pin:version -->0.5.12<!-- fresh:end -->. Check `lexicon --version` and `npm view @ashlr/lexicon version` before you pin; source and npm releases can differ.
 
 ## MCP server
 
@@ -160,7 +168,7 @@ Rules: [docs/MATCHING.md](docs/MATCHING.md).
 
 - **One file**, `~/.config/lexicon/lexicon.yaml`. Project `.lexicon.yaml` merges only after `lexicon trust`.
 - **Twenty-one MCP tools** for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop.
-- **A CLI with 29 commands.** `lexicon --help` lists them. `docs/CLI.md` is generated from that help.
+- **A CLI with 29 commands.** `lexicon --help` lists them. The [CLI reference](docs/CLI.md) includes nested commands and options; contributors can run `lexicon test-select --json` to select tests.
 - **272 terms across the nine packs** (developer, AI, business, voice tools, cloud and DevOps, legal profession, law and litigation, Ashlr.AI fleet, architecture). Community packs install from a registry after a checksum preview.
 - **Sixteen export formats** and **eight importers**, including Wispr Flow, Superwhisper, macOS Text Replacement and espanso. `lexicon export` with no format lists them.
 - **Correction in supported browser composers, eligible macOS text fields, and your own pipeline** (`normalize()`). LexiconBar requires Accessibility access and skips secure fields and apps without suitable Accessibility text support; see [its limitations](docs/MACOS-APP.md#fix-everywhere).

@@ -782,6 +782,24 @@ Commands:
                               bar (schema, author, the ordinary-word guard)
 ```
 
+## Nested commands
+
+All options below come from each command's `--help`; use it for defaults and argument descriptions. Global `--cwd <dir>` also applies. Write examples preview with `--dry-run`. The registry and pack-file examples run from a source checkout.
+
+| Command | Does | Options | Example |
+|---|---|---|---|
+| `lexicon terms add [options] <canonical>` | add a term with the spellings it is heard as; deterministic (no suggested aliases) and idempotent (a second identical run changes nothing) | `--heard <aliases...>`, `--context <words...>`, `--project`, `--dry-run`, `--json`, `-h, --help` | `lexicon terms add Ashlr.AI --heard Ashler --dry-run --json` |
+| `lexicon pending list [options]` | list pending aliases | `--json`, `-h, --help` | `lexicon pending list --json` |
+| `lexicon pending accept [options] [ids...]` | learn pending aliases (as lexicon learn does) and remove them from the queue | `--all`, `--dry-run`, `--json`, `-h, --help` | `lexicon pending accept --all --dry-run --json` |
+| `lexicon pending reject [options] [ids...]` | drop pending aliases without learning them | `--all`, `--dry-run`, `--json`, `-h, --help` | `lexicon pending reject --all --dry-run --json` |
+| `lexicon pack list\|ls [options]` | list the available packs and which are installed | `--json`, `--registry <index>`, `--project`, `-h, --help` | `lexicon pack list --json` |
+| `lexicon pack add [options] <name...>` | install one or more packs into the global lexicon (existing terms only gain aliases); <author>/<name> installs a community pack after a preview | `--project`, `--registry <index>`, `-y, --yes`, `--dry-run`, `--json`, `-h, --help` | `lexicon pack add developer --dry-run --json` |
+| `lexicon pack remove\|rm [options] <name>` | remove a pack; terms you edited since (hits, extra aliases) are kept | `--project`, `--registry <index>`, `--dry-run`, `--json`, `-h, --help` | `lexicon pack remove developer --dry-run --json` |
+| `lexicon pack show [options] <name>` | print the terms and aliases a pack contains | `--registry <index>`, `--json`, `-h, --help` | `lexicon pack show developer --json` |
+| `lexicon pack search [options] <query>` | search community packs in a registry index by name, title, description or author | `--registry <index>`, `--json`, `-h, --help` | `lexicon pack search cardiology --registry registry/index.example.yaml --json` |
+| `lexicon pack update [options] [refs...]` | re-check installed community packs against a fresh index; every changed pack is previewed and confirmed, never silent | `--project`, `--registry <index>`, `-y, --yes`, `--dry-run`, `--json`, `-h, --help` | `lexicon pack update --dry-run --json` |
+| `lexicon pack validate [options] <file>` | check a pack file against the community publish bar (schema, author, the ordinary-word guard) | `--strict`, `--json`, `-h, --help` | `lexicon pack validate registry/packs/cardiology.yaml --json` |
+
 ## See also
 
 - [MCP.md](MCP.md) has the same capabilities as tools your agent can call.
