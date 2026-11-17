@@ -690,6 +690,24 @@ describe('writeFileAtomic creates a file', () => {
 });
 
 describe('writeFileAtomic keeps the file it is replacing', () => {
+  it('preserves the original file when its replacement fails', async () => {
+    const dir = await scratch();
+    const target = path.join(dir, 'lexicon.yaml');
+    const original = Buffer.from('version: 1\r\n# Café 日本語\r\nterms: []\r\n');
+    await fs.writeFile(target, original);
+    // EIO is not retried on Windows, so this exercises the same failure on every platform.
+    const failure = errno('EIO', 'rename', target);
+    const rename = vi.spyOn(fs, 'rename').mockRejectedValueOnce(failure);
+    try {
+      await expect(writeFileAtomic(target, 'replacement contents\n')).rejects.toBe(failure);
+    } finally {
+      rename.mockRestore();
+    }
+
+    expect(await fs.readFile(target)).toEqual(original);
+    expect(await leftoverTemps(target)).toEqual([]);
+  });
+
   it('replaces an existing file with exact Unicode content without leaving a temp file', async () => {
     const dir = await scratch();
     const target = path.join(dir, 'lexicon.yaml');
