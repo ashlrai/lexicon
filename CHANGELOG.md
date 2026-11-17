@@ -45,6 +45,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Internal
 
+- Add regression tests for literal note markers, Unicode pack round-trips, smoke home paths with spaces, and empty registry listings.
 - Test that a failed atomic replacement preserves the original file bytes and removes its temporary file.
 - Drop dead imports in `src/ambiguity`, `cmd-serve`, `cmd-setup` and the clipboard daemon, and delete the committed `artifacts/bundle-diff.patch` (gitignored now; check:bundle still writes it on drift), `docs/issue-proofs-oct31.md` and `docs/ux/correction-notice.md`. (#983)
 - CI retries the apt install of the display and clipboard tools (three attempts, refreshing the index between tries) so a stale runner mirror no longer fails the clipboard job. (#1021)

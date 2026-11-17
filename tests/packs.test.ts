@@ -8,6 +8,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { stringify } from 'yaml';
 
 /**
  * Pass-through wrappers that count YAML parses, so the install-cost test can
@@ -480,6 +481,24 @@ describe('installPack / uninstallPack', () => {
       }
       expect(await fs.readFile(globalPath, 'utf8')).toBe(before);
     }
+  });
+
+  it('imports Unicode pack terms and reads their exact spellings back', async () => {
+    const terms = [
+      { canonical: 'FakeCafé', aliases: ['fake café'], notes: 'Fake fixture: café ☕' },
+      { canonical: 'Fake星舟', aliases: ['fake 星 舟'], notes: 'Fake fixture: 星舟 🚀' },
+      // Keep a decomposed accent distinct from its precomposed spelling.
+      { canonical: 'FakeQuokke\u0301', aliases: ['fake quokke\u0301'], notes: 'Fake fixture: e\u0301' },
+    ];
+    await fs.writeFile(path.join(cwd, 'fake-unicode.yaml'), stringify({
+      name: 'fake-unicode', title: 'Fake Unicode fixture', version: 1, terms,
+    }));
+
+    const result = await installPack('fake-unicode', { cwd, globalPath, dir: cwd });
+    expect(result).toMatchObject({ added: terms.length, merged: 0, alreadyInstalled: false });
+    const file = await readLexiconFile(globalPath, 'global');
+    expect(file.lexicon.terms.map(({ canonical, aliases, notes }) => ({ canonical, aliases, notes }))).toEqual(terms);
+    expect(file.lexicon.settings?.packs).toEqual(['fake-unicode']);
   });
 
   it('adds every term with source pack, records the pack in settings, and is idempotent', async () => {
