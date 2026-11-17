@@ -1,7 +1,9 @@
-## Quick start
+## Start here (60 seconds)
+
+Install Lexicon with Node.js 20 or newer, add a name and its common mishearing, then try a correction:
 
 ```bash
-npm install -g @ashlr/lexicon # requires Node.js 20+
+npm install -g @ashlr/lexicon
 lexicon add Ashlr.AI Ashler
 lexicon normalize "ask Ashler to ship it" --json
 ```
@@ -26,42 +28,19 @@ Lexicon is one YAML file of the words you actually say. It rewrites the transcri
 
 </div>
 
-## Start here (60 seconds)
+## Set up for an agent
 
-Agents are first-class users. One command checks for Node 20+, installs the CLI, and runs `lexicon setup` when it has a terminal. Without a terminal (CI, a Dockerfile), under `sudo`, or with `LEXICON_NO_SETUP=1`, it only installs and ends with `run: lexicon setup`.
-
-```bash
-curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
-```
-
-No global install:
-
-```bash
-npx @ashlr/lexicon@latest setup
-```
-
-Do not install it unasked. Preview the plan, show it, then apply. `--dry-run` writes nothing. Stdout is one JSON document. Read `ok` first.
+For guided setup, run `lexicon setup`. Agents should preview the plan and show it before applying it. The preview writes nothing; JSON output starts with `ok`.
 
 ```bash
 lexicon setup --dry-run --json
+lexicon normalize "ask ashler to deploy kuber netties with post gressql" --json
 lexicon setup --yes --packs developer,ai --json
 ```
 
 `--packs`, `--harvest` and `--serve` stay opt-in even with `--yes`, because each writes a lot or installs a service.
 
 ![Speech-to-text wrote ashler, kuber netties and post gressql. Lexicon rewrites them to Ashlr.AI, Kubernetes and PostgreSQL. The rest of the sentence stays put.](docs/assets/hero.svg)
-
-Correct one sentence. With no lexicon of your own, arguments (not piped input) are corrected against a built-in example, and stderr says so. Nothing is written.
-
-```bash
-lexicon normalize "ask ashler to deploy kuber netties with post gressql" --json
-```
-
-```json
-{"ok":true,"input":"ask ashler to deploy kuber netties with post gressql","output":"ask Ashlr.AI to deploy Kubernetes with PostgreSQL","replacements":[{"start":4,"end":10,"original":"ashler","replacement":"Ashlr.AI","canonical":"Ashlr.AI","reason":"alias","confidence":1},{"start":21,"end":34,"original":"kuber netties","replacement":"Kubernetes","canonical":"Kubernetes","reason":"phonetic","confidence":0.8826923076923077},{"start":40,"end":52,"original":"post gressql","replacement":"PostgreSQL","canonical":"PostgreSQL","reason":"phonetic","confidence":0.8795454545454546}],"changed":true,"example":true}
-```
-
-`example: true` means those terms are the built-in sample, not the user's file yet.
 
 Add the spelling, still as JSON:
 
@@ -86,6 +65,8 @@ Exit code 0 means every check passed. Exit code 1 means at least one check faile
 The same contract, in one fetch: [llms.txt](llms.txt) (index) and [llms-full.txt](llms-full.txt) (install, tools, privacy, FAQ). The page written to an agent is [docs/AGENTS.md](docs/AGENTS.md). Copy-paste only, no commentary: [docs/COPY-PASTE.md](docs/COPY-PASTE.md).
 
 This tree is source version <!-- fresh:begin pin:version -->0.5.12<!-- fresh:end -->. Check `lexicon --version` and `npm view @ashlr/lexicon version` before you pin; source and npm releases can differ.
+
+Agent instructions: [llms.txt](llms.txt) and [llms-full.txt](llms-full.txt).
 
 ## MCP server
 
@@ -150,16 +131,10 @@ claude plugin install lexicon@ashlrai
 
 Exact alias first, then double-metaphone phonetic, then Damerau-Levenshtein fuzzy above a confidence floor. Exact hits win the span. Matches never overlap. A stoplist of common English words blocks phonetic and fuzzy guesses, but explicit aliases override it. Per-term `never` lists and `protectedWords` also restrict replacements; code spans, URLs, emails and paths are skipped by default. Every replacement reports `reason` and `confidence`.
 
-The same sentence, as a person would read it. Replacements go to stderr. The corrected line is stdout.
+Replacements go to stderr. The corrected line is stdout. Results depend on the terms in your lexicon.
 
 ```bash
 lexicon normalize --diff "ask ashler to deploy kuber netties with post gressql"
-# stderr:  lexicon: no terms yet, so this is the built-in example (Ashlr.AI, Kubernetes, PostgreSQL, Pydantic, SaaS, Hetzner).
-#          lexicon: run `lexicon setup` to build your own; nothing was written.
-#          "ashler" -> "Ashlr.AI" (alias, 1.00)
-#          "kuber netties" -> "Kubernetes" (phonetic, 0.88)
-#          "post gressql" -> "PostgreSQL" (phonetic, 0.88)
-# stdout:  ask Ashlr.AI to deploy Kubernetes with PostgreSQL
 ```
 
 Rules: [docs/MATCHING.md](docs/MATCHING.md).
