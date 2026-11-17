@@ -343,6 +343,20 @@ describe('pack validate', () => {
 });
 
 describe('pack list', () => {
+  it('lists an empty registry successfully with no registry entries', async () => {
+    writeFileSync(indexPath, 'version: 1\npacks: []\n');
+    const io = makeIO();
+    expect(await runPackList({ ...baseOpts(), cwd: dir, json: true }, io)).toBe(0);
+    // Built-in packs have their own list; only the requested registry is empty.
+    expect(JSON.parse(io.out)).toMatchObject({ ok: true, registry: [], communityInstalled: [] });
+    expect(io.err).toBe('');
+
+    const plain = makeIO();
+    expect(await runPackList({ ...baseOpts(), cwd: dir }, plain)).toBe(0);
+    expect(plain.out).toContain('(empty index)');
+    expect(plain.err).toBe('');
+  });
+
   it('shows installed community packs', async () => {
     const io = makeIO();
     expect(await runPackAdd(['example/cardiology'], { ...baseOpts(), yes: true }, io)).toBe(0);

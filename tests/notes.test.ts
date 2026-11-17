@@ -175,6 +175,21 @@ describe('core notes', () => {
     }
   });
 
+  it('round-trips literal TODO, FIXME and HACK text in a term note unchanged', async () => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-notes-markers-'));
+    try {
+      const globalPath = path.join(dir, 'lexicon.yaml');
+      const note = 'TODO: fake task; FIXME: fake issue; HACK: fake workaround.';
+      await addTerm({ canonical: 'FakeQuokka', aliases: ['fake quokka'], notes: note }, { cwd: dir, globalPath });
+      const loaded = await loadLexicon({ cwd: dir, globalPath });
+      expect(findTerm(loaded.merged, 'FakeQuokka')?.notes).toBe(note);
+      const file = await readLexiconFile(globalPath, 'global');
+      expect(findTerm(file.lexicon, 'FakeQuokka')?.notes).toBe(note);
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   // Catches: a surface spelling the "no terms yet", "only terms are in the
   // untrusted project lexicon" or "No term matches" sentence itself again, outside core/notes.ts,
   // where the next rewording would leave it behind.
