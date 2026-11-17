@@ -73,6 +73,8 @@ Check the install. Read `ready`, `summary` and `nextStep`.
 lexicon doctor --json
 ```
 
+Exit code 0 means every check passed. Exit code 1 means at least one check failed, and the JSON still prints, so read it either way. A fresh machine with no MCP registration exits 1 and names the fix in `nextStep`.
+
 The same contract, in one fetch: [llms.txt](llms.txt) (index) and [llms-full.txt](llms-full.txt) (install, tools, privacy, FAQ). The page written to an agent is [docs/AGENTS.md](docs/AGENTS.md). Copy-paste only, no commentary: [docs/COPY-PASTE.md](docs/COPY-PASTE.md).
 
 This tree is source version <!-- fresh:begin pin:version -->0.5.12<!-- fresh:end -->. npm `latest` matches it (0.5.12 was published on 2026-11-10). Check `lexicon --version` and `npm view @ashlr/lexicon version` before you pin.
