@@ -66328,16 +66328,26 @@ var init_esm2 = __esm({
   }
 });
 
+// src/cli/exit-codes.ts
+var EXIT_USAGE, EXIT_NOT_FOUND, EXIT_NOT_ALLOWED;
+var init_exit_codes = __esm({
+  "src/cli/exit-codes.ts"() {
+    EXIT_USAGE = 1;
+    EXIT_NOT_FOUND = 2;
+    EXIT_NOT_ALLOWED = 3;
+  }
+});
+
 // src/cli/args.ts
 function line(io, s = "") {
   io.stdout(`${s}
 `);
 }
-function jsonError(error62, nextStep) {
-  return { ok: false, error: error62, nextStep: nextStep || DEFAULT_NEXT_STEP };
+function jsonError(error62, nextStep, code = EXIT_USAGE) {
+  return { ok: false, code, error: error62, nextStep: nextStep || DEFAULT_NEXT_STEP };
 }
-function printJsonError(io, error62, nextStep) {
-  io.stdout(`${JSON.stringify(jsonError(error62, nextStep), null, 2)}
+function printJsonError(io, error62, nextStep, code = EXIT_USAGE) {
+  io.stdout(`${JSON.stringify(jsonError(error62, nextStep, code), null, 2)}
 `);
 }
 function wholeNumber(value) {
@@ -66357,6 +66367,7 @@ var processIO, DEFAULT_NEXT_STEP, CliRefusal;
 var init_args = __esm({
   "src/cli/args.ts"() {
     init_esm2();
+    init_exit_codes();
     processIO = {
       stdout: (s) => {
         process.stdout.write(s);
@@ -66440,15 +66451,20 @@ function renderTable(rows, header, opts = {}) {
   return `${out.join("\n")}
 `;
 }
-function fail(io, err, json2) {
+function errorExitCode(err) {
+  if (isProjectTrustError(err)) return EXIT_NOT_ALLOWED;
+  if (err instanceof Error && err.name === "PackNotFoundError") return EXIT_NOT_FOUND;
+  return EXIT_USAGE;
+}
+function fail(io, err, json2, code = errorExitCode(err)) {
   const message = errorMessage(err);
   const hint = unreadableLexiconHint(message) ?? ownNextStep(err);
-  if (json2) printJsonError(io, message, hint ?? (isProjectTrustError(err) ? PROJECT_TRUST_NEXT_STEP : void 0));
+  if (json2) printJsonError(io, message, hint ?? (isProjectTrustError(err) ? PROJECT_TRUST_NEXT_STEP : void 0), code);
   io.stderr(`lexicon: ${safeMessage(message)}
 `);
   if (hint) io.stderr(`lexicon: ${safeMessage(hint)}
 `);
-  return 1;
+  return code;
 }
 function ownNextStep(err) {
   if (err instanceof CliRefusal) return err.nextStep;
@@ -66469,13 +66485,13 @@ function parseCategory(value) {
   }
   return lower2;
 }
-function refuse(io, json2, error62, nextStep) {
-  if (json2) printJsonError(io, error62, nextStep);
+function refuse(io, json2, error62, nextStep, code = EXIT_USAGE) {
+  if (json2) printJsonError(io, error62, nextStep, code);
   io.stderr(`lexicon: ${safeMessage(error62)}
 `);
   if (nextStep) io.stderr(`lexicon: ${safeMessage(nextStep)}
 `);
-  return 1;
+  return code;
 }
 function unreadableLexiconHint(message) {
   if (/^Cannot read lexicon at /.test(message)) {
@@ -66521,6 +66537,7 @@ var init_io = __esm({
     init_core3();
     init_errors4();
     init_args();
+    init_exit_codes();
     init_lexicon_edit_hint();
     init_args();
     ({ bold, dim, red, green, yellow } = styler(process.stdout));
@@ -73643,13 +73660,13 @@ async function runRemove(canonical, opts, io) {
     const global = holders.find((h) => h.scope === "global");
     if (opts.json) {
       const nextStep = global ? `run ${commandLine(["lexicon", "remove", canonical, "--global"])} to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}` : PROJECT_TRUST_NEXT_STEP;
-      line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...dry ? { dryRun: true } : {}, ...untrusted ? { untrustedProject: untrusted } : {} }));
+      line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep, EXIT_NOT_ALLOWED), canonical, removed: false, ...dry ? { dryRun: true } : {}, ...untrusted ? { untrustedProject: untrusted } : {} }));
     }
     io.stderr(`lexicon: ${safeMessage(errorMessage(err))}
 `);
     if (global) io.stderr(`lexicon: to remove only the global copy (${safeMessage(global.path)}): ${shownCommand(["lexicon", "remove", canonical, "--global"])}
 `);
-    return 1;
+    return EXIT_NOT_ALLOWED;
   }
   const from = removed ? scope ? holders.find((h) => h.scope === scope) : holders[0] : void 0;
   const fromFile = from && loaded ? from.scope === "project" ? loaded.project : loaded.global : void 0;
@@ -73663,14 +73680,14 @@ async function runRemove(canonical, opts, io) {
 ` : "");
   const extra = { ...dry ? { dryRun: true } : {}, ...stillIn.length > 0 ? { stillIn } : {}, ...untrusted ? { untrustedProject: untrusted } : {} };
   if (opts.json) {
-    const failure2 = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ""}`, missStep);
+    const failure2 = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ""}`, missStep, EXIT_NOT_FOUND);
     line(io, JSON.stringify(removed ? jsonOk({ ...dryRunPlan(dry), canonical: removedName, removed, ...extra }) : { ...failure2, canonical, removed, ...extra }));
     if (!removed) io.stderr(notFound());
-    return removed ? 0 : 1;
+    return removed ? 0 : EXIT_NOT_FOUND;
   }
   if (!removed) {
     io.stderr(notFound());
-    return 1;
+    return EXIT_NOT_FOUND;
   }
   line(io, `${dry ? "would remove" : "removed"} ${bold(safe(removedName))}${from ? ` from ${safeMessage(from.path)}` : ""}`);
   for (const h of stillIn) line(io, stillInLine(removedName, h));
@@ -73701,13 +73718,14 @@ async function runRemoveAlias(canonical, alias, opts, scope, cwd, io) {
   try {
     result = await removeAlias(canonical, alias, { ...scope ? { scope } : {}, cwd, ...dry ? { dryRun: true } : {} });
   } catch (err) {
+    const code = isProjectTrustError(err) ? EXIT_NOT_ALLOWED : isInputError(err) ? EXIT_NOT_FOUND : EXIT_USAGE;
     const message = errorMessage(err);
     const holdsAlias2 = (file2) => file2?.lexicon.terms.some(
       (t) => spellingKey(t.canonical) === spellingKey(canonical) && t.aliases.some((a) => spellingKey(a) === spellingKey(alias))
     ) === true;
     const other = scope === "project" ? loaded?.global : scope === "global" ? loaded?.project : void 0;
     const elsewhere = isInputError(err) && other && holdsAlias2(other) ? `it is an alias of "${canonical}" in the ${other.scope} lexicon (${other.path}); run with --${other.scope} to remove it there, or with neither flag to remove it from every file whose copy has it` : isInputError(err) && !untrusted ? emptyLexiconRemoveStep(loaded) ?? aliasMissStep(loaded, scope, canonical) : void 0;
-    if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere), canonical, alias, removed: false, ...extra }));
+    if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere, code), canonical, alias, removed: false, ...extra }));
     io.stderr(`lexicon: ${safeMessage(message)}
 `);
     if (elsewhere) io.stderr(`lexicon: ${safeMessage(elsewhere)}
@@ -73721,7 +73739,7 @@ async function runRemoveAlias(canonical, alias, opts, scope, cwd, io) {
       io.stderr(`lexicon: ${untrustedAliasLine(canonical, alias, untrusted).replace(/^warn: /, "")}
 `);
     }
-    return 1;
+    return code;
   }
   const paths = result.files.map((f) => f.path);
   if (opts.json) {
@@ -73892,7 +73910,7 @@ async function runHarvest(root, opts, io, deps = {}) {
   const target = import_node_path33.default.resolve(cwd, root ?? ".");
   const json2 = opts.json === true || opts.full === true;
   if (!(0, import_node_fs33.existsSync)(target)) {
-    return refuse(io, json2, `harvest: path does not exist: ${target}`, "pass a directory that exists, or leave the path out to harvest the current directory");
+    return refuse(io, json2, `harvest: path does not exist: ${target}`, "pass a directory that exists, or leave the path out to harvest the current directory", EXIT_NOT_FOUND);
   }
   if (!(0, import_node_fs33.statSync)(target).isDirectory()) {
     return refuse(io, json2, `harvest: not a directory: ${target}`, "pass a directory (the repository root, not a file in it), or leave the path out to harvest the current directory");
@@ -73918,10 +73936,10 @@ async function runHarvest(root, opts, io, deps = {}) {
       const status = await isTrusted({ path: projectPath, scope: "project", lexicon: emptyLexicon(), exists: true }, store);
       if (status !== "trusted") {
         const message = new ProjectTrustError(projectPath, status).message;
-        if (json2) line(io, JSON.stringify({ ...jsonError(message, `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again`), added: false, path: projectPath, projectTrust: status }));
+        if (json2) line(io, JSON.stringify({ ...jsonError(message, `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again`, EXIT_NOT_ALLOWED), added: false, path: projectPath, projectTrust: status }));
         io.stderr(`lexicon: ${safeMessage(message)}
 `);
-        return 1;
+        return EXIT_NOT_ALLOWED;
       }
     }
   }
@@ -73984,16 +74002,17 @@ async function runHarvest(root, opts, io, deps = {}) {
       if (!json2 && isProjectTrustError(err)) throw err;
       const message = errorMessage(err);
       const hint = unreadableLexiconHint(message);
+      const code = errorExitCode(err);
       if (json2) {
         const where2 = filePath ? { path: filePath } : {};
-        line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where2 }));
+        line(io, JSON.stringify({ ...jsonError(message, hint, code), added: created + merged, created, merged, ...where2 }));
       }
       io.stderr(`lexicon: ${safeMessage(message)}
 `);
       if (hint) io.stderr(`lexicon: ${hint}
 `);
       io.stderr("lexicon: nothing was added: the candidates are written together, so none of them are in the project lexicon\n");
-      return 1;
+      return code;
     }
     const where = filePath ? ` in ${safe(filePath)}` : "";
     const summary = opts.dryRun ? `would add ${created} new term${created === 1 ? "" : "s"}, merge ${merged}${where}; nothing was written` : `added ${created} new term${created === 1 ? "" : "s"}, merged ${merged}${where}`;
@@ -74176,6 +74195,7 @@ var init_commands = __esm({
     init_prompt();
     init_errors4();
     init_atomic();
+    init_exit_codes();
     EXAMPLE_TERM_COMMENT = `
 # Example term. To enable it, replace the empty \`terms: []\` above with:
 #
