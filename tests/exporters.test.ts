@@ -393,6 +393,27 @@ describe('exports a real user would re-import', () => {
     ['text', 'text'],
     ['markdown', 'markdown'],
     ['claude-md', 'markdown'],
+  ] as const)('%s: commas and quotation marks survive reimport', (exportFormat, importFormat) => {
+    const term = {
+      canonical: 'Acme, "Research"',
+      aliases: ['ack me, "research"', '"Acme", research', 'plain alias'],
+    };
+    const out = exportLexicon({ version: 1, terms: [term] }, exportFormat);
+    const back = importLexicon(out, importFormat);
+    expect(back.skipped).toEqual([]);
+    expect(back.terms.map(({ canonical, aliases }) => ({ canonical, aliases }))).toEqual([term]);
+  });
+
+  it.each([
+    ['wispr', 'wispr'],
+    ['superwhisper', 'superwhisper'],
+    ['macos', 'macos'],
+    ['csv', 'csv'],
+    ['espanso', 'espanso'],
+    ['json', 'json'],
+    ['text', 'text'],
+    ['markdown', 'markdown'],
+    ['claude-md', 'markdown'],
   ] as const)('%s: Unicode canonical and aliases survive reimport', (exportFormat, importFormat) => {
     const term = { canonical: '東京 Café 🚀', aliases: ['とうきょう カフェ', 'café 🚀'] };
     const out = exportLexicon({ version: 1, terms: [term] }, exportFormat);
