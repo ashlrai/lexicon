@@ -26,6 +26,23 @@ Checked before any replacement:
 - Digit characters fused inside a token are invisible to the phonetic key and nearly free in the fuzzy score, so `kubernetes1` reached `Kubernetes` at 0.91 and the rewrite deleted the 1. An inexact candidate is refused when the window carries digits the canonical does not (`gpt4` stays `gpt4`, not `GPT`); when the canonical carries the same digits the match stands (`claude4` becomes `Claude 4`, `kubernetees1` becomes `Kubernetes 1`). The exact pass is untouched: its collapsed comparison counts digits already, so `ubuntu2204` becomes `Ubuntu 22.04` at 1.00 and an explicit alias like `kubernetes1` still rewrites to `Kubernetes` as user intent.
 - An implicit alias that had to invent a word boundary scores 0.95, not 1.0, and has to clear `minConfidence` like anything else. See below.
 
+## Context gates
+
+A term's `context` list requires at least one listed word or phrase elsewhere in
+the text before that term can replace a span. The candidate span cannot supply
+its own evidence. For example, `locus` with `aliases: [Lucas]` and
+`context: [ashlr]` corrects "ask Lucas about ashlr" and leaves "ask Lucas" alone.
+Already-canonical spans stay protected even when the gate is not satisfied.
+
+Library `normalize()` and HTTP `POST /normalize` callers can pass
+`context: { recentText, bundleId }` as additional evidence. These strings are
+tokenized for the gate only: they are never rewritten or prepended to the input,
+and replacement offsets still refer to the input transcript. LexiconBar supplies
+the field text ahead of a dictation burst and the focused app's bundle identifier.
+The CLI `normalize` command and MCP `normalize_transcript` tool do not expose
+this caller-context option. See the [library example](LIBRARY.md#caller-context)
+and [HTTP fields and limits](LOCAL-API.md#normalization-context).
+
 ## Boundaries the matcher invented
 
 The exact pass strips every separator before comparing, which is why `ashlrai`, `ashlr ai`, `ashlr-ai` and `Ashlr.AI` all reach the same term. The same stripping means a window can match by breaking a word the canonical never breaks: `lexicon file` reaches `LexiconFile`, `open ai` reaches `OpenAI`, `tail wind` reaches `Tailwind`. The split is read off a case hump, which is a convention of written code and not a sound anyone makes.

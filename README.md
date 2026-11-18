@@ -131,7 +131,7 @@ claude plugin install lexicon@ashlrai
 
 Exact alias first, then double-metaphone phonetic, then Damerau-Levenshtein fuzzy above a confidence floor. Exact hits win the span. Matches never overlap. A stoplist of common English words blocks phonetic and fuzzy guesses, but explicit aliases override it. Per-term `never` lists and `protectedWords` also restrict replacements; code spans, URLs, emails and paths are skipped by default. Every replacement reports `reason` and `confidence`.
 
-Replacements go to stderr. The corrected line is stdout. Results depend on the terms in your lexicon.
+With `--diff`, the replacement summary goes to stderr and the corrected line goes to stdout. With `--json`, stdout is the result object instead. Results depend on the terms in your lexicon; the built-in example is used only when your lexicon is empty and the text is passed as arguments.
 
 ```bash
 lexicon normalize --diff "ask ashler to deploy kuber netties with post gressql"
@@ -142,6 +142,8 @@ Rules: [docs/MATCHING.md](docs/MATCHING.md).
 ## What you get
 
 - **One file**, `~/.config/lexicon/lexicon.yaml`. Project `.lexicon.yaml` merges only after `lexicon trust`.
+- **Context gates** keep ambiguous names from firing without a relevant word in the transcript. Library and HTTP callers can also supply recent text and an app identifier as evidence. See [matching rules](docs/MATCHING.md#context-gates).
+- **A review queue** for spelling corrections noticed by the Claude Code prompt hook. `lexicon pending` lists them; `lexicon pending accept <id>` or `lexicon pending reject <id>` records your decision.
 - **Twenty-one MCP tools** for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop.
 - **A CLI with 29 commands.** `lexicon --help` lists them. The [CLI reference](docs/CLI.md) includes nested commands and options; contributors can run `lexicon test-select --json` to select tests.
 - **272 terms across the nine packs** (developer, AI, business, voice tools, cloud and DevOps, legal profession, law and litigation, Ashlr.AI fleet, architecture). Community packs install from a registry after a checksum preview.
@@ -165,7 +167,7 @@ Rules: [docs/MATCHING.md](docs/MATCHING.md).
 | Cursor | `lexicon install cursor --json`, then the same command with `--apply` |
 | Other supported clients | `lexicon install --help` lists client names; preview with `lexicon install <client> --json` before adding `--apply` |
 | Browser chats | Extension from the [latest release](https://github.com/ashlrai/lexicon/releases/latest) |
-| Any macOS text field | LexiconBar menu bar app |
+| Eligible macOS text fields | LexiconBar menu bar app; requires Accessibility access and skips secure or unsupported fields |
 | Shortcuts, Raycast, your own app | `lexicon serve` on `127.0.0.1:41733` |
 | Your own speech pipeline | `normalize()` between the recognizer and the model |
 

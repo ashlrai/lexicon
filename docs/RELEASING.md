@@ -2,7 +2,7 @@
 
 How to cut a release of `@ashlr/lexicon`. One tag drives everything: npm, the GitHub release and its download assets, and the Homebrew formula bump that follows.
 
-The version being cut is `package.json`'s `version`: <!-- fresh:begin pin:version -->0.5.12<!-- fresh:end -->. Every doc block between `fresh:begin` and `fresh:end` HTML-comment markers (the README release badge and git-tag pin, this number, the CHANGELOG release table) is regenerated from `package.json` and the dated CHANGELOG sections by `npm run fresh:sync`; `npm run fresh:check` fails on drift, so a release can gate on it the way the `docs` CI job gates on `check:facts`.
+The version being cut is `package.json`'s `version`: <!-- fresh:begin pin:version -->0.5.12<!-- fresh:end -->. Every doc block between `fresh:begin` and `fresh:end` HTML-comment markers (the README release badge and git-tag pin, this number, the CHANGELOG release table) is regenerated from `package.json` and the dated CHANGELOG sections by `npm run fresh:sync`; `npm run fresh:check` fails on drift, so a release can gate on it alongside `check:facts`.
 
 ## Automatic releases
 
@@ -40,9 +40,9 @@ Eleven files carry the version and must agree, in the ten rows below: `package.j
 | `README.md` | the `github:ashlrai/lexicon#vX.Y.Z` install pin. It names a tag that must exist, so it cannot be left at whatever it said when it was written; `check:facts` fails the build on a stale one, which is why it is here rather than in your head. It sits in a `pin:github` block, so `npm run fresh:sync` writes it -- no hand edit |
 | `apps/windows/Directory.Build.props` | `<Version>`, the assembly version of the Windows tray app. Nothing derives it from `package.json` |
 | `web/lib/site.ts` | `VERSION`, the constant the landing page renders. Nothing derives it from `package.json`, and it is the one that shipped wrong: the site said 0.5.0 while the package said 0.5.2 and npm served 0.5.1. `check:facts` reads any declared `VERSION` constant now and fails on a stale one |
-| `docs/CLI.md` | not edited by hand: `npm run docs:cli` regenerates it and it carries the version in its header. The CI `docs` job runs the generator and diffs the result, so a skipped regeneration fails the build |
+| `docs/CLI.md` | not edited by hand: `npm run docs:cli` regenerates it and it carries the version in its header. The full-suite CI Node 22 Linux and Windows rows run the generator and diff the result, so a skipped regeneration fails the build |
 | `packaging/homebrew/lexicon.rb` | `url` and `sha256`, in step 4 rather than here, because the sha256 does not exist until the tag does |
-| `CHANGELOG.md` | rename `## X.Y.Z (unreleased)` to `## X.Y.Z (YYYY-MM-DD)` |
+| `CHANGELOG.md` | move the release's entries from `## Unreleased` under a new `## X.Y.Z (YYYY-MM-DD)` heading |
 
 The extension manifest and `LexiconBar.app` read the version from `package.json` at build time, so they need no edit. `apps/windows` does not.
 
@@ -51,20 +51,22 @@ The extension manifest and `LexiconBar.app` read the version from `package.json`
 ```bash
 npm version patch --no-git-tag-version       # or minor / major; writes package.json + lock
 # edit .claude-plugin/plugin.json, .claude-plugin/marketplace.json, server.json,
-# the README install pin, apps/windows/Directory.Build.props and the VERSION
+# apps/windows/Directory.Build.props and the VERSION
 # constant in web/lib/site.ts to the same version
 # date the CHANGELOG heading
+npm run fresh:sync                           # updates marked version pins and the release table
 npm run docs:cli                             # rewrites docs/CLI.md, including its version header
 
-# The gate, in the order CI runs it. Everything here is also a CI job -- and so
-# a failure now is a failure you would have got from the tag push anyway --
-# with one exception, `check:server-json`, which no workflow runs at all.
-npx tsc --noEmit
-npx vitest run
+# Local qualification before tagging. The release workflow repeats typecheck,
+# tests, bundle and CLI drift, factual counts and the offline server manifest
+# check. Full-suite CI covers links; build:site and fresh:check also run here.
+npm run typecheck
+npm test
 npm run build && npm run build:site && npm run build:extension
 npm run check:bundle                         # plugin/ bundles match src/ (CI fails on drift)
 npm run check:links
 npm run check:facts
+npm run fresh:check
 npm run check:server-json -- --offline       # the `--` is load-bearing; see the note below
 ( cd apps/macos/LexiconBar && swift test )
 
@@ -221,8 +223,9 @@ node --test scripts/release-contract.test.mjs
 node scripts/release-contract.mjs source . vX.Y.Z
 ```
 
-The ordinary pull-request CI also runs the synthetic contract tests in its
-Ubuntu Node 22 job. Those fixtures supply their own dated changelog, so an
+Full-suite CI runs the synthetic release-contract and recovery tests in its
+Ubuntu Node 22 job on scheduled and dispatched runs. The fast pull-request gate
+does not run those tests. Those fixtures supply their own dated changelog, so an
 unreleased candidate can be reviewed while the actual release source command
 continues to reject an undated release.
 
@@ -230,11 +233,11 @@ continues to reject an undated release.
 
 `LexiconBar.app.zip` is signed ad-hoc and not notarized, so on someone else's Mac it is an unidentified developer: Gatekeeper blocks the first launch (right-click > Open, or `xattr -d com.apple.quarantine`), and its Accessibility grant is bound to a cdhash that changes with every release, so each update silently loses the grant until the user removes the row in System Settings and adds the app again. The local `LexiconBar Local Signing` certificate (`scripts/make-signing-identity.sh`, see [MACOS-APP.md](MACOS-APP.md#signing-and-why-the-accessibility-grant-kept-disappearing)) fixes that on the machine that made it and nowhere else. It is not distributable.
 
-The real answer for shipping is a **Developer ID Application** certificate from the Apple Developer Program plus notarization: sign with `codesign --options runtime --sign "Developer ID Application: …"`, submit with `xcrun notarytool submit --wait`, then `xcrun stapler staple LexiconBar.app`. That gives a designated requirement anchored to Apple and the team id, which is stable across every release, so a user grants Accessibility once and updates keep it. In CI the certificate and its password go in repository secrets and are imported into a temporary keychain for the run; `LEXICONBAR_SIGN_IDENTITY` already lets `scripts/build-macos-app.sh` use whatever identity name is available. Until then, the README and the release notes should say the app is unsigned.
+The real answer for shipping is a **Developer ID Application** certificate from the Apple Developer Program plus notarization: sign with `codesign --options runtime --sign "Developer ID Application: …"`, submit with `xcrun notarytool submit --wait`, then `xcrun stapler staple LexiconBar.app`. That gives a designated requirement anchored to Apple and the team id, which is stable across every release, so a user grants Accessibility once and updates keep it. In CI the certificate and its password go in repository secrets and are imported into a temporary keychain for the run; `LEXICONBAR_SIGN_IDENTITY` selects the identity name and `LEXICONBAR_SIGN_KEYCHAIN` selects the dedicated keychain passed to both identity lookup and `codesign`. The identity must be in that keychain; the build does not search the user's other keychains. Until then, the README and release notes should describe the app as ad-hoc signed and not notarized.
 
 The asset names are referenced by the README, the demo site (`site/index.html`) and the Homebrew formula. Do not rename them without updating all three.
 
-`.github/workflows/macos-app.yml` is separate: it builds the same app on pushes that touch `apps/macos/**` and stores the zip as a workflow artifact for review, not as a release asset. `.github/workflows/windows-app.yml` does the same for `apps/windows/**`, and `LexiconBar.exe` is likewise an artifact rather than a release asset, because nothing in that app has been verified on a real Windows desktop yet.
+`.github/workflows/macos-app.yml` is separate: it builds and tests the same app after relevant pushes to `main`, daily, and on manual dispatch and stores the zip as a workflow artifact for review, not as a release asset. `.github/workflows/windows-app.yml` does the same for the Windows app, and `LexiconBar.exe` is likewise an artifact rather than a release asset, because nothing in that app has been verified on a real Windows desktop yet.
 
 ## 3. npm publication authority
 
