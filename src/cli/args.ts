@@ -5,6 +5,7 @@
  */
 import { InvalidArgumentError } from 'commander';
 import type { Command } from 'commander';
+import { EXIT_USAGE } from './exit-codes.js';
 
 /**
  * Where a command writes. Handlers take one instead of touching `process`
@@ -30,11 +31,15 @@ export function line(io: IO, s = ''): void {
 }
 
 /**
- * The stdout document of a `--json` command that failed: `{ ok: false, error,
- * nextStep }`. `nextStep` is always there: the caller's, else DEFAULT_NEXT_STEP.
+ * The stdout document of a `--json` command that failed: `{ ok: false, code,
+ * error, nextStep }`. `code` is the process exit code (exit-codes.ts: 1
+ * usage, 2 not found, 3 not allowed, 4 unavailable), so an agent branches on
+ * it without reading the process status. `nextStep` is always there: the
+ * caller's, else DEFAULT_NEXT_STEP.
  */
 export interface JsonError {
   ok: false;
+  code: number;
   error: string;
   nextStep: string;
 }
@@ -42,13 +47,13 @@ export interface JsonError {
 /** The `nextStep` of a failure that has no more specific one. */
 export const DEFAULT_NEXT_STEP = 'fix what error names, then run the command again (its --help lists the flags)';
 
-export function jsonError(error: string, nextStep?: string): JsonError {
-  return { ok: false, error, nextStep: nextStep || DEFAULT_NEXT_STEP };
+export function jsonError(error: string, nextStep?: string, code: number = EXIT_USAGE): JsonError {
+  return { ok: false, code, error, nextStep: nextStep || DEFAULT_NEXT_STEP };
 }
 
-/** Print `jsonError(error, nextStep)` on stdout. */
-export function printJsonError(io: IO, error: string, nextStep?: string): void {
-  io.stdout(`${JSON.stringify(jsonError(error, nextStep), null, 2)}\n`);
+/** Print `jsonError(error, nextStep, code)` on stdout. */
+export function printJsonError(io: IO, error: string, nextStep?: string, code: number = EXIT_USAGE): void {
+  io.stdout(`${JSON.stringify(jsonError(error, nextStep, code), null, 2)}\n`);
 }
 
 /**
