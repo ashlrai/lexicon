@@ -519,6 +519,38 @@ describe('harvestRepo', () => {
     expect(byName(candidates, 'zod')).toBeUndefined(); // shorter than 4 chars
   });
 
+  it('merges repeated candidate terms across sources and returns a deterministic order', async () => {
+    const dir = path.join(tmp, 'repeated-candidates', 'repo');
+    await fs.mkdir(dir, { recursive: true });
+    await fs.writeFile(path.join(dir, 'package.json'), JSON.stringify({
+      name: 'ZetaWidget',
+      dependencies: { ZetaWidget: '*', BetaWidget: '*', AlphaWidget: '*' },
+      devDependencies: { zetawidget: '*', alphawidget: '*' },
+    }));
+    await fs.writeFile(path.join(dir, 'usage.ts'),
+      'ZetaWidget ZetaWidget BetaWidget BetaWidget AlphaWidget\n');
+
+    const options = { git: false, minCount: 1 };
+    const candidates = await harvestRepo(dir, options);
+    expect(candidates.map(({ canonical, category, source, count, evidence }) =>
+      ({ canonical, category, source, count, evidence }))).toEqual([
+      {
+        canonical: 'ZetaWidget', category: 'product', source: 'harvest:package', count: 5,
+        evidence: ['package.json#name', 'package.json#dependencies', 'package.json#devDependencies', 'usage.ts'],
+      },
+      {
+        canonical: 'AlphaWidget', category: 'identifier', source: 'harvest:package', count: 3,
+        evidence: ['package.json#dependencies', 'package.json#devDependencies', 'usage.ts'],
+      },
+      {
+        canonical: 'BetaWidget', category: 'identifier', source: 'harvest:package', count: 3,
+        evidence: ['package.json#dependencies', 'usage.ts'],
+      },
+    ]);
+    await expect(harvestRepo(dir, options)).resolves.toEqual(candidates);
+    await expect(harvestRepo(dir, { ...options, limit: 2 })).resolves.toEqual(candidates.slice(0, 2));
+  });
+
   it('sorts by count desc then canonical and respects limit', async () => {
     const all = await harvestRepo(repo, { minCount: 1, symbols: true });
     for (let i = 1; i < all.length; i++) {
