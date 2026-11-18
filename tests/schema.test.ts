@@ -493,6 +493,37 @@ describe('hardening (lexicon content reaches model context)', () => {
     expect(name.slice(0, 36)).toBe('\\uFFFF'.repeat(6));
   });
 
+  describe.each([
+    ['FFFE', '\uFFFE', '\\uFFFE'],
+    ['FFFF', '\uFFFF', '\\uFFFF'],
+    ['D800', '\uD800', '\\uD800'],
+    ['DC00', '\uDC00', '\\uDC00'],
+  ])('error-label length after escaping U+%s', (hex, unit, escaped) => {
+    it.each([
+      [33, `${escaped}${'x'.repeat(33)}`],
+      [34, `${escaped}${'x'.repeat(34)}`],
+      [35, `${escaped}${'x'.repeat(33)}…`],
+    ])('bounds an escaped unit followed by %i printable characters', (padding, expected) => {
+      // The raw name is shorter than 40; only escaping can cross the limit.
+      const canonical = `${unit}${'x'.repeat(padding)}`;
+      const input = { terms: [{ canonical }] };
+      const result = LexiconSchema.safeParse(input);
+
+      expect(result.success).toBe(false);
+      if (result.success) throw new Error(`Expected U+${hex} to be rejected`);
+      const message = `must not contain U+${hex} (U+FFFE, U+FFFF and unpaired surrogates fit no file format) in term "${expected}"`;
+      expect(result.error.issues).toMatchObject([
+        { path: ['terms', 0, 'canonical'], message },
+      ]);
+      const label = /in term "(.*)"$/.exec(result.error.issues[0].message)?.[1];
+      expect(label).toBe(expected);
+      expect(label!.length).toBeLessThanOrEqual(40);
+      expect(label).toContain(escaped);
+      expect(label).not.toContain(unit);
+      expect(() => parseLexicon(input)).toThrow(`Invalid lexicon:\n  - terms[0].canonical: ${message}`);
+    });
+  });
+
   it('escapes an unpaired surrogate in a truncated term label', () => {
     const canonical = `${'a'.repeat(30)}\uD800${'b'.repeat(10)}`;
     const result = TermSchema.safeParse({ canonical });
