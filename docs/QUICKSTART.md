@@ -38,90 +38,58 @@ One interactive pass, seven numbered steps, ending in a live correction. Every s
 
 `lexicon setup --yes` runs without prompting: it creates the lexicon and installs into every agent client it detects, but the three steps that write a lot or install a service stay opt-in even then, so add `--packs developer,ai,voice-tools`, `--harvest` and `--serve` for those. `--dry-run` writes nothing and describes the run you would get from this same command without it: on a terminal every step that would stop and ask is marked `asks`, with the answer Enter gives it, so the login service and the export to your Desktop show up as the questions they are and the repo harvest shows up as a question whose default is no; with `--yes` or off a terminal the same plan shows the opt-in steps doing nothing until you pass their flag. `--clients none` / `--no-packs` / `--no-harvest` / `--no-serve` / `--app none` skip steps, and `--json` prints a machine-readable summary.
 
-```text
-$ lexicon setup
-lexicon setup
+The current steps are:
 
 1. Global lexicon
-   created ~/.config/lexicon/lexicon.yaml
-   add "Mason Wyatt" as a person term (how you want your name spelled)? [Y/n]
-   added Mason Wyatt (person): Mason Wiatt, Mason Wyat
-   Your company or product name (as you want it spelled; Enter to skip) Ashlr.AI
-   STT will likely write: Ashlr AI, Ashlr, Ashler, Ashlar, Ashler AI, Ashlar AI
-   phonetic hint (e.g. ASH-ler, Enter for none) ASH-ler
-   added Ashlr.AI (brand): Ashlr AI, Ashlr, Ashler, Ashlar, Ashler AI, Ashlar AI
-   add another term? [y/N]
+
+   Creates the global file if needed and offers person/company spellings and aliases.
 
 2. Starter packs
-   add starter packs to the global lexicon (Enter keeps the checked ones):
-  [x] 1) developer  Developer tools, 82 terms
-  [x] 2) ai  AI models and tools, 45 terms
-  [x] 3) voice-tools  Voice and dictation tools, 14 terms
-toggle numbers (e.g. 2,3), a=all, n=none, Enter=done
-   also add business (Business and startup vocabulary, 35 terms)? [y/N]
-   installed developer: 82 added, 0 merged
-   installed ai: 45 added, 0 merged
-   installed voice-tools: 14 added, 0 merged
+
+   Offers `developer`, `ai` and `voice-tools` as the default checklist, then asks separately about the other available packs. Already-installed packs are left alone.
 
 3. Repo harvest
-   found 2 names in ~/code/lexicon:
-canonical   category  count  suggested aliases
-----------  --------  -----  ---------------------
-lexicon     product   1      lexikon
-quokkatron  product   1      quoccatron, quokatron
-   add them to the project lexicon (~/code/lexicon/.lexicon.yaml)? [y/N] y
-   added 2 new terms, merged 0 in ~/code/lexicon/.lexicon.yaml (trusted)
+
+   Previews names from the current repository and asks before adding them to its project lexicon.
 
 4. Agent clients
-   install the lexicon MCP server (and hooks) into:
-  [x] 1) claude  /usr/local/bin/claude
-  [x] 2) cursor  ~/.cursor
-toggle numbers (e.g. 2,3), a=all, n=none, Enter=done
-   claude: installed ~/.claude/settings.json
-   cursor: installed ~/.cursor/mcp.json
+
+   Detects supported clients and installs the selected MCP registrations and Claude Code hooks.
 
 5. Local API (lexicon serve)
-   install the local API (browser extension, Claude Desktop, menu bar app) as a login service? [Y/n]
-   installed ai.ashlr.lexicon.serve; check with: lexicon serve --status
+
+   Offers a login service for the browser extension and desktop apps.
 
 6. Dictation app
-   which dictation app do you use?
-  1) Wispr Flow
-  2) Superwhisper
-  3) macOS Text Replacement
-  4) none / something else
-number [1] 1
-   wrote ~/Desktop/lexicon-wispr.csv (329 rows)
-   import it in Wispr Flow > Dictionary > Import
+
+   Offers a dictionary export for Wispr Flow, Superwhisper or macOS Text Replacement, or lets you skip it.
 
 7. Does it work?
-   you dictate:  can you ask Mason Wiatt where the Ashler migration landed
-   your agent sees: can you ask Mason Wyatt where the Ashlr.AI migration landed
-   fixed: "Mason Wiatt" -> "Mason Wyatt", "Ashler" -> "Ashlr.AI"
 
-Done.
-   lexicon: ~/.config/lexicon/lexicon.yaml
-   terms added: Mason Wyatt, Ashlr.AI, lexicon, quokkatron
-   packs: developer (82 added), ai (45 added), voice-tools (14 added)
-   clients: claude, cursor
-   local API: installed
-   exports: ~/Desktop/lexicon-wispr.csv
+   Runs a correction with the terms just seeded and shows what changed.
 
-Next: open Claude Code and dictate a sentence with "Ashlr.AI" in it. That is the whole thing.
-   later: lexicon suggest (names you keep correcting), lexicon stats, lexicon voice (local push-to-talk)
+Pack names and counts come from the installed version. Inspect them before choosing:
+
+```bash
+lexicon pack list --json
+lexicon setup --dry-run --json
 ```
 
-Step 3 is the one step whose question defaults to no. It proposes only names the repo says out loud somewhere other than its own code: what the manifests declare, what the README names, the git authors, the directory. A class or a type is something you type rather than say, and its name split into words ("InlineData" into "inline data") would rewrite ordinary dictation, so the harvest leaves those alone; `lexicon harvest --interactive` walks the list one name at a time when you do want them.
+The [terminal recording](assets/cli-setup.cast) and [setup GIF](assets/cli-setup.gif)
+show a historical 0.5.1 run. Their client list and pack counts are records of that
+build; the current [CLI reference](CLI.md) lists today's flags.
+
+Repo harvest (step 3) defaults to no. It proposes only names the repo says out loud somewhere other than its own code: what the manifests declare, what the README names, the git authors, the directory. A class or a type is something you type rather than say, and its name split into words ("InlineData" into "inline data") would rewrite ordinary dictation, so the harvest leaves those alone; `lexicon harvest --interactive` walks the list one name at a time when you do want them.
 
 Step 7 is not a canned example: it takes the terms the run just seeded, writes the sentence speech-to-text would have produced for them, and runs the real normalizer over it. If you skipped everything and the lexicon has nothing to show off, it falls back to the example terms and says so, so the run always ends with the product working.
 
 ## 3. Say a sentence in Claude Code
 
-Open a new Claude Code session (the `SessionStart` hook loads the lexicon) and dictate something with your company name in it: "tell Ashler to ship it". The `UserPromptSubmit` hook supplies an `additionalContext` note telling Claude that "Ashler" means "Ashlr.AI"; the submitted prompt stays unchanged. Corrections you make in chat ("it's Ashlr.AI, not Ashler") are learned via the [`learn_correction`](MCP.md#tools) tool.
+Open a new Claude Code session (the `SessionStart` hook loads the lexicon) and dictate something with a name you added. If you added Ashlr.AI with the alias Ashler, try "tell Ashler to ship it". The `UserPromptSubmit` hook supplies an `additionalContext` note telling Claude that "Ashler" means "Ashlr.AI"; the submitted prompt stays unchanged. Corrections you make in chat ("it's Ashlr.AI, not Ashler") are flagged for the [`learn_correction`](MCP.md#tools) tool and queued for review with `lexicon pending`; the hook never changes active terms on its own.
 
 ## 4. Check it is working
 
-`lexicon normalize "tell Ashler to ship it"` prints `tell Ashlr.AI to ship it`; `lexicon stats` shows hits per term and never-hit terms.
+With that alias saved, `lexicon normalize "tell Ashler to ship it"` prints `tell Ashlr.AI to ship it`; `lexicon stats` shows hits per term and never-hit terms.
 
 `lexicon doctor` checks the files, hooks, MCP registration, clipboard and whisper, and ends with the two lines that matter: a one-sentence verdict and the single next thing to do. Agents get the same two as the `summary` and `nextStep` fields of the [`lexicon_doctor`](MCP.md#tools) tool, alongside `ready`, the boolean answer to "is this set up?".
 

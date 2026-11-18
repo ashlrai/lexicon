@@ -97,6 +97,30 @@ included, and no body. Errors are
 | GET | `/aliases` | `?canonical=X` | `{ canonical, aliases }`: the spellings STT is likely to produce for a name, for an onboarding form. `canonical` loses invisible characters and outer spaces first, as a stored canonical does, and is then at most 80 characters with no control character, newline, U+FFFE, U+FFFF or unpaired surrogate left inside it (400 otherwise, as for a stored canonical) |
 | GET | `/export/:format` | | the export as text; `Content-Type` per format (see below). `?category=` (repeat it or separate with commas) and `?limit=<n>` (at most 10000) filter and cap it like `lexicon export --category` and `--limit`; an unknown format is a 404 whose `error` lists the formats. When the export is empty (no terms yet, only an untrusted project file has terms, or no term matched `?category=`), an alias-row format has no rows, or a skipped project file's terms were left out, the `X-Lexicon-Note` response header says so and names the next step, as `lexicon export` does on stderr; the body is the export either way. That header is ASCII, so when a format left entries out it only says so: `?json=1` (or `true`) answers `{ format, content, rows?, dropped?, note? }` instead, where `content` is the export, `rows` the rows an alias-row format wrote, `dropped` the sentences naming what the format left out (as `lexicon export --json` gives them) and `note` the rest of the header's text; `?json=0` or `false` is the plain export, any other value a 400 |
 
+### Normalization context
+
+`POST /normalize` accepts an optional `context` object with `recentText` (a string
+of at most 100,000 characters) and `bundleId` (at most 255 characters). Either
+field can be omitted; unknown fields or non-string values return 400. These
+limits apply to the HTTP request; the pure library function does not impose them.
+
+```json
+{
+  "text": "ask Lucas to deploy",
+  "context": { "recentText": "the ashlr project", "bundleId": "com.example.editor" }
+}
+```
+
+With a `locus` term whose aliases include `Lucas` and whose `context` includes
+`ashlr`, this returns `output: "ask locus to deploy"`. The context only supplies
+evidence for the gate. It is never prepended to the text or included in replacement
+spans, so the replacement still covers input offsets 4 to 9. LexiconBar sends up
+to 4,000 characters ahead of a dictation burst; that client limit is smaller than
+the API limit. See [matching rules](MATCHING.md#context-gates) and the runnable
+[library example](LIBRARY.md#caller-context).
+
+### Validation and errors
+
 See the [aliases endpoint walkthrough](aliases-endpoint-examples.md) for example requests and responses, the [aliases response reference](aliases-response-reference.md) for the response shape, and [aliases API examples](aliases-api-examples.md) for more inputs and validation errors.
 
 Status codes: 400 invalid JSON, a bad or unknown field (bodies are strict: a misspelled key such as `dry_run` is refused, not ignored), an unknown or repeated query parameter on any route but `/pair` (query strings are strict the same way: `/lexicon?cdw=` and `/health?cdw=` are refused, with or without the token; only `/export`'s `category` may repeat; a POST route takes no query parameter at all, since its options are body fields, so `POST /packs/developer?scope=project` is refused and nothing is installed), an unknown `category` or a `limit` that is not a positive integer on `/export`, a `cwd` that is empty or not an existing directory, or a body on `DELETE /packs/:name`, 401 missing or wrong token, `/health?cwd=` included (with `WWW-Authenticate: Bearer`; the `error` names `lexicon serve --pair` for the browser extension and `lexicon serve --show` for any other client),

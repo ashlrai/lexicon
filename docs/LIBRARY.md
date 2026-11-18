@@ -53,6 +53,34 @@ if (fixed.changed) console.error(fixed.replacements.map((r) => `${r.original} ->
 await llm.send(fixed.output);
 ```
 
+## Caller context
+
+For [context-gated terms](MATCHING.md#context-gates), pass recent field text or
+an app bundle identifier as evidence without adding it to the transcript. This
+example uses an in-memory lexicon and writes no files:
+
+```ts
+import { normalize, parseLexicon } from '@ashlr/lexicon';
+
+const lexicon = parseLexicon({
+  version: 1,
+  terms: [{ canonical: 'locus', aliases: ['Lucas'], context: ['ashlr'] }],
+});
+const text = 'ask Lucas to deploy';
+const withoutContext = normalize(text, lexicon);
+const withContext = normalize(text, lexicon, {
+  context: { recentText: 'the ashlr project', bundleId: 'com.example.editor' },
+});
+
+console.log(JSON.stringify({ withoutContext, withContext }));
+```
+
+`withoutContext.output` is `ask Lucas to deploy`; `withContext.output` is
+`ask locus to deploy`. The replacement covers `Lucas` at input offsets 4 to 9.
+Neither context string appears in the returned input or output. Omit either field
+when it is unavailable. The [HTTP API](LOCAL-API.md#normalization-context)
+accepts the same object with request validation limits.
+
 ## Other exports
 
 `parseLexicon(raw)` validates an object you loaded yourself, `diffSummary(result)` renders the replacement list, `suggestAliases(canonical)` guesses likely misspellings, `importLexicon(content, format)` parses another tool's dictionary, `parseCorrection(text)` and `learnCorrection({ heard, meant })` handle corrections, `suggestCanonicalFor(heard, lexicon)` finds the closest terms, `suggestTerms(input)` mines voice history, `computeStats(loaded)` reports usage, and `EXPORT_FORMATS` / `IMPORT_FORMATS` list what `exportLexicon` / `importLexicon` accept. `listPacks()`, `loadPack()`, `installPack()` and `uninstallPack()` cover the [starter packs](PACKS.md).

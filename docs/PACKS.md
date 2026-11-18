@@ -55,7 +55,7 @@ lexicon pack remove example/cardiology                               # no --regi
 lexicon pack validate ./my-pack.yaml                                 # the publish bar, before you list it
 ```
 
-A community pack installs through the same merge rules as the vendored eight, with three extra guarantees, because installed terms reach model context on every hooked prompt:
+A community pack installs through the same merge rules as the built-in packs, with the following guarantees, because installed terms reach model context on every hooked prompt:
 
 - **https only.** An index and its pack files are fetched over `https://` (plain `http://` only from this machine, `localhost` or `127.0.0.1`), a redirect to plain `http://` elsewhere is refused, and every index or pack file over 2 MB is refused. The index is what vouches for each pack's checksum, so over plain http anyone on the path could swap both.
 - **Checksums pinned at install.** The index carries a sha256 of each pack file; the download is verified before it is read, and the checksum is pinned in `<global-lexicon-dir>/registry/registry.json`. `pack update` re-checks it.

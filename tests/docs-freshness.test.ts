@@ -8,9 +8,27 @@ import { createServer } from '../src/mcp/server.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = (file: string): string => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
-const guides = ['README.md', 'AGENTS.md', 'CLAUDE.md', 'llms-install.md', 'llms.txt', 'llms-full.txt', 'docs/AGENTS.md', 'docs/COPY-PASTE.md'];
+const guides = ['README.md', 'AGENTS.md', 'CLAUDE.md', 'llms-install.md', 'llms.txt', 'llms-full.txt', 'docs/AGENTS.md', 'docs/COPY-PASTE.md', 'docs/QUICKSTART.md', 'docs/MATCHING.md', 'docs/LIBRARY.md', 'docs/LOCAL-API.md'];
 
 describe('source-backed documentation freshness', () => {
+  it('runs the documented caller-context example without changing the transcript offsets', () => {
+    const section = read('docs/LIBRARY.md').split('## Caller context\n')[1]?.split('\n## ')[0];
+    const example = section?.match(/```ts\n([\s\S]*?)```/)?.[1];
+    expect(example).toBeDefined();
+    const script = example!.replace("from '@ashlr/lexicon'", "from './src/core/index.ts'");
+    const result = JSON.parse(execFileSync(process.execPath,
+      ['--import', 'tsx', '--input-type=module', '-e', script],
+      { cwd: root, encoding: 'utf8', timeout: 30_000 }));
+
+    expect(result.withoutContext).toEqual({
+      input: 'ask Lucas to deploy', output: 'ask Lucas to deploy', replacements: [], changed: false,
+    });
+    expect(result.withContext).toEqual({
+      input: 'ask Lucas to deploy', output: 'ask locus to deploy', changed: true,
+      replacements: [{ start: 4, end: 9, original: 'Lucas', replacement: 'locus', canonical: 'locus', reason: 'alias', confidence: 1 }],
+    });
+  });
+
   it('documents exactly the registered MCP tools and all their schema arguments', async () => {
     // createServer uses TOOL_REGISTRARS from src/mcp/tools/index.ts. Listing
     // schemas executes no tool and needs no lexicon or client configuration.

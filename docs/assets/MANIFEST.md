@@ -6,6 +6,12 @@ CLI **0.5.1** (repo `dist/`), and the user's real 134-term lexicon.
 
 Every asset below is a genuine capture. Nothing is mocked, composited, or retouched.
 
+These are historical captures. Their menus, pack rosters and counts describe the
+captured builds, not the current feature list. Use the [quickstart](../QUICKSTART.md)
+and [CLI reference](../CLI.md) for current setup, and `lexicon pack list --json`
+for the installed version's pack inventory. Keep the captured text intact when
+reusing an image; label its version rather than updating numbers inside it.
+
 Each file exists at **two identical paths** so either surface can use it without
 reaching across directories:
 
