@@ -1,13 +1,3 @@
-## Start here (60 seconds)
-
-Install Lexicon with Node.js 20 or newer, add a name and its common mishearing, then try a correction:
-
-```bash
-npm install -g @ashlr/lexicon
-lexicon add Ashlr.AI Ashler
-lexicon normalize "ask Ashler to ship it" --json
-```
-
 <div align="center">
 
 <img src="docs/assets/logo-400.png" alt="" width="88" height="88">
@@ -27,6 +17,18 @@ Lexicon is one YAML file of the words you actually say. It rewrites the transcri
 [**Live demo**](https://ashlrai.github.io/lexicon/) · [**Docs**](docs/README.md) · [**llms.txt**](llms.txt) · [**llms-full.txt**](llms-full.txt) · [**lexicon.ashlr.ai**](https://lexicon.ashlr.ai)
 
 </div>
+
+## Start here (60 seconds)
+
+Install Lexicon with Node.js 20 or newer, add a name and its common mishearing, then try a correction:
+
+```bash
+npm install -g @ashlr/lexicon
+lexicon add Ashlr.AI Ashler
+lexicon normalize "ask Ashler to ship it" --json
+```
+
+Lexicon is the voice layer of the [Ashlr.AI ecosystem](#part-of-the-ashlrai-ecosystem): an agent-run software factory where the person dictating is the board member, not the operator.
 
 ## Set up for an agent
 
@@ -229,9 +231,25 @@ Homebrew formula: [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap
 
 Changing the code: [CONTRIBUTING.md](CONTRIBUTING.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-Lexicon is one of the open-source tools from [Ashlr.AI](https://ashlr.ai). It does not need the others to run. How it sits next to Phantom: [docs/PHANTOM-USAGE.md](docs/PHANTOM-USAGE.md).
-
 Pellucid is now part of lexicon. Pellucid's ambiguity engine - the INCOSE rule layer, span resolution and confidence calibration - lives in `src/ambiguity/`. The two-stage design it feeds is in [docs/design/two-stage-correction.md](docs/design/two-stage-correction.md).
+
+## Part of the Ashlr.AI ecosystem
+
+Phantom and its ecosystem form a fully autonomous, code-first, agent-native software factory. Agents run it; the human is a passive board member. The goal is open source RSI (recursive self improvement). Lexicon is the piece that makes sure the names a person dictates reach those agents spelled right.
+
+| Repo | Role |
+|---|---|
+| Phantom | The agent-run software factory the rest of the ecosystem serves. |
+| phantom-secrets | `phantom exec` gives an agent `phm_` placeholders instead of real provider keys. Lexicon needs no key and runs unchanged under it: [docs/PHANTOM-USAGE.md](docs/PHANTOM-USAGE.md). |
+| ashlr-plugin | The Claude Code plugin for agent tooling; `ashlr doctor` reads the companions below. |
+| Locus | Identity and tenant pinning for agents. |
+| **lexicon** | This repo: canonical spellings for what speech-to-text writes, fixed before an agent reads it. |
+| ashlr-md | Ships `mdopener-mcp`. |
+| ashlr-stack | The `stack` CLI; it owns the shared handshake contract and `stack doctor --ecosystem`. |
+
+Lexicon does not need any of the others to run. The tie between them is the [companion handshake](docs/ashlr-handshake.md): each tool answers `--ashlr-handshake --json` with its name, version, capabilities and health, and `lexicon doctor` reads Locus and ashlr-md that way and reports one info line for each.
+
+**How agents work on this repo.** Agents write and ship the code here. [AGENTS.md](AGENTS.md) is the entry point for any agent, whether it is installing Lexicon for a user or changing this codebase. [CLAUDE.md](CLAUDE.md) is the working brief: layout, conventions, and the generated files to rebuild before a commit. CI fails a change whose plugin bundle drifts from `src/` or whose docs state a stale tool, command or format count (`npm run check:facts`). `npm run fresh:check` catches a stale version pin in the docs.
 
 ## Roadmap and non-goals
 
