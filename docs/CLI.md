@@ -6,6 +6,8 @@ Generated from `lexicon --help` (v0.5.12) by `npm run docs:cli`. Do not edit by 
 
 Global option: `--cwd <dir>` sets the directory used to find the project `.lexicon.yaml`.
 
+For agents, append `--json=v1` to any command for one `{ schemaVersion: 1, ok, data }` document. `data` contains the command result, including `error` and `nextStep` on a refusal. Existing `--json` payloads stay compatible. See [CLI-JSON.md](CLI-JSON.md).
+
 ## Commands
 
 | Command | Does |
@@ -87,6 +89,7 @@ Commands:
 
 Start here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.
 Check an install: lexicon doctor
+For agents: append --json=v1 for { schemaVersion: 1, ok, data }.
 ```
 
 ## `lexicon init`
@@ -369,6 +372,8 @@ watch the clipboard (macOS, Linux, Windows) and correct dictated text in place
 Options:
   --once            correct the clipboard once and exit (for a keyboard shortcut
                     after dictating)
+  --json            print a JSON result with --once or --which; watching needs a
+                    one-shot mode
   --paste           with --once: send Cmd+V afterwards (macOS only; needs
                     Accessibility permission)
   --interval <ms>   poll interval in milliseconds (at least 20; a smaller value

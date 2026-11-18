@@ -5,6 +5,7 @@
  * fallback and all other commands use ./run.ts.
  */
 import { packageVersion } from '../util/package.js';
+import { jsonInvocation } from './json-output.js';
 
 const args = process.argv.slice(2);
 if (args.length === 1 && (args[0] === '--version' || args[0] === '-V' || args[0] === '-v')) {
@@ -13,7 +14,7 @@ if (args.length === 1 && (args[0] === '--version' || args[0] === '-V' || args[0]
 }
 
 const { isFastRead, tryFastRead } = await import('../daemon/fast-client.js');
-const result = isFastRead(args) ? await tryFastRead(args) : undefined;
+const result = jsonInvocation(args).version === undefined && isFastRead(args) ? await tryFastRead(args) : undefined;
 if (result) {
   process.stdout.on('error', (err: NodeJS.ErrnoException) => {
     if (err.code === 'EPIPE') process.exit(0);

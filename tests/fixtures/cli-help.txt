@@ -42,3 +42,4 @@ Commands:
 
 Start here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.
 Check an install: lexicon doctor
+For agents: append --json=v1 for { schemaVersion: 1, ok, data }.

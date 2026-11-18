@@ -25,6 +25,7 @@ import {
 } from './clipboard-backends.js';
 import type { ClipboardBackend, ClipboardBackendName, ClipboardExec } from './clipboard-backends.js';
 import { findOnPath } from '../util/which.js';
+import { jsonError } from '../cli/args.js';
 
 /** Options shared by the loop and once modes. */
 export interface ClipboardCommonOptions {
@@ -589,6 +590,7 @@ export async function runClipboardOnce(opts: ClipboardOnceOptions = {}): Promise
 // CLI entry (shared by `lexicon daemon` and the standalone script)
 
 export interface DaemonCommandOptions extends ClipboardDaemonOptions, ClipboardOnceOptions {
+  json?: boolean;
   /** Run once and exit instead of polling. */
   once?: boolean;
   /** Print the detected backend and exit. */
@@ -609,6 +611,11 @@ export async function runDaemonCommand(opts: DaemonCommandOptions = {}): Promise
   const platform = opts.platform ?? process.platform;
   const env = opts.env ?? process.env;
 
+  if (opts.json && (opts.expander || (!opts.once && !opts.which))) {
+    out(`${JSON.stringify(jsonError('JSON output needs a one-shot clipboard command', 'use lexicon daemon --once --json=v1 or lexicon daemon --which --json=v1'))}\n`);
+    return 1;
+  }
+
   if (opts.socketPath !== undefined && !opts.expander) {
     throw new Error('--socket works only with --expander; run: lexicon daemon --expander --socket <path>');
   }
@@ -626,6 +633,10 @@ export async function runDaemonCommand(opts: DaemonCommandOptions = {}): Promise
   if (opts.which) {
     try {
       const clipboard = await resolveClipboard(opts);
+      if (opts.json) {
+        out(`${JSON.stringify({ ok: true, backend: clipboard.name, description: clipboard.description })}\n`);
+        return 0;
+      }
       out(`clipboard backend: ${clipboard.name} (${clipboard.description})\n`);
       if (opts.paste === true || platform === 'darwin') {
         const osascript = await findOnPath('osascript', { env, platform });
@@ -634,6 +645,7 @@ export async function runDaemonCommand(opts: DaemonCommandOptions = {}): Promise
       return 0;
     } catch (e) {
       err(`no clipboard backend: ${message(e)}\n`);
+      if (opts.json) out(`${JSON.stringify(jsonError(message(e), 'install a clipboard backend, then run lexicon daemon --which --json=v1'))}\n`);
       return 1;
     }
   }
@@ -645,7 +657,8 @@ export async function runDaemonCommand(opts: DaemonCommandOptions = {}): Promise
   }
 
   if (opts.once) {
-    await runClipboardOnce(opts);
+    const result = await runClipboardOnce(opts.json ? { ...opts, quiet: true } : opts);
+    if (opts.json) out(`${JSON.stringify({ ok: true, ...result })}\n`);
     return 0;
   }
 
