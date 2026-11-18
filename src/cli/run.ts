@@ -3,11 +3,20 @@
  * `--version`, `-V` or `-v`, which index.ts answers without this module.
  */
 import { existsSync } from 'node:fs';
-import { Command, CommanderError } from 'commander';
+import { Command, CommanderError, Option } from 'commander';
 import { packageVersion } from '../util/package.js';
 import { buildHandshake, wantsHandshake } from './handshake.js';
-import { argvRequestsJson, CliRefusal, jsonFlagsOf, line, optsRequestJson, processIO, usageErrorJson } from './args.js';
+import { argvRequestsJson, CliRefusal, jsonError, jsonFlagsOf, line, optsRequestJson, processIO as terminalIO, usageErrorJson } from './args.js';
 import { buildProgram } from './program.js';
+import { jsonInvocation, versionedIO } from './json-output.js';
+
+const invocation = jsonInvocation(process.argv.slice(2));
+const versioned = invocation.version !== undefined;
+const processIO = versioned ? versionedIO(terminalIO) : terminalIO;
+if (versioned && invocation.version !== 'v1') {
+  line(processIO, JSON.stringify(jsonError(`unsupported JSON version: ${invocation.version}`, 'use --json=v1')));
+  process.exit(1);
+}
 
 // Companion handshake (docs/ashlr-handshake.md): before commander, one JSON line.
 if (wantsHandshake(process.argv.slice(2))) {
@@ -18,6 +27,20 @@ if (wantsHandshake(process.argv.slice(2))) {
 }
 
 const program = buildProgram(processIO);
+if (versioned) {
+  // Keep legacy --json payloads and human help intact. All commands accept
+  // the versioned transport, including those that must refuse protocol IO.
+  const enable = (cmd: Command): void => {
+    if (!cmd.options.some((o) => o.long === '--json')) cmd.addOption(new Option('--json').hideHelp());
+    cmd.configureOutput({ writeOut: (output) => line(processIO, JSON.stringify({ output })) });
+    for (const sub of cmd.commands) enable(sub);
+  };
+  enable(program);
+  const pack = program.commands.find((c) => c.name() === 'pack')!;
+  for (const cmd of [program, pack]) cmd.action(() => {
+    line(processIO, JSON.stringify({ ok: true, commands: cmd.commands.map((c) => c.name()) }));
+  });
+}
 // Status is the same health report, including JSON and exit codes.
 program.commands.find((command) => command.name() === 'doctor')!.alias('status');
 
@@ -60,6 +83,10 @@ process.stdout.on('error', (err: NodeJS.ErrnoException) => {
 let active: Command | undefined;
 program.hook('preAction', async (_thisCommand, actionCommand) => {
   active = actionCommand;
+  if (versioned) actionCommand.setOptionValue('json', true);
+  if (versioned && ['hook', 'mcp'].includes(actionCommand.name())) {
+    throw new CliRefusal(`${actionCommand.name()} uses its own stdout protocol`, `run lexicon ${actionCommand.name()} without --json=v1`);
+  }
   // `hook` must always exit 0 and ignores --cwd (the payload names the
   // directory); `mcp` takes its roots from the client.
   if (actionCommand.name() === 'hook' || actionCommand.name() === 'mcp') return;
@@ -69,7 +96,9 @@ program.hook('preAction', async (_thisCommand, actionCommand) => {
 });
 
 // `-v` is the version flag in node, npm and most CLIs; commander only knows -V.
-const argv = process.argv.length === 3 && process.argv[2] === '-v' ? [...process.argv.slice(0, 2), '--version'] : process.argv;
+const argv = [...process.argv.slice(0, 2), ...invocation.args];
+if (argv.length === 3 && argv[2] === '-v') argv[2] = '--version';
+if (versioned && invocation.args.length === 2 && invocation.args.includes('-v')) argv[argv.indexOf('-v')] = '--version';
 
 try {
   await program.parseAsync(argv);
@@ -88,12 +117,12 @@ try {
     process.exitCode = err.exitCode;
   } else if (err instanceof CliRefusal) {
     const { refuse } = await import('./io.js');
-    process.exitCode = refuse(processIO, optsRequestJson(active?.opts<{ json?: boolean; full?: boolean }>()), err.message, err.nextStep);
+    process.exitCode = refuse(processIO, versioned || optsRequestJson(active?.opts<{ json?: boolean; full?: boolean }>()), err.message, err.nextStep);
   } else {
     // fail() is the same `lexicon: <message>` line plus, for a lexicon file
     // that does not parse, the command that fixes it.
     // `--full` (list, harvest) implies --json, so its failure gets the document too.
     const { fail } = await import('./io.js');
-    process.exitCode = fail(processIO, err, optsRequestJson(active?.opts<{ json?: boolean; full?: boolean }>()));
+    process.exitCode = fail(processIO, err, versioned || optsRequestJson(active?.opts<{ json?: boolean; full?: boolean }>()));
   }
 }

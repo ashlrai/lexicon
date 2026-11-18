@@ -125,6 +125,7 @@ async function main(): Promise<void> {
   );
   out.push('');
   out.push('Global option: `--cwd <dir>` sets the directory used to find the project `.lexicon.yaml`.');
+  out.push('', 'For agents, append `--json=v1` to any command for one `{ schemaVersion: 1, ok, data }` document. `data` contains the command result, including `error` and `nextStep` on a refusal. Existing `--json` payloads stay compatible. See [CLI-JSON.md](CLI-JSON.md).');
   out.push('');
   out.push('## Commands');
   out.push('');

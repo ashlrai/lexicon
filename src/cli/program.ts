@@ -41,6 +41,7 @@ import type { TrustDeps } from './cmd-trust.js';
 import type { UninstallOptions } from './cmd-uninstall.js';
 
 interface DaemonCliOptions {
+  json?: boolean;
   interval: number;
   dryRun?: boolean;
   quiet?: boolean;
@@ -109,7 +110,7 @@ export function buildProgram(io: IO): Command {
     // No leading spaces: the e2e --help sweep reads indented lines as commands.
     .addHelpText(
       'after',
-      '\nStart here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.\nCheck an install: lexicon doctor',
+      '\nStart here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.\nCheck an install: lexicon doctor\nFor agents: append --json=v1 for { schemaVersion: 1, ok, data }.',
     );
 
   function withGlobals<T extends object>(opts: T): T & { cwd?: string } {
@@ -320,6 +321,7 @@ export function buildProgram(io: IO): Command {
     .command('daemon')
     .description('watch the clipboard (macOS, Linux, Windows) and correct dictated text in place')
     .option('--once', 'correct the clipboard once and exit (for a keyboard shortcut after dictating)')
+    .option('--json', 'print a JSON result with --once or --which; watching needs a one-shot mode')
     .option('--paste', 'with --once: send Cmd+V afterwards (macOS only; needs Accessibility permission)')
     .option('--interval <ms>', 'poll interval in milliseconds (at least 20; a smaller value is raised to 20, with a warning)', positiveIntOption('--interval', 250), 250)
     .option('--dry-run', 'report corrections without writing to the clipboard')
@@ -339,6 +341,7 @@ export function buildProgram(io: IO): Command {
       const { runDaemonCommand } = await import('../daemon/clipboard.js');
       done(
         await runDaemonCommand({
+          ...(opts.json ? { json: true, out: io.stdout, err: io.stderr } : {}),
           intervalMs: opts.interval,
           dryRun: opts.dryRun ?? false,
           quiet: opts.quiet ?? false,
