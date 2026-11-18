@@ -122,6 +122,7 @@ import {
   conflictLine,
   dim,
   ensureNewline,
+  errorExitCode,
   green,
   jsonError,
   jsonOk,
@@ -174,6 +175,7 @@ import { PromptClosedError, createPrompter, isInteractive, splitList } from './p
 import type { Prompter } from './prompt.js';
 import { errorMessage, isInputError } from '../util/errors.js';
 import { writeFileAtomic } from '../util/atomic.js';
+import { EXIT_NOT_ALLOWED, EXIT_NOT_FOUND } from './exit-codes.js';
 
 // ---------------------------------------------------------------------------
 // IO + shared helpers
@@ -538,7 +540,7 @@ export interface RemoveOptions extends CommonOptions {
   project?: boolean;
   /** Only the global lexicon (the mirror of `project`). */
   global?: boolean;
-  /** Print `{ canonical, removed }` as JSON (exit 1 still means not found). */
+  /** Print `{ canonical, removed }` as JSON (a miss still prints it, with code 2 for not found). */
   json?: boolean;
   /** Remove only this alias from the term, keeping the term. */
   alias?: string;
@@ -572,11 +574,11 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     const global = holders.find((h) => h.scope === 'global');
     if (opts.json) {
       const nextStep = global ? `run ${commandLine(['lexicon', 'remove', canonical, '--global'])} to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}` : PROJECT_TRUST_NEXT_STEP;
-      line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...(dry ? { dryRun: true } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) }));
+      line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep, EXIT_NOT_ALLOWED), canonical, removed: false, ...(dry ? { dryRun: true } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) }));
     }
     io.stderr(`lexicon: ${safeMessage(errorMessage(err))}\n`);
     if (global) io.stderr(`lexicon: to remove only the global copy (${safeMessage(global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--global'])}\n`);
-    return 1;
+    return EXIT_NOT_ALLOWED;
   }
   const from = removed ? (scope ? holders.find((h) => h.scope === scope) : holders[0]) : undefined;
   // The spelling the file held, not the one typed: `lexicon remove yod` removes "Yod".
@@ -600,15 +602,15 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
   const extra = { ...(dry ? { dryRun: true } : {}), ...(stillIn.length > 0 ? { stillIn } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
   if (opts.json) {
     // A miss is a failure document like every other --json refusal: `ok: false` and `error` lead it;
-    // a removal leads with `ok: true`.
-    const failure = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ''}`, missStep);
+    // a removal leads with `ok: true`. A miss is not found: exit code 2.
+    const failure = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ''}`, missStep, EXIT_NOT_FOUND);
     line(io, JSON.stringify(removed ? jsonOk({ ...dryRunPlan(dry), canonical: removedName, removed, ...extra }) : { ...failure, canonical, removed, ...extra }));
     if (!removed) io.stderr(notFound());
-    return removed ? 0 : 1;
+    return removed ? 0 : EXIT_NOT_FOUND;
   }
   if (!removed) {
     io.stderr(notFound());
-    return 1;
+    return EXIT_NOT_FOUND;
   }
   line(io, `${dry ? 'would remove' : 'removed'} ${bold(safe(removedName))}${from ? ` from ${safeMessage(from.path)}` : ''}`);
   for (const h of stillIn) line(io, stillInLine(removedName, h));
@@ -618,8 +620,8 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
 
 /**
  * `remove <canonical> --alias <alias>`: drop one alias and keep the term. An
- * unknown term or alias exits 1 (with `{ removed: false, error }` under
- * --json). When the skipped (untrusted) project file's copy of the term holds
+ * unknown term or alias exits 2, not found (with `{ removed: false, error }`
+ * under --json). When the skipped (untrusted) project file's copy of the term holds
  * the alias too, that copy is named (path only, `untrustedAliasHolder`) and
  * never edited: a `warn:` line, and `untrustedProject` under --json. A
  * refused untrusted project file (it comes first without a scope) prints the
@@ -675,6 +677,9 @@ async function runRemoveAlias(
   try {
     result = await removeAlias(canonical, alias, { ...(scope ? { scope } : {}), cwd, ...(dry ? { dryRun: true } : {}) });
   } catch (err) {
+    // A missed alias is not found (2), a refused untrusted project file is not
+    // allowed (3), anything else stays the catch-all (1).
+    const code = isProjectTrustError(err) ? EXIT_NOT_ALLOWED : isInputError(err) ? EXIT_NOT_FOUND : EXIT_USAGE;
     const message = errorMessage(err);
     // Compared as the store compares spellings (spellingKey: trimmed,
     // lowercased, NFC): `Cafe` plus U+0301 typed for a stored `Café` missed
@@ -693,7 +698,7 @@ async function runRemoveAlias(
         : isInputError(err) && !untrusted
           ? (emptyLexiconRemoveStep(loaded) ?? aliasMissStep(loaded, scope, canonical))
           : undefined;
-    if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere), canonical, alias, removed: false, ...extra }));
+    if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere, code), canonical, alias, removed: false, ...extra }));
     io.stderr(`lexicon: ${safeMessage(message)}\n`);
     if (elsewhere) io.stderr(`lexicon: ${safeMessage(elsewhere)}\n`);
     if (isProjectTrustError(err)) {
@@ -703,7 +708,7 @@ async function runRemoveAlias(
     } else if (untrusted) {
       io.stderr(`lexicon: ${untrustedAliasLine(canonical, alias, untrusted).replace(/^warn: /, '')}\n`);
     }
-    return 1;
+    return code;
   }
   const paths = result.files.map((f) => f.path);
   if (opts.json) {
@@ -1037,7 +1042,7 @@ export async function runHarvest(
   // --full is --json with one object on stdout instead of the bare array.
   const json = opts.json === true || opts.full === true;
   if (!existsSync(target)) {
-    return refuse(io, json, `harvest: path does not exist: ${target}`, 'pass a directory that exists, or leave the path out to harvest the current directory');
+    return refuse(io, json, `harvest: path does not exist: ${target}`, 'pass a directory that exists, or leave the path out to harvest the current directory', EXIT_NOT_FOUND);
   }
   // A file (package.json, a README) is refused here with the same hint: the
   // scan's own `not a directory` came with the generic next step.
@@ -1073,9 +1078,9 @@ export async function runHarvest(
       const status = await isTrusted({ path: projectPath, scope: 'project', lexicon: emptyLexicon(), exists: true }, store);
       if (status !== 'trusted') {
         const message = new ProjectTrustError(projectPath, status).message;
-        if (json) line(io, JSON.stringify({ ...jsonError(message, `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again`), added: false, path: projectPath, projectTrust: status }));
+        if (json) line(io, JSON.stringify({ ...jsonError(message, `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again`, EXIT_NOT_ALLOWED), added: false, path: projectPath, projectTrust: status }));
         io.stderr(`lexicon: ${safeMessage(message)}\n`);
-        return 1;
+        return EXIT_NOT_ALLOWED;
       }
     }
   }
@@ -1153,16 +1158,17 @@ export async function runHarvest(
       if (!json && isProjectTrustError(err)) throw err;
       const message = errorMessage(err);
       const hint = unreadableLexiconHint(message);
+      const code = errorExitCode(err);
       if (json) {
         // The one --json document for a write that failed: the error and the
         // counts (0: the batch writes all or none), never the candidate array.
         const where = filePath ? { path: filePath } : {};
-        line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where }));
+        line(io, JSON.stringify({ ...jsonError(message, hint, code), added: created + merged, created, merged, ...where }));
       }
       io.stderr(`lexicon: ${safeMessage(message)}\n`);
       if (hint) io.stderr(`lexicon: ${hint}\n`);
       io.stderr('lexicon: nothing was added: the candidates are written together, so none of them are in the project lexicon\n');
-      return 1;
+      return code;
     }
     const where = filePath ? ` in ${safe(filePath)}` : '';
     const summary = opts.dryRun

@@ -14,6 +14,7 @@ import { TERM_CATEGORIES, commandLine, isProjectTrustError, sanitizeForDisplay, 
 import type { LearnConflict, LoadedLexicon, TermCategory, TermHolder } from '../core/index.js';
 import { errorMessage } from '../util/errors.js';
 import { CliRefusal, printJsonError, type IO } from './args.js';
+import { EXIT_NOT_ALLOWED, EXIT_NOT_FOUND, EXIT_USAGE } from './exit-codes.js';
 import { unreadableLexiconEdit } from './lexicon-edit-hint.js';
 
 // Help and usage-error helpers live in args.ts so --help does not load this
@@ -239,20 +240,34 @@ export function renderTable(
 // ---------------------------------------------------------------------------
 
 /**
+ * The exit code for a thrown error (exit-codes.ts): a refused project write
+ * is not allowed (3), an unknown pack is not found (2), everything else is a
+ * usage error or catch-all (1). Shared by fail() and the handlers that catch
+ * and classify themselves, so the `code` in the `--json` document and the
+ * process exit code never disagree.
+ */
+export function errorExitCode(err: unknown): number {
+  if (isProjectTrustError(err)) return EXIT_NOT_ALLOWED;
+  if (err instanceof Error && err.name === 'PackNotFoundError') return EXIT_NOT_FOUND;
+  return EXIT_USAGE;
+}
+
+/**
  * The house style for a failed command: one `lexicon: <message>` line on
- * stderr, exit code 1. With `json` true (the command's `--json`) the
- * `{ ok: false, error, nextStep }` document goes to stdout as well, `nextStep`
+ * stderr, exit code 1 (3 for a refused project write, 2 for an unknown pack;
+ * see errorExitCode). With `json` true (the command's `--json`) the
+ * `{ ok: false, code, error, nextStep }` document goes to stdout as well, `nextStep`
  * being the unreadable-lexicon hint when there is one, PROJECT_TRUST_NEXT_STEP
  * for a refused project write, else DEFAULT_NEXT_STEP. Handlers `return fail(io, err)` rather than throwing, so
  * the commander wiring in index.ts stays a thin pass-through of exit codes.
  */
-export function fail(io: IO, err: unknown, json?: boolean): number {
+export function fail(io: IO, err: unknown, json?: boolean, code: number = errorExitCode(err)): number {
   const message = errorMessage(err);
   const hint = unreadableLexiconHint(message) ?? ownNextStep(err);
-  if (json) printJsonError(io, message, hint ?? (isProjectTrustError(err) ? PROJECT_TRUST_NEXT_STEP : undefined));
+  if (json) printJsonError(io, message, hint ?? (isProjectTrustError(err) ? PROJECT_TRUST_NEXT_STEP : undefined), code);
   io.stderr(`lexicon: ${safeMessage(message)}\n`);
   if (hint) io.stderr(`lexicon: ${safeMessage(hint)}\n`);
-  return 1;
+  return code;
 }
 
 /** The `nextStep` of a pack name that is neither a starter pack nor a community ref. */
@@ -326,13 +341,14 @@ export function cwdOptionProblem(cwd: string | undefined): CliRefusal | undefine
 /**
  * A refusal that is not an exception: the `lexicon: <error>` line (and a
  * `lexicon: <nextStep>` line) on stderr and, under --json, the `JsonError`
- * document on stdout. Exit code 1.
+ * document on stdout. Returns `code` (exit-codes.ts), 1 (usage) by default,
+ * so the caller can `return refuse(...)` straight through.
  */
-export function refuse(io: IO, json: boolean | undefined, error: string, nextStep?: string): number {
-  if (json) printJsonError(io, error, nextStep);
+export function refuse(io: IO, json: boolean | undefined, error: string, nextStep?: string, code: number = EXIT_USAGE): number {
+  if (json) printJsonError(io, error, nextStep, code);
   io.stderr(`lexicon: ${safeMessage(error)}\n`);
   if (nextStep) io.stderr(`lexicon: ${safeMessage(nextStep)}\n`);
-  return 1;
+  return code;
 }
 
 /**
