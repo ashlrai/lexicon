@@ -258,7 +258,7 @@ Phantom and its ecosystem form a fully autonomous, code-first, agent-native soft
 
 Lexicon does not need any of the others to run. The tie between them is the [companion handshake](docs/ashlr-handshake.md): each tool answers `--ashlr-handshake --json` with its name, version, capabilities and health, and `lexicon doctor` reads Locus and ashlr-md that way and reports one info line for each.
 
-**How agents work on this repo.** Agents write and ship the code here. [AGENTS.md](AGENTS.md) is the entry point for any agent, whether it is installing Lexicon for a user or changing this codebase. [CLAUDE.md](CLAUDE.md) is the working brief: layout, conventions, and the generated files to rebuild before a commit. CI fails a change whose plugin bundle drifts from `src/` or whose docs state a stale tool, command or format count (`npm run check:facts`). `npm run fresh:check` catches a stale version pin in the docs.
+**How agents work on this repo.** Agents write and ship the code here. [AGENTS.md](AGENTS.md) is the entry point for any agent, whether it is installing Lexicon for a user or changing this codebase. [CLAUDE.md](CLAUDE.md) is the working brief: layout, conventions, and the generated files to rebuild before a commit. A pull request gets one required check, `CI Gate`: typecheck, build, the crypto policy check, the redaction test and the diff secret scans. Plugin bundle drift from `src/` and docs that state a stale tool, command or format count (`npm run check:facts`) are caught only by the daily full suite on `main`, so run `npm run build:bundle` and `npm run check:facts` locally when CLAUDE.md says to. `npm run fresh:check` catches a stale version pin in the docs.
 
 ## Roadmap and non-goals
 
