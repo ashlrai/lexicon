@@ -30,6 +30,33 @@ import {
 
 const CONFIG_JSON = JSON.stringify(MCP_SERVER_CONFIG, null, 2);
 
+// Mirrors the README's "Part of the Ashlr.AI ecosystem" section and the repo's
+// llms.txt. The companion names match DOCTOR_COMPANIONS in src/cli/companions.ts.
+const ECOSYSTEM = `## Part of the Ashlr.AI ecosystem
+
+Phantom and its ecosystem form a fully autonomous, code-first, agent-native
+software factory, run by agents with the human as a passive board member,
+chasing open source RSI (recursive self improvement). Lexicon is the voice
+layer: it makes sure the names a person dictates reach those agents spelled
+right.
+
+- Phantom: the agent-run software factory the rest of the ecosystem serves.
+- phantom-secrets: \`phantom exec\` gives an agent \`phm_\` placeholders instead
+  of real provider keys. Lexicon needs no key and runs unchanged under it.
+- ashlr-plugin: the Claude Code plugin for agent tooling.
+- Locus: identity and tenant pinning for agents.
+- lexicon: this project.
+- ashlr-md: ships \`mdopener-mcp\`.
+- ashlr-stack: the \`stack\` CLI; it owns the shared handshake contract.
+
+Lexicon runs without any of the others. \`lexicon doctor\` asks \`locus\` and
+\`mdopener-mcp\` for \`--ashlr-handshake --json\` and reports one info line for
+each; a missing companion is not an error.
+
+Agents write and ship this code. To change it, read ${REPO}/blob/main/AGENTS.md,
+then ${REPO}/blob/main/CLAUDE.md.
+`;
+
 export function llmsTxt(): string {
   return `# Lexicon
 
@@ -52,6 +79,7 @@ MCP server config, for any MCP client:
 
 ${CONFIG_JSON.split('\n').map((l) => `    ${l}`).join('\n')}
 
+${ECOSYSTEM}
 ## Start here
 
 - [Full text for models](${SITE_URL}/llms-full.txt): everything below, in one fetch.
@@ -270,6 +298,8 @@ ${DOC('SECURITY.md')}
 
 ${FAQ.map((f) => `### ${f.q}\n\n${f.a}`).join('\n\n')}
 
+--------------------------------------------------------------------------------
+${ECOSYSTEM}
 --------------------------------------------------------------------------------
 ## Verify an install worked
 
