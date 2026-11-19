@@ -54,7 +54,10 @@ Lexicon runs without any of the others. \`lexicon doctor\` asks \`locus\` and
 each; a missing companion is not an error.
 
 Agents write and ship this code. To change it, read ${REPO}/blob/main/AGENTS.md,
-then ${REPO}/blob/main/CLAUDE.md.
+then ${REPO}/blob/main/CLAUDE.md. Contributors and their agents follow the same
+path: ${REPO}/blob/main/CONTRIBUTING.md#contribute-with-an-agent (fork, \`npm ci\`,
+\`lexicon test-select\`, the commands the required \`CI Gate\` check runs, the
+merge queue).
 `;
 
 export function llmsTxt(): string {
