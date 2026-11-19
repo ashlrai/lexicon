@@ -58,14 +58,11 @@ exist on your operating system is [PLATFORMS.md](PLATFORMS.md).
 | [BENCH-DAEMON.md](BENCH-DAEMON.md) | Resident daemon read latency on one macOS machine, and the gap to the espanso baseline from issue #220 |
 | [RESEARCH.md](RESEARCH.md) | Why this layer exists at all, the market read, and the kill criteria |
 | [GROWING.md](GROWING.md) | The four ways terms get in after the first one: a starter pack, your repo, your corrections, your voice history |
-| [harvest-markers.md](harvest-markers.md) | How harvest treats TODO-style markers and their casing |
+| [harvest-markers.md](harvest-markers.md) | The TODO-style marker literals, with source links, and how harvest treats them and their casing |
 | [harvest-marker-boundary-examples.md](harvest-marker-boundary-examples.md) | Tested source identifier boundary examples near markers |
 | [harvest-marker-boundaries.md](harvest-marker-boundaries.md) | Why the marker lookup compares whole candidates, and how the identifier scan finds them |
 | [harvest-marker-case-behavior.md](harvest-marker-case-behavior.md) | Exact-case marker matching, with worked inputs and results |
 | [harvest-marker-examples.md](harvest-marker-examples.md) | A sample source file and what harvest returns for it |
-| [harvest-marker-reference.md](harvest-marker-reference.md) | Configured marker literals and links to their source |
-| [harvest-marker-catalog.md](harvest-marker-catalog.md) | The five configured marker strings, in one table |
-| [harvest-marker-inventory.md](harvest-marker-inventory.md) | Marker literals and their role in harvest |
 | [SUGGEST.md](SUGGEST.md) | What `lexicon suggest` mines from your voice history, and how it scores |
 
 ## Reference
