@@ -122,7 +122,6 @@ import {
   conflictLine,
   dim,
   ensureNewline,
-  errorExitCode,
   green,
   jsonError,
   jsonOk,
@@ -175,7 +174,7 @@ import { PromptClosedError, createPrompter, isInteractive, splitList } from './p
 import type { Prompter } from './prompt.js';
 import { errorMessage, isInputError } from '../util/errors.js';
 import { writeFileAtomic } from '../util/atomic.js';
-import { EXIT_NOT_ALLOWED, EXIT_NOT_FOUND, EXIT_USAGE } from './exit-codes.js';
+import { EXIT_FAILURE, EXIT_NOT_FOUND, EXIT_USAGE } from './exit-codes.js';
 
 // ---------------------------------------------------------------------------
 // IO + shared helpers
@@ -574,11 +573,11 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
     const global = holders.find((h) => h.scope === 'global');
     if (opts.json) {
       const nextStep = global ? `run ${commandLine(['lexicon', 'remove', canonical, '--global'])} to remove only the global copy, or ${PROJECT_TRUST_NEXT_STEP}` : PROJECT_TRUST_NEXT_STEP;
-      line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep, EXIT_NOT_ALLOWED), canonical, removed: false, ...(dry ? { dryRun: true } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) }));
+      line(io, JSON.stringify({ ...jsonError(errorMessage(err), nextStep), canonical, removed: false, ...(dry ? { dryRun: true } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) }));
     }
     io.stderr(`lexicon: ${safeMessage(errorMessage(err))}\n`);
     if (global) io.stderr(`lexicon: to remove only the global copy (${safeMessage(global.path)}): ${shownCommand(['lexicon', 'remove', canonical, '--global'])}\n`);
-    return EXIT_NOT_ALLOWED;
+    return EXIT_FAILURE;
   }
   const from = removed ? (scope ? holders.find((h) => h.scope === scope) : holders[0]) : undefined;
   // The spelling the file held, not the one typed: `lexicon remove yod` removes "Yod".
@@ -602,8 +601,8 @@ export async function runRemove(canonical: string, opts: RemoveOptions, io: IO):
   const extra = { ...(dry ? { dryRun: true } : {}), ...(stillIn.length > 0 ? { stillIn } : {}), ...(untrusted ? { untrustedProject: untrusted } : {}) };
   if (opts.json) {
     // A miss is a failure document like every other --json refusal: `ok: false` and `error` lead it;
-    // a removal leads with `ok: true`. A miss is not found: exit code 2.
-    const failure = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ''}`, missStep, EXIT_NOT_FOUND);
+    // a removal leads with `ok: true`.
+    const failure = removed ? {} : jsonError(`term "${canonical}" not found${scope ? ` in ${scope} lexicon` : ''}`, missStep);
     line(io, JSON.stringify(removed ? jsonOk({ ...dryRunPlan(dry), canonical: removedName, removed, ...extra }) : { ...failure, canonical, removed, ...extra }));
     if (!removed) io.stderr(notFound());
     return removed ? 0 : EXIT_NOT_FOUND;
@@ -677,9 +676,8 @@ async function runRemoveAlias(
   try {
     result = await removeAlias(canonical, alias, { ...(scope ? { scope } : {}), cwd, ...(dry ? { dryRun: true } : {}) });
   } catch (err) {
-    // A missed alias is not found (2), a refused untrusted project file is not
-    // allowed (3), anything else stays the catch-all (1).
-    const code = isProjectTrustError(err) ? EXIT_NOT_ALLOWED : isInputError(err) ? EXIT_NOT_FOUND : EXIT_USAGE;
+    // Every failure exits 1 (exit-codes.ts); the names say why.
+    const code = isProjectTrustError(err) ? EXIT_FAILURE : isInputError(err) ? EXIT_NOT_FOUND : EXIT_USAGE;
     const message = errorMessage(err);
     // Compared as the store compares spellings (spellingKey: trimmed,
     // lowercased, NFC): `Cafe` plus U+0301 typed for a stored `Café` missed
@@ -698,7 +696,7 @@ async function runRemoveAlias(
         : isInputError(err) && !untrusted
           ? (emptyLexiconRemoveStep(loaded) ?? aliasMissStep(loaded, scope, canonical))
           : undefined;
-    if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere, code), canonical, alias, removed: false, ...extra }));
+    if (opts.json) line(io, JSON.stringify({ ...jsonError(message, elsewhere), canonical, alias, removed: false, ...extra }));
     io.stderr(`lexicon: ${safeMessage(message)}\n`);
     if (elsewhere) io.stderr(`lexicon: ${safeMessage(elsewhere)}\n`);
     if (isProjectTrustError(err)) {
@@ -1078,9 +1076,9 @@ export async function runHarvest(
       const status = await isTrusted({ path: projectPath, scope: 'project', lexicon: emptyLexicon(), exists: true }, store);
       if (status !== 'trusted') {
         const message = new ProjectTrustError(projectPath, status).message;
-        if (json) line(io, JSON.stringify({ ...jsonError(message, `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again`, EXIT_NOT_ALLOWED), added: false, path: projectPath, projectTrust: status }));
+        if (json) line(io, JSON.stringify({ ...jsonError(message, `review ${projectPath} and run lexicon trust, then run lexicon harvest --add again`), added: false, path: projectPath, projectTrust: status }));
         io.stderr(`lexicon: ${safeMessage(message)}\n`);
-        return EXIT_NOT_ALLOWED;
+        return EXIT_FAILURE;
       }
     }
   }
@@ -1158,12 +1156,12 @@ export async function runHarvest(
       if (!json && isProjectTrustError(err)) throw err;
       const message = errorMessage(err);
       const hint = unreadableLexiconHint(message);
-      const code = errorExitCode(err);
+      const code = EXIT_FAILURE;
       if (json) {
         // The one --json document for a write that failed: the error and the
         // counts (0: the batch writes all or none), never the candidate array.
         const where = filePath ? { path: filePath } : {};
-        line(io, JSON.stringify({ ...jsonError(message, hint, code), added: created + merged, created, merged, ...where }));
+        line(io, JSON.stringify({ ...jsonError(message, hint), added: created + merged, created, merged, ...where }));
       }
       io.stderr(`lexicon: ${safeMessage(message)}\n`);
       if (hint) io.stderr(`lexicon: ${hint}\n`);

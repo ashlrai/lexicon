@@ -7,6 +7,7 @@
 import { Command, InvalidArgumentError } from 'commander';
 import type { ErrorOptions } from 'commander';
 import { packageVersion } from '../util/package.js';
+import { exitCodesHelpText } from './exit-codes.js';
 import { EXPORT_MAX_LIMIT, HARVEST_MAX_LIMIT, LIMITS, SUGGEST_MAX_LIMIT, AUTO_APPLY_CONFIDENCE, IMPORT_FORMATS } from '../core/caps.js';
 import { parseBackendName } from '../daemon/clipboard-backends.js';
 import type { ClipboardBackendName } from '../daemon/clipboard-backends.js';
@@ -110,7 +111,7 @@ export function buildProgram(io: IO): Command {
     // No leading spaces: the e2e --help sweep reads indented lines as commands.
     .addHelpText(
       'after',
-      '\nStart here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.\nCheck an install: lexicon doctor\nFor agents: append --json=v1 for { schemaVersion: 1, ok, data }.',
+      `\nStart here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.\nCheck an install: lexicon doctor\nFor agents: append --json=v1 for { schemaVersion: 1, ok, data }.\n\n${exitCodesHelpText()}`,
     );
 
   function withGlobals<T extends object>(opts: T): T & { cwd?: string } {
