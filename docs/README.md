@@ -35,6 +35,7 @@ exist on your operating system is [PLATFORMS.md](PLATFORMS.md).
 | [firefox-extension-readiness.md](firefox-extension-readiness.md) | Firefox packaging evidence and open review questions | |
 | [firefox-extension-publication-questions.md](firefox-extension-publication-questions.md) | Open Firefox publication and review questions | |
 | [firefox-addon-submission-checklist.md](firefox-addon-submission-checklist.md) | Verification steps for a listed Firefox AMO submission | |
+| [firefox-extension-distribution.md](firefox-extension-distribution.md) | Issue #12's proposed addons.mozilla.org listing: what is proposed and what has not been done | |
 | [MACOS-APP.md](MACOS-APP.md) | LexiconBar: any macOS app, via the Accessibility API | |
 | [WINDOWS-APP.md](WINDOWS-APP.md) | The tray app: any Windows app, via UI Automation. Built and unit-tested, never yet run on Windows | |
 | [LOCAL-API.md](LOCAL-API.md) | The loopback HTTP API: the browser extension is its main client, then LexiconBar, Shortcuts, Raycast, Alfred and scripts | |
@@ -54,11 +55,16 @@ exist on your operating system is [PLATFORMS.md](PLATFORMS.md).
 | [BENCHMARK.md](BENCHMARK.md) | The accuracy measurements: corpora, method, results, and what still fails |
 | [BENCH-NON-ENGLISH.md](BENCH-NON-ENGLISH.md) | The generated non-English name report: per-language hit rates beside the English baseline |
 | [BENCHMARKS.md](BENCHMARKS.md) | Install time, latency and memory next to espanso and whisper.cpp, measured on one Linux VM |
+| [BENCH-DAEMON.md](BENCH-DAEMON.md) | Resident daemon read latency on one macOS machine, and the gap to the espanso baseline from issue #220 |
 | [RESEARCH.md](RESEARCH.md) | Why this layer exists at all, the market read, and the kill criteria |
 | [GROWING.md](GROWING.md) | The four ways terms get in after the first one: a starter pack, your repo, your corrections, your voice history |
 | [harvest-markers.md](harvest-markers.md) | How harvest treats TODO-style markers and their casing |
 | [harvest-marker-boundary-examples.md](harvest-marker-boundary-examples.md) | Tested source identifier boundary examples near markers |
+| [harvest-marker-boundaries.md](harvest-marker-boundaries.md) | Why the marker lookup compares whole candidates, and how the identifier scan finds them |
+| [harvest-marker-case-behavior.md](harvest-marker-case-behavior.md) | Exact-case marker matching, with worked inputs and results |
+| [harvest-marker-examples.md](harvest-marker-examples.md) | A sample source file and what harvest returns for it |
 | [harvest-marker-reference.md](harvest-marker-reference.md) | Configured marker literals and links to their source |
+| [harvest-marker-catalog.md](harvest-marker-catalog.md) | The five configured marker strings, in one table |
 | [harvest-marker-inventory.md](harvest-marker-inventory.md) | Marker literals and their role in harvest |
 | [SUGGEST.md](SUGGEST.md) | What `lexicon suggest` mines from your voice history, and how it scores |
 
@@ -77,21 +83,30 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | Page | What it covers | Also listed under |
 |---|---|---|
 | [CLI.md](CLI.md) | Every command and flag, generated from `--help` | |
+| [CLI-JSON.md](CLI-JSON.md) | The versioned `--json=v1` envelope (`schemaVersion`, `ok`, `data`) for agents and scripts | |
+| [doctor-fix.md](doctor-fix.md) | `lexicon doctor --fix`: the dry-run preview, `--apply`, and the `--json` plan | |
+| [ashlr-handshake.md](ashlr-handshake.md) | `lexicon --ashlr-handshake`: the JSON contract shared with Locus, ashlr-stack, ashlr-plugin and ashlr-md | |
+| [PUBLIC-API.md](PUBLIC-API.md) | Every runtime value and type exported by `@ashlr/lexicon` | |
 | [source-versus-npm-commands.md](source-versus-npm-commands.md) | Dated npm 0.5.4 and source command differences, with version checks | |
 | [MCP.md](MCP.md) | Every tool, resource and prompt, with arguments and return shapes | Use it with |
 | [aliases-endpoint-example.md](aliases-endpoint-example.md) | Alias suggestions during onboarding | |
 | [aliases-endpoint-edge-cases.md](aliases-endpoint-edge-cases.md) | Missing and unknown canonical names in alias suggestions | |
 | [aliases-onboarding-reference.md](aliases-onboarding-reference.md) | Suggesting and reviewing aliases in an onboarding form | |
 | [aliases-query-examples.md](aliases-query-examples.md) | Local API alias suggestion queries and responses | |
+| [aliases-api-examples.md](aliases-api-examples.md) | `GET /aliases` requests and responses against a running `lexicon serve` | |
+| [aliases-endpoint-examples.md](aliases-endpoint-examples.md) | The `canonical` query parameter, URL encoding and example responses | |
+| [aliases-response-reference.md](aliases-response-reference.md) | `GET /aliases` request and response fields | |
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Get started |
 | [contract-limits-reference.md](contract-limits-reference.md) | Schema limits, units and scope | |
 | [schema-limit-reference.md](schema-limit-reference.md) | File schema limits and their relationship to the contract | |
 | [term-capacity-reference.md](term-capacity-reference.md) | Term and alias count limits versus text-length limits, with sources | |
 | [schema-collection-limits.md](schema-collection-limits.md) | Alias and term collection limits and validation definitions | |
+| [schema-alias-count-boundary.md](schema-alias-count-boundary.md) | What validation reports at and over the 64-entry list cap | |
 | [schema-text-limits.md](schema-text-limits.md) | Notes and phonetic text limits, counting and examples | |
 | [contract-term-limits.md](contract-term-limits.md) | Contract term limits, affected fields and counting rules | |
 | [contract-limit-examples.md](contract-limit-examples.md) | Executable examples at and beyond the schema limits | |
 | [schema-error-examples.md](schema-error-examples.md) | Reading invalid code unit errors and shortened term names | |
+| [schema-unicode-error-examples.md](schema-unicode-error-examples.md) | Complete errors for unpaired surrogates, U+FFFE and U+FFFF | |
 | [schema-first-invalid-unit.md](schema-first-invalid-unit.md) | Which invalid code unit a schema error reports first | |
 | [schema-error-preview.md](schema-error-preview.md) | How schema errors escape and shorten term-name previews | |
 | [schema-error-preview-reference.md](schema-error-preview-reference.md) | Exact term-name preview construction and UTF-16 boundaries | |
@@ -122,6 +137,8 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [RELEASING.md](RELEASING.md) | Cutting a release: npm, GitHub assets, the Homebrew bump |
 | [DISTRIBUTION.md](DISTRIBUTION.md) | Where Lexicon gets listed so people and agents find it |
 | [LANDING.md](LANDING.md) | The `web/` landing page: what it claims and how it deploys |
+| [metrics-copy.md](metrics-copy.md) | Landing-page number copy, each figure with the command that computes it; not applied to the site |
+| [DEEPWIKI.md](DEEPWIKI.md) | The `.devin/wiki.json` config that guides DeepWiki's generated pages |
 
 ## Internals
 
@@ -133,6 +150,7 @@ Design notes and live records. You do not need these to use Lexicon.
 | [expander-boundary-map.md](expander-boundary-map.md) | Existing correction surfaces, the resident expander and open platform integration boundaries |
 | [DOGFOOD.md](DOGFOOD.md) | A live run of the hooks and MCP server against the real Claude Code CLI, and the bugs it found |
 | [DOGFOOD-AGENT-NATIVE.md](DOGFOOD-AGENT-NATIVE.md) | The same treatment for the agent-native onboarding tools |
+| [PQ-READINESS.md](PQ-READINESS.md) | What cryptography Lexicon uses today, the `check:crypto` scan, and what a post-quantum migration would touch |
 | [resident-expander-scope.md](resident-expander-scope.md) | The scope outline for issue #220: the proposed system-wide expander, the pieces that exist, and the boundary left to build |
 | [daemon-acceptance-criteria.md](daemon-acceptance-criteria.md) | Issue #220's acceptance record: what the opt-in resident expander observably does, and which OS-integration decisions stay open |
 | [daemon-scope.md](daemon-scope.md) | Issue #220's resident expander scope, current boundary and open decisions |
@@ -146,10 +164,10 @@ Design notes and live records. You do not need these to use Lexicon.
 ## Not built: commercial planning
 
 Nothing in this section describes software you can run. Lexicon is MIT-licensed
-and everything it does today is free; these three pages are the working papers
+and everything it does today is free; these four pages are the working papers
 for a paid tier that does not exist, kept in the open because deciding whether
 to sell, and what, is a decision the people using this deserve to watch. Each
-one says so at the top. If you came here to use Lexicon, you can skip all three
+one says so at the top. If you came here to use Lexicon, you can skip all four
 and lose nothing.
 
 | Page | What it covers |
@@ -157,6 +175,7 @@ and lose nothing.
 | [COMMERCIAL.md](COMMERCIAL.md) | Whether to charge at all, for what, and at what price. Its own conclusion is "do not sell yet" |
 | [ENTERPRISE.md](ENTERPRISE.md) | The same proposal written for someone evaluating it at a company, with the shipped part separated from the planned part |
 | [TEAM-SYNC.md](TEAM-SYNC.md) | The engineering scope for the one paid feature proposed: a hosted team lexicon layer. None of it is in `src/` |
+| [pricing-content.md](pricing-content.md) | Copy and structure for a landing-page pricing section, with the reasoning in COMMERCIAL.md. The Team and Enterprise tiers it describes do not exist |
 
 ## Also at the repository root
 
