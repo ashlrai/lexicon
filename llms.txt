@@ -69,7 +69,7 @@ Phantom and its ecosystem form a fully autonomous, code-first, agent-native soft
 
 Lexicon runs without any of the others. `lexicon doctor` asks `locus` and `mdopener-mcp` for `--ashlr-handshake --json` and reports one info line for each; a missing companion is not an error.
 
-Agents write and ship this code. To change it, read [AGENTS.md](AGENTS.md), then [CLAUDE.md](CLAUDE.md).
+Agents write and ship this code. To change it, read [AGENTS.md](AGENTS.md), then [CLAUDE.md](CLAUDE.md). Contributors and their agents follow the same path: [Contribute with an agent](CONTRIBUTING.md#contribute-with-an-agent) (fork, `npm ci`, `lexicon test-select`, the commands the required `CI Gate` check runs, the merge queue).
 
 ## Start here
 

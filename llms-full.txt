@@ -194,7 +194,7 @@ Phantom and its ecosystem form a fully autonomous, code-first, agent-native soft
 
 Lexicon runs without any of the others. `lexicon doctor` asks `locus` and `mdopener-mcp` for `--ashlr-handshake --json` and reports one info line for each; a missing companion is not an error. The contract: docs/ashlr-handshake.md.
 
-Agents write and ship this code. To change it, read AGENTS.md, then CLAUDE.md (layout, conventions, generated files). CI fails a change whose plugin bundle drifts from src/ or whose docs state a stale count (`npm run check:facts`).
+Agents write and ship this code. To change it, read AGENTS.md, then CLAUDE.md (layout, conventions, generated files). Contributors and their agents follow the same path: CONTRIBUTING.md, "Contribute with an agent" (fork, `npm ci`, `lexicon test-select`, the commands the required `CI Gate` check runs, the merge queue). A pull request gets one required check, `CI Gate`: typecheck, build, the crypto policy check, the redaction test and the diff secret scans. Plugin bundle drift and stale doc counts (`npm run check:facts`) are caught only by the daily full suite on main, so run `npm run build:bundle` and `npm run check:facts` locally when CLAUDE.md says to.
 
 --------------------------------------------------------------------------------
 ## Counts, from the source
