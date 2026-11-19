@@ -11,6 +11,12 @@ or from the unsigned release zip. See [Firefox notes](EXTENSION.md#firefox-notes
 and the [roadmap](../README.md#roadmap-and-non-goals), which still says the
 extension is not on Firefox Add-ons.
 
+This page is the single record for issue #12: what the issue asks, where the
+repository stands, what maintainers must establish, and the submission
+checklist. It is not evidence
+of an AMO submission, approval, signing, or publication, and not a submission
+or publication in itself.
+
 ## What the issue asks
 
 The issue (opened September 20, 2026, labeled `help wanted` and `platform`)
@@ -100,8 +106,52 @@ settled or that a submission has happened:
    and where the listing URL and status are recorded before EXTENSION.md and
    the README roadmap change.
 
-The rest of the issue #12 record lives in
-[distribution scope](firefox-distribution-scope.md),
-[readiness](firefox-extension-readiness.md),
-[publication questions](firefox-extension-publication-questions.md) and the
-[submission checklist](firefox-addon-submission-checklist.md).
+## Submission checklist
+
+The target is a listed Firefox Add-ons (AMO) listing, submitted through
+Mozilla's "On this site" path. All boxes are unverified until a maintainer
+records evidence for them. Record the candidate revision, version, artifact
+checksum, owner, dates and evidence links with the submission record.
+
+### Candidate and review materials
+
+- [ ] Claim the work on issue #12 and settle the AMO account owner and the
+  long-term Gecko ID `lexicon@ashlr.ai`.
+- [ ] From the candidate revision, run `npm ci` and `npm run build:extension`.
+  Verify that `extension/lexicon-extension-firefox.zip` was created, inspect
+  its root manifest and record its checksum. Do not upload the Chromium zip.
+- [ ] Run `npx web-ext lint --source-dir extension/dist-firefox` and fix every
+  error; investigate warnings.
+- [ ] Prepare the source archive and reviewer build instructions. The build
+  bundles with esbuild and minifies `core.js`, so Mozilla needs the source:
+  the revision or tag, `package-lock.json`, the build scripts, the Node
+  version and the exact command. Rebuild in a clean environment and compare
+  the output with the candidate zip.
+- [ ] Run the [manual checklist](EXTENSION.md#manual-checklist) in a clean
+  Firefox profile on the supported versions, including permanent install,
+  restart, upgrade, pairing on other ports, opt-in Any site, and permission
+  revocation and regrant. Resolve failures.
+
+### Listing and privacy
+
+- [ ] Write the listing (name, summary, description, categories, license,
+  support contact, screenshots) and check every claim against the candidate,
+  including when the local server is needed.
+- [ ] Justify `storage`, `activeTab`, `scripting`, the host permissions and
+  optional `<all_urls>` in the listing, with the loopback explanation the issue
+  asks for.
+- [ ] Check the data declarations `personalCommunications`, `websiteContent`
+  and `authenticationInfo` against actual behavior, and publish a privacy
+  policy covering loopback transmission, use and retention.
+- [ ] Write reviewer notes covering setup, pairing, both modes and the build.
+  Use test data; never include a real user's bearer token.
+
+### Submission and follow-up
+
+- [ ] Upload the verified Firefox zip in the AMO Developer Hub on the listed
+  path, attach the source, record the validation result, version and status,
+  and answer review feedback.
+- [ ] Verify the signed install and update from the live listing, record its
+  URL, then add "Publishing to AMO" to EXTENSION.md and RELEASING.md and
+  replace the `about:debugging` instructions and the README roadmap bullet.
+  Future updates must go through the same AMO add-on.
