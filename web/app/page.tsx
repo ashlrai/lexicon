@@ -1,6 +1,7 @@
 import { Clip } from '@/components/Clip';
 import { CommandLine } from '@/components/Copy';
 import { CorrectionProof } from '@/components/CorrectionProof';
+import { Ecosystem } from '@/components/Ecosystem';
 import { Faq } from '@/components/Faq';
 import { HowItWorks } from '@/components/HowItWorks';
 import { Install } from '@/components/Install';
@@ -99,6 +100,7 @@ export default async function Page() {
         <ForAgents />
         <Faq />
         <OpenSource />
+        <Ecosystem />
       </main>
 
       <Footer />
@@ -1138,6 +1140,9 @@ function Footer() {
             </a>
             <a className="link-quiet" href={`${REPO}/blob/main/LICENSE`}>
               MIT
+            </a>
+            <a className="link-quiet" href="#ecosystem">
+              Ecosystem
             </a>
             <a className="link-quiet" href="https://ashlr.ai">
               Ashlr.AI
