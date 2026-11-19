@@ -219,7 +219,8 @@ and \`trust_project\` preview by default and only write when passed
 
 1. Before an agent reads a prompt. The MCP server, plus a Claude Code plugin
    whose SessionStart hook hands the model the lexicon once per session and
-   whose UserPromptSubmit hook corrects each dictated prompt on its way in.
+   whose UserPromptSubmit hook adds each dictated prompt's corrections as
+   context on its way in, without rewriting the prompt.
 2. Before you press send in a browser chat. An extension that rewrites the
    composer in place on ChatGPT, Claude, Gemini, Grok, Perplexity, Microsoft
    Copilot and Poe, and on any other site the user switches it on for. Runs in
