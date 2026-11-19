@@ -88,14 +88,11 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [MCP.md](MCP.md) | Every tool, resource and prompt, with arguments and return shapes | Use it with |
 | [aliases-api-examples.md](aliases-api-examples.md) | `GET /aliases`: the `canonical` parameter, onboarding use, response fields, unknown names and every validation error, with requests checked against a running `lexicon serve` | |
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Get started |
-| [contract-limits-reference.md](contract-limits-reference.md) | Schema limits, units and scope | |
-| [schema-limit-reference.md](schema-limit-reference.md) | File schema limits and their relationship to the contract | |
+| [schema-limit-reference.md](schema-limit-reference.md) | Every file schema limit, its fields and counting rules, how it relates to the contract, and executable examples at and beyond each limit | |
 | [term-capacity-reference.md](term-capacity-reference.md) | Term and alias count limits versus text-length limits, with sources | |
 | [schema-collection-limits.md](schema-collection-limits.md) | Alias and term collection limits and validation definitions | |
 | [schema-alias-count-boundary.md](schema-alias-count-boundary.md) | What validation reports at and over the 64-entry list cap | |
 | [schema-text-limits.md](schema-text-limits.md) | Notes and phonetic text limits, counting and examples | |
-| [contract-term-limits.md](contract-term-limits.md) | Contract term limits, affected fields and counting rules | |
-| [contract-limit-examples.md](contract-limit-examples.md) | Executable examples at and beyond the schema limits | |
 | [schema-error-examples.md](schema-error-examples.md) | Reading invalid code unit errors and shortened term names | |
 | [schema-unicode-error-examples.md](schema-unicode-error-examples.md) | Complete errors for unpaired surrogates, U+FFFE and U+FFFF | |
 | [schema-first-invalid-unit.md](schema-first-invalid-unit.md) | Which invalid code unit a schema error reports first | |
