@@ -238,7 +238,7 @@ Homebrew formula: [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap
 | Every tool | [docs/MCP.md](docs/MCP.md) |
 | The index | [docs/README.md](docs/README.md) |
 
-Changing the code: [CONTRIBUTING.md](CONTRIBUTING.md), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
+Changing the code: [CONTRIBUTING.md](CONTRIBUTING.md) (agents: [Contribute with an agent](CONTRIBUTING.md#contribute-with-an-agent)), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
 Pellucid is now part of lexicon. Pellucid's ambiguity engine - the INCOSE rule layer, span resolution and confidence calibration - lives in `src/ambiguity/`. The two-stage design it feeds is in [docs/design/two-stage-correction.md](docs/design/two-stage-correction.md).
 

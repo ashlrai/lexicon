@@ -51,6 +51,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 ### Internal
 
 - Desktop app workflows run after relevant pushes to `main`, daily and on manual dispatch, without adding PR or merge-queue jobs. Newer pushes cancel an older push build; scheduled and dispatched runs keep their own groups. (#1032)
+- Add a "Contribute with an agent" section to `CONTRIBUTING.md` (fork, `npm ci`, `lexicon test-select`, the `CI Gate` commands, merge queue, CODEOWNERS) and align the pull request template checklist with the CI Gate and `CLAUDE.md` rules. (#1054, #1055)
 - Align contributor and release CI guidance with the current fast gate and scheduled full suite, replace the stale quickstart setup transcript with the current steps, mark captured imagery as historical, and document caller context for gated terms with an executable library example.
 - Test that an isolated high surrogate in a term is rejected with its code unit and escaped term name in the validation error.
 - Add regression tests for literal note markers, Unicode pack round-trips, smoke home paths with spaces, and empty registry listings.
