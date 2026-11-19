@@ -5,7 +5,7 @@ to clipboard repair and push-to-talk on Windows and Linux. This page separates
 its platform suggestions from questions that remain open; it does not announce
 a design decision or claim the requested behavior has shipped. One platform
 and one action can be a complete contribution. The
-[platform scope](tray-platform-scope.md), [action map](tray-action-map.md) and
+[tray scope](tray-scope.md), [action map](tray-action-map.md) and
 [interaction questions](tray-interaction-questions.md) cover the shared
 contract and user experience in more detail.
 
