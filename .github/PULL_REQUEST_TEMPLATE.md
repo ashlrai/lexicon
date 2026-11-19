@@ -8,9 +8,14 @@
 
 ## Checklist
 
-- [ ] `npm run typecheck`, `npm run build` and `npm test` pass locally
+<!-- The required check is CI Gate (typecheck, build, crypto policy, redaction tests, diff secret scans). The full suite runs daily on main, not on this PR, so run it locally. See CONTRIBUTING.md "Contribute with an agent". -->
+
+- [ ] `npm run typecheck`, `npm run build`, `npm run check:crypto`, `npx vitest run tests/upstream-redaction.test.ts` and `npm test` pass locally
 - [ ] Tests added or updated (`tests/*.test.ts`)
+- [ ] `npm run build:bundle` run and `plugin/` committed if `src/core`, `src/mcp`, `src/hooks`, `src/cli` or a dependency changed
+- [ ] `npm run docs:cli` run if a command or flag changed; `npm run check:facts` if a tool, command, format or pack was added
 - [ ] `docs/CONTRACT.md` updated if a public signature changed
-- [ ] `CHANGELOG.md` has a bullet under the next version
+- [ ] `CHANGELOG.md` has a bullet under `Unreleased`
 - [ ] README updated if a command, flag, format or client changed
 - [ ] Relative imports end in `.js`; no `any` in exported signatures
+- [ ] No tokens or secrets in the diff, not even fake ones shaped like real ones
