@@ -92,9 +92,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [schema-error-examples.md](schema-error-examples.md) | Reading invalid code unit errors and shortened term names | |
 | [schema-unicode-error-examples.md](schema-unicode-error-examples.md) | Complete errors for unpaired surrogates, U+FFFE and U+FFFF | |
 | [schema-first-invalid-unit.md](schema-first-invalid-unit.md) | Which invalid code unit a schema error reports first | |
-| [schema-error-preview.md](schema-error-preview.md) | How schema errors escape and shorten term-name previews | |
-| [schema-error-preview-reference.md](schema-error-preview-reference.md) | Exact term-name preview construction and UTF-16 boundaries | |
-| [schema-error-name-format.md](schema-error-name-format.md) | How invalid term names are escaped and truncated in schema errors | |
+| [schema-error-preview.md](schema-error-preview.md) | How schema errors escape and shorten term-name previews: which fields carry one, the exact construction, UTF-16 boundaries and checked examples | |
 | [EXPORTS.md](EXPORTS.md) | Every export format and every importer | Use it with |
 | [voice-cleaning-reference.md](voice-cleaning-reference.md) | How local voice transcription removes tags and collapses whitespace | |
 | [transcript-tag-examples.md](transcript-tag-examples.md) | Short examples of tags removed from voice transcripts | |
