@@ -24,7 +24,7 @@ Or inside a Claude Code session: `/plugin marketplace add ashlrai/lexicon` then 
 The plugin ships:
 
 - `.claude-plugin/plugin.json`: the manifest, which declares the `lexicon` MCP server (`node ${CLAUDE_PLUGIN_ROOT}/plugin/mcp-server.mjs`).
-- `hooks/hooks.json`: a `SessionStart` hook that hands the model your lexicon once per session and a `UserPromptSubmit` hook that corrects each dictated prompt. Both are described under [What the hooks do](#what-the-hooks-do).
+- `hooks/hooks.json`: a `SessionStart` hook that hands the model your lexicon once per session and a `UserPromptSubmit` hook that adds each dictated prompt's corrections as `additionalContext` (the prompt itself is never rewritten). Both are described under [What the hooks do](#what-the-hooks-do).
 - `skills/lexicon/SKILL.md`: tells Claude when to normalize, when to save a correction, when to ask "did you mean", and how to run setup, doctor and suggestions.
 - `commands/lexicon.md`: the `/lexicon` command (`/lexicon`, `/lexicon add X as Y, Z`, `/lexicon learn Y -> X`, `/lexicon harvest`, `/lexicon export <format>`, `/lexicon remove X`, `/lexicon stats`, `/lexicon setup`, `/lexicon doctor`, `/lexicon suggest`, `/lexicon trust [path]`).
 
@@ -178,7 +178,7 @@ Anything that speaks MCP over stdio can be pointed at the server directly, with 
 the bundle runs without a build. The same JSON is in
 [examples/mcp-config.json](../examples/mcp-config.json).
 
-[MCP.md](MCP.md) documents what the server answers once it is running: the twenty
+[MCP.md](MCP.md) documents what the server answers once it is running: the twenty-one
 tools, the three resources and the two prompts.
 
 ## ChatGPT, Claude.ai, Grok and other browser chats

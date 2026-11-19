@@ -105,7 +105,8 @@ From inside an MCP session the same preview is `install_client { client, apply? 
 
 In Claude Code, `lexicon install claude --apply` also merges a `SessionStart`
 hook (hands the model the lexicon once per session) and a `UserPromptSubmit`
-hook (corrects each dictated prompt on the way in) into
+hook (adds each dictated prompt's corrections as context; the prompt itself
+is never rewritten) into
 `~/.claude/settings.json`. Existing hooks are preserved. The plugin route
 (`claude plugin marketplace add ashlrai/lexicon` then
 `claude plugin install lexicon@ashlrai`) brings those plus a skill and the

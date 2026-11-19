@@ -15,6 +15,12 @@ npm serves `@ashlr/lexicon` 0.5.4. This source tree is 0.5.6. The install
 path below is 0.5.4, because that is what the script installs. Flags that
 exist only in this tree are called out as source.
 
+Rechecked 2026-11-19 against source 0.5.12, which npm now serves too
+(`npm view @ashlr/lexicon version`). The 0.5.4 rows below are the
+original measurement. The agent-use claims about this source were updated
+where the code has since changed, and the follow-ups that shipped are
+marked done.
+
 ## Timed path
 
 The install and setup timings are in [BENCHMARKS.md](BENCHMARKS.md#install-and-first-result).
@@ -120,12 +126,12 @@ row says 0.5.4. No TTY: stdin closed or piped.
   does not prompt. `--dry-run` writes nothing and prints the plan as JSON
   when `--json` is set. `--yes` is the explicit form of the same defaults.
 - `lexicon trust` on a TTY asks, and the default answer is no. Off a TTY it
-  does not ask: it prints the preview and pins the file. That is written
-  down in `src/cli/cmd-trust.ts` as intentional, so a script that already
-  runs `lexicon trust` keeps working. The MCP tool `trust_project` does not
-  do this. It asks the user with an elicitation the agent cannot answer.
-  An agent that shells out to `lexicon trust` with no TTY therefore pins a
-  project file the MCP tool would have left for the user.
+  does not ask and pins nothing: it prints the preview and exits 1 unless
+  `--yes` was passed (`src/cli/cmd-trust.ts`). There is no
+  environment-variable bypass. The MCP tool `trust_project` asks the user
+  with an elicitation the agent cannot answer. Either way, an agent cannot
+  pin a project file by accident; it takes an explicit `--yes`. (The 0.5.6
+  audit found the opposite: off a TTY it pinned the file. Fixed in #216.)
 - `lexicon install` without `--apply` prints the config and writes nothing.
   `--apply` is the write. `--json` exists on this source. On 0.5.4,
   `lexicon install cursor --json` exits 1 with `unknown option '--json'`.
@@ -153,9 +159,11 @@ line on stderr and one JSON document on stdout, exit 1:
 `--json` is on `init`, `add`, `remove`, `list`, `normalize`, `harvest`,
 `export`, `path`, `doctor`, `import`, `install`, `uninstall`, `trust`,
 `untrust`, `learn`, `stats`, `pending`, `serve`, `voice`, `setup`,
-`suggest`, `review` and `edit`. It is not on `mcp`, `hook`, `daemon` or
-`pack` itself (`pack add` has its own `--json`). `mcp` and `hook` are
-protocol streams, not document commands.
+`suggest`, `review` and `edit`. `review` and `edit` are interactive, so
+they accept `--json` only to refuse it (exit 1, with a `nextStep` naming the
+non-interactive command). `daemon` has `--json` with `--once` or `--which`.
+It is not on `mcp`, `hook` or `pack` itself (`pack add` has its own
+`--json`). `mcp` and `hook` are protocol streams, not document commands.
 
 On published 0.5.4, `add --json`, `init --json`, `doctor --json` and
 `install --json` all exit 1 with `unknown option '--json'`. An agent that
@@ -167,10 +175,9 @@ fail until it is on this tree or a later release. `normalize --json` and
 
 | writes | how a no-op run is spelled |
 | --- | --- |
-| `setup`, `import`, `uninstall`, `daemon`, `normalize` | `--dry-run` (`normalize --dry-run` prints the summary and leaves stdout as the input) |
+| `setup`, `import`, `uninstall`, `daemon`, `normalize`, `init`, `add`, `remove`, `learn`, `trust`, `untrust`, `review`, `harvest --add`, `pack add` | `--dry-run` (`normalize --dry-run` prints the summary and leaves stdout as the input; `edit --dry-run` reports the file and does not launch an editor) |
 | `install`, `suggest`, `doctor --fix` | preview is the default. The write is `--apply` (`doctor` also needs `--fix`; `--apply` alone is refused) |
 | `pack add` of a community pack, `pack update` | preview, then a prompt. `--yes` accepts it, and off a TTY `--yes` is required for the community preview |
-| `init`, `add`, `remove`, `learn`, `untrust`, `edit`, `review`, `harvest` with the add switch, `pack add` of a built-in pack | no `--dry-run`. They write |
 
 `normalize` is not a file write. Its `--dry-run` skips applying replacements
 to stdout.
@@ -195,9 +202,9 @@ go to stderr.
 Ranked by how much of the product they touch.
 
 1. Done: Hetzner is back in the empty-lexicon demo ([#217](https://github.com/ashlrai/lexicon/issues/217)).
-2. Small: keep a dotted brand when setup guesses a company from a scoped package ([#218](https://github.com/ashlrai/lexicon/issues/218)).
-3. Medium: `--dry-run` on `add`, `remove`, `learn`, `init`, `untrust` and built-in `pack add` ([#219](https://github.com/ashlrai/lexicon/issues/219)).
-4. Medium: off a TTY, `lexicon trust` requires `--yes` ([#216](https://github.com/ashlrai/lexicon/pull/216)).
-5. Medium: lazy-load the CLI and MCP entry points to cut startup ([#212](https://github.com/ashlrai/lexicon/pull/212)).
-6. Large: a resident system-wide expander as a separate surface ([#220](https://github.com/ashlrai/lexicon/issues/220)); see the [scope outline](resident-expander-scope.md).
-7. Release: npm still serves 0.5.4 ([#221](https://github.com/ashlrai/lexicon/issues/221)).
+2. Done: keep a dotted brand when setup guesses a company from a scoped package ([#218](https://github.com/ashlrai/lexicon/issues/218)).
+3. Done: `--dry-run` on `add`, `remove`, `learn`, `init`, `untrust` and built-in `pack add` ([#219](https://github.com/ashlrai/lexicon/issues/219)).
+4. Done: off a TTY, `lexicon trust` requires `--yes` ([#216](https://github.com/ashlrai/lexicon/pull/216)).
+5. Done: lazy-load the CLI and MCP entry points to cut startup ([#212](https://github.com/ashlrai/lexicon/pull/212)).
+6. Done, opt-in: a resident system-wide expander as a separate surface ([#220](https://github.com/ashlrai/lexicon/issues/220)), now `lexicon daemon --expander`; see the [scope outline](resident-expander-scope.md).
+7. Done: npm serves the current release (0.5.12 on 2026-11-19), not 0.5.4 ([#221](https://github.com/ashlrai/lexicon/issues/221)).
