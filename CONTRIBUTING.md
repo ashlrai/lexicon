@@ -144,7 +144,7 @@ structured command argument arrays. Run the commands from the repository root.
 Unknown paths, deleted tests, and an empty change list select `npm test`.
 This is a conservative starting point; run the full suite before claiming a change works.
 
-Vitest. Tests live under `tests/`, one file per module; vitest also picks up the few `src/**/*.test.ts` files colocated with their module and `bench/**/*.test.ts`:
+Vitest. Tests live under `tests/`: one file per core module, plus a few hundred focused files named after the behaviour or regression they pin. Vitest also picks up the few `src/**/*.test.ts` files colocated with their module and `bench/**/*.test.ts`. The wall-clock files listed in `PERF_FILES` in `vitest.config.ts` run in their own `perf` project, one worker, after the rest finishes. The per-module files:
 
 ```text
 tests/
@@ -155,7 +155,7 @@ tests/
   suggest-terms.test.ts                   extension.test.ts (jsdom; skipped on Node 20)
   e2e.test.ts (real CLI/hook/MCP as subprocesses)
   fixtures/fake-repo/ a small repo (package.json, README.md, src/, scripts/, node_modules/) for harvest tests
-bench/bench.test.ts   accuracy regression guard over the benchmark corpus (npx vitest run bench)
+bench/bench.test.ts   accuracy regression guard over the benchmark corpus (npx vitest run bench; also non-english.test.ts, run.test.ts)
 ```
 
 `npm test` runs them once; `npm run test:watch` watches. `npm run bench` prints the accuracy report as markdown and writes `bench/results.json`; `docs/BENCHMARK.md` is updated by hand from that report. See `bench/README.md`.
@@ -223,13 +223,13 @@ The CLI (`lexicon export` with no format) picks up new formats from `EXPORT_FORM
 
 ## Adding a harvester source
 
-`src/core/harvest.ts` collects `HarvestCandidate[]` from several sources and merges them by canonical.
+`src/core/harvest.ts` collects `HarvestCandidate[]` from several sources and merges them by canonical. The scan lives in `harvestReport()`; `harvestRepo()` returns its candidates.
 
-1. Add a function next to the existing ones (`harvestPackageJson`, `harvestPyproject`, `harvestCargo`, `harvestGoMod`, `pascalCaseIdentifiers`, `readmeProperNouns`, `gitAuthors`). It receives the file text or repo root and records candidates through the shared `bump` callback with `canonical`, `category`, `source`, `evidence` and a count.
-2. Add a `TermSource` value in `src/core/types.ts` if none fits (`harvest:repo`, `harvest:git`, `harvest:package` exist).
-3. Add an opt-out flag to `HarvestOptions` if the source is slow or noisy, defaulting to on.
-4. Call it from `harvestRepo()`. Files come from `walk()`, which already applies the ignore list (`node_modules`, `dist`, `.git`, `vendor`, `build`, plus `HarvestOptions.ignore`), the 512KB file cap and the 5000 file cap.
-5. Filter through `HARVEST_STOPLIST` and `isGenericIdentifier()` before returning. Suggested aliases come from `safeSuggest()`.
+1. Add a function next to the existing ones, in one of two shapes. Manifest readers (`harvestPackageJson`, `harvestPyproject`, `harvestCargo`, `harvestGoMod`) take `(file, rel, bump)` and record candidates through the shared `bump` callback with `canonical`, `category`, `source`, `evidence` and a count. Text scanners (`pascalCaseIdentifiers`, `readmeProperNouns`, `countDotTldBrands`) take the file text and return a `Map` of name to count, which the file loop passes to `bump`. Git authors (`gitAuthors(root)`) and the directory name are recorded before the loop.
+2. Add a value to `TERM_SOURCES` in `src/core/types.ts` if none fits (harvest uses `harvest:repo`, `harvest:git` and `harvest:package`).
+3. Add an opt-out flag to `HarvestOptions` if the source is slow or noisy, defaulting to on (like `git`, `packages` and `identifiers`).
+4. Call it from the file loop in `harvestReport()`. Files come from `gitFiles()` (git's file list, so `.gitignore` applies) or, outside a git work tree, `walk()`. Both skip the always-ignored directories (`node_modules`, `dist`, `build`, `.git`, `vendor`, `target`, `.next`, `coverage`, `__pycache__`, `.venv`, `venv`, plus `HarvestOptions.ignore`), keep only `READ_EXTENSIONS` (add the extension there if the source reads a new file type) and stop at `HARVEST_MAX_FILES` (5000). `readText()` skips files over 512KB.
+5. Filter through `HARVEST_STOPLIST` (and `isGenericIdentifier()` for code identifiers) before recording. Pass `external = false` to `bump` for a name seen only in code, so it stays behind `HarvestOptions.symbols`. Suggested aliases are added to every candidate by `harvestAliases()` at the end; do not add them in the source function.
 6. Extend `tests/fixtures/fake-repo/` and add a case to `tests/harvest.test.ts`.
 
 ## Pull requests
