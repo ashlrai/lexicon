@@ -112,7 +112,7 @@ Manual stdio check of the MCP server: `node dist/mcp/server.js`. Interactive che
 ```text
 src/util/        the bottom layer, dependency-free and imported directly: errors, json, jsonc, which, atomic, package, xdg and a few more
 src/core/        the library: types, caps (limits and format lists), schema, store, trust, matcher (+ matcher/), stoplist, normalize, suggest, suggestTerms, harvest, learn, pending, stats, notes, packs, demo, exporters/, importers/
-src/cli/         the `lexicon` command (index.ts answers version flags, run.ts dispatches, program.ts wires commander, handlers in commands.ts and cmd-*.ts, prompt.ts for interactive input, the setup wizard in setup/)
+src/cli/         the `lexicon` command (index.ts answers version flags and tries the daemon fast read, run.ts dispatches, program.ts wires commander, handlers in commands.ts and cmd-*.ts, prompt.ts for interactive input, the setup wizard in setup/)
 src/mcp/         the stdio MCP server (`lexicon-mcp`)
 src/hooks/       the Claude Code SessionStart and UserPromptSubmit hook
 src/daemon/      the clipboard watcher and its per-platform backends

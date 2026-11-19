@@ -16,8 +16,14 @@ src/
     package.ts              findPackageRoot(), readPackageVersion()
     xdg.ts                  XDG Base Directory resolution, in one place
     cli-hint.ts             cliCommand(): a `lexicon` command named with its `npx @ashlr/lexicon` form, for text an agent relays
+    shell.ts                quoting for printed commands (POSIX shell, or PowerShell on Windows)
+    jsonc.ts                JSON-with-comments configs: parse, and edit only the keys this tool owns
+    bounded-read.ts         read a file someone else put there with a size and time bound
+    record.ts               object-shape predicates
+    anthropic.ts            the Anthropic API version header, in one place
   core/                     pure library, no CLI or MCP concerns
     types.ts                shared types; dependency-free
+    caps.ts                 numbers and name lists help text and tool schemas need at startup; imports nothing
     schema.ts               zod schemas, parseLexicon(), LIMITS, invisible-character stripping
     store.ts                path resolution, YAML read/write, global+project merge,
                             addTerm / removeTerm / recordHits, the project-write trust gate,
@@ -26,17 +32,29 @@ src/
                             the last global parse failure (parse-failure.json),
                             the compiled matcher index cache (index-cache.json, loadMatcherIndex)
     trust.ts                trust registry (trust.json): isTrusted, trustProject, refreshTrust, listTrusted
+    parsed-hash.ts          the sha256 of the bytes a project file was parsed from, for the trust gate
+    edit-check.ts           a cheap look at what a hand edit changed, for the hook's stale-global path
     matcher.ts              the public face: buildIndex(), findReplacements(), phoneticKey(), similarity()
-    matcher/                its four parts: build (the index), text (folding, metaphone, edit distance),
-                            tokenize (windows, and the code/URL/path spans to leave alone), tuning (every threshold)
+    matcher/                its parts: build (the index), text (folding, metaphone, edit distance),
+                            tokenize (windows, and the code/URL/path spans to leave alone), tuning (every threshold),
+                            enumeration (text about spelling that must survive), serialize (the index as JSON)
     stoplist.ts             STOPLIST: 3398 common English words that block phonetic and fuzzy guesses
     normalize.ts            normalize() applies replacements; diffSummary()
     suggest.ts              suggestAliases(): likely STT misspellings of a canonical
     suggestTerms.ts         suggestTerms(): alias / term / never / stale proposals from voice history, hits and the repo
     learn.ts                parseCorrection(), learnCorrection(), suggestCanonicalFor()
+    conflict-note.ts        the wording of a learn/add conflict; pure, so the extension reuses it
+    pending.ts              pending-aliases.yaml: hook-detected corrections queued for review
+    notes.ts                the empty-result and skipped-project notes every surface shares
+    collate.ts              one locale-independent text order for every machine
+    redact.ts               strips credentials from upstream text and configured URLs
+    shell.ts                re-exports util/shell.ts quoting as public core API
     stats.ts                computeStats(): counts, top terms, never-hit terms
     harvest.ts              harvestRepo(): candidate terms from a codebase
+    import-sources.ts       vocabulary import sources (lexicon import --guided, import_vocabulary); never writes
+    import-preview.ts       the candidate data shown before an import
     packs.ts                listPacks(), loadPack(), installPack(): the curated lexicons in packs/*.yaml
+    registry.ts             community pack registry: publish and install packs from git
     demo.ts                 demonstrate(): the before/after pair the setup wizard and the site both show
     exporters/              exportLexicon(), one file per format (16)
     importers/              importLexicon(), detectImportFormat(), one file per format (8)
@@ -44,9 +62,15 @@ src/
   daemon/
     clipboard.ts            clipboard watcher (lexicon daemon): loop mode and --once for shortcuts
     clipboard-backends.ts   pbcopy (macOS), wl / xclip / xsel (Linux), powershell (Windows) + PATH detection
+    expander.ts             the pure expansion core: a state machine over keystrokes in one text field
+    expander-server.ts      the opt-in resident expander (lexicon daemon --expander): local socket, NDJSON
+    fast-client.ts          the CLI side: list/stats/path/export ask the resident daemon first, 100 ms timeout
   serve/
     config.ts               serve.json: port, bearer token (0600), allowedOrigins; isOriginAllowed()
     server.ts               createServer(): node:http, 12 endpoints, auth, CORS, body caps, per-cwd lexicon cache
+    info.ts                 SERVER_FEATURES: the stable discovery contract for API clients
+    defaults.ts             DEFAULT_PORT (41733), split out so help text can name it without the core
+    index.ts                public entry: createServer() plus the serve.json helpers
   voice/
     process.ts              locate ffmpeg / whisper-cli, exec and detached spawn, install hints
     devices.ts              audio input device listing (avfoundation, pulse/alsa, dshow)
@@ -56,18 +80,30 @@ src/
     history.ts              voice/history.jsonl (newest 1000 lines)
     voice.ts                runVoice, runVoiceToggle, runVoiceStatus, runVoiceListDevices; exit codes 0/1/2/3
   cli/
-    index.ts                lone version flags (bin: lexicon), otherwise loads run.ts
+    index.ts                bin: lexicon; answers lone version flags, tries the daemon fast read, otherwise loads run.ts
     run.ts                  CLI dispatch, handshake, cwd validation and error handling
     program.ts              lightweight commander wiring; handlers loaded on command execution
     args.ts                 IO interface, argument parsing and usage-error helpers
     cli-entry.ts            package name, $LEXICON_CLI, resolveCliEntry(): which file the installers point at
     io.ts                   re-exports args.ts helpers, plus bold/dim/safe/renderTable
+    json-output.ts          the `--json` envelope (schemaVersion 1, ok) around each command's payload
+    exit-codes.ts           the exit code table: 0 success, 1 failure, with named reasons
+    dry-run-plan.ts         marks successful --dry-run previews with plan: true
+    client-names.ts         client and dictation-app names for --help, without loading the installers
+    import-limit.ts         the largest input lexicon import reads, without loading the importers
+    lexicon-edit-hint.ts    the `lexicon edit` command a parse error names
+    handshake.ts            lexicon --ashlr-handshake: the Ashlr companion handshake v1
     prompt.ts               dependency-free readline prompter used by the interactive commands
     claude-settings.ts      merging hooks into Claude Code's settings.json
     serve-paths.ts          launchd plist and systemd unit paths for lexicon serve --install
     commands.ts             a facade: init/add/remove/list/normalize/harvest/export/path, and re-exports of the rest
     cmd-doctor.ts           doctor
+    doctor-fix.ts           doctor --fix: preview by default, --apply with a backup of every file
+    doctor-config-read.ts   the bounded reads doctor uses on other clients' MCP configs
+    companions.ts           doctor's companion section (Locus, ashlr-md handshakes)
+    phantom-presence.ts     doctor's value-free Phantom presence check
     cmd-import.ts           import
+    cmd-import-guided.ts    import --guided: the vocabulary import wizard
     cmd-install.ts          install [client]
     cmd-uninstall.ts        uninstall [client]
     cmd-trust.ts            trust, untrust
@@ -84,8 +120,13 @@ src/
     setup/                  its parts: types (the vocabulary), detect (machine probing), steps (the steps themselves)
   hooks/
     user-prompt-submit.ts   Claude Code hook for SessionStart and UserPromptSubmit (lexicon hook)
+    plugin-entry.ts         the plugin's hook entry: enables Node's compile cache, then loads the hook bundle
   mcp/
     server.ts               stdio MCP server "lexicon": 21 tools, 3 resources, 2 prompts (bin: lexicon-mcp)
+    shared.ts               per-server context, result wrappers, guarded(), the lazy loadCore()
+    annotations.ts          every tool's readOnly / destructive / idempotent / openWorld hints, in one table
+    tools/                  index.ts (TOOL_REGISTRARS, the advertised order) and one module per family:
+                            terms, harvest, packs, setup, trust
 
 plugin/
   mcp-server.mjs            esbuild bundle of src/mcp/server.ts, every dependency inlined (committed)
@@ -98,7 +139,7 @@ apps/macos/LexiconBar/      SwiftPM menu bar app that drives the CLI as subproce
 packaging/homebrew/         the Homebrew formula (published to ashlrai/homebrew-tap)
 site/                       the demo page (GitHub Pages) and, after build, install.sh
 scripts/
-  build-bundle.mjs          produces plugin/*.mjs (npm run build:bundle; CI runs check:bundle)
+  build-bundle.mjs          produces plugin/*.mjs (npm run build:bundle; the daily CI suite runs check:bundle)
   build-extension.mjs       produces extension/dist, dist-firefox and the zips
   extension-manifest.mjs    the Firefox manifest (gecko id, strict_min_version 140)
   build-macos-app.sh        builds and ad-hoc signs apps/macos/build/LexiconBar.app
