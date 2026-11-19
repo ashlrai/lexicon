@@ -74,5 +74,5 @@ the cut would land on half a pair. Use the zero-based field path and the
 original input to find and replace the invalid unit; the preview is a label,
 not a repair or a serialized copy of the name. List indexes refer to the
 cleaned list.
-See the [preview reference](schema-error-preview-reference.md) for details and
+See the [preview guide](schema-error-preview.md) for details and
 [schema error examples](schema-error-examples.md) for settings errors.
