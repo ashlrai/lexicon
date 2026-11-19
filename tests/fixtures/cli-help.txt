@@ -43,3 +43,10 @@ Commands:
 Start here: lexicon setup (the guided first run), or lexicon add "Ashlr.AI" Ashler to add one term.
 Check an install: lexicon doctor
 For agents: append --json=v1 for { schemaVersion: 1, ok, data }.
+
+Exit codes:
+0  ok
+1  failed (usage error, not found, or a runtime failure); stderr and the --json error say which
+
+Under --json a failure prints {"ok":false,"error":"plain words","nextStep":"what to do"} on stdout.
+lexicon voice keeps its own codes: 1 error, 2 ffmpeg/whisper-cli missing, 3 nothing heard.

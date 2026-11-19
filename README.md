@@ -64,6 +64,15 @@ lexicon doctor --json
 
 Exit code 0 means every check passed. Exit code 1 means at least one check failed, and the JSON still prints, so read it either way. A fresh machine with no MCP registration exits 1 and names the fix in `nextStep`.
 
+Every command uses the same exit codes, also listed at the end of the CLI help:
+
+| Code | Meaning |
+| --- | --- |
+| 0 | ok |
+| 1 | failed: usage error, not found, or a runtime failure (stderr and the `--json` `error` and `nextStep` say which) |
+
+`lexicon voice` keeps its own codes: 1 error, 2 ffmpeg or whisper-cli missing, 3 nothing heard.
+
 The same contract, in one fetch: [llms.txt](llms.txt) (index) and [llms-full.txt](llms-full.txt) (install, tools, privacy, FAQ). The page written to an agent is [docs/AGENTS.md](docs/AGENTS.md). Copy-paste only, no commentary: [docs/COPY-PASTE.md](docs/COPY-PASTE.md).
 
 This tree is source version <!-- fresh:begin pin:version -->0.5.12<!-- fresh:end -->. Check `lexicon --version` and `npm view @ashlr/lexicon version` before you pin; source and npm releases can differ.
