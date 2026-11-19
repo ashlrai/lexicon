@@ -127,6 +127,15 @@ src/
     annotations.ts          every tool's readOnly / destructive / idempotent / openWorld hints, in one table
     tools/                  index.ts (TOOL_REGISTRARS, the advertised order) and one module per family:
                             terms, harvest, packs, setup, trust
+  ambiguity/                the ambiguity engine ported from Pellucid; self-contained, not yet imported by any surface
+    terms.ts                the INCOSE-derived vague-term lexicon (data)
+    rules.ts                term-rule matching over that data
+    syntax.ts               passive-voice and dangling-pronoun detectors
+    resolve.ts              span resolution for model output (trust the text over the offsets)
+    parse.ts                raw model JSON to a DetectorReport
+    calibrate.ts            PAV isotonic confidence calibration
+    aggregate.ts            overlap clustering and ensemble confidence
+    types.ts, index.ts      the finding types and the barrel (design: docs/design/two-stage-correction.md)
 
 plugin/
   mcp-server.mjs            esbuild bundle of src/mcp/server.ts, every dependency inlined (committed)
@@ -138,6 +147,9 @@ extension/
 apps/macos/LexiconBar/      SwiftPM menu bar app that drives the CLI as subprocesses
 packaging/homebrew/         the Homebrew formula (published to ashlrai/homebrew-tap)
 site/                       the demo page (GitHub Pages) and, after build, install.sh
+web/                        the Next.js site for lexicon.ashlr.ai, with its own package.json (serves /llms.txt, /llms-full.txt, /mcp.json)
+packs/                      the curated starter packs, one YAML file each (lexicon pack add)
+registry/                   index.example.yaml, the community pack registry format, and an example pack
 scripts/
   build-bundle.mjs          produces plugin/*.mjs (npm run build:bundle; the daily CI suite runs check:bundle)
   build-extension.mjs       produces extension/dist, dist-firefox and the zips
@@ -160,6 +172,7 @@ hooks/hooks.json            plugin hook entries, SessionStart + UserPromptSubmit
 skills/lexicon/SKILL.md     when the agent should normalize, learn, suggest, harvest, set up, diagnose
 commands/lexicon.md         the /lexicon slash command
 tests/                      vitest, one file per module, e2e.test.ts for subprocess journeys, fixtures/fake-repo for harvest
+test/                       hook-main-sonar.test.mjs, one of the node --test files npm test runs before vitest
 bench/                      accuracy benchmarks: synthetic corpus and synthesized speech through whisper.cpp
 ```
 
