@@ -250,6 +250,18 @@ source documentation does not prove publication or authenticated-import acceptan
 - [CLIENTS.md](CLIENTS.md) - per-client detail and what the hooks do.
 - [FAQ.md](FAQ.md) - answers to quote at a user who asks why this happens.
 
+## Part of the Ashlr.AI ecosystem
+
+Lexicon is the voice layer of the Ashlr.AI ecosystem: Phantom, phantom-secrets,
+ashlr-plugin, Locus, lexicon, ashlr-md and ashlr-stack. Together they form a
+fully autonomous, code-first, agent-native software factory, run by agents with
+the human as a passive board member, chasing open source RSI (recursive self
+improvement). Lexicon needs none of the others. `lexicon doctor` reads `locus`
+and `mdopener-mcp` through the [companion handshake](ashlr-handshake.md) and
+reports one info line for each. Under phantom-secrets' `phantom exec` it runs
+unchanged: [PHANTOM-USAGE.md](PHANTOM-USAGE.md). The full table is in the
+[README](../README.md#part-of-the-ashlrai-ecosystem).
+
 ## See also
 
 - [AGENT-NATIVE.md](AGENT-NATIVE.md) is the design behind the tools this checklist calls.
