@@ -3,7 +3,7 @@
 [Issue #13](https://github.com/ashlrai/lexicon/issues/13) asks for Windows and
 Linux tray access to push-to-talk and clipboard repair. This is a set of open
 questions for contributors, not a specification or a claim that the proposed
-interactions are implemented. The [platform scope](tray-platform-scope.md)
+interactions are implemented. The [tray scope](tray-scope.md)
 separates the issue's requests from open decisions; the
 [action map](tray-action-map.md) links those requests to existing behavior.
 

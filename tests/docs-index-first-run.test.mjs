@@ -19,20 +19,5 @@ test('linked documentation index rows point to existing files', () => {
   }
 });
 
-test('tray request scope distinguishes the issue request from open implementation details', () => {
-  const scope = readFileSync(path.join(docs, 'tray-request-scope.md'), 'utf8');
-  const [request, context] = scope.split('## Current context');
-  const open = context?.split('## Open implementation details')[1]?.split('## Verification requested by the issue')[0];
-  assert.ok(index.includes('(tray-request-scope.md)'), 'scope is discoverable from the index');
-  assert.match(request, /github\.com\/ashlrai\/lexicon\/issues\/13/);
-  for (const item of ['Windows', 'Linux', 'Fix clipboard', 'lexicon daemon --once --paste',
-    'Dictate', 'lexicon voice --toggle --paste', 'Open lexicon', 'Preferences', 'Quit',
-    'global shortcut', 'PATH']) {
-    assert.ok(request.includes(item), `request is missing ${item}`);
-  }
-  assert.ok(open, 'expected a separate open implementation details section');
-  for (const item of ['toolkit', 'paste', 'shortcut', 'discovery']) {
-    assert.match(open, new RegExp(`\\*\\*Open:\\*\\*[^\\n]*(?:\\n(?!- ).*)*${item}`, 'i'),
-      `${item} should be labeled open`);
-  }
-});
+// The tray request-scope assertions that lived here moved to tests/tray-scope.test.ts
+// when tray-request-scope.md was folded into docs/tray-scope.md.
