@@ -106,7 +106,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 
 | Page | What it covers |
 |---|---|
-| [CONTRIBUTING.md](../CONTRIBUTING.md) | Setup, the test layout, and a recipe for each kind of contribution |
+| [CONTRIBUTING.md](../CONTRIBUTING.md) | Setup, the test layout, and a recipe for each kind of contribution; [Contribute with an agent](../CONTRIBUTING.md#contribute-with-an-agent) for fork, `npm ci`, `lexicon test-select` and the `CI Gate` commands |
 | [setup-cast-outline.md](setup-cast-outline.md) | Reproducible, synthetic-data setup recording plan |
 | [setup-contract-summary.md](setup-contract-summary.md) | Guided first-run responsibilities, preview boundaries and open questions |
 | [setup-command-entrypoints.md](setup-command-entrypoints.md) | CLI and MCP setup registration, dispatch and shared execution |
