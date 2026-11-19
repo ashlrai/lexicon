@@ -110,9 +110,9 @@ Manual stdio check of the MCP server: `node dist/mcp/server.js`. Interactive che
 ## Repo layout
 
 ```text
-src/util/        the bottom layer, imported directly by every other one: errors, json, which, atomic, package, xdg
-src/core/        the library: types, schema, store, trust, matcher (+ matcher/), stoplist, normalize, suggest, suggestTerms, harvest, learn, stats, packs, demo, exporters/, importers/
-src/cli/         the `lexicon` command (commander wiring in index.ts, handlers in commands.ts and cmd-*.ts, prompt.ts for interactive input, the setup wizard in setup/)
+src/util/        the bottom layer, dependency-free and imported directly: errors, json, jsonc, which, atomic, package, xdg and a few more
+src/core/        the library: types, caps (limits and format lists), schema, store, trust, matcher (+ matcher/), stoplist, normalize, suggest, suggestTerms, harvest, learn, pending, stats, notes, packs, demo, exporters/, importers/
+src/cli/         the `lexicon` command (index.ts answers version flags, run.ts dispatches, program.ts wires commander, handlers in commands.ts and cmd-*.ts, prompt.ts for interactive input, the setup wizard in setup/)
 src/mcp/         the stdio MCP server (`lexicon-mcp`)
 src/hooks/       the Claude Code SessionStart and UserPromptSubmit hook
 src/daemon/      the clipboard watcher and its per-platform backends
@@ -144,7 +144,7 @@ structured command argument arrays. Run the commands from the repository root.
 Unknown paths, deleted tests, and an empty change list select `npm test`.
 This is a conservative starting point; run the full suite before claiming a change works.
 
-Vitest. Tests live under `tests/`, one file per module:
+Vitest. Tests live under `tests/`, one file per module; vitest also picks up the few `src/**/*.test.ts` files colocated with their module and `bench/**/*.test.ts`:
 
 ```text
 tests/
@@ -206,10 +206,10 @@ A pack for a profession the shipped packs do not cover is a useful thing a newco
    }
    ```
 
-2. Add the format name to the `ExportFormat` union in `src/core/types.ts`.
-3. Register it in `src/core/exporters/index.ts`: add it to `EXPORT_FORMATS`, add a `description` and `ext` entry to `EXPORT_FORMAT_INFO`, and add it to the `EXPORTERS` map that `exportLexicon()` dispatches through. Use `sortByImportance()` from `shared.ts` so term order matches the other exporters.
+2. Add the format name to the `EXPORT_FORMATS` array in `src/core/types.ts`; the `ExportFormat` type is derived from it.
+3. Register it in `src/core/exporters/index.ts`: add a `description` and `ext` entry to `EXPORT_FORMAT_INFO` and add it to the `EXPORTERS` map that `exportLexicon()` dispatches through (the build fails until both have it). Use `sortByImportance()` from `shared.ts` so term order matches the other exporters.
 4. Add a test in `tests/exporters.test.ts` with a small lexicon and an exact expected string. Cover `categories` and `limit`.
-5. Add the format to `EXPORT_FORMAT_VALUES` in `src/mcp/server.ts` (the build fails until you do) and to the `export_lexicon` description.
+5. The MCP `export_lexicon` tool accepts every name in `EXPORT_FORMATS` on its own (`src/mcp/tools/terms.ts`); add the format to the list in that tool's description by hand.
 6. Add a row to the export table in `docs/EXPORTS.md`, the format lists in `commands/lexicon.md` and `skills/lexicon/SKILL.md`, the exporters line in `docs/CONTRACT.md` and `EXPORT_CONTENT_TYPES` in `src/serve/server.ts` if the extension is new. Update the format count wherever it is stated ("sixteen"), including `README.md`.
 
 The CLI (`lexicon export` with no format) picks up new formats from `EXPORT_FORMATS` automatically.
@@ -217,9 +217,9 @@ The CLI (`lexicon export` with no format) picks up new formats from `EXPORT_FORM
 ## Adding an importer
 
 1. Create `src/core/importers/<format>.ts` exporting `parse<Format>Import(content: string): RawImport` (`rows` plus `skipped` with a 1-based line and a reason) and, when the format can be sniffed, a `looksLike<Format>(content)` predicate. Use `rowFor()` from `shared.ts` and `parseCsv()` from `csv-parse.ts` where they fit. Parsers must be linear-time; the CLI already caps input at 8 MB.
-2. Add the name to `ImportFormat` and `IMPORT_FORMATS` in `src/core/importers/index.ts`, describe it in `IMPORT_FORMAT_INFO`, register the parser in `PARSERS`, and add a detection step to `detectImportFormat()` (unambiguous structured markers first, extensions last).
+2. Add the name to `IMPORT_FORMATS` in `src/core/caps.ts` and to the `ImportFormat` union in `src/core/importers/index.ts`. In that same file, describe it in `IMPORT_FORMAT_INFO`, register the parser in `PARSERS`, and add a detection step to `detectImportFormat()` (unambiguous structured markers first, extensions last).
 3. Add a test in `tests/importers.test.ts` with an exact fixture, including a malformed row that lands in `skipped`. If the format has an exporter, add a round-trip case.
-4. Add a row to the import table in `docs/EXPORTS.md`, update the count in `README.md`, and update the `lexicon import` help text in `src/cli/cmd-import.ts` and `src/cli/index.ts`, then run `npm run docs:cli`. Update the format count wherever it is stated ("seven"); `npm run check:facts` will tell you every place you missed.
+4. Add a row to the import table in `docs/EXPORTS.md`, update the count in `README.md`, and add the format to the `lexicon import` description in `src/cli/program.ts` (the format argument and `--help` list come from `IMPORT_FORMATS`), then run `npm run docs:cli`. Update the format count wherever it is stated ("eight"); `npm run check:facts` will tell you every place you missed.
 
 ## Adding a harvester source
 
