@@ -121,7 +121,7 @@ the API limit. See [matching rules](MATCHING.md#context-gates) and the runnable
 
 ### Validation and errors
 
-See the [aliases endpoint walkthrough](aliases-endpoint-examples.md) for example requests and responses, the [aliases response reference](aliases-response-reference.md) for the response shape, and [aliases API examples](aliases-api-examples.md) for more inputs and validation errors.
+See [GET /aliases](aliases-api-examples.md) for example requests and responses, the response fields, onboarding use and every validation error.
 
 Status codes: 400 invalid JSON, a bad or unknown field (bodies are strict: a misspelled key such as `dry_run` is refused, not ignored), an unknown or repeated query parameter on any route but `/pair` (query strings are strict the same way: `/lexicon?cdw=` and `/health?cdw=` are refused, with or without the token; only `/export`'s `category` may repeat; a POST route takes no query parameter at all, since its options are body fields, so `POST /packs/developer?scope=project` is refused and nothing is installed), an unknown `category` or a `limit` that is not a positive integer on `/export`, a `cwd` that is empty or not an existing directory, or a body on `DELETE /packs/:name`, 401 missing or wrong token, `/health?cwd=` included (with `WWW-Authenticate: Bearer`; the `error` names `lexicon serve --pair` for the browser extension and `lexicon serve --show` for any other client),
 403 a `Host` that does not name this server (any route), a project-scope

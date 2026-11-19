@@ -3498,29 +3498,25 @@ describe('packs and aliases routes', () => {
     expect(((await removal.json()) as { error: string }).error).toContain('or retry with ?scope=global to use the global lexicon instead');
   });
 
-  it('serves the aliases endpoint example without changing the lexicon', async () => {
-    const doc = await fs.readFile(new URL('../docs/aliases-endpoint-example.md', import.meta.url), 'utf8');
+  // docs/aliases-api-examples.md is the one GET /aliases doc: it absorbed the
+  // onboarding, query, walkthrough, response-reference and edge-case docs, and
+  // these tests keep every assertion those docs had.
+  const aliasesDocUrl = new URL('../docs/aliases-api-examples.md', import.meta.url);
+  const aliasesExamplePattern = /```http\nGET (\/aliases[^\n]*)\n```\n\nHTTP (\d{3}):\n\n```json\n([^\n]+)\n```/g;
+
+  it('indexes the single aliases doc and keeps the onboarding guidance', async () => {
+    const doc = await fs.readFile(aliasesDocUrl, 'utf8');
     const index = await fs.readFile(new URL('../docs/README.md', import.meta.url), 'utf8');
-    expect(index).toContain('(aliases-endpoint-example.md)');
+    expect(index).toContain('(aliases-api-examples.md)');
     expect(doc).toContain('onboarding form');
     expect(doc).toContain('Authorization: Bearer <token>');
-    const example = doc.match(/```http\nGET (\/aliases\?canonical=[^\n]+)\n```\n\nHTTP (\d{3}):\n\n```json\n([^\n]+)\n```/);
-    expect(example).not.toBeNull();
-    expect(example![1]).toBe('/aliases?canonical=Mason%20Wyatt');
-    const before = await (await api2('GET', '/lexicon')).json();
-    const response = await api2('GET', example![1]!);
-    expect(response.status).toBe(Number(example![2]));
-    expect(await response.json()).toEqual(JSON.parse(example![3]!));
-    expect(await (await api2('GET', '/lexicon')).json()).toEqual(before);
+    expect(doc).toContain('required `canonical` query parameter');
+    expect(doc).toContain('`aliases: []`');
+    expect(doc).toContain('application/json; charset=utf-8');
   });
 
-  it('serves the onboarding reference example without changing the lexicon', async () => {
-    const doc = await fs.readFile(new URL('../docs/aliases-onboarding-reference.md', import.meta.url), 'utf8');
-    const index = await fs.readFile(new URL('../docs/README.md', import.meta.url), 'utf8');
-    expect(index).toContain('(aliases-onboarding-reference.md)');
-    expect(doc).toContain('required `canonical` query parameter');
-    expect(doc).toContain('onboarding form');
-    expect(doc).toContain('`aliases: []`');
+  it('serves the first aliases example without changing the lexicon', async () => {
+    const doc = await fs.readFile(aliasesDocUrl, 'utf8');
     const example = doc.match(/```http\nGET (\/aliases\?canonical=[^\n]+)\n```\n\nHTTP (\d{3}):\n\n```json\n([^\n]+)\n```/);
     expect(example).not.toBeNull();
     expect(example![1]).toBe('/aliases?canonical=Mason%20Wyatt');
@@ -3542,71 +3538,32 @@ describe('packs and aliases routes', () => {
   });
 
   it('serves every documented aliases request and response', async () => {
-    const doc = await fs.readFile(new URL('../docs/aliases-api-examples.md', import.meta.url), 'utf8');
-    const examples = [...doc.matchAll(/```http\nGET (\/aliases[^\n]*)\n```\n\nHTTP (\d{3}):\n\n```json\n([^\n]+)\n```/g)];
+    const doc = await fs.readFile(aliasesDocUrl, 'utf8');
+    const examples = [...doc.matchAll(aliasesExamplePattern)];
     expect(examples.length).toBeGreaterThanOrEqual(9);
     expect(new Set(examples.map((example) => example[2]))).toEqual(new Set(['200', '400']));
-    for (const [, route, status, body] of examples) {
-      const response = await api2('GET', route!);
-      expect(response.status, route).toBe(Number(status));
-      expect(await response.json(), route).toEqual(JSON.parse(body!));
-    }
-  });
-
-  it('serves the aliases query examples with exactly the documented responses', async () => {
-    const doc = await fs.readFile(new URL('../docs/aliases-query-examples.md', import.meta.url), 'utf8');
-    const examples = [...doc.matchAll(/```http\nGET (\/aliases[^\n]*)\n```\n\nHTTP (\d{3}):\n\n```json\n([^\n]+)\n```/g)];
-    expect(examples.map((example) => example[1])).toEqual([
-      '/aliases?canonical=Mason%20Wyatt',
-      '/aliases?canonical=Bob',
-      '/aliases',
-    ]);
-    for (const [, route, status, body] of examples) {
-      const response = await api2('GET', route!);
-      expect(response.status, route).toBe(Number(status));
-      expect(await response.json(), route).toEqual(JSON.parse(body!));
-    }
-  });
-
-  it('serves the aliases endpoint walkthrough examples', async () => {
-    const doc = await fs.readFile(new URL('../docs/aliases-endpoint-examples.md', import.meta.url), 'utf8');
-    const examples = [...doc.matchAll(/```http\nGET (\/aliases[^\n]*)\n```\n\nHTTP (\d{3}):\n\n```json\n([^\n]+)\n```/g)];
-    expect(examples.map((example) => example[1])).toEqual([
+    // Every request the folded-in docs showed is still documented.
+    expect(examples.map((example) => example[1])).toEqual(expect.arrayContaining([
       '/aliases?canonical=Mason%20Wyatt',
       '/aliases?canonical=%20Ashlr%E2%80%8B.AI%20',
       '/aliases?canonical=Bob',
       '/aliases',
-      '/aliases?canonical=Vercel&limit=3',
-    ]);
-    for (const [, route, status, body] of examples) {
-      const response = await api2('GET', route!);
-      expect(response.status, route).toBe(Number(status));
-      expect(await response.json(), route).toEqual(JSON.parse(body!));
-    }
-  });
-
-  it('serves the request and error examples in the aliases response reference', async () => {
-    const doc = await fs.readFile(new URL('../docs/aliases-response-reference.md', import.meta.url), 'utf8');
-    const examples = [...doc.matchAll(/```http\nGET (\/aliases[^\n]*)\n```[\s\S]*?HTTP (\d{3})[^\n]*\n\n```json\n([^\n]+)\n```/g)];
-    expect(examples.map((example) => example[2])).toEqual(['200', '400']);
-    for (const [, route, status, body] of examples) {
-      const response = await api2('GET', route!);
-      expect(response.status, route).toBe(Number(status));
-      expect(await response.json(), route).toEqual(JSON.parse(body!));
-    }
-  });
-
-  it('serves the documented alias edge cases without looking up or writing terms', async () => {
-    const doc = await fs.readFile(new URL('../docs/aliases-endpoint-edge-cases.md', import.meta.url), 'utf8');
-    const index = await fs.readFile(new URL('../docs/README.md', import.meta.url), 'utf8');
-    expect(index).toContain('(aliases-endpoint-edge-cases.md)');
-    const examples = [...doc.matchAll(/```http\nGET (\/aliases[^\n]*)\n```\n\nHTTP (\d{3}):\n\n```json\n([^\n]+)\n```/g)];
-    expect(examples.map((example) => example[1])).toEqual([
-      '/aliases',
       '/aliases?canonical=%20%E2%80%8B%20',
-      '/aliases?canonical=Mason%20Wyatt',
-      '/aliases?canonical=Bob',
-    ]);
+      '/aliases?canonical=Vercel&limit=3',
+      '/aliases?canonical=Bob&canonical=Vercel',
+    ]));
+    for (const [, route, status, body] of examples) {
+      const response = await api2('GET', route!);
+      expect(response.status, route).toBe(Number(status));
+      expect(await response.json(), route).toEqual(JSON.parse(body!));
+    }
+  });
+
+  it('serves the documented aliases examples without looking up or writing terms', async () => {
+    const doc = await fs.readFile(aliasesDocUrl, 'utf8');
+    const examples = [...doc.matchAll(aliasesExamplePattern)];
+    const mason = examples.find((example) => example[1] === '/aliases?canonical=Mason%20Wyatt');
+    expect(mason).toBeDefined();
 
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-alias-edge-'));
     const globalPath = path.join(dir, 'config', 'lexicon.yaml');
@@ -3627,7 +3584,7 @@ describe('packs and aliases routes', () => {
       await addTerm({ canonical: 'Mason Wyatt', aliases: ['a stored alias'] }, { cwd: dir, globalPath });
       const response = await get('/aliases?canonical=Mason%20Wyatt');
       expect(response.status).toBe(200);
-      expect(await response.json()).toEqual(JSON.parse(examples[2]![3]!));
+      expect(await response.json()).toEqual(JSON.parse(mason![3]!));
     } finally {
       await server.stop();
       await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
