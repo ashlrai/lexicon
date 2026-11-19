@@ -20,6 +20,41 @@ Good shapes for a first PR:
 
 Before you start: say so on the issue so two people do not write the same exporter. If nothing on the list fits, open an issue describing the correction that went wrong, with the output of `lexicon normalize --diff "<what STT wrote>"`.
 
+## Contribute with an agent
+
+Lexicon is part of the Ashlr.AI ecosystem, where most changes are written, verified and merged by coding agents. Your pull request goes through the same path as theirs, whether you or your agent writes it. The short version:
+
+1. **Fork and clone.** Fork `ashlrai/lexicon` on GitHub, clone your fork, then install from the lockfile and build:
+
+   ```bash
+   git clone https://github.com/<you>/lexicon
+   cd lexicon
+   npm ci
+   npm run build
+   ```
+
+2. **Point the agent at the brief.** Claude Code reads [CLAUDE.md](CLAUDE.md) on its own; other agents start at [AGENTS.md](AGENTS.md), which routes them to the same brief. It holds the layout, the conventions and the rules agents most often miss.
+3. **Make one small change on a branch**, with its test (see the shapes in [Good first issues](#good-first-issues)).
+4. **Verify what you touched, then everything.** After `npm run build`, `node dist/cli/index.js test-select` (or `lexicon test-select` after `npm link`) prints the test commands for your staged, unstaged and untracked changes and falls back to `npm test` when it cannot narrow them. Before pushing, run what the required gate runs plus the full suite, which the gate does not:
+
+   ```bash
+   npm run typecheck
+   npm run build
+   npm run check:crypto
+   npx vitest run tests/upstream-redaction.test.ts
+   npm test
+   ```
+
+   Then the rule-driven extras from [CLAUDE.md](CLAUDE.md): `npm run build:bundle` and commit `plugin/` when `src/core`, `src/mcp`, `src/hooks` or `src/cli` changed; `npm run docs:cli` after a command or flag change; `npm run check:facts` after adding a tool, command, format or pack; `npm run check:links` after moving a doc; `npm run fresh:check` when a version or release fact moved.
+5. **Push to your fork and open a pull request against `main`.** Fill in the template checklist and add a `CHANGELOG.md` bullet under `Unreleased`.
+
+What happens next:
+
+- The one required check is **`CI Gate`**. It passes only when the fast job (typecheck, build, crypto policy, redaction tests) and both diff secret scans (pinned Gitleaks and the secret-shape scan over added lines) succeed; a skipped or cancelled job fails it. The scans ignore any `.gitleaks.toml` or `.gitleaksignore` in the PR, so a leak cannot be allowlisted from the same diff. Never commit a token, even a fake one shaped like a real one.
+- Merging goes through GitHub's merge queue, which runs `CI Gate` again on the result of merging your branch with current `main`.
+- Changes under the paths in [`.github/CODEOWNERS`](.github/CODEOWNERS) (workflows, `src/serve/`, the serve and argument parsing CLI files, the crypto check) request a review from the code owner.
+- The full portable suite (every OS, Node 20/22/24, e2e, bundle drift, doc checks) runs daily on `main`, not on your PR. That is why the local `npm test` above matters: a break it would have caught lands on `main` and becomes a fix-forward issue.
+
 ## Setup
 
 ```bash

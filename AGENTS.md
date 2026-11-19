@@ -68,7 +68,9 @@ The worked steps are in [docs/AGENTS.md](docs/AGENTS.md).
 Read **[CLAUDE.md](CLAUDE.md)** first: it is the working brief for this
 repository (layout, conventions, the rules about rebuilding the plugin bundle
 and regenerating the generated docs). Then
-[CONTRIBUTING.md](CONTRIBUTING.md) for the workflow and
+[CONTRIBUTING.md](CONTRIBUTING.md) for the workflow (its
+[Contribute with an agent](CONTRIBUTING.md#contribute-with-an-agent) section is
+the fork-to-merge path and what the required `CI Gate` checks) and
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for why the pieces are shaped the
 way they are. `docs/CONTRACT.md` is the module API.
 
