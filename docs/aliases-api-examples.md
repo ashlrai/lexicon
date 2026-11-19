@@ -1,4 +1,4 @@
-# GET /aliases examples
+# GET /aliases
 
 `GET /aliases` suggests spellings that speech-to-text might produce for a
 canonical name. It generates suggestions from the supplied name; it does not
@@ -9,13 +9,19 @@ server and client setup, and the [contract](CONTRACT.md#srcserve-configts-server
 Start `lexicon serve` and send `Authorization: Bearer <token>` with each
 request below. The default base URL is `http://127.0.0.1:41733`; use the URL
 and token shown by `lexicon serve --show` if configured differently. The
-examples show request targets, so prepend the base URL. URL-encode the value
-of `canonical` (for example, `encodeURIComponent(name)` in JavaScript).
-The endpoint accepts only one `canonical` query parameter.
+examples show request targets, so prepend the base URL.
 
-## Successful requests
+## Request
 
-A name containing a space:
+The required `canonical` query parameter is the correct spelling of the name
+to suggest aliases for. URL-encode its value, including spaces (for example,
+`encodeURIComponent(name)` in JavaScript). Supply it once, with no other query
+parameters.
+
+## Suggesting aliases in an onboarding form
+
+An onboarding form can ask for the correct spelling of a name first, then send
+it as `canonical`. For the name `Mason Wyatt`:
 
 ```http
 GET /aliases?canonical=Mason%20Wyatt
@@ -26,6 +32,24 @@ HTTP 200:
 ```json
 {"canonical":"Mason Wyatt","aliases":["Mason Wiatt","Mason Wyat"]}
 ```
+
+Show the suggestions for review before saving. To save a term and the chosen
+suggestions, send a separate `POST /add` with `canonical` and the selected
+`aliases` in its JSON body. Send `aliases: []` if none were selected: omitting
+`aliases` generates suggestions automatically for a newly created term. See
+[POST /add](LOCAL-API.md#endpoints) for its other fields and write behavior.
+
+## Response
+
+A successful response is HTTP 200 (`application/json; charset=utf-8`) with two
+fields:
+
+- `canonical` is the cleaned name as a string, which can differ from the input.
+- `aliases` is an array of generated strings in suggestion order. It can be
+  empty and contains at most eight suggestions. Suggestions are not the stored
+  aliases, and the canonical itself is excluded case-insensitively.
+
+## Cleaning the input
 
 The server strips invisible characters and trims surrounding whitespace before
 validation and suggestion. Here `%E2%80%8B` is a zero-width space:
@@ -40,7 +64,12 @@ HTTP 200:
 {"canonical":"Ashlr.AI","aliases":["Ashlr AI","Ashlr","Ashler","Ashlar","Ashler AI","Ashlar AI"]}
 ```
 
-There may be no suggestions:
+## Names not in the lexicon, and no suggestions
+
+An unknown canonical is still valid: the endpoint generates suggestions from
+the cleaned name rather than looking up stored terms. It neither adds the name
+nor returns aliases saved for it, so the `Mason Wyatt` response above is the
+same with an empty lexicon. Some names produce no suggestions:
 
 ```http
 GET /aliases?canonical=Bob
@@ -52,19 +81,30 @@ HTTP 200:
 {"canonical":"Bob","aliases":[]}
 ```
 
-A successful JSON response has two fields:
-
-- `canonical` is the cleaned name as a string, which can differ from the input.
-- `aliases` is an array of generated strings in suggestion order. It can be
-  empty and contains at most eight suggestions. Suggestions are not the stored
-  aliases, and the canonical itself is excluded case-insensitively.
+An empty array does not establish whether a term exists. The contract does not
+specify which suggestions any arbitrary name must produce or promise that a
+name will have suggestions; these examples show current results, not a lookup
+or an exhaustive list.
 
 ## Invalid requests
 
-A missing or blank name (including one that is blank after cleaning) is rejected:
+Errors have a string `error` field. An omitted `canonical`, an empty value, or
+a value that becomes empty after cleaning returns the same error:
 
 ```http
 GET /aliases
+```
+
+HTTP 400:
+
+```json
+{"error":"canonical query parameter is required (e.g. GET /aliases?canonical=Ashlr.AI)"}
+```
+
+This value holds only spaces and a zero-width space:
+
+```http
+GET /aliases?canonical=%20%E2%80%8B%20
 ```
 
 HTTP 400:
@@ -134,9 +174,8 @@ HTTP 400:
 ```
 
 Validation also rejects C0 and C1 controls, DEL, U+2028, U+2029 and unpaired
-surrogates that reach it. Errors have a string `error` field. A missing or
-invalid bearer token returns HTTP 401 with `WWW-Authenticate: Bearer`; use
-`lexicon serve --show` for a manual client or `lexicon serve --pair` for the
-browser extension. `HEAD` accepts the same query and returns the GET status
-and headers without a body. See the [local HTTP API guide](LOCAL-API.md) for
-other shared HTTP errors and headers.
+surrogates that reach it. A missing or invalid bearer token returns HTTP 401
+with `WWW-Authenticate: Bearer`; use `lexicon serve --show` for a manual client
+or `lexicon serve --pair` for the browser extension. `HEAD` accepts the same
+query and returns the GET status and headers without a body. See the [local
+HTTP API guide](LOCAL-API.md) for other shared HTTP errors and headers.
