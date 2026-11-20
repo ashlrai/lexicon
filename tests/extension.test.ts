@@ -1722,7 +1722,9 @@ describe('content: live mode keeps the caret where the user is typing', () => {
     sel.removeAllRanges();
     sel.addRange(r);
     e.dispatchEvent(new Event('input', { bubbles: true }));
-    await wait(60);
+    // Poll rather than sleep a fixed 60 ms: under a loaded full-suite run the
+    // debounced rewrite can land well after the debounce interval.
+    for (let i = 0; i < 100 && readText(e) !== 'ping Ashlr.AI about Kubernetes and'; i++) await wait(20);
     expect(readText(e)).toBe('ping Ashlr.AI about Kubernetes and');
     const { caretOffset } = await import('../extension/src/editable.js');
     expect(caretOffset(document, e)).toBe('ping Ashlr.AI about Kubernetes and'.length);
