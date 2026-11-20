@@ -113,8 +113,9 @@ and the built-in-example note.
 
 7. Published 0.5.4 `lexicon doctor --json` and `lexicon doctor --fix` both
    exited 1 with `error: unknown option`; only the source tree had them.
-   Both are on npm now: `doctor --json` since 0.5.6 and `doctor --fix` since
-   0.5.7 (see [source-versus-npm-commands.md](source-versus-npm-commands.md)).
+   Both are on npm now, since 0.5.8, the first npm release after 0.5.4
+   (`doctor --json` is in the 0.5.6 CHANGELOG section and `doctor --fix` in
+   0.5.7, neither of which was published; see [source-versus-npm-commands.md](source-versus-npm-commands.md)).
 
 ## Agent use
 
@@ -168,8 +169,8 @@ It is not on `mcp`, `hook` or `pack` itself (`pack add` has its own
 
 On published 0.5.4, `add --json`, `init --json`, `doctor --json` and
 `install --json` all exited 1 with `unknown option '--json'`. All four
-shipped in 0.5.6, so an agent on 0.5.6 or later (`lexicon --version`) can
-pass them. `normalize --json` and `setup --json` already worked on 0.5.4
+are in the 0.5.6 CHANGELOG section and first reached npm in 0.5.8, so an
+agent on 0.5.6 or later (`lexicon --version`) can pass them. `normalize --json` and `setup --json` already worked on 0.5.4
 (measured).
 
 ### `--dry-run` and other write gates

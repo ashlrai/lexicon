@@ -160,11 +160,10 @@ in its review prompts. Non-interactive CLI previews must name their sources;
 applying requires `--yes`, the matching `--preview-id` and explicit `--accept`
 candidate IDs. The `import_vocabulary` MCP tool instead requires the returned
 `previewToken`, explicit sources and `approvedCandidateIds`, and consumes that
-saved snapshot without rereading sources. No email or chat importer is implemented. The importer is reachable in
-repository source and the `v0.5.5` tag (release prep merged in
-[#25](https://github.com/ashlrai/lexicon/pull/25)); public npm `latest` remained
-`0.5.4` when requeried on 2026-10-15, with no `v0.5.5` GitHub release yet. Source implementation is not authenticated-import or
-published-release acceptance.
+saved snapshot without rereading sources. No email or chat importer is implemented. The importer landed in
+the `v0.5.5` tag (release prep merged in
+[#25](https://github.com/ashlrai/lexicon/pull/25)), which was never published;
+it first reached npm and a GitHub release in 0.5.8 (2026-11-06).
 
 **Install script (`curl | sh`).** `scripts/install.sh` (served from
 `https://ashlrai.github.io/lexicon/install.sh`) is POSIX sh. It checks for Node

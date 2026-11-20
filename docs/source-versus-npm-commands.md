@@ -14,24 +14,28 @@ prove which version is installed on PATH.
 
 ## Status
 
-Every row below has since shipped. The last column names the earliest release
-whose [CHANGELOG](../CHANGELOG.md) section mentions it. The first-run report was
-rechecked on 2026-11-19, when npm served 0.5.12, so a current npm install has
-all of them. The gap matters only for an executable older than the release in
-that column: check it as described in [Check what you are running](#check-what-you-are-running).
+Every row below has since shipped. The last column names the earliest version
+whose [CHANGELOG](../CHANGELOG.md) section mentions it. Not every CHANGELOG
+version was published: npm went from 0.5.4 to 0.5.8 (0.5.5, 0.5.6 and 0.5.7
+never reached npm or a GitHub release), so every row first reached npm in
+0.5.8, the "On npm since" column. The first-run report was rechecked on
+2026-11-19, when npm served 0.5.12, so a current npm install has all of them.
+The gap matters only for an executable older than the version in the last
+column (any npm install older than 0.5.8): check it as described in [Check what you are running](#check-what-you-are-running).
 
-| Command or flag | npm 0.5.4 at the reported snapshot | Source behavior | First release |
-| --- | --- | --- | --- |
-| `lexicon doctor --fix` | Source-only; 0.5.4 reports an unknown option. | Previews safe repairs without writing; add `--apply` to perform them. | 0.5.7 |
-| `lexicon doctor --json` | Source-only; 0.5.4 reports an unknown option. | Prints the doctor report as JSON; failed checks still affect the exit code. | 0.5.6 |
-| `lexicon pending` | Source-only in the issue's comparison. | Lists queued corrections; `pending accept` learns them and `pending reject` drops them. | 0.5.7 |
-| `lexicon add --json` | Source-only; 0.5.4 reports an unknown option. | Reports the add result as JSON; adding still writes. | 0.5.6 |
-| `lexicon install --json` | Source-only; 0.5.4 reports an unknown option. | Reports the install result as JSON; install previews by default and `--apply` writes. | 0.5.6 |
-| `lexicon uninstall` | Source-only in the issue's comparison. | Removes supported client integration entries; `--dry-run` previews the changes. | 0.5.7 |
+| Command or flag | npm 0.5.4 at the reported snapshot | Source behavior | On npm since | CHANGELOG version |
+| --- | --- | --- | --- | --- |
+| `lexicon doctor --fix` | Source-only; 0.5.4 reports an unknown option. | Previews safe repairs without writing; add `--apply` to perform them. | 0.5.8 | 0.5.7 |
+| `lexicon doctor --json` | Source-only; 0.5.4 reports an unknown option. | Prints the doctor report as JSON; failed checks still affect the exit code. | 0.5.8 | 0.5.6 |
+| `lexicon pending` | Source-only in the issue's comparison. | Lists queued corrections; `pending accept` learns them and `pending reject` drops them. | 0.5.8 | 0.5.7 |
+| `lexicon add --json` | Source-only; 0.5.4 reports an unknown option. | Reports the add result as JSON; adding still writes. | 0.5.8 | 0.5.6 |
+| `lexicon install --json` | Source-only; 0.5.4 reports an unknown option. | Reports the install result as JSON; install previews by default and `--apply` writes. | 0.5.8 | 0.5.6 |
+| `lexicon uninstall` | Source-only in the issue's comparison. | Removes supported client integration entries; `--dry-run` previews the changes. | 0.5.8 | 0.5.7 |
 
 This table is not a complete inventory of differences. In particular, the
-first-run report also found `init --json` unavailable in 0.5.4 (it shipped in
-0.5.6), while `normalize --json` and `setup --json` worked there.
+first-run report also found `init --json` unavailable in 0.5.4 (its CHANGELOG
+section is 0.5.6; it first reached npm in 0.5.8), while
+`normalize --json` and `setup --json` worked there.
 
 ## Check what you are running
 

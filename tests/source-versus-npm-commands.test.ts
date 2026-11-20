@@ -50,6 +50,8 @@ describe('source versus npm command comparison', () => {
     ] as const) {
       const row = doc.split('\n').find((line) => line.startsWith(`| \`${cell}\` |`));
       expect(row?.trimEnd().endsWith(`| ${release} |`), `${cell} release cell`).toBe(true);
+      // npm skipped 0.5.5 to 0.5.7, so every row first reached npm in 0.5.8.
+      expect(row?.trimEnd().endsWith(`| 0.5.8 | ${release} |`), `${cell} npm cell`).toBe(true);
       const at = sections.findIndex(([version]) => version === release);
       expect(at, `CHANGELOG ${release}`).toBeGreaterThanOrEqual(0);
       expect(sections[at][1], `CHANGELOG ${release}`).toContain(mention);
@@ -58,5 +60,6 @@ describe('source versus npm command comparison', () => {
       }
     }
     expect(doc).toContain('npm served 0.5.12');
+    expect(doc).toContain('npm went from 0.5.4 to 0.5.8');
   });
 });

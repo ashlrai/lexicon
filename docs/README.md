@@ -70,8 +70,9 @@ The CLI reference describes the current source tree. In the published npm packag
 0.5.4, measured in [FIRST-RUN.md](FIRST-RUN.md), `lexicon doctor --fix`,
 `lexicon doctor --json`, `lexicon add --json`, `lexicon install --json`,
 `lexicon uninstall` and `lexicon pending` were available only in source. All six
-reached npm in 0.5.6 or 0.5.7; [source-versus-npm-commands.md](source-versus-npm-commands.md)
-has the release for each. Source and npm can still differ between releases, so
+reached npm in 0.5.8, the first npm release after 0.5.4;
+[source-versus-npm-commands.md](source-versus-npm-commands.md) has the
+CHANGELOG version for each. Source and npm can still differ between releases, so
 compare `lexicon --version` with `npm view @ashlr/lexicon version`, then use
 `lexicon --help` and `lexicon doctor --help` to check which commands and flags
 your install supports.
@@ -83,7 +84,7 @@ your install supports.
 | [doctor-fix.md](doctor-fix.md) | `lexicon doctor --fix`: the dry-run preview, `--apply`, and the `--json` plan | |
 | [ashlr-handshake.md](ashlr-handshake.md) | `lexicon --ashlr-handshake`: the JSON contract shared with Locus, ashlr-stack, ashlr-plugin and ashlr-md | |
 | [PUBLIC-API.md](PUBLIC-API.md) | Every runtime value and type exported by `@ashlr/lexicon` | |
-| [source-versus-npm-commands.md](source-versus-npm-commands.md) | Dated npm 0.5.4 and source command differences (all shipped by 0.5.7), with version checks | |
+| [source-versus-npm-commands.md](source-versus-npm-commands.md) | Dated npm 0.5.4 and source command differences (all on npm since 0.5.8), with version checks | |
 | [MCP.md](MCP.md) | Every tool, resource and prompt, with arguments and return shapes | Use it with |
 | [aliases-api-examples.md](aliases-api-examples.md) | `GET /aliases`: the `canonical` parameter, onboarding use, response fields, unknown names and every validation error, with requests checked against a running `lexicon serve` | |
 | [LEXICON-FILE.md](LEXICON-FILE.md) | Where the file lives, the term schema, the settings, `never` | Get started |
