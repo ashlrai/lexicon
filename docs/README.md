@@ -94,10 +94,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 | [schema-first-invalid-unit.md](schema-first-invalid-unit.md) | Which invalid code unit a schema error reports first | |
 | [schema-error-preview.md](schema-error-preview.md) | How schema errors escape and shorten term-name previews: which fields carry one, the exact construction, UTF-16 boundaries and checked examples | |
 | [EXPORTS.md](EXPORTS.md) | Every export format and every importer | Use it with |
-| [voice-cleaning-reference.md](voice-cleaning-reference.md) | How local voice transcription removes tags and collapses whitespace | |
-| [transcript-tag-examples.md](transcript-tag-examples.md) | Short examples of tags removed from voice transcripts | |
-| [transcript-cleaning-scope.md](transcript-cleaning-scope.md) | Which transcript tags are removed or preserved, with examples | |
-| [transcript-cleaning-examples.md](transcript-cleaning-examples.md) | Input and output examples for voice transcript cleaning | |
+| [transcript-cleaning-scope.md](transcript-cleaning-scope.md) | How `lexicon voice` cleans whisper.cpp transcripts: which bracket, parenthesis and asterisk tags are removed or kept, the noise-word list, checked examples | |
 
 ## Contribute
 
