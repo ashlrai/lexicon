@@ -33,6 +33,9 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - Source-checked public API inventory and nested CLI option reference, with a five-line README quick start and corrected install examples.
 - `POST /normalize` and `normalize()` take an optional `context` (`recentText`, `bundleId`): words in it count as evidence for a term's `context` gate without being part of the corrected text or the reported spans. LexiconBar's Fix everywhere sends the field text ahead of the burst (up to 4,000 characters) and the focused app's bundle identifier, so a gated term can fire on what the field already held and which app holds it. (#851, #852)
 - `lexicon test-select [files...]` prints the tests a set of changed repository files should run (a `tests/*.test.ts` file maps to itself), falling back to the full suite when nothing is passed or a path has no reviewed mapping. `--json` prints the selection and the command argument arrays. (#906)
+- `--json=v1` on any command prints one `{ schemaVersion, ok, data }` document; `--json` is unchanged. (#1045)
+- `lexicon daemon --once` and `--which` accept `--json=v1`; the endless watcher refuses it. (#1045)
+- `lexicon --help` lists exit codes (0 ok, 1 failed); the `--json` error says why. (#1052)
 
 ### Fixed
 
