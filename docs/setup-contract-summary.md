@@ -1,9 +1,12 @@
-# Guided first-run contract summary
+# Guided setup: contract summary and entrypoints
 
 This page summarizes the current [setup contract](CONTRACT.md#srcclicmd-setupts)
-for maintainers. The contract is the source for exact options, return shapes and
-edge cases; this page is not a new specification. The questions below are prompts
-for future investigation, not commitments or claims that behavior is missing.
+for maintainers and maps where `lexicon setup` and the `setup_lexicon` MCP tool
+are registered and run. The contract is the source for exact options, return
+shapes and edge cases; [CLI.md](CLI.md) is the generated user-facing flag
+reference. This page is not a new specification. The questions at the end are
+prompts for future investigation, not commitments or claims that behavior is
+missing. Source paths are relative to the repository root.
 
 ## Documented responsibilities
 
@@ -51,14 +54,57 @@ the run would actually install. The plan provides a command to apply it. JSON
 mode puts the plan or summary on stdout and reports failure through `ok` and the
 exit code.
 
-The MCP `setup_lexicon` tool previews by default and asks the agent to show the
-plan before calling it with `apply: true`. Applying installs only the clients named in the request; an omitted or empty
-client list installs nothing, and harvest or the service runs only when explicitly
-enabled. Applying does not
+The MCP `setup_lexicon` tool previews by default (`dryRun: true`) and asks the
+agent to show the plan before calling it with `apply: true`. Applying installs
+only the clients named in the request; an omitted or empty client list installs
+nothing, and harvest or the service runs only when explicitly enabled. Applying
+does not
 implicitly trust a project file: the response names a file needing review and a
-separate trust decision. The `onboard` prompt asks for exact names and client
-choices and ends with a sentence to dictate. See the [MCP contract](CONTRACT.md)
-for the tool and prompt details.
+separate trust decision, while an already trusted project remains trusted. A
+failed apply is marked as an MCP error. The `onboard` prompt asks for exact names
+and client choices and ends with a sentence to dictate. See the
+[MCP contract](CONTRACT.md) for the tool and prompt details. CLI defaults and
+prompts differ, so callers should use the contract for the chosen surface rather
+than assume the two interfaces have identical defaults.
+
+## CLI registration and dispatch
+
+1. The `lexicon` package bin points to `dist/cli/index.js`, built from `src/cli/index.ts`. Except for its early version and fast-read paths, it loads `src/cli/run.ts`.
+2. `run.ts` calls `buildProgram(io)` in `src/cli/program.ts`, installs the global `--cwd` validation hook, and parses argv with Commander. `buildProgram` calls `registerSetupCommands(program, io)`.
+3. `registerSetupCommands`, defined in `src/cli/program.ts` and re-exported by `src/cli/cmd-setup.ts`, registers `setup`, its options and an action. Registration does not execute setup. The action dynamically imports `runSetupCli` only when invoked.
+4. `runSetupCli` in `src/cli/cmd-setup.ts` forwards the global `cwd` and options to `runSetup`, converts thrown errors into a JSON error when requested, and sets the process exit code on failure. The general CLI dispatcher handles other thrown errors.
+
+The registered setup options are:
+
+```text
+--yes --clients --company --person --phonetic --app --export-dir
+--harvest --packs --no-packs --no-harvest --serve --no-serve
+--dry-run --reseed --home --json
+```
+
+`-y` is the short form of `--yes`; `--cwd` belongs to the parent command. See the generated reference for option arguments and defaults.
+
+## Shared execution
+
+`runSetup(opts, io, deps?)` in `src/cli/cmd-setup.ts` is the testable execution entrypoint for both surfaces. It validates options before any step, chooses whether to prompt, creates the context, and runs the following functions in order from `src/cli/setup/steps.ts`:
+
+| Step | Function | Role |
+|---|---|---|
+| Global lexicon | `stepLexicon` | Initialize the global file if needed and seed names. |
+| Starter packs | `stepPacks` | Select and install packs. |
+| Repo harvest | `stepHarvest` | Find repo names and optionally add them to the project lexicon. |
+| Agent clients | `stepClients` | Detect and install into selected clients. |
+| Local API | `stepServe` | Optionally install the login service. |
+| Dictation app | `stepExport` | Optionally export terms for an app. |
+| Does it work? | `stepDemo` | Demonstrate a correction. |
+
+The steps reuse existing initialization, installation, harvest and export functions. `src/cli/setup/types.ts` defines options, results and injectable dependencies; `src/cli/setup/detect.ts` handles validation and detection. `cmd-setup.ts` is the facade that re-exports the documented setup types and helpers.
+
+`dryRun` suppresses writes and prompts and returns a `SetupPlan`; otherwise the handler returns a `SetupSummary`. Both return a code, and JSON mode prints the corresponding result. A client or service failure returns code 1 after the other steps run. A closed prompt or thrown step stops later steps and reports what was already done; a thrown step during a dry run propagates. `SetupDeps` allows tests to replace machine-dependent probes and installers.
+
+## MCP registration and dispatch
+
+`createServer` in `src/mcp/server.ts` walks `TOOL_REGISTRARS` from `src/mcp/tools/index.ts`. That list includes `registerSetupTools` in `src/mcp/tools/setup.ts`, which registers `setup_lexicon` along with other setup and health tools. Its guarded handler validates names, dynamically imports `runSetup`, translates tool arguments into non-interactive options, and returns the plan or summary as a tool result. The preview, apply and trust behavior is described under [Preview and agent responsibilities](#preview-and-agent-responsibilities).
 
 ## Open questions
 

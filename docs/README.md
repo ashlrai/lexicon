@@ -102,8 +102,7 @@ your installed version with `lexicon --version`, then use `lexicon --help` and
 |---|---|
 | [CONTRIBUTING.md](../CONTRIBUTING.md) | Setup, the test layout, and a recipe for each kind of contribution; [Contribute with an agent](../CONTRIBUTING.md#contribute-with-an-agent) for fork, `npm ci`, `lexicon test-select` and the `CI Gate` commands |
 | [setup-cast-outline.md](setup-cast-outline.md) | Reproducible, synthetic-data setup recording plan |
-| [setup-contract-summary.md](setup-contract-summary.md) | Guided first-run responsibilities, preview boundaries and open questions |
-| [setup-command-entrypoints.md](setup-command-entrypoints.md) | CLI and MCP setup registration, dispatch and shared execution |
+| [setup-contract-summary.md](setup-contract-summary.md) | Guided setup: first-run responsibilities, preview boundaries, CLI and MCP registration, dispatch and shared execution, open questions |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | The module map and the design decisions behind it |
 | [CONTRACT.md](CONTRACT.md) | The per-module API every change is written against |
 | [tray-scope.md](tray-scope.md) | Issue #13 tray proposal: proposed capabilities, each requirement marked stated or open, current state and desktop verification |
