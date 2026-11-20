@@ -952,7 +952,9 @@ describe.skipIf(process.env.LEXICON_SKIP_E2E).concurrent('e2e: UserPromptSubmit 
     expect(ctx).toContain('ping Ashlr.AI');
     expect(ctx).toContain('learn_correction tool with heard: "versel", meant: "Vercel"');
     expect(r.stderr).toContain('could not queue corrections for review');
-    expect(elapsed).toBeLessThan(4000);
+    // The regression waited the store's ten seconds per held lock. The bound sits
+    // below that but leaves room for process spawn on a loaded CI runner.
+    expect(elapsed).toBeLessThan(8000);
     // Neither held file was touched.
     await expect(fs.stat(path.join(dir, 'pending-aliases.yaml'))).rejects.toThrow();
     await expect(fs.stat(path.join(dir, 'hits.json'))).rejects.toThrow();
