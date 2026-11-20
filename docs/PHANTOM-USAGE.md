@@ -12,8 +12,9 @@ You do not need to wrap `lexicon` itself in `phantom exec`. Doing so is harmless
 
 None of these calls uses a provider key:
 - **`lexicon pack` with `--registry <url>`:** fetches a pack index and pack files over `https://` only, or plain `http://` only from this machine.
-- **Voice model downloads:** fetch Whisper models from Hugging Face (`https://huggingface.co/ggerganov/whisper.cpp`).
-- **`lexicon serve`:** listens on `http://127.0.0.1:41733` only ([LOCAL-API.md](LOCAL-API.md)).
+- **`lexicon voice`:** downloads its Whisper model (`base.en` by default, or the name passed to `--model`) from Hugging Face (`https://huggingface.co/ggerganov/whisper.cpp`) when it is not already on disk. A model given as a file path is never downloaded.
+- **`lexicon import --guided` and the MCP `import_vocabulary` tool, GitHub source only:** run the `gh` CLI, which calls `api.github.com` with your existing `gh` login (your profile, org members and repo names). Lexicon reads no GitHub token itself, and the contacts and calendar sources read local files only.
+- **`lexicon serve`:** listens on `127.0.0.1`, port 41733 by default ([LOCAL-API.md](LOCAL-API.md)). `--host` can bind another interface, which exposes the API to the network; leave it at the default.
 
 ## The `lexicon serve` token
 
