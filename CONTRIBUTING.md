@@ -51,8 +51,10 @@ Lexicon is part of the Ashlr.AI ecosystem, where most changes are written, verif
 What happens next:
 
 - The one required check is **`CI Gate`**. It passes only when the fast job (typecheck, build, crypto policy, redaction tests) and both diff secret scans (pinned Gitleaks and the secret-shape scan over added lines) succeed; a skipped or cancelled job fails it. The scans ignore any `.gitleaks.toml` or `.gitleaksignore` in the PR, so a leak cannot be allowlisted from the same diff. Never commit a token, even a fake one shaped like a real one.
-- Merging goes through GitHub's merge queue, which runs `CI Gate` again on the result of merging your branch with current `main`.
-- Changes under the paths in [`.github/CODEOWNERS`](.github/CODEOWNERS) (workflows, `src/serve/`, the serve and argument parsing CLI files, the crypto check) request a review from the code owner.
+- On a first pull request from a fork, GitHub may hold the workflow runs until a maintainer approves them. That is GitHub's default for new contributors, not a failure.
+- Merging goes through GitHub's merge queue, which runs `CI Gate` again on the result of merging your branch with current `main` and squash-merges it when green. Nothing else blocks: the branch rules require no approving review and do not require your branch to be up to date with `main`, so there is no need to rebase just to catch up.
+- Auto-merge is how a pull request enters the queue: `gh pr merge --auto <number>` (or **Enable auto-merge** on the PR page) queues it as soon as `CI Gate` passes. GitHub only lets accounts with write access do this, so on a fork PR a maintainer or the fleet arms it for you. A new push to the branch re-runs the gate first.
+- Changes under the paths in [`.github/CODEOWNERS`](.github/CODEOWNERS) (workflows, `src/serve/`, the serve and argument parsing CLI files, the crypto check) request a review from the code owner. The request is a signal to look, not a merge requirement.
 - The full portable suite (every OS, Node 20/22/24, e2e, bundle drift, doc checks) runs daily on `main`, not on your PR. That is why the local `npm test` above matters: a break it would have caught lands on `main` and becomes a fix-forward issue.
 
 ## Setup
