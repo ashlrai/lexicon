@@ -4,7 +4,7 @@
 canonical name. It generates suggestions from the supplied name; it does not
 look up stored aliases or add anything to the lexicon. Review the suggestions
 before using them. See the [local HTTP API guide](LOCAL-API.md) for starting the
-server and client setup, and the [contract](CONTRACT.md#srcserve-configts-serverts-indexts-and-srcclicmd-servets) for the full API.
+server and client setup, and the [contract](CONTRACT.md#srcserve-defaultsts-configts-infots-serverts-indexts-and-srcclicmd-servets) for the full API.
 
 Start `lexicon serve` and send `Authorization: Bearer <token>` with each
 request below. The default base URL is `http://127.0.0.1:41733`; use the URL
