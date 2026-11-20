@@ -5,11 +5,12 @@ each destination costs. We pay for none of it. Several directories now sell queu
 where that is true it is named, along with the free path and what the free path costs in
 waiting.
 
-Status is as of 2026-09-20. This landscape moves, so verify before acting.
+Status is as of 2026-09-20, except the Official MCP Registry row, rechecked 2026-11-19. This
+landscape moves, so verify before acting.
 
 | # | Destination | Cost | Who drives it | Status |
 |---|---|---|---|---|
-| 1 | [Official MCP Registry](#1-official-mcp-registry) | free | agent | ready to publish |
+| 1 | [Official MCP Registry](#1-official-mcp-registry) | free | agent | listed, but at 0.5.4; republish per release |
 | 2 | [Glama](#2-glama) | free | agent | ready, file committed |
 | 3 | [Anthropic plugin directory](#3-anthropic-plugin-directory) | free | **Mason** | needs his sign-in |
 | 4 | [punkpeye/awesome-mcp-servers](#4-punkpeyeawesome-mcp-servers) | free | agent, Mason merges | line drafted, PR not opened |
@@ -33,6 +34,15 @@ can prepare and run.
 The one that matters most: it is upstream of several other directories, which ingest from
 it rather than crawling. Free, no review queue, no placement to buy.
 
+**Status.** Listed as `io.github.ashlrai/lexicon`, first published 2026-09-28 at 0.5.4.
+The registry does not follow npm: every version is its own publish, and on 2026-11-19 the
+listing still said 0.5.4 while npm had 0.5.12. After each release, run the validate and
+publish steps below so the listing matches npm. To see what the registry holds now:
+
+```bash
+curl -s "https://registry.modelcontextprotocol.io/v0/servers?search=io.github.ashlrai/lexicon"
+```
+
 **What it requires.** A [`server.json`](../server.json) at the repo root, valid against the
 `2025-12-11` schema, plus proof that we own both the namespace and the npm package.
 
@@ -53,8 +63,8 @@ mcp-publisher validate server.json
 
 `mcp-publisher validate` only checks shape against the registry's schema; it does **not**
 check npm ownership, so it passes on its own while a real publish would fail.
-[`scripts/check-server-json.mjs`](../scripts/check-server-json.mjs) checks all three, and
-as of 0.5.1 it prints `ready to publish`.
+[`scripts/check-server-json.mjs`](../scripts/check-server-json.mjs) checks all three and
+prints `check:server-json: ready to publish` when they pass.
 
 (This was blocked until 0.5.1. `@ashlr/lexicon@0.5.0` went to npm without an `mcpName`
 field and npm versions are immutable, so the field could only arrive in a new release.
@@ -77,8 +87,8 @@ for no password and no token on the command line. The credential is cached; `mcp
 logout` clears it. Nothing else prompts.
 
 To publish from CI instead, `mcp-publisher login github-oidc` uses the GitHub Actions OIDC
-token and needs no interactive step. Worth wiring into the release workflow once the first
-manual publish has proven the namespace.
+token and needs no interactive step. The 2026-09-28 manual publish proved the namespace, so
+this is now the way to keep the listing current; the release workflow does not run it yet.
 
 ## 2. Glama
 
@@ -334,10 +344,10 @@ replace this one on someone's machine.
 
 ## Order of operations
 
-1. `0.5.1` is on npm carrying `mcpName`, so the blocker is gone: run `mcp-publisher
-   publish`. Everything downstream benefits, and two of the forms want the registry
-   name. Cut any further release through [RELEASING.md](RELEASING.md) rather than
-   uploading assets by hand.
+1. The registry listing exists but is stuck at 0.5.4: run `mcp-publisher publish` for the
+   current release, then once per release, so it tracks npm. Everything downstream
+   benefits, and two of the forms want the registry name. Cut any further release
+   through [RELEASING.md](RELEASING.md) rather than uploading assets by hand.
 2. Glama needs nothing further. The file is in the repo.
 3. Open the awesome-mcp-servers PR.
 4. Mason submits the Anthropic plugin directory form.
