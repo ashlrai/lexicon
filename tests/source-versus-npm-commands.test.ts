@@ -31,4 +31,32 @@ describe('source versus npm command comparison', () => {
       if (option) expect(command?.options.some((entry) => entry.long === option)).toBe(true);
     }
   });
+
+  it('names, for each row, the earliest released CHANGELOG section that mentions the command', () => {
+    const changelog = readFileSync(new URL('../CHANGELOG.md', import.meta.url), 'utf8');
+    // Released sections ("## 0.5.7 (date)"), newest first; "## Unreleased" is dropped.
+    const sections: Array<[string, string]> = [];
+    for (const part of changelog.split(/^## /m).slice(1)) {
+      const version = /^(\d+\.\d+\.\d+) \(/.exec(part)?.[1];
+      if (version) sections.push([version, part]);
+    }
+    for (const [cell, mention, release] of [
+      ['lexicon doctor --fix', 'lexicon doctor --fix', '0.5.7'],
+      ['lexicon doctor --json', 'lexicon doctor --json', '0.5.6'],
+      ['lexicon pending', 'pending-aliases.yaml', '0.5.7'],
+      ['lexicon add --json', 'lexicon add --json', '0.5.6'],
+      ['lexicon install --json', 'lexicon install --json', '0.5.6'],
+      ['lexicon uninstall', 'lexicon uninstall <client>', '0.5.7'],
+    ] as const) {
+      const row = doc.split('\n').find((line) => line.startsWith(`| \`${cell}\` |`));
+      expect(row?.trimEnd().endsWith(`| ${release} |`), `${cell} release cell`).toBe(true);
+      const at = sections.findIndex(([version]) => version === release);
+      expect(at, `CHANGELOG ${release}`).toBeGreaterThanOrEqual(0);
+      expect(sections[at][1], `CHANGELOG ${release}`).toContain(mention);
+      for (const [older, body] of sections.slice(at + 1)) {
+        expect(body.includes(mention), `${mention} already in ${older}`).toBe(false);
+      }
+    }
+    expect(doc).toContain('npm served 0.5.12');
+  });
 });
