@@ -10,6 +10,9 @@ describe('documentation index', () => {
     expect(reference).toBeDefined();
     expect(reference).toMatch(/CLI reference describes the current source tree/);
     expect(reference).toMatch(/published npm package[\s\S]*available only in source/);
+    // The source-only gap was npm 0.5.4's; it has shipped, so the index says so and links the release table.
+    expect(reference).toMatch(/npm package\s+0\.5\.4/);
+    expect(reference).toContain('[source-versus-npm-commands.md](source-versus-npm-commands.md)');
     for (const command of [
       'lexicon doctor --fix', 'lexicon doctor --json', 'lexicon add --json',
       'lexicon install --json', 'lexicon uninstall', 'lexicon pending',
@@ -54,6 +57,6 @@ describe('documentation index', () => {
     expect(report).toMatch(/^### `--dry-run` and other write gates$/m);
     expect(report).toMatch(/^### MCP schemas$/m);
     expect(report).toMatch(/^## Follow-ups\n\nRanked by how much of the product they touch\./m);
-    expect(report).toMatch(/npm serves `@ashlr\/lexicon` 0\.5\.4\. This source tree is 0\.5\.6/);
+    expect(report).toMatch(/When this was measured, npm served `@ashlr\/lexicon` 0\.5\.4 and this source\s+tree was 0\.5\.6/);
   });
 });

@@ -67,11 +67,14 @@ Look up an exact name, flag or field. Some pages also appear above, listed
 twice because you may reach them for different reasons.
 
 The CLI reference describes the current source tree. In the published npm package
-measured in [FIRST-RUN.md](FIRST-RUN.md), `lexicon doctor --fix`,
+0.5.4, measured in [FIRST-RUN.md](FIRST-RUN.md), `lexicon doctor --fix`,
 `lexicon doctor --json`, `lexicon add --json`, `lexicon install --json`,
-`lexicon uninstall` and `lexicon pending` were available only in source. Check
-your installed version with `lexicon --version`, then use `lexicon --help` and
-`lexicon doctor --help` to check which commands and flags it supports.
+`lexicon uninstall` and `lexicon pending` were available only in source. All six
+reached npm in 0.5.6 or 0.5.7; [source-versus-npm-commands.md](source-versus-npm-commands.md)
+has the release for each. Source and npm can still differ between releases, so
+compare `lexicon --version` with `npm view @ashlr/lexicon version`, then use
+`lexicon --help` and `lexicon doctor --help` to check which commands and flags
+your install supports.
 
 | Page | What it covers | Also listed under |
 |---|---|---|

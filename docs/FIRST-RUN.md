@@ -11,9 +11,10 @@ The README command is:
 curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
 ```
 
-npm serves `@ashlr/lexicon` 0.5.4. This source tree is 0.5.6. The install
-path below is 0.5.4, because that is what the script installs. Flags that
-exist only in this tree are called out as source.
+When this was measured, npm served `@ashlr/lexicon` 0.5.4 and this source
+tree was 0.5.6. The install path below is 0.5.4, because that is what the
+script installed then (it installs the version `npm view` reports). Flags
+that existed only in the source tree at the time are called out as source.
 
 Rechecked 2026-11-19 against source 0.5.12, which npm now serves too
 (`npm view @ashlr/lexicon version`). The 0.5.4 rows below are the
@@ -111,9 +112,9 @@ and the built-in-example note.
    says setup must then be run as the user. That path is doing what it says.
 
 7. Published 0.5.4 `lexicon doctor --json` and `lexicon doctor --fix` both
-   exit 1 with `error: unknown option`. This source has both flags, and the
-   README says the fix mode is not in the npm package yet. Anyone whose
-   first binary came from the install script is on 0.5.4 until a release.
+   exited 1 with `error: unknown option`; only the source tree had them.
+   Both are on npm now: `doctor --json` since 0.5.6 and `doctor --fix` since
+   0.5.7 (see [source-versus-npm-commands.md](source-versus-npm-commands.md)).
 
 ## Agent use
 
@@ -166,10 +167,10 @@ It is not on `mcp`, `hook` or `pack` itself (`pack add` has its own
 `--json`). `mcp` and `hook` are protocol streams, not document commands.
 
 On published 0.5.4, `add --json`, `init --json`, `doctor --json` and
-`install --json` all exit 1 with `unknown option '--json'`. An agent that
-installs from the README and then passes `--json` to those commands will
-fail until it is on this tree or a later release. `normalize --json` and
-`setup --json` do work on 0.5.4 (measured).
+`install --json` all exited 1 with `unknown option '--json'`. All four
+shipped in 0.5.6, so an agent on 0.5.6 or later (`lexicon --version`) can
+pass them. `normalize --json` and `setup --json` already worked on 0.5.4
+(measured).
 
 ### `--dry-run` and other write gates
 
