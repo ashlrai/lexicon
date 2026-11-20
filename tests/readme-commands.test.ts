@@ -49,6 +49,31 @@ function resolveCommand(program: Command, words: string[]): { chain: Command[]; 
 
 const LONG_FLAG = /^--[a-z][a-z0-9-]*/;
 
+/** Why one invocation does not match the CLI, or null when it does. Takes any text, so a fixture can prove it fails. */
+export function commandProblem(program: Command, line: string): string | null {
+  const words = line.replace(/^lexicon\s+/, '').split(/\s+/).filter(Boolean);
+  const { chain } = resolveCommand(program, words);
+  if (chain.length === 0 && !words.every((word) => word.startsWith('-'))) return `no registered command in: ${line}`;
+  const leaf = chain.at(-1);
+  const next = words[chain.length];
+  if (leaf && leaf.commands.length && leaf.registeredArguments.length === 0 && next && !next.startsWith('-')) {
+    return `unknown subcommand ${next} in: ${line}`;
+  }
+  // Flags the program and every command on the chain accept.
+  const accepted = new Set<string>(['--help', '-h']);
+  for (const cmd of [program, ...chain]) {
+    for (const option of cmd.options) {
+      if (option.long) accepted.add(option.long);
+      if (option.short) accepted.add(option.short);
+    }
+  }
+  const flags = words.map((w) => w.split('=')[0]).filter((w) => LONG_FLAG.test(w) || /^-[a-zA-Z]$/.test(w));
+  for (const flag of flags) {
+    if (!accepted.has(flag)) return `${flag} is not an option of ${chain.map((c) => c.name()).join(' ')} (in: ${line})`;
+  }
+  return null;
+}
+
 describe('README lexicon commands match the CLI', () => {
   const program = buildProgram(makeIO());
   const invocations = readmeInvocations(readme);
@@ -58,26 +83,21 @@ describe('README lexicon commands match the CLI', () => {
   });
 
   it.each([...new Set(invocations)])('%s uses a registered command and known flags', (line) => {
-    const words = line.replace(/^lexicon\s+/, '').split(/\s+/).filter(Boolean);
-    const { chain } = resolveCommand(program, words);
-    expect(chain.length > 0 || words.every((word) => word.startsWith('-')), `no registered command in: ${line}`).toBe(true);
-    const leaf = chain.at(-1);
-    const next = words[chain.length];
-    if (leaf && leaf.commands.length && leaf.registeredArguments.length === 0 && next && !next.startsWith('-')) {
-      expect.fail(`unknown subcommand ${next} in: ${line}`);
-    }
+    expect(commandProblem(program, line)).toBeNull();
+  });
 
-    // Flags the program and every command on the chain accept.
-    const accepted = new Set<string>(['--help', '-h']);
-    for (const cmd of [program, ...chain]) {
-      for (const option of cmd.options) {
-        if (option.long) accepted.add(option.long);
-        if (option.short) accepted.add(option.short);
-      }
-    }
-    const flags = words.map((w) => w.split('=')[0]).filter((w) => LONG_FLAG.test(w) || /^-[a-zA-Z]$/.test(w));
-    for (const flag of flags) {
-      expect(accepted.has(flag), `${flag} is not an option of ${chain.map((c) => c.name()).join(' ')} (in: ${line})`).toBe(true);
-    }
+  it('fails on a README that names a command or flag that does not exist', () => {
+    const fixture = [
+      '```bash', 'lexicon nosuchthing', 'lexicon list --nosuchflag', 'lexicon list', '```', 'Run `lexicon fakecmd` now.',
+    ].join('\n');
+    const problems = readmeInvocations(fixture).map((line) => commandProblem(program, line));
+    expect(problems.filter(Boolean)).toHaveLength(3);
+    expect(problems[2]).toBeNull();
+  });
+
+  it('states the real command count and links the full reference that lists every command', () => {
+    expect(readme).toContain(`A CLI with ${program.commands.length} commands`);
+    expect(readme).toContain('(docs/CLI.md)');
+    expect(readme).toContain('(docs/MCP.md)');
   });
 });
