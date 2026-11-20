@@ -8,20 +8,32 @@ Several files are facades: they re-export from the modules they were split into 
 
 ## Module map (dependency order)
 
-Each layer imports only from the layers above it, and siblings only through `src/core/index.js`.
+Every file under `src/` (tests and the self-contained `src/ambiguity/` aside) is listed once below. Each layer imports from the layers named after its `<-`, and reaches the core through `src/core/index.js`. These exceptions are deliberate, and each is checked against the imports in the source:
+
+- `src/util/*` is imported directly by path from every layer.
+- Startup metadata imports `core/caps.js` and `core/types.js` directly, so `--help` and the MCP tool schemas load without the core: `cli/program.ts` and `mcp/tools/{terms,harvest,trust,setup,packs}.ts`. `cli/run.ts` imports `core/store.js` lazily, only to answer the companion handshake.
+- `core/index.ts` re-exports the discovery contract of `serve/info.ts`, and `serve/config.ts` imports `redactSecrets` from `core/redact.ts`.
+- `daemon/clipboard.ts` imports `jsonError` from `cli/args.ts`, and `daemon/expander-server.ts` lazily imports `cli/program`, `cli/commands`, `cli/io` and `cli/cmd-learn` to answer the CLI's fast reads.
+- `cli/program.ts` lazily imports `mcp/server.ts` and `hooks/user-prompt-submit.ts`, which back `lexicon mcp` and `lexicon hook`.
 
 ```text
-src/util/          errors, json, which, atomic, package      <- nothing (the bottom layer; every other layer imports it directly)
-src/core/          types, schema, store, trust, matcher (facade over matcher/{build,text,tokenize,tuning} + stoplist),
-                   normalize, suggest, learn, pending, stats, notes, suggestTerms, harvest, packs, shell, importers/, exporters/, index   <- util
-src/daemon/        clipboard-backends, clipboard, expander, expander-server   <- core, util
-src/serve/         config, server, index                     <- core, util
+src/util/          errors, record, json, jsonc, which, atomic, package, xdg, shell, bounded-read, cli-hint, anthropic   <- nothing (the bottom layer)
+src/core/          types, caps, schema, store, edit-check, trust, parsed-hash,
+                   matcher (facade over matcher/{build,text,tokenize,tuning,enumeration} + stoplist; matcher/serialize is store's),
+                   normalize, collate, conflict-note, notes, suggest, learn, pending, stats, suggestTerms, harvest, packs, registry, demo,
+                   import-sources, import-preview, redact, shell, importers/, exporters/, index   <- util
+src/serve/         defaults, info, config, server, index     <- core, util
+src/daemon/        clipboard-backends, clipboard, expander, expander-server, fast-client   <- core, util, cli (see above)
 src/voice/         process, devices, models, recorder, transcribe, history, voice   <- core, daemon (clipboard write), util
-src/cli/           cli-entry, io, serve-paths, prompt, claude-settings, commands (facade), cmd-doctor, companions, handshake, cmd-install,
-                   cmd-import, cmd-trust, cmd-learn, cmd-review, cmd-suggest, cmd-serve, cmd-voice, cmd-pack,
-                   cmd-setup (facade over setup/{types,detect,steps}), index   <- core, daemon, serve, voice, util
-src/hooks/         user-prompt-submit                        <- core, util
-src/mcp/           server, shared, tools/{index,terms,harvest,trust,setup,packs}   <- core, cli (runDoctorReport, runInstall, runImport, runSetup), util
+src/cli/           index, run, program, args, io, exit-codes, json-output, dry-run-plan, client-names, import-limit, lexicon-edit-hint,
+                   cli-entry, serve-paths, prompt, claude-settings, commands (facade), cmd-doctor, doctor-fix, doctor-config-read,
+                   phantom-presence, companions, handshake, cmd-install, cmd-uninstall, cmd-import, cmd-import-guided, cmd-trust,
+                   cmd-learn, cmd-pending, cmd-review, cmd-suggest, cmd-terms, cmd-test-select, cmd-serve, cmd-voice, cmd-pack,
+                   cmd-setup (facade over setup/{types,detect,steps})   <- core, daemon, serve, voice, util; mcp and hooks lazily
+src/hooks/         user-prompt-submit, plugin-entry          <- core, util
+src/mcp/           annotations, server, shared, tools/{index,terms,harvest,trust,setup,packs}
+                   <- core, serve (defaults, config), util, cli (the IO type, unreadableLexiconEdit, MAX_IMPORT_BYTES; lazily
+                      runDoctorReport, runInstall, runUninstall, runImport, runSetup, setupNameProblem, serveInstallBlocker)
 ```
 
 Data and other trees, none of which `src/` imports at build time:
@@ -85,7 +97,7 @@ see [bench/README.md](../bench/README.md); measured results, if needed, live in
 fixture, not recognition quality or real-world performance across speakers and languages.
 
 
-## src/util/ (errors, record, json, which, atomic, package)
+## src/util/ (errors, record, json, jsonc, which, atomic, package, xdg, shell, bounded-read, cli-hint, anthropic)
 
 The bottom layer: no imports from `src/core`, `src/cli` or anything else in the tree. Every other layer imports these directly by path rather than through `core/index.js`, which is the one documented exception to the sibling rule. These exist because seven waves of agents each wrote their own copy; if you find yourself writing an eightieth `String(err)` or `PATH.split(':')`, it belongs here.
 
@@ -130,6 +142,25 @@ Executable lookup without spawning `which` / `where`.
 - `findPackageRoot(from: string): string | undefined` walks up from a path or `file:` URL to the directory whose `package.json` is named `@ashlr/lexicon`.
 - `packageVersion(moduleUrl: string): string` one answer to "what version am I" that holds from `src/`, from `dist/` and from the `plugin/` bundles, falling back to `UNKNOWN_VERSION`. Used by `cli/index.ts`, `cmd-doctor.ts`, `serve/server.ts` and `mcp/shared.ts`.
 - **Name collision to know about.** `src/core/packs.ts` also exports a `findPackageRoot`, with an *optional* argument defaulting to its own module URL, and `core/index.js` re-exports it. `import { findPackageRoot } from './core/index.js'` and `from './cli/cli-entry.js'` are therefore different functions. Both do the same walk; prefer the `util/package.ts` one in new code.
+
+### src/util/xdg.ts
+- `usableHome(home): string`: `home` when it is an absolute path, else the user database's home directory; throws when neither is usable, so an empty or relative `HOME` never turns `~/.config` into a path under the working directory. `homeDir()` is `usableHome(os.homedir())`, the default every CLI and voice path uses.
+- `xdgConfigHome(env?, home?)`, `xdgDataHome(env?, home?)`, `xdgStateHome(env?, home?)`: the XDG variable when it holds an absolute path, else `~/.config`, `~/.local/share` or `~/.local/state`. An empty or relative value is ignored, as the XDG spec says.
+- `globalLexiconPath(env?, home?)`: `$LEXICON_PATH` when set, else `<XDG config home>/lexicon/lexicon.yaml`. `resolvePaths` in `core/store.ts` adds an explicit override on top; the plugin hook's entry stub uses this to find its compile cache directory without loading the store.
+
+### src/util/shell.ts
+`posixShellWord`, `powerShellWord`, `hostPlatform`, `shellWord` and `commandLine`: the quoting for every command lexicon prints for a person to run. Defined here, dependency-free; `core/shell.ts` re-exports them as public core API, where they are documented.
+
+### src/util/bounded-read.ts
+Reads of files someone else may have put there (a project `.lexicon.yaml` comes from whatever repository was cloned, and git stores symlinks), without letting the file decide how much is read or whether the read finishes.
+- `readBoundedRegularFile(filePath, maxBytes): Promise<{ bytes: Buffer; mode: number }>`: follows symlinks, rejects with ENOENT when nothing is there and with a `BoundedReadError` (`path`, `reason: 'not-regular' | 'too-large'`, `size?`) for a device, FIFO or directory, or a file over `maxBytes`. The open is non-blocking where the platform has the flag, the descriptor is checked again, and at most `maxBytes + 1` bytes are read whatever the file claims. `isBoundedReadError(err)` tests by name.
+- `readRegularFileTail(filePath, maxBytes): Promise<string | undefined>`: the last `maxBytes` as text, from the first whole line inside them; `undefined` when nothing is there, an `EINVAL` error for anything but a regular file. The voice history writer and `lexicon suggest` share it, with one bound.
+
+### src/util/cli-hint.ts
+- `cliCommand(args): string`: a `lexicon` command as an agent should name it, followed by its `npx @ashlr/lexicon` form, because a user who installed only the Claude Code plugin has no `lexicon` on PATH.
+
+### src/util/anthropic.ts
+- `ANTHROPIC_API_VERSION = "2023-06-01"`: the one place for the Anthropic API version request header. Nothing imports it yet.
 
 ## src/core/types.ts
 Dependency-free shared types.
@@ -225,15 +256,16 @@ Pure functions, no IO, no environment, no logging.
 - `GLUE_BEFORE`, `GLUE_AFTER` (matcher.ts) and `PATH_RE` (matcher/tokenize.ts) are module-private; only the behaviour above is contract.
 - `similarity(a: string, b: string): number` 0..1; optimal string alignment distance up to 40 characters, plain Levenshtein beyond, so its value does not depend on the caller.
 
-## src/core/matcher/ (build.ts, text.ts, tokenize.ts, tuning.ts)
+## src/core/matcher/ (build.ts, text.ts, tokenize.ts, tuning.ts, enumeration.ts, serialize.ts)
 
-The matcher split into four files behind the `matcher.ts` facade. Same purity rule: no IO, no environment, no logging. Only the names listed in the `matcher.ts` section are re-exported; everything else here is imported by path or not at all.
+The matcher split into five files behind the `matcher.ts` facade (build, text, tokenize, tuning, enumeration), plus `serialize.ts`, which only `store.ts` imports. Same purity rule: no IO, no environment, no logging. Only the names listed in the `matcher.ts` section are re-exported; everything else here is imported by path or not at all.
 
 - `matcher/tuning.ts` holds every tuned constant, so a threshold change is one diff in one file: `DEFAULT_MIN_CONFIDENCE = 0.82`, `MAX_WINDOW = 5`, `PHONETIC_BASE = 0.9`, `PHONETIC_LENGTH_WEIGHT = 0.25`, `MAX_PHONETIC_KEYS_PER_TERM = 24`, `PHONETIC_MIN_KEY = 3`, `PHONETIC_MIN_WINDOW = 4`, `ALIASED_PLAIN_WORD_MIN = 0.88`, `INVENTED_BOUNDARY_CONFIDENCE = 0.95`, `PHONETIC_LONE_TOKEN_MIN_SIM = 0.6`, `PHONETIC_LONE_KEY3_MIN_SIM = 0.8`, `PHONETIC_LONE_KEY4_MIN_SIM = 0.65`, `loneTokenMinSim(keyLength)`, `VOWEL_RE`, `DOMAIN_SUFFIX`, `FUNCTION_WORDS`, and a re-export of `STOPLIST`. Every number here is justified by a case in `tests/matcher.test.ts`; change one and run the benchmark (`npm run bench`).
 - `matcher/text.ts`: `foldDiacritics`, `foldLower`, `alphaOnly`, `collapse`, `squash`, `phoneticKey`, `osaDistance`, `similarity`.
 - `matcher/tokenize.ts`: `Token`, `Range`, `collectRanges(text)` (the code spans, fences, HTML `<code>`/`<pre>`/`<kbd>`/`<samp>`/`<script>`/`<style>` elements, URLs, emails and paths `skipCode` protects), `htmlCodeRanges(text)` (a real `<code>`, `<pre>`, `<kbd>`, `<samp>`, `<script>` or `<style>` element, opening tag to closing tag, found in one linear pass; an unclosed tag and escaped `&lt;code&gt;` text are not ranges), `indentedCodeRanges(text)` (Markdown's indented code block: needs a blank line above, a non-blank line above that, four columns of indent past its container block quote or list item, and one line in the run that is not itself a list item or table row; see docs/MATCHING.md), `tokenize(text, skipCode)`. None of these are re-exported by `matcher.ts`; `src/core/index.ts` re-exports `collectRanges` and `codeSpanRanges` (the prompt hook reads no correction out of them).
 - `matcher/build.ts`: `AliasEntry`, `PhoneticEntry`, `MatcherIndex`, `buildIndex(lexicon)`, `separatorOffsets(s)` (the offsets, counted in the collapsed form, where a spelling separates one alphanumeric run from the next: `Ashlr.AI` -> `{5}`, `LexiconFile` -> `{}`; folded and lowercased first, since that is what `collapse` counts), plus `push`, `isSpelledOut`, `implicitAliases`, `sortFuzzyBuckets` and `firstAtLeast` (index construction helpers, reachable only from this path).
 - `matcher/serialize.ts` (reachable only from this path; store.ts uses it): `INDEX_FORMAT_VERSION` (bump on any change that can alter buildIndex's output or the serialized shape; `tests/index-cache.test.ts` fingerprints build.ts, text.ts, tuning.ts, serialize.ts and the double-metaphone version and fails until the version and digest are re-recorded), `indexKey(lexicon): string` (JSON of the format version, the matcher settings `minConfidence`, `phonetic`, `fuzzy`, `skipCode`, `protectedWords`, and each term's `[canonical, aliases, never, caseSensitive]`; `hits`, `notes`, `category`, `scope` and the rest are not in it), `SerializedIndex`, `serializeIndex(index)`, `deserializeIndex(data, lexicon): MatcherIndex | undefined` (type- and range-checks everything it rebuilds; `undefined` on the first thing that is off; entries point at `lexicon.terms`).
+- `matcher/enumeration.ts` (dependency-free; `matcher.ts` runs it on every rewrite set): `MentionSpan { start; end; original; replacement }`, `declineCollapsedMentions<T extends MentionSpan>(text, spans): T[]` drops the rewrites that would flatten a passage quoting spellings on purpose ("it's Ashlr.AI, not Ashler" must not become "it's Ashlr.AI, not Ashlr.AI"); pure, and order-preserving for what it keeps. The test is closed rather than proximate: the canonical must stand in the block or the paragraph directly above it, so two garbles with no canonical nearby are still corrected as dictation. `GUARD_VOCABULARY` is the cue-word set, exported so `tests/enumeration.property.test.ts` reads the real one.
 
 ## src/core/packs.ts
 Starter term packs: the curated lexicons in `packs/*.yaml` at the package root, so a new user installs dozens of names with one command instead of typing them. A pack is a plain lexicon file plus `name`, `title` and `description`.
@@ -391,15 +423,30 @@ Pure, no IO.
 - The MCP server's zod enums live in `src/mcp/shared.ts` (`INSTALL_CLIENT_VALUES`, `INSTALL_SCOPES`, `IMPORT_FORMAT_VALUES`, `SUGGESTION_KINDS`), each `as const satisfies readonly <T>[]` so it fails to compile when the union grows. `export_lexicon` takes its format from an enum of `EXPORT_FORMATS` plus the `EXPORT_FORMAT_ALIASES` keys and resolves it with `resolveExportFormat`.
 
 ## src/core/shell.ts
-Quoting for every command lexicon prints for a person to copy and run (`to apply, run: ...`, `then run: ...`, the whisper rerun): one source, so all of them are quoted the same way on a platform.
+Quoting for every command lexicon prints for a person to copy and run (`to apply, run: ...`, `then run: ...`, the whisper rerun): one source, so all of them are quoted the same way on a platform. Defined in the dependency-free `src/util/shell.ts`; this file re-exports the five names as public core API.
 - `posixShellWord(s): string`: bare when it matches `[\w@%+=:,./-]+`, else single-quoted with `'` written as `'\''`.
 - `powerShellWord(s): string`: bare when it is plainly safe for PowerShell (word characters and `+ = : . / \ -`, plus `@` and `~` after the first character, so `C:\Users\RUNNER~1\...` stays bare), else single-quoted with `'` and U+2018 to U+201B doubled. A comma is always quoted (bare, PowerShell passes `a,b` as two arguments), and so is a leading `@` or `~`.
 - `hostPlatform(): string`: `process.platform`, or `'linux'` where there is no `process` (the browser extension, which bundles this module through conflict-note.ts), so a command printed there is quoted for a POSIX shell.
 - `shellWord(s, platform: string = hostPlatform())`: `powerShellWord` on win32, else `posixShellWord`.
 - `commandLine(words, platform: string = hostPlatform())`: the words joined, each through `shellWord`; on win32 a first word that had to be quoted gets PowerShell's call operator `& ` in front.
 
+## src/core/caps.ts
+The numbers and name lists that CLI help and the MCP tool schemas need before any command or tool runs. It imports nothing but a type, so loading it pulls in neither zod, yaml, the matcher nor the exporters. `cli/program.ts` and `mcp/tools/*` import it directly; the modules that own each behavior re-export what they use, so `core/index.ts` stays the public path.
+- `LIMITS = { word: 80, text: 200, aliases: 64, terms: 5000, protectedWords: 1000 }` (characters per canonical or alias, characters of notes or phonetic, aliases and `never` words per term, terms per file, protected words).
+- `HARVEST_MAX_LIMIT = 1000`, `EXPORT_MAX_LIMIT = 10000`, `SUGGEST_DEFAULT_LIMIT = 20`, `SUGGEST_MAX_LIMIT = 500`, `AUTO_APPLY_CONFIDENCE = 0.8` (what `--yes` and MCP auto-apply accept unattended), `MAX_CORRECTION_LENGTH = 60`, `TOP_TERMS = 10`, `NEVER_HIT_CAP = 20`, `DEFAULT_MIN_CONFIDENCE = 0.82`, `INVENTED_BOUNDARY_CONFIDENCE = 0.95`.
+- `EXPORT_FORMAT_ALIASES` (other names accepted for a format), `EXPORT_ALIAS_ROW_FORMATS`, `PROJECT_FILE_NAME = '.lexicon.yaml'`, `IMPLEMENTED_IMPORT_SOURCES = ['contacts', 'calendar', 'github']`, `IMPORT_FORMATS`. `EXPORT_FORMATS` stays in `types.ts`.
+
+## src/core/parsed-hash.ts
+Internal to core; `parsedContentHash` in `trust.ts` is the public reader. Keeps the sha256 of the exact bytes a project `LexiconFile` was parsed from (or last written as) in a `WeakMap` beside the object, so the trust gate checks the bytes that were merged rather than a second read a `git checkout` could change in between. A copy of the object has no entry and falls back to hashing the file on disk.
+- `sha256OfBytes(bytes): Promise<string>` (loads `node:crypto` on first use), `rememberParsedBytes(file, bytes)` (hashed only when asked, since the prompt hook never needs it), `rememberParsedHash(file, sha256)`, `shareParsedHash(from, to)`, `recalledParsedHash(file): Promise<string | undefined>`.
+
+## src/core/redact.ts
+Not re-exported from `core/index.ts`; `serve/config.ts`, `core/registry.ts` and the extension import it by path.
+- `redactSecrets(text, secrets): string` replaces every run of 8 or more characters of `text` that also occurs in one of `secrets` with `[redacted]`; secrets shorter than 8 are ignored. Used on upstream error bodies and status replies before they reach an error, CLI output or the extension popup.
+- `safeUrlLabel(url): string`: scheme, host, port and path only; a user name, password, query or fragment is dropped, and an unparseable URL is not echoed.
+
 ## src/core/index.ts
-Re-exports everything above: `types`, `schema`, `store`, `trust`, `matcher`, `normalize`, `harvest`, `exporters`, `importers`, `suggest`, `learn`, `stats`, `suggestTerms`, `packs`, `registry`, `shell`, `import-sources`, `import-preview`. The only cross-module import path inside core; also the package entry point (`main` / `exports["."]`). Note that `export * from './packs.js'` also surfaces `packs.ts`'s own `findPackageRoot`, which is a *different* function from the one in `src/util/package.ts` (see below).
+Re-exports, with `export *`: `types`, `schema`, `store`, `edit-check`, `trust`, `matcher`, `normalize`, `harvest`, `import-sources`, `import-preview`, `exporters`, `importers`, `suggest`, `learn`, `pending`, `stats`, `notes`, `suggestTerms`, `packs`, `registry`, `demo`, `shell`. By name: `INVENTED_BOUNDARY_CONFIDENCE` (`matcher/tuning.ts`), `codeSpanRanges` and `collectRanges` (`matcher/tokenize.ts`), `compareText` (`collate.ts`), and `ServerInfoSchema`, `SERVER_FEATURES` and the `ServerInfoResponse` type (`serve/info.ts`). Names from `caps.ts`, `conflict-note.ts` and `stoplist.ts` arrive through the modules that re-export them (`schema`, `harvest`, `learn`, `matcher` and others); `parsed-hash.ts`, `redact.ts` and `matcher/serialize.ts` are not reachable from here. The only cross-module import path inside core; also the package entry point (`main` / `exports["."]`). Note that `export * from './packs.js'` also surfaces `packs.ts`'s own `findPackageRoot`, which is a *different* function from the one in `src/util/package.ts` (see that section above).
 
 ## src/daemon/clipboard-backends.ts
 - `ClipboardBackend { name; description?; read(): Promise<string>; write(text): Promise<void> }`. `read` resolves `''` for an empty or non-text clipboard (the tool exits non-zero or prints nothing); a missing binary (`ENOENT`) or a display/session error still rejects, and so does a `ClipboardTooLargeError`.
@@ -793,6 +840,24 @@ Setup previously truncated the company suggestion to `Ashlr`. The requested
 behavior is to preserve the dot and suggest `Ashlr.AI`; the dry-run preview and
 the seeded brand must agree. The matching author supplies the capitalization.
 Without it, the dotted scope still produces `Ashlr.ai`, with the dot intact.
+
+## Other src/cli modules
+The small modules the command handlers share, and the commands without a section above. Several have no import from the core on purpose: `lexicon --help` and the MCP tool schemas load them, and loading the core (zod, yaml, the matcher) is what made help slow.
+- `src/cli/args.ts` (no core import): `IO { stdout; stderr }`, `processIO`, `line(io, s?)`; `JsonError` and `jsonError(error, nextStep?)`, `printJsonError(io, error, nextStep?)`, `DEFAULT_NEXT_STEP`; `class CliRefusal extends Error` (`nextStep?`); `argvRequestsJson(args, flags?)`, `jsonFlagsOf(cmd)`, `optsRequestJson(opts)`, `usageErrorJson(message, commandPath)`, `unknownCommandHint(name)`; the commander parsers `positiveIntOption(flag, example, max?)`, `nonNegativeIntOption(flag, example)`, `wholeNumber(value)`, `parsePort(value)` and `exampleAfterMissingArgument(cmd, example)`. `io.ts` re-exports these.
+- `src/cli/run.ts`: no exports. Loaded by `index.ts` for every invocation but a lone version flag: applies `--json=v1`, answers the companion handshake before commander, builds the program and reports errors.
+- `src/cli/program.ts`: `buildProgram(io): Command` and the twelve `register*Commands` functions listed under `src/cli/index.ts` below.
+- `src/cli/exit-codes.ts` (no imports): `EXIT_OK = 0`; `EXIT_USAGE`, `EXIT_NOT_FOUND` and `EXIT_FAILURE` are all 1, named so the reason is readable in code while scripts keep branching on 0 or 1 (the reason is in the `--json` document's `error`). `exitCodesHelpText()` is the "Exit codes" section of `lexicon --help`. `lexicon voice` keeps its own codes.
+- `src/cli/json-output.ts`: the `--json=v1` transport. `CliJsonV1<T> { schemaVersion: 1; ok; data: T }`, `jsonV1(data)` (`ok` is false when `data`, or any element of an array `data`, has `ok: false`), `jsonInvocation(args)` (rewrites `--json=<version>` to `--json` before `--` only, and returns the version asked for), `versionedIO(io)` (wraps each JSON document a handler writes). Any version other than `v1` is refused with exit 1.
+- `src/cli/dry-run-plan.ts`: `dryRunPlan(dryRun): { plan?: true; dryRun?: true }`, spread into a successful mutation preview (a no-op included) so every `--dry-run` JSON result carries the same two markers. Applied results and failures never carry `plan`.
+- `src/cli/client-names.ts` (no imports): `INSTALL_CLIENTS` (`claude`, `codex`, `cursor`, `windsurf`, `gemini`, `claude-desktop`, `vscode`, `generic`) and `InstallClient`; `SETUP_CLIENTS` (all but `generic`) and `SetupClient`; `SETUP_APPS` (`wispr`, `superwhisper`, `macos`, `none`) and `SetupApp`.
+- `src/cli/import-limit.ts`: `MAX_IMPORT_BYTES = 8 * 1024 * 1024`, the largest input `lexicon import` and MCP `import_dictionary` read; split out so the MCP schema can name it without loading the importer.
+- `src/cli/lexicon-edit-hint.ts`: `unreadableLexiconEdit(message): string | undefined`, the `lexicon edit` command (with `--project` for a `.lexicon.yaml`) that opens the file a store parse or validation error names, or `undefined` when the message is not one. The MCP server words its next step around it.
+- `src/cli/doctor-fix.ts`: `lexicon doctor --fix [--apply]`, specified in [doctor-fix.md](doctor-fix.md). `planFixes(env: FixEnv): Promise<FixPlan>` reads and writes nothing; `applyFixes(...)` makes the planned fixes with a backup first; `runDoctorFix(opts: DoctorFixOptions, io, deps?): Promise<number>` prints the plan, or with `--apply` the outcome (exit 1 only when an applied fix was skipped); `refuseApplyWithoutFix(io, json)` is the `--apply` without `--fix` refusal. Types: `StateFile = "trust" | "hits" | "pending" | "index_cache"`, `PlannedFix`, `ReportOnly`, `FixPlan { fixes; report_only }`, `AppliedFix`, `FixOutcome`, `FixEnv`, `DoctorFixOptions { json?; fix?; apply? }`.
+- `src/cli/doctor-config-read.ts`: `DOCTOR_CONFIG_MAX_BYTES` (1 MiB), `DoctorConfigRead` (`read` with `text`, `missing`, or `unconfirmed` with a reason: `nonregular`, `too-large`, `changed`, `invalid-utf8`, `unreadable`), `readDoctorConfigText(file)` and `readDoctorConfigJson(file): Promise<JsonFileRead>`. Only an initial ENOENT counts as absence; a client config that is over the cap, a symlink, or changes during the read is left unconfirmed.
+- `src/cli/phantom-presence.ts`: the report-only Phantom line of `lexicon doctor`. `probePhantomCli(exec): PhantomCli` runs only `phantom --version`; `inPhantomExecSession(env)` is true when `PHANTOM_PROXY_PORT` is a valid port and `PHANTOM_PROXY_TOKEN` is non-empty (its value is never read into the message); `checkPhantomPresence(probe): DoctorCheck` is always `info`, so it never changes `ok`, `ready` or the exit code. It never reads, reveals or resolves a secret.
+- `src/cli/cmd-terms.ts`: `TermsAddOptions extends CommonOptions { heard?; context?; project?; dryRun?; json?; globalPath? }`, `runTermsAdd(canonical, opts, io): Promise<number>`. `lexicon terms add` is the deterministic add: a canonical and the spellings it is heard as (`--heard`), with none of `add`'s suggested aliases or prompts, idempotent through `addTerm`'s merge (a second identical run answers `unchanged`). Plain `lexicon terms` is the `list` table.
+- `src/cli/cmd-test-select.ts`: `selectTests(paths, root)` returns `{ ok, full, files, unknown, tests, commands }`. A changed `tests/` or `bench/` test file maps to itself, a few reviewed paths map to their tests, and any other path (or no path) means the full suite (`npm test`); `changedFiles(cwd)` is the tracked diff against `HEAD` plus untracked files; `runTestSelect(paths, opts, io)` prints the commands, or the object under `--json`.
+- `src/cli/cmd-uninstall.ts`: specified with `lexicon install` in the `cmd-install.ts` section above.
 
 ## src/cli/index.ts  (bin: lexicon)
 A lone `--version`, `-V` or `-v` prints the package version before commander or the core loads. Other invocations load `run.ts` for the handshake, dispatch and error handling. `program.ts` exports `buildProgram(io): Command` and wires commander; actions dynamically import handlers in `commands.ts` and `cmd-*.ts`. Lightweight argument and IO helpers live in `args.ts` and are re-exported from `io.ts`. Twelve registrars run in this order: `registerImportCommands`, `registerInstallCommands`, `registerUninstallCommands`, `registerTrustCommands`, `registerLearnCommands`, `registerPendingCommands`, `registerServeCommands`, `registerVoiceCommands`, `registerSetupCommands`, `registerSuggestCommands`, `registerReviewCommands`, `registerPackCommands`. Global `--cwd <dir>`: the `preAction` hook refuses one that is not an existing directory before any command but `hook` and `mcp` runs (`cwdOptionProblem(cwd): CliRefusal | undefined` in io.ts; the `CliRefusal { message, nextStep? }` it throws is reported through `refuse`: `lexicon: --cwd "<dir>" is not an existing directory`, then `pass a directory that exists, or leave --cwd out to use the current directory`, both also as `{ ok: false, error, nextStep }` under `--json` or `--full`, exit 1). Commands wired in `program.ts`: `init` (`--project`, `--dry-run`, `--json`), `add <canonical> [aliases...]` (`--phonetic`, `--category`, `--notes`, `--project`, `--suggest`, `-i/--interactive`, `--never <word...>`), `remove|rm <canonical>` (`--project`), `list|ls` (`--json`, `--category`, `--query`), `normalize [text...]` (stdin if omitted; `--json`, `--diff`, `--dry-run`, `--min-confidence`, `--no-phonetic`, `--no-fuzzy`, `--include-untrusted`), `harvest [path]` (`--limit`, `--min-count`, `--add`, `-i/--interactive`, `--yes`, `--json`, `--full`), `export [format]` (`--out`, `--category <c...>`, `--limit`), `path` (`--json`), `doctor` (`--json`), `mcp`, `hook`, `daemon` (`--once`, `--paste`, `--interval`, `--dry-run`, `--quiet`, `--backend`, `--which`), `install-claude` (`--apply`, `--scope`, `--project`, `--home`, `--json`: the flags of `install claude`, forwarded to `runInstall("claude", ...)`, with no `--scope` default of its own). Then `registerImportCommands`, `registerInstallCommands`, `registerUninstallCommands`, `registerTrustCommands`, `registerLearnCommands`, `registerReviewCommands`, `registerSetupCommands` add `import`, `install`, `uninstall`, `trust`, `untrust`, `learn`, `stats`, `review`, `edit`, `setup`. `docs/CLI.md` is generated from their `--help`.
