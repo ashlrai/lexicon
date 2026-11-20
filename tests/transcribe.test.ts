@@ -1,62 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { readFileSync } from 'node:fs';
 import { cleanTranscript } from '../src/voice/transcribe.js';
 
-describe('transcript tag examples', () => {
-  const document = readFileSync(new URL('../docs/transcript-tag-examples.md', import.meta.url), 'utf8');
+// The documented cleaning examples are checked against cleanTranscript in
+// tests/transcript-cleaning-scope.test.ts (docs/transcript-cleaning-scope.md).
 
-  it('keeps the published tag examples in sync with the cleaner', () => {
-    const json = document.match(/```json\n([\s\S]*?)\n```/)?.[1];
-    expect(json).toBeDefined();
-    const examples = JSON.parse(json!) as Array<{ input: string; cleaned: string }>;
-    expect(examples.length).toBeGreaterThanOrEqual(14);
-    expect(examples.some(({ input }) => /\[[^\]]*\]/.test(input))).toBe(true);
-    expect(examples.some(({ input }) => /\*[^*]+\*/.test(input))).toBe(true);
-    for (const { input, cleaned } of examples) {
-      expect(cleanTranscript(input), input).toBe(cleaned);
-    }
-  });
-});
-
-describe('voice cleaning reference', () => {
-  const reference = readFileSync(new URL('../docs/voice-cleaning-reference.md', import.meta.url), 'utf8');
-  const examples = [...reference.matchAll(/^\| `([^`]+)` \| `([^`]+)` \|$/gm)];
-
-  it('keeps every published example in sync with the cleaner', () => {
-    expect(examples.length).toBeGreaterThanOrEqual(18);
-    for (const [, input, output] of examples) {
-      expect(cleanTranscript(input), input).toBe(output === '""' ? '' : output);
-    }
-  });
-
+describe('cleanTranscript whitespace', () => {
   it('collapses whitespace after cleaning and leaves unmatched delimiters', () => {
     expect(cleanTranscript(' \tHello\n[MUSIC]\tthere  *unfinished ')).toBe('Hello there *unfinished');
-  });
-});
-
-describe('transcript cleaning examples', () => {
-  const document = readFileSync(new URL('../docs/transcript-cleaning-examples.md', import.meta.url), 'utf8');
-
-  it.each([
-    ['Square brackets', 7],
-    ['Asterisks', 9],
-  ])('keeps the %s examples in sync with the cleaner', (section, minimum) => {
-    const content = document.split(`## ${section}\n`)[1]?.split('\n## ')[0] ?? '';
-    const examples = [...content.matchAll(/^\| `([^`]+)` \| `([^`]+)` \|$/gm)];
-    expect(examples.length).toBeGreaterThanOrEqual(minimum);
-    for (const [, input, output] of examples) {
-      expect(cleanTranscript(input), input).toBe(output === '""' ? '' : output);
-    }
-  });
-
-  it('documents interactions between sequential and adjacent matches', () => {
-    for (const row of [
-      '| `Keep *laughs**coughs* here.` | `Keep here.` |',
-      '| `Keep *one*two* here.` | `Keep two* here.` |',
-      '| `Before *hello [noise] world* after.` | `Before after.` |',
-    ]) {
-      expect(document).toContain(row);
-    }
   });
 });
 

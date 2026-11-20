@@ -25,7 +25,7 @@ microphone -> ffmpeg (16 kHz mono s16 WAV) -> whisper.cpp (--prompt <canonicals>
    spellings it sees in the prompt; on the audio benchmark that alone lifts
    `base.en` term recall from 42% to 67% (see below). Bracketed tags like
    `[BLANK_AUDIO]` and noise annotations like `(applause)` are stripped. See
-   [transcript tag examples](transcript-tag-examples.md) for the exact cleaning
+   [transcript cleaning](transcript-cleaning-scope.md) for the exact cleaning
    behavior, including starred text. whisper-cli
    gets 2 minutes plus 10 seconds per second of audio; past that it is stopped and the
    capture is kept. Ctrl-C while it runs stops it and keeps the capture as well; both
