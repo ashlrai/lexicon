@@ -15,7 +15,9 @@ tools below call the same handlers, so the two never drift.
 ## Philosophy
 
 - **Ask, then act.** The tools are designed for a dialogue: `install_client`
-  previews before it writes, `trust_project` shows the file before it trusts,
+  previews before it writes, `uninstall_client` dry-runs before it removes,
+  `setup_lexicon` returns a plan before it applies, `trust_project` shows a
+  sanitized summary before it trusts,
   `import_dictionary` has `dryRun`, `suggest_terms` proposes and
   `apply_suggestion` applies only the items the user accepted.
 - **Structured results, not screen scraping.** `lexicon_doctor` returns the
@@ -72,6 +74,11 @@ slash commands, so `/mcp__lexicon__onboard` for a server added as `lexicon`; or
 > Cursor, Windsurf, Gemini CLI, VS Code?
 > **User:** Claude Code and Cursor.
 > **Agent:** *calls `setup_lexicon { company: "Ashlr.AI", person: "Mason Wyatt", clients: ["claude", "cursor"] }`*
+> Here is the plan; nothing is written yet: seed Ashlr.AI and Mason Wyatt in
+> ~/.config/lexicon/lexicon.yaml, register the server in Claude Code and
+> Cursor. Go ahead?
+> **User:** yes
+> **Agent:** *calls the same with `apply: true`*
 > Done. Lexicon at ~/.config/lexicon/lexicon.yaml with Ashlr.AI and Mason
 > Wyatt; registered in Claude Code (server + hooks) and Cursor. Adding
 > Entire.io next.
@@ -98,17 +105,23 @@ Answers "is lexicon set up for this user, and if not what is the single
 command that fixes it" in one call. Three fields carry that answer and are
 meant to be read on their own:
 
-- `ready` is true when corrections will actually happen: there are terms, and
-  an agent is wired up to use them. This, not `ok`, is the answer to "is it
-  set up". A lexicon with no terms and no integration fails no check, so `ok`
+- `ready` is true when the lexicon has at least one term and an integration
+  declaration was found for at least one agent. It does not prove a live
+  client connection or an actual correction. This, not `ok`, is the answer to
+  "is it set up". A lexicon file that exists but does not parse is also
+  `ready: false`, and `setup_lexicon` does not repair it: relay `nextStep`,
+  which names the file. A lexicon with no terms and no integration fails no check, so `ok`
   is true and nothing works.
 - `summary` is one sentence, safe to relay verbatim.
 - `nextStep` is the single thing to do next, already phrased as an instruction.
   Always present; when nothing is broken it says so and names how to try it.
 
-Then `{ ok, checks: [{ level: 'ok'|'warn'|'fail'|'info', message }],
-paths: { global, project?, trust, settings, installedPlugins }, versions:
-{ lexicon, node, platform } }` for when detail is actually wanted. `lexicon
+Then `{ ok, error?, checks: [{ level: 'ok'|'warn'|'fail'|'info', message }],
+paths: { global, project?, trust, settings, projectSettings?,
+projectSettingsFiles?, installedPlugins }, versions: { lexicon, node,
+platform }, companions? }` (`error`, present only when `ok` is false, is the
+first failing check; `companions` is what [the Ashlr.AI
+handshake](ashlr-handshake.md) read from companion tools) for when detail is actually wanted. `lexicon
 doctor` in a terminal prints the same `summary` and `nextStep` under the
 check list, so the CLI and the agent never tell the user different things.
 Same checks as `lexicon doctor`, including
@@ -135,9 +148,15 @@ checks, because it did not have to read them.
 `client`: `claude`, `codex`, `cursor`, `windsurf`, `gemini`, `vscode` or
 `claude-desktop`. Without `apply` it returns the file and the entry that
 would be merged and writes nothing. With `apply: true` it writes (idempotent:
-an existing entry is left alone) and `written` lists each file it touched as
-`{ file, outcome }`, so the agent need not parse `output`. `scope: 'project'` targets the repo-level
-config (`./.cursor/mcp.json`, `claude mcp add --scope project`).
+an existing entry is left alone). It returns `{ client, scope, applied, ok,
+written, output, reload?, stderr?, next?, nextStep? }`: `written` lists each
+file it touched as `{ file, outcome }` (`created`, `updated` or `unchanged`;
+empty for a preview), so the agent need not parse `output`; `reload` is what
+the user does so the client loads the server; `ok: false` means the step did
+not complete, and `nextStep` says not to apply until it is fixed.
+`scope: 'project'` targets the repo-level config (`./.cursor/mcp.json`,
+`claude mcp add --scope project`); `windsurf` and `claude-desktop` have none,
+so `scope: 'project'` with them is refused.
 
 > **Agent:** *calls `install_client { client: "cursor" }`*
 > This would merge into ~/.cursor/mcp.json:
@@ -147,15 +166,32 @@ config (`./.cursor/mcp.json`, `claude mcp add --scope project`).
 > **Agent:** *calls `install_client { client: "cursor", apply: true }`*
 > Written. Reload the Cursor window (Developer: Reload Window) to pick it up.
 
+### `uninstall_client { client, apply?, scope? }`
+
+The reverse of `install_client`, with the same clients and scopes. Without
+`apply` it is a dry run that writes nothing. It removes only what an install
+writes (a lexicon server launched the way an install launches it and, for
+`claude`, the lexicon hook commands); a server the user named themselves is
+reported as `kept`, and every other entry in the file is untouched. It returns
+`{ client, scope, applied, ok, changes, output, stderr?, next?, nextStep? }`,
+where `changes` lists `{ file, entry, outcome }` with outcome `removed` (would
+be removed, in a dry run), `absent` or `kept`. The Claude Code plugin is not
+removed by this tool; `output` names the command that removes it.
+
 ### `trust_project { action, path? }`
 
 `action: 'status'` returns `{ status: 'trusted'|'untrusted'|'changed'|
 'missing'|'invalid'|'none', termCount, aliasCount, termsWithNotes, sample,
 more, fullPreview, registry, trustAll, trusted[] }`: `sample` is at most 3
 canonicals, each at most 40 characters, and `fullPreview` tells the model the
-full preview is for the user, through `lexicon trust` in a terminal. `'trust'`
-asks the user, pins the file at the sha256 they approved and returns the same
-summary; `'untrust'` revokes. `path` defaults to the project `.lexicon.yaml`
+full preview is for the user, through `lexicon trust` in a terminal. An
+`'invalid'` status (the file does not parse) adds `error` and `nextStep`.
+`'trust'` asks the user directly, through an MCP elicitation prompt they
+answer rather than the model, pins the file at the sha256 they approved and
+answers `result`: `'trusted'`, `'updated'` (a changed file re-approved),
+`'re-pinned'`, `'already-trusted'` or `'declined'`. When the client cannot
+ask, it returns how the user can run it themselves instead. `'untrust'`
+revokes and answers `removed`. `path` defaults to the project `.lexicon.yaml`
 for the server's working directory. This is how the model reviews the file:
 every string passes through `sanitizeForDisplay` and `neutralizeMarkup`, and
 no alias or note is quoted, so next to nothing the file says reaches the
@@ -193,12 +229,16 @@ dryRun, terms: [{ canonical, aliases, created }], skipped, counts }`.
 ### `suggest_terms { cwd?, limit? }` and `apply_suggestion { suggestion | suggestions, scope? }`
 
 `suggest_terms` reads the merged lexicon, the voice history and the repo and
-returns `TermSuggestion[]`: `{ kind: 'alias'|'term'|'never'|'stale',
-canonical, alias?, reason, confidence, evidence[], count }`.
-`apply_suggestion` takes one back verbatim: `alias` merges the alias into the
-term, `term` adds it (aliases auto-suggested when none given), `never` records
-the word on the term's `never` list, `stale` removes the term from one
-lexicon file. A term with a copy in both the project and the global file comes
+returns a bare `TermSuggestion[]`, best first: `{ kind: 'alias'|'term'|
+'never'|'phonetic'|'stale', canonical, alias?, aliases?, phonetic?, category?, reason,
+confidence, evidence[], count, scope, path }`, where `scope` and `path` name the lexicon
+file applying it would write (name that file when presenting it). An empty
+array comes with a second text block saying why and what produces
+suggestions. `apply_suggestion` takes one back verbatim: `alias` merges the
+alias into the term, `term` adds it (aliases auto-suggested when none given),
+`never` records the word on the term's `never` list, `phonetic` sets the
+term's pronunciation hint only when it has none (never applied unattended),
+`stale` removes the term from one lexicon file. A term with a copy in both the project and the global file comes
 back with `stillIn` naming the other copy, which keeps correcting until it is
 removed with its own `scope`. An `alias` or `never` goes where the term lives;
 a `scope` naming a file that does not hold the term is refused and nothing is
@@ -221,12 +261,19 @@ rest.
 > **Agent:** *calls `apply_suggestion` once, with both in `suggestions`*
 > Done: "ashlur" -> Ashlr.AI saved; "sauce" will never be rewritten to SaaS.
 
-### `setup_lexicon { company?, person?, clients?, harvest?, serve?, apply? }`
+### `setup_lexicon { company?, person?, clients?, packs?, harvest?, serve?, apply? }`
 
 Preview by default. Without `apply` it runs `lexicon setup --dry-run` and
 returns the plan, `{ plan: true, lexiconPath, lexiconExists, wouldSeed,
+wouldInstallPacks, packsOnOffer, packsToInstall, alreadyInstalledPacks?,
 wouldHarvest, detectedClients, wouldInstallClients, wouldInstallServe,
-serveBlocked?, wouldExport, next }`, having written nothing. `serveBlocked`
+serveBlocked?, wouldExport, demo?, interactive, wouldAsk, next }`, having
+written nothing. `demo` (`{ heard, corrected, terms, usedExample }`) is the
+before and after a real run would end on, worth showing. `packsOnOffer` is
+the default starter-pack set to offer; `packsToInstall` stays empty until
+`packs` names some (`list_packs` describes each). `company` and `person` are
+one line each, within the term length cap; a longer, blank or multi-line one
+is refused, in the preview too. `serveBlocked`
 (with `serve: true`) says why the login service would be refused, for example
 from a plugin or npx copy, and names the fix (`npm i -g @ashlr/lexicon`);
 relay it instead of offering the service. Show it to the user, then call
@@ -239,11 +286,13 @@ login service. The apply call runs `lexicon setup` non-interactively (`yes`,
 `json`) and returns `{ ok, applied: true, summary: { lexiconPath, termsAdded,
 clients: [{ name, status, detail? }], serve, exports, nextStep }, nextStep }`
 (`nextStep`, what to relay next, names `add_term` when the user has no name of
-their own in the lexicon yet); `detail` is the
+their own in the lexicon yet; when a step fails, `ok` is false and the same
+payload comes back flagged as an error result); `detail` is the
 config file the installer wrote (`~/.cursor/mcp.json`, `~/.claude/settings.json
 (unchanged)`).
 
-What it does not do: install a client that is not listed, harvest without
+What it does not do: install a client that is not listed, install a starter
+pack that `packs` does not name, harvest without
 `harvest: true`, or create the login service without `serve: true`. It never
 seeds a person or company already in the global lexicon (case-insensitive),
 and the harvest skips names the global lexicon already covers (the git author
@@ -264,7 +313,11 @@ failing server returns its full error: `{ up: true, url, version, terms,
 port, ... }`; `{ up: false, running: true, url, status, error, hint }` when
 the server answers with an error (a lexicon file that does not parse, say),
 so the agent fixes `error` instead of starting a second server; or
-`{ up: false, url, error, hint }` when nothing answers. From a plugin or npx
+`{ up: false, url, error, hint }` when nothing answers or when a program
+other than `lexicon serve` holds the port. When `serve.json` is missing or
+unusable (not valid JSON, no usable token, unreadable), any of these adds
+`configured: false`, `configPath` and a `note` saying why and what fixes it,
+as `lexicon serve --status --json` does. From a plugin or npx
 copy that hint names `npx @ashlr/lexicon serve` and why a login service needs
 a permanent install, instead of `setup_lexicon` with `serve: true`.
 
