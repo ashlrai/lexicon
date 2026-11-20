@@ -5,16 +5,17 @@ each destination costs. We pay for none of it. Several directories now sell queu
 where that is true it is named, along with the free path and what the free path costs in
 waiting.
 
-Status is as of 2026-09-20, except the Official MCP Registry row, rechecked 2026-11-19. This
-landscape moves, so verify before acting.
+Status is as of 2026-09-20, except rows 1, 2, 4 and 5 (Official MCP Registry, Glama,
+awesome-mcp-servers, Cline), rechecked 2026-11-19 against the public listing, PR and issue
+tracker. This landscape moves, so verify before acting.
 
 | # | Destination | Cost | Who drives it | Status |
 |---|---|---|---|---|
 | 1 | [Official MCP Registry](#1-official-mcp-registry) | free | agent | listed, but at 0.5.4; republish per release |
-| 2 | [Glama](#2-glama) | free | agent | ready, file committed |
+| 2 | [Glama](#2-glama) | free | agent | listed; claim it to edit |
 | 3 | [Anthropic plugin directory](#3-anthropic-plugin-directory) | free | **Mason** | needs his sign-in |
-| 4 | [punkpeye/awesome-mcp-servers](#4-punkpeyeawesome-mcp-servers) | free | agent, Mason merges | line drafted, PR not opened |
-| 5 | [Cline MCP Marketplace](#5-cline-mcp-marketplace) | free | agent, needs a logo | blocked on a 400x400 PNG |
+| 4 | [punkpeye/awesome-mcp-servers](#4-punkpeyeawesome-mcp-servers) | free | agent, upstream merges | PR #15315 open since 2026-09-29 |
+| 5 | [Cline MCP Marketplace](#5-cline-mcp-marketplace) | free | agent | logo ready, not submitted |
 | 6 | [mcpservers.org](#6-mcpserversorg) | free, or $39 | agent | not submitted |
 | 7 | [mcp.so](#7-mcpso) | free via issue, or $39 | agent | not submitted |
 | 8 | [mcpmarket.com](#8-mcpmarketcom) | free, or $29 | agent | not submitted |
@@ -102,9 +103,11 @@ Free. The schema (<https://glama.ai/mcp/schemas/server.json>) requires exactly o
 `gh api user --jq .login`). Note this is a personal handle, not the `ashlrai` org; Glama
 matches maintainers by GitHub user.
 
-Nothing to submit. The file is committed; the crawler picks it up on its next pass. If the
-listing does not appear or cannot be claimed after a couple of weeks, Glama has a contact
-form on the server page.
+Nothing to submit. The crawler has already created the listing at
+<https://glama.ai/mcp/servers/ashlrai/lexicon> (checked 2026-11-19; the older
+`/@ashlrai/lexicon` URL redirects there). What remains is claiming it through the committed
+`glama.json` to unlock editing; if the claim does not take, Glama has a contact form on the
+server page.
 
 ## 3. Anthropic plugin directory
 
@@ -146,6 +149,12 @@ browse. It is strictly alphabetical, and `ashlrai` sorts before the current firs
 The exact line, and the PR steps, are in [The awesome-mcp-servers line](#the-awesome-mcp-servers-line)
 below.
 
+**Status.** Opened as
+[punkpeye/awesome-mcp-servers#15315](https://github.com/punkpeye/awesome-mcp-servers/pull/15315)
+("Add ashlrai/lexicon") on 2026-09-29; still open and unmerged on 2026-11-19, and the list
+does not carry the line yet. Nothing to do but wait or answer review comments; do not open a
+second PR.
+
 Scope check passed: their list is for servers with a public repo that you install and run
 yourself, not remote-only hosted URLs. Lexicon qualifies.
 
@@ -157,8 +166,8 @@ Free. Submission is a GitHub issue using their `mcp-server-submission.yml` templ
 requires three things:
 
 1. The GitHub repo URL.
-2. **A 400x400 PNG logo.** We do not have one at that size. This is the blocker. There is
-   artwork under `docs/assets` and `web/` to cut one from.
+2. **A 400x400 PNG logo.** Use [`docs/assets/logo-400.png`](assets/logo-400.png), a
+   400x400 RGBA PNG (the same file the README header shows).
 3. A short reason the server benefits Cline users.
 
 The template also asks you to confirm you have watched Cline install the server from the
@@ -169,7 +178,9 @@ agents increasingly look for it by convention.
 
 Their stated review criteria are community adoption, maintainer credibility, project
 maturity and security. A brand-new project may be deferred; this is worth re-submitting
-after the repo has some traction rather than burning the first impression now.
+after the repo has some traction rather than burning the first impression now. As of
+2026-11-19 the tracker holds submissions for two sibling repos (ashlr-plugin and
+phantom-secrets) but none for Lexicon.
 
 ## 6. mcpservers.org
 
@@ -187,12 +198,12 @@ Form fields, and what to put in them:
 | Category | `Productivity` (no voice/speech category exists; `Development` is the fallback) |
 | Short Description | Fixes the names and jargon speech-to-text gets wrong before your agent acts on a dictated prompt. |
 | Repository / Website | `https://github.com/ashlrai/lexicon` |
-| Official MCP Registry Name | `io.github.ashlrai/lexicon` (fill this in only after step 1 lands) |
+| Official MCP Registry Name | `io.github.ashlrai/lexicon` (listed since 2026-09-28, see step 1) |
 | Supports remote connections | unchecked (stdio, local only) |
 | Contact Email | `mason@ashlr.ai` |
 | Plan | Free ($0) |
 
-Do this *after* the registry publish, so the registry name field can be filled.
+The registry publish has landed, so the registry name field can be filled now.
 
 ## 7. mcp.so
 
@@ -348,11 +359,11 @@ replace this one on someone's machine.
    current release, then once per release, so it tracks npm. Everything downstream
    benefits, and two of the forms want the registry name. Cut any further release
    through [RELEASING.md](RELEASING.md) rather than uploading assets by hand.
-2. Glama needs nothing further. The file is in the repo.
-3. Open the awesome-mcp-servers PR.
+2. Glama is listed; claim the listing to edit it.
+3. The awesome-mcp-servers PR (#15315) is open; follow up on it rather than reopening.
 4. Mason submits the Anthropic plugin directory form.
 5. Free-tier forms: mcpservers.org, then mcpmarket.com, then the mcp.so issue.
-6. Cline, once there is a 400x400 logo and a little traction.
+6. Cline, once there is a little traction; the 400x400 logo is ready.
 7. Re-check PulseMCP in a month.
 
 ## See also
