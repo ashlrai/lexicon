@@ -74,6 +74,11 @@ the fork-to-merge path and what the required `CI Gate` checks) and
 [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for why the pieces are shaped the
 way they are. `docs/CONTRACT.md` is the module API.
 
+Merging needs no approving review: the merge queue reruns `CI Gate` on the
+branch merged with current `main` and squash-merges it when green, so there is
+no need to rebase just to catch up. Auto-merge (`gh pr merge --auto`) needs
+write access; on a fork pull request a maintainer or the fleet arms it.
+
 The rules most often broken by an agent in a hurry:
 
 - Rebuild and commit `plugin/` (`npm run build:bundle`) after touching

@@ -57,7 +57,11 @@ Agents write and ship this code. To change it, read ${REPO}/blob/main/AGENTS.md,
 then ${REPO}/blob/main/CLAUDE.md. Contributors and their agents follow the same
 path: ${REPO}/blob/main/CONTRIBUTING.md#contribute-with-an-agent (fork, \`npm ci\`,
 \`lexicon test-select\`, the commands the required \`CI Gate\` check runs, the
-merge queue).
+merge queue). The merge queue reruns \`CI Gate\` on the branch merged with
+current \`main\` and squash-merges it when green; no approving review is
+required and the branch need not be up to date. Auto-merge
+(\`gh pr merge --auto\`) needs write access, so on a fork pull request a
+maintainer or the fleet arms it.
 `;
 
 export function llmsTxt(): string {
