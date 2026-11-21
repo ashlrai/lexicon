@@ -65,7 +65,11 @@ Valid `<client>` values: `claude`, `codex`, `cursor`, `windsurf`, `gemini`, `vsc
 `claude-desktop`. Add `--project` to write the repo-level config instead of the user-level
 one, where that client supports it.
 
-For any other MCP client, add this block to its config file by hand:
+For any other MCP client, run `lexicon install generic` (or `lexicon install` with no
+client). It prints the `mcpServers` block with the server path this install resolved, plus
+`LEXICON_PATH` / `LEXICON_CWD` when they are set, and writes nothing (`--apply` and
+`--project` are refused without a named client). Paste that block into the client's config
+file. The minimal form, when `lexicon-mcp` is on `PATH`:
 
 ```json
 {
@@ -99,7 +103,9 @@ Two optional environment variables, both paths, neither secret:
 - `LEXICON_PATH`: the global lexicon YAML. Defaults to `$XDG_CONFIG_HOME/lexicon/lexicon.yaml`,
   else `~/.config/lexicon/lexicon.yaml`.
 - `LEXICON_CWD`: the directory searched for a project `.lexicon.yaml`. Defaults to the
-  server's working directory.
+  client's first MCP root when the client supports roots, else the server's working
+  directory. `lexicon install` copies both variables into the config it writes when they
+  are set.
 
 Claude Code users can skip all of the above and install the plugin, which also brings the
 hooks, the skill and the `/lexicon` command:
