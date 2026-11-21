@@ -1,60 +1,68 @@
 name: Bug report
-description: A correction that was wrong, missed, or applied where it should not have been.
+description: A correction that was wrong, missed or misapplied, or a setup, client or command that does not work.
 labels: [bug]
 body:
   - type: markdown
     attributes:
       value: |
-        Thanks. The three lines below are what make a correction bug reproducible. Run `lexicon normalize --diff "<text>"` to get the third one.
+        Thanks. For a correction bug, the first three fields (what you said, what speech-to-text wrote, what Lexicon produced) make it reproducible; run `lexicon normalize --diff "<text>"` to get the third one. For a setup or client bug, leave those empty and paste `lexicon doctor` instead.
+
+        A name Lexicon does not correct because no term covers it yet is not a bug: add your own names with `lexicon add`, and propose public names with the "Add a misheard term" form.
   - type: input
     id: said
     attributes:
       label: What you said
+      description: Correction bugs only.
       placeholder: tell Ashlr.AI to deploy the Kubernetes auth service
-    validations:
-      required: true
   - type: input
     id: heard
     attributes:
       label: What speech-to-text wrote
+      description: Correction bugs only.
       placeholder: tell Ashler to deploy the Cooper Nettie's off service
-    validations:
-      required: true
   - type: textarea
     id: produced
     attributes:
-      label: What lexicon produced
-      description: Output of `lexicon normalize --diff "<what STT wrote>"` (both stdout and the stderr diff lines).
+      label: What Lexicon produced
+      description: Correction bugs only. Output of `lexicon normalize --diff "<what STT wrote>"` (both stdout and the stderr diff lines).
       render: text
-    validations:
-      required: true
   - type: textarea
     id: term
     attributes:
       label: Your term YAML
-      description: The relevant entries from `~/.config/lexicon/lexicon.yaml` or `.lexicon.yaml`, plus any `settings`.
+      description: Correction bugs only. The relevant entries from `~/.config/lexicon/lexicon.yaml` or `.lexicon.yaml`, plus any `settings`.
       render: yaml
       placeholder: |
         terms:
           - canonical: Ashlr.AI
             aliases: [Ashler, Ashlar]
-    validations:
-      required: true
+  - type: textarea
+    id: doctor
+    attributes:
+      label: lexicon doctor output
+      description: Setup, client and "corrections are not happening" bugs. Output of `lexicon doctor` (or `lexicon doctor --json`).
+      render: text
   - type: dropdown
     id: client
     attributes:
-      label: Client
+      label: Client or surface
       options:
         - Claude Code (plugin)
-        - Claude Code (hook / install-claude)
+        - Claude Code (lexicon install claude)
         - Codex
         - Cursor
         - Windsurf
         - Gemini CLI
         - Claude Desktop
         - VS Code
+        - Another MCP client (lexicon install generic)
         - CLI only
-        - Clipboard daemon
+        - Clipboard daemon (lexicon daemon)
+        - Local HTTP API (lexicon serve)
+        - Voice push-to-talk (lexicon voice)
+        - Browser extension
+        - macOS menu bar app (LexiconBar)
+        - Windows tray app (LexiconBar)
         - Other
     validations:
       required: true
@@ -63,9 +71,11 @@ body:
     attributes:
       label: Version and OS
       description: Output of `lexicon --version` and `node --version`, plus your OS.
-      placeholder: lexicon 0.1.0, node v22.12.0, macOS 15
+      placeholder: lexicon 0.5.12, node v22.12.0, macOS 15
   - type: textarea
     id: more
     attributes:
-      label: Anything else
-      description: Dictation app, expected behaviour, workarounds you tried.
+      label: What happened, and what you expected
+      description: The command you ran or what you did, the expected behaviour, the dictation app, workarounds you tried.
+    validations:
+      required: true
