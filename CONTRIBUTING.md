@@ -12,6 +12,7 @@ Good shapes for a first PR:
 
 | Shape | Recipe | Roughly |
 |---|---|---|
+| A public name speech-to-text gets wrong, added to the starter pack it fits | [docs/PACKS.md](docs/PACKS.md#adding-a-term-to-a-shipped-pack) | One YAML entry, plus a count if a test or doc pins it |
 | A term pack for a profession the packs do not cover (law, medicine, finance, design) | [docs/PACKS.md](docs/PACKS.md#adding-a-pack-to-this-repo) | One YAML file plus one test |
 | An export format for another dictation app or STT engine | [Adding an exporter](#adding-an-exporter) | Three files plus a test |
 | An import format for a dictionary the tool cannot read yet | [Adding an importer](#adding-an-importer) | Three files plus a test |
