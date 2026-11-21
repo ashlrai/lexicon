@@ -75,17 +75,29 @@ This tool reads text you dictate, including text you type into chat composers,
 and it injects vocabulary into a model's context. You should interrogate that.
 Here are the facts, each of which you can verify in the public repository.
 
-### Nothing leaves the machine
+### Transcripts never leave the machine
 
-**There is no network destination in this product.** Not a telemetry endpoint,
+**Ordinary correction has no network destination.** Not a telemetry endpoint,
 not an update check, not an analytics beacon. The CLI, the hooks, the MCP
 server, the local API and the browser extension make no request beyond the
-loopback interface.
+loopback interface while they correct text.
 
-There is exactly one outbound request anywhere in the codebase: the optional
-local dictation command downloads a whisper speech model from Hugging Face the
-first time you use it. Point it at a local model file and even that disappears.
-Audio itself never leaves the machine; transcription is local.
+Three optional features make an outbound request, and only when a user asks
+for them by name:
+
+- The local dictation command (`lexicon voice`) downloads a whisper speech
+  model from Hugging Face the first time you use it. Point it at a local model
+  file and that request disappears. Audio never leaves the machine;
+  transcription is local.
+- `lexicon pack` fetches a community pack index and pack files from a registry
+  URL the user chooses (over `https://`, plain `http://` only from this
+  machine; every pack is sha256-checked against the index). The nine starter packs ship inside the package and need no network.
+- The GitHub source of guided import (`lexicon import --guided`, MCP
+  `import_vocabulary`) calls the GitHub API through the user's existing `gh`
+  login to read names: their username, org memberships, member logins and
+  repo names. It runs only when that source is selected.
+
+None of them sends a transcript, the lexicon or any text you dictate.
 
 Your vocabulary is a plain YAML file at `~/.config/lexicon/lexicon.yaml`. You
 can read it, diff it, back it up and delete it. There is no account to close.
