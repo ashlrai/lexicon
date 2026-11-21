@@ -134,7 +134,8 @@ two bigger cards. It is the product.
 
 **Footnote under the card:**
 
-> No account. No telemetry. No network request beyond loopback.
+> No account. No telemetry. Ordinary correction makes no network request
+> beyond loopback.
 
 **CTA:** the install command, matching the existing install block.
 
@@ -227,11 +228,14 @@ the free tool; the second does not survive Team. The rewrite must keep the
 strong claim where it is still strong:
 
 > No. Your lexicon is a plain YAML file at `~/.config/lexicon/lexicon.yaml`,
-> and the CLI, the hooks, the MCP server, the local API and the browser
-> extension make no network request beyond the loopback interface. The only
-> outbound request anywhere in the codebase is `lexicon voice` downloading a
-> whisper.cpp model the first time you use local push-to-talk; audio itself
-> never leaves the machine. A team on a paid plan syncs its shared word list to
+> and during ordinary correction the CLI, the hooks, the MCP server, the local
+> API and the browser extension make no network request beyond the loopback
+> interface. Three features use the network, and only when you ask for them:
+> `lexicon voice` downloads a whisper.cpp model the first time you use local
+> push-to-talk (audio itself never leaves the machine), `lexicon pack` fetches
+> a community pack from a registry URL you choose and checks its checksum, and
+> the GitHub source of `lexicon import --guided` calls the GitHub API through
+> your existing `gh` login. A team on a paid plan syncs its shared word list to
 > Ashlr.AI, and that is the word list only: no transcript, no audio and no
 > text you dictate is transmitted on any plan, because there is no code path
 > that could. The full threat model is in SECURITY.md.
@@ -369,7 +373,9 @@ advance, and not left stale afterwards.
 Replacement text for the first one, for the README owner:
 
 > Non-goals: this is not a dictation app, and the tool itself has no accounts
-> and makes no network request beyond loopback. It is a file. Ashlr.AI
+> and makes no network request beyond loopback during ordinary correction (the
+> whisper model download, community packs and the GitHub importer reach the
+> network only when asked). It is a file. Ashlr.AI
 > separately runs an optional hosted service for organizations that want one
 > shared lexicon across every employee's machine; the tool works completely
 > without it, and always will.
