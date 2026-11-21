@@ -18,7 +18,9 @@ Open a [bug report](https://github.com/ashlrai/lexicon/issues/new?template=bug_r
 - the output of `lexicon doctor` if the problem is in setup or in corrections not happening;
 - the smallest input that reproduces it (a dictated phrase is enough).
 
-If speech-to-text writes a name the lexicon does not correct, use the [misheard term issue](https://github.com/ashlrai/lexicon/issues/new?template=misheard_term.yml) form instead. It takes the canonical spelling and what your engine actually wrote.
+The form has one set of fields for a wrong or missed correction (what you said, what speech-to-text wrote, the `lexicon normalize --diff` output) and one for a setup or client problem (`lexicon doctor`); fill the set that fits.
+
+If speech-to-text writes a name that no term covers yet, that is not a bug. Add your own names with `lexicon add`. For a public name (a product, tool, company or well-known person), use the [misheard term issue](https://github.com/ashlrai/lexicon/issues/new?template=misheard_term.yml) form instead. It takes the canonical spelling and what your engine actually wrote.
 
 ## Report a security issue
 
