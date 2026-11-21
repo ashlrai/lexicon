@@ -17,16 +17,21 @@ MIT gives an organization the code. It does not give them a place to put a
 shared file, an identity to attach to it, or a record of who changed it. Those
 are operations, not software, and a fork cannot take them.
 
-Today a team can already share a vocabulary two ways, and both stay free
-forever:
+Today a team can already share a vocabulary three ways, and all three stay
+free forever:
 
 - Commit `.lexicon.yaml` and every teammate runs `lexicon trust` ([TRUST.md](TRUST.md)).
+- Publish a community pack: host an index and the pack files at any URL, and
+  every teammate runs `lexicon pack add <author>/<name> --registry <index>`
+  ([PACKS.md](PACKS.md#community-packs)).
 - Export the terms and mail the file around ([EXPORTS.md](EXPORTS.md)).
 
-Both work. Both break at about fifteen people, because a repo file only reaches
-people who clone that repo, the designer and the salesperson never do, and
-nobody knows whether Ana on the support team has the current list. The hosted
-layer is what fixes that, and it is a service.
+All three work. All three break at about fifteen people. A repo file only
+reaches people who clone that repo, and the designer and the salesperson never
+do. A pack or an exported file is a copy merged into each person's own file,
+current only until the list changes and each person runs `lexicon pack update`
+or imports again, so nobody knows whether Ana on the support team has the
+current list. The hosted layer is what fixes that, and it is a service.
 
 ---
 
@@ -260,10 +265,19 @@ The line matters, so it is drawn explicitly.
 - The third merge layer, the precedence rules, `list --why`, the cache, the
   offline behaviour, and `doctor`'s reporting of all of it.
 
-This is the part that must not be crippled. A team that wants to host a YAML
-file themselves and point everyone at it gets a complete, working, unlimited
-shared lexicon for nothing. That is the honest answer to "are you holding the
-useful part hostage": no, here it is.
+Part of this exists already. The community pack registry (`lexicon pack
+--registry`, `src/core/registry.ts`) fetches lexicon content from an `https://`
+URL or a local path, checks every pack file against the sha256 in the index,
+previews before the first write and re-checks on `pack update`. What it does
+not do is act as a layer: a pack's terms are merged into the user's own file
+at install time, and an update is a new approved install rather than a
+background pull. `remote` should reuse the registry's fetch and checksum code
+rather than add a second network path.
+
+The `remote` layer is the part that must not be crippled. A team that wants to
+host a YAML file themselves and point everyone at it gets a complete, working,
+unlimited shared lexicon for nothing. That is the honest answer to "are you
+holding the useful part hostage": no, here it is.
 
 **In a separate package under a commercial licence (`@ashlr/lexicon-team`),
 detected by the core CLI as a subcommand plugin:**
@@ -307,9 +321,10 @@ small team burns a month.
 
 The plan above is sound and premature. See
 [COMMERCIAL.md](COMMERCIAL.md#recommendation-do-not-sell-yet) for the
-preconditions; the short version is that the project is days old with no
-measured users, and five conversations with teams of ten or more should happen
-before six weeks of engineering does.
+preconditions; the short version is that its dated facts (2026-09-20, the day
+after the repository was created) show no measured users, and five
+conversations with teams of ten or more should happen before six weeks of
+engineering does.
 
 ---
 
