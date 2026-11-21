@@ -59,15 +59,9 @@ What happens next:
 
 ## Setup
 
-```bash
-git clone https://github.com/ashlrai/lexicon
-cd lexicon
-npm install
-npm run build
-npm test
-```
+Node 20 or newer. Clone and install as in step 1 of [Contribute with an agent](#contribute-with-an-agent); to only read or try the code, clone `ashlrai/lexicon` itself instead of a fork (opening a pull request needs the fork). `npm ci` installs the exact versions in `package-lock.json` and runs the `prepare` script, which is `npm run build` (tsc into `dist/`) followed by `npm run build:bundle` (the committed `plugin/` bundles, see below). The explicit `npm run build` after it is what you rerun after editing `src/`; `npm ci --ignore-scripts && npm run build` installs without rebuilding the bundles.
 
-Node 20 or newer. `npm run dev` rebuilds on change. `npm run typecheck` runs `tsc --noEmit` on the package, extension and demo site sources.
+`npm run dev` rebuilds on change. `npm run typecheck` runs `tsc --noEmit` on the package, extension and demo site sources.
 
 ## The committed plugin bundles
 
@@ -85,12 +79,12 @@ lexicon doctor
 ## Build commands
 
 ```bash
-npm install
+npm ci                  # lockfile install; runs prepare (build + build:bundle)
 npm run build           # tsc -> dist/
 npm run build:bundle    # esbuild -> plugin/mcp-server.mjs + plugin/hook.mjs + plugin/hook-main.mjs (commit these)
 npm run check:bundle    # rebuild and fail if plugin/ differs from the checked-in files (the daily CI suite runs the same check)
 npm run typecheck       # tsc --noEmit (package, extension and site)
-npm test                # unit + integration + e2e (vitest)
+npm test                # a few node --test files, then unit + integration + e2e (vitest)
 npm run test:e2e        # only tests/e2e.test.ts: the real CLI, hook and MCP server as subprocesses
 npm run bench           # synthetic accuracy benchmark (see bench/README.md)
 npm run bench:audio     # TTS-audio benchmark through whisper.cpp
