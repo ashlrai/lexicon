@@ -263,6 +263,18 @@ reports one info line for each. Under phantom-secrets' `phantom exec` it runs
 unchanged: [PHANTOM-USAGE.md](PHANTOM-USAGE.md). The full table is in the
 [README](../README.md#part-of-the-ashlrai-ecosystem).
 
+## If you are changing Lexicon itself
+
+This page is about installing Lexicon for a user. Agents also write and ship
+Lexicon's own code. To change it, read the repository's
+[AGENTS.md](../AGENTS.md), then [CLAUDE.md](../CLAUDE.md), and follow
+[Contribute with an agent](../CONTRIBUTING.md#contribute-with-an-agent): fork,
+`npm ci`, `lexicon test-select` to pick the tests for your change, the commands
+the required `CI Gate` check runs, then a pull request. The merge queue reruns
+`CI Gate` and squash-merges when it is green; no approving review is required.
+Auto-merge needs write access, so on a fork pull request a maintainer or the
+fleet arms it.
+
 ## See also
 
 - [AGENT-NATIVE.md](AGENT-NATIVE.md) is the design behind the tools this checklist calls.
