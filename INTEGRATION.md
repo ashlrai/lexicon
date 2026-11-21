@@ -1,11 +1,16 @@
 # Lexicon x Phantom: integration sketch
 
-How this repo plugs into Phantom, written from Lexicon's side. Phantom is the
-orchestration layer over a personal fleet of heterogeneous assistants (Muse,
-Grok, ChatGPT, ...). Lexicon is the shared terminology layer underneath it:
-one YAML file of the words speech-to-text gets wrong, applied everywhere the
-user's voice lands. Nothing here changes Phantom core; it describes the
-contract Phantom would integrate against.
+How this repo plugs into Phantom, written from Lexicon's side. Phantom and its
+ecosystem form a fully autonomous, code-first, agent-native software factory,
+run by agents with the human as a passive board member, chasing open source
+RSI (recursive self improvement); the [README](README.md#part-of-the-ashlrai-ecosystem)
+lists the other repos. The board member steers that factory partly by voice,
+and speech-to-text mangles exactly the names the agents need: the company, its
+products, its people, its internal systems. Lexicon is the shared terminology
+layer underneath: one YAML file of the words speech-to-text gets wrong, applied
+everywhere the user's voice lands, whichever agent or assistant receives it.
+Nothing here changes Phantom core; it describes the contract Phantom would
+integrate against.
 
 ## The terminology-list model
 
@@ -36,23 +41,23 @@ in `docs/LEXICON-FILE.md`.
 
 Two directions, both already implemented:
 
-**Outbound: user speaks, assistant receives corrected text.** Every surface
-below takes raw transcript in and hands corrected text to the assistant. The
-primitives Phantom can call, in order of preference:
+**Outbound: user speaks, the agent receives corrected text.** Every surface
+below takes raw transcript in and hands corrected text to the agent or
+assistant. The primitives Phantom can call, in order of preference:
 
 1. `normalize()`: pure function, `npm i @ashlr/lexicon`. Text plus lexicon
    in, corrected text plus a replacement list out. No processes, no files
    beyond the YAML. Best when Phantom already holds the transcript.
 2. MCP server (`lexicon-mcp`, stdio, 21 tools): `normalize_transcript`,
    `learn_correction`, `add_term`, `setup_lexicon`, `lexicon_doctor`. Best when
-   Phantom talks to an assistant over MCP anyway.
+   Phantom talks to an agent over MCP anyway.
    The complete tool contract is `add_pack`, `add_term`, `apply_suggestion`,
    `export_lexicon`, `harvest_repo`, `import_dictionary`, `import_vocabulary`,
    `install_client`, `learn_correction`, `lexicon_doctor`, `lexicon_stats`,
    `list_packs`, `list_terms`, `normalize_transcript`, `remove_term`,
    `serve_status`, `setup_lexicon`, `suggest_canonical`, `suggest_terms`,
    `trust_project`, and `uninstall_client`.
-3. Local HTTP API (`lexicon serve`, loopback `127.0.0.1:41733`, Bearer <redacted>,
+3. Local HTTP API (`lexicon serve`, loopback `127.0.0.1:41733`, bearer-token auth,
    12 endpoints): `POST /normalize`, `POST /learn`, `GET /lexicon`. Best for
    non-JS hosts and the tray apps. The default server binds to loopback and
    rejects non-loopback Host headers before authentication. An explicit
@@ -64,27 +69,32 @@ primitives Phantom can call, in order of preference:
 `lexicon export` also produces biasing hints that improve the recognizer
 itself: Whisper/OpenAI prompt lists, Deepgram, AssemblyAI, Speechmatics, Azure and Google
 vocabularies, Wispr Flow and Superwhisper dictionaries, macOS Text Replacement,
-espanso. For fleet assistants that run their own STT, Phantom can push the
+espanso. For agents and assistants that run their own STT, Phantom can push the
 user's terms into the recognizer before transcription rather than fixing the
 transcript after.
 
 **Inbound: corrections flow back.** When the user says "it's Ashlr.AI not
-Ashler" to any fleet assistant, that is `learn_correction` (MCP),
-`POST /learn` (local API) or `lexicon learn` (CLI): the alias lands in the
-shared file once, and every surface picks it up. `lexicon suggest` mines the
-voice history for terms the matcher keeps guessing at and proposes phonetic
-hints or alias promotions, held below the auto-apply confidence so a human
-approves.
+Ashler" to any agent, that is `learn_correction` (MCP), `POST /learn` (local
+API) or `lexicon learn` (CLI): the alias lands in the shared file once, and
+every surface picks it up. The Claude Code hook does not write it; it flags
+the correction for the agent and queues it in `pending-aliases.yaml` for
+`lexicon pending` review. `lexicon suggest` mines the voice history and
+proposes aliases, new terms, never-words, phonetic hints and stale terms.
+Only suggestions at 0.80 confidence or above (promoted guesses, well-attested
+garbles, names seen five or more times) are applied unattended by `--yes` or
+an agent applying them on its own; phonetic hints, harvest candidates and
+stale removals always wait for a human ([SUGGEST.md](docs/SUGGEST.md)).
 
 ## Surface map for a heterogeneous fleet
 
 | Fleet entry point | Lexicon surface that covers it | How |
 |---|---|---|
 | Claude Code | Plugin hooks | `SessionStart` injects the claude-md export (capped at 4000 chars); `UserPromptSubmit` corrects each dictated prompt as `additionalContext`, never rewriting the prompt |
-| Any MCP-capable assistant | MCP server | stdio `lexicon-mcp`; `lexicon://me` resource hands the model the user's vocabulary at session start |
-| ChatGPT / Claude.ai / Grok / Gemini / Perplexity web | Browser extension | rewrites the composer when the user presses send |
+| Any MCP-capable agent or assistant | MCP server | stdio `lexicon-mcp`; `lexicon://me` resource hands the model the user's vocabulary at session start |
+| ChatGPT / Claude.ai / Grok / Gemini / Perplexity web | Browser extension | rewrites the composer when the user presses Enter or the send button, with a toast and Undo |
 | Any macOS app or dictation tool | LexiconBar menu bar app | rewrites dictated text in the focused field through Accessibility, with an undo bubble |
-| Any text field, any OS | Clipboard daemon | `lexicon daemon --once --paste` on a hotkey |
+| Any Windows app | LexiconBar for Windows | the same burst correction through UI Automation; that half has not yet been run on Windows ([WINDOWS-APP.md](docs/WINDOWS-APP.md)) |
+| Any text field, any OS | Clipboard daemon | `lexicon daemon --once --paste` on a hotkey (`--paste` is macOS only) |
 | Phantom's own STT pipeline | Library or exports | `normalize()` between transcription and the model, or export biasing hints into the recognizer |
 
 ## Opt-in / opt-out
@@ -101,10 +111,10 @@ shape for Phantom's config (names illustrative, Phantom's side to finalize):
   repos; packs as an onboarding checklist, not a default dump (a pack is a
   hundred-odd global terms; under `lexicon setup --yes` nothing installs
   unless asked).
-- Learning requires consent: `learn_correction` writes to the user's file, so
-  Phantom should confirm before a fleet assistant teaches the shared lexicon
-  from a correction, the same way the MCP tools preview writes before
-  applying.
+- Learning requires consent: `learn_correction` writes to the user's file
+  as soon as it is called (it has no preview, unlike `setup_lexicon` and
+  `install_client`), so Phantom should confirm before an agent teaches the
+  shared lexicon from a correction.
 
 ## Boundaries Phantom must respect
 
@@ -125,9 +135,9 @@ shape for Phantom's config (names illustrative, Phantom's side to finalize):
 
 ## Open questions for Phantom's side
 
-- Which assistant in the fleet owns the "it's X not Y" moment? If two
-  assistants can both call `learn_correction`, whose confirmation UX wins?
-- Should the fleet share one global lexicon, or does each assistant get a
+- Which agent owns the "it's X not Y" moment? If two agents can both call
+  `learn_correction`, whose confirmation UX wins?
+- Should the fleet share one global lexicon, or does each agent get a
   filtered view (e.g. work terms for the work assistant)? The file supports
   per-term `notes` and categories; filtering is Phantom's policy to define.
 - Pre-transcription biasing needs recognizer credentials Phantom may not
