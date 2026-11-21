@@ -39,9 +39,13 @@ microphone -> ffmpeg (16 kHz mono s16 WAV) -> whisper.cpp (--prompt <canonicals>
    now; elsewhere it falls back to `--copy` with a notice). `--json` prints
    `{ ok: true, raw, output, replacements, summary, model, seconds, ms: { record, transcribe, normalize } }`,
    and every failure, a bad flag included, prints `{ ok: false, error, nextStep?, code }`
-   with `code` the exit code.
+   with `code` the exit code. When a transcript was made but not delivered (nothing
+   heard, a failed copy or a failed `--paste`), those failure keys are laid over the
+   full result, so `raw` and `output` are still there. `--quiet` drops the status lines
+   on stderr (corrections made, download progress); errors are still printed.
 5. **Remember.** Each transcription appends `{ at, raw, output, model, ms }` to
-   `~/.config/lexicon/voice/history.jsonl` (newest 1000 kept). The raw/output pairs
+   `~/.config/lexicon/voice/history.jsonl` (newest 1000 lines and at most 4 MB kept,
+   written 0600 since it holds everything you dictated). The raw/output pairs
    are the material for `lexicon learn` and future alias suggestions; `--no-history`
    opts out.
 
@@ -118,6 +122,7 @@ lexicon voice --device "External Microphone"   # by name or index; see --list-de
 lexicon voice --list-devices
 lexicon voice --lang de --translate      # non-English audio, English text
 lexicon voice --no-prompt --no-history
+lexicon voice --quiet                    # no status lines on stderr, for launchers
 ```
 
 ### Hotkey mode: `--toggle`
@@ -133,6 +138,8 @@ lexicon voice --status                   # "recording since <time>" (exit 0) or 
 With `--json`, `--status` prints `{ ok: true, recording: true, since, pid }` while a
 recording runs and `{ ok: false, recording: false }` when idle: `ok` follows the exit
 code, as `lexicon serve --status --json` does, and an idle answer carries no `error`.
+With `--toggle --json`, the press that starts prints `{"status":"recording"}` and the
+press that stops prints the usual result document.
 
 The first call spawns ffmpeg detached, writes
 `~/.config/lexicon/voice/recording.json` (`{ pid, wav, startedAt }`), prints
@@ -164,7 +171,8 @@ device's default, which ffmpeg documents as typically a multiple of 500 ms: budg
 half a second or so off the end of each toggle, not "a fraction of a second". Nothing
 here has measured it, because dshow does not exist off Windows.
 
-A forgotten recording stops itself after 10 minutes (`-t 600`). **That is a finished
+A forgotten recording stops itself after 10 minutes (`-t 600`), and `--seconds` with
+`--toggle` is capped there too: a longer value exits `1` before anything records. **That is a finished
 recording, not a mess to clear up**: the next press finds a pid that is gone, looks at
 the WAV, and transcribes it like any other.
 
@@ -199,7 +207,7 @@ another doomed recording, and the command exits 1.
 Two presses that arrive together deliver one recording, not two. The start half has
 always claimed the state file exclusively, and the stop half claims it the same way: of
 two presses exactly one goes on to stop the recorder and transcribe, and the other prints
-`stopping` and exits 0. Without that, one thing said arrived as two paste keystrokes and
+`stopping` (`{"status":"stopping"}` with `--json`) and exits 0. Without that, one thing said arrived as two paste keystrokes and
 two lines of history.
 
 Nothing deletes a capture that holds bytes. A WAV is removed when whisper has read
