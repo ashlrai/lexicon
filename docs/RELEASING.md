@@ -2,7 +2,7 @@
 
 How to cut a release of `@ashlr/lexicon`. One tag drives everything: npm, the GitHub release and its download assets, and the Homebrew formula bump that follows.
 
-The version being cut is `package.json`'s `version`: <!-- fresh:begin pin:version -->0.5.12<!-- fresh:end -->. Every doc block between `fresh:begin` and `fresh:end` HTML-comment markers (the README release badge and git-tag pin, this number, the CHANGELOG release table) is regenerated from `package.json` and the dated CHANGELOG sections by `npm run fresh:sync`; `npm run fresh:check` fails on drift, so a release can gate on it alongside `check:facts`.
+The version being cut is `package.json`'s `version`: <!-- fresh:begin pin:version -->0.5.13<!-- fresh:end -->. Every doc block between `fresh:begin` and `fresh:end` HTML-comment markers (the README release badge and git-tag pin, this number, the CHANGELOG release table) is regenerated from `package.json` and the dated CHANGELOG sections by `npm run fresh:sync`; `npm run fresh:check` fails on drift, so a release can gate on it alongside `check:facts`.
 
 ## Automatic releases
 

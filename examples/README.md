@@ -1,7 +1,7 @@
 # Examples
 
 Runnable copies of the snippets the docs describe, written against
-<!-- fresh:begin pin:npm -->`npm i -g @ashlr/lexicon@0.5.12`<!-- fresh:end -->.
+<!-- fresh:begin pin:npm -->`npm i -g @ashlr/lexicon@0.5.13`<!-- fresh:end -->.
 npm `latest` matches; confirm with `npm view @ashlr/lexicon version` before you pin an older tag.
 
 - `lexicon.example.yaml` - a commented starter lexicon: canonical spellings, the
