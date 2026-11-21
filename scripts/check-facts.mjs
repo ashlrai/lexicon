@@ -453,6 +453,7 @@ const CLAIMS = [
       new RegExp(`\\b${NUM}\\s+export\\s+(?:formats|targets)\\b`, 'i'),
       new RegExp(`\\bexports?\\s+(?:to\\s+)?${NUM}\\s+(?:formats|tools|targets)\\b`, 'i'),
       new RegExp(`\\bunion\\s+of\\s+the\\s+${NUM}\\s+format\\s+names\\b`, 'i'),
+      new RegExp(`\\b${NUM}\\s+exporters\\b`, 'i'),
     ],
   },
   {
@@ -460,7 +461,8 @@ const CLAIMS = [
     patterns: [
       new RegExp(`\\b${NUM}\\s+import\\s+formats\\b`, 'i'),
       new RegExp(`\\bimports?\\s+(?:from\\s+)?${NUM}\\s+formats\\b`, 'i'),
-      new RegExp(`\\b${NUM}\\s+importers\\b`, 'i'),
+      // "seven dictionary importers" slipped past the bare pattern.
+      new RegExp(`\\b${NUM}\\s+(?:dictionary\\s+)?importers\\b`, 'i'),
       new RegExp(`\\b${NUM}\\s+ways\\s+in\\b`, 'i'),
     ],
   },
