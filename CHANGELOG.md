@@ -29,6 +29,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Internal
+
+- `CONTRIBUTING.md` explains the repo's own `.lexicon.yaml` (why it is skipped until trusted, how to preview, trust and add to it) and the `.mcp.json` that runs the committed server bundle.
+
 ## 0.5.13 (2026-11-21)
 
 ### Added
