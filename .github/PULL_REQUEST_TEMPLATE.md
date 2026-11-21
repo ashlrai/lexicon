@@ -14,8 +14,9 @@
 - [ ] Tests added or updated (`tests/*.test.ts`)
 - [ ] `npm run build:bundle` run and `plugin/` committed if `src/core`, `src/mcp`, `src/hooks`, `src/cli` or a dependency changed
 - [ ] `npm run docs:cli` run if a command or flag changed; `npm run check:facts` if a tool, command, format or pack was added
+- [ ] `npm run check:links` run if a doc moved; `npm run fresh:check` if a version or release fact moved
 - [ ] `docs/CONTRACT.md` updated if a public signature changed
 - [ ] `CHANGELOG.md` has a bullet under `Unreleased`
-- [ ] README updated if a command, flag, format or client changed
+- [ ] README tables updated if a tool, command, format or client was added
 - [ ] Relative imports end in `.js`; no `any` in exported signatures
 - [ ] No tokens or secrets in the diff, not even fake ones shaped like real ones
