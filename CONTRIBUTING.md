@@ -45,7 +45,7 @@ Lexicon is part of the Ashlr.AI ecosystem, where most changes are written, verif
    npm test
    ```
 
-   Then the rule-driven extras from [CLAUDE.md](CLAUDE.md): `npm run build:bundle` and commit `plugin/` when `src/core`, `src/mcp`, `src/hooks` or `src/cli` changed; `npm run docs:cli` after a command or flag change; `npm run check:facts` after adding a tool, command, format or pack; `npm run check:links` after moving a doc; `npm run fresh:check` when a version or release fact moved.
+   Then the rule-driven extras from [CLAUDE.md](CLAUDE.md): `npm run build:bundle` and commit `plugin/` when `src/core`, `src/mcp`, `src/hooks`, `src/cli` or a dependency changed (`npm run check:bundle` confirms nothing drifted); `npm run docs:cli` after a command or flag change; `npm run check:facts` after adding a tool, command, format or pack; update `docs/CONTRACT.md` when a public signature changes and the README tables when a tool, format or command is added; `npm run check:links` after moving a doc; `npm run fresh:check` when a version or release fact moved.
 5. **Push to your fork and open a pull request against `main`.** Fill in the template checklist and add a `CHANGELOG.md` bullet under `Unreleased`.
 
 What happens next:
@@ -67,7 +67,7 @@ Node 20 or newer. Clone and install as in step 1 of [Contribute with an agent](#
 
 `plugin/mcp-server.mjs` and `plugin/hook.mjs` are what the Claude Code plugin runs (`.claude-plugin/plugin.json`, `hooks/hooks.json`). They are esbuild bundles of `src/mcp/server.ts` and `src/hooks/plugin-entry.ts` (a small stub that enables Node's compile cache and imports `plugin/hook-main.mjs`, the bundle of `src/hooks/user-prompt-submit.ts`) with every dependency inlined, because `claude plugin install` clones the repo without `npm install` or a build. They are committed on purpose.
 
-Run `npm run build:bundle` before committing any change that the MCP server or the hook can reach (almost everything under `src/core`, `src/mcp`, `src/hooks`, or a dependency bump) and commit the regenerated files. `npm run check:bundle` rebuilds and fails on any diff under `plugin/`. The daily full CI suite on `main` runs the same check; the PR gate does not, so run it yourself. `dist/` (the tsc output for the npm package and library types) stays untracked.
+Run `npm run build:bundle` before committing any change that the MCP server or the hook can reach (almost everything under `src/core`, `src/mcp`, `src/hooks` and `src/cli`, since the MCP server imports the CLI handlers, or a dependency bump) and commit the regenerated files. `npm run check:bundle` rebuilds and fails on any diff under `plugin/`. The daily full CI suite on `main` runs the same check; the PR gate does not, so run it yourself. `dist/` (the tsc output for the npm package and library types) stays untracked.
 
 To try the CLI from a checkout:
 
@@ -230,7 +230,7 @@ The CLI (`lexicon export` with no format) picks up new formats from `EXPORT_FORM
 
 ## Pull requests
 
-Keep them small. One exporter, one importer, one harvester, one matcher change per PR. Include the test. Add a bullet to `CHANGELOG.md` under the `Unreleased` heading at the top (Added, Changed, Security or Internal). Rebuild the plugin bundles (`npm run build:bundle`) when the change is reachable from the MCP server or the hook, and commit them. Run `npm run docs:cli` after touching a command or flag, and `npm run check:links` after moving or renaming a doc.
+Keep them small. One exporter, one importer, one harvester, one matcher change per PR. Include the test. Add a bullet to `CHANGELOG.md` under the `Unreleased` heading at the top, in the matching subsection (Added, Changed, Fixed, Security or Internal). The commands to run before pushing, and the rule-driven extras (plugin bundle, `docs:cli`, `check:facts`, `check:links`, `fresh:check`), are listed once, in step 4 of [Contribute with an agent](#contribute-with-an-agent); the pull request template's checklist mirrors them.
 
 ### Resolving conflicts on the usual suspects
 

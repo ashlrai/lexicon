@@ -77,7 +77,7 @@ way they are. `docs/CONTRACT.md` is the module API.
 The rules most often broken by an agent in a hurry:
 
 - Rebuild and commit `plugin/` (`npm run build:bundle`) after touching
-  `src/core`, `src/mcp`, `src/hooks` or `src/cli`. The daily full CI suite
+  `src/core`, `src/mcp`, `src/hooks` or `src/cli`, or a dependency bump. The daily full CI suite
   fails on drift; the PR gate does not check it.
 - `npm run docs:cli` after any command or flag change; `docs/CLI.md` is generated.
 - `npm run check:facts` after adding a tool, command, format or pack. It derives
