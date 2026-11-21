@@ -63,7 +63,7 @@ npm run docs:cli                             # rewrites docs/CLI.md, including i
 npm run typecheck
 npm test
 npm run build && npm run build:site && npm run build:extension
-npm run check:bundle                         # plugin/ bundles match src/ (CI fails on drift)
+npm run check:bundle                         # plugin/ bundles match src/ (release.yml and the daily suite fail on drift)
 npm run check:links
 npm run check:facts
 npm run fresh:check

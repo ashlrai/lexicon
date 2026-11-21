@@ -35,7 +35,7 @@ changing the extension.
 npm run build:extension
 ```
 
-Produces `extension/dist` (Chromium), `extension/dist-firefox` (same files, Firefox manifest) and, when `zip` is on the PATH, `extension/lexicon-extension.zip` and `extension/lexicon-extension-firefox.zip`, which are the two assets the release attaches. CI also builds it on every push and uploads `extension/dist` as the `lexicon-extension` artifact, so a reviewer can pull an unreleased build straight from the Actions run.
+Produces `extension/dist` (Chromium), `extension/dist-firefox` (same files, Firefox manifest) and, when `zip` is on the PATH, `extension/lexicon-extension.zip` and `extension/lexicon-extension-firefox.zip`, which are the two assets the release attaches. The daily full CI suite on `main` (and a manual `workflow_dispatch` run on any branch) also builds it and uploads `extension/dist` as the `lexicon-extension` artifact, so a reviewer can pull an unreleased build straight from the Actions run. Pull requests run only the fast `CI Gate`, which does not build the extension.
 
 What is in `dist`:
 
