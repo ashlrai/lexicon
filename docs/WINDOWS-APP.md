@@ -19,6 +19,7 @@ Source: `apps/windows` (C#, .NET 8, WinForms, no third-party runtime dependencie
 - [What it does](#what-it-does)
 - [Install and run](#install-and-run)
 - [The menu](#the-menu)
+- [Settings](#settings)
 - [Fix everywhere](#fix-everywhere)
 - [What it refuses to touch](#what-it-refuses-to-touch)
 - [The correction bubble](#the-correction-bubble)
@@ -93,6 +94,27 @@ Settings live in `%APPDATA%\LexiconBar\settings.json`; the log is `%APPDATA%\Lex
 
 The two hotkeys are registered with `RegisterHotKey`, which **fails rather than stealing** a combination another app already owns. If your IDE has Ctrl+Alt+Z, LexiconBar logs that it could not register and the menu item still works.
 
+## Settings
+
+Every setting lives in `%APPDATA%\LexiconBar\settings.json` (source: `apps/windows/src/LexiconBar.Core/AppSettings.cs`). Keys are camelCase and read case-insensitively. A missing, unreadable or malformed file means all defaults, never a startup error; a missing key keeps its default. The file is rewritten with every key whenever a menu toggle or Preferences changes anything.
+
+| Key | Default | Where you change it | What it does |
+| --- | --- | --- | --- |
+| `fixEverywhere` | `true` | menu (Fix everywhere) | The [Fix everywhere](#fix-everywhere) master switch. Off, nothing is read. |
+| `watchClipboard` | `false` | menu (Watch clipboard) | Polls the clipboard every 500 ms and normalizes new text, as Fix clipboard now does. |
+| `showBubble` | `true` | menu (Show the correction bubble) | Off, fixes are announced as balloon tips. |
+| `bubbleSeconds` | `4` | Preferences > Correction bubble (0 to 30, whole seconds) | How long the [bubble](#the-correction-bubble) stays up; `0` keeps it until dismissed. Any other value shorter than 0.5 s is shown for 0.5 s. |
+| `settleMs` | `700` | Preferences > Fix everywhere (100 to 5000) | How long the field must be quiet before a single insertion is judged. |
+| `minWords` | `3` | Preferences > Fix everywhere (1 to 20) | Shorter insertions are only corrected if they arrive in one chunk. |
+| `runQuietMs` | `1500` | Preferences > Fix everywhere (300 to 6000) | Silence that ends a streamed, word-by-word run. |
+| `maxRunMs` | `12000` | `settings.json` only | Cap on one continuous streamed run before it is corrected anyway. |
+| `maxFieldLength` | `20000` | Preferences > Fix everywhere (500 to 200000) | Longer fields are ignored entirely. Fix clipboard now and Watch clipboard leave longer clipboard text alone too. |
+| `pollMs` | `250` | Preferences > Fix everywhere (60 to 2000) | The safety-net poll of the focused field. The watcher clamps any value to 60 to 2000, including one edited into the file. |
+| `exclusions` | terminals, remote sessions, credential surfaces, password managers | Preferences > Excluded processes (one per line), menu ("Fix everywhere in `<app>`") | See [What it refuses to touch](#what-it-refuses-to-touch). `[]` excludes nothing. |
+| `cliPath` | empty (search `PATH`) | Preferences > Lexicon CLI | The `lexicon` binary used only for Open lexicon file and Run doctor. |
+
+Preferences shows a stored number outside its range clamped into it, and **Save** writes the clamped value. **Restore defaults** refills every field except the CLI path; nothing is saved until you press **Save**. Start at login is not in this file: it is the `Run` registry value described in [Install and run](#install-and-run).
+
 ## Fix everywhere
 
 ### Deciding what was dictated
@@ -104,7 +126,7 @@ An insertion becomes a **burst** when it is big enough to be dictation and the f
 - **Anchoring the window to the caret.** This one ate somebody's paragraph on macOS. A prefix/suffix diff cannot always say *where* an insertion happened. Dictating "ping ashler about the…" into a field that already reads "ping Ashlr.AI about the…" shares the leading "ping ", so the naive diff reports the insertion five units late: a window that starts inside the new text and runs into the old. It is textually consistent, so every other guard passes, and the correction gets spliced into the middle of a word while the words outside the slid window are never corrected at all. The caret position resolves it. **When the caret cannot be read, an ambiguous insertion is refused rather than guessed at.**
 - **Refusing a stale snapshot.** The field is live the whole time the API is answering. If it no longer holds exactly the text the burst was cut from, every offset we have is stale, and nothing is written.
 
-Tunables: `SettleMs` 700, `MinWords` 3, `MinChunk` 4, `RunQuietMs` 1500, `MaxRunMs` 12000, `MaxFieldLength` 20000. The first five are in Preferences.
+Tunables: `SettleMs` 700, `MinWords` 3, `MinChunk` 4, `RunQuietMs` 1500, `MaxRunMs` 12000, `MaxFieldLength` 20000. Settle delay, minimum words, streamed-run quiet and maximum field length are in Preferences; `MaxRunMs` can only be changed in `settings.json`, and `MinChunk` is fixed in the burst detector and is not a setting. See [Settings](#settings).
 
 ### Writing the correction back
 
