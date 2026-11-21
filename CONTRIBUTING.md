@@ -83,16 +83,30 @@ npm ci                  # lockfile install; runs prepare (build + build:bundle)
 npm run build           # tsc -> dist/
 npm run build:bundle    # esbuild -> plugin/mcp-server.mjs + plugin/hook.mjs + plugin/hook-main.mjs (commit these)
 npm run check:bundle    # rebuild and fail if plugin/ differs from the checked-in files (the daily CI suite runs the same check)
+npm run dev             # tsc --watch into dist/
 npm run typecheck       # tsc --noEmit (package, extension and site)
+npm run lint            # tsc --noEmit on the package only
+npm run check:crypto    # flags classical-only asymmetric crypto not on the allowlist (part of CI Gate)
 npm test                # a few node --test files, then unit + integration + e2e (vitest)
+npm run test:watch      # vitest in watch mode
 npm run test:e2e        # only tests/e2e.test.ts: the real CLI, hook and MCP server as subprocesses
+npm run smoke           # the built CLI, the bundled hook and the MCP server, end to end (after build + build:bundle)
+npm run mcp             # start the built MCP server on stdio (node dist/mcp/server.js)
 npm run bench           # synthetic accuracy benchmark (see bench/README.md)
+npm run bench:non-english  # the non-English corpus (docs/BENCH-NON-ENGLISH.md)
 npm run bench:audio     # TTS-audio benchmark through whisper.cpp
+npm run bench:compare   # the same audio against raw whisper, a --prompt hint list and exact substitution
+npm run bench:hook      # wall-clock latency of plugin/hook.mjs against the 200ms budget
 npm run docs:cli        # regenerate docs/CLI.md from every command's --help
 npm run build:extension # extension/dist, extension/dist-firefox and the two zips
 npm run build:site      # the demo site (site/dist), including install.sh
+npm run dev:site        # build the demo site and serve it locally
 npm run check:links     # every relative link in README.md and docs/ resolves
 npm run check:facts     # every number the docs state (tool/command/format/pack/stoplist counts) matches the code
+npm run fresh:sync      # regenerate the fresh:-marked doc blocks from package.json and CHANGELOG
+npm run fresh:check     # fail on a stale fresh:-marked block
+npm run check:server-json  # validate server.json (MCP Registry manifest) and its versions; uses the network
+npm run resolve:conflicts  # settle CLAUDE.md, README.md and lockfile conflicts (see below)
 ```
 
 Pull requests and merge-queue entries run the fast required `CI Gate`: typecheck, build, the crypto policy check, redaction tests and the two diff secret scans. The full portable suite runs daily and on `workflow_dispatch`, with Linux on Node 20, 22 and 24 plus Windows and macOS on Node 22. Those runs include bundle drift, tests, CLI/hook/MCP smoke checks and the extension build. Documentation checks reuse the Node 22 rows: links and CLI-reference drift on Linux and Windows, factual counts on Linux. There is no separate `docs` job. Run the checks locally before submitting; the fast gate does not run the full test suite.
