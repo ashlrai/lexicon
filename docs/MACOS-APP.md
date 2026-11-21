@@ -39,7 +39,7 @@ because each release is signed with a different ad-hoc identity.
 | Stats… | `lexicon stats --json` | Term, alias and hit counts plus the top terms, in an alert. |
 | Run doctor | `lexicon doctor` | Output in a scrollable window. |
 | Start at login | `SMAppService.mainApp` | Only shown when running from the packaged `.app`. |
-| Preferences… | | CLI path, whisper model (`base.en` / `small.en`), paste vs copy, all three hotkeys. |
+| Preferences… (⌘,) | | CLI path, whisper model (`base.en` / `small.en`), paste vs copy, the Fix everywhere switch, settle delay, minimum words and excluded apps, the correction bubble and how long it stays up, "Notify on each fix", and all three hotkeys. See [Settings](#settings). |
 
 After each voice or clipboard run the app posts a notification such as "Corrected 2 words" listing the replacements. Notification permission is requested on first use; if you decline, the app stays quiet.
 
@@ -113,7 +113,7 @@ The decisions above are unit-tested. The Accessibility calls that carry them out
 
 ## Correction bubble
 
-After a Fix-everywhere rewrite, a small floating panel appears just below and left of the caret, the way Grammarly does it. It is on by default; turn it off with the menu's **Show the correction bubble** or the Preferences row, and fixes are announced as notifications instead.
+After a Fix-everywhere rewrite, a small floating panel appears just below and left of the caret, the way Grammarly does it. It is on by default; turn it off with the menu's **Show the correction bubble** or the Preferences row, and fixes are announced as notifications instead, as long as **Notify on each fix** is on (it is by default). With both off, a fix is silent apart from the menu bar icon flashing and the **Last correction** submenu.
 
 What it shows: up to three `original → canonical` lines, the heard spelling struck through and dimmed, the canonical bold, plus "+4 more" when there were more than three. Above them, "Fixed 2 words".
 
@@ -264,6 +264,31 @@ If you also use the CLI from a terminal, the terminal app needs the same Microph
 Defaults: ⌃⌥Space for push to talk, ⌃⌥V for fix clipboard, ⌃⌥Z to undo the last Fix-everywhere rewrite. All are global (they work in any app) and are registered with Carbon `RegisterEventHotKey`, which does not need Accessibility permission. Change them in Preferences: click the field, press the new combination (Escape cancels), or pick a preset. A letter or digit without any modifier is refused so the hotkey cannot swallow typing; function keys (F1 to F20) are allowed on their own. If another app already owns the combination, registration fails and the menu shows "Could not register ...".
 
 Hotkeys are stored in `UserDefaults` under `hotkey.pushToTalk`, `hotkey.fixClipboard` and `hotkey.undoFix` as `keyCode` + `modifiers` (Carbon bits).
+
+## Settings
+
+Every setting lives in `UserDefaults` for `ai.ashlr.lexiconbar` (source: `Sources/LexiconBar/Settings.swift`). Preferences and the menu read and write the same values, so a change in one shows in the other at once. A stored value outside its range is clamped on launch.
+
+| Key | Default | Where you change it | What it does |
+| --- | --- | --- | --- |
+| `cliPath` | empty (auto-detect) | Preferences > lexicon CLI | A `lexicon` binary or a `dist/cli/index.js`. See [Finding the CLI](#finding-the-cli). |
+| `model` | `base.en` | Preferences > Voice | Whisper model for push to talk, `base.en` or `small.en`. Any other stored value falls back to `base.en`. |
+| `pasteMode` | on | Preferences > Voice ("After transcribing") | On adds `--paste` to the voice and clipboard calls; off leaves the text on the clipboard. |
+| `watchClipboard` | off | menu (Watch clipboard), first-run step 4 | Runs the supervised `lexicon daemon --quiet`; remembered, so the watcher starts again on the next launch. |
+| `localAPI` | off | menu (Local API), first-run step 4 | Asks for the local API. See [Who runs the local API](#who-runs-the-local-api). |
+| `fixEverywhere` | on | menu, Preferences > Fix everywhere, first-run step 4 | The [Fix everywhere](#fix-everywhere) master switch. |
+| `fixEverywhere.settleMs` | 700 | Preferences > Fix everywhere (slider, 300 to 1500 ms, steps of 50) | How long an insertion must be quiet before it becomes a burst. |
+| `fixEverywhere.minWords` | 3 | Preferences > Fix everywhere (stepper, 1 to 5) | The fewest words a burst may have. |
+| `fixEverywhere.excludedApps` | terminals and password managers | Preferences > Fix everywhere (Excluded apps: Add, Choose app…, −, Reset), menu ("Fix everywhere in `<app>`") | Bundle ids Fix everywhere never reads. Reset restores the default list. The menu switch is disabled when the app is covered by a vendor prefix rule (`com.1password.*`); the menu names the rule, and only Preferences can change it. |
+| `bubble.show` | on | menu, Preferences > Correction bubble, first-run step 4 | Whether a fix shows the [correction bubble](#correction-bubble). |
+| `bubble.seconds` | 4 | Preferences > Correction bubble (slider, 2 to 10 s, steps of 0.5) | How long the bubble stays up. |
+| `fixEverywhere.notify` | on | Preferences > Correction bubble ("Notify on each fix") | With the bubble off, posts a "Fixed: …" notification per fix. In either mode it also posts "Undid the last fix" after an undo. The bubble's Never and Add confirmations are posted whatever this is set to. |
+| `hotkey.pushToTalk`, `hotkey.fixClipboard`, `hotkey.undoFix` | ⌃⌥Space, ⌃⌥V, ⌃⌥Z | Preferences > Hotkeys | See [Hotkeys](#hotkeys). |
+| `didOnboard` | unset | written by the first-run window | See [First run](#first-run). |
+| `hint.accessibilityShown` | unset | written after the first paste failure | The one-time Accessibility hint. |
+| `notifications.asked` | unset | written on first use | Whether notification permission has been requested. |
+
+To start over with every default: quit LexiconBar, then `defaults delete ai.ashlr.lexiconbar`.
 
 ## How it relates to the CLI
 
