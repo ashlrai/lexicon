@@ -1,6 +1,6 @@
 # Design proposal: guided vocabulary import
 
-**Status:** implemented (MVP) in `src/core/import-sources.ts`, `src/cli/cmd-import-guided.ts` (`lexicon import --guided`) and the MCP `import_vocabulary` tool. The decisions below are the ones this section asked Mason for; they are recorded here so a future change knows what it is revisiting.
+**Status:** implemented (MVP) in `src/core/import-sources.ts`, `src/cli/cmd-import-guided.ts` (`lexicon import --guided`) and the MCP `import_vocabulary` tool. This page is the design record: the proposal sections are kept as written, the decisions below are the ones this section asked Mason for, and [As built](#as-built) notes where the code differs from the proposal. The flags are in [docs/CLI.md](docs/CLI.md#lexicon-import).
 
 ## The gap
 
@@ -49,6 +49,11 @@ possible.
 2. **Privacy posture.** Local-first only: macOS Contacts and Calendar are read from their on-disk databases, GitHub through the user's existing `gh` login. No new OAuth, no new network calls beyond the source's own API. `--yes` requires an explicit `--sources` list, preview digest and approved candidate ids: the wizard never reads an address book on a default. Email/Slack stay out until the OAuth conversation happens.
 3. **Dedup and merge.** Candidates merge case-insensitively across sources (higher count wins a spelling conflict, the loser survives as an alias); writes go through `addTerm`, so an existing term keeps its spelling and only gains aliases. New terms are stamped `source: import:<name>`; merged terms keep the source they had.
 4. **Scope.** Vocabulary-shaped only: sources are inputs to term candidates, never a CRM. Alias policy is the cautious harvest one, with GitHub handles keeping single-word aliases (they are dictated as words, unlike code symbols).
+
+## As built
+
+- **Where the code went.** The sources live in `src/core/import-sources.ts`, not `src/core/harvest.ts`; the wizard is its own `src/cli/cmd-import-guided.ts` behind `lexicon import --guided`, and MCP got a new `import_vocabulary` tool rather than an extension of `setup_lexicon`. `lexicon setup` does not run it.
+- **Sources.** `contacts` and `calendar` read macOS data on disk (the AddressBook database and `~/Library/Calendars`; Contacts needs the `sqlite3` CLI on PATH); `github` needs a logged-in `gh`. Each reports why it is unavailable instead of failing. `email` and `slack` are always unavailable, with the reason shown.
 
 **Open for later:** email and Slack sources (email needs new OAuth scopes, Slack a workspace token); folding the wizard into `lexicon setup` as an optional step; per-source cleanup (`pack remove`-style by `import:<name>`).
 

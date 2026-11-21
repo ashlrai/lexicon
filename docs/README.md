@@ -135,6 +135,9 @@ Design notes and live records. You do not need these to use Lexicon.
 | [expander-platform-questions.md](expander-platform-questions.md) | The per-platform discovery questions behind that boundary, each marked decided or undecided |
 | [daemon-surface-questions.md](daemon-surface-questions.md) | The daemon half of the same list: the requested resident-expander surface and the open server-side questions, marked decided or undecided |
 | [daemon-design-questions.md](daemon-design-questions.md) | Open lifecycle, configuration, cross-surface and platform questions for the proposed resident expander |
+| [DESIGN-PACK-MARKETPLACE.md](../DESIGN-PACK-MARKETPLACE.md) | Design record for the community pack registry: the proposal, the trust problem, the MVP decisions and where the code differs |
+| [DESIGN-VOCABULARY-IMPORT.md](../DESIGN-VOCABULARY-IMPORT.md) | Design record for `lexicon import --guided`: sources, privacy posture, merge rules and where the code differs |
+| [design/two-stage-correction.md](design/two-stage-correction.md) | Design, partly implemented: the matcher as stage 1 and the `src/ambiguity/` engine as stage 2 |
 
 ## Not built: commercial planning
 
