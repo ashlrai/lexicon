@@ -19,18 +19,18 @@ lexicon harvest . --add    # add them to the project lexicon
 
 It scans package and module names (`package.json`, `pyproject.toml`, `Cargo.toml`, `go.mod`), git author names, the project directory name and proper nouns in README prose. Common words and generic identifiers (`String`, `Error`, `Component`) are filtered out.
 
-A name is proposed only when the repo says it somewhere other than its own code. PascalCase identifiers are read, and they count towards a name the README or a manifest also names, but a class that exists nowhere but source is something you type rather than something you say, and adding it teaches the lexicon to rewrite ordinary dictation: `InlineData` would arrive with the alias `inline data`. `--symbols` proposes those too, for reviewing one at a time with `--interactive`.
+A name is proposed only when the repo says it somewhere other than its own code. PascalCase identifiers are read, and they count towards a name the README or a manifest also names, but a class that exists nowhere but source is something you type rather than something you say, and adding it teaches the lexicon to rewrite ordinary dictation: `InlineData` would arrive with the alias `inline data`. `lexicon harvest . --symbols --interactive` proposes those too, as `identifier` candidates with no suggested aliases, for reviewing one at a time.
 
 For the same reason a candidate's suggested aliases never invent a word boundary the name does not already have. `Ashlr.AI` and `pasture-notes` say where their words break, so `Ashlr AI` and `pasture notes` are offered; `LexiconBar` does not, so `Lexicon Bar` is not.
 
 ```text
-canonical      category    count  suggested aliases                           evidence
--------------  ----------  -----  ------------------------------------------  -----------------
-openclaw       product     4                                                  package.json#name
-Ashlr.AI       brand       2      Ashlr AI, Ashlr, Ashler, Ashlar, Ashler AI  README.md
+canonical      category    count  suggested aliases                                      evidence
+-------------  ----------  -----  -----------------------------------------------------  -----------------
+openclaw       product     4                                                             package.json#name
+Ashlr.AI       brand       2      Ashlr AI, Ashlr, Ashler, Ashlar, Ashler AI, Ashlar AI  README.md
 ```
 
-`--limit N` caps candidates, `--min-count N` sets the minimum occurrences (default 2), `--json` prints candidates as JSON. It never reads `node_modules`, `dist`, `.git`, `vendor` or `build`.
+`--limit N` caps candidates (default 50, at most 1000), `--min-count N` sets the minimum occurrences for a name found only in file text (default 2; the directory name, git authors, package names and dot-TLD brands count at any number), `--json` prints candidates as JSON, and `--add --dry-run` reports what it would add without writing. It never reads `node_modules`, `dist`, `.git`, `vendor` or `build`.
 
 ### Pick candidates one by one
 
@@ -40,22 +40,24 @@ On a terminal, `--add` walks the candidates instead of adding them blindly (`--y
 $ lexicon harvest . --add
 12 candidates [y]es  [n]o  [e]dit aliases  [c]ategory  [a]ll remaining  [q]uit
 
-[1/12] LexiconStore  identifier, seen 5x
-  evidence: src/store.ts, src/index.ts
-  aliases:  Lexicon Store, Lexikon Store, LexikonStore
+[1/12] pasture-notes  product, seen 3x
+  evidence: package.json#name, README.md
+  aliases:  pasture notes
   add? [y/n/e/c/a/q] y
-  added LexiconStore
+  added pasture-notes
 
 [2/12] Ashlr.AI  brand, seen 2x
   evidence: README.md
-  aliases:  Ashlr AI, Ashlr, Ashler, Ashlar, Ashler AI
+  aliases:  Ashlr AI, Ashlr, Ashler, Ashlar, Ashler AI, Ashlar AI
   add? [y/n/e/c/a/q] e
-  aliases (comma-separated, replaces the suggestions) [Ashlr AI, Ashlr, Ashler, Ashlar, Ashler AI] Ashler, Ashlar, Ashley our AI
+  aliases (comma-separated, replaces the suggestions) [Ashlr AI, Ashlr, Ashler, Ashlar, Ashler AI, Ashlar AI] Ashler, Ashlar, Ashley our AI
   aliases:  Ashler, Ashlar, Ashley our AI
   add? [y/n/e/c/a/q] y
   added Ashlr.AI
 
 [3/12] Mason Wyatt  person, seen 40x
+  evidence: git log
+  aliases:  Mason Wiatt, Mason Wyat
   add? [y/n/e/c/a/q] q
 
 added 2 new terms, merged 0, skipped 10 in /repo/.lexicon.yaml

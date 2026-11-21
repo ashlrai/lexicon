@@ -79,7 +79,7 @@ The [terminal recording](assets/cli-setup.cast) and [setup GIF](assets/cli-setup
 show a historical 0.5.1 run. Their client list and pack counts are records of that
 build; the current [CLI reference](CLI.md) lists today's flags.
 
-Repo harvest (step 3) defaults to no. It proposes only names the repo says out loud somewhere other than its own code: what the manifests declare, what the README names, the git authors, the directory. A class or a type is something you type rather than say, and its name split into words ("InlineData" into "inline data") would rewrite ordinary dictation, so the harvest leaves those alone; `lexicon harvest --interactive` walks the list one name at a time when you do want them.
+Repo harvest (step 3) defaults to no. It proposes only names the repo says out loud somewhere other than its own code: what the manifests declare, what the README names, the git authors, the directory. A class or a type is something you type rather than say, and its name split into words ("InlineData" into "inline data") would rewrite ordinary dictation, so the harvest leaves those alone; `lexicon harvest --symbols --interactive` adds them to the list and walks it one name at a time when you do want them.
 
 Step 7 is not a canned example: it takes the terms the run just seeded, writes the sentence speech-to-text would have produced for them, and runs the real normalizer over it. If you skipped everything and the lexicon has nothing to show off, it falls back to the example terms and says so, so the run always ends with the product working.
 
