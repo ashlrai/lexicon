@@ -120,7 +120,9 @@ and the built-in-example note.
 ## Agent use
 
 Audited on this source (`node dist/cli/index.js`, version 0.5.6) unless the
-row says 0.5.4. No TTY: stdin closed or piped.
+row says 0.5.4. No TTY: stdin closed or piped. The `--json` and `--dry-run`
+lists below were rechecked on 2026-11-21 against [CLI.md](CLI.md), which is
+generated from `lexicon --help` (0.5.12).
 
 ### Non-interactive
 
@@ -131,7 +133,8 @@ row says 0.5.4. No TTY: stdin closed or piped.
   does not ask and pins nothing: it prints the preview and exits 1 unless
   `--yes` was passed (`src/cli/cmd-trust.ts`). There is no
   environment-variable bypass. The MCP tool `trust_project` asks the user
-  with an elicitation the agent cannot answer. Either way, an agent cannot
+  with an elicitation the agent cannot answer; a client without elicitation
+  gets back how the user can run it themselves. Either way, an agent cannot
   pin a project file by accident; it takes an explicit `--yes`. (The 0.5.6
   audit found the opposite: off a TTY it pinned the file. Fixed in #216.)
 - `lexicon install` without `--apply` prints the config and writes nothing.
@@ -158,14 +161,22 @@ line on stderr and one JSON document on stdout, exit 1:
 `normalize --json` on a sentence the example corrects returns `input`,
 `output`, `replacements` (with `reason` and `confidence`) and `changed`.
 
-`--json` is on `init`, `add`, `remove`, `list`, `normalize`, `harvest`,
-`export`, `path`, `doctor`, `import`, `install`, `uninstall`, `trust`,
-`untrust`, `learn`, `stats`, `pending`, `serve`, `voice`, `setup`,
-`suggest`, `review` and `edit`. `review` and `edit` are interactive, so
-they accept `--json` only to refuse it (exit 1, with a `nextStep` naming the
-non-interactive command). `daemon` has `--json` with `--once` or `--which`.
-It is not on `mcp`, `hook` or `pack` itself (`pack add` has its own
-`--json`). `mcp` and `hook` are protocol streams, not document commands.
+`--json` is on `init`, `add`, `remove`, `list`, `terms` (and `terms add`),
+`normalize`, `harvest`, `export`, `path`, `doctor`, `test-select`, `import`,
+`install`, `uninstall`, `trust`, `untrust`, `learn`, `stats`, `pending` (and
+`pending list`, `accept` and `reject`), `serve`, `voice`, `setup`, `suggest`,
+`review` and `edit`, and on every `pack` subcommand (`list`, `add`, `remove`,
+`show`, `search`, `update`, `validate`). `review` and `edit` are interactive,
+so they accept `--json` only to refuse it (exit 1, with a `nextStep` naming
+the non-interactive command). `daemon` has `--json` with `--once` or
+`--which`. It is not on `mcp`, `hook` or the bare `pack` group. `mcp` and
+`hook` are protocol streams, not document commands.
+
+For one stable shape across every command, append `--json=v1`: stdout is a
+single `{ schemaVersion: 1, ok, data }` document, where `data` is the
+command's usual `--json` payload, and `mcp`, `hook`, `edit`, `review` and a
+continuous `daemon` answer with a refusal instead. See
+[CLI-JSON.md](CLI-JSON.md).
 
 On published 0.5.4, `add --json`, `init --json`, `doctor --json` and
 `install --json` all exited 1 with `unknown option '--json'`. All four
@@ -177,8 +188,9 @@ agent on 0.5.6 or later (`lexicon --version`) can pass them. `normalize --json` 
 
 | writes | how a no-op run is spelled |
 | --- | --- |
-| `setup`, `import`, `uninstall`, `daemon`, `normalize`, `init`, `add`, `remove`, `learn`, `trust`, `untrust`, `review`, `harvest --add`, `pack add` | `--dry-run` (`normalize --dry-run` prints the summary and leaves stdout as the input; `edit --dry-run` reports the file and does not launch an editor) |
-| `install`, `suggest`, `doctor --fix` | preview is the default. The write is `--apply` (`doctor` also needs `--fix`; `--apply` alone is refused) |
+| `setup`, `import`, `uninstall`, `daemon`, `normalize`, `init`, `add`, `terms add`, `remove`, `learn`, `trust`, `untrust`, `review`, `edit`, `harvest --add`, `export --out`, `pending accept`, `pending reject`, `pack add`, `pack remove`, `pack update` | `--dry-run` (`normalize --dry-run` prints the summary and leaves stdout as the input; `edit --dry-run` reports the file and does not launch an editor) |
+| `install`, `doctor --fix` | preview is the default. The write is `--apply` (`doctor` also needs `--fix`; `--apply` alone is refused) |
+| `suggest` | preview is the default. `--apply` walks the suggestions and asks about each; `--yes` applies every one at or above 0.80 confidence without asking |
 | `pack add` of a community pack, `pack update` | preview, then a prompt. `--yes` accepts it, and off a TTY `--yes` is required for the community preview |
 
 `normalize` is not a file write. Its `--dry-run` skips applying replacements
