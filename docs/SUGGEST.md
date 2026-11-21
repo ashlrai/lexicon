@@ -2,7 +2,7 @@
 
 `lexicon suggest` reads the voice history that `lexicon voice` keeps
 (`<config dir>/voice/history.jsonl`, one `{ raw, output }` pair per dictation,
-capped at 1000 lines) and the lexicon itself, and proposes the edits that
+capped at 1000 lines and 4 MB) and the lexicon itself, and proposes the edits that
 would have made the last few weeks of transcripts come out right. Nothing is
 written unless you say so. The same engine backs the `suggest_terms` MCP tool,
 so an agent can run the routine for you.
@@ -19,7 +19,18 @@ stale  Zebrafish Labs          0      0.30        never matched in 110 days
 5 suggestions. `lexicon suggest --apply` walks them; `--yes` applies those at or above 0.80.
 ```
 
-## The four kinds
+Before the table, the text modes (plain, `--apply`, `--yes`) list the
+pending queue: corrections captured but not applied (the hook queues the
+"it's X not Y" ones it notices), each with its id, source and the `lexicon pending accept <id>` /
+`lexicon pending reject <id>` commands that settle it. `--json` leaves the
+queue out so its output stays a plain array; `lexicon pending --json` reads
+it.
+
+With nothing to propose, `lexicon suggest` says so and names the next step
+(dictate with `lexicon voice` for a while, or run it with `--harvest` inside
+a repository).
+
+## The five kinds
 
 ### alias: a spelling STT produces for a term you already have
 
@@ -106,7 +117,7 @@ removes it; in `--apply` the default answer for a stale term is `n`, and
 Suggestions are ranked by `confidence * log(1 + count)`: a 0.78 seen twice
 sorts below a 0.65 seen four times. Duplicates (same kind, canonical and
 alias) merge into one row with the larger count and the stronger reason.
-`--limit` caps the list (default 20).
+`--limit` caps the list (default 20, at most 500).
 
 `0.80` is the line for unattended use. `--yes` (and any agent applying
 suggestions on its own) takes everything at or above it: promoted guesses,
@@ -137,7 +148,16 @@ see `CONTRACT.md` in this directory) for scripts and for the MCP tool.
 `lexicon suggest --yes --json` applies the safe ones and prints one document,
 `{ ok: true, threshold, applied, skipped }`, where each `applied` entry names
 the kind, canonical, alias, what the write did and the file (`path`) it went
-to. `--apply` asks a question per suggestion, so it refuses `--json`.
+to. `--apply` asks a question per suggestion, so it refuses `--json`, and
+it needs a terminal: without a TTY on stdin and stdout it exits 1 and points
+at `--yes`. `--apply` and `--yes` together are refused as well.
+
+Suggestions read the global lexicon and a trusted project `.lexicon.yaml`;
+an untrusted or changed project file is named on stderr and never parsed
+(`lexicon trust` approves it). Alias, `never`, `phonetic` and stale edits go
+to the file that holds the term. With `--project`, new terms go to the
+project file, and a write to an untrusted one stops the run with the trust
+error instead of writing anywhere else.
 
 ## Privacy
 
