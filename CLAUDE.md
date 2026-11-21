@@ -22,7 +22,7 @@ agent sees them. Not a dictation app. Ground truth for every doc is the code;
 ## Conventions
 - ESM, NodeNext: relative imports end in `.js`. No default exports. No `any` in exported signatures.
 - Cross-module core imports go through `src/core/index.js`; lightweight startup metadata may import `core/caps.js` and `core/types.js` directly. Dependency-free `src/util/` helpers are imported directly. `src/core/matcher.ts` stays pure (no IO, env or logging).
-- Tests live in `tests/*.test.ts` (vitest). Core tests import the module directly; MCP/CLI tests mock `src/core/index.js`. Interactive handlers take a `Prompter` so tests script answers.
+- New tests go in `tests/*.test.ts` (vitest); vitest also runs the few `src/**/*.test.ts` files colocated with their module and `bench/**/*.test.ts`. Core tests import the module directly; MCP/CLI tests mock `src/core/index.js`. Interactive handlers take a `Prompter` so tests script answers.
 - Lexicon files: global `~/.config/lexicon/lexicon.yaml` (override `LEXICON_PATH`), project `.lexicon.yaml` at git root, merged only when trusted (`lexicon trust`). Project wins on collision.
 - The hook always exits 0 and stays under 200ms. Stdout is the protocol channel for `mcp` and `hook`; log to stderr.
 - No em-dashes in docs or user-facing strings. "Ashlr.AI" (never "Ashlr AI" outside a quoted STT error); "Lexicon" for the product, `lexicon` for the CLI, `@ashlr/lexicon` for the package.

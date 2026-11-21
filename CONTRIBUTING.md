@@ -156,7 +156,9 @@ For a quick local check, run `lexicon test-select` from the repository root. It
 prints commands for the current staged, unstaged, and untracked changes. Pass
 repository-relative paths to select for a specific change, or add `--json` for
 structured command argument arrays. Run the commands from the repository root.
-Unknown paths, deleted tests, and an empty change list select `npm test`.
+A changed `tests/` or `bench/` test file selects itself. Unknown paths (including
+the colocated `src/**/*.test.ts` files), deleted tests, and an empty change list
+select `npm test`.
 This is a conservative starting point; run the full suite before claiming a change works.
 
 Vitest. Tests live under `tests/`: one file per core module, plus a few hundred focused files named after the behaviour or regression they pin. Vitest also picks up the few `src/**/*.test.ts` files colocated with their module and `bench/**/*.test.ts`. The wall-clock files listed in `PERF_FILES` in `vitest.config.ts` run in their own `perf` project, one worker, after the rest finishes. The per-module files:

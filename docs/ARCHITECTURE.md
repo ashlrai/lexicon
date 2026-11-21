@@ -172,6 +172,7 @@ hooks/hooks.json            plugin hook entries, SessionStart + UserPromptSubmit
 skills/lexicon/SKILL.md     when the agent should normalize, learn, suggest, harvest, set up, diagnose
 commands/lexicon.md         the /lexicon slash command
 tests/                      vitest, one file per module, e2e.test.ts for subprocess journeys, fixtures/fake-repo for harvest
+                            (vitest also runs the few src/**/*.test.ts files colocated with their module, and bench/**/*.test.ts)
 test/                       hook-main-sonar.test.mjs, one of the node --test files npm test runs before vitest
 bench/                      accuracy benchmarks: synthetic corpus and synthesized speech through whisper.cpp
 ```
