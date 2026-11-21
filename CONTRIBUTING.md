@@ -64,6 +64,14 @@ Node 20 or newer. Clone and install as in step 1 of [Contribute with an agent](#
 
 `npm run dev` rebuilds on change. `npm run typecheck` runs `tsc --noEmit` on the package, extension and demo site sources.
 
+## Working in this repo with Lexicon installed
+
+Many contributors dictate to their agents, so two committed files are worth knowing about before your own Lexicon install meets them.
+
+- **`.lexicon.yaml`** at the root is this project's own lexicon. Like any project lexicon it is not applied until you trust it, so in this repo the CLI prints `lexicon: untrusted project lexicon skipped: <path> (run: lexicon trust)` and the Claude Code session note says the file was skipped. That is the [trust gate](docs/TRUST.md) working, not a bug. `lexicon trust --dry-run` shows the preview and pins nothing; `lexicon trust` asks before pinning (off a terminal it needs `--yes`). Trust pins the file's sha256, so after a `git pull` that changes it, it is skipped again until you re-run `lexicon trust`. An agent should show you the `trust_project` summary and ask rather than trust it on its own, and should not open the file itself.
+- **Adding a name to it:** trust it first (a project write refuses on an untrusted file), then `lexicon add <Canonical> <aliases...> --project` (add `--dry-run` to preview), committed with the pull request that needs it. Hit counts go to `hits.json` beside your global lexicon, never into this file, so dictating while you work does not dirty the tree.
+- **`.mcp.json`** registers the `lexicon` MCP server as `node plugin/mcp-server.mjs`, so opening the repo as a project in Claude Code (which asks you to approve project servers) runs the committed bundle from your checkout. After changing `src/`, `npm run build:bundle` is what makes that server reflect your change.
+
 ## The committed plugin bundles
 
 `plugin/mcp-server.mjs` and `plugin/hook.mjs` are what the Claude Code plugin runs (`.claude-plugin/plugin.json`, `hooks/hooks.json`). They are esbuild bundles of `src/mcp/server.ts` and `src/hooks/plugin-entry.ts` (a small stub that enables Node's compile cache and imports `plugin/hook-main.mjs`, the bundle of `src/hooks/user-prompt-submit.ts`) with every dependency inlined, because `claude plugin install` clones the repo without `npm install` or a build. They are committed on purpose.
