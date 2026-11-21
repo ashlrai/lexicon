@@ -73,6 +73,17 @@ Project community packs keep separate pins and caches for each canonical project
 
 `pack update --json` previews without writing unless `--yes` is also given. Installation and removal restore the dictionary, cache and state if publishing registry metadata fails. Update approval also binds the installation record: a new version pin or registry source requires a fresh preview even when the installed bytes are unchanged.
 
+## Adding a term to a shipped pack
+
+The usual follow-up to a [misheard term issue](https://github.com/ashlrai/lexicon/issues/new?template=misheard_term.yml), and the smallest useful pull request here.
+
+1. Add the entry to the `packs/<name>.yaml` it fits: `canonical`, a `category` (`brand`, `person`, `product`, `acronym`, `identifier`, `place` or `other`) and `aliases`, ideally spellings a real engine wrote. Leave out `source`, `scope` and `hits`: installs set them, and the test fails if a pack carries them.
+2. Apply [the alias rule](#how-the-aliases-were-chosen). `tests/packs.test.ts` fails on an alias that is a stoplist word (unless allowlisted in `STOPLIST_ALIAS_ALLOWLIST`), a multi-word alias made only of stoplist words (unless in `STOPLIST_PHRASE_ALLOWLIST`), a canonical another pack already has, a repeated alias, the canonical listed as its own alias, or a word that is both an alias and a `never`. Prefer dropping the alias to growing an allowlist.
+3. Update the counts. `npm test` fails where `tests/packs.test.ts` pins an exact term count (`architecture`, `cloud-devops` and `profession-q8` today). After `npm run build`, `npm run check:facts` fails on every doc that still states the old total ("272 terms across the nine packs"); it does not check the per-pack rows of the table above, so fix that row by hand from `node dist/cli/index.js pack show <name> --json`.
+4. Try it against a scratch lexicon, so your own file is untouched: point `LEXICON_PATH` at a new file, run `node dist/cli/index.js pack add <name>`, then `node dist/cli/index.js normalize "<what STT wrote>"` should print the canonical, and a plain sentence using the nearby ordinary word should come back unchanged.
+
+No plugin rebuild is needed for a pack-only change: packs are read from the package's `packs/` directory at run time, not bundled.
+
 ## Adding a pack to this repo
 
 A new vendored pack is one file and one test.
