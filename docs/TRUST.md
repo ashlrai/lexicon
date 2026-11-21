@@ -27,7 +27,7 @@ Until a project file is trusted, `list`, `normalize` and `doctor` warn on stderr
 
 ## The rest of the hardening
 
-Every field is length-capped and stripped of zero-width and bidi characters at parse time, lexicon files over 2 MB and imports over 8 MB are refused, and the local API listens on loopback only behind a bearer token. There is no telemetry: the CLI, hooks, MCP server, local API and extension make no request beyond loopback, and the one outbound request in the codebase is `lexicon voice` fetching a whisper model on first use. Details, including the extension, voice history and the install script, are in [SECURITY.md](../SECURITY.md).
+Every field is length-capped and stripped of zero-width and bidi characters at parse time, lexicon files over 2 MB and imports over 8 MB are refused, and the local API listens on loopback only behind a bearer token. There is no telemetry: the CLI, hooks, MCP server, local API and extension make no request beyond loopback during ordinary correction. Three features use the network, and only when you ask for them: `lexicon voice` fetching a whisper model on first use, `lexicon pack` fetching a community pack from a registry URL you choose, and the GitHub source of guided import (`lexicon import --guided`, MCP `import_vocabulary`) calling the GitHub API through your existing `gh` login. Details, including the extension, voice history and the install script, are in [SECURITY.md](../SECURITY.md).
 
 ## See also
 

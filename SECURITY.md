@@ -300,10 +300,14 @@ treated as the user's own words).
   words in the prompt are echoed as typed, and exporter output
   (`lexicon export claude-md` and the rest), which users paste into files, is
   not changed.
-- **No telemetry, two user-initiated downloads.** The tool collects nothing and all state is
+- **No telemetry, three user-initiated network features.** The tool collects nothing and all state is
   local files. The CLI, hooks, MCP server, local API and extension make no
   request beyond loopback, except when the user asks for one by name:
-  `lexicon voice` fetching a whisper model on first use (see above), and
+  `lexicon voice` fetching a whisper model on first use (see above),
+  the GitHub source of guided import (`lexicon import --guided`, MCP
+  `import_vocabulary` with `github` among the approved `sources`) calling
+  api.github.com through the user's existing `gh` login (it reads names and
+  sends no lexicon text), and
   `lexicon pack` fetching a community pack index and pack files from the
   `--registry` URL the user passed (MCP `list_packs` and `add_pack` read
   only a registry the user registered: one they installed a pack from, or
