@@ -4,9 +4,9 @@ Small, well-scoped pull requests are the easiest kind to merge here. A new start
 
 ## Good first issues
 
-If you want a concrete place to start, the [`good first issue`](https://github.com/ashlrai/lexicon/labels/good%20first%20issue) label is kept stocked with work that is genuinely self-contained: each issue names the files to touch and how to check the result. The recipes below cover the four most common shapes.
+If you want a concrete place to start, look at the [`good first issue`](https://github.com/ashlrai/lexicon/labels/good%20first%20issue) label. It marks self-contained work: the issue names the files to touch and how to check the result. The label often has no open issues; when it is empty, pick a shape from the table below instead. The open [`help wanted`](https://github.com/ashlrai/lexicon/labels/help%20wanted) issues are platform work (a tray app, a Firefox listing), larger than a first pull request. The recipes below cover the four most common shapes.
 
-The lowest-effort contribution of all needs no code: if speech-to-text mangles a public name and the lexicon does not catch it, open a [misheard term issue](https://github.com/ashlrai/lexicon/issues/new?template=misheard_term.yml) with the canonical spelling and what your STT engine actually wrote. Real transcripts are worth more than guesses, and they feed both the starter packs and the benchmark corpus.
+The lowest-effort contribution of all needs no code: if speech-to-text mangles a public name and the lexicon does not catch it, open a [misheard term issue](https://github.com/ashlrai/lexicon/issues/new?template=misheard_term.yml) with the canonical spelling and what your STT engine actually wrote. Real transcripts are worth more than guesses, and they feed both the starter packs and the benchmark corpus. The form labels each one `good first issue`, so a reported term is also a ready first pull request for whoever adds it to its pack.
 
 Good shapes for a first PR:
 
