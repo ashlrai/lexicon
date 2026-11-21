@@ -1,6 +1,6 @@
 # Exports and imports
 
-Getting your terms into a dictation app's own dictionary or an STT engine's biasing parameter, and bringing in a dictionary you already trained somewhere else.
+Getting your terms into a dictation app's own dictionary or an STT engine's biasing parameter, bringing in a dictionary you already trained somewhere else, and collecting names from your contacts, calendar and GitHub.
 
 One lexicon, sixteen ways out and eight ways in.
 
@@ -61,6 +61,32 @@ lexicon import CLAUDE.md --dry-run                        # the ## Voice lexicon
 | `json` | A lexicon JSON or YAML file | `lexicon export json`, another machine's `lexicon.yaml` |
 
 Rows are merged by canonical (case-insensitive), aliases deduped, and each term is then added with the same merge rules as `lexicon add`, so re-importing is safe. The output is a table of what was created or merged plus a summary line, `imported N terms (M new, K merged, S skipped)`; skipped rows and why go to stderr. Inputs over 8 MB are refused before parsing.
+
+## Import names from your contacts, calendar and GitHub
+
+No dictionary to bring over? `lexicon import --guided` collects candidate names from where they already live, and you approve each one before anything is written.
+
+```bash
+lexicon import --guided                     # on a terminal: pick sources, then review
+lexicon import --guided --dry-run           # same picker, prints the candidates, writes nothing
+lexicon import --guided --sources github --json    # preview for scripts and agents
+```
+
+| Source | What it reads | Needs |
+|---|---|---|
+| `contacts` | First and last names (as `person`) and organizations (as `brand`) from the local macOS Contacts database, opened read-only | macOS, a database under `~/Library/Application Support/AddressBook`, `sqlite3` on PATH |
+| `calendar` | Attendee and organizer names (as `person`) and proper nouns in event titles (as `other`) from the `.ics` files under `~/Library/Calendars` | macOS, that directory |
+| `github` | Your profile name and username, the members and repos of up to 20 of your orgs, and up to 200 of your own repos (logins as `identifier`, repos as `product`) | `gh` installed and logged in; it calls `api.github.com` with that login and asks for no new scopes |
+
+Nothing is read until you pick a source, and a source that is not available is skipped with the reason. Email and Slack are listed but not implemented: they would need new OAuth scopes or a workspace token. A name found more than once, in any source, is one candidate (compared ignoring case) with its counts and evidence added up; candidates are reviewed most frequent first, at most `--limit` of them (default 50). The review uses the same keys as `lexicon harvest --interactive`: `y` adds, `n` skips, `e` edits the aliases, `c` changes the category, `a` adds the rest, `q` quits. Approved names go through the same merge rules as `lexicon add`, tagged `import:contacts`, `import:calendar` or `import:github`; `--project` writes to `.lexicon.yaml` and is refused for an untrusted one.
+
+Off a terminal nothing is chosen for you: every run must name `--sources`. A write takes two steps. The `--json` preview returns a `previewId` and an `id` for each candidate; then pass the ones the user approved:
+
+```bash
+lexicon import --guided --sources github --yes --preview-id <previewId> --accept <id>,<id>
+```
+
+The `previewId` covers the sources, the destination file and every candidate, so if any of them changed since the preview the write is refused and you preview again. The MCP `import_vocabulary` tool is the same flow for agents (preview, then apply with the preview's token and the approved ids). Candidate previews go to whatever client asked for them, so an agent's model provider may see them. [DESIGN-VOCABULARY-IMPORT.md](../DESIGN-VOCABULARY-IMPORT.md) is the design record.
 
 Flags for both commands are in the [CLI reference](CLI.md). Adding a new format is three files and a test: see [CONTRIBUTING.md](../CONTRIBUTING.md).
 

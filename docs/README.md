@@ -97,7 +97,7 @@ your install supports.
 | [schema-unicode-error-examples.md](schema-unicode-error-examples.md) | Complete errors for unpaired surrogates, U+FFFE and U+FFFF | |
 | [schema-first-invalid-unit.md](schema-first-invalid-unit.md) | Which invalid code unit a schema error reports first | |
 | [schema-error-preview.md](schema-error-preview.md) | How schema errors escape and shorten term-name previews: which fields carry one, the exact construction, UTF-16 boundaries and checked examples | |
-| [EXPORTS.md](EXPORTS.md) | Every export format and every importer | Use it with |
+| [EXPORTS.md](EXPORTS.md) | Every export format, every importer and the guided import from contacts, calendar and GitHub | Use it with |
 | [transcript-cleaning-scope.md](transcript-cleaning-scope.md) | How `lexicon voice` cleans whisper.cpp transcripts: which bracket, parenthesis and asterisk tags are removed or kept, the noise-word list, checked examples | |
 
 ## Contribute
