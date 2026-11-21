@@ -122,24 +122,28 @@ Manual stdio check of the MCP server: `node dist/mcp/server.js`. Interactive che
 
 ```text
 src/util/        the bottom layer, dependency-free and imported directly: errors, json, jsonc, which, atomic, package, xdg and a few more
-src/core/        the library: types, caps (limits and format lists), schema, store, trust, matcher (+ matcher/), stoplist, normalize, suggest, suggestTerms, harvest, learn, pending, stats, notes, packs, demo, exporters/, importers/
+src/core/        the library: types, caps (limits and format lists), schema, store, trust, matcher (+ matcher/), stoplist, normalize, suggest, suggestTerms, harvest, learn, pending, stats, notes, packs, registry (community packs), import-sources and import-preview (the guided vocabulary import), edit-check, demo, shell, redact, exporters/, importers/; index.ts is the public API
 src/cli/         the `lexicon` command (index.ts answers version flags and tries the daemon fast read, run.ts dispatches, program.ts wires commander, handlers in commands.ts and cmd-*.ts, prompt.ts for interactive input, the setup wizard in setup/)
-src/mcp/         the stdio MCP server (`lexicon-mcp`)
+src/mcp/         the stdio MCP server (`lexicon-mcp`); tools registered through tools/index.ts, handlers grouped in tools/*.ts
 src/hooks/       the Claude Code SessionStart and UserPromptSubmit hook
-src/daemon/      the clipboard watcher and its per-platform backends
+src/daemon/      the clipboard watcher and its per-platform backends, the opt-in resident expander (`lexicon daemon --expander`) and the CLI's fast-read client for it
 src/serve/       the local HTTP API (`lexicon serve`)
 src/voice/       ffmpeg + whisper.cpp push-to-talk (`lexicon voice`)
+src/ambiguity/   the ambiguity engine ported from Pellucid; self-contained, nothing else in src/ imports it yet
 plugin/          committed esbuild bundles of the MCP server and hook that the plugin runs
 packs/           the starter term packs (developer, ai, business, voice-tools, cloud-devops, profession-q8, legal, ashlr, architecture)
+registry/        an example community pack registry (index.example.yaml and packs/)
 extension/       the browser extension (Manifest V3; built into extension/dist and dist-firefox)
 web/             the Next.js marketing site for lexicon.ashlr.ai (web/lib/generated holds a browser bundle of src/core)
 apps/macos/      LexiconBar, the SwiftPM menu bar app
+apps/windows/    LexiconBar for Windows, the tray app (see docs/WINDOWS-APP.md for what is verified)
 packaging/       the Homebrew formula
 site/            the demo site published to GitHub Pages, plus install.sh
-tests/           vitest; one file per module, e2e.test.ts for whole-journey subprocess tests, fixtures/fake-repo for harvest
+tests/           vitest; one file per module, e2e.test.ts for whole-journey subprocess tests, fixtures/fake-repo for harvest (vitest also picks up src/**/*.test.ts and bench/**/*.test.ts)
+test/            node --test files that `npm test` runs before vitest
 bench/           accuracy benchmark corpora and runners (synthetic and audio)
 examples/        example lexicon, client configs, library and STT pipeline examples
-scripts/         build-bundle, build-extension, build-macos-app, build-site, check-links, gen-cli-docs, install.sh
+scripts/         builders (build-bundle, build-extension, build-macos-app, build-site, gen-cli-docs), checks (check-bundle, check-facts, check-links, check-crypto, check-server-json, freshness/), release-contract, smoke and install.sh
 docs/            architecture, research, benchmark, quickstart, the module contract, per-feature guides and the generated CLI reference
 skills/ commands/ hooks/ .claude-plugin/ .mcp.json   what makes the repo a Claude Code plugin
 ```
