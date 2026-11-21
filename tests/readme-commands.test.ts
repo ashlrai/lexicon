@@ -96,7 +96,11 @@ describe('README lexicon commands match the CLI', () => {
   });
 
   it('states the real command count and links the full reference that lists every command', () => {
-    expect(readme).toContain(`A CLI with ${program.commands.length} commands`);
+    // Count what `lexicon --help` lists, as the README sentence and scripts/check-facts.mjs do:
+    // hidden commands (the `install-claude` alias) and the implicit `help` are not counted.
+    const listed = program.createHelp().visibleCommands(program).filter((cmd) => cmd.name() !== 'help');
+    expect(listed.length).toBeGreaterThan(0);
+    expect(readme).toContain(`A CLI with ${listed.length} commands`);
     expect(readme).toContain('(docs/CLI.md)');
     expect(readme).toContain('(docs/MCP.md)');
   });

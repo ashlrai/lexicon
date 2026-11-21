@@ -156,7 +156,7 @@ Rules: [docs/MATCHING.md](docs/MATCHING.md).
 - **Context gates** keep ambiguous names from firing without a relevant word in the transcript. Library and HTTP callers can also supply recent text and an app identifier as evidence. See [matching rules](docs/MATCHING.md#context-gates).
 - **A review queue** for spelling corrections noticed by the Claude Code prompt hook. `lexicon pending` lists them; `lexicon pending accept <id>` or `lexicon pending reject <id>` records your decision.
 - **Twenty-one MCP tools** for Claude Code, Codex, Cursor, Windsurf, Gemini CLI, VS Code and Claude Desktop.
-- **A CLI with 30 commands.** `lexicon --help` lists them. The [CLI reference](docs/CLI.md) includes nested commands and options; contributors can run `lexicon test-select --json` to select tests.
+- **A CLI with 29 commands.** `lexicon --help` lists them. The [CLI reference](docs/CLI.md) includes nested commands and options; contributors can run `lexicon test-select --json` to select tests.
 - **272 terms across the nine packs** (developer, AI, business, voice tools, cloud and DevOps, legal profession, law and litigation, Ashlr.AI fleet, architecture). Community packs install from a registry after a checksum preview.
 - **Sixteen export formats** and **eight importers**, including Wispr Flow, Superwhisper, macOS Text Replacement and espanso. `lexicon export` with no format lists them.
 - **Correction in supported browser composers, eligible macOS text fields, and your own pipeline** (`normalize()`). LexiconBar requires Accessibility access and skips secure fields and apps without suitable Accessibility text support; see [its limitations](docs/MACOS-APP.md#fix-everywhere).
