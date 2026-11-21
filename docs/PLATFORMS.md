@@ -5,7 +5,7 @@ Which parts of Lexicon work on macOS, Windows and Linux, and what each answer is
 Every cell in the table below carries one of three marks. The sections after it
 go into the cases where the mark alone would mislead.
 
-- **Tested in CI**. A GitHub Actions job exercises this on that operating system on every push. The reason column says what the job actually does, because "tested" covers a wide range.
+- **Tested in CI**. A GitHub Actions job in the full portable suite exercises this on that operating system. That suite runs daily on `main` and on manual dispatch, not on pull requests, which run only the fast `CI Gate` ([Full-suite and desktop CI](../CONTRIBUTING.md#full-suite-and-desktop-ci)). The reason column says what the job actually does, because "tested" covers a wide range.
 - **Works, untested on real hardware**. The code path exists and its logic is covered by unit tests, but nobody has run it against the real device, desktop session or API it drives. Treat it as a first draft.
 - **Not available**. There is nothing to run. The reason column says why, and what to do instead.
 
@@ -15,9 +15,9 @@ The matrix is `ubuntu-latest`, `windows-latest` and `macos-latest`, with Node 20
 
 | Feature | macOS | Windows | Linux | What the mark rests on |
 |---|---|---|---|---|
-| CLI: all twenty-five `lexicon` commands | **Tested in CI** | **Tested in CI** | **Tested in CI** | The TypeScript test suite runs on every matrix job, followed by a smoke test that drives the built binary rather than the source. The jsdom extension file is skipped on Node 20; the POSIX installer script tests are skipped on Windows. |
+| CLI: all 29 `lexicon` commands | **Tested in CI** | **Tested in CI** | **Tested in CI** | The TypeScript test suite runs on every matrix job, followed by a smoke test that drives the built binary rather than the source. The jsdom extension file is skipped on Node 20; the POSIX installer script tests are skipped on Windows. |
 | MCP server (stdio, twenty-one tools) | **Tested in CI** | **Tested in CI** | **Tested in CI** | The smoke step starts the real server as a child process and speaks stdio JSON-RPC to it on every job. |
-| Claude Code hooks and the plugin bundle | **Tested in CI** | **Tested in CI** | **Tested in CI** | The end-to-end suite spawns the real hook and the real CLI as child processes; a separate gate fails if the committed plugin bundle has drifted from source. |
+| Claude Code hooks and the plugin bundle | **Tested in CI** | **Tested in CI** | **Tested in CI** | The end-to-end suite spawns the real hook and the real CLI as child processes; each job also fails if the committed plugin bundle has drifted from source. |
 | `lexicon install <client> --apply` | **Tested in CI** | **Tested in CI** | **Tested in CI** | Covered by the portable suite everywhere. On Windows all five client configs are additionally written into a scratch `%USERPROFILE%` and read back off disk, so the paths are checked against the filesystem rather than against our own constant. |
 | Config and data file locations | **Tested in CI** | **Tested in CI** | **Tested in CI** | Linux checks that `XDG_CONFIG_HOME` moves the lexicon and that a relative value is ignored per the spec; Windows checks `%APPDATA%\Claude` and `%APPDATA%\Code\User` against the real directories. |
 | Local HTTP API (`lexicon serve`) | **Tested in CI** | **Tested in CI** | **Tested in CI** | The loopback bind, the bearer token file and all twelve routes are in the portable suite. The 0600 mode check is skipped on Windows, which has no POSIX mode bits. |
