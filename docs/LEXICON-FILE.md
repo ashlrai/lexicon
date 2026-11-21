@@ -9,9 +9,9 @@ Two files, merged at load time.
 | Global | `$LEXICON_PATH`, else `$XDG_CONFIG_HOME/lexicon/lexicon.yaml`, else `~/.config/lexicon/lexicon.yaml` |
 | Project | `.lexicon.yaml`, found by walking up from the current directory to the git root |
 
-Project wins when both define the same canonical (case-insensitive). Aliases from both are unioned. Run `lexicon path` to see which files are in play. Commit `.lexicon.yaml` to share a team vocabulary; each teammate approves it once with `lexicon trust` (see [TRUST.md](TRUST.md)).
+Project wins when both define the same canonical (case-insensitive). Aliases from both are unioned. Settings merge key by key with the project's value winning, except `protectedWords`, which are unioned. The walk stops at the git root, and on macOS and Linux it passes over a `.lexicon.yaml` owned by anyone other than you or root. A new project file (`lexicon init --project`, or the first `lexicon add --project`) is created at the git root, or in the current directory outside a repo. Run `lexicon path` to see which files are in play. Commit `.lexicon.yaml` to share a team vocabulary; each teammate approves it once with `lexicon trust` (see [TRUST.md](TRUST.md)).
 
-The config directory also holds `trust.json`, `serve.json` (local API token), `voice/history.jsonl` and `models/` (whisper models). Nothing else is written outside it except what you ask for (`--out`, exports from `lexicon setup`, client config files under `--apply`).
+The global file's directory also holds Lexicon's own state and caches; [the config directory](#the-config-directory) lists them.
 
 A full annotated example is in [examples/lexicon.example.yaml](../examples/lexicon.example.yaml). The short version:
 
@@ -65,6 +65,24 @@ settings:
 
 Parsing is defensive: fields are length-capped and stripped of zero-width and bidi characters, and oversized files are refused. The limits and the reasoning are in [TRUST.md](TRUST.md#the-rest-of-the-hardening).
 For examples of validation errors involving invalid code units and shortened term names, see [schema error examples](schema-error-examples.md).
+
+## The config directory
+
+Everything Lexicon keeps for itself sits beside the global lexicon, so `LEXICON_PATH` and `XDG_CONFIG_HOME` move it too.
+
+| Entry | What it holds |
+|---|---|
+| `trust.json` | The approved project files and the hash each was approved at ([TRUST.md](TRUST.md)) |
+| `hits.json` | Per-term hit counts for global and project terms, read by `lexicon stats` |
+| `pending-aliases.yaml` | Corrections the Claude Code hook detected, waiting for `lexicon pending` (at most 200) |
+| `serve.json` | The local API's bearer token, last port and any extra allowed origins ([LOCAL-API.md](LOCAL-API.md)) |
+| `registry/` | Community pack state and cached pack files from `lexicon pack` |
+| `voice/` | `history.jsonl` and the recorder's state and log for `lexicon voice` |
+| `models/` | whisper.cpp models (`LEXICON_WHISPER_MODELS` puts them elsewhere) |
+| `parse-cache.json`, `project-parse-cache.json`, `index-cache.json`, `parse-failure.json` | Caches that keep the hook fast; an entry is reused only for the exact file contents (or matcher inputs) it was built from, so a stale one is never applied |
+| `index-refresh.lock`, `onboard-note.json` | Hook bookkeeping: the background cache refresh, and when the empty-lexicon note was last shown |
+
+A write also holds a short-lived `<file>.lock` beside the file it changes. Outside this directory Lexicon writes only what you ask for: `--out` and the exports from `lexicon setup`, client config files under `--apply`, the login service from `lexicon serve --install` (on macOS its log is `~/Library/Logs/lexicon/serve.log`), and the socket of the resident expander you start with `lexicon daemon --expander` (`$XDG_RUNTIME_DIR/lexicon/expander.sock`, else under `$XDG_STATE_HOME`; a named pipe on Windows).
 
 ## See also
 
