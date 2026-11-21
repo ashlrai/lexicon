@@ -13,9 +13,13 @@ lexicon daemon --interval 500  # poll every 500ms instead of 250
 lexicon daemon --quiet         # rewrite silently
 lexicon daemon --which         # print the detected clipboard backend and exit
 lexicon daemon --backend xsel  # force a backend: pbcopy | wl | xclip | xsel | powershell
+lexicon daemon --once --json   # print one JSON result instead of the diff
+lexicon daemon --which --json  # the detected backend as JSON
 ```
 
-The watcher polls the clipboard every 250ms. When the text changes and `normalize` would alter it, it writes the corrected text back, prints the diff and records the hits. A loop guard remembers the last value it wrote so it never rewrites its own output. The lexicon is re-read when a lexicon file or `trust.json` has changed, checked (a few `stat` calls) each time a new clipboard text is about to be corrected, so a term you just learned is used on the next copy; it is also re-read every 5 seconds as a backstop. Ctrl-C stops it cleanly; when a clipboard read is still in flight it waits for it and says so, and a second Ctrl-C stops at once. Either way the exit status follows the signal: 130 after Ctrl-C (SIGINT), 143 after SIGTERM.
+The watcher polls the clipboard every 250ms by default. `--interval` takes a positive whole number of milliseconds; anything below 20 is raised to 20, with a warning on stderr. When the text changes and `normalize` would alter it, it writes the corrected text back, prints the diff and records the hits. A loop guard remembers the last value it wrote so it never rewrites its own output. The lexicon is re-read when a lexicon file or `trust.json` has changed, checked (a few `stat` calls) each time a new clipboard text is about to be corrected, so a term you just learned is used on the next copy; it is also re-read every 5 seconds as a backstop. Ctrl-C stops it cleanly; when a clipboard read is still in flight it waits for it and says so, and a second Ctrl-C stops at once. Either way the exit status follows the signal: 130 after Ctrl-C (SIGINT), 143 after SIGTERM.
+
+Some flag combinations are refused before anything runs: `--paste` without `--once` (the watcher would paste on every clipboard change), `--socket` without `--expander`, and `--once`, `--paste` or `--which` with `--expander` (the expander's `clipboard` request does that job without a new process).
 
 ## Backends
 
@@ -29,6 +33,19 @@ The clipboard tool is detected per platform (`lexicon daemon --which` and `lexic
 | Windows | `powershell` | `Get-Clipboard -Raw` / `Set-Clipboard` (built in; CRLF preserved) |
 
 An empty or non-text clipboard (an image, a file) is treated as no text and skipped, as is anything over 20,000 characters. Content a tool hands over as bytes that are not UTF-8 text (a NUL, or bytes that do not decode) is never rewritten either, so a copied image stays an image.
+
+On macOS, plain `--which` also prints a `--paste:` line saying whether `osascript` is on PATH.
+
+## JSON output
+
+`--json` works only with the two one-shot modes, `--once` and `--which`, and prints one line on stdout:
+
+| Command | Result |
+|---|---|
+| `lexicon daemon --once --json` | `{"ok":true,"changed":true,"written":true,"corrections":1,"pasted":false}` |
+| `lexicon daemon --which --json` | `{"ok":true,"backend":"pbcopy","description":"pbpaste / pbcopy (macOS)"}` |
+
+With `--once --json` the diff and the `no changes` line are not printed, so stdout holds only the result. `written` is false for a dry run or an unchanged clipboard, and `pasted` is true only when `--paste` sent the keystroke. With no usable backend, `--which --json` prints `{"ok":false,"error":"...","nextStep":"..."}` and exits 1. The watcher and `--expander` have no single result, so `--json` with either prints the same kind of refusal and exits 1. `--json=v1` wraps the document in the versioned envelope described in [CLI-JSON.md](CLI-JSON.md).
 
 ## One-shot mode for a keyboard shortcut
 
