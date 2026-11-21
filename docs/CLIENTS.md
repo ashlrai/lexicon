@@ -41,11 +41,11 @@ lexicon install claude --apply  # do it
 
 Without `--apply` it prints the three steps. With `--apply` it performs the first two:
 
-1. Registers the MCP server: `claude mcp add --scope user lexicon -- node "<install path>/plugin/mcp-server.mjs"`. Use `--scope project` to register it in the current repo instead. When a `lexicon` server is already registered, a registration an earlier install wrote from another location (a deleted checkout, an npx cache, a moved global install) is repointed at this one and the output names the old and new launch; a server named `lexicon` that the install did not write is left alone.
+1. Registers the MCP server: `claude mcp add --scope user lexicon -- node "<install path>/plugin/mcp-server.mjs"`. Use `--scope project` to register it in the current repo instead. When `LEXICON_PATH` or `LEXICON_CWD` is set in the shell you install from, it is passed along as `-e LEXICON_PATH=<absolute path>` (see [Your lexicon path travels with the install](#your-lexicon-path-travels-with-the-install)). When a `lexicon` server is already registered, a registration an earlier install wrote from another location (a deleted checkout, an npx cache, a moved global install) is repointed at this one and the output names the old and new launch; a server named `lexicon` that the install did not write is left alone.
 2. Merges `SessionStart` and `UserPromptSubmit` hooks running `node "<install path>/plugin/hook.mjs"` (timeout 5s) into `~/.claude/settings.json` (`$CLAUDE_CONFIG_DIR/settings.json` when that is set). With `--scope project` they go into the repo's shared `.claude/settings.json` under the current directory instead, beside the `.mcp.json` step 1 writes, so the whole install is the repo's and nothing lands in your user settings; the output names the file as project scope. Existing hooks are kept. The fragment is in [examples/claude-settings.hook.json](../examples/claude-settings.hook.json).
 3. Reminds you to add "Read the `lexicon://me` resource before interpreting dictated text" to your `CLAUDE.md`.
 
-Paths are absolute and quoted, so an install path with spaces works. The bundles under `plugin/` are preferred (the npm package ships them too); a checkout that only ran `npm run build` falls back to `dist/mcp/server.js` and `dist/hooks/user-prompt-submit.js`. `lexicon doctor` checks that the plugin or the hooks are in place. With the plugin installed (listed in `~/.claude/plugins/installed_plugins.json` or enabled in `settings.json`), a user-scope `lexicon install claude` (and `install_client` or `setup_lexicon` for `claude`) changes nothing and says so, because the plugin already runs the server and both hooks and a second copy would add every hook note twice; `--scope project` still writes the repo's config.
+Paths are absolute. The hook command is always quoted, and the printed `claude mcp add` line quotes the path when it contains a space or a shell character, so an install path with spaces works. The bundles under `plugin/` are preferred (the npm package ships them too); a checkout that only ran `npm run build` falls back to `dist/mcp/server.js` and `dist/hooks/user-prompt-submit.js`. `lexicon doctor` checks that the plugin or the hooks are in place. With the plugin installed (listed in `~/.claude/plugins/installed_plugins.json` or enabled in `settings.json`), a user-scope `lexicon install claude` (and `install_client` or `setup_lexicon` for `claude`) changes nothing and says so, because the plugin already runs the server and both hooks and a second copy would add every hook note twice; `--scope project` still writes the repo's config.
 
 Manual installs do not load `skills/lexicon/SKILL.md`; the hook notes and the tool descriptions carry the instructions. Install the plugin (option a) to get the skill and the `/lexicon` command.
 
@@ -119,7 +119,20 @@ npm cache directory that may later be deleted. To configure only the current
 project, add `--project --apply`; that writes `.cursor\mcp.json` in the project
 directory instead.
 
-`--project` (or `--scope project`) writes the repo-level file instead where the client has one: `./.codex/config.toml`, `./.cursor/mcp.json`, `./.gemini/settings.json`, `./.vscode/mcp.json`. Windsurf and Claude Desktop have no project-level config and `--project` is refused for them. Every client ends with the same hint: `lexicon export claude-md >> <rules file>` (`CLAUDE.md`, `AGENTS.md` for Codex, `.cursor/rules/lexicon.mdc`, `GEMINI.md`, `.windsurfrules`, `.github/copilot-instructions.md`) so the model prefers the canonical spellings even when it does not call the tool.
+`--project` (or `--scope project`) writes the repo-level file instead where the client has one: `./.codex/config.toml`, `./.cursor/mcp.json`, `./.gemini/settings.json`, `./.vscode/mcp.json`. Windsurf and Claude Desktop have no project-level config and `--project` is refused for them. Every client ends with the same hint: `lexicon export claude-md >> <rules file>` (`CLAUDE.md`, `AGENTS.md` for Codex, `.cursor/rules/lexicon.mdc`, `GEMINI.md`, `.windsurfrules`, `.github/copilot-instructions.md`; for Claude Desktop, the project instructions or Settings > Profile > preferences) so the model prefers the canonical spellings even when it does not call the tool.
+
+`--json` prints `{ ok: true, client, scope, applied, written, output }`, where `written` lists each file `--apply` touched with `created`, `updated` or `unchanged` (empty for a preview), and `{ ok: false, error, nextStep }` for an unknown client or scope. With no client named, `lexicon install` (or `lexicon install generic`) prints the generic snippet with the resolved server path and the supported client names; `--apply` and `--project` are refused there, because there is no generic file to write.
+
+### Your lexicon path travels with the install
+
+When `LEXICON_PATH` or `LEXICON_CWD` is set in the shell you run `lexicon install` from, the install writes it into the client's `lexicon` entry as an absolute path (a relative value is resolved against the current directory). A GUI client such as Claude Desktop, Cursor or VS Code does not start from your shell, so without this its server would read `~/.config/lexicon/lexicon.yaml` instead of the file you installed from.
+
+```bash
+LEXICON_PATH=~/notes/lexicon.yaml lexicon install cursor
+# the printed entry gains  "env": { "LEXICON_PATH": "/Users/you/notes/lexicon.yaml" }
+```
+
+Codex gets an `env = { ... }` line in `[mcp_servers.lexicon]`, Claude Code gets `claude mcp add -e LEXICON_PATH=...`, and the generic snippet shows the same `env` block. Unset variables are left out, so a default install writes no `env` at all.
 
 ### Where writing the file is not quite enough
 
