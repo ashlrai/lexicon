@@ -16,6 +16,38 @@ lexicon serve --install       # start at login: launchd (macOS), systemd --user 
 lexicon serve --uninstall
 ```
 
+### Flags
+
+- `--port <n>`: the port to listen on (default 41733; `0` picks a free one,
+  which the start line and `--json` report). With `--show`, `--status` or
+  `--pair` it names the port to report or probe instead of the one recorded
+  in `serve.json`.
+- `--host <host>`: the interface to bind (default `127.0.0.1`). Anything but
+  a loopback address (`127.x.x.x`, `localhost`, `::1`) prints a warning that
+  the API is now exposed to the network, where anyone with the token can read
+  and change your lexicon. `--pair` always opens `127.0.0.1`.
+- `--quiet`: no line per request; failures, the start line and `lexicon serve
+  stopped` are still printed. The installed service runs `serve --quiet`.
+- `--json`: one JSON document on stdout, led by `ok`:
+  - `lexicon serve`: `{ ok: true, url, port, host, token, configPath }` on one
+    line once it is listening; it then keeps serving until stopped.
+  - `--show`: `{ ok: true, url, port, token, configPath }`.
+  - `--status`: `{ ok, up, url, ... }`, where `ok` equals `up` (exit 0 up, 1
+    otherwise). Up adds `health` (the `/health` body); down, failing (`running:
+    true`, `status`) or another program on the port adds `error`, `hint`,
+    `nextStep` and `reason`; no `serve.json` adds `configured: false`,
+    `configPath` and `note`.
+  - `--pair`: `{ ok, up, url, opened, error?, note? }`, or `{ ok: false, error,
+    nextStep, up: false, ... }` when serve is not configured or not up.
+  - `--install` and `--uninstall`: `{ ok, action, platform, output, error?,
+    nextStep? }`, where `output` is the text the command prints without
+    `--json`; the commands it ran still go to stderr.
+
+Only one of `--show`, `--status`, `--pair`, `--install` and `--uninstall` may
+be given, and `--quiet` applies only to a running server, so
+`lexicon serve --status --quiet` is refused too. A refusal exits 1, with
+`{ ok: false, error, nextStep }` under `--json`.
+
 `--install` writes `~/Library/LaunchAgents/ai.ashlr.lexicon.serve.plist` on
 macOS, `~/.config/systemd/user/lexicon-serve.service` on Linux, or a logon-
 triggered Scheduled Task on Windows, whose program is the built CLI,
