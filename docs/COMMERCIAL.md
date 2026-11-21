@@ -27,6 +27,10 @@ correct. This section says when to switch it on, and the answer is not today.
 | Known organizations using it | zero |
 | Conversations with a team of ten or more about a shared lexicon | zero |
 
+Rechecked 2026-11-21: 2 stars and 3 forks on GitHub, eight versions on npm
+(latest 0.5.12), and `lexicon remote`, step 1 below, is still unbuilt, so the
+order below still starts at its first step.
+
 Publishing a price list for a Team product that does not exist, on a project
 that is a day old and has never been deployed by anyone, would be selling a
 roadmap. It would also spend the one asset the project actually has right now,
@@ -62,8 +66,8 @@ The rest of this document assumes the answer eventually becomes yes.
 
 ## What MIT gives away, permanently
 
-The code is published under MIT. Every version already released, 0.1.0 through
-0.5.1, carries that grant, and the grant is not coming back.
+The code is published under MIT. Every version already released (tags v0.1.0
+through v0.5.12 as of 2026-11-21) carries that grant, and the grant is not coming back.
 
 **What any company may do today, forever, without paying and without asking:**
 
@@ -119,11 +123,15 @@ Relicensing future versions is **legally available to us right now, and more
 cheaply than it ever will be again.** It is worth stating plainly rather than
 waving it away:
 
-- There are 30 commits by one author. Ashlr.AI holds copyright in 100% of the
-  code. There is no contributor licence agreement gap to close and nobody to
-  ask.
-- There is no community to fork yet: one star, no forks, no downstream
-  packagers.
+- When this was written (2026-09-20) there were 30 commits by one author and
+  Ashlr.AI held copyright in 100% of the code. As of 2026-11-21 the history
+  has 1,177 commits: all but 16 by the founder, 14 Dependabot dependency
+  bumps, and two test-only commits from one outside contributor (October
+  2026), contributed under the repository's MIT licence through GitHub's
+  inbound=outbound terms. There is no contributor licence agreement, so those
+  two commits are the one place a relicence would have someone to ask.
+- There is still barely a community to fork from: 2 stars and 3 forks
+  (2026-11-21), and no known downstream packagers.
 - The credible target would be the **Functional Source License** (FSL), which
   Sentry wrote after finding BUSL's four-year term too long and its variable
   Additional Use Grant too hard for compliance departments to approve. FSL
@@ -269,11 +277,16 @@ Everything that exists today and everything that would be built for the local
 experience tomorrow:
 
 - The matcher, the CLI, the MCP server (twenty-one tools), the Claude Code plugin
-  and hooks, the browser extension, the macOS menu bar app, the loopback HTTP
-  API, the clipboard daemon, local voice, the starter packs, sixteen exporters
-  and eight importers, the importable library.
+  and hooks, the browser extension, the macOS menu bar app, the Windows tray
+  app (source and a CI build only), the loopback HTTP API, the clipboard
+  daemon, local voice, the starter packs, sixteen exporters and eight
+  importers, the importable library.
 - Sharing a lexicon by committing `.lexicon.yaml` to a repository, with the
   trust gate.
+- Sharing packs through a community pack registry you host: an index file
+  anywhere a URL reaches, installed with `lexicon pack add`, each pack
+  previewed and sha256-checked before it is written. See
+  [PACKS.md](PACKS.md#community-packs).
 - **`lexicon remote`: *planned, week 1*.** Pull a lexicon layer from any URL
   you control: a raw GitHub file, an S3 object, an internal file server.
   Unlimited members, unlimited terms, no account. This is the part that matters
@@ -357,8 +370,9 @@ Anchor at **$14 per user per month, annual**, with a **$12,000/year floor**.
 - SCIM provisioning.
 - Support with a written SLA and a named contact.
 - **Indemnification.** The one item on the list with no free substitute. Our
-  position is unusually clean: a single copyright holder, no CLA gaps, and 98
-  production dependencies of which 87 are MIT, 8 ISC, 2 BSD-3-Clause and 1
+  position is unusually clean: Ashlr.AI holds copyright in everything but two
+  test-only commits (see [Why relicensing is
+  rejected](#why-relicensing-is-rejected)), and 98 production dependencies of which 87 are MIT, 8 ISC, 2 BSD-3-Clause and 1
   BSD-2-Clause, with **no copyleft anywhere in what ships**.
 
 The floor matters more than the rate. Below roughly seventy seats, an
@@ -396,17 +410,22 @@ lose a month.
 
 The landing page must not blur this line, so it is stated once, precisely.
 
-**Shipped, working, in the public repository today:** the matcher; the CLI (25
+**Shipped, working, in the public repository today:** the matcher; the CLI (29
 commands); the MCP server (twenty-one tools, three resources, two prompts); the
 Claude Code plugin with `SessionStart` and `UserPromptSubmit` hooks; the
 browser extension; the macOS menu bar app; the loopback HTTP API; the clipboard
-daemon; local voice via ffmpeg and whisper.cpp; nine starter packs (272 terms);
-sixteen exporters and eight importers; the trust gate; the benchmark.
+daemon and the opt-in resident expander; local voice via ffmpeg and
+whisper.cpp; nine starter packs (272 terms) and community pack registries;
+sixteen exporters, eight importers and the guided import wizard; the trust
+gate; the benchmark.
 
 **Shipped with a distribution caveat:** the browser extension is not in the
 Chrome or Firefox stores (unpacked install only), and the macOS app is ad-hoc
-signed and not notarized (Gatekeeper blocks first launch). Both matter for any
-fleet-deployment claim and neither may be described as fleet-ready.
+signed and not notarized (Gatekeeper blocks first launch). The Windows tray app
+is in no release at all: its UI Automation half has never been run, so it
+exists only as source and a CI build ([WINDOWS-APP.md](WINDOWS-APP.md)). All
+three matter for any fleet-deployment claim and none may be described as
+fleet-ready.
 
 **Planned, not built. Every single item:** `lexicon remote`; the hosted org
 lexicon; accounts, device login and orgs; roles; proposals; the audit trail;

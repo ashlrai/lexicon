@@ -44,16 +44,18 @@ required.**
 | Claude Code specifically | A plugin with `SessionStart` and `UserPromptSubmit` hooks, so corrections land before the model reads the prompt |
 | Browser chat | An extension for ChatGPT, Claude.ai, Gemini, Grok, Perplexity, Copilot and Poe |
 | Any macOS text field | A menu bar app using the Accessibility API: Slack, Mail, Notes, your editor |
+| Any Windows text field | A tray app using UI Automation. *Source and a CI build only*; see the caveats below |
 | Your own tooling | A loopback HTTP API, and the matcher as an importable library |
 | Existing dictation apps | Sixteen export formats and eight importers, including Wispr Flow, Superwhisper, macOS Text Replacement, Deepgram, Azure and Google |
 | Sharing within a repository | Commit `.lexicon.yaml`; each engineer approves it once with `lexicon trust` |
+| Sharing beyond a repository | A community pack registry you host (an index file anywhere a URL reaches); `lexicon pack add` previews each pack and checks its sha256 before writing it |
 
 There is no seat limit, no term limit, no time limit and no telemetry. If your
 organization deploys this to ten thousand machines and never contacts us, that
 is a legitimate and permanent use of the MIT licence, and it is a use we
 support.
 
-**Two shipped things have distribution caveats you should know before you
+**Three shipped things have distribution caveats you should know before you
 plan a rollout:**
 
 - The **browser extension is not in the Chrome or Firefox stores yet**. Today
@@ -63,8 +65,11 @@ plan a rollout:**
   copy is blocked by Gatekeeper on first launch until the user right-clicks and
   chooses Open. A Developer ID certificate and notarization are prerequisites
   for any real fleet deployment and are on the roadmap.
+- The **Windows tray app ships in no release**. Its pure logic is
+  unit-tested, but every line that drives UI Automation is still unrun, so
+  today it is source plus a CI build. See [WINDOWS-APP.md](WINDOWS-APP.md).
 
-Neither caveat affects the CLI, the MCP server or the Claude Code plugin, which
+None of these caveats affects the CLI, the MCP server or the Claude Code plugin, which
 install cleanly through npm, Homebrew or a shell script.
 
 ---
@@ -181,7 +186,7 @@ is checkable in one command against the public repository.
   If you require one, say so now; it changes the timeline, not the answer.
 - No penetration test by a third party has been performed.
 - The extension and the macOS app are not distributed through the platform
-  stores yet, as noted above.
+  stores yet, and the Windows tray app is in no release, as noted above.
 - We have no compliance certifications of any kind. What we have is a public
   codebase, a written threat model in [SECURITY.md](../SECURITY.md), and the
   willingness to answer a questionnaire honestly.
@@ -284,9 +289,9 @@ provide intellectual-property indemnification for the versions covered by your
 subscription: we defend the claim and bear the cost, subject to negotiated
 caps. This is the same structure Red Hat's Open Source Assurance and Grafana
 Enterprise use, and the reason it works is that we hold the copyright
-in the entire codebase: there is a single author, no contributor licence
-agreement gaps, and a permissively licensed dependency tree with no copyleft in
-it.
+in almost the entire codebase: the only outside code is two test-only commits
+contributed under the MIT licence, and the dependency tree is permissively
+licensed with no copyleft in it.
 
 **This is a contract term, not a feature.** It requires a signed agreement and
 our counsel's review. Ask early; it is the longest lead time in any deal.
