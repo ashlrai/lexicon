@@ -77,8 +77,6 @@ The same contract, in one fetch: [llms.txt](llms.txt) (index) and [llms-full.txt
 
 This tree is source version <!-- fresh:begin pin:version -->0.5.12<!-- fresh:end -->. Check `lexicon --version` and `npm view @ashlr/lexicon version` before you pin; source and npm releases can differ.
 
-Agent instructions: [llms.txt](llms.txt) and [llms-full.txt](llms-full.txt).
-
 ## MCP server
 
 Preview, then write. Without `--apply`, nothing is written. `--json` returns `{ ok, client, scope, applied, written, output }`.
@@ -240,7 +238,7 @@ Homebrew formula: [ashlrai/homebrew-tap](https://github.com/ashlrai/homebrew-tap
 
 Changing the code: [CONTRIBUTING.md](CONTRIBUTING.md) (agents: [Contribute with an agent](CONTRIBUTING.md#contribute-with-an-agent)), [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md).
 
-Pellucid is now part of lexicon. Pellucid's ambiguity engine - the INCOSE rule layer, span resolution and confidence calibration - lives in `src/ambiguity/`. The two-stage design it feeds is in [docs/design/two-stage-correction.md](docs/design/two-stage-correction.md).
+Pellucid is now part of Lexicon. Its ambiguity engine (the INCOSE rule layer, span resolution and confidence calibration) lives in `src/ambiguity/`. No command, tool or hook calls it yet; it is a tested library waiting on the two-stage design in [docs/design/two-stage-correction.md](docs/design/two-stage-correction.md).
 
 ## Part of the Ashlr.AI ecosystem
 
