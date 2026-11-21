@@ -3,7 +3,7 @@
  * CLI registers and only flags that command (or the program) accepts. The
  * check walks the Commander tree, so a renamed command or dropped flag fails
  * here instead of sending a reader to an error. Positional text in quotes is
- * ignored; running each command for real is verified by hand (see BRIDGE_NOTES).
+ * ignored; running each command for real is left to a manual check.
  */
 import { readFileSync } from 'node:fs';
 import type { Command } from 'commander';
