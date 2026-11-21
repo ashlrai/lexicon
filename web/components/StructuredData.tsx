@@ -86,7 +86,7 @@ const graph = [
       'Claude Code plugin with SessionStart and UserPromptSubmit hooks',
       'Browser extension for ChatGPT, Claude, Gemini, Grok, Perplexity, Copilot and Poe',
       'macOS menu bar app that rewrites any focused text field',
-      'Sixteen export formats and seven dictionary importers',
+      'Sixteen export formats and eight dictionary importers',
       'Ordinary correction is local: no account and no telemetry. Voice model download, community packs and the GitHub importer use the network only when you turn them on',
     ],
     keywords:
