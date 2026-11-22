@@ -31,7 +31,14 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Internal
 
-- `CONTRIBUTING.md` explains the repo's own `.lexicon.yaml` (why it is skipped until trusted, how to preview, trust and add to it) and the `.mcp.json` that runs the committed server bundle.
+- `CONTRIBUTING.md` explains the repo's own `.lexicon.yaml` (why it is skipped until trusted, how to preview, trust and add to it) and the `.mcp.json` that runs the committed server bundle. (#1138)
+- Document the suggestion queue, five suggestion kinds, limits and apply modes; clipboard one-shot JSON, flag constraints and signal exits; and the local API's flags and JSON results. These describe existing behavior. (#1131, #1133, #1134)
+- Clarify client registration, custom lexicon-path propagation, generic install previews and doctor repair backups, manual items and result shapes. (#1135, #1136)
+- Align extension build and pairing guidance with the source, and document macOS and Windows tray settings, defaults and controls while preserving the Windows runtime-verification caveat. (#1137, #1139, #1140, #1142)
+- Refresh platform coverage, benchmark file inventory and landing-page build, deployment and brand-asset documentation. (#1132, #1141, #1143)
+- Expand the `/lexicon` command and skill guidance for normalization, packs, imports, installation and suggestion previews; correct starter-pack sizes in integration guidance. (#1144 to #1147)
+- Mark the two-stage ambiguity pipeline as partially implemented with no active callers, update DeepWiki's source map, and recheck the cryptographic inventory and policy-check scope. (#1148 to #1150)
+- Surface the shipped `--json=v1` envelope in README and agent guidance, correct the voice JSON failure contract and clipboard signal-exit guidance, label the historical TextEdit capture, and extend source-backed checks for maintained command examples and JSON documentation.
 
 ## 0.5.13 (2026-11-21)
 

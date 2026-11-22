@@ -64,7 +64,7 @@ lexicon doctor --json
 
 Exit code 0 means every check passed. Exit code 1 means at least one check failed, and the JSON still prints, so read it either way. A fresh machine with no MCP registration exits 1 and names the fix in `nextStep`.
 
-Every command uses the same exit codes, also listed at the end of the CLI help:
+Most commands use these exit codes, also listed at the end of the CLI help:
 
 | Code | Meaning |
 | --- | --- |
@@ -72,6 +72,19 @@ Every command uses the same exit codes, also listed at the end of the CLI help:
 | 1 | failed: usage error, not found, or a runtime failure (stderr and the `--json` `error` and `nextStep` say which) |
 
 `lexicon voice` keeps its own codes: 1 error, 2 ffmpeg or whisper-cli missing, 3 nothing heard.
+The clipboard watcher exits 130 after SIGINT (Ctrl-C) and 143 after SIGTERM.
+
+For scripts that need one stable JSON shape, append `--json=v1`:
+
+```bash
+lexicon normalize "ask Ashler to ship it" --json=v1
+```
+
+Read the envelope's `ok`, then `data`, which holds the command's usual `--json`
+result. Refusals carry `data.error` and `data.nextStep`. Existing `--json` output
+keeps its command-specific shape. Protocol and interactive commands return a
+refusal in versioned mode; see [versioned CLI JSON](docs/CLI-JSON.md) for the
+exceptions and long-running services.
 
 The same contract, in one fetch: [llms.txt](llms.txt) (index) and [llms-full.txt](llms-full.txt) (install, tools, privacy, FAQ). The page written to an agent is [docs/AGENTS.md](docs/AGENTS.md). Copy-paste only, no commentary: [docs/COPY-PASTE.md](docs/COPY-PASTE.md).
 
@@ -168,6 +181,10 @@ Rules: [docs/MATCHING.md](docs/MATCHING.md).
 [Watch the terminal setup recording](docs/assets/cli-setup.cast). It shows version 0.5.1; use the current [CLI reference](docs/CLI.md) for today's prompts and flags.
 
 ![A TextEdit note where the dictated line rewrites itself in place to Ashlr.AI, Kubernetes and Vercel, with a bubble listing the three fixes.](docs/assets/fix-in-place.gif)
+
+The TextEdit capture shows LexiconBar 0.4.0. See the current
+[macOS guide](docs/MACOS-APP.md) for settings and the
+[asset manifest](docs/assets/MANIFEST.md) for capture versions and provenance.
 
 | Surface | How |
 |---|---|
