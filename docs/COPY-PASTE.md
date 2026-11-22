@@ -1,6 +1,6 @@
 # Copy-paste
 
-Commands only. Every one runs. `--json` prints one document on stdout. Read `ok` first. A refusal is `{ ok: false, error, nextStep }`.
+Commands only. Every one runs. `--json` prints one document on stdout. Read `ok` first. A refusal is `{ ok: false, error, nextStep }`. For one stable shape across every command, use `--json=v1`: stdout is `{ schemaVersion: 1, ok, data }`, `data` is the usual `--json` result, and a refusal carries `data.error` and `data.nextStep` ([CLI-JSON.md](CLI-JSON.md)).
 
 Do not install Lexicon for someone until they have seen the dry-run plan.
 
@@ -34,6 +34,7 @@ lexicon setup --yes --packs developer,ai --json
 ```bash
 lexicon normalize "ask ashler to deploy kuber netties with post gressql" --json
 lexicon normalize --diff "ask ashler to deploy kuber netties with post gressql"
+lexicon normalize "ask ashler to deploy kuber netties with post gressql" --json=v1
 lexicon add Ashlr.AI Ashler Ashlar "Ashler AI" --phonetic ASH-ler --json
 lexicon learn --from "it's Ashlr.AI not Ashler" --dry-run --json
 lexicon doctor --json

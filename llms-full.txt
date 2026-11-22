@@ -53,6 +53,12 @@ claude plugin install lexicon@ashlrai
 
 Read `ok` first. A refusal is `{ ok: false, error, nextStep }` on stdout and a `lexicon:` line on stderr.
 
+For one stable shape across every command, append `--json=v1` instead of `--json`. Stdout is `{ schemaVersion: 1, ok, data }`: `data` is the command's usual `--json` result (an array stays an array), `ok` is false when that result failed, and a refusal carries `data.error` and `data.nextStep`. Exit codes do not change. `mcp`, `hook`, `edit`, `review` and the continuous clipboard watcher refuse versioned mode; use `daemon --once` or `daemon --which` for one clipboard result. Existing `--json` output keeps its command-specific shape. Details: docs/CLI-JSON.md.
+
+```bash
+lexicon normalize "ask ashler to deploy kuber netties with post gressql" --json=v1
+```
+
 Correct a transcript. Piped input is never rewritten by the built-in example. Arguments are, when the user has no terms yet, and `example` is then true.
 
 ```bash

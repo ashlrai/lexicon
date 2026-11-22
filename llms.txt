@@ -28,6 +28,12 @@ Correct a transcript. Stdout is one JSON document. Read `ok`, then `output`. `ex
 lexicon normalize "ask ashler to deploy kuber netties with post gressql" --json
 ```
 
+One stable shape for every command: append `--json=v1` instead. Stdout is `{ schemaVersion: 1, ok, data }`, where `data` is the command's usual `--json` result; a refusal carries `data.error` and `data.nextStep`. `mcp`, `hook`, `edit`, `review` and the continuous clipboard watcher refuse it. Details: [docs/CLI-JSON.md](docs/CLI-JSON.md).
+
+```bash
+lexicon normalize "ask ashler to deploy kuber netties with post gressql" --json=v1
+```
+
 MCP server. Preview (`applied` is false), then write:
 
 ```bash

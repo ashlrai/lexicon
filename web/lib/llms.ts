@@ -182,6 +182,12 @@ stay opt-in: add \`--packs developer,ai,voice-tools\`, \`--harvest\` and
 \`--serve\`. \`--dry-run\` prints the plan and writes nothing. \`--json\` prints a
 machine-readable summary. \`--clients none\` installs into nothing.
 
+Every CLI command also takes \`--json=v1\`: one stdout document
+\`{ schemaVersion: 1, ok, data }\`, where \`data\` is the command's usual
+\`--json\` result and a refusal carries \`data.error\` and \`data.nextStep\`.
+Exit codes do not change. \`mcp\`, \`hook\`, \`edit\`, \`review\` and the
+continuous clipboard watcher refuse it. Details: ${REPO}/blob/main/docs/CLI-JSON.md.
+
 ## MCP server
 
 Name: \`lexicon\`. Transport: stdio. Binary: \`lexicon-mcp\` (on PATH after a
