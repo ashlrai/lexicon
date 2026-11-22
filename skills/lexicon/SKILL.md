@@ -165,7 +165,7 @@ note says a project file was skipped as untrusted or changed:
 | Register the server in a client (preview, then apply) | `install_client { client, apply?, scope? }` |
 | Remove it from a client again (dry run, then apply) | `uninstall_client { client, apply?, scope? }` |
 | Inspect or approve a repo `.lexicon.yaml` | `trust_project { action: 'status' \| 'trust' \| 'untrust', path? }` |
-| Bring in a Wispr/Superwhisper/macOS/espanso/CSV dictionary | `import_dictionary { path? \| content?, format?, scope?, dryRun? }` |
+| Bring in a Wispr/Superwhisper/macOS/espanso/markdown/text/CSV/JSON dictionary | `import_dictionary { path? \| content?, format?, scope?, dryRun? }` |
 | Names from the user's contacts, calendar or GitHub (preview, then apply) | `import_vocabulary { sources?, apply?, scope?, previewToken?, approvedCandidateIds? }` |
 | What should be added or removed | `suggest_terms { cwd?, limit? }` |
 | Apply accepted suggestions (several in `suggestions`) | `apply_suggestion { suggestion?, suggestions?, scope? }` |

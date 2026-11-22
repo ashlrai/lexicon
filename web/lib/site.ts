@@ -68,15 +68,15 @@ export const MCP_SERVER_CONFIG = {
 export const MCP_TOOLS: { name: string; summary: string }[] = [
   { name: 'normalize_transcript', summary: 'Correct a dictated transcript and report what changed.' },
   { name: 'add_term', summary: 'Add a canonical spelling, with aliases suggested when omitted.' },
-  { name: 'remove_term', summary: 'Remove a term.' },
+  { name: 'remove_term', summary: 'Remove a term, or just one of its aliases.' },
   { name: 'list_terms', summary: 'List or search the merged lexicon.' },
   { name: 'export_lexicon', summary: 'Export to any of the sixteen formats.' },
   { name: 'learn_correction', summary: 'Record "heard X, meant Y" as a new alias.' },
   { name: 'suggest_canonical', summary: 'Closest existing terms to a garbled word, for "did you mean".' },
   { name: 'lexicon_stats', summary: 'Hits per term, totals, never-hit terms.' },
   { name: 'harvest_repo', summary: 'Find proper nouns in a repository worth adding.' },
-  { name: 'suggest_terms', summary: 'Propose aliases, terms and stale entries from usage.' },
-  { name: 'apply_suggestion', summary: 'Apply one accepted suggestion.' },
+  { name: 'suggest_terms', summary: 'Propose aliases, terms, never-words, pronunciation hints and stale terms from voice history, usage and the repo.' },
+  { name: 'apply_suggestion', summary: 'Apply one accepted suggestion, or several in one call.' },
   { name: 'trust_project', summary: 'Show, trust or untrust a project .lexicon.yaml.' },
   { name: 'lexicon_doctor', summary: 'The doctor checks as structured data.' },
   { name: 'install_client', summary: 'Preview or write the MCP config for a named client.' },
@@ -85,7 +85,7 @@ export const MCP_TOOLS: { name: string; summary: string }[] = [
   { name: 'serve_status', summary: 'Whether the loopback API on 127.0.0.1:41733 is up.' },
   { name: 'list_packs', summary: 'The nine starter packs (and a registry\'s community packs) and which are installed.' },
   { name: 'add_pack', summary: 'Install a starter pack, or a community pack after a preview.' },
-  { name: 'import_dictionary', summary: 'Import a Wispr, Superwhisper, macOS, espanso, CSV or JSON dictionary.' },
+  { name: 'import_dictionary', summary: 'Import a Wispr, Superwhisper, macOS, espanso, markdown, plain text, CSV or JSON dictionary.' },
   { name: 'import_vocabulary', summary: 'Preview or harvest proper nouns from contacts, calendar and GitHub.' },
 ];
 
