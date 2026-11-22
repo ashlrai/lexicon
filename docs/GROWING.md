@@ -4,7 +4,7 @@ Four ways terms get in after the first one, and one way to take them out again: 
 
 - [Starter packs](PACKS.md) are one command and 272 curated terms.
 - [Harvest your repo](#harvest-your-repo) mines the names already in your code.
-- [Learn from corrections](#learn-from-corrections) turns "it's Ashlr.AI, not Ashler" into an alias.
+- [Learn from corrections](#learn-from-corrections) turns "it's Ashlr.AI, not Ashler" into an alias, and [`lexicon pending`](#review-what-the-hook-queued) reviews the corrections the hook queued.
 - [Suggestions](SUGGEST.md) mine your voice history for what to add next.
 - [Review what you have](#review-what-you-have) prunes what never fires.
 
@@ -77,6 +77,31 @@ lexicon learn --from "it's Ashlr.AI, not Ashler"     # natural language
 ```
 
 If `Ashlr.AI` already exists (as a canonical or an alias) the heard form becomes one more alias of it; otherwise a new term is created with `source: learned` plus auto-suggested aliases. Recognized phrasings: "it's X not Y", "I said X not Y", "I meant X not Y", "not Y, X", "replace Y with X", "Y -> X" (also `=>` or `→`), "Y should be X", plus quoted forms. A phrase that names only the right spelling ("that should be X", "spelled X") is refused with a hint to run `lexicon learn <heard> X`. `--project` writes to `.lexicon.yaml`.
+
+### Review what the hook queued
+
+The hook never learns a correction itself. Besides asking the model to call `learn_correction`, it queues every correction it notices in `pending-aliases.yaml` next to the global lexicon. Nothing in that file changes matching until you accept it:
+
+```bash
+lexicon pending                          # list the queue (same as: lexicon pending list)
+lexicon pending accept 8e411c5c          # learn one, as lexicon learn does
+lexicon pending reject 8e411c5c          # drop it without learning
+lexicon pending accept --all --dry-run   # show what would be learned; nothing is written
+```
+
+```text
+2 pending aliases in ~/.config/lexicon/pending-aliases.yaml; none of them changes matching until accepted:
+id        heard           meant       seen  last
+--------  --------------  ----------  ----  ----------  -------------
+8e411c5c  cooper netties  Kubernetes  1     2026-11-22
+c828fd47  Ashlar          Ashlr.AI    1     2026-11-22  already known
+```
+
+- **Ids** are eight hex characters derived from the heard and meant spellings, so the same correction keeps the same id; `seen` counts how often it was noticed. Name several ids at once, or pass `--all`. An id the queue does not hold is reported on stderr and exits 1; naming none without `--all` is refused.
+- **Skipped at queue time:** a correction the lexicon already resolves (Ashler when Ashler is already an alias of Ashlr.AI) and one you rejected before. A rejected id is remembered (the last 500) so the hook does not queue it again; `lexicon learn` still works for it.
+- **`already known`** marks an entry learned some other way after it was queued (the model called `learn_correction`, or you ran `lexicon learn`). Accepting it adds nothing; accept or reject it to clear it from the queue.
+- **Accept** goes through the same path as `lexicon learn` and prints the file it wrote. An entry that fails stays queued.
+- The queue holds at most 200 entries (the least recently seen are dropped). `--json` on `pending`, `list`, `accept` and `reject` prints a JSON document for agents. `LEXICON_QUEUE_CORRECTIONS=0` in the hook's environment stops the queueing; the `learn_correction` prompt still appears.
 
 ## What is actually firing
 
