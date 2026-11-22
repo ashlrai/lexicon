@@ -66,6 +66,18 @@ project lexicon trusted (/repo/.lexicon.yaml)
 
 `y` adds, `n` skips, `e` replaces the suggested aliases with what you type, `c` changes the category, `a` adds this and every remaining candidate, `q` stops. Adds go to the project lexicon and respect the [trust gate](TRUST.md). `--interactive` without a terminal (a pipe, CI) is an error; use `--add --yes` there.
 
+### Scripts, agents and failure paths
+
+- **No terminal.** Without a TTY (a pipe, CI, an agent's shell) `--add` does not prompt: it adds every candidate, as `--add --yes` does. `--interactive` there exits 1 with `harvest --interactive needs a terminal`, and `--interactive` with `--json` is refused.
+- **Dry run.** `--add --dry-run` prints the table, then `would add N new terms, merge M in <path>; nothing was written`. No `.lexicon.yaml` is created.
+- **Running it again.** A candidate that is already a term is merged, not duplicated: its suggested aliases join the term's own, and the summary counts it under `merged`.
+- **Trust.** An add writes the project lexicon and re-pins it, so the summary ends with `project lexicon trusted (<path>)`. If the file exists but is not trusted (never trusted, or hand-edited since), `--add` refuses before scanning: nothing is printed on stdout, stderr names the file and says to run `lexicon trust`, and the exit code is 1. With `--json` the refusal is one object, `{ ok: false, error, nextStep, added: false, path, projectTrust }`, where `projectTrust` is `untrusted` or `changed`. See [TRUST.md](TRUST.md).
+- **All or nothing.** A non-interactive add writes every candidate in one batch, so a failed write adds none of them and says so (`nothing was added`). The walkthrough writes each answer as you give it.
+- **JSON.** `--json` prints the bare candidate array (`canonical`, `category`, `source`, `evidence`, `count`, `suggestedAliases`). With `--add` the array is printed after the write and the `added ... merged ...` summary goes to stderr, so stdout stays one JSON document. `--full` prints one object instead, `{ ok: true, root, candidates, count }` (the keys the MCP tool `harvest_repo` returns), plus `added`, `created`, `merged`, `path` (and `dryRun`) with `--add`.
+- **Large trees.** The scan stops after 5000 files and says so (a `warn:` line, or `truncated: true` plus `note` under `--full`); harvest a subdirectory to scan that part in full.
+- **Nothing found.** An empty result says why: names seen fewer than `--min-count` times (rerun with `--min-count 1`), names found only as code symbols (rerun with `--symbols`), or a directory with no manifest, README or source file. It exits 0.
+- **Bad input.** A path that does not exist, or a file instead of a directory, exits 1 with `harvest: path does not exist` or `harvest: not a directory`. `--limit` and `--min-count` take positive integers; `0` is rejected before anything is scanned.
+
 ## Learn from corrections
 
 The other source of terms is you correcting the agent. `lexicon learn` records what STT heard and what you meant; the MCP tool `learn_correction` does the same from inside a session, and the `UserPromptSubmit` hook prompts the model to call it when your prompt is a correction.
