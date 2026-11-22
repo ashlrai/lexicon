@@ -62,6 +62,15 @@ lexicon import CLAUDE.md --dry-run                        # the ## Voice lexicon
 
 Rows are merged by canonical (case-insensitive), aliases deduped, and each term is then added with the same merge rules as `lexicon add`, so re-importing is safe. The output is a table of what was created or merged plus a summary line, `imported N terms (M new, K merged, S skipped)`; skipped rows and why go to stderr. Inputs over 8 MB are refused before parsing.
 
+### Scripts, agents and failure paths
+
+- **Preview.** `--dry-run` reads the target file, marks each row `new` or `merged`, writes nothing and ends with `dry run (<format>): would have imported N terms (M new, K merged, S skipped) into global lexicon <path>`. A real run ends with the same summary plus `[<format>]`, where `<format>` is the one detected when you left it out. A real run on a file with nothing to import prints `nothing to import (<format>): ...` and exits 0.
+- **Category and source.** `--category` fills in only terms the file gave no category. `--source` sets the provenance stamped on each term (default `import`; one of `user`, `harvest:repo`, `harvest:git`, `harvest:package`, `import`, `import:contacts`, `import:calendar`, `import:github`, `learned`, `pack`). An unknown value of either is refused with the list.
+- **Encoding.** UTF-8 is read as is, and a UTF-16 file with a byte order mark is decoded. A file in another encoding (a Windows-1252 export, say) is refused by name before the lexicon is touched, with an `iconv` and a PowerShell command that convert it, since importing it as UTF-8 would store the wrong spelling.
+- **Project files.** `--project` writes the `.lexicon.yaml` at the git root. An untrusted one is refused before any term is written, with `lexicon trust` as the next step; `--project --dry-run` still previews against it.
+- **JSON.** `--json` prints `{ ok: true, format, scope, dryRun, terms: [{ canonical, aliases, created }], skipped: [{ line, reason }], counts: { total, created, merged, skipped }, path }`. `created` is `true` for a new term and `false` for a merge; `path` is the target file, left out by a real run that imported nothing.
+- **Failures** exit 1, and under `--json` print `{ ok: false, error, nextStep }`: an unknown format (stderr also lists the formats), a format given both as the argument and as `--format` with different values, a `--guided`-only flag (`--sources`, `--limit`, `--yes`, `--preview-id`, `--accept`, `--home`) without `--guided`, no file argument, a missing file or a directory, an unknown `--category` or `--source`, an encoding it will not guess, an input over 8 MB, and an untrusted project file.
+
 ## Import names from your contacts, calendar and GitHub
 
 No dictionary to bring over? `lexicon import --guided` collects candidate names from where they already live, and you approve each one before anything is written.
