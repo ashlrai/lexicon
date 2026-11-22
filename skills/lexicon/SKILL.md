@@ -59,11 +59,14 @@ not Ashler". Record it so it never happens again. Phrasings: "it's X not Y", "I 
 X", "that should be X", "Y should be X", "replace Y with X", "Y -> X", or the
 user simply retyping a name you wrote. X is what they meant, Y what was heard.
 
-The `UserPromptSubmit` hook catches the explicit forms and adds a line telling
-you to call `learn_correction`. It only flags; it never writes. Its "Y" is a
-regex capture of the words after "not", so if it carries trailing words
-("versel please fix it"), pass only the name as `heard`. Corrections the hook
-cannot see ("spelled Zoë", a retyped name) are yours to catch.
+The `UserPromptSubmit` hook catches only the forms that name both spellings
+("it's X not Y", "I said X not Y", "I meant X not Y", "not Y, X", "Y should
+be X", "replace Y with X", "Y -> X" or `=>`/`→`, and quoted `"X" not "Y"`)
+and adds a line telling you to call `learn_correction`. It only flags; it
+never writes. Its "Y" is a regex capture, so if it carries trailing words
+("versel please fix it"), pass only the name as `heard`. Forms that name only
+the right spelling ("that should be X", "spelled Zoë", a bare "I meant X")
+and a retyped name get no hook line: those are yours to catch.
 
 Call `learn_correction { heard: Y, meant: X }`. When the user only names the
 right spelling, `heard` is the form you wrote in your previous message; add
