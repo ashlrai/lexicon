@@ -207,7 +207,7 @@ The name is out of vocabulary. The recognizer picks the nearest common-sounding 
 
 ### How does an agent install it?
 
-`curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh`, or `npx @ashlr/lexicon@latest setup`. Preview with `lexicon setup --dry-run --json`. The script runs setup only in a terminal. Under `sudo`, without a terminal, or with `LEXICON_NO_SETUP=1`, it prints `run: lexicon setup`.
+`curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh`, or `npx @ashlr/lexicon@latest setup`. Preview with `lexicon setup --dry-run --json`. The script runs setup only in a terminal. Under `sudo`, without a terminal, or with `LEXICON_NO_SETUP=1`, it prints `run: lexicon setup`. Off a terminal, or with `--json`, `lexicon setup` asks nothing and installs into every detected client, so preview first.
 
 ### Does this replace Wispr Flow or Superwhisper?
 

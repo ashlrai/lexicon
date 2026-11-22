@@ -127,7 +127,9 @@ generated from `lexicon --help` (0.5.12).
 ### Non-interactive
 
 - `lexicon setup` with no TTY takes the defaults and says so, exit 0. It
-  does not prompt. `--dry-run` writes nothing and prints the plan as JSON
+  does not prompt. `--json` also turns the prompts off, even on a TTY, and
+  does not print the "taking the defaults" line, so `lexicon setup --json`
+  applies the defaults (every detected client) silently. `--dry-run` writes nothing and prints the plan as JSON
   when `--json` is set. `--yes` is the explicit form of the same defaults.
 - `lexicon trust` on a TTY asks, and the default answer is no. Off a TTY it
   does not ask and pins nothing: it prints the preview and exits 1 unless

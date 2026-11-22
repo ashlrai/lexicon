@@ -12,7 +12,7 @@ The same text, for a model that wants one fetch: [llms.txt](../llms.txt) and [ll
 curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
 ```
 
-The script runs `lexicon setup` when it has a terminal. Without a terminal, under `sudo`, or with `LEXICON_NO_SETUP=1`, it only installs and ends with `run: lexicon setup`.
+The script runs `lexicon setup` when it has a terminal. Without a terminal, under `sudo`, or with `LEXICON_NO_SETUP=1`, it only installs and ends with `run: lexicon setup`. Off a terminal, or with `--json`, `lexicon setup` asks nothing and takes the `--yes` defaults (it installs into every detected client); `lexicon setup --dry-run --json` previews.
 
 ```bash
 npx @ashlr/lexicon@latest setup

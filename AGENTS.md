@@ -37,7 +37,7 @@ lexicon install cursor --json
 lexicon install codex --json
 ```
 
-`--json` prints one document on stdout. Read `ok` first. Add `--apply` only after the user has seen the plan. Without a terminal, under `sudo`, or with `LEXICON_NO_SETUP=1`, the install script only installs and ends with `run: lexicon setup`.
+`--json` prints one document on stdout. Read `ok` first. Add `--apply` only after the user has seen the plan. Without a terminal, under `sudo`, or with `LEXICON_NO_SETUP=1`, the install script only installs and ends with `run: lexicon setup`. Off a terminal, or with `--json`, `lexicon setup` (and `npx @ashlr/lexicon@latest setup`) asks nothing and takes the `--yes` defaults, installing into every detected client, so run it only after the user has seen the `--dry-run` plan.
 
 Claude Code and Cursor, once `lexicon-mcp` is on PATH:
 

@@ -4,7 +4,7 @@
 
 Agents are first-class users. Do not install it unasked. Preview, show the plan, then apply.
 
-Install (Node 20+). The script runs `lexicon setup` when it has a terminal. Without a terminal, under `sudo`, or with `LEXICON_NO_SETUP=1`, it only installs and ends with `run: lexicon setup`.
+Install (Node 20+). The script runs `lexicon setup` when it has a terminal. Without a terminal, under `sudo`, or with `LEXICON_NO_SETUP=1`, it only installs and ends with `run: lexicon setup`. That line is for the user: off a terminal, or with `--json`, `lexicon setup` asks nothing and takes the `--yes` defaults, so it creates the lexicon and installs into every detected client. Run `lexicon setup --dry-run --json` first.
 
 ```bash
 curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
