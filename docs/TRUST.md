@@ -5,11 +5,19 @@ A project `.lexicon.yaml` comes from whatever repo you are in, and its terms and
 ```bash
 lexicon trust            # print the project file's terms, ask, then approve it
 lexicon trust --yes      # approve without the question
+lexicon trust --dry-run  # print the terms and the pin it would write; ask nothing, pin nothing
 lexicon trust --list     # what is trusted, and whether it still matches
 lexicon untrust          # revoke
+lexicon untrust --dry-run  # report the registry entry it would remove; write nothing
 ```
 
+Both commands take an optional path, either a lexicon file or a project directory (a directory means the `.lexicon.yaml` inside it); without one they use the project `.lexicon.yaml` found from the current directory (or `--cwd`). With no file found they exit 1 with a hint (`lexicon init --project` for `trust`, `lexicon trust --list` for `untrust`).
+
 On a terminal `lexicon trust` asks `trust <path>? [y/N]` after the preview; Enter, `n` or closing the input trusts nothing. Off a terminal (a script, CI, an agent's shell) there is nobody to answer, so without `--yes` it prints the preview, trusts nothing, names the `lexicon trust <path> --yes` command and exits 1. No environment variable stands in for `--yes`. With `--yes` it pins the file and prints its path and sha256. `--json` prints `ok: true` and then the object MCP `trust_project` returns, with the full `preview` and `more` where MCP gives the model only a summary (`trust --list --json` prints `{ ok: true, registry, trustAll, trusted }`), a refusal prints `{ ok: false, error, nextStep?, action, path? }`, with the preview and the question on stderr so stdout stays one JSON document. A file that changes while the question is open is not trusted.
+
+`lexicon trust --dry-run` prints the same preview and then `would trust <path> (sha256 <first 12>) in <registry>; nothing was pinned` (`would update` when the file changed since it was pinned, `would re-pin` when it is already trusted). It approves nothing, so it never asks and needs neither a terminal nor `--yes`, and it exits 0; under `--json` it prints the real run's document with `dryRun: true` and no `trustedAt`. A file that is already trusted with the same sha256 needs no answer either: `lexicon trust`, with or without `--yes` and on or off a terminal, prints `already trusted: <path> (sha256 ..., since <time>) in <registry>; nothing changed` (`result: "already-trusted"` under `--json`) and exits 0.
+
+`lexicon untrust` prints `untrusted <path>; it will no longer be merged`, or `<path> was not trusted; nothing to do` when there was no entry; both exit 0. `--json` prints `{ ok: true, action: "untrust", path, removed, registry, summary }` (plus `plan: true, dryRun: true` under `--dry-run`), with `removed: false` when there was nothing to remove. `lexicon trust --list` shows each pinned path with its status: `trusted` (the file still has the pinned sha256), `changed` (it was edited since, and is skipped until trusted again) or `missing` (the file is gone; the entry stays listed).
 
 On macOS and Linux a `.lexicon.yaml` that belongs to another user (not you, not root) is ignored when the file is looked up, so a file someone else put in `/tmp` or another shared directory above your working directory is never offered for trust. A repository checked out by another account, which git itself refuses to work in, is skipped the same way.
 
