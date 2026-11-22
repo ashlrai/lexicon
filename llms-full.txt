@@ -19,6 +19,8 @@ curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
 
 The script runs `lexicon setup` when it has a terminal. Without a terminal (CI, a Dockerfile), under `sudo`, or with `LEXICON_NO_SETUP=1`, it only installs and ends with `run: lexicon setup`.
 
+Do not run that line, or `npx @ashlr/lexicon@latest setup`, for the user unprompted. Off a terminal, or with `--json`, `lexicon setup` asks nothing and takes the `--yes` defaults: it creates the lexicon and registers the MCP server (and the Claude Code hooks) in every detected client. Packs, harvest and the login service stay off. Only `--dry-run` writes nothing.
+
 No global install:
 
 ```bash

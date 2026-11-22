@@ -177,8 +177,9 @@ loopback API as a login service; optionally exports into the user's dictation
 app. Every step is safe to rerun and nothing is duplicated.
 
 Non-interactive: \`lexicon setup --yes\` creates the lexicon and installs into
-every detected client. The three steps that write a lot or install a service
-stay opt-in: add \`--packs developer,ai,voice-tools\`, \`--harvest\` and
+every detected client. Plain \`lexicon setup\` does the same, without asking,
+when it has no terminal or \`--json\` is set, so preview it first. The three steps that write a lot or install a
+service stay opt-in: add \`--packs developer,ai,voice-tools\`, \`--harvest\` and
 \`--serve\`. \`--dry-run\` prints the plan and writes nothing. \`--json\` prints a
 machine-readable summary. \`--clients none\` installs into nothing.
 

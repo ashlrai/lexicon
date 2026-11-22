@@ -38,6 +38,8 @@ lexicon setup --yes --packs developer,ai --json
 
 The script checks for Node 20+, installs the CLI, and runs `lexicon setup` when it has a terminal. Run by an agent with no terminal, under `sudo` or with `LEXICON_NO_SETUP=1`, it only installs and ends with a line that says why, then `run: lexicon setup`. Alternatives: `brew install ashlrai/tap/lexicon`, `npm i -g @ashlr/lexicon`. Plain `brew install lexicon` is a different project.
 
+Do not follow that line for your user unasked. With no terminal, or with `--json`, `lexicon setup` (and `npx @ashlr/lexicon@latest setup`) never prompts: it takes the `--yes` defaults, so it creates the lexicon and installs into every detected client (`src/cli/cmd-setup.ts`). Show the `--dry-run` plan first, and pass `--clients` to install into only the clients your user named.
+
 `--yes` skips every prompt. `--packs`, `--harvest` and `--serve` are opt-in even under `--yes`, because each writes a lot or installs a service. `--dry-run` prints the plan and writes nothing; run that first and show it to your user. `--clients none` installs into no client. `--json` gives you a `SetupSummary` (or the `SetupPlan` under `--dry-run`) instead of prose, led by `ok` (false when a client or the login service failed, exit 1); a refusal is `{ ok: false, error, nextStep }`.
 
 Any other `--json` command that fails without a result of its own to print
