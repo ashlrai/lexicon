@@ -76,7 +76,7 @@ lexicon learn "Ashler -> Ashlr.AI"                   # or one sentence
 lexicon learn --from "it's Ashlr.AI, not Ashler"     # natural language
 ```
 
-If `Ashlr.AI` already exists (as a canonical or an alias) the heard form becomes one more alias of it; otherwise a new term is created with `source: learned` plus auto-suggested aliases. Recognized phrasings: "it's X not Y", "I said X not Y", "I meant X not Y", "not Y, X", "replace Y with X", "Y -> X", "Y should be X", plus quoted forms. `--project` writes to `.lexicon.yaml`.
+If `Ashlr.AI` already exists (as a canonical or an alias) the heard form becomes one more alias of it; otherwise a new term is created with `source: learned` plus auto-suggested aliases. Recognized phrasings: "it's X not Y", "I said X not Y", "I meant X not Y", "not Y, X", "replace Y with X", "Y -> X" (also `=>` or `→`), "Y should be X", plus quoted forms. A phrase that names only the right spelling ("that should be X", "spelled X") is refused with a hint to run `lexicon learn <heard> X`. `--project` writes to `.lexicon.yaml`.
 
 ## What is actually firing
 
