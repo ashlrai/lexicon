@@ -47,12 +47,18 @@ well as the `lexicon:` line on stderr, and exits non-zero. `nextStep` is always
 there: the command that fixes it when there is one (`lexicon edit` for a file
 that does not parse, `lexicon trust` for an untrusted project lexicon), else
 `fix what error names, then run the command again (its --help lists the flags)`.
-Only `lexicon voice` adds `code` (its exit code, which can be 1, 2 or 3). A command line that does not parse
+`lexicon voice --json` also adds `code` (its exit code, which can be 1, 2 or 3). A command line that does not parse
 (an unknown option or command, a missing argument, an invalid `--port`) does the
 same whenever `--json` is on it before any `--`: commander's message as `error`,
 `nextStep` naming that command's `--help`, and commander's exit code (1).
-`lexicon voice --json` is the exception:
-its failures are on stderr with exit codes 1 to 3.
+Voice failures also print their JSON document on stdout and diagnostics on stderr.
+
+For a stable envelope across commands, append `--json=v1`. Read its top-level
+`ok`, then `data` for the command's usual payload; an array stays an array inside
+`data`. Refusals carry `data.error` and `data.nextStep`, and voice errors also
+carry `data.code`. `mcp`, `hook`, `edit`, `review` and the continuous clipboard
+watcher refuse versioned mode. Use `daemon --once` or `daemon --which` for a
+single clipboard result. Details: [CLI-JSON.md](CLI-JSON.md).
 
 ## Register Claude, Cursor and Codex
 

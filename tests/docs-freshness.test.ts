@@ -1,5 +1,7 @@
-import { readFileSync } from 'node:fs';
+import { existsSync, mkdirSync, mkdtempSync, readFileSync, rmSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
+import { tmpdir } from 'node:os';
+import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { describe, expect, it } from 'vitest';
 import { Client } from '@modelcontextprotocol/sdk/client/index.js';
@@ -8,9 +10,48 @@ import { createServer } from '../src/mcp/server.js';
 
 const root = fileURLToPath(new URL('../', import.meta.url));
 const read = (file: string): string => readFileSync(new URL(`../${file}`, import.meta.url), 'utf8');
-const guides = ['README.md', 'AGENTS.md', 'CLAUDE.md', 'llms-install.md', 'llms.txt', 'llms-full.txt', 'docs/AGENTS.md', 'docs/COPY-PASTE.md', 'docs/QUICKSTART.md', 'docs/MATCHING.md', 'docs/LIBRARY.md', 'docs/LOCAL-API.md'];
+// Current user guides only. Historical measurements and design proposals can
+// intentionally contain commands from other releases or commands not built yet.
+const guides = [
+  'README.md', 'AGENTS.md', 'CLAUDE.md', 'llms-install.md', 'llms.txt', 'llms-full.txt',
+  'docs/AGENTS.md', 'docs/COPY-PASTE.md', 'docs/QUICKSTART.md', 'docs/MATCHING.md',
+  'docs/LIBRARY.md', 'docs/LOCAL-API.md', 'docs/CLI-JSON.md', 'docs/CLIENTS.md',
+  'docs/DAEMON.md', 'docs/EXPORTS.md', 'docs/EXTENSION.md', 'docs/GROWING.md',
+  'docs/PACKS.md', 'docs/SUGGEST.md', 'docs/TRUST.md', 'docs/VOICE.md', 'docs/doctor-fix.md',
+];
 
 describe('source-backed documentation freshness', () => {
+  it('runs the versioned JSON guide examples as one document each without writing a lexicon', () => {
+    const home = mkdtempSync(join(tmpdir(), 'lexicon-docs-json-'));
+    const lexiconPath = join(home, 'lexicon.yaml');
+    // Stop project discovery at the disposable directory.
+    mkdirSync(join(home, '.git'));
+    const env = { ...process.env, HOME: home, USERPROFILE: home,
+      XDG_CONFIG_HOME: join(home, '.config'), LEXICON_PATH: lexiconPath,
+      LEXICON_CWD: home, LEXICON_TRUST_ALL: '' };
+    try {
+      const blocks = [...read('docs/CLI-JSON.md').matchAll(/```sh\n([\s\S]*?)```/g)];
+      const examples = blocks.flatMap((block) => block[1].trim().split('\n'));
+      expect(examples.length).toBeGreaterThanOrEqual(3);
+      for (const example of examples) {
+        // These examples use double-quoted strings and simple bare arguments.
+        const args = example.match(/"[^"]*"|\S+/g)!.map((word) => word.replace(/^"|"$/g, ''));
+        expect(args.shift()).toBe('lexicon');
+        const stdout = execFileSync(process.execPath,
+          ['--import', 'tsx', 'src/cli/index.ts', '--cwd', home, ...args],
+          { cwd: root, env, encoding: 'utf8', timeout: 30_000, stdio: ['ignore', 'pipe', 'pipe'] });
+        const doc = JSON.parse(stdout);
+        expect(Object.keys(doc).sort(), example).toEqual(['data', 'ok', 'schemaVersion']);
+        expect(doc, example).toMatchObject({ schemaVersion: 1, ok: true });
+        if (args[0] === 'list') expect(doc.data).toEqual([]);
+        if (args[0] === 'normalize') expect(doc.data.output).toBe('ask Ashlr.AI');
+      }
+      expect(existsSync(lexiconPath)).toBe(false);
+    } finally {
+      rmSync(home, { recursive: true, force: true });
+    }
+  });
+
   it('runs the documented caller-context example without changing the transcript offsets', () => {
     const section = read('docs/LIBRARY.md').split('## Caller context\n')[1]?.split('\n## ')[0];
     const example = section?.match(/```ts\n([\s\S]*?)```/)?.[1];
@@ -92,8 +133,10 @@ describe('source-backed documentation freshness', () => {
     for (const file of guides) {
       for (const block of read(file).matchAll(/```(?:bash|sh|console)\n([\s\S]*?)```/g)) {
         for (const line of block[1].split('\n')) {
-          const example = /^\s*(?:\$ )?lexicon\s+([^#\n]+)/.exec(line)?.[1];
-          if (!example) continue;
+          const invocation = /^\s*(?:\$ )?lexicon\s+([^#\n]+)/.exec(line)?.[1];
+          if (!invocation) continue;
+          // Quoted transcript text is positional data, including flag-like words.
+          const example = invocation.replace(/"[^"]*"|'[^']*'/g, '');
           const command = example.trim().split(/\s+/)[0];
           if (command.startsWith('-')) {
             expect(cli.flags, `${file}: ${line}`).toContain(command);
@@ -101,12 +144,18 @@ describe('source-backed documentation freshness', () => {
           }
           const registered = cli.commands.find((entry) => entry.name === command);
           expect(registered, `${file}: ${line}`).toBeDefined();
-          // Nested commands have their own option sets.
-          const nested = /^(pack|pending)\s+([a-z-]+)/.exec(example);
-          const target = nested ? registered!.commands.find((entry) => entry.name === nested[2]) : registered;
-          expect(target, `${file}: ${line}`).toBeDefined();
-          for (const flag of example.match(/--[a-z][a-z-]*/g) ?? []) {
-            expect([...cli.flags, ...target!.flags], `${file}: ${line}`).toContain(flag);
+          // Descend through all registered groups, including terms add.
+          let target = registered!;
+          const flags = [...cli.flags, ...target.flags, '--help', '-h'];
+          for (const word of example.trim().split(/\s+/).slice(1)) {
+            if (!target.commands.length || word.startsWith('-')) break;
+            const nested = target.commands.find((entry) => entry.name === word);
+            expect(nested, `${file}: ${line}`).toBeDefined();
+            target = nested!;
+            flags.push(...target.flags);
+          }
+          for (const flag of example.split(/\s--\s/)[0].match(/--[a-z][a-z-]*/g) ?? []) {
+            expect(flags, `${file}: ${line}`).toContain(flag);
           }
           checked += 1;
         }
