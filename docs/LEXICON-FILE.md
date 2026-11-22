@@ -63,6 +63,17 @@ settings:
 
 `lexicon edit` opens the global file (`--project` for `.lexicon.yaml`) in `$VISUAL` / `$EDITOR` and validates it when the editor exits, reporting any schema error with the path so your edits are never lost. A trusted project file is re-pinned after the edit. Without a terminal (a pipe, CI, an agent's shell) a terminal editor such as vim or nano is refused rather than left waiting for keys; an editor that opens a window (`VISUAL="code --wait"`) still works.
 
+| Case | What `lexicon edit` does |
+|---|---|
+| `--dry-run` | Prints `would create` (when the file is missing) and `would open <file>; nothing was written`, exit 0. Starts no editor. |
+| No global lexicon yet | Creates it empty first, so the editor opens a valid file. `--project` with no `.lexicon.yaml` exits 1 and suggests `lexicon init --project`. |
+| No `$VISUAL` or `$EDITOR` | Prints the path to edit by hand and what to run after saving (`lexicon doctor`, or `lexicon trust` for a project file), exit 0. |
+| The editor cannot start | Exit 1, naming the variable and the file to edit directly. |
+| The editor exits non-zero (vim `:cq`) | Treated as an aborted edit: nothing is checked or re-trusted, exit 1. |
+| The saved file does not parse | Prints the schema error and leaves your edits in the file, exit 1. Fix it and run `lexicon edit` again. |
+| The saved file parses | Prints `ok: N terms in <file>`. A project file that was trusted before the edit is re-trusted; one that was not stays untrusted until `lexicon trust`. |
+| `--json`, or a term name (`lexicon edit Ashler`) | Refused, exit 1. Edit opens the whole file; to change one term use `lexicon add` and `lexicon remove`, or the MCP tools `add_term` and `remove_term`. |
+
 Parsing is defensive: fields are length-capped and stripped of zero-width and bidi characters, and oversized files are refused. The limits and the reasoning are in [TRUST.md](TRUST.md#the-rest-of-the-hardening).
 For examples of validation errors involving invalid code units and shortened term names, see [schema error examples](schema-error-examples.md).
 

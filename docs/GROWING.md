@@ -115,6 +115,12 @@ c828fd47  Ashlar          Ashlr.AI    1     2026-11-22  already known
 
 `lexicon review` walks existing terms (`--never-hit` for only the ones that never fired, `--project` for the project file, `--category <c>`), showing each term's aliases and hit count and taking `k` keep, `d` delete, `e` edit aliases, `p` phonetic hint, `n` notes, `q` quit. The file is written once at the end.
 
+- **`--dry-run`** walks the same prompts and ends with `Would write <file>` instead of writing it.
+- **The last line** is `kept N, removed N, edited N`, plus `N not reviewed (left as they were)` after an early `q`, then `Wrote <file>` or `(nothing written)`. Ctrl-D counts as `q`: the answers already given are kept and written.
+- **A change made elsewhere during the review** (the hook counting hits, a `lexicon add` in another shell) is merged before the write, not overwritten: deleted terms stay deleted, edited terms keep your edit, untouched terms take the version on disk, and new terms are kept. If the file no longer parses, or a project file is no longer trusted, nothing is written and the command exits 1.
+- **`--project`** needs a trusted `.lexicon.yaml` (exit 1 otherwise; run `lexicon trust`) and re-trusts the file after writing it.
+- **It needs a terminal.** With stdin or stdout not a TTY (a pipe, CI, an agent's shell) it exits 1 having changed nothing, and `--json` is refused the same way with `{ ok: false, error, nextStep }`. Agents use `lexicon list --json`, `lexicon remove <canonical> [--alias <alias>]` and `lexicon add <canonical> <aliases...>`, or the MCP tools `list_terms`, `remove_term` and `add_term`.
+
 `lexicon add <canonical> -i` turns the auto-suggested aliases into a checklist and asks for the phonetic hint and category. To edit the YAML directly, `lexicon edit` opens it safely: see [LEXICON-FILE.md](LEXICON-FILE.md#editing-it).
 
 ## See also
