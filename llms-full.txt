@@ -83,6 +83,12 @@ Add a spelling. `suggested` lists aliases the server proposed when you did not p
 lexicon add Ashlr.AI Ashler Ashlar "Ashler AI" --phonetic ASH-ler --json
 ```
 
+The deterministic add for scripts. It writes only the `--heard` spellings (no suggested aliases), exits 1 with `ok:false` and a `nextStep` when `--heard` is missing, and a repeat run answers `"unchanged":true`.
+
+```bash
+lexicon terms add Ashlr.AI --heard Ashler Ashlar --json
+```
+
 Record a correction the user just made. `--dry-run` writes nothing.
 
 ```bash
