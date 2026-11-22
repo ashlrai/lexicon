@@ -119,6 +119,46 @@ c828fd47  Ashlar          Ashlr.AI    1     2026-11-22  already known
 
 `lexicon stats` shows term and alias counts, total hits, the ten most-used terms and up to twenty that never fired. Every replacement made by the MCP `normalize_transcript` tool, the `UserPromptSubmit` hook, the local API, `lexicon voice` or the clipboard daemon bumps the term's `hits` counter (the CLI `normalize` does not), so the numbers reflect what was actually corrected.
 
+### Reading the report
+
+For a lexicon of three terms, two of which have fired:
+
+```text
+terms: 3   aliases: 4   hits: 10
+by category: brand 1, product 1, uncategorized 1
+by source: unknown 2, user 1
+
+top terms
+canonical  hits
+---------  ----
+Ashlr.AI   7
+Locus      3
+
+never hit (1)
+  Phantom
+
+files
+global  ~/.config/lexicon/lexicon.yaml  3 terms
+```
+
+- **Hits** are each term's `hits:` value in its lexicon file plus its count in `hits.json`, as [LEXICON-FILE.md](LEXICON-FILE.md) describes; `lexicon stats` only reads them.
+- **top terms** holds at most ten terms with one hit or more, most hits first, ties in alphabetical order. With no hits yet it prints one line naming what counts them (the prompt hook, the MCP server, `lexicon voice`, the clipboard daemon, `lexicon serve`) and that `lexicon normalize` does not.
+- **never hit (N)** counts every term with no hits and names the first twenty in lexicon order, then `and N more`. `lexicon review --never-hit` walks them.
+- **by category** and **by source** count terms per value, largest first; a term with none counts as `uncategorized` or `unknown`.
+- **files** lists the lexicons the terms came from: the global file, plus the project `.lexicon.yaml` once it is trusted. `hits.json` holds no terms and is not listed. `--cwd <dir>` picks which project file is looked for.
+- **No terms yet:** the second line says the lexicon has no terms yet, so nothing is corrected or counted, and names `lexicon setup` and `lexicon learn <heard> <meant>`.
+- **An untrusted or changed project file** is left out of every count. The command still exits 0 and prints one stderr line: `lexicon: untrusted project lexicon skipped: <path> (run: lexicon trust)`, or `project lexicon changed since you trusted it, so it was skipped` for a file edited after `lexicon trust`.
+- **Failures** exit 1 having changed nothing: a lexicon file that does not parse or fails the schema prints the error and `fix that file first (run: lexicon edit), then check it with: lexicon doctor`; a `--cwd` that is not an existing directory is refused.
+
+### For scripts and agents
+
+`lexicon stats --json` prints `{ ok: true, schemaVersion: 1, termCount, aliasCount, totalHits, topTerms: [{ canonical, hits }], neverHit, neverHitCount, byCategory, bySource, files: [{ path, scope, terms }] }`. `neverHit` holds the same first twenty names and `neverHitCount` the total. Two cases add keys:
+
+- no terms: `note`, the no-terms sentence above;
+- a skipped project file: `projectTrust` (`untrusted` or `changed`), `skippedProject` (its path, never its contents) and a `note` that says to review the file and run `lexicon trust`, with the stderr line as well.
+
+A failure prints `{ ok: false, error, nextStep }` and exits 1. `--json=v1` wraps the same object in the versioned envelope ([CLI-JSON.md](CLI-JSON.md)). The MCP `lexicon_stats` tool returns the same counts and skipped-project keys without `ok` and `schemaVersion` (its no-terms note names `setup_lexicon` and `add_term`), and the local API serves them at `GET /stats` ([LOCAL-API.md](LOCAL-API.md)).
+
 ## Suggestions from your voice history
 
 `lexicon suggest` reads the history `lexicon voice` keeps, the hit counters and, with `--harvest`, the repo, and proposes the edits that would have made the last few weeks of transcripts come out right: aliases to add, terms you are missing, words to protect with `never`, and terms that stopped firing. `--apply` walks them one by one; your agent gets the same list as `suggest_terms` and `apply_suggestion`. What it proposes and how it scores each one is in [SUGGEST.md](SUGGEST.md).
