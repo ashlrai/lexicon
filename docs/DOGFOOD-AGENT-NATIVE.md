@@ -1,6 +1,6 @@
 # Dogfood 2: agent-native onboarding against the real Claude Code CLI
 
-Run 2 of two recorded dogfood sessions. Subject: the agent-native onboarding tools and the `SessionStart` note, in an isolated scratch HOME. A dated record, not a guide; it assumes the fixes from [DOGFOOD.md](DOGFOOD.md) are in.
+Run 2 of two recorded dogfood sessions. Subject: the agent-native onboarding tools and the `SessionStart` note, in an isolated scratch HOME. A dated record, not a guide; it assumes the fixes from [DOGFOOD.md](DOGFOOD.md) are in. [What happened next](#what-happened-next) says where each finding stands today.
 
 Live run of the agent-native tools (`setup_lexicon`, `lexicon_doctor`,
 `trust_project`, `import_dictionary`, `suggest_terms`, `apply_suggestion`,
@@ -525,6 +525,24 @@ exercised without touching the real machine by giving the MCP server
 process at the real `~/.claude`: it re-saves `settings.json` and creates
 `~/.claude/.claude.json`. And until bug 2 is fixed, pass `serve: false`
 explicitly or the run will replace the real LaunchAgent.
+
+## What happened next
+
+Checked against the source on 2026-11-22. The four bugs are fixed; the
+"Status" notes inside findings 1 and 2 describe the tree at the time of the
+run, not today.
+
+| Finding | Where it is now |
+| --- | --- |
+| 1. Login service installed when `serve` is omitted | `setup_lexicon` previews by default and writes nothing without `apply: true`; `serve` installs the local API only when `true` ("omitted = not installed"). |
+| 2. Broken plist from the bundle | `serveDepsFor` in `src/cli/setup/steps.ts` passes `<cliDir>/index.js` from the MCP server, and `lexicon serve --install` refuses a program path that does not exist before writing anything; a failed install reports `serve: failed`. |
+| 3. Silent harvest and trust | `harvest` is opt-in ("omitted = not harvested"), and a project file the user has not trusted stays untrusted. Each client's `detail` lists the files it wrote, when there are any. |
+| 4. Doctor misses the login service | `lexicon doctor` has a login service check (`checkLoginService` in `src/cli/cmd-doctor.ts`). |
+| 5. Model reads the untrusted file | The hook's skipped-project note uses the proposed wording (call `trust_project` with action "status", do not open the file with Read or cat). The `trust_project` description was reworded its own way: 'status' returns a short summary and the full preview is `lexicon trust` in a terminal. |
+| 6. `ONBOARD_NOTE` questions | The note asks for company/product names, the person's own name and the agent clients, and says `setup_lexicon` previews first. |
+| 7. Hook normalizes pasted dictionary rows | `dropDataBlockSpans` leaves `word,replacement` rows alone and keeps them out of `hits`. The proposed SKILL.md sentence was not added. |
+| 8. `suggest_terms` reason text | The promotion reason now reads "the matcher would guess this as X (N times in history); make it an exact alias" (`src/core/suggestTerms.ts`). |
+| 9. Method notes | Not moved into another doc; this report is still the only record. |
 
 ## Files
 

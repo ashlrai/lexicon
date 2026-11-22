@@ -1,6 +1,6 @@
 # Dogfood: @ashlr/lexicon against the real Claude Code CLI
 
-Run 1 of two recorded dogfood sessions. Subject: the correction path (the Claude Code hooks and the MCP server) against the real CLI. A dated record, not a guide; nothing here is required reading to use Lexicon.
+Run 1 of two recorded dogfood sessions. Subject: the correction path (the Claude Code hooks and the MCP server) against the real CLI. A dated record, not a guide; nothing here is required reading to use Lexicon. [What happened next](#what-happened-next) says where each finding stands today.
 
 Live run of the hook + MCP integration through the headless CLI, on the
 maintainer's machine, with the maintainer's real lexicon. Nothing in `src/`
@@ -336,6 +336,21 @@ prompt, including test prompts and hook timing loops; Vercel went 0 -> 7
 during this run from five standalone hook invocations plus two real prompts.
 Mention in the README that `lexicon stats` counts hook matches from any
 session, including headless and scripted ones.
+
+## What happened next
+
+Checked against the source on 2026-11-22: every recommendation above has
+landed, so the bugs in this report are history, not open issues.
+
+| Item | Where it is now |
+| --- | --- |
+| A. `parseCorrection` swallows the next sentence (bug 1) | `BARE_WORD` and `TAIL` in `src/core/learn.ts` are the two regexes proposed above. |
+| B. The hook normalizes the word being corrected (bug 2) | `dropCorrectionSpans` in `src/hooks/user-prompt-submit.ts` drops every replacement on the heard or meant side before the note is built and before `hits` are bumped; other garbles in the same prompt are still corrected (the filter option, not the skip). |
+| C. Hook note text | `formatCorrectionNote` uses the proposed wording, with named `heard:` and `meant:` fields. |
+| D. SKILL.md on trailing words | [skills/lexicon/SKILL.md](../skills/lexicon/SKILL.md) says to pass only the name as `heard` when the hook's capture carries trailing words. The "trust the correction note" sentence is not there and is not needed now that B has shipped. |
+| E. SKILL.md on ToolSearch | SKILL.md says to skip `normalize_transcript` when the hook note is present, since the first lexicon call can cost a ToolSearch turn. |
+| F. Manual installs and headless use (finding 3) | [CLIENTS.md](CLIENTS.md) says manual installs do not load the skill, and its "Headless and scripted use" section names `--allowedTools mcp__lexicon` and the `LEXICON_PATH` test setup. |
+| G. Hook hits | CLIENTS.md says `lexicon stats` counts hook matches from any session, including headless and scripted ones. |
 
 ## Files
 
