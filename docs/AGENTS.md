@@ -131,6 +131,14 @@ lexicon doctor --json
 
 `normalize --json` sets `example` to true when the built-in sample stood in. Nothing is written. `doctor --json`: read `ready`, `summary` and `nextStep`.
 
+`add` with no aliases fills in suggested ones (`lexicon add PostgreSQL` also writes `Postgre SQL`). When a script must write only what it passes, use the deterministic form:
+
+```bash
+lexicon terms add Ashlr.AI --heard Ashler Ashlar --json
+```
+
+It never adds suggested aliases, takes `--context`, `--project` and `--dry-run`, and is idempotent: a repeat run leaves the term as it was and answers `"created":false,"unchanged":true`. With no `--heard` it exits 1 with `ok:false`, `error` and `nextStep`.
+
 ## The tools you will actually call
 
 Twenty-one tools in all; [MCP.md](MCP.md) is the full table. These calls cover almost everything:

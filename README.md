@@ -50,6 +50,8 @@ Add the spelling, still as JSON:
 lexicon add Ashlr.AI Ashler Ashlar "Ashler AI" --phonetic ASH-ler --json
 ```
 
+For a scripted add that writes only what you pass, use `lexicon terms add Ashlr.AI --heard Ashler Ashlar --json`: no suggested aliases, refused without `--heard`, and a repeat run answers `"unchanged":true`.
+
 When the user corrects you, record it. `--dry-run` writes nothing.
 
 ```bash

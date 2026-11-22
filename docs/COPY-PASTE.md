@@ -50,6 +50,12 @@ lexicon doctor --json
 
 Stdout is `ask Ashlr.AI to deploy Kubernetes with PostgreSQL`.
 
+`add` with no aliases fills in suggested ones. For a scripted add that writes only the spellings you pass and answers `"unchanged":true` on a repeat run:
+
+```bash
+lexicon terms add Ashlr.AI --heard Ashler Ashlar --json
+```
+
 ## MCP: Claude, Cursor, Codex
 
 ```bash
