@@ -36,7 +36,7 @@ Lexicon is part of the Ashlr.AI ecosystem, where most changes are written, verif
 
 2. **Point the agent at the brief.** Claude Code reads [CLAUDE.md](CLAUDE.md) on its own; other agents start at [AGENTS.md](AGENTS.md), which routes them to the same brief. It holds the layout, the conventions and the rules agents most often miss.
 3. **Make one small change on a branch**, with its test (see the shapes in [Good first issues](#good-first-issues)).
-4. **Verify what you touched, then everything.** After `npm run build`, `node dist/cli/index.js test-select` (or `lexicon test-select` after `npm link`) prints the test commands for your staged, unstaged and untracked changes and falls back to `npm test` when it cannot narrow them. Before pushing, run what the required gate runs plus the full suite, which the gate does not:
+4. **Verify what you touched, then everything.** After `npm run build`, `node dist/cli/index.js test-select` (or `lexicon test-select` after `npm link`) prints the test commands for your staged, unstaged and untracked changes and falls back to `npm test` when it cannot narrow them. Its mapping is deliberately small (see [Tests](#tests)), so for most changes, including anything under `src/`, a doc or a pack, it prints `npm test`; while iterating on a module, run its own file directly (`npx vitest run tests/matcher.test.ts`). Before pushing, run what the required gate runs plus the full suite, which the gate does not:
 
    ```bash
    npm run typecheck
@@ -55,7 +55,7 @@ What happens next:
 - On a first pull request from a fork, GitHub may hold the workflow runs until a maintainer approves them. That is GitHub's default for new contributors, not a failure.
 - Merging goes through GitHub's merge queue, which runs `CI Gate` again on the result of merging your branch with current `main` and squash-merges it when green. Nothing else blocks: the branch rules require no approving review and do not require your branch to be up to date with `main`, so there is no need to rebase just to catch up.
 - Auto-merge is how a pull request enters the queue: `gh pr merge --auto <number>` (or **Enable auto-merge** on the PR page) queues it as soon as `CI Gate` passes. GitHub only lets accounts with write access do this, so on a fork PR a maintainer or the fleet arms it for you. A new push to the branch re-runs the gate first.
-- Changes under the paths in [`.github/CODEOWNERS`](.github/CODEOWNERS) (workflows, `src/serve/`, the serve and argument parsing CLI files, the crypto check) request a review from the code owner. The request is a signal to look, not a merge requirement.
+- Changes under the paths in [`.github/CODEOWNERS`](.github/CODEOWNERS) (workflows, `CODEOWNERS` itself, `src/serve/`, the serve and argument parsing CLI files, the crypto check, the secret-shape scan fixtures) request a review from the code owner. The request is a signal to look, not a merge requirement.
 - The full portable suite (every OS, Node 20/22/24, e2e, bundle drift, doc checks) runs daily on `main`, not on your PR. That is why the local `npm test` above matters: a break it would have caught lands on `main` and becomes a fix-forward issue.
 
 ## Setup
@@ -164,10 +164,18 @@ For a quick local check, run `lexicon test-select` from the repository root. It
 prints commands for the current staged, unstaged, and untracked changes. Pass
 repository-relative paths to select for a specific change, or add `--json` for
 structured command argument arrays. Run the commands from the repository root.
-A changed `tests/` or `bench/` test file selects itself. Unknown paths (including
-the colocated `src/**/*.test.ts` files), deleted tests, and an empty change list
-select `npm test`.
-This is a conservative starting point; run the full suite before claiming a change works.
+A changed `tests/` or `bench/` test file selects itself. Beyond that, only paths
+whose coverage has been reviewed are mapped (the `mappings` table in
+`src/cli/cmd-test-select.ts`: today the command's own source and
+`scripts/check-links.mjs`). Every other path is unknown, and one unknown path
+selects `npm test` for the whole change: that covers every other source file
+under `src/`, the colocated `src/**/*.test.ts` files, docs (several tests pin
+doc text), packs, scripts and config. Deleted tests and an empty change list
+select `npm test` too. So the command narrows a change that only touches tests;
+for a source change, run the module's own test file while you work (the
+per-module files are listed below), then the full suite before claiming the
+change works. A new mapping belongs in that table only after its coverage has
+been reviewed, with a case in `tests/test-select.test.ts`.
 
 Vitest. Tests live under `tests/`: one file per core module, plus a few hundred focused files named after the behaviour or regression they pin. Vitest also picks up the few `src/**/*.test.ts` files colocated with their module and `bench/**/*.test.ts`. The wall-clock files listed in `PERF_FILES` in `vitest.config.ts` run in their own `perf` project, one worker, after the rest finishes. The per-module files:
 
