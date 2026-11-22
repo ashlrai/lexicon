@@ -40,6 +40,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - Mark the two-stage ambiguity pipeline as partially implemented with no active callers, update DeepWiki's source map, and recheck the cryptographic inventory and policy-check scope. (#1148 to #1150)
 - Surface the shipped `--json=v1` envelope in README and agent guidance, correct the voice JSON failure contract and clipboard signal-exit guidance, label the historical TextEdit capture, and extend source-backed checks for maintained command examples and JSON documentation.
 - Agent install guidance (`llms.txt`, `llms-full.txt`, both `AGENTS.md`, README FAQ, `COPY-PASTE.md`, `FIRST-RUN.md`, the site's `/llms-full.txt`) now warns that `lexicon setup` with no terminal or with `--json` asks nothing and takes the `--yes` defaults, installing into every detected client, so the install script's `run: lexicon setup` line is for the user, not for an agent to follow unprompted.
+- `docs/PACKS.md` and the `DELETE /packs/:name` row in `docs/LOCAL-API.md` now describe `shared`: a term another installed pack also has stays when one pack is removed (and is reported as `kept` when the other goes), matching `lexicon pack remove` and the server's response.
 
 ## 0.5.13 (2026-11-21)
 
