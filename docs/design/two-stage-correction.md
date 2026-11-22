@@ -3,13 +3,17 @@
 Status: design, partially implemented. The stage-2 deterministic and ensemble
 machinery landed with the Pellucid acquisition (`src/ambiguity/`); the
 stage-1 producer and the model detector are the sibling work items
-RQ-LEX-CONTEXT-NORMALIZE and RQ-LEX-STAGE2-LOCALMODEL.
+RQ-LEX-CONTEXT-NORMALIZE and RQ-LEX-STAGE2-LOCALMODEL. Nothing calls stage 2
+yet: no command, MCP tool, hook or HTTP endpoint imports `src/ambiguity/`, and
+the package's public entry (`src/core/index.ts`) does not export it. It is a
+tested library (`tests/ambiguity-*.test.ts`) waiting on this pipeline.
 
 ## Why two stages
 
-Stage 1 is the matcher lexicon has today: deterministic glossary and phonetic
-rewrites over the user's own terms. It is fast (~200 ms budget in the prompt
-hook), local, and precise about one thing - which word the user meant.
+Stage 1 is the matcher Lexicon has today: deterministic glossary and phonetic
+rewrites over the user's own terms. It is fast (the prompt hook stays under
+200 ms end to end, and its matching stops after `HOOK_MATCH_BUDGET_MS`,
+100 ms), local, and precise about one thing - which word the user meant.
 
 It is blind to a second class of problem a dictated prompt carries: the
 sentence itself is ambiguous. "Deploy it to production", "make it fast", "use
@@ -38,11 +42,13 @@ tries three passes per window in priority order:
 3. edit-distance fuzzy.
 
 `Replacement { start, end, original, replacement, canonical, reason,
-confidence }` is today's emitted shape. Stage 1 maps into the shared
-candidate shape by field rename (`original` -> `text`, `reason` -> `source`),
-no semantic change. `skipCode` ranges stay authoritative: stage 2 detectors
-never see code spans, URLs or emails either - a pronoun inside a fence is not
-prose.
+confidence }` (`src/core/types.ts`) is today's emitted shape, with `reason`
+one of `alias`, `phonetic` or `fuzzy`. Stage 1 maps into the shared candidate
+shape by renaming two fields (`original` -> `text`, `reason` -> `source`) and
+one tag (`alias` -> `glossary`; `phonetic` and `fuzzy` keep their names);
+`canonical` has no slot of its own. No semantic change. `skipCode` ranges stay
+authoritative: stage 2 detectors never see code spans, URLs or emails
+either - a pronoun inside a fence is not prose.
 
 Output of stage 1 is both the rewritten text and the candidate list; stage 2
 runs on the rewritten text and is told which spans were already corrected so
@@ -77,7 +83,8 @@ sentences do not merge markdown headers into 200-char spans the way spaCy
 sentences did).
 
 `runRuleLayer` is deterministic and needs no model. It is stage 2's floor:
-every surface can score a transcript today.
+once a surface wires it in, that surface can score a transcript with no model
+at all. None does yet (see Status).
 
 ### Where the model fits
 
@@ -90,7 +97,7 @@ resolved unambiguously is dropped rather than mis-anchored).
 
 What it deliberately does not port: the LangGraph graph, LiteLLM plumbing,
 asyncio orchestration, the FastAPI/web/database layers. A stage-2 model in
-lexicon is a local, offline scorer (RQ-LEX-STAGE2-LOCALMODEL) that emits the
+Lexicon is a local, offline scorer (RQ-LEX-STAGE2-LOCALMODEL) that emits the
 same `DetectorReport` JSON `parseDetectorReport` consumes - the wiring is a
 small runner, not a framework.
 
@@ -155,7 +162,7 @@ merged candidate list: calibrated confidence, max severity, ensemble source
 ## Non-goals
 
 - No rewrite generation yet. Pellucid's "Forge Clarity" produced candidate
-  rewrites from an LLM; lexicon's stage-2 model may propose `suggestion`
+  rewrites from an LLM; Lexicon's stage-2 model may propose `suggestion`
   text, but nothing applies an ambiguity rewrite automatically.
 - No remote model calls. Stage 2b is local-only by design; BYOK/provider
   plumbing was not ported.
