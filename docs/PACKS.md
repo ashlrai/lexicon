@@ -22,7 +22,7 @@ lexicon pack remove business         # take one back out
 | `profession-q8` | 25 | 31 | Opt-in legal terminology, research tools and spelled-out acronyms (voir dire, res judicata, habeas corpus, subpoena, certiorari) |
 | `ashlr` | 14 | 45 | The Ashlr.AI fleet, its products and people (Ashlr.AI, locus, Phantom, Stacksync, Evan DeLoria, Codex), and Weyv |
 
-`lexicon setup` offers the packs as a checklist with `developer`, `ai` and `voice-tools` checked and `architecture`, `ashlr`, `business`, `cloud-devops`, `legal` and `profession-q8` offered unchecked, one yes/no each: the business and cloud packs are mostly acronyms speech-to-text already gets right, the legal and architecture packs are opt-in domain vocabulary, and `ashlr` is one team's namespace. `--packs a,b` or `--no-packs` decides it without a prompt; under `--yes` nothing is installed unless you pass `--packs`, because a pack is a hundred-odd global terms.
+`lexicon setup` offers the packs as a checklist with `developer`, `ai` and `voice-tools` checked and `architecture`, `ashlr`, `business`, `cloud-devops`, `legal` and `profession-q8` offered unchecked, one yes/no each: the business and cloud packs are mostly acronyms speech-to-text already gets right, the legal and architecture packs are opt-in domain vocabulary, and `ashlr` is one team's namespace. `--packs a,b` or `--no-packs` decides it without a prompt; under `--yes` nothing is installed unless you pass `--packs`, because setup writes each pack into the global lexicon: 12 to 82 terms a pack, 141 for the three checked by default.
 
 Your agent can do the same: the MCP tool `list_packs` reports the packs and which are installed.
 

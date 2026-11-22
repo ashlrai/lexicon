@@ -108,9 +108,10 @@ shape for Phantom's config (names illustrative, Phantom's side to finalize):
   (`lexicon install <client>`, `lexicon serve --install`, the extension zip);
   Phantom would call the same entry points.
 - Per-scope toggles: global terms always; project terms only from trusted
-  repos; packs as an onboarding checklist, not a default dump (a pack is a
-  hundred-odd global terms; under `lexicon setup --yes` nothing installs
-  unless asked).
+  repos; packs as an onboarding checklist, not a default dump (a pack
+  writes 12 to 82 terms into the global lexicon, and the `lexicon setup`
+  default selection of developer, ai and voice-tools writes 141; under
+  `lexicon setup --yes` nothing installs unless asked).
 - Learning requires consent: `learn_correction` writes to the user's file
   as soon as it is called (it has no preview, unlike `setup_lexicon` and
   `install_client`), so Phantom should confirm before an agent teaches the
