@@ -60,6 +60,14 @@ dictation accuracy.
 | `cases/nonenglish.jsonl` | Hand-written non-English edges: name-lookalike prose negatives, first-name-only and diminutive misses, multi-name sentences. Every case carries `lang`. |
 | `corpus.jsonl` | Generated output. Committed so the numbers are reproducible without regenerating. |
 | `lib.ts` | Loading + metrics. `run.ts` (CLI) and `bench.test.ts` both import it so they cannot disagree. |
+| `run.ts` | The `npm run bench` runner: the flags above, a Markdown report on stdout, JSON to `--out` (default `results.json`). |
+| `report-path.ts` | Stores relative paths in the report with `/` separators, so a Windows run writes the same JSON. |
+| `bench.test.ts` | The regression guard: corpus shape checks and the thresholds in [CI regression gate](#ci-regression-gate). |
+| `run.test.ts` | Runs `run.ts` end to end on LF and CRLF corpora and checks the portable report paths. |
+| `non-english.yaml` | The 35-name, five-language fixture (german, spanish, polish, japanese, arabic) for `npm run bench:non-english` (`scripts/bench-non-english.mjs`). |
+| `non-english.test.ts` | Checks that fixture and runs the focused benchmark. |
+| `hook-latency.mjs` | `npm run bench:hook`; see [Hook latency](#hook-latency). |
+| `daemon-latency.mjs` | The resident expander: CLI and socket latency, plus the daemon's peak RSS. Run `node bench/daemon-latency.mjs` from the repository root after `npm run build`; results are in [`docs/BENCH-DAEMON.md`](../docs/BENCH-DAEMON.md). |
 | `results.json` | Last run: summary, sweep, every failing case. |
 
 ## Case format
@@ -123,7 +131,7 @@ deliberately.
 
 ## CI regression gate
 
-CI runs `npx vitest run bench/bench.test.ts` as its own step ("Benchmark regression gate (synthetic corpus)") on every push and pull request, independent of which files a PR touched. It fails when the matcher's accuracy drops below thresholds set from the numbers measured on 2026-10-26 minus a small margin. The guard runs on the `baseline` (untagged) subset, so its gates still measure the original 402 cases they were tuned on:
+CI runs `npx vitest run bench/bench.test.ts` as its own step ("Benchmark regression gate (synthetic corpus)") on the ubuntu-latest Node 22 row of the full suite, which runs daily on `main` and on `workflow_dispatch`, whatever files changed. Pull requests and the merge queue run only the required `CI Gate` check, which does not include it, so run `npx vitest run bench` (or `npm test`, which includes `bench/**/*.test.ts`) before opening a pull request that touches the matcher. It fails when the matcher's accuracy drops below thresholds set from the numbers measured on 2026-10-26 minus a small margin. The guard runs on the `baseline` (untagged) subset, so its gates still measure the original 402 cases they were tuned on:
 
 | Measure (baseline subset, 402 sentences) | Measured | Gate |
 |---|---|---|
