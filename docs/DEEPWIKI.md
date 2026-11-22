@@ -5,6 +5,10 @@ and subsystem pages. The notes identify source-of-truth files and boundaries;
 the page list supplies titles, purposes and parent relationships. Generated
 content can be stale or incorrect, so check claims against the source.
 
+Two notes summarize README sections: the ecosystem note follows "Part of the
+Ashlr.AI ecosystem" and the agents note follows "How agents work on this repo".
+When either README section changes, update its note in the same pull request.
+
 For another repository, copy the config, rewrite the notes for its layout and
 replace the pages with its actual subsystems. Keep titles unique and make each
 parent refer to an existing page. Do not put secrets, personal transcripts or

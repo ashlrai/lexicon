@@ -5,15 +5,30 @@
     },
     {
       "content": "Distinguish global and trusted project lexicons, and explain preview and explicit application for agent-initiated writes. Do not include secret values, personal transcripts or real machine paths."
+    },
+    {
+      "content": "Lexicon is one repo in the Ashlr.AI ecosystem: Phantom and its ecosystem form a fully autonomous, code-first, agent-native software factory, run by agents with the human as a passive board member, chasing open source RSI (recursive self improvement). The other repos are Phantom, phantom-secrets, ashlr-plugin, Locus, ashlr-md and ashlr-stack; the README section 'Part of the Ashlr.AI ecosystem' gives each one's role. Lexicon runs without any of them. The tie is the companion handshake (docs/ashlr-handshake.md, src/cli/handshake.ts, src/cli/companions.ts): each tool answers --ashlr-handshake --json, and lexicon doctor reads Locus and ashlr-md that way. Do not describe features of the other repos beyond what this repo's docs state."
+    },
+    {
+      "content": "Agents write and ship this code. AGENTS.md is the entry point for any agent and CLAUDE.md is the working brief; CONTRIBUTING.md#contribute-with-an-agent is the contributor path (fork, npm ci, lexicon test-select, the CI Gate commands). A pull request has one required check, CI Gate (typecheck, build, crypto policy check, redaction test, diff secret scans); the merge queue reruns it and squash-merges with no approving review. Plugin bundle drift (npm run check:bundle) and stale doc counts (npm run check:facts) are caught only by the daily full suite on main. docs/CLI.md and fresh:-marked doc blocks are generated; never describe them as hand-written."
+    },
+    {
+      "content": "src/ambiguity/ (the ambiguity engine ported from Pellucid) is self-contained and nothing in src/ calls it yet; describe it as unwired, per docs/design/two-stage-correction.md. The Windows tray app (apps/windows) is built and unit-tested but has never been run on Windows (docs/WINDOWS-APP.md)."
     }
   ],
   "pages": [
-    { "title": "Overview", "purpose": "What Lexicon does and how transcripts flow through its surfaces" },
+    { "title": "Overview", "purpose": "What Lexicon does, how transcripts flow through its surfaces, and its place in the Ashlr.AI ecosystem" },
     { "title": "Matching and normalization", "purpose": "Alias, phonetic and fuzzy matching, stoplist and normalization", "parent": "Overview" },
     { "title": "Storage and trust", "purpose": "Global and project lexicons, merging, trust and write boundaries", "parent": "Overview" },
-    { "title": "CLI", "purpose": "Command dispatch, setup, review, import and export", "parent": "Overview" },
+    { "title": "Learning and suggestions", "purpose": "Correction parsing, the pending-aliases queue, suggest and harvest", "parent": "Overview" },
+    { "title": "Import, export and packs", "purpose": "Exporters, importers, guided import, starter packs and the community pack registry", "parent": "Overview" },
+    { "title": "CLI", "purpose": "Command dispatch, setup, review, doctor and the resident daemon fast path", "parent": "Overview" },
     { "title": "MCP and hooks", "purpose": "MCP tools, resources and prompts, and Claude Code hook behavior", "parent": "Overview" },
-    { "title": "Integrations", "purpose": "Local API, browser extension, clipboard daemon and voice flow", "parent": "Overview" },
-    { "title": "Development and testing", "purpose": "Repository layout, tests, generated docs and plugin bundles", "parent": "Overview" }
+    { "title": "Integrations", "purpose": "Local API, browser extension, clipboard daemon, resident expander and voice flow", "parent": "Overview" },
+    { "title": "Tray apps", "purpose": "The macOS LexiconBar and Windows tray apps under apps/", "parent": "Integrations" },
+    { "title": "Ecosystem and companion handshake", "purpose": "How Lexicon fits Phantom and the other Ashlr.AI repos, and the --ashlr-handshake contract", "parent": "Overview" },
+    { "title": "Ambiguity engine", "purpose": "The unwired src/ambiguity rules, detectors and calibration, and the planned two-stage pipeline", "parent": "Overview" },
+    { "title": "Development and testing", "purpose": "Repository layout, tests, generated docs and plugin bundles", "parent": "Overview" },
+    { "title": "Contributing with an agent", "purpose": "AGENTS.md, CLAUDE.md, the CI Gate check, the merge queue and the daily full suite", "parent": "Development and testing" }
   ]
 }
