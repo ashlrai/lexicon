@@ -17,13 +17,16 @@ npm install
 npm run dev          # http://localhost:3000
 ```
 
-`predev` and `prebuild` both run `scripts/build-demo-bundle.mjs` first, so the
-demo bundle is always current. Other scripts:
+`predev` and `prebuild` both run `scripts/scan-media.mjs` and then
+`scripts/build-demo-bundle.mjs` first, so the media manifest and the demo bundle
+are always current. Other scripts:
 
 ```sh
-npm run build        # production build (regenerates the demo bundle first)
+npm run build        # production build (regenerates lib/generated first)
 npm start            # serve the production build
 npm run lint         # tsc --noEmit
+npm run docs:faq     # regenerate docs/FAQ.md from lib/site.ts
+npm run check:faq    # fail if docs/FAQ.md is stale
 ```
 
 The page reads `../src/core`, `../packs` and `../examples`. It has to be run
@@ -35,14 +38,16 @@ from inside a checkout of the Lexicon repository.
 
 The live demo on the page is not a mock-up. It runs Lexicon's real matcher,
 compiled for the browser. `web/scripts/build-demo-bundle.mjs` writes four files
-into `web/lib/generated/` (gitignored, rebuilt on every build):
+into `web/lib/generated/` (gitignored, rebuilt on every build, including on
+Vercel), and `web/scripts/scan-media.mjs` writes a fifth:
 
 | File | What it is |
 | --- | --- |
 | `lexicon-core.js` | `lib/demo-entry.ts` bundled by esbuild: `normalize`, `suggestAliases` and `DEFAULT_MIN_CONFIDENCE` straight out of `src/core`. 41 KB. |
 | `lexicon-core.d.ts` | Hand-written types for the above, so the app type-checks. |
 | `demo-lexicon.json` | The nine starter packs (272 terms) plus the `Ashlr.AI` entry from `examples/lexicon.example.yaml`, parsed from the same YAML the CLI ships. |
-| `brand-icons.json` | Monochrome SVG paths from `simple-icons` for the "works with" wall. |
+| `brand-icons.json` | Monochrome SVG paths from `simple-icons` for the "works with" wall and the platform row. |
+| `media.json` | Which screenshots and recordings exist in `web/public/media/`, with their pixel dimensions read from the file headers. `{}` when the directory is absent, and the page falls back to its drawn animations. |
 
 This mirrors `scripts/build-site.mjs` at the repo root, which does the same job
 for the GitHub Pages demo. Three things are worth knowing:
@@ -74,46 +79,46 @@ types is sent anywhere.
 
 Vercel scope **`evero`**, project **`lexicon`**.
 
+The project is connected to the repository, so a push builds the site through
+Vercel's git integration. Its Root Directory is `web`, and the build step
+includes files outside it, so `../src/core`, `../packs` and `../examples` are
+present and `prebuild` regenerates `lib/generated` from source on every build.
+Vercel installs only `web/node_modules`, which is why `web/package.json`
+declares the runtime dependencies the demo bundle pulls in through `src/core`
+and why `build-demo-bundle.mjs` points esbuild at both `node_modules` folders.
+
+`web/vercel.json` sets an `ignoreCommand` that skips the build when nothing the
+page reads changed since the previous deployment: `web/` itself, `src/core`,
+`examples`, `packs`, `SECURITY.md` and `docs/FAQ.md`. A change anywhere else in
+the repository does not redeploy the site.
+
+To deploy by hand, run the CLI from the repository root, not from inside `web`:
+the Root Directory setting is applied relative to the directory you deploy.
+
 ```sh
 cd "<repo root>"
-npm --prefix web run build      # regenerate lib/generated from source
-vercel deploy --cwd web --prod
+vercel deploy --prod
 ```
 
-### Why the build artifacts are uploaded
+### When the repository sources are absent
 
-`vercel --cwd web` uploads `web/` only, but the build reads `../src/core`,
-`../packs` and `../examples`. Two things make this work:
+The build is guarded for the case where `web/` arrives without `../src/core`,
+`../packs` and `../examples` (an upload of `web/` on its own, which is how the
+site was deployed before the project was connected to git):
 
 1. `web/.vercelignore` does **not** exclude `lib/generated`. Vercel uses
-   `.vercelignore` instead of `.gitignore` when choosing what to upload, so the
-   locally generated artifacts ship with the deploy.
+   `.vercelignore` instead of `.gitignore` when choosing what to upload, so
+   locally generated artifacts ship with the upload.
 2. `scripts/build-demo-bundle.mjs` detects that `../src/core` is absent, finds
    the prebuilt artifacts, and keeps them. If neither is present it throws
    rather than serving a page whose demo cannot work.
 
-**So always run `npm run build` in `web/` before deploying.** Otherwise you ship
+So run `npm run build` in `web/` before an upload like that. Otherwise you ship
 whatever `lib/generated` held last.
 
 `lib/demo-entry.ts` is listed in `tsconfig.json`'s `exclude` for the same
 reason: its `../../src/core/*` imports do not resolve in an upload of `web/`
 alone, and Next type-checks the whole project.
-
-### Switching to git-triggered deploys
-
-The project is currently **not** connected to a git repository, so `vercel link`
-connects one automatically, and it was disconnected on purpose, because a push
-would otherwise build from the repository root, where there is no Next app.
-
-To deploy from git instead, set both of these in the Vercel dashboard under
-Settings → Build and Deployment:
-
-- **Root Directory** → `web`
-- **Include files outside of the Root Directory in the Build Step** → on
-
-With those set, `../src/core` is available during the build, the prebuild script
-regenerates everything from source, and `lib/generated` can stay gitignored.
-Then run `vercel git connect --cwd web`.
 
 ---
 
@@ -152,33 +157,40 @@ with. It is never framed as endorsement. The section headings say "Lexicon
 corrects what you dictate into" and "Works wherever you talk to an agent",
 never "Trusted by" or "Partners", which would be false.
 
-The rules applied, in `web/components/WorksWith.tsx`:
+The rules applied, in `web/components/WorksWith.tsx` and
+`web/components/Platforms.tsx` (per-brand verdicts and sources in
+`web/public/brands/MANIFEST.md`):
 
 **No Apple logo, anywhere on the page.** Apple's Identity Guidelines forbid
 using the Apple logo to indicate compatibility. "macOS" and "macOS Text
-Replacement" are set as words in the page's own type. The same rule would apply
-to Mac and iPhone.
+Replacement" are set as words in the page's own type, and the macOS platform
+tile opens with a laptop glyph we drew. The same rule would apply to Mac and
+iPhone. The Windows tile opens with a drawn monitor for a similar reason: the
+Windows guidelines name compatibility-signalling as a use the logo is not for.
 
 **Where `simple-icons` ships a CC0 path, the mark is used monochrome.** The SVG
 path data is CC0; the trademarks are not. Marks are rendered in the page's
 neutral foreground (`--color-paper-2`), never in the accent colour, never sized
 to dominate the section, and never locked up with a Lexicon mark as if it were
-a partnership. Currently: Claude Code, Claude, Cursor, Windsurf, Gemini,
-Perplexity, Poe, Deepgram, Google Cloud, Chrome, Firefox, GitHub, Anthropic.
+a partnership. Currently: Claude Code, Claude, Anthropic, Gemini, Cursor,
+Windsurf, Perplexity, Poe, Chrome, Firefox, Deepgram, Google Cloud, GitHub, and
+Tux on the Linux platform tile, which Larry Ewing permits on condition of the
+credit the footer carries.
 
 **Where `simple-icons` does not ship a path, the product name is set as text.**
 This is not a workaround. `simple-icons` removes marks when the owner asks, so
 its absence is a signal not to reproduce the mark. Set as words for this reason:
 ChatGPT, OpenAI Codex, Microsoft Copilot, VS Code, Azure Speech, Grok. Also set
 as words because `simple-icons` simply has no entry: Wispr Flow, Superwhisper,
-Whisper, AssemblyAI, espanso.
+Whisper, AssemblyAI, espanso. Each of these tiles opens with a two-letter
+monogram in the page's mono face, so every tile has the same leading slot.
 
 **Only shipped integrations are listed.** Every entry was verified against the
 repository: `extension/manifest.json` and `extension/src/adapters.ts` for the
-chat sites, `INSTALL_CLIENTS` in `src/cli/cmd-install.ts` for the agent clients,
-`src/core/exporters/` for the speech vendors. Ollama and Slack appear in the
-starter packs as *vocabulary terms* and are not integrations, so neither is on
-the wall.
+chat sites, `INSTALL_CLIENTS` in `src/cli/client-names.ts` for the agent
+clients, `src/core/exporters/` for the speech vendors. Ollama and Slack appear
+in the starter packs as *vocabulary terms* and are not integrations, so neither
+is on the wall.
 
 **Footer line.** "All product names, logos and brands are the property of their
 respective owners. Their use here indicates compatibility only, and does not
@@ -200,8 +212,10 @@ much cleaner than a phone microphone. The page says so directly under the stat
 band.
 
 **Never drop the "ordinary prose" qualifier.** The false-positive rows are
-`0/72` (audio) and `0/95` (synthetic) *excluding* the corpus's deliberately
-adversarial `expected-hard` sentences. Including them the rate is not zero.
+`0/72` (audio) and `0/95` (synthetic, the original 402-case corpus that
+`docs/BENCHMARK.md` reports as the `baseline (untagged)` subset) *excluding* the
+corpus's deliberately adversarial `expected-hard` sentences. Including them the
+rate is not zero.
 
 Two figures are **not** publishable and are not on the page:
 
@@ -209,9 +223,10 @@ Two figures are **not** publishable and are not on the page:
   exists anywhere in the repository. `docs/MACOS-APP.md` describes a deliberate
   700 ms settle delay and a 500 ms focus poll, so the real end-to-end figure is
   closer to a second. Use the matcher latency (0.3 ms per sentence) instead.
-- *Term precision 94.1% and prose FP 15.0%.* The Headline table in
-  `docs/BENCHMARK.md` is one revision behind `bench/results.json`, which the doc
-  itself notes. Neither number is on the page.
+- *The inclusive prose false-positive rate.* The Headline table in
+  `docs/BENCHMARK.md` also reports the rate with `expected-hard` cases
+  included, which is not a rate on ordinary prose. Quote the rate excluding
+  them instead.
 
 ---
 
