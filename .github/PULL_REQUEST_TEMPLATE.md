@@ -20,3 +20,10 @@
 - [ ] README tables updated if a tool, command, format or client was added
 - [ ] Relative imports end in `.js`; no `any` in exported signatures
 - [ ] No tokens or secrets in the diff, not even fake ones shaped like real ones
+
+## Agent used (optional)
+
+<!-- Helps us learn which coding tools contribute. Leave blank for a fully human PR.
+     Examples: Codex, Claude Code, Cursor, GitHub Copilot, Gemini CLI, Grok, Devin, Aider, Windsurf, local model (name it). -->
+
+Agent used:
