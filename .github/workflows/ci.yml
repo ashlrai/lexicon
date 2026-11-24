@@ -31,10 +31,13 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-      - uses: actions/setup-node@v7
+      # Pinned on purpose. setup-node v7.1.0 treats a read-only Actions cache
+      # (a fork pull_request) as a skipped save. A later tag that failed the
+      # job on that denial would turn a good fork PR red.
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
         with:
           node-version: 22
           cache: npm
@@ -139,6 +142,11 @@ jobs:
   test:
     name: ${{ matrix.os }} node ${{ matrix.node }}
     needs: plan
+    # plan does not run on pull_request or merge_group. Reading fromJSON of
+    # its empty output can fail the workflow before the CI Gate job is
+    # created, and the merge queue then waits until that required check
+    # times out. Skip first so the matrix is never evaluated on those events.
+    if: ${{ always() && needs.plan.result == 'success' }}
     runs-on: ${{ matrix.os }}
     # Recent main runs finish in 1 to 5 minutes; a hung runner now fails at 20
     # instead of the 360-minute default.
@@ -583,12 +591,21 @@ jobs:
           HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
         run: |
           set -euo pipefail
+          # pull_request and merge_group scan every added commit. schedule and
+          # workflow_dispatch scan the newest commit. A missing base used to
+          # fall back to HEAD~1 and hide every earlier commit in the diff.
           case "$EVENT_NAME" in
             pull_request) base="$(git merge-base "$PR_BASE" "$HEAD_SHA")" ;;
             merge_group) base="$MG_BASE" ;;
-            *) base="" ;;
+            *) base="${HEAD_SHA}~1" ;;
           esac
-          if [ -z "$base" ] || ! git cat-file -e "${base}^{commit}" 2>/dev/null; then base="${HEAD_SHA}~1"; fi
+          if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            GIT_TERMINAL_PROMPT=0 timeout 30 git fetch --no-tags origin "$base" || true
+          fi
+          if ! git cat-file -e "${base}^{commit}" 2>/dev/null; then
+            echo "::error::secret scan base ${base} is not in this checkout; refusing to scan a shorter range"
+            exit 1
+          fi
           # A PR must not allowlist its own leak: ignore any repo-supplied config.
           rm -f .gitleaks.toml .gitleaksignore
           echo "scanning ${base}..${HEAD_SHA}"
@@ -618,6 +635,9 @@ jobs:
         run: |
           set -euo pipefail
           echo "${SCRUB_SHA256}  .github/tests/secret-shape/scrub.pl" | sha256sum --check --strict
+          if [ -n "${BASE_SHA}" ] && ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            GIT_TERMINAL_PROMPT=0 timeout 30 git fetch --no-tags origin "${BASE_SHA}" || true
+          fi
           if [ -z "${BASE_SHA}" ]; then BASE_SHA="$(git rev-parse "${HEAD_SHA}^1")"; fi
           base="$(git merge-base "${BASE_SHA}" "${HEAD_SHA}")"
           git diff --no-color --no-ext-diff "${base}" "${HEAD_SHA}" > "${RUNNER_TEMP}/candidate.diff"

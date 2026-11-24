@@ -31,6 +31,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Internal
 
+- CI Gate keeps reporting on fork pull requests and in the merge queue. The fast job pins checkout and setup-node so a read-only Actions cache is a skipped save, the full test matrix is not evaluated when its planner did not run, and the diff secret scan refuses to shrink to the last commit when the base commit is missing.
 - `CONTRIBUTING.md` now says what `lexicon test-select` actually narrows: test files and the few reviewed paths in its mapping table; any other change (every other `src/` file, docs, packs, scripts, config) prints `npm test`, so contributors run the module's own test file while iterating. The CODEOWNERS list now also names `CODEOWNERS` itself and the secret-shape scan fixtures.
 - `CONTRIBUTING.md` explains the repo's own `.lexicon.yaml` (why it is skipped until trusted, how to preview, trust and add to it) and the `.mcp.json` that runs the committed server bundle. (#1138)
 - Document the suggestion queue, five suggestion kinds, limits and apply modes; clipboard one-shot JSON, flag constraints and signal exits; and the local API's flags and JSON results. These describe existing behavior. (#1131, #1133, #1134)
