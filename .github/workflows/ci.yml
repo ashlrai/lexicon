@@ -49,6 +49,14 @@ jobs:
         run: npm run check:crypto
       - name: Redaction tests
         run: npx vitest run tests/upstream-redaction.test.ts
+      # Pull requests and the merge queue run the tests vitest marks affected.
+      # The daily matrix still runs the full suite on Linux, Windows and macOS.
+      # This step reuses the job timeout already set above.
+      - name: Affected tests
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: node scripts/ci-affected-tests.mjs
 
   # ---------------------------------------------------------------------------
   # The portable suite: every platform, and the three supported Node majors on
