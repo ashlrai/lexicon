@@ -93,6 +93,22 @@ public class BurstDetectorTests
     }
 
     [Fact]
+    public void SingleEventAtMinimumLengthFiresAtSettle()
+    {
+        BurstDetector d = new("Note: ");
+        d.Record("Note: hello world!", 0);
+
+        Assert.Equal(SettleOutcome.Waiting.Instance, d.Settle(0.5));
+        Burst burst = ExpectBurst(d.Settle(Settle));
+        Assert.Equal("hello world!", burst.Text);
+        Assert.Equal(new TextSpan(6, 12), burst.Span);
+        Assert.Equal("Note: hello world!", burst.FullText);
+        Assert.Equal(burst.FullText, d.LastStable);
+        Assert.False(d.HasPendingChanges);
+        Assert.Equal(SettleOutcome.Waiting.Instance, d.Settle(RunQuiet));
+    }
+
+    [Fact]
     public void ShortSingleEventFiresAtTwelveChars()
     {
         BurstDetector d = new("Deploy to ");
