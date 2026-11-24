@@ -785,7 +785,7 @@ jobs:
         with:
           path: ${{ steps.npm-cache.outputs.dir }}
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
+      - run: npm ci --ignore-scripts
         shell: bash
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         if: steps.npm-restore.outputs.cache-hit != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
@@ -827,7 +827,7 @@ jobs:
         with:
           path: ${{ steps.npm-cache.outputs.dir }}
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         if: steps.npm-restore.outputs.cache-hit != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         continue-on-error: true
@@ -864,7 +864,7 @@ jobs:
         with:
           path: ${{ steps.npm-cache.outputs.dir }}
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
+      - run: npm ci --ignore-scripts
         shell: bash
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         if: steps.npm-restore.outputs.cache-hit != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
@@ -872,6 +872,9 @@ jobs:
         with:
           path: ${{ steps.npm-cache.outputs.dir }}
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Build this commit
+        shell: bash
+        run: npm run build
       - name: This commit
         shell: bash
         run: node scripts/ci-install-smoke.mjs commit
@@ -907,7 +910,7 @@ jobs:
         with:
           path: ${{ steps.npm-cache.outputs.dir }}
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
+      - run: npm ci --ignore-scripts
         shell: bash
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         if: steps.npm-restore.outputs.cache-hit != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
@@ -915,6 +918,9 @@ jobs:
         with:
           path: ${{ steps.npm-cache.outputs.dir }}
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Build this commit
+        shell: bash
+        run: npm run build
       - name: This commit
         shell: bash
         run: node scripts/ci-install-smoke.mjs commit
@@ -945,13 +951,15 @@ jobs:
         with:
           path: ${{ steps.npm-cache.outputs.dir }}
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
-      - run: npm ci
+      - run: npm ci --ignore-scripts
       - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
         if: steps.npm-restore.outputs.cache-hit != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
         continue-on-error: true
         with:
           path: ${{ steps.npm-cache.outputs.dir }}
           key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: Build this commit
+        run: npm run build
       - name: This commit
         run: node scripts/ci-install-smoke.mjs commit
       - name: Published release
@@ -972,7 +980,7 @@ jobs:
           CLASSIFY: ${{ needs.classify.result }}
           FLAG: ${{ needs.classify.outputs.os }}
           EVENT: ${{ github.event_name }}
-          JOBS: ${{ format('{{"fast":"{0}","smoke":"{1}"}}', needs.fast.result, needs.install-smoke-linux.result) }}
+          JOBS: ${{ format('{{"fast":"{0}","smoke":"{1}"}}', needs.fast.result, needs['install-smoke-linux'].result) }}
         run: node scripts/ci-os-gate.mjs
 
   gate-windows:
@@ -991,7 +999,7 @@ jobs:
           FLAG: ${{ needs.classify.outputs.os }}
           EVENT: ${{ github.event_name }}
           OPTIONAL_WHEN_MEASURING: checks
-          JOBS: ${{ format('{{"checks":"{0}","smoke":"{1}"}}', needs.os-windows.result, needs.install-smoke-windows.result) }}
+          JOBS: ${{ format('{{"checks":"{0}","smoke":"{1}"}}', needs['os-windows'].result, needs['install-smoke-windows'].result) }}
         run: node scripts/ci-os-gate.mjs
 
   gate-macos:
@@ -1010,5 +1018,5 @@ jobs:
           FLAG: ${{ needs.classify.outputs.os }}
           EVENT: ${{ github.event_name }}
           OPTIONAL_WHEN_MEASURING: checks
-          JOBS: ${{ format('{{"checks":"{0}","smoke":"{1}"}}', needs.os-macos.result, needs.install-smoke-macos.result) }}
+          JOBS: ${{ format('{{"checks":"{0}","smoke":"{1}"}}', needs['os-macos'].result, needs['install-smoke-macos'].result) }}
         run: node scripts/ci-os-gate.mjs
