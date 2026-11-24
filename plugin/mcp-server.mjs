@@ -70808,7 +70808,10 @@ var init_detect = __esm({
     init_claude_settings();
     init_cmd_install();
     init_types4();
-    defaultSetupExec = (file2, args) => (0, import_node_child_process8.execFileSync)(file2, args, { encoding: "utf8", timeout: 5e3, stdio: ["ignore", "pipe", "ignore"] }).trim();
+    defaultSetupExec = (file2, args) => {
+      const runnable = findRunnableSync(file2) ?? file2;
+      return (0, import_node_child_process8.execFileSync)(runnable, args, { encoding: "utf8", timeout: 5e3, stdio: ["ignore", "pipe", "ignore"] }).trim();
+    };
     APP_BUNDLES = {
       "claude-desktop": "Claude.app",
       cursor: "Cursor.app",
@@ -71819,9 +71822,12 @@ function isInstallClient(value) {
 function resolveServerPath(cliDir) {
   return resolveIntegrationPaths(cliDir).server;
 }
+function pathFor(platform) {
+  return platform === "win32" ? import_node_path31.default.win32 : import_node_path31.default;
+}
 function appData(ctx) {
   const value = ctx.env.APPDATA?.trim();
-  return value ? value : import_node_path31.default.join(ctx.home, "AppData", "Roaming");
+  return value ? value : pathFor(ctx.platform).join(ctx.home, "AppData", "Roaming");
 }
 function codexHome(ctx) {
   const override = ctx.env.CODEX_HOME?.trim();
@@ -71848,13 +71854,13 @@ function configPathFor(client, ctx) {
       if (platform === "darwin") {
         return import_node_path31.default.join(home, "Library", "Application Support", "Claude", "claude_desktop_config.json");
       }
-      if (platform === "win32") return import_node_path31.default.join(appData(ctx), "Claude", "claude_desktop_config.json");
+      if (platform === "win32") return import_node_path31.default.win32.join(appData(ctx), "Claude", "claude_desktop_config.json");
       return import_node_path31.default.join(xdgConfigHome(ctx.env, home), "Claude", "claude_desktop_config.json");
     }
     case "vscode": {
       if (project) return import_node_path31.default.join(cwd, ".vscode", "mcp.json");
       if (platform === "darwin") return import_node_path31.default.join(home, "Library", "Application Support", "Code", "User", "mcp.json");
-      if (platform === "win32") return import_node_path31.default.join(appData(ctx), "Code", "User", "mcp.json");
+      if (platform === "win32") return import_node_path31.default.win32.join(appData(ctx), "Code", "User", "mcp.json");
       return import_node_path31.default.join(home, ".config", "Code", "User", "mcp.json");
     }
   }

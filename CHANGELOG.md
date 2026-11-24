@@ -40,6 +40,7 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - The README and CONTRIBUTING.md list install and dev setup under macOS, Windows and Linux headings.
 - Harvest runs `git.exe` when a Windows PATH would otherwise select `git.cmd`, and joins git's `/` paths with `path.win32` on Windows. Companion probes copy `USERPROFILE` and `APPDATA`, and they read `Path` as well as `PATH`.
 - Dev setup installs with `npm ci --ignore-scripts` and then builds explicitly. Node downloads stay on HTTPS if a redirect is offered.
+- Windows client configs for Claude Desktop and VS Code are joined with `path.win32`. The recommended install on macOS and Windows is `npm install -g @ashlr/lexicon`. Homebrew remains documented for macOS. Release 0.5.12 does not ship a Windows app exe or zip.
 
 ### Internal
 

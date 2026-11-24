@@ -10,7 +10,7 @@ import { existsSync, promises as fs } from 'node:fs';
 import { homeDir } from '../../util/xdg.js';
 import path from 'node:path';
 import { LIMITS, UNENCODABLE_NOTE, findUnencodableChar, hasControlChars, stripInvisible } from '../../core/index.js';
-import { findOnPath } from '../../util/which.js';
+import { findOnPath, findRunnableSync } from '../../util/which.js';
 import type { IO } from '../io.js';
 import { claudeConfigDir } from '../claude-settings.js';
 import { configPathFor } from '../cmd-install.js';
@@ -177,8 +177,11 @@ export async function readPackageIdentity(cwd: string): Promise<{ name?: string;
   }
 }
 
-export const defaultSetupExec: SetupExec = (file, args) =>
-  execFileSync(file, args, { encoding: 'utf8', timeout: 5_000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+export const defaultSetupExec: SetupExec = (file, args) => {
+  // On Windows, `git` can resolve to git.cmd, which CreateProcess will not start.
+  const runnable = findRunnableSync(file) ?? file;
+  return execFileSync(runnable, args, { encoding: 'utf8', timeout: 5_000, stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+};
 
 export function tryExec(exec: SetupExec, file: string, args: readonly string[]): string | undefined {
   try {

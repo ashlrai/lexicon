@@ -238,13 +238,19 @@ On 330 clips of synthesized speech through whisper.cpp `small.en` (three voices,
 
 ### macOS
 
+Recommended, with Node.js 20 or newer:
+
+```bash
+npm install -g @ashlr/lexicon
+```
+
+Homebrew is also supported:
+
 ```bash
 brew install ashlrai/tap/lexicon
 ```
 
 Plain `brew install lexicon` is [dns-lexicon](https://github.com/dns-lexicon/dns-lexicon), a different project. Use the full tap name.
-
-Or, with Node.js 20 or newer: `npm i -g @ashlr/lexicon`
 
 ### Linux
 
@@ -256,13 +262,19 @@ Or, with Node.js 20 or newer: `npm i -g @ashlr/lexicon`
 
 ### Windows
 
-In PowerShell, with Node.js 20 or newer already installed:
+Recommended, with Node.js 20 or newer. This is the same package as on macOS. npm writes `lexicon.cmd` next to its prefix. No bash script is required.
+
+```bash
+npm install -g @ashlr/lexicon
+```
+
+The published 0.5.12 release does not include a Windows app exe or zip. The CLI above is the Windows install. The tray app in `apps/windows/` is not part of that package.
+
+Optional PowerShell wrapper, which runs the same npm install:
 
 ```powershell
 irm https://raw.githubusercontent.com/ashlrai/lexicon/main/scripts/install.ps1 | iex
 ```
-
-Or: `npm i -g @ashlr/lexicon`
 
 <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.13`<!-- fresh:end --> installs that tag from GitHub and builds on install.
 
