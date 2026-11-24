@@ -719,3 +719,296 @@ jobs:
           path: fixup-queue.txt
           if-no-files-found: error
           retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # Per-OS gates. They are not inputs of CI Gate. Windows and macOS checks use
+  # the same 20 minute budget as the scheduled test job (windows p95 380s).
+  # Smokes and the classifier use the 10 and 5 minute budgets already on the
+  # fast job and the secret scan. Native app builds stay in macos-app.yml and
+  # windows-app.yml.
+  # ---------------------------------------------------------------------------
+  classify:
+    name: Classify OS paths
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      os: ${{ steps.paths.outputs.os }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        if: github.event_name == 'pull_request' || github.event_name == 'merge_group'
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - id: paths
+        shell: bash
+        env:
+          EVENT: ${{ github.event_name }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+          HEAD_SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          if [ "$EVENT" = "schedule" ] || [ "$EVENT" = "workflow_dispatch" ]; then
+            echo "os=true" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          if ! git cat-file -e "${BASE_SHA}^{commit}" 2>/dev/null; then
+            GIT_TERMINAL_PROMPT=0 git fetch --no-tags origin "$BASE_SHA"
+          fi
+          git diff --name-only "$BASE_SHA" "$HEAD_SHA" | node scripts/ci-os-paths.mjs >> "$GITHUB_OUTPUT"
+
+  os-windows:
+    name: Checks (windows)
+    needs: classify
+    if: needs.classify.outputs.os == 'true' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - name: Keep LF endings on Windows
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: npm cache directory
+        id: npm-cache
+        shell: bash
+        run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        id: npm-restore
+        continue-on-error: true
+        with:
+          path: ${{ steps.npm-cache.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+        shell: bash
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: steps.npm-restore.outputs.cache-hit != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        continue-on-error: true
+        with:
+          path: ${{ steps.npm-cache.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm run typecheck
+        shell: bash
+      - run: npm run build
+        shell: bash
+      - name: Affected tests
+        shell: bash
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: node scripts/ci-affected-tests.mjs
+
+  os-macos:
+    name: Checks (macos)
+    needs: classify
+    if: needs.classify.outputs.os == 'true' && (github.event_name == 'pull_request' || github.event_name == 'merge_group')
+    runs-on: macos-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: npm cache directory
+        id: npm-cache
+        shell: bash
+        run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        id: npm-restore
+        continue-on-error: true
+        with:
+          path: ${{ steps.npm-cache.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: steps.npm-restore.outputs.cache-hit != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        continue-on-error: true
+        with:
+          path: ${{ steps.npm-cache.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm run typecheck
+      - run: npm run build
+      - name: Affected tests
+        env:
+          BASE_SHA: ${{ github.event.pull_request.base.sha || github.event.merge_group.base_sha }}
+        run: node scripts/ci-affected-tests.mjs
+
+  install-smoke-linux:
+    name: install smoke (linux)
+    needs: classify
+    if: needs.classify.outputs.os == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: npm cache directory
+        id: npm-cache
+        shell: bash
+        run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        id: npm-restore
+        continue-on-error: true
+        with:
+          path: ${{ steps.npm-cache.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+        shell: bash
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: steps.npm-restore.outputs.cache-hit != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        continue-on-error: true
+        with:
+          path: ${{ steps.npm-cache.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: This commit
+        shell: bash
+        run: node scripts/ci-install-smoke.mjs commit
+      - name: Published release
+        shell: bash
+        run: node scripts/ci-install-smoke.mjs release
+
+  install-smoke-windows:
+    name: install smoke (windows)
+    needs: classify
+    if: needs.classify.outputs.os == 'true'
+    runs-on: windows-latest
+    timeout-minutes: 10
+    steps:
+      - name: Keep LF endings on Windows
+        shell: bash
+        run: |
+          git config --global core.autocrlf false
+          git config --global core.eol lf
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: npm cache directory
+        id: npm-cache
+        shell: bash
+        run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        id: npm-restore
+        continue-on-error: true
+        with:
+          path: ${{ steps.npm-cache.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+        shell: bash
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: steps.npm-restore.outputs.cache-hit != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        continue-on-error: true
+        with:
+          path: ${{ steps.npm-cache.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: This commit
+        shell: bash
+        run: node scripts/ci-install-smoke.mjs commit
+      - name: Published release
+        shell: bash
+        run: node scripts/ci-install-smoke.mjs release
+
+  install-smoke-macos:
+    name: install smoke (macos)
+    needs: classify
+    if: needs.classify.outputs.os == 'true'
+    runs-on: macos-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+        with:
+          node-version: 22
+      - name: npm cache directory
+        id: npm-cache
+        shell: bash
+        run: echo "dir=$(npm config get cache)" >> "$GITHUB_OUTPUT"
+      - uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        id: npm-restore
+        continue-on-error: true
+        with:
+          path: ${{ steps.npm-cache.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - run: npm ci
+      - uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6
+        if: steps.npm-restore.outputs.cache-hit != 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+        continue-on-error: true
+        with:
+          path: ${{ steps.npm-cache.outputs.dir }}
+          key: npm-${{ runner.os }}-${{ hashFiles('package-lock.json') }}
+      - name: This commit
+        run: node scripts/ci-install-smoke.mjs commit
+      - name: Published release
+        run: node scripts/ci-install-smoke.mjs release
+
+  gate-linux:
+    name: Gate (linux)
+    if: always()
+    needs: [classify, fast, install-smoke-linux]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require this OS
+        env:
+          CLASSIFY: ${{ needs.classify.result }}
+          FLAG: ${{ needs.classify.outputs.os }}
+          EVENT: ${{ github.event_name }}
+          JOBS: ${{ format('{{"fast":"{0}","smoke":"{1}"}}', needs.fast.result, needs.install-smoke-linux.result) }}
+        run: node scripts/ci-os-gate.mjs
+
+  gate-windows:
+    name: Gate (windows)
+    if: always()
+    needs: [classify, os-windows, install-smoke-windows]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require this OS
+        env:
+          CLASSIFY: ${{ needs.classify.result }}
+          FLAG: ${{ needs.classify.outputs.os }}
+          EVENT: ${{ github.event_name }}
+          OPTIONAL_WHEN_MEASURING: checks
+          JOBS: ${{ format('{{"checks":"{0}","smoke":"{1}"}}', needs.os-windows.result, needs.install-smoke-windows.result) }}
+        run: node scripts/ci-os-gate.mjs
+
+  gate-macos:
+    name: Gate (macos)
+    if: always()
+    needs: [classify, os-macos, install-smoke-macos]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Require this OS
+        env:
+          CLASSIFY: ${{ needs.classify.result }}
+          FLAG: ${{ needs.classify.outputs.os }}
+          EVENT: ${{ github.event_name }}
+          OPTIONAL_WHEN_MEASURING: checks
+          JOBS: ${{ format('{{"checks":"{0}","smoke":"{1}"}}', needs.os-macos.result, needs.install-smoke-macos.result) }}
+        run: node scripts/ci-os-gate.mjs
