@@ -36,27 +36,28 @@ Lexicon is part of the Ashlr.AI ecosystem, where most changes are written, verif
 
 2. **Point the agent at the brief.** Claude Code reads [CLAUDE.md](CLAUDE.md) on its own; other agents start at [AGENTS.md](AGENTS.md), which routes them to the same brief. It holds the layout, the conventions and the rules agents most often miss.
 3. **Make one small change on a branch**, with its test (see the shapes in [Good first issues](#good-first-issues)).
-4. **Verify what you touched, then everything.** After `npm run build`, `node dist/cli/index.js test-select` (or `lexicon test-select` after `npm link`) prints the test commands for your staged, unstaged and untracked changes and falls back to `npm test` when it cannot narrow them. Its mapping is deliberately small (see [Tests](#tests)), so for most changes, including anything under `src/`, a doc or a pack, it prints `npm test`; while iterating on a module, run its own file directly (`npx vitest run tests/matcher.test.ts`). Before pushing, run what the required gate runs plus the full suite, which the gate does not:
+4. **Verify what you touched.** After `npm run build`, `node dist/cli/index.js test-select` (or `lexicon test-select` after `npm link`) prints the test commands for your staged, unstaged and untracked changes. While iterating on a module, run its own file directly (`npx vitest run tests/matcher.test.ts`). Before pushing, run what the required gate runs:
 
    ```bash
    npm run typecheck
    npm run build
    npm run check:crypto
    npx vitest run tests/upstream-redaction.test.ts
-   npm test
    ```
+
+   The hosted Linux job runs the affected tests on the pull request and again in the merge queue, so a full local `npm test` is not required before every push.
 
    Then the rule-driven extras from [CLAUDE.md](CLAUDE.md): `npm run build:bundle` and commit `plugin/` when `src/core`, `src/mcp`, `src/hooks`, `src/cli` or a dependency changed (`npm run check:bundle` confirms nothing drifted); `npm run docs:cli` after a command or flag change; `npm run check:facts` after adding a tool, command, format or pack; update `docs/CONTRACT.md` when a public signature changes and the README tables when a tool, format or command is added; `npm run check:links` after moving a doc; `npm run fresh:check` when a version or release fact moved.
 5. **Push to your fork and open a pull request against `main`.** Fill in the template checklist and add a `CHANGELOG.md` bullet under `Unreleased`.
 
 What happens next:
 
-- The one required check is **`CI Gate`**. It passes only when the fast job (typecheck, build, crypto policy, redaction tests) and both diff secret scans (pinned Gitleaks and the secret-shape scan over added lines) succeed; a skipped or cancelled job fails it. The scans ignore any `.gitleaks.toml` or `.gitleaksignore` in the PR, so a leak cannot be allowlisted from the same diff. Never commit a token, even a fake one shaped like a real one.
+- The one required check is **`CI Gate`**. It passes only when the fast job (typecheck, build, crypto policy, redaction tests, and the affected tests on a pull request or merge queue run) and both diff secret scans (pinned Gitleaks and the secret-shape scan over added lines) succeed; a skipped or cancelled job fails it. The scans ignore any `.gitleaks.toml` or `.gitleaksignore` in the PR, so a leak cannot be allowlisted from the same diff. Never commit a token, even a fake one shaped like a real one.
 - On a first pull request from a fork, GitHub may hold the workflow runs until a maintainer approves them. That is GitHub's default for new contributors, not a failure.
 - Merging goes through GitHub's merge queue, which runs `CI Gate` again on the result of merging your branch with current `main` and squash-merges it when green. Nothing else blocks: the branch rules require no approving review and do not require your branch to be up to date with `main`, so there is no need to rebase just to catch up.
 - Auto-merge is how a pull request enters the queue: `gh pr merge --auto <number>` (or **Enable auto-merge** on the PR page) queues it as soon as `CI Gate` passes. GitHub only lets accounts with write access do this, so on a fork PR a maintainer or the fleet arms it for you. A new push to the branch re-runs the gate first.
 - Changes under the paths in [`.github/CODEOWNERS`](.github/CODEOWNERS) (workflows, `CODEOWNERS` itself, `src/serve/`, the serve and argument parsing CLI files, the crypto check, the secret-shape scan fixtures) request a review from the code owner. The request is a signal to look, not a merge requirement.
-- The full portable suite (every OS, Node 20/22/24, e2e, bundle drift, doc checks) runs daily on `main`, not on your PR. That is why the local `npm test` above matters: a break it would have caught lands on `main` and becomes a fix-forward issue.
+- The hosted Linux job runs the affected tests on the pull request and in the merge queue, and a failure there fails `CI Gate` before merge. The full portable suite (every OS, Node 20/22/24, e2e, bundle drift, doc checks) still runs daily on `main`.
 
 ## Setup
 
