@@ -13,6 +13,8 @@ Lexicon is one YAML file of the words you actually say. It rewrites the transcri
 <!-- fresh:begin badge:release -->[![source version](https://img.shields.io/badge/source-v0.5.13-blue)](package.json)<!-- fresh:end -->
 [![license: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 [![node >=20](https://img.shields.io/node/v/%40ashlr%2Flexicon)](package.json)
+[![GitHub stars](https://img.shields.io/github/stars/ashlrai/lexicon?logo=github)](https://github.com/ashlrai/lexicon/stargazers)
+[![npm downloads](https://img.shields.io/npm/dm/%40ashlr%2Flexicon?logo=npm&label=npm%20downloads)](https://www.npmjs.com/package/@ashlr/lexicon)
 
 [**Live demo**](https://ashlrai.github.io/lexicon/) · [**Docs**](docs/README.md) · [**llms.txt**](llms.txt) · [**llms-full.txt**](llms-full.txt) · [**lexicon.ashlr.ai**](https://lexicon.ashlr.ai)
 
@@ -286,6 +288,31 @@ This is not a dictation app. There is no hosted account and no sync. It is a fil
 - Linux has no tray app. The Windows tray app is built and unit-tested, and it has never been run on Windows: [docs/WINDOWS-APP.md](docs/WINDOWS-APP.md).
 - Double metaphone is tuned for English. Names in other languages fall back to fuzzy matching.
 - The audio benchmark is text-to-speech read into whisper.cpp, not a phone microphone.
+
+## Join the mission
+
+AshlrAI is an engineering firm. We build tools like Lexicon to make our own work faster and more AI-native, then open-source them so every engineer can do the same. If you build with coding agents, build this with us.
+
+- **Start here:** read [CONTRIBUTING.md](CONTRIBUTING.md). Your coding agent can follow [AGENTS.md](AGENTS.md) and [llms.txt](llms.txt).
+- **Pick an issue:** [`good first issue`](https://github.com/ashlrai/lexicon/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) or [`help wanted`](https://github.com/ashlrai/lexicon/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22).
+- **See the whole lineup:** [ashlr.ai/open-source](https://ashlr.ai/open-source).
+<!-- TODO(discord): add the AshlrAI Discord invite here, and a Discord badge in the header, once the public invite link is confirmed. -->
+
+### Star history
+
+<a href="https://star-history.com/#ashlrai/lexicon&Date">
+  <picture>
+    <source media="(prefers-color-scheme: dark)" srcset="https://api.star-history.com/svg?repos=ashlrai/lexicon&type=Date&theme=dark" />
+    <source media="(prefers-color-scheme: light)" srcset="https://api.star-history.com/svg?repos=ashlrai/lexicon&type=Date" />
+    <img alt="Lexicon star history" src="https://api.star-history.com/svg?repos=ashlrai/lexicon&type=Date" width="600" />
+  </picture>
+</a>
+
+### Contributors
+
+<a href="https://github.com/ashlrai/lexicon/graphs/contributors">
+  <img alt="Lexicon contributors" src="https://contrib.rocks/image?repo=ashlrai/lexicon" />
+</a>
 
 ## Star Lexicon
 
