@@ -175,7 +175,7 @@ interface PathContext {
  * out relative (`Claude\claude_desktop_config.json`) and was written under
  * the current directory, where Claude Desktop never looks.
  */
-function pathFor(platform: NodeJS.Platform): path.PlatformPath {
+function pathFor(platform: NodeJS.Platform): typeof path.win32 {
   return platform === 'win32' ? path.win32 : path;
 }
 
