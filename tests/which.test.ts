@@ -7,7 +7,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { afterAll, beforeAll, describe, expect, it } from 'vitest';
-import { findOnPath, findOnPathSync, locateTool, locateToolSync } from '../src/util/which.js';
+import { findOnPath, findOnPathSync, findRunnableSync, locateTool, locateToolSync } from '../src/util/which.js';
 
 describe('findOnPath', () => {
   it('splits PATH with the platform delimiter and probes each dir', async () => {
@@ -69,6 +69,19 @@ describe('findOnPath', () => {
     expect(probed).toEqual(['C:\\Tools\\wl-copy.exe', 'C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\wl-copy.exe']);
   });
 
+  it('findRunnableSync prefers git.exe when PATHEXT lists git.cmd first', () => {
+    const env = { PATH: 'C:\\Program Files\\Git\\cmd', PATHEXT: '.CMD;.EXE' };
+    const present = new Set([
+      'C:\\Program Files\\Git\\cmd\\git.CMD',
+      'C:\\Program Files\\Git\\cmd\\git.EXE',
+      'C:\\Program Files\\Git\\cmd\\git.cmd',
+      'C:\\Program Files\\Git\\cmd\\git.exe',
+    ]);
+    const exists = (candidate: string) => present.has(candidate);
+    expect(findOnPathSync('git', { platform: 'win32', env, exists })).toBe('C:\\Program Files\\Git\\cmd\\git.CMD');
+    expect(findRunnableSync('git', { platform: 'win32', env, exists })).toBe('C:\\Program Files\\Git\\cmd\\git.EXE');
+  });
+
   it('finds a real executable on this machine', async () => {
     const node = await findOnPath('node');
     expect(node).toBeDefined();
@@ -123,6 +136,22 @@ describe('locateTool / locateToolSync', () => {
     expect(findOnPathSync('space-tool', { env: spaceEnv })).toBe(executable);
     expect(await locateTool(['space-tool'], { env: spaceEnv, extraDirs: [] })).toBe(executable);
     expect(locateToolSync(['space-tool'], spaceEnv)).toBe(executable);
+  });
+
+  it('on win32 an extra directory tries PATHEXT, including .cmd', async () => {
+    const probed: string[] = [];
+    const exists = async (candidate: string) => {
+      probed.push(candidate);
+      return candidate === 'C:\\Tools\\git.cmd';
+    };
+    expect(await locateTool(['git'], {
+      platform: 'win32',
+      env: { PATH: '', PATHEXT: '.COM;.EXE;.BAT;.CMD' },
+      extraDirs: ['C:\\Tools'],
+      exists,
+    })).toBe('C:\\Tools\\git.cmd');
+    expect(probed).toContain('C:\\Tools\\git.CMD');
+    expect(probed).toContain('C:\\Tools\\git.cmd');
   });
 
   it('falls back to the well-known directories after PATH', async () => {

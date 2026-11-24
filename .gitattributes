@@ -3,3 +3,6 @@
 # merge.* config is needed; note that GitHub's server-side merge ignores
 # attributes and may still flag the file on the web UI.
 CHANGELOG.md merge=union
+scripts/*.sh text eol=lf
+scripts/*.mjs text eol=lf
+scripts/*.ps1 text eol=crlf

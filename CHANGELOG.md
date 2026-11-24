@@ -31,11 +31,14 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ### Added
 
-- `bash scripts/setup.sh` is the one-command dev setup: Node 20 when PATH has none, lockfile install, then the smoke test. It is safe to run again on macOS and Linux. `.devcontainer/devcontainer.json` runs it when a dev container is created.
+- `bash scripts/setup.sh` (macOS and Linux) and `powershell -File scripts/setup.ps1` (Windows) are the one-command dev setup: Node 20 when PATH has none, then `node scripts/setup.mjs` for the lockfile install and the smoke test. `.devcontainer/devcontainer.json` runs the Node script when a dev container is created.
+- Windows install: `irm https://raw.githubusercontent.com/ashlrai/lexicon/main/scripts/install.ps1 | iex`, plus the existing `npm i -g @ashlr/lexicon` and `brew install ashlrai/tap/lexicon`.
 
 ### Changed
 
 - The README and CONTRIBUTING.md link to The Dev Shack on Discord (`https://discord.gg/jBQrSU6XeD`).
+- The README and CONTRIBUTING.md list install and dev setup under macOS, Windows and Linux headings.
+- Harvest runs `git.exe` when a Windows PATH would otherwise select `git.cmd`. Companion probes copy `USERPROFILE` and `APPDATA`, and they read `Path` as well as `PATH`.
 
 ### Internal
 

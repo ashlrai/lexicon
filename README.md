@@ -232,14 +232,37 @@ More answers: [docs/FAQ.md](docs/FAQ.md).
 
 On 330 clips of synthesized speech through whisper.cpp `small.en` (three voices, the same 70-term lexicon in every row), Lexicon recovered **91.0%** of the proper nouns. Raw whisper.cpp recovered 45.9%. Clean prose wrongly changed: **0 of 72**. The audio is macOS text-to-speech read into whisper.cpp, cleaner than a phone microphone. Method, the other rows, and every failing case: [docs/BENCHMARK.md](docs/BENCHMARK.md). Reproduce with `npm run bench:audio` (see [audio benchmark setup](bench/README.md)).
 
-## Other installs
+## Install
+
+`npm i -g @ashlr/lexicon` works on macOS, Windows and Linux once Node.js 20 or newer is installed. Each system also has a one-command installer.
+
+### macOS
 
 ```bash
 brew install ashlrai/tap/lexicon
-npm i -g @ashlr/lexicon
 ```
 
 Plain `brew install lexicon` is [dns-lexicon](https://github.com/dns-lexicon/dns-lexicon), a different project. Use the full tap name.
+
+Or, with Node.js 20 or newer: `npm i -g @ashlr/lexicon`
+
+### Linux
+
+```bash
+curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
+```
+
+Or, with Node.js 20 or newer: `npm i -g @ashlr/lexicon`
+
+### Windows
+
+In PowerShell, with Node.js 20 or newer already installed:
+
+```powershell
+irm https://raw.githubusercontent.com/ashlrai/lexicon/main/scripts/install.ps1 | iex
+```
+
+Or: `npm i -g @ashlr/lexicon`
 
 <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.13`<!-- fresh:end --> installs that tag from GitHub and builds on install.
 

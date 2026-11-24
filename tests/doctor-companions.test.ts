@@ -154,6 +154,22 @@ describe("detectCompanions", () => {
 			NO_COLOR: "1",
 		});
 	});
+
+	it("reads Windows Path, USERPROFILE and APPDATA without copying secrets", () => {
+		expect(
+			companionEnv({
+				Path: "C:\\Windows\\System32",
+				USERPROFILE: "C:\\Users\\me",
+				APPDATA: "C:\\Users\\me\\AppData\\Roaming",
+				GITHUB_TOKEN: "t",
+			}),
+		).toEqual({
+			PATH: "C:\\Windows\\System32",
+			USERPROFILE: "C:\\Users\\me",
+			APPDATA: "C:\\Users\\me\\AppData\\Roaming",
+			NO_COLOR: "1",
+		});
+	});
 });
 
 describe.skipIf(process.platform === "win32")(

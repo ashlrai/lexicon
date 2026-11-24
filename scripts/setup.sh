@@ -97,16 +97,4 @@ ensure_node() {
 say "lexicon dev setup (${ROOT})"
 ensure_node
 command -v npm >/dev/null 2>&1 || fail "npm was not found (it ships with Node)"
-say "npm $(npm --version)"
-
-export npm_config_fund=false
-export npm_config_audit=false
-export npm_config_update_notifier=false
-
-say "npm ci"
-npm ci --no-fund --no-audit
-
-say "npm run smoke"
-npm run smoke
-
-say "setup complete"
+exec node "$ROOT/scripts/setup.mjs"

@@ -54,6 +54,38 @@ async function accessible(candidate: string, win: boolean): Promise<boolean> {
   }
 }
 
+/** `.bat` and `.cmd` need cmd.exe. CreateProcess can start `.exe` and `.com`. */
+function isBatchShim(file: string): boolean {
+  return /\.(bat|cmd)$/i.test(file);
+}
+
+/**
+ * A PATH hit CreateProcess can start. On Windows a directory that has both
+ * `git.cmd` and `git.exe` (and a PATHEXT that lists `.CMD` first) must yield
+ * the `.exe`: spawning the `.cmd` shim fails with EINVAL. A directory that
+ * has only a batch shim is skipped so a later directory can still provide
+ * the real binary. Returns undefined when every hit is a batch shim.
+ */
+export function findRunnableSync(bin: string, opts: FindOnPathSyncOptions = {}): string | undefined {
+  const platform = opts.platform ?? process.platform;
+  const env = opts.env ?? process.env;
+  const win = platform === 'win32';
+  const p = win ? path.win32 : path.posix;
+  const exists = opts.exists ?? existsSync;
+  const names = candidateNames(bin, env, win);
+  for (const dir of pathDirs(env, win)) {
+    for (const name of names) {
+      const candidate = p.join(dir, name);
+      if (!exists(candidate)) continue;
+      // A .cmd/.bat in this directory is not a result. Keep scanning so
+      // git.exe later in PATHEXT, or in a later PATH entry, still wins.
+      if (win && isBatchShim(candidate)) continue;
+      return candidate;
+    }
+  }
+  return undefined;
+}
+
 /** Locate `bin` on PATH. Returns the absolute path or undefined. */
 export async function findOnPath(bin: string, opts: FindOnPathOptions = {}): Promise<string | undefined> {
   const platform = opts.platform ?? process.platform;
@@ -74,6 +106,8 @@ export async function findOnPath(bin: string, opts: FindOnPathOptions = {}): Pro
 export interface FindOnPathSyncOptions {
   env?: NodeJS.ProcessEnv;
   platform?: NodeJS.Platform;
+  /** Existence probe. Default `existsSync`. Injected by tests. */
+  exists?: (candidate: string) => boolean;
 }
 
 /**
@@ -87,10 +121,11 @@ export function findOnPathSync(bin: string, opts: FindOnPathSyncOptions = {}): s
   const win = platform === 'win32';
   const p = win ? path.win32 : path.posix;
   const names = candidateNames(bin, env, win);
+  const exists = opts.exists ?? existsSync;
   for (const dir of pathDirs(env, win)) {
     for (const name of names) {
       const candidate = p.join(dir, name);
-      if (existsSync(candidate)) return candidate;
+      if (exists(candidate)) return candidate;
     }
   }
   return undefined;
@@ -122,12 +157,12 @@ export async function locateTool(names: readonly string[], opts: LocateOptions =
   const p = win ? path.win32 : path.posix;
   for (const dir of extraDirsFor(opts, platform)) {
     for (const name of names) {
-      // path.win32/path.posix rather than the host's `path`, to match the
-      // PATH scan above: with an injected `platform` the two loops otherwise
-      // join with different separators and a test that simulates Windows on a
-      // Mac gets one answer from findOnPath and another from here.
-      const candidate = p.join(dir, win ? `${name}.exe` : name);
-      if (await exists(candidate)) return candidate;
+      // Same names as the PATH scan, including PATHEXT (.exe and .cmd), so an
+      // extra directory is not limited to `.exe`.
+      for (const fileName of candidateNames(name, env, win)) {
+        const candidate = p.join(dir, fileName);
+        if (await exists(candidate)) return candidate;
+      }
     }
   }
   return undefined;
@@ -147,8 +182,10 @@ export function locateToolSync(
   const p = win ? path.win32 : path.posix;
   for (const dir of extraDirsFor({}, platform)) {
     for (const name of names) {
-      const candidate = p.join(dir, win ? `${name}.exe` : name);
-      if (existsSync(candidate)) return candidate;
+      for (const fileName of candidateNames(name, env, win)) {
+        const candidate = p.join(dir, fileName);
+        if (existsSync(candidate)) return candidate;
+      }
     }
   }
   return undefined;

@@ -1,4 +1,5 @@
 #!/usr/bin/env bash
+# macOS and Linux. On Windows run `npm run typecheck` and then `npm test`.
 # Run from any directory in the checkout. Requires installed dependencies.
 # Stop at the first failed step so a known failure returns promptly.
 set -euo pipefail
