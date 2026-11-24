@@ -29,6 +29,14 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Added
+
+- `bash scripts/setup.sh` is the one-command dev setup: Node 20 when PATH has none, lockfile install, then the smoke test. It is safe to run again on macOS and Linux. `.devcontainer/devcontainer.json` runs it when a dev container is created.
+
+### Changed
+
+- The README and CONTRIBUTING.md link to The Dev Shack on Discord (`https://discord.gg/jBQrSU6XeD`).
+
 ### Internal
 
 - CI Gate keeps reporting on fork pull requests and in the merge queue. The fast job pins checkout and setup-node so a read-only Actions cache is a skipped save, the full test matrix is not evaluated when its planner did not run, and the diff secret scan refuses to shrink to the last commit when the base commit is missing.

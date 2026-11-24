@@ -1,0 +1,5 @@
+{
+  "name": "Lexicon",
+  "image": "mcr.microsoft.com/devcontainers/javascript-node:20-bookworm",
+  "postCreateCommand": "bash scripts/setup.sh"
+}
