@@ -35,8 +35,8 @@ if ($env:LEXICON_REF) {
   }
 }
 
-Write-Host "installing $spec (npm install -g)..."
-& npm install -g $spec
+Write-Host "installing $spec (npm install -g --ignore-scripts)..."
+& npm install -g --ignore-scripts $spec
 if ($LASTEXITCODE -ne 0) { Fail "install failed" }
 
 $lex = Get-Command lexicon -ErrorAction SilentlyContinue

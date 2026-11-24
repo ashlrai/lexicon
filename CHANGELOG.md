@@ -38,7 +38,8 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 - The README and CONTRIBUTING.md link to The Dev Shack on Discord (`https://discord.gg/jBQrSU6XeD`).
 - The README and CONTRIBUTING.md list install and dev setup under macOS, Windows and Linux headings.
-- Harvest runs `git.exe` when a Windows PATH would otherwise select `git.cmd`. Companion probes copy `USERPROFILE` and `APPDATA`, and they read `Path` as well as `PATH`.
+- Harvest runs `git.exe` when a Windows PATH would otherwise select `git.cmd`, and joins git's `/` paths with `path.win32` on Windows. Companion probes copy `USERPROFILE` and `APPDATA`, and they read `Path` as well as `PATH`.
+- Dev setup installs with `npm ci --ignore-scripts` and then builds explicitly. Node downloads stay on HTTPS if a redirect is offered.
 
 ### Internal
 

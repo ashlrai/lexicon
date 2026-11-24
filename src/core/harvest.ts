@@ -29,6 +29,7 @@ import { STOPLIST } from './stoplist.js';
 import { suggestAliases } from './suggest.js';
 import type { HarvestCandidate, HarvestOptions, TermCategory, TermSource } from './types.js';
 import { isRecord } from '../util/json.js';
+import { joinGitPath } from '../util/repo-path.js';
 import { findRunnableSync } from '../util/which.js';
 
 /** Most files one harvest reads; the rest of a larger tree is not scanned (`HarvestReport.truncated`). */
@@ -518,11 +519,11 @@ function gitFiles(root: string, ignore: Set<string>): WalkResult | undefined {
   if (rels.length === 0) return undefined;
   const files: string[] = [];
   for (const rel of rels) {
-    // git prints `/` even on Windows. A backslash is still a separator.
+    // git prints `/` even on Windows. joinGitPath uses path.win32 there.
     const parts = rel.split(/[/\\]/).filter((part) => part !== '');
     if (parts.slice(0, -1).some((dir) => ignore.has(dir))) continue;
     if (!READ_EXTENSIONS.has(path.extname(rel).toLowerCase())) continue;
-    const full = path.join(root, ...parts);
+    const full = joinGitPath(root, rel);
     // As the walk: regular files only, never a symlink out of the repo.
     let st: fs.Stats;
     try {

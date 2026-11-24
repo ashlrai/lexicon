@@ -39,8 +39,12 @@ function run(command, args) {
   if (result.status !== 0) process.exit(result.status ?? 1);
 }
 
-console.log('npm ci');
-run('npm', ['ci', '--no-fund', '--no-audit']);
+console.log('npm ci --ignore-scripts');
+run('npm', ['ci', '--ignore-scripts', '--no-fund', '--no-audit']);
+console.log('npm run build');
+run('npm', ['run', 'build']);
+console.log('npm run build:bundle');
+run('npm', ['run', 'build:bundle']);
 console.log('npm run smoke');
 run('npm', ['run', 'smoke']);
 console.log('setup complete');

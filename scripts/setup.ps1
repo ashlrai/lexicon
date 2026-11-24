@@ -23,9 +23,19 @@ function Current-Node {
   return $null
 }
 
-$Prefix = if ($env:XDG_DATA_HOME) { $env:XDG_DATA_HOME } else { Join-Path $env:USERPROFILE '.local\share' }
-$Prefix = Join-Path $Prefix 'lexicon-dev\node'
-$PrefixNode = Join-Path $Prefix 'node.exe'
+$HomeDir = if ($env:USERPROFILE) { $env:USERPROFILE } elseif ($env:HOME) { $env:HOME } else { throw 'setup: no home directory (USERPROFILE or HOME)' }
+$PrefixRoot = if ($env:XDG_DATA_HOME) { $env:XDG_DATA_HOME } else { Join-Path $HomeDir '.local/share' }
+$Prefix = Join-Path $PrefixRoot 'lexicon-dev/node'
+$NodeFileName = if ($env:OS -eq 'Windows_NT') { 'node.exe' } else { 'node' }
+$PrefixNode = Join-Path $Prefix $NodeFileName
+
+function Save-Https([string]$Url, [string]$OutFile) {
+  if ($Url -notmatch '^https://') { throw "setup: refusing non-HTTPS URL $Url" }
+  $curl = Get-Command curl.exe -ErrorAction SilentlyContinue
+  if (-not $curl) { throw 'setup: curl.exe is required so Node is downloaded over HTTPS only' }
+  & curl.exe --proto '=https' --proto-redir '=https' --fail --silent --show-error --location --retry 3 --output $OutFile $Url
+  if ($LASTEXITCODE -ne 0) { throw "setup: download failed ($LASTEXITCODE) $Url" }
+}
 
 function Use-PrefixNode {
   if (Test-Path $PrefixNode) {
@@ -51,13 +61,13 @@ if (-not (Current-Node)) {
     New-Item -ItemType Directory -Path $tmp | Out-Null
     try {
       $sumsPath = Join-Path $tmp 'SHASUMS256.txt'
-      Invoke-WebRequest -Uri 'https://nodejs.org/dist/latest-v20.x/SHASUMS256.txt' -OutFile $sumsPath -UseBasicParsing
+      Save-Https 'https://nodejs.org/dist/latest-v20.x/SHASUMS256.txt' $sumsPath
       $name = Select-String -Path $sumsPath -Pattern "node-v[0-9.]+-win-$arch\.zip$" | Select-Object -First 1
       if (-not $name) { throw "setup: no Node zip for win-$arch" }
       $file = ($name.Line -split '\s+')[-1]
       $hash = ($name.Line -split '\s+')[0].ToLower()
       $zip = Join-Path $tmp $file
-      Invoke-WebRequest -Uri "https://nodejs.org/dist/latest-v20.x/$file" -OutFile $zip -UseBasicParsing
+      Save-Https "https://nodejs.org/dist/latest-v20.x/$file" $zip
       $actual = (Get-FileHash -Algorithm SHA256 -Path $zip).Hash.ToLower()
       if ($actual -ne $hash) { throw "setup: Node download checksum did not match" }
       if (Test-Path $Prefix) { Remove-Item -Recurse -Force $Prefix }
