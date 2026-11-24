@@ -36,24 +36,26 @@ export function verifyIntegrity(bytes, integrity) {
   verifyDigest(bytes, integrity.slice(0, dash), integrity.slice(dash + 1), 'base64');
 }
 
-export function npmPath() {
+export function npmCli() {
   const dir = dirname(process.execPath);
-  const names = process.platform === 'win32' ? ['npm.cmd', 'npm'] : ['npm'];
-  for (const name of names) {
-    const candidate = join(dir, name);
-    if (existsSync(candidate)) return candidate;
-  }
-  throw new Error('npm was not found next to node');
+  const candidates = [
+    join(dir, 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+    join(dir, '..', 'lib', 'node_modules', 'npm', 'bin', 'npm-cli.js'),
+  ];
+  const found = candidates.find((candidate) => existsSync(candidate));
+  if (!found) throw new Error('npm-cli.js was not found next to node');
+  return found;
 }
 
 function npm(args, options = {}) {
-  const run = spawnSync(npmPath(), args, {
+  const run = spawnSync(process.execPath, [npmCli(), ...args], {
     cwd: root,
     encoding: 'utf8',
     ...options,
   });
+  if (run.error) throw new Error(run.error.message);
   if (run.status !== 0) {
-    const detail = (run.stderr || run.stdout || 'npm failed').split('\n').map((line) => line.trim()).find(Boolean);
+    const detail = `${run.stderr || ''}\n${run.stdout || ''}`.split('\n').map((line) => line.trim()).filter(Boolean).slice(-3).join(' ');
     throw new Error(detail || 'npm failed');
   }
   return run.stdout || '';
@@ -81,8 +83,12 @@ function installAndRun(bytes, filename, expectedVersion) {
   const prefix = join(dir, 'prefix');
   writeFileSync(tarball, bytes);
   npm(['install', '--global', '--prefix', prefix, tarball], { cwd: dir });
-  const entry = join(prefix, 'node_modules', '@ashlr', 'lexicon', 'dist', 'cli', 'index.js');
-  if (!existsSync(entry)) throw new Error('installed CLI entry was not found');
+  const candidates = [
+    join(prefix, 'lib', 'node_modules', '@ashlr', 'lexicon', 'dist', 'cli', 'index.js'),
+    join(prefix, 'node_modules', '@ashlr', 'lexicon', 'dist', 'cli', 'index.js'),
+  ];
+  const entry = candidates.find((candidate) => existsSync(candidate));
+  if (!entry) throw new Error('installed CLI entry was not found');
   const run = spawnSync(process.execPath, [entry, '--version'], { encoding: 'utf8' });
   if (run.status !== 0) throw new Error((run.stderr || 'lexicon --version failed').trim() || 'lexicon --version failed');
   const version = (run.stdout || '').trim();
