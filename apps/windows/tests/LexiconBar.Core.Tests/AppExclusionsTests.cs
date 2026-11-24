@@ -108,6 +108,15 @@ public class AppExclusionsTests
         Assert.Null(exclusions.MatchingEntry(null));
     }
 
+    [Fact]
+    public void UnrelatedApplicationDoesNotMatchCustomExclusions()
+    {
+        AppExclusions exclusions = new(new[] { "keepass*", "myvault" });
+
+        Assert.False(exclusions.IsExcluded("calculator.exe"));
+        Assert.Null(exclusions.MatchingEntry("calculator.exe"));
+    }
+
     // --------------------------------------------------------- an empty list
 
     /// <summary>
