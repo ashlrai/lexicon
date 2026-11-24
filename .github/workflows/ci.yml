@@ -34,6 +34,9 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+          # Full history so vitest --changed can diff the pull request base.
+          # Same depth the secret scan already uses.
+          fetch-depth: 0
       # Pinned on purpose. setup-node v7.1.0 treats a read-only Actions cache
       # (a fork pull_request) as a skipped save. A later tag that failed the
       # job on that denial would turn a good fork PR red.

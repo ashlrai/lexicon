@@ -88,6 +88,17 @@ function fetchCommit(sha) {
   }).status === 0 && haveCommit(sha);
 }
 
+function diagnosticText(stderr, stdout) {
+  const text = `${stderr || ''}\n${stdout || ''}`.replace(/\u001b\[[0-9;]*m/g, '');
+  const lines = text.split('\n').map((line) => line.trim()).filter((line) => {
+    if (!line) return false;
+    if (/^[⎯─-]{3,}/.test(line)) return false;
+    if (line === 'Collect Error') return false;
+    return true;
+  });
+  return lines.slice(0, 8).join('\n') || 'vitest failed';
+}
+
 function finishFailure(failure) {
   writeSummary(summaryForFailure(failure));
   const loc = failure.line ? ` file=${failure.file},line=${failure.line}` : (failure.file ? ` file=${failure.file}` : '');
@@ -111,7 +122,7 @@ function main() {
 
   const listed = runVitest(['list', '--changed', base, '--filesOnly']);
   if (listed.status !== 0) {
-    const detail = (listed.stderr || listed.stdout || 'vitest list failed').split('\n').map((line) => line.trim()).find(Boolean) || 'vitest list failed';
+    const detail = diagnosticText(listed.stderr, listed.stdout);
     writeSummary(`Could not list affected tests.\n\n${detail}\n`);
     console.log(`::error::${commandFor(detail)}`);
     process.exit(1);
@@ -139,7 +150,7 @@ function main() {
   }
   const failure = report ? firstFailure(report) : null;
   if (failure) finishFailure(failure);
-  const detail = (run.stderr || run.stdout || 'vitest failed without a JSON report').split('\n').map((line) => line.trim()).find(Boolean) || 'vitest failed';
+  const detail = diagnosticText(run.stderr, run.stdout);
   finishFailure({ file: '', line: null, title: 'vitest failed', message: detail });
 }
 
