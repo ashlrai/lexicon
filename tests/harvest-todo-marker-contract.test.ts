@@ -100,6 +100,62 @@ describe('TODO marker contract', () => {
     });
   });
 
+  it.each([
+    { token: 'QuasarTODO2', accepted: true },
+    { token: 'QuasarTODOBeacon2', accepted: true },
+    { token: 'Q2TODOBeacon', accepted: true },
+    { token: 'TODOQuasar', accepted: false },
+    { token: 'QuasarTODO_Beacon', accepted: false },
+    { token: 'QuasarTODOBeacon_', accepted: false },
+    { token: '_QuasarTODOBeacon', accepted: false },
+  ])('applies source identifier boundaries to $token', async ({ token, accepted }) => {
+    await withRepo(async (repo) => {
+      // Digits stay inside a PascalCase candidate; underscores are word
+      // characters, so they prevent extracting a partial candidate. An
+      // uppercase TODO prefix does not satisfy the PascalCase opening.
+      await fs.writeFile(path.join(repo, 'markers.ts'),
+        `// TODO: ${token}; NebulaWidget\n`);
+
+      const candidates = await harvestRepo(repo, { git: false, symbols: true, minCount: 1 });
+      const expectedNames = accepted ? ['NebulaWidget', token].sort() : ['NebulaWidget'];
+      expect(candidates.map(({ canonical }) => canonical).sort()).toEqual(expectedNames);
+      for (const candidate of candidates) {
+        expect(candidate).toMatchObject({
+          category: 'identifier', source: 'harvest:repo', count: 1,
+          evidence: ['markers.ts'], suggestedAliases: [],
+        });
+      }
+    });
+  });
+
+  it('requires external evidence for an embedded TODO name and merges only whole matches', async () => {
+    await withRepo(async (repo) => {
+      await fs.writeFile(path.join(repo, 'markers.ts'), [
+        '// TODO: QuasarTODOBeacon',
+        'class QuasarTODOBeacon {}',
+        '// xQuasarTODOBeacon QuasarTODOBeacon_ TODOQuasarTODOBeacon TODO',
+      ].join('\n'));
+
+      const options = { git: false, minCount: 2 };
+      const heldBack = await harvestReport(repo, options);
+      expect(heldBack.candidates).toEqual([]);
+      expect(heldBack.symbolsOnly).toBe(1);
+      expect(heldBack.belowMinCount).toBe(0);
+
+      await fs.writeFile(path.join(repo, 'README.md'), 'We use QuasarTODOBeacon today. TODO\n');
+      const corroborated = await harvestRepo(repo, options);
+      expect(corroborated).toEqual([
+        expect.objectContaining({
+          canonical: 'QuasarTODOBeacon', category: 'brand', source: 'harvest:repo',
+          count: 3, evidence: expect.arrayContaining(['markers.ts', 'README.md']),
+        }),
+      ]);
+      // With the source scan disabled, the lone README occurrence falls
+      // below the same threshold. Standalone TODO never adds to the count.
+      expect(await harvestRepo(repo, { ...options, identifiers: false })).toEqual([]);
+    });
+  });
+
   it('proposes the mixed-case ToDo in prose but not in source', async () => {
     await withRepo(async (repo) => {
       // `ToDo` is a different string from `TODO`: at four characters it is
