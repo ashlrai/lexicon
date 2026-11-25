@@ -24,6 +24,24 @@ afterEach(async () => {
   for (const dir of dirs.splice(0)) await fs.rm(dir, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
 });
 
+describe('transcribeFile bracketed tags at both transcript boundaries', () => {
+  it.each([
+    ['spaced JSON tags', { segments: ['[MUSIC] ashler asked Zoë to send the café menu. [inaudible]'] }],
+    ['JSON tags touching speech', { segments: ['[MUSIC]ashler asked Zoë to send the café menu.[inaudible]'] }],
+    ['tags in separate JSON segments', { segments: ['[MUSIC]', 'ashler asked Zoë', 'to send the café menu.', '[inaudible]'] }],
+    ['JSON tags on separate lines', { segments: [' \t[MUSIC]\nashler asked Zoë to send the café menu.\r\n[inaudible]\t '] }],
+    ['spaced stdout tags', { stdout: '[MUSIC] ashler asked Zoë to send the café menu. [inaudible]' }],
+    ['stdout tags touching speech', { stdout: '[MUSIC]ashler asked Zoë to send the café menu.[inaudible]' }],
+    ['stdout tags on separate lines', { stdout: ' \t[MUSIC]\nashler asked Zoë to send the café menu.\r\n[inaudible]\t ' }],
+  ])('removes both tags and preserves all speech from %s', async (_label, whisper) => {
+    const result = await transcribe(whisper);
+    expect(result.raw).toBe('ashler asked Zoë to send the café menu.');
+    expect(result.normalized.input).toBe('ashler asked Zoë to send the café menu.');
+    expect(result.output).toBe('Ashlr.AI asked Zoë to send the café menu.');
+    expect(result.normalized.changed).toBe(true);
+  });
+});
+
 async function transcribe(whisper: { segments?: string[]; stdout?: string }) {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-transcribe-tag-start-'));
   dirs.push(dir);
