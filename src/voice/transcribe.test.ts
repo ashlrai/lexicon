@@ -240,6 +240,30 @@ describe('cleanTranscript', () => {
 });
 
 describe('transcribeFile', () => {
+  it.each(['json', 'stdout'] as const)('removes a tag between spoken words from %s before normalization', async (source) => {
+    const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-transcribe-test-'));
+    try {
+      const transcript = 'Please ask Ashler [background noise] to send the report.';
+      const result = await transcribeFile(path.join(dir, 'capture.wav'), {
+        lexicon: { version: 1, terms: [{ canonical: 'Ashlr.AI', aliases: ['Ashler'] }] },
+        whisperCli: 'whisper-cli',
+        modelOptions: { globalPath: path.join(dir, 'lexicon.yaml'), env: {}, fallbackDirs: [], exists: () => true },
+        tmpDir: dir,
+        exec: async (_cmd, args) => {
+          if (source === 'json') {
+            const outBase = args[args.indexOf('-of') + 1];
+            await fs.writeFile(`${outBase}.json`, JSON.stringify({ transcription: [{ text: transcript }] }));
+          }
+          return { code: 0, stdout: source === 'stdout' ? transcript : 'ignored speech', stderr: '' };
+        },
+      });
+      expect(result.raw).toBe('Please ask Ashler to send the report.');
+      expect(result.output).toBe('Please ask Ashlr.AI to send the report.');
+    } finally {
+      await fs.rm(dir, { recursive: true, force: true });
+    }
+  });
+
   it.each(['json', 'stdout'] as const)('returns no text for a tag-only transcript from %s', async (source) => {
     const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-transcribe-test-'));
     try {
