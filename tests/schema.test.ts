@@ -24,6 +24,13 @@ describe('parseLexicon', () => {
     expect(lex.terms[0].aliases).toEqual(['Ashler']);
   });
 
+  it('validates an empty term collection with the default version', () => {
+    const input = { terms: [] };
+    const expected = { version: 1, terms: [] };
+    expect(LexiconSchema.safeParse(input)).toStrictEqual({ success: true, data: expected });
+    expect(parseLexicon(input)).toStrictEqual(expected);
+  });
+
   it('fills defaults: version, terms, aliases', () => {
     const lex = parseLexicon({ terms: [{ canonical: 'Kubernetes' }] });
     expect(lex.version).toBe(1);
