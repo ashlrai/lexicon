@@ -2,7 +2,7 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { harvestRepo } from '../src/core/harvest.js';
+import { harvestReport, harvestRepo } from '../src/core/harvest.js';
 
 const dirs: string[] = [];
 async function repoWith(source: string): Promise<string> {
@@ -64,8 +64,14 @@ describe('harvest HACK marker', () => {
 
   it('does not propose HACK even when it is the only comment word', async () => {
     const dir = await repoWith('// HACK\nexport const x = 1;\n');
-    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
-    expect(candidates.map((c) => c.canonical)).not.toContain('HACK');
+    // docs/harvest-markers.md: uppercase standalone markers do not match
+    // the source scanner, even when source-only symbols are requested.
+    for (const symbols of [false, true]) {
+      expect(await harvestReport(dir, { git: false, minCount: 1, symbols })).toEqual({
+        candidates: [], filesScanned: 1, truncated: false,
+        symbolsOnly: 0, belowMinCount: 0,
+      });
+    }
   });
 
   it('ignores HACK in block comments and the doc prose scan', async () => {
