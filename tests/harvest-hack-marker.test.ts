@@ -22,6 +22,27 @@ afterEach(async () => {
 // HACK is a recognized comment marker: harvest reads the comment for the
 // names around it but never proposes the marker word itself.
 describe('harvest HACK marker', () => {
+  it('keeps the relative source location of a name in a standalone HACK comment', async () => {
+    const dir = await repoWith('// ordinary comment\n');
+    await fs.mkdir(path.join(dir, 'src', 'nested'), { recursive: true });
+    await fs.writeFile(
+      path.join(dir, 'src', 'nested', 'marker.ts'),
+      '// HACK retry NebulaRelay after disconnect\n',
+    );
+
+    const report = await harvestReport(dir, { git: false, minCount: 1, symbols: true });
+    // HACK is a standalone marker, not a candidate. Evidence must point to
+    // the nested source file, not the unrelated file with the same basename.
+    expect(report.candidates).toEqual([
+      expect.objectContaining({
+        canonical: 'NebulaRelay', category: 'identifier', source: 'harvest:repo',
+        count: 1, evidence: [path.join('src', 'nested', 'marker.ts')],
+      }),
+    ]);
+    expect(report.filesScanned).toBe(2);
+    expect(report.truncated).toBe(false);
+  });
+
   it('counts a name found only in HACK comment text as source evidence', async () => {
     const dir = await repoWith('// HACK: retry NebulaRelay after disconnect\n');
     const options = { git: false, minCount: 1 };
