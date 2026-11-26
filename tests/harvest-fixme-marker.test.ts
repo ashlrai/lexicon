@@ -2,12 +2,15 @@ import fs from 'node:fs/promises';
 import os from 'node:os';
 import path from 'node:path';
 import { afterEach, describe, expect, it } from 'vitest';
-import { harvestRepo } from '../src/core/harvest.js';
+import { harvestReport, harvestRepo } from '../src/core/harvest.js';
 
 const dirs: string[] = [];
 async function repoWith(source: string): Promise<string> {
-  const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-fixme-'));
-  dirs.push(dir);
+  const base = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-fixme-'));
+  dirs.push(base);
+  // Keep the directory name from contributing an unrelated candidate.
+  const dir = path.join(base, 'repo');
+  await fs.mkdir(dir);
   await fs.writeFile(path.join(dir, 'marker.ts'), source);
   return dir;
 }
@@ -42,8 +45,14 @@ describe('harvest FIXME marker', () => {
 
   it('does not propose FIXME even when it is the only comment word', async () => {
     const dir = await repoWith('// FIXME\nexport const x = 1;\n');
-    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
-    expect(candidates.map((c) => c.canonical)).not.toContain('FIXME');
+    // docs/harvest-markers.md: uppercase standalone markers do not match
+    // the source scanner, even when source-only symbols are requested.
+    for (const symbols of [false, true]) {
+      expect(await harvestReport(dir, { git: false, minCount: 1, symbols })).toEqual({
+        candidates: [], filesScanned: 1, truncated: false,
+        symbolsOnly: 0, belowMinCount: 0,
+      });
+    }
   });
 
   it('ignores FIXME in block comments and the doc prose scan', async () => {
