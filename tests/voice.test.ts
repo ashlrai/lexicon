@@ -1894,6 +1894,11 @@ describe('cleanTranscript', () => {
     expect(cleanTranscript('before *the door slams loudly* after')).toBe('before *the door slams loudly* after');
   });
 
+  it('preserves a five-word asterisk-delimited phrase', () => {
+    expect(cleanTranscript('before *the heavy door slams loudly* after'))
+      .toBe('before *the heavy door slams loudly* after');
+  });
+
   it('removes a one-word starred sound marker while preserving adjacent speech', () => {
     expect(cleanTranscript('Please *laughs* continue speaking.')).toBe('Please continue speaking.');
   });
