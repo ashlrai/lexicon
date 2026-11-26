@@ -11,6 +11,13 @@ const bullet = contract.split('\n').find((line) => line.includes('`cleanTranscri
 
 describe('transcribe asterisks: annotations', () => {
   it.each([
+    ['comma', 'Ready *cough*, then continue!', 'Ready , then continue!'],
+    ['period', 'Please continue *laughs*.', 'Please continue .'],
+  ])('removes a one-word sound before a %s while preserving prose and punctuation', (_punctuation, input, expected) => {
+    expect(cleanTranscript(input)).toBe(expected);
+  });
+
+  it.each([
     ['one word', 'Please *laughs* continue speaking.', 'Please continue speaking.'],
     ['two words', 'Please *door slams* continue speaking.', 'Please continue speaking.'],
     ['three words', 'Please *door slams loudly* continue speaking.', 'Please continue speaking.'],
