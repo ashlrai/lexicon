@@ -12,9 +12,20 @@ const bullet = contract.split('\n').find((line) => line.includes('`cleanTranscri
 describe('transcribe asterisks: annotations', () => {
   it.each([
     ['one word', 'Please *laughs* continue speaking.', 'Please continue speaking.'],
+    ['two words', 'Please *door slams* continue speaking.', 'Please continue speaking.'],
     ['three words', 'Please *door slams loudly* continue speaking.', 'Please continue speaking.'],
   ])('removes a %s annotation and retains surrounding speech', (_length, input, expected) => {
     expect(cleanTranscript(input)).toBe(expected);
+  });
+
+  describe.each(['laughs', 'door slams', 'door slams loudly'])('tag *%s* adjacent to speech', (tag) => {
+    it.each([
+      ['preceding word', `Please*${tag}* continue speaking.`],
+      ['following word', `Please *${tag}*continue speaking.`],
+      ['both words', `Please*${tag}*continue speaking.`],
+    ])('removes the tag touching the %s and keeps both sides of the speech', (_position, input) => {
+      expect(cleanTranscript(input)).toBe('Please continue speaking.');
+    });
   });
 });
 
