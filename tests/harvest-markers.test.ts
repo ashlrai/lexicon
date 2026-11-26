@@ -44,6 +44,29 @@ it('filters marker words from source while retaining adjacent identifiers', asyn
   }
 });
 
+it('counts names beside repeated standalone markers without inventing terms', async () => {
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-repeated-markers-'));
+  const dir = path.join(temp, 'app');
+  try {
+    await fs.mkdir(dir);
+    await fs.writeFile(path.join(dir, 'markers.ts'), [
+      '// TODO TODO FIXME FIXME NOTE NOTE HACK HACK XXX XXX',
+      '// TODO: QuasarWidget TODO: QuasarWidget',
+      '// FIXME: NebulaQueue FIXME: NebulaQueue',
+    ].join('\n'));
+
+    const candidates = await harvestRepo(dir, { git: false, symbols: true, minCount: 1 });
+    expect(candidates.map(({ canonical, category, count, evidence }) => ({ canonical, category, count, evidence })))
+      .toEqual(expect.arrayContaining([
+        { canonical: 'QuasarWidget', category: 'identifier', count: 2, evidence: ['markers.ts'] },
+        { canonical: 'NebulaQueue', category: 'identifier', count: 2, evidence: ['markers.ts'] },
+      ]));
+    expect(candidates).toHaveLength(2);
+  } finally {
+    await fs.rm(temp, { recursive: true, force: true });
+  }
+});
+
 it('keeps the case-sensitive marker contract: lowercase marker text is never a candidate', async () => {
   const dir = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-markers-lower-'));
   try {
