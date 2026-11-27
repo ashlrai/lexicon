@@ -45,6 +45,25 @@ describe('harvest XXX marker', () => {
     expect(candidates).toEqual([]);
   });
 
+  it('preserves nested source evidence around a standalone XXX comment', async () => {
+    const dir = await repoWith('');
+    await fs.mkdir(path.join(dir, 'src'));
+    await fs.writeFile(path.join(dir, 'src', 'worker.ts'), [
+      '// QuasarWidget',
+      '// XXX',
+      '// QuasarWidget',
+      '',
+    ].join('\n'));
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+    // Evidence is a repository-relative file path; harvest does not return line numbers.
+    expect(candidates).toEqual([{
+      canonical: 'QuasarWidget', category: 'identifier', source: 'harvest:repo',
+      count: 2, evidence: ['src/worker.ts'], suggestedAliases: [],
+    }]);
+    expect(candidates.map(({ canonical }) => canonical)).not.toContain('XXX');
+  });
+
   it('ignores XXX in block comments and the doc prose scan', async () => {
     const dir = await repoWith('/* XXX: drain NebulaQueue */\nclass NebulaQueue {}\n');
     await fs.writeFile(path.join(dir, 'README.md'), 'XXX: tune NebulaQueue.\n');
