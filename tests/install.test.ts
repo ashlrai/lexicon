@@ -446,16 +446,16 @@ describe('lexicon install codex --apply (TOML)', () => {
 describe('platform-specific paths', () => {
   it('uses %APPDATA% on Windows for Claude Desktop and VS Code', () => {
     const ctx = { home: 'C:\\Users\\me', cwd: 'C:\\repo', platform: 'win32' as const, env: { APPDATA: 'C:\\AppData' }, project: false };
-    expect(configPathFor('claude-desktop', ctx)).toBe(path.join('C:\\AppData', 'Claude', 'claude_desktop_config.json'));
-    expect(configPathFor('vscode', ctx)).toBe(path.join('C:\\AppData', 'Code', 'User', 'mcp.json'));
+    expect(configPathFor('claude-desktop', ctx)).toBe(path.win32.join('C:\\AppData', 'Claude', 'claude_desktop_config.json'));
+    expect(configPathFor('vscode', ctx)).toBe(path.win32.join('C:\\AppData', 'Code', 'User', 'mcp.json'));
   });
 
   // Catches: a blank APPDATA passed `??`, so the path came out relative and
   // the config was written under the current directory.
   it('falls back to <home>/AppData/Roaming when APPDATA is blank', () => {
     const ctx = { home: 'C:\\Users\\me', cwd: 'C:\\repo', platform: 'win32' as const, env: { APPDATA: ' ' }, project: false };
-    expect(configPathFor('claude-desktop', ctx)).toBe(path.join('C:\\Users\\me', 'AppData', 'Roaming', 'Claude', 'claude_desktop_config.json'));
-    expect(configPathFor('vscode', { ...ctx, env: { APPDATA: '' } })).toBe(path.join('C:\\Users\\me', 'AppData', 'Roaming', 'Code', 'User', 'mcp.json'));
+    expect(configPathFor('claude-desktop', ctx)).toBe(path.win32.join('C:\\Users\\me', 'AppData', 'Roaming', 'Claude', 'claude_desktop_config.json'));
+    expect(configPathFor('vscode', { ...ctx, env: { APPDATA: '' } })).toBe(path.win32.join('C:\\Users\\me', 'AppData', 'Roaming', 'Code', 'User', 'mcp.json'));
   });
 
   it('uses ~/.config on Linux for VS Code and Claude Desktop', () => {

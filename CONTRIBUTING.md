@@ -2,6 +2,44 @@
 
 Small, well-scoped pull requests are the easiest kind to merge here. A new starter pack, one exporter, one importer, one harvester source, one matcher guard.
 
+## New contributors
+
+Questions and work in progress go in [The Dev Shack](https://discord.gg/jBQrSU6XeD) on Discord.
+
+**Dev setup.** From a clone, one command. It is safe to run again and it asks nothing. It installs Node 20 or newer when the copy on PATH is missing or older, installs dependencies from the lockfile, and runs the smoke test.
+
+### macOS and Linux
+
+```bash
+bash scripts/setup.sh
+```
+
+### Windows
+
+```powershell
+powershell -File scripts/setup.ps1
+```
+
+Both run `node scripts/setup.mjs` after Node is available. A [dev container](.devcontainer/devcontainer.json) runs that Node script when the container is created.
+
+**Install the CLI** (not the dev setup) is listed by operating system in the [README](README.md#install).
+
+`scripts/fast-check.sh` is a macOS and Linux shortcut. On Windows run `npm run typecheck`, then `npm test`.
+
+**Tests.** `npm test` runs the suite. While you are changing one module, `npx vitest run tests/<file>.test.ts` is enough. The commands a pull request must pass are listed in [Contribute with an agent](#contribute-with-an-agent).
+
+**Pick a task.** Open the [`good first issue`](https://github.com/ashlrai/lexicon/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) list and take one issue. It names the files to touch and how to check the result. Say so on the issue before you start. When that list is empty, use a shape from [Good first issues](#good-first-issues).
+
+**Pull request.**
+
+1. Fork `ashlrai/lexicon` and clone your fork.
+2. Make a branch from `main`.
+3. Open a pull request against `main`.
+4. Wait until `CI Gate` is green.
+5. Maintainers merge it through the merge queue.
+
+The same path, with the exact gate commands, is [Contribute with an agent](#contribute-with-an-agent).
+
 ## Good first issues
 
 If you want a concrete place to start, look at the [`good first issue`](https://github.com/ashlrai/lexicon/labels/good%20first%20issue) label. It marks self-contained work: the issue names the files to touch and how to check the result. The label often has no open issues; when it is empty, pick a shape from the table below instead. The open [`help wanted`](https://github.com/ashlrai/lexicon/labels/help%20wanted) issues are platform work (a tray app, a Firefox listing), larger than a first pull request. The recipes below cover the four most common shapes.
@@ -61,7 +99,7 @@ What happens next:
 
 ## Setup
 
-Node 20 or newer. Clone and install as in step 1 of [Contribute with an agent](#contribute-with-an-agent); to only read or try the code, clone `ashlrai/lexicon` itself instead of a fork (opening a pull request needs the fork). `npm ci` installs the exact versions in `package-lock.json` and runs the `prepare` script, which is `npm run build` (tsc into `dist/`) followed by `npm run build:bundle` (the committed `plugin/` bundles, see below). The explicit `npm run build` after it is what you rerun after editing `src/`; `npm ci --ignore-scripts && npm run build` installs without rebuilding the bundles.
+The one-command path is in [New contributors](#new-contributors) (`bash scripts/setup.sh`, or `powershell -File scripts/setup.ps1` on Windows). Node 20 or newer. To do the same steps by hand, clone and install as in step 1 of [Contribute with an agent](#contribute-with-an-agent); to only read or try the code, clone `ashlrai/lexicon` itself instead of a fork (opening a pull request needs the fork). `npm ci` installs the exact versions in `package-lock.json` and runs the `prepare` script, which is `npm run build` (tsc into `dist/`) followed by `npm run build:bundle` (the committed `plugin/` bundles, see below). The explicit `npm run build` after it is what you rerun after editing `src/`; `npm ci --ignore-scripts && npm run build` installs without rebuilding the bundles.
 
 `npm run dev` rebuilds on change. `npm run typecheck` runs `tsc --noEmit` on the package, extension and demo site sources.
 

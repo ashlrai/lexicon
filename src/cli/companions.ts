@@ -70,23 +70,42 @@ export const doctorFixStep = (command: string): string =>
 export const LOCUS_DOCTOR_FIX_STEP = doctorFixStep("locus");
 export const MDOPENER_DOCTOR_FIX_STEP = doctorFixStep("mdopener-mcp");
 
-/** PATH, HOME, USER, locale and TMPDIR only. */
+/**
+ * Names copied into a companion process. Windows stores PATH as `Path` and
+ * the home directory as USERPROFILE, not HOME. APPDATA is where Claude
+ * Desktop and VS Code keep their configs. Secrets are not in this list.
+ */
+const COMPANION_ENV_NAMES = [
+	"PATH",
+	"HOME",
+	"USER",
+	"LANG",
+	"LC_ALL",
+	"TMPDIR",
+	"SYSTEMROOT",
+	"PATHEXT",
+	"COMSPEC",
+	"USERPROFILE",
+	"APPDATA",
+	"LOCALAPPDATA",
+	"HOMEDRIVE",
+	"HOMEPATH",
+] as const;
+
+function envByName(env: NodeJS.ProcessEnv, name: string): string | undefined {
+	if (env[name] !== undefined) return env[name];
+	const key = Object.keys(env).find((k) => k.toUpperCase() === name);
+	return key === undefined ? undefined : env[key];
+}
+
+/** PATH, home, user, locale and the Windows path variables. No secrets. */
 export function companionEnv(
 	env: NodeJS.ProcessEnv = process.env,
 ): NodeJS.ProcessEnv {
 	const out: NodeJS.ProcessEnv = {};
-	for (const k of [
-		"PATH",
-		"HOME",
-		"USER",
-		"LANG",
-		"LC_ALL",
-		"TMPDIR",
-		"SYSTEMROOT",
-		"PATHEXT",
-	]) {
-		const v = env[k];
-		if (v !== undefined) out[k] = v;
+	for (const name of COMPANION_ENV_NAMES) {
+		const value = envByName(env, name);
+		if (value !== undefined) out[name] = value;
 	}
 	out["NO_COLOR"] = "1";
 	return out;

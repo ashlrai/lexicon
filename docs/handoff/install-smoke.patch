@@ -1,0 +1,72 @@
+diff --git a/.github/workflows/install-smoke.yml b/.github/workflows/install-smoke.yml
+new file mode 100644
+--- /dev/null
++++ b/.github/workflows/install-smoke.yml
+@@ -0,0 +1,67 @@
++name: Install smoke
++
++# Hosted install check for the npm package on macOS and Windows.
++# Pull requests run it only when packaging, bin, or OS-specific paths change.
++# A published GitHub release runs it with no path filter.
++on:
++  pull_request:
++    paths:
++      - 'package.json'
++      - 'package-lock.json'
++      - 'packaging/**'
++      - 'scripts/install.sh'
++      - 'scripts/install.ps1'
++      - 'scripts/setup.sh'
++      - 'scripts/setup.ps1'
++      - 'scripts/setup.mjs'
++      - 'src/cli/**'
++      - 'src/util/which.ts'
++      - 'src/util/xdg.ts'
++      - 'src/util/repo-path.ts'
++      - 'src/daemon/**'
++      - 'apps/windows/**'
++      - 'apps/macos/**'
++      - '.github/workflows/release.yml'
++      - '.github/workflows/install-smoke.yml'
++  release:
++    types: [published]
++
++jobs:
++  install:
++    name: npm install on ${{ matrix.os }}
++    runs-on: ${{ matrix.os }}
++    strategy:
++      fail-fast: false
++      matrix:
++        os: [macos-latest, windows-latest]
++    steps:
++      - uses: actions/checkout@v4
++      - uses: actions/setup-node@v4
++        with:
++          node-version: 22
++      - name: Pack the npm tarball
++        shell: bash
++        run: |
++          set -euo pipefail
++          npm ci --ignore-scripts
++          npm run build
++          npm run build:bundle
++          npm pack --ignore-scripts
++      - name: Install the tarball and run one command
++        shell: bash
++        run: |
++          set -euo pipefail
++          prefix="${RUNNER_TEMP}/npm-prefix"
++          mkdir -p "$prefix"
++          export NPM_CONFIG_PREFIX="$prefix"
++          npm install -g --ignore-scripts ./ashlr-lexicon-*.tgz
++          if [ "$RUNNER_OS" = "Windows" ]; then
++            export PATH="$prefix:$PATH"
++          else
++            export PATH="$prefix/bin:$PATH"
++          fi
++          lexicon --version
++          lexicon add Ashlr.AI Ashler
++          got="$(lexicon normalize "ask Ashler to ship it")"
++          printf '%s\n' "$got"
++          test "$got" = "ask Ashler to ship it"

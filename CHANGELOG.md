@@ -29,6 +29,19 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Added
+
+- `bash scripts/setup.sh` (macOS and Linux) and `powershell -File scripts/setup.ps1` (Windows) are the one-command dev setup: Node 20 when PATH has none, then `node scripts/setup.mjs` for the lockfile install and the smoke test. `.devcontainer/devcontainer.json` runs the Node script when a dev container is created.
+- Windows install: `irm https://raw.githubusercontent.com/ashlrai/lexicon/main/scripts/install.ps1 | iex`, plus the existing `npm i -g @ashlr/lexicon` and `brew install ashlrai/tap/lexicon`.
+
+### Changed
+
+- The README and CONTRIBUTING.md link to The Dev Shack on Discord (`https://discord.gg/jBQrSU6XeD`).
+- The README and CONTRIBUTING.md list install and dev setup under macOS, Windows and Linux headings.
+- Harvest runs `git.exe` when a Windows PATH would otherwise select `git.cmd`, and joins git's `/` paths with `path.win32` on Windows. Companion probes copy `USERPROFILE` and `APPDATA`, and they read `Path` as well as `PATH`.
+- Dev setup installs with `npm ci --ignore-scripts` and then builds explicitly. Node downloads stay on HTTPS if a redirect is offered.
+- Windows client configs for Claude Desktop and VS Code are joined with `path.win32`. The recommended install on macOS and Windows is `npm install -g @ashlr/lexicon`. Homebrew remains documented for macOS. Release 0.5.12 does not ship a Windows app exe or zip.
+
 ### Internal
 
 - Pull requests and the merge queue run vitest's affected tests on the hosted Linux job, stop at the first failure, and write that test's file and line into the step summary. A full local `npm test` is no longer required before every push. The daily Linux, Windows and macOS matrix is unchanged.

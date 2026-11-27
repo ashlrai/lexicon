@@ -29,6 +29,8 @@ import { STOPLIST } from './stoplist.js';
 import { suggestAliases } from './suggest.js';
 import type { HarvestCandidate, HarvestOptions, TermCategory, TermSource } from './types.js';
 import { isRecord } from '../util/json.js';
+import { joinGitPath } from '../util/repo-path.js';
+import { findRunnableSync } from '../util/which.js';
 
 /** Most files one harvest reads; the rest of a larger tree is not scanned (`HarvestReport.truncated`). */
 export const HARVEST_MAX_FILES = 5000;
@@ -494,10 +496,15 @@ function walk(root: string, ignore: Set<string>): WalkResult {
  * is missing or slow, or git lists nothing (a directory the enclosing repo
  * ignores, which the user still asked to scan).
  */
+/** `git.exe` when PATHEXT would otherwise hand us `git.cmd`, else the name `git`. */
+function gitCommand(): string {
+  return findRunnableSync('git') ?? 'git';
+}
+
 function gitFiles(root: string, ignore: Set<string>): WalkResult | undefined {
   let out: string;
   try {
-    out = execFileSync('git', ['-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
+    out = execFileSync(gitCommand(), ['-C', root, 'ls-files', '-z', '--cached', '--others', '--exclude-standard'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 5000,
@@ -512,10 +519,11 @@ function gitFiles(root: string, ignore: Set<string>): WalkResult | undefined {
   if (rels.length === 0) return undefined;
   const files: string[] = [];
   for (const rel of rels) {
-    const parts = rel.split('/');
+    // git prints `/` even on Windows. joinGitPath uses path.win32 there.
+    const parts = rel.split(/[/\\]/).filter((part) => part !== '');
     if (parts.slice(0, -1).some((dir) => ignore.has(dir))) continue;
     if (!READ_EXTENSIONS.has(path.extname(rel).toLowerCase())) continue;
-    const full = path.join(root, ...parts);
+    const full = joinGitPath(root, rel);
     // As the walk: regular files only, never a symlink out of the repo.
     let st: fs.Stats;
     try {
@@ -854,13 +862,13 @@ function countDotTldBrands(text: string): Map<string, number> {
  */
 function gitAuthors(root: string): string[] {
   try {
-    const prefix = execFileSync('git', ['-C', root, 'rev-parse', '--show-prefix'], {
+    const prefix = execFileSync(gitCommand(), ['-C', root, 'rev-parse', '--show-prefix'], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 5000,
     }).trim();
     const scope = prefix === '' ? [] : ['--', '.'];
-    const out = execFileSync('git', ['-C', root, 'log', '--format=%an', '-n', '500', ...scope], {
+    const out = execFileSync(gitCommand(), ['-C', root, 'log', '--format=%an', '-n', '500', ...scope], {
       encoding: 'utf8',
       stdio: ['ignore', 'pipe', 'ignore'],
       timeout: 5000,

@@ -15,6 +15,7 @@ Lexicon is one YAML file of the words you actually say. It rewrites the transcri
 [![node >=20](https://img.shields.io/node/v/%40ashlr%2Flexicon)](package.json)
 [![GitHub stars](https://img.shields.io/github/stars/ashlrai/lexicon?logo=github)](https://github.com/ashlrai/lexicon/stargazers)
 [![npm downloads](https://img.shields.io/npm/dm/%40ashlr%2Flexicon?logo=npm&label=npm%20downloads)](https://www.npmjs.com/package/@ashlr/lexicon)
+[![Discord: The Dev Shack](https://img.shields.io/badge/Discord-The%20Dev%20Shack-5865F2?logo=discord&logoColor=white)](https://discord.gg/jBQrSU6XeD)
 
 [**Live demo**](https://ashlrai.github.io/lexicon/) · [**Docs**](docs/README.md) · [**llms.txt**](llms.txt) · [**llms-full.txt**](llms-full.txt) · [**lexicon.ashlr.ai**](https://lexicon.ashlr.ai)
 
@@ -231,14 +232,49 @@ More answers: [docs/FAQ.md](docs/FAQ.md).
 
 On 330 clips of synthesized speech through whisper.cpp `small.en` (three voices, the same 70-term lexicon in every row), Lexicon recovered **91.0%** of the proper nouns. Raw whisper.cpp recovered 45.9%. Clean prose wrongly changed: **0 of 72**. The audio is macOS text-to-speech read into whisper.cpp, cleaner than a phone microphone. Method, the other rows, and every failing case: [docs/BENCHMARK.md](docs/BENCHMARK.md). Reproduce with `npm run bench:audio` (see [audio benchmark setup](bench/README.md)).
 
-## Other installs
+## Install
+
+`npm i -g @ashlr/lexicon` works on macOS, Windows and Linux once Node.js 20 or newer is installed. Each system also has a one-command installer.
+
+### macOS
+
+Recommended, with Node.js 20 or newer:
+
+```bash
+npm install -g @ashlr/lexicon
+```
+
+Homebrew is also supported:
 
 ```bash
 brew install ashlrai/tap/lexicon
-npm i -g @ashlr/lexicon
 ```
 
 Plain `brew install lexicon` is [dns-lexicon](https://github.com/dns-lexicon/dns-lexicon), a different project. Use the full tap name.
+
+### Linux
+
+```bash
+curl -fsSL https://ashlrai.github.io/lexicon/install.sh | sh
+```
+
+Or, with Node.js 20 or newer: `npm i -g @ashlr/lexicon`
+
+### Windows
+
+Recommended, with Node.js 20 or newer. This is the same package as on macOS. npm writes `lexicon.cmd` next to its prefix. No bash script is required.
+
+```bash
+npm install -g @ashlr/lexicon
+```
+
+The published 0.5.12 release does not include a Windows app exe or zip. The CLI above is the Windows install. The tray app in `apps/windows/` is not part of that package.
+
+Optional PowerShell wrapper, which runs the same npm install:
+
+```powershell
+irm https://raw.githubusercontent.com/ashlrai/lexicon/main/scripts/install.ps1 | iex
+```
 
 <!-- fresh:begin pin:github -->`npm i -g github:ashlrai/lexicon#v0.5.13`<!-- fresh:end --> installs that tag from GitHub and builds on install.
 
@@ -296,7 +332,7 @@ AshlrAI is an engineering firm. We build tools like Lexicon to make our own work
 - **Start here:** read [CONTRIBUTING.md](CONTRIBUTING.md). Your coding agent can follow [AGENTS.md](AGENTS.md) and [llms.txt](llms.txt).
 - **Pick an issue:** [`good first issue`](https://github.com/ashlrai/lexicon/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) or [`help wanted`](https://github.com/ashlrai/lexicon/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22).
 - **See the whole lineup:** [ashlr.ai/open-source](https://ashlr.ai/open-source).
-<!-- TODO(discord): add the AshlrAI Discord invite here, and a Discord badge in the header, once the public invite link is confirmed. -->
+- **Talk with us:** [The Dev Shack](https://discord.gg/jBQrSU6XeD) on Discord.
 
 ### Star history
 

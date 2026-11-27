@@ -65,6 +65,16 @@ The worked steps are in [docs/AGENTS.md](docs/AGENTS.md).
 
 ## You are here to change this codebase
 
+From a fresh clone, one command installs Node 20 if it is missing, installs
+dependencies, and runs the smoke test. It is safe to run again and asks nothing.
+
+macOS and Linux: `bash scripts/setup.sh`
+
+Windows: `powershell -File scripts/setup.ps1`
+
+A dev container runs that script on create (`.devcontainer/devcontainer.json`).
+The same steps are in [CONTRIBUTING.md](CONTRIBUTING.md#new-contributors).
+
 Read **[CLAUDE.md](CLAUDE.md)** first: it is the working brief for this
 repository (layout, conventions, the rules about rebuilding the plugin bundle
 and regenerating the generated docs). Then

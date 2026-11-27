@@ -175,9 +175,13 @@ interface PathContext {
  * out relative (`Claude\claude_desktop_config.json`) and was written under
  * the current directory, where Claude Desktop never looks.
  */
+function pathFor(platform: NodeJS.Platform): typeof path.win32 {
+  return platform === 'win32' ? path.win32 : path;
+}
+
 function appData(ctx: PathContext): string {
   const value = ctx.env.APPDATA?.trim();
-  return value ? value : path.join(ctx.home, 'AppData', 'Roaming');
+  return value ? value : pathFor(ctx.platform).join(ctx.home, 'AppData', 'Roaming');
 }
 
 /** `$CODEX_HOME` when set, else `~/.codex`. */
@@ -216,7 +220,7 @@ export function configPathFor(client: Exclude<InstallClient, 'claude' | 'generic
       if (platform === 'darwin') {
         return path.join(home, 'Library', 'Application Support', 'Claude', 'claude_desktop_config.json');
       }
-      if (platform === 'win32') return path.join(appData(ctx), 'Claude', 'claude_desktop_config.json');
+      if (platform === 'win32') return path.win32.join(appData(ctx), 'Claude', 'claude_desktop_config.json');
       // Linux is best effort: Anthropic documents only the macOS and Windows
       // paths, so follow the XDG variable when it is set rather than assuming
       // ~/.config.
@@ -225,7 +229,7 @@ export function configPathFor(client: Exclude<InstallClient, 'claude' | 'generic
     case 'vscode': {
       if (project) return path.join(cwd, '.vscode', 'mcp.json');
       if (platform === 'darwin') return path.join(home, 'Library', 'Application Support', 'Code', 'User', 'mcp.json');
-      if (platform === 'win32') return path.join(appData(ctx), 'Code', 'User', 'mcp.json');
+      if (platform === 'win32') return path.win32.join(appData(ctx), 'Code', 'User', 'mcp.json');
       // Not XDG: VS Code hardcodes $HOME/.config/Code on Linux and ignores
       // XDG_CONFIG_HOME (userDataProfile.ts). Honouring the variable here
       // would write a file VS Code never reads.
