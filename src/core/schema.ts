@@ -100,9 +100,20 @@ export function escapeUnencodable(s: string): string {
   return s.replace(UNENCODABLE_RE_G, (c) => `\\u${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`);
 }
 
-/** `s` with each unencodable code unit written as `\uXXXX`, cut to 40 characters, for naming a term in an error. */
+const CONTROL_ESCAPES: Record<string, string> = { '\n': '\\n', '\r': '\\r', '\t': '\\t' };
+
+/**
+ * `s` with each control character (newline, tab, ESC, U+2028, ...) and each
+ * unencodable code unit written as an escape (`\n`, `\uXXXX`), cut to 40
+ * characters, for naming a term in an error. Escaping keeps the name on the
+ * error's own line: a raw newline in a canonical would split the message and
+ * could smuggle a second line into it.
+ */
 function showTermName(s: string): string {
-  const shown = escapeUnencodable(s);
+  const shown = escapeUnencodable(s).replace(
+    CONTROL_RE_G,
+    (c) => CONTROL_ESCAPES[c] ?? `\\u${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, '0')}`,
+  );
   if (shown.length <= 40) return shown;
   // Do not leave half of a valid surrogate pair at the truncation boundary.
   const end = /[\uD800-\uDBFF]/.test(shown[38]) && /[\uDC00-\uDFFF]/.test(shown[39]) ? 38 : 39;
