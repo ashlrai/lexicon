@@ -6258,7 +6258,10 @@ function escapeUnencodable(s) {
   return s.replace(UNENCODABLE_RE_G, (c) => `\\u${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`);
 }
 function showTermName(s) {
-  const shown = escapeUnencodable(s);
+  const shown = escapeUnencodable(s).replace(
+    CONTROL_RE_G,
+    (c) => CONTROL_ESCAPES[c] ?? `\\u${c.charCodeAt(0).toString(16).toUpperCase().padStart(4, "0")}`
+  );
   if (shown.length <= 40) return shown;
   const end = /[\uD800-\uDBFF]/.test(shown[38]) && /[\uDC00-\uDFFF]/.test(shown[39]) ? 38 : 39;
   return `${shown.slice(0, end)}\u2026`;
@@ -6429,7 +6432,7 @@ ${lines.join("\n")}`);
 function emptyLexicon() {
   return { version: 1, terms: [] };
 }
-var INVISIBLE_RE, CONTROL_RE, CONTROL_RE_G, ANSI_RE, OTHER_RE, UNENCODABLE_RE, UNENCODABLE_RE_G, UNENCODABLE_NOTE, MODEL_PATH_MAX_CHARS, TERM_TEXT_FIELDS, buildCategory, buildScope, buildSource, built, MAX_LISTED_ISSUES;
+var INVISIBLE_RE, CONTROL_RE, CONTROL_RE_G, ANSI_RE, OTHER_RE, UNENCODABLE_RE, UNENCODABLE_RE_G, UNENCODABLE_NOTE, CONTROL_ESCAPES, MODEL_PATH_MAX_CHARS, TERM_TEXT_FIELDS, buildCategory, buildScope, buildSource, built, MAX_LISTED_ISSUES;
 var init_schema = __esm({
   "src/core/schema.ts"() {
     init_zod();
@@ -6444,6 +6447,7 @@ var init_schema = __esm({
     UNENCODABLE_RE = /[\uFFFE\uFFFF]|[\uD800-\uDBFF](?![\uDC00-\uDFFF])|(?<![\uD800-\uDBFF])[\uDC00-\uDFFF]/;
     UNENCODABLE_RE_G = new RegExp(UNENCODABLE_RE.source, "g");
     UNENCODABLE_NOTE = "U+FFFE, U+FFFF and unpaired surrogates fit no file format";
+    CONTROL_ESCAPES = { "\n": "\\n", "\r": "\\r", "	": "\\t" };
     MODEL_PATH_MAX_CHARS = 120;
     TERM_TEXT_FIELDS = ["canonical", "aliases", "never", "context", "phonetic", "notes", "createdAt"];
     buildCategory = () => _enum(TERM_CATEGORIES);
