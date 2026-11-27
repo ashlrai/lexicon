@@ -5,6 +5,9 @@ import { describe, expect, it } from 'vitest';
 import { cleanTranscript, parseWhisperOutput, transcribeFile } from './transcribe.js';
 
 describe('cleanTranscript', () => {
+  it('removes a two-word annotation touching surrounding speech', () => {
+    expect(cleanTranscript('Zoë said,*door slams*send the report.')).toBe('Zoë said, send the report.');
+  });
   it.each(['[BLANK_AUDIO]', '[MUSIC]', '[speaker 2]', '[]', '[background\nnoise]'])
     ('returns no text for a transcript containing only %s', (tag) => {
       expect(cleanTranscript(tag)).toBe('');
