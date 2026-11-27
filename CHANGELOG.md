@@ -45,6 +45,12 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 - Agent install guidance (`llms.txt`, `llms-full.txt`, both `AGENTS.md`, README FAQ, `COPY-PASTE.md`, `FIRST-RUN.md`, the site's `/llms-full.txt`) now warns that `lexicon setup` with no terminal or with `--json` asks nothing and takes the `--yes` defaults, installing into every detected client, so the install script's `run: lexicon setup` line is for the user, not for an agent to follow unprompted.
 - `docs/PACKS.md` and the `DELETE /packs/:name` row in `docs/LOCAL-API.md` now describe `shared`: a term another installed pack also has stays when one pack is removed (and is reported as `kept` when the other goes), matching `lexicon pack remove` and the server's response.
 
+- README shows live growth badges and a "Join the mission" section, and `docs/GROWING.md` collects the ways terms get into a lexicon (starter packs, harvest, learned corrections, suggestions, review). (#1167, #1168)
+- Any-agent instruction files: `GEMINI.md`, `.github/copilot-instructions.md` and `.cursor/rules/agents.mdc` point other coding agents at the same repo rules as `AGENTS.md`, and the pull request template has an optional `Agent used` field. (#1176)
+- Every third-party action in the CI, release, Pages, macOS app and Windows app workflows is pinned to a 40-hex commit SHA. (#1179)
+- Dev-dependency group bump (lockfile only). (#1116)
+- Added regression tests for harvest marker handling (`TODO`, `FIXME`, `HACK`, `XXX` and adjacent markers), voice transcript cleanup (bracketed tags and asterisks), schema note handling, and the Windows and macOS menu bar apps' burst detector and app exclusions. No behavior change. (#1181 to #1197)
+
 ## 0.5.13 (2026-11-21)
 
 ### Added
