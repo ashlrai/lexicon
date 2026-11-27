@@ -27,3 +27,37 @@ describe('harvest adjacent TODO and FIXME markers', () => {
     }
   });
 });
+
+it.each([
+  ['LF', '\n'],
+  ['CRLF', '\r\n'],
+])('retains a distinct name beside every standalone marker on separate %s lines', async (_label, newline) => {
+  const temp = await fs.mkdtemp(path.join(os.tmpdir(), 'lexicon-mixed-markers-'));
+  const dir = path.join(temp, 'repo');
+  try {
+    await fs.mkdir(dir);
+    await fs.writeFile(path.join(dir, 'markers.ts'), [
+      '// TODO: QuasarWidget',
+      '// FIXME: NebulaQueue',
+      '// NOTE: OrbitBridge',
+      '// HACK: PulsarLoader',
+      '// XXX: VectorPlanner',
+    ].join(newline) + newline);
+
+    const candidates = await harvestRepo(dir, { git: false, minCount: 1, symbols: true });
+    // Evidence currently identifies files, not lines. Distinct names expose
+    // a dropped marker line that a shared name and aggregate count can hide.
+    expect(candidates).toEqual([
+      'NebulaQueue', 'OrbitBridge', 'PulsarLoader', 'QuasarWidget', 'VectorPlanner',
+    ].map((canonical) => ({
+      canonical,
+      category: 'identifier',
+      source: 'harvest:repo',
+      count: 1,
+      evidence: ['markers.ts'],
+      suggestedAliases: [],
+    })));
+  } finally {
+    await fs.rm(temp, { recursive: true, force: true, maxRetries: 10, retryDelay: 50 });
+  }
+});
