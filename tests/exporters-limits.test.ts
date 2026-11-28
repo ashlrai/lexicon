@@ -61,6 +61,31 @@ describe('whisper-prompt and openai: the prompt window Whisper reads', () => {
     expect(out.notes[0]).toContain('past the 223 prompt tokens');
   });
 
+  it('counts only fitted names toward the voice cap when all 100 preferred candidates are oversized', () => {
+    const project = Array.from({ length: 100 }, (_, i) => ({
+      canonical: `${'界'.repeat(90)}${i}`, aliases: [], hits: 42,
+    }));
+    const input = lex([...project, { canonical: 'ShortGlobal', aliases: [] }]);
+    const out = exportLexiconWithNotes(input, 'whisper-prompt', {
+      preferredWhisperCanonicals: new Set(project.map((term) => term.canonical)),
+    });
+    expect(out.text).toBe('ShortGlobal');
+    expect(out.names).toBe(1);
+    expect(out.notes).toEqual([expect.stringContaining('left out 100 names past the 223 prompt tokens')]);
+    expect(exportLexicon(input, 'whisper-prompt')).toBe('');
+  });
+
+  it('still caps the number of names fitted by voice at 100', () => {
+    const project = Array.from({ length: 101 }, (_, i) => ({
+      canonical: String.fromCharCode(65 + Math.floor(i / 26), 65 + i % 26), aliases: [],
+    }));
+    const out = exportLexiconWithNotes(lex(project), 'whisper-prompt', {
+      preferredWhisperCanonicals: new Set(project.map((term) => term.canonical)),
+    });
+    expect(out.names).toBe(100);
+    expect(out.notes).toEqual([expect.stringContaining('left out 1 name past the 100')]);
+  });
+
   it.each(['whisper-prompt', 'openai'] as const)('%s keeps a single short name without omissions', (format) => {
     const { text, notes, names } = exportLexiconWithNotes(lex([{ canonical: 'kubectl', aliases: [] }]), format);
     expect(text).toBe('kubectl');

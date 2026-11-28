@@ -61,7 +61,7 @@ export function estimateWhisperTokens(text: string): number {
 }
 
 export function exportWhisperPrompt(lexicon: Lexicon, opts: ExportOptions = {}, sink?: ExportSink): string {
-  const limit = opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT;
+  const limit = Math.max(0, opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT);
   // Whitespace collapsed, then each name once: canonicals that differ only
   // in whitespace (`Ashlr  AI`, a no-break space) each spent prompt tokens on
   // the same name, and each took a place under the cap.
@@ -70,6 +70,7 @@ export function exportWhisperPrompt(lexicon: Lexicon, opts: ExportOptions = {}, 
   const repeats: string[] = [];
   const ordered = sortByImportance(lexicon.terms);
   const preferred = opts.preferredWhisperCanonicals;
+  const fitPreferred = Boolean(preferred?.size);
   const ranked = preferred?.size
     ? [...ordered.filter((term) => preferred.has(term.canonical)), ...ordered.filter((term) => !preferred.has(term.canonical))]
     : ordered;
@@ -83,20 +84,22 @@ export function exportWhisperPrompt(lexicon: Lexicon, opts: ExportOptions = {}, 
     seen.add(name);
     all.push(name);
   }
-  const names = all.slice(0, Math.max(0, limit));
-  // Past the default cap: a `limit` the caller gave was applied before the
-  // exporter (applyOptions) and is what they asked for, but the default one
-  // left names out without a word, and the window note undercounted.
-  const pastDefault = opts.limit === undefined ? all.slice(names.length) : [];
+  // The standalone export retains the historical candidate cap and prefix.
+  // Voice instead counts fitted names so oversized project hints cannot push
+  // every usable global name out before it is considered.
+  const names = fitPreferred ? all : all.slice(0, limit);
+  const pastDefault = opts.limit === undefined && !fitPreferred ? all.slice(names.length) : [];
   const kept: string[] = [];
   const dropped: string[] = [];
   let used = 0;
-  for (const name of names) {
+  for (const [i, name] of names.entries()) {
+    if (fitPreferred && kept.length >= limit) {
+      if (opts.limit === undefined) pastDefault.push(...names.slice(i));
+      break;
+    }
     // `, ` before every name but the first: the comma is a token, the space joins the word.
     const cost = estimateWhisperTokens(kept.length > 0 ? `, ${listItem(name)}` : listItem(name));
-    // Voice can prefer a project name too large to fit even on its own.
-    // Skip it and give smaller names a chance rather than silently sending no hint.
-    if ((preferred?.size || dropped.length === 0) && used + cost <= WHISPER_PROMPT_TOKEN_BUDGET) {
+    if ((fitPreferred || dropped.length === 0) && used + cost <= WHISPER_PROMPT_TOKEN_BUDGET) {
       kept.push(name);
       used += cost;
     } else {
