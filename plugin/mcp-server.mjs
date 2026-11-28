@@ -57462,11 +57462,15 @@ function estimateWhisperTokens(text) {
   return tokens;
 }
 function exportWhisperPrompt(lexicon, opts = {}, sink) {
-  const limit = opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT;
+  const limit = Math.max(0, opts.limit ?? WHISPER_PROMPT_DEFAULT_LIMIT);
   const all = [];
   const seen = /* @__PURE__ */ new Set();
   const repeats = [];
-  for (const { canonical } of canonicalList(sortByImportance(lexicon.terms))) {
+  const ordered = sortByImportance(lexicon.terms);
+  const preferred = opts.preferredWhisperCanonicals;
+  const fitPreferred = Boolean(preferred?.size);
+  const ranked = preferred?.size ? [...ordered.filter((term) => preferred.has(term.canonical)), ...ordered.filter((term) => !preferred.has(term.canonical))] : ordered;
+  for (const { canonical } of canonicalList(ranked)) {
     const name = canonical.replace(/\s+/g, " ").trim();
     if (!name) continue;
     if (seen.has(name)) {
@@ -57476,14 +57480,18 @@ function exportWhisperPrompt(lexicon, opts = {}, sink) {
     seen.add(name);
     all.push(name);
   }
-  const names = all.slice(0, Math.max(0, limit));
-  const pastDefault = opts.limit === void 0 ? all.slice(names.length) : [];
+  const names = fitPreferred ? all : all.slice(0, limit);
+  const pastDefault = opts.limit === void 0 && !fitPreferred ? all.slice(names.length) : [];
   const kept = [];
   const dropped = [];
   let used = 0;
-  for (const name of names) {
+  for (const [i, name] of names.entries()) {
+    if (fitPreferred && kept.length >= limit) {
+      if (opts.limit === void 0) pastDefault.push(...names.slice(i));
+      break;
+    }
     const cost = estimateWhisperTokens(kept.length > 0 ? `, ${listItem(name)}` : listItem(name));
-    if (dropped.length === 0 && used + cost <= WHISPER_PROMPT_TOKEN_BUDGET) {
+    if ((fitPreferred || dropped.length === 0) && used + cost <= WHISPER_PROMPT_TOKEN_BUDGET) {
       kept.push(name);
       used += cost;
     } else {

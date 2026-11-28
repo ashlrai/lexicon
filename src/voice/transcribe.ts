@@ -86,13 +86,15 @@ export function parseWhisperOutput(json: string | undefined, stdout: string): st
 }
 
 /** Build whisper's initial prompt from the merged lexicon (canonicals only). */
-export function buildWhisperPrompt(lexicon: Lexicon): string {
-  return exportLexicon(lexicon, 'whisper-prompt');
+export function buildWhisperPrompt(lexicon: Lexicon, preferredWhisperCanonicals?: ReadonlySet<string>): string {
+  return exportLexicon(lexicon, 'whisper-prompt', preferredWhisperCanonicals ? { preferredWhisperCanonicals } : {});
 }
 
 export interface TranscribeOptions {
   /** The merged lexicon used for the prompt and for normalize(). */
   lexicon: Lexicon;
+  /** Canonicals from the verified active project, if one was loaded. */
+  preferredWhisperCanonicals?: ReadonlySet<string>;
   /** Absolute path to whisper-cli. */
   whisperCli: string;
   /** Model name or path. Default `base.en`. */
@@ -242,7 +244,7 @@ export async function transcribeFile(wav: string, opts: TranscribeOptions): Prom
     throw e;
   }
   if (signal?.aborted) throw new TranscribeInterruptedError();
-  const prompt = opts.prompt === false ? undefined : buildWhisperPrompt(opts.lexicon) || undefined;
+  const prompt = opts.prompt === false ? undefined : buildWhisperPrompt(opts.lexicon, opts.preferredWhisperCanonicals) || undefined;
   const tmpDir = opts.tmpDir ?? os.tmpdir();
   await fs.mkdir(tmpDir, { recursive: true });
   // whisper-cli writes the transcript to `<outBase>.json`. That was a

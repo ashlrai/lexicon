@@ -29,6 +29,10 @@ All notable changes to `@ashlr/lexicon` are recorded here. The format follows Ke
 
 ## Unreleased
 
+### Fixed
+
+- Local voice dictation gives the trusted project vocabulary priority when frequent global names would otherwise fill Whisper’s prompt window.
+
 ### Internal
 
 - Pull requests and the merge queue run vitest's affected tests on the hosted Linux job, stop at the first failure, and write that test's file and line into the step summary. A full local `npm test` is no longer required before every push. The daily Linux, Windows and macOS matrix is unchanged.
