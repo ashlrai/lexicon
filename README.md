@@ -263,19 +263,9 @@ Pellucid is now part of Lexicon. Its ambiguity engine (the INCOSE rule layer, sp
 
 ## Part of the Ashlr.AI ecosystem
 
-Phantom and its ecosystem form a fully autonomous, code-first, agent-native software factory. Agents run it; the human is a passive board member. The goal is open source RSI (recursive self improvement). Lexicon is the piece that makes sure the names a person dictates reach those agents spelled right.
+Lexicon corrects dictated names and domain terms before an agent reads them. It runs on its own or alongside [Phantom](https://phm.dev), the workbench for coordinating coding agents. For an example of using Lexicon alongside Phantom Secrets, see [Phantom usage](docs/PHANTOM-USAGE.md). Browse the [AshlrAI open-source ecosystem](https://github.com/ashlrai#the-open-source-ecosystem) for the rest of the tools.
 
-| Repo | Role |
-|---|---|
-| Phantom | The agent-run software factory the rest of the ecosystem serves. |
-| phantom-secrets | `phantom exec` gives an agent `phm_` placeholders instead of real provider keys. Lexicon needs no key and runs unchanged under it: [docs/PHANTOM-USAGE.md](docs/PHANTOM-USAGE.md). |
-| ashlr-plugin | The Claude Code plugin for agent tooling; `ashlr doctor` reads the companions below. |
-| Locus | Identity and tenant pinning for agents. |
-| **lexicon** | This repo: canonical spellings for what speech-to-text writes, fixed before an agent reads it. |
-| ashlr-md | Ships `mdopener-mcp`. |
-| ashlr-stack | The `stack` CLI; it owns the shared handshake contract and `stack doctor --ecosystem`. |
-
-Lexicon does not need any of the others to run. The tie between them is the [companion handshake](docs/ashlr-handshake.md): each tool answers `--ashlr-handshake --json` with its name, version, capabilities and health, and `lexicon doctor` reads Locus and ashlr-md that way and reports one info line for each.
+Lexicon integrates with other tools through the [companion handshake](docs/ashlr-handshake.md): each tool answers `--ashlr-handshake --json` with its name, version, capabilities and health, and `lexicon doctor` reads Locus and ashlr-md that way and reports one info line for each.
 
 **How agents work on this repo.** Agents write and ship the code here. [AGENTS.md](AGENTS.md) is the entry point for any agent, whether it is installing Lexicon for a user or changing this codebase. [CLAUDE.md](CLAUDE.md) is the working brief: layout, conventions, and the generated files to rebuild before a commit. A pull request gets one required check, `CI Gate`: typecheck, build, the crypto policy check, the redaction test and the diff secret scans. Merging goes through the merge queue, which reruns `CI Gate` on the branch merged with current `main` and squash-merges it when green; no approving review is required. Auto-merge needs write access, so on a fork pull request a maintainer or the fleet arms it (see [Contribute with an agent](CONTRIBUTING.md#contribute-with-an-agent)). Plugin bundle drift from `src/` and docs that state a stale tool, command or format count (`npm run check:facts`) are caught only by the daily full suite on `main`, so run `npm run build:bundle` and `npm run check:facts` locally when CLAUDE.md says to. `npm run fresh:check` catches a stale version pin in the docs.
 
@@ -295,8 +285,8 @@ AshlrAI is an engineering firm. We build tools like Lexicon to make our own work
 
 - **Start here:** read [CONTRIBUTING.md](CONTRIBUTING.md). Your coding agent can follow [AGENTS.md](AGENTS.md) and [llms.txt](llms.txt).
 - **Pick an issue:** [`good first issue`](https://github.com/ashlrai/lexicon/issues?q=is%3Aissue+is%3Aopen+label%3A%22good+first+issue%22) or [`help wanted`](https://github.com/ashlrai/lexicon/issues?q=is%3Aissue+is%3Aopen+label%3A%22help+wanted%22).
-- **See the whole lineup:** [ashlr.ai/open-source](https://ashlr.ai/open-source).
-<!-- TODO(discord): add the AshlrAI Discord invite here, and a Discord badge in the header, once the public invite link is confirmed. -->
+- **See the whole lineup:** [AshlrAI open-source ecosystem](https://github.com/ashlrai#the-open-source-ecosystem).
+- **Talk with us:** [The Dev Shack](https://discord.gg/jBQrSU6XeD) on Discord.
 
 ### Star history
 
