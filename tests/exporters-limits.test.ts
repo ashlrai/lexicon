@@ -49,6 +49,18 @@ describe('empty lexicon exports', () => {
 });
 
 describe('whisper-prompt and openai: the prompt window Whisper reads', () => {
+  it('skips an oversized preferred name while retaining other project and global hints', () => {
+    const oversized = '界'.repeat(90);
+    const out = exportLexiconWithNotes(lex([
+      { canonical: oversized, aliases: [], hits: 99 },
+      { canonical: 'ZephyrBridge', aliases: [] },
+      { canonical: 'GloballyFrequent', aliases: [], hits: 42 },
+    ]), 'whisper-prompt', { preferredWhisperCanonicals: new Set([oversized, 'ZephyrBridge', 'NotInLexicon']) });
+    expect(out.text).toBe('ZephyrBridge, GloballyFrequent');
+    expect(out.notes).toHaveLength(1);
+    expect(out.notes[0]).toContain('past the 223 prompt tokens');
+  });
+
   it.each(['whisper-prompt', 'openai'] as const)('%s keeps a single short name without omissions', (format) => {
     const { text, notes, names } = exportLexiconWithNotes(lex([{ canonical: 'kubectl', aliases: [] }]), format);
     expect(text).toBe('kubectl');

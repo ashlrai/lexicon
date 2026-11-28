@@ -20,8 +20,11 @@ microphone -> ffmpeg (16 kHz mono s16 WAV) -> whisper.cpp (--prompt <canonicals>
    Linux `-f pulse -i default` (ALSA when ffmpeg has no pulse demuxer), Windows
    `-f dshow -i audio=<device>`.
 2. **Transcribe.** `whisper-cli` runs on the WAV with `-nt -np -oj` and, unless
-   `--no-prompt`, `--prompt` set to `lexicon export whisper-prompt` (the canonicals of
-   your merged lexicon, comma-separated, capped at 100). Whisper biases toward
+   `--no-prompt`, a comma-separated `--prompt` of canonical spellings from your
+   merged lexicon, capped at 100 names and an estimated 223 prompt tokens. Voice
+   gives terms from the trusted active project first claim on that budget, then
+   fills the remaining space with global terms. An untrusted or changed project
+   is not used. Whisper biases toward
    spellings it sees in the prompt; on the audio benchmark that alone lifts
    `base.en` term recall from 42% to 67% (see below). Bracketed tags like
    `[BLANK_AUDIO]` and noise annotations like `(applause)` are stripped. See

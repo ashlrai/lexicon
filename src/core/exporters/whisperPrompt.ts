@@ -68,7 +68,12 @@ export function exportWhisperPrompt(lexicon: Lexicon, opts: ExportOptions = {}, 
   const all: string[] = [];
   const seen = new Set<string>();
   const repeats: string[] = [];
-  for (const { canonical } of canonicalList(sortByImportance(lexicon.terms))) {
+  const ordered = sortByImportance(lexicon.terms);
+  const preferred = opts.preferredWhisperCanonicals;
+  const ranked = preferred?.size
+    ? [...ordered.filter((term) => preferred.has(term.canonical)), ...ordered.filter((term) => !preferred.has(term.canonical))]
+    : ordered;
+  for (const { canonical } of canonicalList(ranked)) {
     const name = canonical.replace(/\s+/g, ' ').trim();
     if (!name) continue;
     if (seen.has(name)) {
@@ -89,7 +94,9 @@ export function exportWhisperPrompt(lexicon: Lexicon, opts: ExportOptions = {}, 
   for (const name of names) {
     // `, ` before every name but the first: the comma is a token, the space joins the word.
     const cost = estimateWhisperTokens(kept.length > 0 ? `, ${listItem(name)}` : listItem(name));
-    if (dropped.length === 0 && used + cost <= WHISPER_PROMPT_TOKEN_BUDGET) {
+    // Voice can prefer a project name too large to fit even on its own.
+    // Skip it and give smaller names a chance rather than silently sending no hint.
+    if ((preferred?.size || dropped.length === 0) && used + cost <= WHISPER_PROMPT_TOKEN_BUDGET) {
       kept.push(name);
       used += cost;
     } else {

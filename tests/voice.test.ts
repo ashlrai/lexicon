@@ -1143,6 +1143,45 @@ describe('lexicon voice (foreground)', () => {
     expect(prompt).not.toContain('Ashler');
   });
 
+  it('gives trusted active-project words the Whisper budget before frequent global words', async () => {
+    const globalWords = Array.from({ length: 100 }, (_, i) =>
+      `  - canonical: GloballyFrequent${i}\n    aliases: []\n    hits: 99`,
+    ).join('\n');
+    const h = await harness({ lexicon: `version: 1\nterms:\n${globalWords}\n` });
+    h.deps.waitForStop = async () => 'enter';
+    h.transcript = 'review the zephyr bridge';
+    const repo = path.join(h.dir, 'repo');
+    await fs.mkdir(path.join(repo, '.git'), { recursive: true });
+    const projectPath = path.join(repo, '.lexicon.yaml');
+    await fs.writeFile(projectPath, 'version: 1\nterms:\n  - canonical: ZephyrBridge\n    aliases: [zephyr bridge]\n');
+    const capture = async () => {
+      h.execCalls.length = 0;
+      h.out.length = 0;
+      expect(await runVoice({ ...h.opts, cwd: repo, json: true }, h.io, h.deps)).toBe(EXIT_OK);
+      const args = whisperCall(h)!.args;
+      return {
+        prompt: args[args.indexOf('--prompt') + 1],
+        text: JSON.parse(h.out.join('')),
+      };
+    };
+
+    const untrusted = await capture();
+    expect(untrusted.prompt).toMatch(/^GloballyFrequent/);
+    expect(untrusted.prompt).not.toContain('ZephyrBridge');
+    expect(untrusted.text.output).toBe(h.transcript);
+
+    await trustProject(projectPath, { globalPath: h.globalPath });
+    const trusted = await capture();
+    expect(trusted.prompt).toMatch(/^ZephyrBridge, GloballyFrequent/);
+    expect(trusted.text.raw).toBe(h.transcript);
+    expect(trusted.text.output).toBe('review the ZephyrBridge');
+
+    await fs.appendFile(projectPath, '  - canonical: ChangedProjectWord\n    aliases: []\n');
+    const changed = await capture();
+    expect(changed.prompt).toBe(untrusted.prompt);
+    expect(changed.text.output).toBe(h.transcript);
+  });
+
   it('--no-prompt omits --prompt', async () => {
     const h = await harness();
     h.deps.waitForStop = async () => 'enter';

@@ -281,4 +281,6 @@ export interface ExportOptions {
   categories?: TermCategory[];
   /** Cap term count (whisper-prompt enforces ~100). */
   limit?: number;
+  /** For Whisper prompts, prefer these already-loaded canonical names within the prompt budget. */
+  preferredWhisperCanonicals?: ReadonlySet<string>;
 }

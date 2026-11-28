@@ -32,7 +32,7 @@ import { promises as fs } from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { commandLine, diffSummary, loadLexicon, recordHits, resolvePaths, sanitizeForDisplay, sanitizeForDisplayMax } from '../core/index.js';
-import type { Lexicon, LoadedLexicon } from '../core/index.js';
+import type { LoadedLexicon } from '../core/index.js';
 import { PASTE_APPLESCRIPT, emptyLexiconHint } from '../daemon/clipboard.js';
 import { ExecError, detectClipboardBackend } from '../daemon/clipboard-backends.js';
 import type { ClipboardExec } from '../daemon/clipboard-backends.js';
@@ -484,9 +484,11 @@ export function jsonResult(result: TranscribeResult, recordMs: number, seconds: 
   };
 }
 
-function transcribeOptions(r: Resolved, opts: VoiceOptions, deps: VoiceDeps, lexicon: Lexicon, whisperCli: string) {
+function transcribeOptions(r: Resolved, opts: VoiceOptions, deps: VoiceDeps, loaded: LoadedLexicon, whisperCli: string) {
+  const project = loaded.projectTrust === 'trusted' ? loaded.project : undefined;
   return {
-    lexicon,
+    lexicon: loaded.merged,
+    ...(project ? { preferredWhisperCanonicals: new Set(project.lexicon.terms.map((term) => term.canonical)) } : {}),
     whisperCli,
     model: opts.model ?? DEFAULT_MODEL,
     modelOptions: {
@@ -740,7 +742,7 @@ async function transcribeCapture(
   }
   try {
     r.log('transcribing ...');
-    const result = await transcribeInterruptibly(wav, transcribeOptions(r, opts, deps, loaded.merged, tools.whisperCli), deps);
+    const result = await transcribeInterruptibly(wav, transcribeOptions(r, opts, deps, loaded, tools.whisperCli), deps);
     await keepOrRemoveTranscribed(result, wav, io, timing.keepBecause);
     return await deliver(result, recordMs, seconds, opts, io, deps, r, loaded);
   } catch (e) {
@@ -923,7 +925,7 @@ async function recordForeground(opts: VoiceOptions, io: VoiceIO, deps: VoiceDeps
 
   try {
     r.log('transcribing ...');
-    const result = await transcribeInterruptibly(wav, transcribeOptions(r, opts, deps, loaded.merged, tools.whisperCli), deps);
+    const result = await transcribeInterruptibly(wav, transcribeOptions(r, opts, deps, loaded, tools.whisperCli), deps);
     await keepOrRemoveTranscribed(result, wav, io);
     return await deliver(result, recordMs, recordMs / 1000, opts, io, deps, r, loaded);
   } catch (e) {

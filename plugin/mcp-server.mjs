@@ -57466,7 +57466,10 @@ function exportWhisperPrompt(lexicon, opts = {}, sink) {
   const all = [];
   const seen = /* @__PURE__ */ new Set();
   const repeats = [];
-  for (const { canonical } of canonicalList(sortByImportance(lexicon.terms))) {
+  const ordered = sortByImportance(lexicon.terms);
+  const preferred = opts.preferredWhisperCanonicals;
+  const ranked = preferred?.size ? [...ordered.filter((term) => preferred.has(term.canonical)), ...ordered.filter((term) => !preferred.has(term.canonical))] : ordered;
+  for (const { canonical } of canonicalList(ranked)) {
     const name = canonical.replace(/\s+/g, " ").trim();
     if (!name) continue;
     if (seen.has(name)) {
@@ -57483,7 +57486,7 @@ function exportWhisperPrompt(lexicon, opts = {}, sink) {
   let used = 0;
   for (const name of names) {
     const cost = estimateWhisperTokens(kept.length > 0 ? `, ${listItem(name)}` : listItem(name));
-    if (dropped.length === 0 && used + cost <= WHISPER_PROMPT_TOKEN_BUDGET) {
+    if ((preferred?.size || dropped.length === 0) && used + cost <= WHISPER_PROMPT_TOKEN_BUDGET) {
       kept.push(name);
       used += cost;
     } else {
